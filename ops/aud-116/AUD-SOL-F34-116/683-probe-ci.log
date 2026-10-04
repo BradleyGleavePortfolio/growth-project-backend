@@ -1,0 +1,77 @@
+targeted	Targeted jest	﻿2026-10-04T02:35:44.2024365Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T02:35:44.2024712Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T02:35:44.2025098Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T02:35:44.2025593Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T02:35:44.2025947Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T02:35:44.2026252Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T02:35:44.2090332Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T02:35:44.2090678Z env:
+targeted	Targeted jest	2026-10-04T02:35:44.2090898Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T02:35:44.2091264Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T02:35:44.2091584Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T02:35:44.2186792Z specs: test/audit-sol-f34-683.spec.ts test/s-fee-charge-settlement.spec.ts
+targeted	Targeted jest	2026-10-04T02:35:57.6295215Z ^[[31m[Nest] 3078  - ^[[39m10/04/2026, 2:35:57 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[ChargeSettlementService] ^[[39m^[[31mSFEE_RECONCILE_PENDING alert=true 1 settlement adjustment(s) have waited over an hour for canonical Stripe state (see ChargeSettlement.reconcile_reason)^[[39m
+targeted	Targeted jest	2026-10-04T02:35:57.6759139Z PASS test/s-fee-charge-settlement.spec.ts (12.395 s)
+targeted	Targeted jest	2026-10-04T02:35:57.6762435Z ^[[33m[Nest] 3078  - ^[[39m10/04/2026, 2:35:57 AM ^[[33m   WARN^[[39m ^[[38;5;3m[ChargeSettlementService] ^[[39m^[[33msettleCharge waiting charge=ch_wait: Stripe has not reported the balance transaction yet; the settlement sweeper retries.^[[39m
+targeted	Targeted jest	2026-10-04T02:35:57.6766371Z ^[[33m[Nest] 3078  - ^[[39m10/04/2026, 2:35:57 AM ^[[33m   WARN^[[39m ^[[38;5;3m[ChargeSettlementService] ^[[39m^[[33msettleCharge: head coach head-1 has no connected account; sub-coach coach-1 keeps the split for charge=ch_team^[[39m
+targeted	Targeted jest	2026-10-04T02:35:57.6770309Z ^[[33m[Nest] 3078  - ^[[39m10/04/2026, 2:35:57 AM ^[[33m   WARN^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[33mSFEE_REVERSAL_REFUSED transfer=tr-85 op=tgp-tr-rev-tr-85-op1 amount=4630: Insufficient funds in the connected account to reverse this transfer^[[39m
+targeted	Targeted jest	2026-10-04T02:35:57.6774507Z ^[[33m[Nest] 3078  - ^[[39m10/04/2026, 2:35:57 AM ^[[33m   WARN^[[39m ^[[38;5;3m[ChargeSettlementService] ^[[39m^[[33mtransfer reversal refused transfer=tr-85 charge=ch_1: Insufficient funds in the connected account to reverse this transfer; recording a recovery to collect^[[39m
+targeted	Targeted jest	2026-10-04T02:35:57.9803822Z ^[[33m[Nest] 3078  - ^[[39m10/04/2026, 2:35:57 AM ^[[33m   WARN^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[33mSFEE_TRANSFER_FAILED transfer=tr-21 kind=coach_net purchase=cp_audit settlement=cs-17 attempt=1/6 alert=false: temporary provider outage; not visible at Stripe yet, re-checked before any re-send^[[39m
+targeted	Targeted jest	2026-10-04T02:35:57.9806759Z FAIL test/audit-sol-f34-683.spec.ts
+targeted	Targeted jest	2026-10-04T02:35:57.9808304Z   ● Independent F3 actual-service boundary probes › FX: CAD presentment cents must not be subtracted as USD settlement cents
+targeted	Targeted jest	2026-10-04T02:35:57.9809168Z 
+targeted	Targeted jest	2026-10-04T02:35:57.9809521Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T02:35:57.9810215Z 
+targeted	Targeted jest	2026-10-04T02:35:57.9810437Z     Expected: 5640
+targeted	Targeted jest	2026-10-04T02:35:57.9810817Z     Received: 5140
+targeted	Targeted jest	2026-10-04T02:35:57.9811039Z 
+targeted	Targeted jest	2026-10-04T02:35:57.9812439Z     ^[[0m ^[[90m 56 |^[[39m     expect(db^[[33m.^[[39msettlements[^[[35m0^[[39m])^[[33m.^[[39mtoMatchObject({ gross_cents^[[33m:^[[39m ^[[35m8^[[39m_000^[[33m,^[[39m currency^[[33m:^[[39m ^[[32m'usd'^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:35:57.9814150Z      ^[[90m 57 |^[[39m     ^[[90m// USD 80 - USD 2 processing - USD 1.60 platform - USD 20 refund.^[[39m
+targeted	Targeted jest	2026-10-04T02:35:57.9815640Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 58 |^[[39m     expect(stripe^[[33m.^[[39mnetTo(^[[32m'acct_audit'^[[39m))^[[33m.^[[39mtoBe(^[[35m5^[[39m_640)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:35:57.9816947Z      ^[[90m    |^[[39m                                        ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:35:57.9817712Z      ^[[90m 59 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:35:57.9818256Z      ^[[90m 60 |^[[39m
+targeted	Targeted jest	2026-10-04T02:35:57.9819370Z      ^[[90m 61 |^[[39m   it(^[[32m'reconciliation cannot attest paid/ok when Stripe has never created the pending transfer'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T02:35:57.9820633Z 
+targeted	Targeted jest	2026-10-04T02:35:57.9820903Z       at Object.<anonymous> (test/audit-sol-f34-683.spec.ts:58:40)
+targeted	Targeted jest	2026-10-04T02:35:57.9821183Z 
+targeted	Targeted jest	2026-10-04T02:35:57.9821825Z   ● Independent F3 actual-service boundary probes › reconciliation cannot attest paid/ok when Stripe has never created the pending transfer
+targeted	Targeted jest	2026-10-04T02:35:57.9822392Z 
+targeted	Targeted jest	2026-10-04T02:35:57.9822561Z     expect(received).not.toMatchObject(expected)
+targeted	Targeted jest	2026-10-04T02:35:57.9822785Z 
+targeted	Targeted jest	2026-10-04T02:35:57.9822950Z     Expected: not {"drift_cents": 0, "status": "ok"}
+targeted	Targeted jest	2026-10-04T02:35:57.9824220Z     Received:     {"drift_cents": 0, "ledger": {"application_fee_cents": 98, "destination_cents": 0, "head_coach_cents": 0, "reversed_cents": 0}, "notes": null, "purchase_id": "cp_audit", "status": "ok", "stripe": {"amount_cents": 4900, "application_fee_cents": 0, "refunded_cents": 0, "transfers_cents": 4630}}
+targeted	Targeted jest	2026-10-04T02:35:57.9825195Z 
+targeted	Targeted jest	2026-10-04T02:35:57.9826357Z     ^[[0m ^[[90m 72 |^[[39m     ^[[36mconst^[[39m reconciliation ^[[33m=^[[39m ^[[36mnew^[[39m ^[[33mReconciliationService^[[39m(asPrisma(prisma)^[[33m,^[[39m stripe)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:35:57.9828494Z      ^[[90m 73 |^[[39m     ^[[36mconst^[[39m result ^[[33m=^[[39m ^[[36mawait^[[39m reconciliation^[[33m.^[[39mreconcilePurchase(purchase^[[33m.^[[39mid)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:35:57.9831402Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 74 |^[[39m     expect(result)^[[33m.^[[39mnot^[[33m.^[[39mtoMatchObject({ status^[[33m:^[[39m ^[[32m'ok'^[[39m^[[33m,^[[39m drift_cents^[[33m:^[[39m ^[[35m0^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:35:57.9832904Z      ^[[90m    |^[[39m                        ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:35:57.9834139Z      ^[[90m 75 |^[[39m     expect(result^[[33m.^[[39mstripe^[[33m.^[[39mtransfers_cents)^[[33m.^[[39mtoBe(^[[35m0^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:35:57.9835125Z      ^[[90m 76 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:35:57.9835652Z      ^[[90m 77 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T02:35:57.9835898Z 
+targeted	Targeted jest	2026-10-04T02:35:57.9836299Z       at Object.<anonymous> (test/audit-sol-f34-683.spec.ts:74:24)
+targeted	Targeted jest	2026-10-04T02:35:57.9836790Z 
+targeted	Targeted jest	2026-10-04T02:35:57.9837897Z   ● Independent F3 actual-service boundary probes › a failed notice DB write must not export arbitrary diagnostic text to centralized logs
+targeted	Targeted jest	2026-10-04T02:35:57.9838823Z 
+targeted	Targeted jest	2026-10-04T02:35:57.9839148Z     expect(received).not.toContain(expected) // indexOf
+targeted	Targeted jest	2026-10-04T02:35:57.9839835Z 
+targeted	Targeted jest	2026-10-04T02:35:57.9840289Z     Expected substring: not "AUDIT_MESSAGE_BODY_contact_at_example_invalid"
+targeted	Targeted jest	2026-10-04T02:35:57.9842289Z     Received string:        "SFEE_NOTICE_FAILED alert=true charge=ch_audit: could not record the payee notice (AUDIT_MESSAGE_BODY_contact_at_example_invalid); the money is converged and the sweeper retries the notice"
+targeted	Targeted jest	2026-10-04T02:35:57.9843646Z 
+targeted	Targeted jest	2026-10-04T02:35:57.9844579Z     ^[[0m ^[[90m 88 |^[[39m     expect(stripe^[[33m.^[[39mnetTo(^[[32m'acct_audit'^[[39m))^[[33m.^[[39mtoBe(^[[35m2^[[39m_630)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:35:57.9846907Z      ^[[90m 89 |^[[39m     expect([^[[33m...^[[39merrors^[[33m.^[[39mmock^[[33m.^[[39mcalls^[[33m,^[[39m ^[[33m...^[[39mwarns^[[33m.^[[39mmock^[[33m.^[[39mcalls]^[[33m.^[[39mmap((c) ^[[33m=>^[[39m ^[[33mString^[[39m(c[^[[35m0^[[39m]))^[[33m.^[[39mjoin(^[[32m'\n'^[[39m))
+targeted	Targeted jest	2026-10-04T02:35:57.9848088Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 90 |^[[39m       ^[[33m.^[[39mnot^[[33m.^[[39mtoContain(canary)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:35:57.9848597Z      ^[[90m    |^[[39m            ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:35:57.9848953Z      ^[[90m 91 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:35:57.9849265Z      ^[[90m 92 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:35:57.9849763Z      ^[[90m 93 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T02:35:57.9849922Z 
+targeted	Targeted jest	2026-10-04T02:35:57.9850151Z       at Object.<anonymous> (test/audit-sol-f34-683.spec.ts:90:12)
+targeted	Targeted jest	2026-10-04T02:35:57.9850416Z 
+targeted	Targeted jest	2026-10-04T02:35:57.9850601Z Test Suites: 1 failed, 1 passed, 2 total
+targeted	Targeted jest	2026-10-04T02:35:57.9850945Z Tests:       3 failed, 27 passed, 30 total
+targeted	Targeted jest	2026-10-04T02:35:57.9851242Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T02:35:57.9851471Z Time:        12.952 s
+targeted	Targeted jest	2026-10-04T02:35:57.9852000Z Ran all test suites matching test/audit-sol-f34-683.spec.ts|test/s-fee-charge-settlement.spec.ts.
+targeted	Targeted jest	2026-10-04T02:35:58.2599502Z ##[error]Process completed with exit code 1.

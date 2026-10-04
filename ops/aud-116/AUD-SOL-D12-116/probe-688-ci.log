@@ -1,0 +1,113 @@
+targeted	Targeted jest	﻿2026-10-04T02:34:07.6744774Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T02:34:07.6745253Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T02:34:07.6745829Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T02:34:07.6746546Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T02:34:07.6747087Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T02:34:07.6747513Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T02:34:07.6828334Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T02:34:07.6828928Z env:
+targeted	Targeted jest	2026-10-04T02:34:07.6829282Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T02:34:07.6829878Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T02:34:07.6830701Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T02:34:07.6955227Z specs: test/aud-sol-d12-116-d2.spec.ts test/dunning-v2-service.spec.ts test/dunning-v2-cadence.spec.ts test/dunning-v2-dispatcher.spec.ts
+targeted	Targeted jest	2026-10-04T02:34:19.8101603Z PASS test/dunning-v2-service.spec.ts (11.042 s)
+targeted	Targeted jest	2026-10-04T02:34:19.8104181Z ^[[32m[Nest] 3104  - ^[[39m10/04/2026, 2:34:19 AM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[32m{"event":"dunning_v2.locked","dunning_state_id":"ds1","purchase_id":"p1","entered_at":"2026-10-05T16:00:00.000Z"}^[[39m
+targeted	Targeted jest	2026-10-04T02:34:19.8107044Z ^[[33m[Nest] 3104  - ^[[39m10/04/2026, 2:34:19 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[33mdunning v2 lock skipped state=ds1: purchase status active is not past_due^[[39m
+targeted	Targeted jest	2026-10-04T02:34:19.8132368Z ^[[33m[Nest] 3104  - ^[[39m10/04/2026, 2:34:19 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[33mdunning v2 lock skipped state=ds1: Stripe reports subscription active; waiting for invoice.paid^[[39m
+targeted	Targeted jest	2026-10-04T02:34:19.8162057Z ^[[33m[Nest] 3104  - ^[[39m10/04/2026, 2:34:19 AM ^[[33m   WARN^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[33mdunning v2 lock deferred state=ds1: Stripe check failed: stripe unreachable^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1767149Z ^[[32m[Nest] 3104  - ^[[39m10/04/2026, 2:34:20 AM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[32m{"event":"dunning_v2.locked","dunning_state_id":"ds-p1","purchase_id":"p1","entered_at":"2026-10-04T02:30:00.000Z"}^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1768962Z ^[[32m[Nest] 3104  - ^[[39m10/04/2026, 2:34:20 AM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[32m{"event":"dunning_v2.locked","dunning_state_id":"ds-p1","purchase_id":"p1","entered_at":"2026-10-04T02:30:00.000Z"}^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1831427Z FAIL test/aud-sol-d12-116-d2.spec.ts (5.343 s)
+targeted	Targeted jest	2026-10-04T02:34:25.1832645Z   ● AUD-SOL-D12-116 D2 acceptance probes › a stale sweep cannot lock a new Day-0 cycle after awaiting Stripe
+targeted	Targeted jest	2026-10-04T02:34:25.1833094Z 
+targeted	Targeted jest	2026-10-04T02:34:25.1833306Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T02:34:25.1833565Z 
+targeted	Targeted jest	2026-10-04T02:34:25.1833655Z     Expected: 0
+targeted	Targeted jest	2026-10-04T02:34:25.1833872Z     Received: 1
+targeted	Targeted jest	2026-10-04T02:34:25.1833989Z 
+targeted	Targeted jest	2026-10-04T02:34:25.1834749Z     ^[[0m ^[[90m 84 |^[[39m     ^[[36mconst^[[39m out ^[[33m=^[[39m ^[[36mawait^[[39m svc^[[33m.^[[39mrunSweep(now)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1836599Z      ^[[90m 85 |^[[39m     expect(fake^[[33m.^[[39mfind(^[[32m'dunningState'^[[39m^[[33m,^[[39m { id^[[33m:^[[39m ^[[32m'ds-p1'^[[39m })^[[33m?^[[39m^[[33m.^[[39mentered_at)^[[33m.^[[39mtoEqual(now)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1838296Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 86 |^[[39m     expect(out^[[33m.^[[39mlocked)^[[33m.^[[39mtoBe(^[[35m0^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1839380Z      ^[[90m    |^[[39m                        ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1841447Z      ^[[90m 87 |^[[39m     expect(fake^[[33m.^[[39mfind(^[[32m'dunningState'^[[39m^[[33m,^[[39m { id^[[33m:^[[39m ^[[32m'ds-p1'^[[39m })^[[33m?^[[39m^[[33m.^[[39mlocked_out_at)^[[33m.^[[39mtoBeNull()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1843980Z      ^[[90m 88 |^[[39m     expect(fake^[[33m.^[[39mfind(^[[32m'clientPurchase'^[[39m^[[33m,^[[39m { id^[[33m:^[[39m ^[[32m'p1'^[[39m })^[[33m?^[[39m^[[33m.^[[39mentitlement_active)^[[33m.^[[39mtoBe(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1845431Z      ^[[90m 89 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T02:34:25.1845764Z 
+targeted	Targeted jest	2026-10-04T02:34:25.1846182Z       at Object.<anonymous> (test/aud-sol-d12-116-d2.spec.ts:86:24)
+targeted	Targeted jest	2026-10-04T02:34:25.1847232Z 
+targeted	Targeted jest	2026-10-04T02:34:25.1848143Z   ● AUD-SOL-D12-116 D2 acceptance probes › cycles after the first 500 must eventually receive their due notices
+targeted	Targeted jest	2026-10-04T02:34:25.1848935Z 
+targeted	Targeted jest	2026-10-04T02:34:25.1849290Z     expect(received).toBeGreaterThanOrEqual(expected)
+targeted	Targeted jest	2026-10-04T02:34:25.1849707Z 
+targeted	Targeted jest	2026-10-04T02:34:25.1849886Z     Expected: >= 1
+targeted	Targeted jest	2026-10-04T02:34:25.1850299Z     Received:    0
+targeted	Targeted jest	2026-10-04T02:34:25.1850935Z 
+targeted	Targeted jest	2026-10-04T02:34:25.1851754Z     ^[[0m ^[[90m  96 |^[[39m     ^[[36mawait^[[39m svc^[[33m.^[[39mrunSweep(at(^[[35m1.1^[[39m))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1852992Z      ^[[90m  97 |^[[39m     ^[[36mawait^[[39m svc^[[33m.^[[39mrunSweep(at(^[[35m3^[[39m))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1855268Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m  98 |^[[39m     expect(fake^[[33m.^[[39mfind(^[[32m'dunningState'^[[39m^[[33m,^[[39m { id^[[33m:^[[39m ^[[32m'ds-p500'^[[39m })^[[33m?^[[39m^[[33m.^[[39mstep_index)^[[33m.^[[39mtoBeGreaterThanOrEqual(^[[35m1^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1857305Z      ^[[90m     |^[[39m                                                                      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1858177Z      ^[[90m  99 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1858755Z      ^[[90m 100 |^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1860147Z      ^[[90m 101 |^[[39m   it(^[[32m'failed real CoachAlertEmitter delivery must not get a sent receipt'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T02:34:25.1861687Z 
+targeted	Targeted jest	2026-10-04T02:34:25.1862096Z       at Object.<anonymous> (test/aud-sol-d12-116-d2.spec.ts:98:70)
+targeted	Targeted jest	2026-10-04T02:34:25.1862572Z 
+targeted	Targeted jest	2026-10-04T02:34:25.1863500Z   ● AUD-SOL-D12-116 D2 acceptance probes › failed real CoachAlertEmitter delivery must not get a sent receipt
+targeted	Targeted jest	2026-10-04T02:34:25.1864288Z 
+targeted	Targeted jest	2026-10-04T02:34:25.1864623Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T02:34:25.1865051Z 
+targeted	Targeted jest	2026-10-04T02:34:25.1865215Z     Expected: "failed"
+targeted	Targeted jest	2026-10-04T02:34:25.1865617Z     Received: "sent"
+targeted	Targeted jest	2026-10-04T02:34:25.1865861Z 
+targeted	Targeted jest	2026-10-04T02:34:25.1866321Z     ^[[0m ^[[90m 123 |^[[39m     }^[[33m,^[[39m ^[[33mT0^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1867597Z      ^[[90m 124 |^[[39m     expect(notifications^[[33m.^[[39mcreateNotification)^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1869962Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 125 |^[[39m     expect(fake^[[33m.^[[39mfind(^[[32m'dunningNoticeDelivery'^[[39m^[[33m,^[[39m { id^[[33m:^[[39m deliveryId })^[[33m?^[[39m^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(^[[32m'failed'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1872294Z      ^[[90m     |^[[39m                                                                            ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1873715Z      ^[[90m 126 |^[[39m     expect(t^[[33m.^[[39mcoachNotified)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1874723Z      ^[[90m 127 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1875056Z      ^[[90m 128 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T02:34:25.1875210Z 
+targeted	Targeted jest	2026-10-04T02:34:25.1875442Z       at Object.<anonymous> (test/aud-sol-d12-116-d2.spec.ts:125:76)
+targeted	Targeted jest	2026-10-04T02:34:25.1875744Z 
+targeted	Targeted jest	2026-10-04T02:34:25.1876195Z   ● AUD-SOL-D12-116 D2 acceptance probes › raw diagnostic text must not cross the new sweep log boundary
+targeted	Targeted jest	2026-10-04T02:34:25.1876615Z 
+targeted	Targeted jest	2026-10-04T02:34:25.1876799Z     expect(received).not.toContain(expected) // indexOf
+targeted	Targeted jest	2026-10-04T02:34:25.1877040Z 
+targeted	Targeted jest	2026-10-04T02:34:25.1877415Z     Expected substring: not "synthetic-person@tgp.invalid token=SYNTHETIC_SECRET message=SYNTHETIC_BODY"
+targeted	Targeted jest	2026-10-04T02:34:25.1878443Z     Received string:        "[[\"dunning v2 lock deferred state=ds-p1: Stripe check failed: synthetic-person@tgp.invalid token=SYNTHETIC_SECRET message=SYNTHETIC_BODY\"]]"
+targeted	Targeted jest	2026-10-04T02:34:25.1879042Z 
+targeted	Targeted jest	2026-10-04T02:34:25.1879389Z     ^[[0m ^[[90m 136 |^[[39m     ^[[36mawait^[[39m svc^[[33m.^[[39mrunSweep(at(^[[35m11^[[39m))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1879991Z      ^[[90m 137 |^[[39m     expect(warn)^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1881300Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 138 |^[[39m     expect(^[[33mJSON^[[39m^[[33m.^[[39mstringify(warn^[[33m.^[[39mmock^[[33m.^[[39mcalls))^[[33m.^[[39mnot^[[33m.^[[39mtoContain(secret)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1882388Z      ^[[90m     |^[[39m                                                 ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1882825Z      ^[[90m 139 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1883120Z      ^[[90m 140 |^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1883928Z      ^[[90m 141 |^[[39m   it(^[[32m'a recorded lost dispute during a payment cycle still blocks payment-only recovery'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T02:34:25.1884509Z 
+targeted	Targeted jest	2026-10-04T02:34:25.1884733Z       at Object.<anonymous> (test/aud-sol-d12-116-d2.spec.ts:138:49)
+targeted	Targeted jest	2026-10-04T02:34:25.1885009Z 
+targeted	Targeted jest	2026-10-04T02:34:25.1885547Z   ● AUD-SOL-D12-116 D2 acceptance probes › a recorded lost dispute during a payment cycle still blocks payment-only recovery
+targeted	Targeted jest	2026-10-04T02:34:25.1886021Z 
+targeted	Targeted jest	2026-10-04T02:34:25.1886209Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T02:34:25.1886450Z 
+targeted	Targeted jest	2026-10-04T02:34:25.1886546Z     Expected: true
+targeted	Targeted jest	2026-10-04T02:34:25.1886772Z     Received: false
+targeted	Targeted jest	2026-10-04T02:34:25.1886909Z 
+targeted	Targeted jest	2026-10-04T02:34:25.1887078Z     ^[[0m ^[[90m 152 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1888134Z      ^[[90m 153 |^[[39m     expect(fake^[[33m.^[[39mfind(^[[32m'dunningDisputeObligation'^[[39m^[[33m,^[[39m { stripe_dispute_id^[[33m:^[[39m ^[[32m'dp-lost'^[[39m })^[[33m?^[[39m^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(^[[32m'lost'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1889443Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 154 |^[[39m     expect(^[[36mawait^[[39m svc^[[33m.^[[39misDisputeCycleOpen(^[[32m'p1'^[[39m))^[[33m.^[[39mtoBe(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1890624Z      ^[[90m     |^[[39m                                                ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1891090Z      ^[[90m 155 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1891385Z      ^[[90m 156 |^[[39m
+targeted	Targeted jest	2026-10-04T02:34:25.1892109Z      ^[[90m 157 |^[[39m   it(^[[32m'control: a won recorded dispute need not keep a payment cycle open'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T02:34:25.1892621Z 
+targeted	Targeted jest	2026-10-04T02:34:25.1892832Z       at Object.<anonymous> (test/aud-sol-d12-116-d2.spec.ts:154:48)
+targeted	Targeted jest	2026-10-04T02:34:25.1893108Z 
+targeted	Targeted jest	2026-10-04T02:34:25.5111980Z PASS test/dunning-v2-cadence.spec.ts
+targeted	Targeted jest	2026-10-04T02:34:25.5130447Z 
+targeted	Targeted jest	2026-10-04T02:34:25.5138174Z Test Suites: 1 failed, 2 passed, 3 total
+targeted	Targeted jest	2026-10-04T02:34:25.5138822Z Tests:       5 failed, 44 passed, 49 total
+targeted	Targeted jest	2026-10-04T02:34:25.5139149Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T02:34:25.5139424Z Time:        16.991 s
+targeted	Targeted jest	2026-10-04T02:34:25.5140467Z Ran all test suites matching test/aud-sol-d12-116-d2.spec.ts|test/dunning-v2-service.spec.ts|test/dunning-v2-cadence.spec.ts|test/dunning-v2-dispatcher.spec.ts.
+targeted	Targeted jest	2026-10-04T02:34:25.8522598Z ##[error]Process completed with exit code 1.

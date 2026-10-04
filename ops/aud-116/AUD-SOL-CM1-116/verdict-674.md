@@ -1,0 +1,60 @@
+AUDIT GPT-6.1 Sol — growth-project-backend#674 @ 9a512028f49682073227c04ef1268c81102716fd — VERDICT: REQUEST CHANGES
+
+A/B/C = 0/4/0
+
+## Scope, independence and prior findings
+
+Full-depth T4 review of the complete 2,128-line M1 diff, migration/down/backfill, scheduler wiring, owner controller, Stripe receipt listing, refund entry points, local ledger/transfer arithmetic, test harness and all changed specs; no candidate-source edits and no other PR audited. [Exact M1 candidate and size assessment](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/674#issuecomment-5975772953)
+
+No prior Sol APPROVE on original #641 exists to inherit; the refund/ledger code and relevant candidate specs are byte-identical to FIX ROUND 5 where checked, and this verdict rests on a fresh full-piece review and independent probes, not the other lens's approval. [Original Sol verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/641#issuecomment-5972111823) [Original FIX ROUND 5](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/641#issuecomment-5972277703)
+
+- Original **B-641-7 and B-641-8 narrowed close on their stated once-per-refund, 23-hour and cross-run fairness boundaries**: first-attempt admission is shared, expired work moves to review, and last-attempt ordering reaches waiting rows over bounded runs; this does not close the distinct-refund or webhook-mirror races below. [Current independent run and 35 passing candidate controls](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37171509961)
+- Original **B-641-9 and B-641-10 close on the reported duplicate receipt and undersized receipt boundaries**: unique canonical receipt binding shares the refund claim transaction, duplicate assignments are refused, and an undersized receipt stays in review without recording. [Current controls](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37171509961)
+- Original **B-641-11 closes at the specific reversal-attempt classifier**: Error.name, unknown provider code and invalid HTTP status are catalogued; the new scheduler is a separate unclosed text sink below. [Original nine failing-before assertions](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37144238446) [Current controls](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37171509961)
+- Original B-641-5's package-create code is outside M1/M3 and is not certified by this job; C-641-2's release-composition condition belongs to the Money/API piece and remains carried there. [Original disposition and composition requirement](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/641#issuecomment-5972111823)
+
+## B — must fix
+
+### B-674-1 — distinct-refund transactions still lose one local reversal
+
+**Piece alias of inherited B-641-12, independently confirmed, not a duplicate new issue.** `src/connect/fees/transfer-orchestrator.service.ts:224–228,253–277` re-reads without locking and writes the absolute `reversed_amount_cents`; `src/connect/fees/split-ledger.service.ts:134–147` does the same for `reversed_cents`, while the claim locks only each refund's own row. [Transfer implementation](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/9a512028f49682073227c04ef1268c81102716fd/src%2Fconnect%2Ffees%2Ftransfer-orchestrator.service.ts) [Ledger implementation](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/9a512028f49682073227c04ef1268c81102716fd/src%2Fconnect%2Ffees%2Fsplit-ledger.service.ts)
+
+The independent actual-service overlap probe makes two provider requests for 100 and 50 cents under distinct refund keys, releases both local SELECT snapshots before the literal updates, and receives **transfer=50 / ledger=50 instead of 150/150**; this models the plain SELECT/literal UPDATE boundary rather than the globally serialized candidate double. [Executed counterexample](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37171509961)
+
+**Minimal fix rule:** serialize the shared transfer and slice rows, in consistent lock order, or use database-atomic bounded increments with derived status/time; keep refund claiming and each local increment in the same transaction, and prove different-refund overlap with a real disposable Postgres concurrency test in an approved CI lane before closure. [Affected shared-row boundary](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/9a512028f49682073227c04ef1268c81102716fd/src%2Fconnect%2Ffees%2Ftransfer-orchestrator.service.ts)
+
+### B-674-2 — mandatory owner review/reconcile routes cannot be reached with an ordinary owner JWT
+
+`src/checkout/payment-ops.controller.ts:110–113,582–624` mounts both new routes beneath `JwtAuthGuard`, `ServiceTokenGuard` and `RolesGuard`; the first two consume the same `Authorization: Bearer ...` value, respectively as a verified user JWT and the configured opaque admin service token. [New routes and inherited class guard chain](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/9a512028f49682073227c04ef1268c81102716fd/src%2Fcheckout%2Fpayment-ops.controller.ts)
+
+The native HTTP/Nest probe uses the real JWT/lifecycle guard with a synthetic verifier, the real service-token guard and the real role guard: the opaque service token is correctly 401 at JWT verification, but a verified owner JWT is also **401 instead of 200** at the service-token comparison; consequently the new 23-hour recovery queue has no normal owner-authenticated working path. [Executed HTTP counterexample](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37171509961)
+
+**Minimal fix rule:** give these recovery routes one coherent authenticated owner path, for example a dedicated JWT-plus-owner controller, or independently authenticate a separate service credential without reusing the JWT header; never make the routes public or allow a service token alone to manufacture an owner role, and test owner success plus coach/student/anonymous/deleted-user denial through the actual HTTP guard chain. [Affected recovery endpoints](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/9a512028f49682073227c04ef1268c81102716fd/src%2Fcheckout%2Fpayment-ops.controller.ts)
+
+The class-level mismatch predates this diff, but it is a blocker here because the newly introduced mandatory financial recovery mechanism depends on those unreachable routes. [New review/reconcile contract](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/9a512028f49682073227c04ef1268c81102716fd/docs%2Frunbooks%2Frefund-transfer-reversal-review.md)
+
+### B-674-3 — webhook-before-local-record makes the next refund settle for too little
+
+`src/connect/fees/transfer-orchestrator.service.ts:216–228,258–265` adds the reversal after the provider returns, while `src/checkout/refund-dispute-handler.service.ts:1432–1440` can already have installed Stripe's absolute `amount_reversed`; the newly used `owedHeadCoachReversal:622–635` then caps the next obligation using that double-counted mirror. [Transfer record](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/9a512028f49682073227c04ef1268c81102716fd/src%2Fconnect%2Ffees%2Ftransfer-orchestrator.service.ts) [Mirror and new owed-share cap](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/9a512028f49682073227c04ef1268c81102716fd/src%2Fcheckout%2Frefund-dispute-handler.service.ts)
+
+The actual-service probe seeds two legitimate 2,450-cent refunds on a 4,900-cent purchase with a 245-cent head-coach transfer and delivers each synthetic provider `transfer.reversed` webhook before its request returns: the first 122-cent reversal is mirrored then added again, the second request becomes **1 cent**, both refund obligations become terminal, and Stripe's total is **123 instead of 244 cents**. [Executed financial loss counterexample](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37171509961)
+
+**Minimal fix rule:** distinguish canonical provider totals from per-receipt locally applied postings, bind receipt identity once, and make webhook/reconcile/request-record ordering converge without adding the same receipt to an already mirrored total; never terminalize a refund from an unverified/mirrored remaining balance, and cover webhook-before/after-record, lost local commit, full reversal and stale webhook order. [Affected admission and terminalization](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/9a512028f49682073227c04ef1268c81102716fd/src%2Fcheckout%2Frefund-dispute-handler.service.ts)
+
+The old webhook writer is outside the own hunk, but its interaction with the new cap/terminalization is demonstrated unsafe for this piece, not a request to audit a neighbouring PR. [Current-source counterexample](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37171509961)
+
+### B-674-4 — new retry scheduler logs arbitrary failure text
+
+`src/checkout/refund-transfer-reversal.scheduler.ts:27–29` logs `Error.message` or `String(err)` verbatim; the independent failed-sweep canary reaches the actual Logger.error sink. [Scheduler source](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/9a512028f49682073227c04ef1268c81102716fd/src%2Fcheckout%2Frefund-transfer-reversal.scheduler.ts) [Executed canary](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37171509961)
+
+**Minimal fix rule:** emit a closed failure catalog and safe correlation identifiers only, including a closed unknown fallback; retain actionable operator alerting without attaching the exception object, provider response, arbitrary names/messages or database request text, and retain the logger canary regression. [Affected text sink](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/9a512028f49682073227c04ef1268c81102716fd/src%2Fcheckout%2Frefund-transfer-reversal.scheduler.ts)
+
+## Evidence, piece safety and limits
+
+Final independent probe lane: **4 failed acceptance assertions / 35 passing candidate controls**, with only audit specs and the one-job lane wrapper added to exact candidate source; CI execution SHA is `0b135c0c2614ed66a0d91ecc8698f27562f5173b`, not a candidate approval SHA. [Final probe run](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37171509961)
+
+The first probe attempt had a missing optional test-library import and did not execute the new probes; it is not claimed as defect proof, and the replacement used native HTTP without any dependency/lockfile changes. [Initial attempt and passing controls](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37171379739)
+
+The nullable migration/backfill/indexes are additive, include down.sql and contain no new user-id field; current M1 required checks, forward migration and schema parity are green, but these checks do not close the four demonstrated boundaries. [Migration](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/9a512028f49682073227c04ef1268c81102716fd/prisma%2Fmigrations%2F20270314000000_charge_refund_transfer_reversal_review%2Fmigration.sql) [Exact-head checks](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/674/checks)
+
+M1 has no import of a later piece and carries its own reversal tests; the operator's M1→M3→M4 land-as-one instruction and final green combined main checks still apply after fixes, and this audit is not live-provider, live-database or release acceptance. [Landing instruction](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/674#issuecomment-5975772953)

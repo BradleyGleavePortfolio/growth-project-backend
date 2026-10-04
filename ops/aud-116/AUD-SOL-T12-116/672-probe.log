@@ -1,0 +1,83 @@
+targeted	Targeted jest	﻿2026-10-04T03:07:32.8241947Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T03:07:32.8242309Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T03:07:32.8242714Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T03:07:32.8243214Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T03:07:32.8243577Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T03:07:32.8243874Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T03:07:32.8306814Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T03:07:32.8307177Z env:
+targeted	Targeted jest	2026-10-04T03:07:32.8307409Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T03:07:32.8307775Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T03:07:32.8308108Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T03:07:32.8410733Z specs: test/aud-sol-t12-116-notice-probe.spec.ts test/b-trials-one-trial-rule.spec.ts test/b-trials-package-rules.spec.ts
+targeted	Targeted jest	2026-10-04T03:07:45.3918592Z ^[[32m[Nest] 3071  - ^[[39m10/04/2026, 3:07:45 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:07:45.3927995Z ^[[32m[Nest] 3071  - ^[[39m10/04/2026, 3:07:45 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:07:45.4007218Z PASS test/b-trials-package-rules.spec.ts (11.489 s)
+targeted	Targeted jest	2026-10-04T03:07:48.9322690Z ^[[31m[Nest] 3071  - ^[[39m10/04/2026, 3:07:48 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-2 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T03:07:48.9333690Z ^[[31m[Nest] 3071  - ^[[39m10/04/2026, 3:07:48 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-old started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T03:07:48.9343395Z ^[[31m[Nest] 3071  - ^[[39m10/04/2026, 3:07:48 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-b started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T03:07:48.9471192Z PASS test/b-trials-one-trial-rule.spec.ts
+targeted	Targeted jest	2026-10-04T03:07:49.3067050Z ^[[32m[Nest] 3071  - ^[[39m10/04/2026, 3:07:48 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.3069803Z ^[[32m[Nest] 3071  - ^[[39m10/04/2026, 3:07:48 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.3072362Z ^[[32m[Nest] 3071  - ^[[39m10/04/2026, 3:07:48 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.3075082Z ^[[32m[Nest] 3071  - ^[[39m10/04/2026, 3:07:48 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.3077861Z ^[[32m[Nest] 3071  - ^[[39m10/04/2026, 3:07:48 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.3080393Z ^[[32m[Nest] 3071  - ^[[39m10/04/2026, 3:07:48 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.3082847Z ^[[32m[Nest] 3071  - ^[[39m10/04/2026, 3:07:48 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.3085287Z ^[[32m[Nest] 3071  - ^[[39m10/04/2026, 3:07:48 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.3087974Z ^[[32m[Nest] 3071  - ^[[39m10/04/2026, 3:07:48 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.3090431Z ^[[32m[Nest] 3071  - ^[[39m10/04/2026, 3:07:48 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.3093380Z ^[[32m[Nest] 3071  - ^[[39m10/04/2026, 3:07:48 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.3095770Z ^[[32m[Nest] 3071  - ^[[39m10/04/2026, 3:07:48 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.3098492Z ^[[32m[Nest] 3071  - ^[[39m10/04/2026, 3:07:48 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.3100898Z ^[[32m[Nest] 3071  - ^[[39m10/04/2026, 3:07:48 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.3103539Z ^[[32m[Nest] 3071  - ^[[39m10/04/2026, 3:07:48 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.3105982Z ^[[32m[Nest] 3071  - ^[[39m10/04/2026, 3:07:48 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.3108610Z ^[[32m[Nest] 3071  - ^[[39m10/04/2026, 3:07:48 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.3111160Z ^[[32m[Nest] 3071  - ^[[39m10/04/2026, 3:07:48 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.4505984Z FAIL test/aud-sol-t12-116-notice-probe.spec.ts
+targeted	Targeted jest	2026-10-04T03:07:49.4508394Z   ● AUD-SOL-T12-116 — new notice-worker counterexamples › pending notices for 50 canceled purchases cannot permanently hide a healthy later notice
+targeted	Targeted jest	2026-10-04T03:07:49.4509464Z 
+targeted	Targeted jest	2026-10-04T03:07:49.4509811Z     expect(jest.fn()).toHaveBeenCalledTimes(expected)
+targeted	Targeted jest	2026-10-04T03:07:49.4510245Z 
+targeted	Targeted jest	2026-10-04T03:07:49.4510463Z     Expected number of calls: 1
+targeted	Targeted jest	2026-10-04T03:07:49.4511016Z     Received number of calls: 0
+targeted	Targeted jest	2026-10-04T03:07:49.4511322Z 
+targeted	Targeted jest	2026-10-04T03:07:49.4512155Z     ^[[0m ^[[90m 214 |^[[39m     ^[[36mawait^[[39m w^[[33m.^[[39mservice^[[33m.^[[39msweep(^[[33mNOW^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.4514099Z      ^[[90m 215 |^[[39m     ^[[36mawait^[[39m w^[[33m.^[[39mservice^[[33m.^[[39msweep(^[[36mnew^[[39m ^[[33mDate^[[39m(^[[33mNOW^[[39m^[[33m.^[[39mgetTime() ^[[33m+^[[39m ^[[35m600^[[39m_000))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.4516635Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 216 |^[[39m     expect(w^[[33m.^[[39mnotifications^[[33m.^[[39mpushToUser)^[[33m.^[[39mtoHaveBeenCalledTimes(^[[35m1^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.4518192Z      ^[[90m     |^[[39m                                        ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.4520307Z      ^[[90m 217 |^[[39m     expect(w^[[33m.^[[39mnotices^[[33m.^[[39mrows[^[[35m50^[[39m])^[[33m.^[[39mtoMatchObject({ push_status^[[33m:^[[39m ^[[32m'delivered'^[[39m^[[33m,^[[39m email_status^[[33m:^[[39m ^[[32m'sent'^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.4521916Z      ^[[90m 218 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.4522458Z      ^[[90m 219 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T03:07:49.4522718Z 
+targeted	Targeted jest	2026-10-04T03:07:49.4523219Z       at Object.<anonymous> (test/aud-sol-t12-116-notice-probe.spec.ts:216:40)
+targeted	Targeted jest	2026-10-04T03:07:49.4523780Z 
+targeted	Targeted jest	2026-10-04T03:07:49.4524968Z   ● AUD-SOL-T12-116 — new notice-worker counterexamples › after slow earlier rows, a fresh channel claim must not expire before its provider finishes
+targeted	Targeted jest	2026-10-04T03:07:49.4526001Z 
+targeted	Targeted jest	2026-10-04T03:07:49.4526511Z     expect(received).toHaveLength(expected)
+targeted	Targeted jest	2026-10-04T03:07:49.4526911Z 
+targeted	Targeted jest	2026-10-04T03:07:49.4527088Z     Expected length: 1
+targeted	Targeted jest	2026-10-04T03:07:49.4527527Z     Received length: 2
+targeted	Targeted jest	2026-10-04T03:07:49.4534683Z     Received array:  [["client-a", "Your free trial", "Your free trial ends on Oct 12. Your card will be charged $49 then. Cancel anytime before.", {"actionScreen": "ClientPackages", "deep_link": "tgp://plan", "kind": "trial_ending", "purchase_id": "p-3"}, {Symbol(kEvents): Map {}, Symbol(events.maxEventTargetListeners): 10, Symbol(events.maxEventTargetListenersWarned): false, Symbol(kHandlers): Map {}, Symbol(kAborted): false, Symbol(kReason): undefined, Symbol(kComposite): false}], ["client-a", "Your free trial", "Your free trial ends on Oct 12. Your card will be charged $49 then. Cancel anytime before.", {"actionScreen": "ClientPackages", "deep_link": "tgp://plan", "kind": "trial_ending", "purchase_id": "p-3"}, {Symbol(kEvents): Map {}, Symbol(events.maxEventTargetListeners): 10, Symbol(events.maxEventTargetListenersWarned): false, Symbol(kHandlers): Map {}, Symbol(kAborted): false, Symbol(kReason): undefined, Symbol(kComposite): false}]]
+targeted	Targeted jest	2026-10-04T03:07:49.4541503Z 
+targeted	Targeted jest	2026-10-04T03:07:49.4542940Z     ^[[0m ^[[90m 259 |^[[39m     ^[[36mconst^[[39m forThird ^[[33m=^[[39m w^[[33m.^[[39mnotifications^[[33m.^[[39mpushToUser^[[33m.^[[39mmock^[[33m.^[[39mcalls^[[33m.^[[39mfilter((args) ^[[33m=>^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.4545475Z      ^[[90m 260 |^[[39m       (args[^[[35m3^[[39m] ^[[36mas^[[39m { purchase_id^[[33m?^[[39m^[[33m:^[[39m string } ^[[33m|^[[39m undefined)^[[33m?^[[39m^[[33m.^[[39mpurchase_id ^[[33m===^[[39m ^[[32m'p-3'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.4547739Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 261 |^[[39m     expect(forThird)^[[33m.^[[39mtoHaveLength(^[[35m1^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.4548886Z      ^[[90m     |^[[39m                      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.4549637Z      ^[[90m 262 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.4550245Z      ^[[90m 263 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.4551050Z      ^[[90m 264 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T03:07:49.4551220Z 
+targeted	Targeted jest	2026-10-04T03:07:49.4551501Z       at Object.<anonymous> (test/aud-sol-t12-116-notice-probe.spec.ts:261:22)
+targeted	Targeted jest	2026-10-04T03:07:49.4551823Z 
+targeted	Targeted jest	2026-10-04T03:07:49.4552007Z Test Suites: 1 failed, 2 passed, 3 total
+targeted	Targeted jest	2026-10-04T03:07:49.4552364Z Tests:       2 failed, 51 passed, 53 total
+targeted	Targeted jest	2026-10-04T03:07:49.4552667Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T03:07:49.4552897Z Time:        15.796 s
+targeted	Targeted jest	2026-10-04T03:07:49.4553666Z Ran all test suites matching test/aud-sol-t12-116-notice-probe.spec.ts|test/b-trials-one-trial-rule.spec.ts|test/b-trials-package-rules.spec.ts.
+targeted	Targeted jest	2026-10-04T03:07:49.4855010Z ^[[33m[Nest] 3071  - ^[[39m10/04/2026, 3:07:49 AM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.4857074Z ^[[33m[Nest] 3071  - ^[[39m10/04/2026, 3:07:49 AM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.4858891Z ^[[33m[Nest] 3071  - ^[[39m10/04/2026, 3:07:49 AM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.4860602Z ^[[33m[Nest] 3071  - ^[[39m10/09/2026, 5:03:23 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice push outcome dropped (lease lost) notice=notice-p-3^[[39m
+targeted	Targeted jest	2026-10-04T03:07:49.7492101Z ##[error]Process completed with exit code 1.

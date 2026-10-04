@@ -1,0 +1,43 @@
+targeted	Targeted jest	﻿2026-10-04T03:40:09.5115900Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T03:40:09.5116106Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T03:40:09.5116644Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T03:40:09.5116913Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T03:40:09.5117115Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T03:40:09.5117276Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T03:40:09.5169770Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T03:40:09.5169964Z env:
+targeted	Targeted jest	2026-10-04T03:40:09.5170093Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T03:40:09.5170303Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T03:40:09.5170476Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T03:40:09.5245988Z specs: test/audit-611-sol-fr8-truth.spec.ts test/privacy-diagnostics-disclosure.spec.ts test/privacy-round8-retention.spec.ts test/privacy-owner-answers.spec.ts test/privacy-restore-split.spec.ts test/trust-pages.spec.ts test/help-delete-account.spec.ts test/observability/sentry-config.spec.ts
+targeted	Targeted jest	2026-10-04T03:40:16.2013179Z PASS test/trust-pages.spec.ts (6.046 s)
+targeted	Targeted jest	2026-10-04T03:40:16.3681455Z PASS test/help-delete-account.spec.ts
+targeted	Targeted jest	2026-10-04T03:40:16.4454623Z PASS test/privacy-round8-retention.spec.ts
+targeted	Targeted jest	2026-10-04T03:40:16.5021100Z PASS test/privacy-owner-answers.spec.ts
+targeted	Targeted jest	2026-10-04T03:40:16.6277635Z PASS test/observability/sentry-config.spec.ts
+targeted	Targeted jest	2026-10-04T03:40:16.8623355Z PASS test/privacy-diagnostics-disclosure.spec.ts
+targeted	Targeted jest	2026-10-04T03:40:16.9295573Z PASS test/privacy-restore-split.spec.ts
+targeted	Targeted jest	2026-10-04T03:40:17.0899073Z FAIL test/audit-611-sol-fr8-truth.spec.ts
+targeted	Targeted jest	2026-10-04T03:40:17.0901263Z   ● independent #611 FR8 truth checks › manual Apple unlink recovery uses Apple’s current iPhone path, not its web path
+targeted	Targeted jest	2026-10-04T03:40:17.0901725Z 
+targeted	Targeted jest	2026-10-04T03:40:17.0901912Z     expect(received).not.toContain(expected) // indexOf
+targeted	Targeted jest	2026-10-04T03:40:17.0902119Z 
+targeted	Targeted jest	2026-10-04T03:40:17.0902291Z     Expected substring: not "then Sign-In &amp; Security"
+targeted	Targeted jest	2026-10-04T03:40:17.0908587Z     Received string:        "<p>You can delete your account in the app: Settings, then Delete account. You confirm with your password or Sign in with Apple, and deletion is scheduled straight away with a 14-day grace period during which you can cancel. After that, your profile, consultation answers, logs, connected health data, Roman conversations, notifications and community memberships are permanently deleted, and the content of your community posts and messages is removed. If you used Sign in with Apple, deleting your account ends the app’s link to your Apple ID. To remove the app from your Apple ID as well, on your iPhone open Settings, tap your name, then Sign-In &amp; Security, then Sign in with Apple, choose the app and stop using it with your Apple ID. We keep only what we must: the payment records the law requires; security and audit logs; one deletion record with a random reference, the date and the result; and a closed-account record with no name, contact details or profile, holding only an internal account number, the account type and dates such as when the account was opened and closed, so the records we must keep still point to one closed account. While removing your sign-in account at your sign-in provider is still being retried, we also keep that provider’s account ID. Once it is removed, we keep only a one-way code made from it, for 30 days, so the app can tell you the account was deleted if you sign in again; then the code is discarded.</p>"
+targeted	Targeted jest	2026-10-04T03:40:17.0913336Z 
+targeted	Targeted jest	2026-10-04T03:40:17.0914085Z     ^[[0m ^[[90m 75 |^[[39m       ^[[36mconst^[[39m paragraph ^[[33m=^[[39m html^[[33m.^[[39mmatch(^[[35m/<p>[^<]*on your iPhone open Settings[^<]*<\/p>/^[[39m)^[[33m?^[[39m^[[33m.^[[39m[^[[35m0^[[39m]^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:40:17.0914895Z      ^[[90m 76 |^[[39m       expect(paragraph)^[[33m.^[[39mtoBeDefined()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:40:17.0915699Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 77 |^[[39m       expect(paragraph)^[[33m.^[[39mnot^[[33m.^[[39mtoContain(^[[32m'then Sign-In &amp; Security'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:40:17.0916909Z      ^[[90m    |^[[39m                             ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T03:40:17.0917516Z      ^[[90m 78 |^[[39m       expect(paragraph)^[[33m.^[[39mtoContain(^[[32m'then Sign in with Apple'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:40:17.0917980Z      ^[[90m 79 |^[[39m     }
+targeted	Targeted jest	2026-10-04T03:40:17.0918269Z      ^[[90m 80 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T03:40:17.0918436Z 
+targeted	Targeted jest	2026-10-04T03:40:17.0918663Z       at Object.<anonymous> (test/audit-611-sol-fr8-truth.spec.ts:77:29)
+targeted	Targeted jest	2026-10-04T03:40:17.0918928Z 
+targeted	Targeted jest	2026-10-04T03:40:17.0922137Z Test Suites: 1 failed, 7 passed, 8 total
+targeted	Targeted jest	2026-10-04T03:40:17.0922498Z Tests:       1 failed, 107 passed, 108 total
+targeted	Targeted jest	2026-10-04T03:40:17.0922777Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T03:40:17.0922991Z Time:        7.083 s
+targeted	Targeted jest	2026-10-04T03:40:17.0924505Z Ran all test suites matching test/audit-611-sol-fr8-truth.spec.ts|test/privacy-diagnostics-disclosure.spec.ts|test/privacy-round8-retention.spec.ts|test/privacy-owner-answers.spec.ts|test/privacy-restore-split.spec.ts|test/trust-pages.spec.ts|test/help-delete-account.spec.ts|test/observability/sentry-config.spec.ts.
+targeted	Targeted jest	2026-10-04T03:40:17.3440772Z ##[error]Process completed with exit code 1.

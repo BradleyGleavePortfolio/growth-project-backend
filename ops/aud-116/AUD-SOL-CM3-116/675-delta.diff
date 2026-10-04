@@ -1,0 +1,874 @@
+diff --git a/src/packages/package-idempotency.filter.ts b/src/packages/package-idempotency.filter.ts
+new file mode 100644
+index 00000000..6bf8d634
+--- /dev/null
++++ b/src/packages/package-idempotency.filter.ts
+@@ -0,0 +1,67 @@
++import {
++  type ArgumentsHost,
++  Catch,
++  type ExceptionFilter,
++  UnprocessableEntityException,
++} from '@nestjs/common';
++import type { Request, Response } from 'express';
++import { HttpExceptionFilter } from '../filters/http-exception.filter';
++import { buildErrorEnvelope } from '../filters/not-found-envelope';
++import { safeDiagnostic } from '../observability/orm-diagnostics';
++
++// B-675-1 — the 422 IDEMPOTENCY_KEY_REUSED answer to POST /v1/coach/packages
++// names the package that key already made (`package_id`), so the app adopts
++// it and saves the coach's current details onto it, instead of asking for a
++// retry that can only get the same 422 again. The global HttpExceptionFilter
++// sends only the fixed envelope keys, so on the coach package routes this
++// filter builds the same envelope (the shared buildErrorEnvelope) and adds
++// that one field: only for this code, only `package_id`, only when it is a
++// UUID. PackagesService names a package only when it is live in the caller's
++// own catalog (anything else is 410). Every other 422 goes to
++// HttpExceptionFilter unchanged.
++export const IDEMPOTENCY_KEY_REUSED_CODE = 'IDEMPOTENCY_KEY_REUSED';
++
++const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
++
++/** The package a reused key made, from a 422 body; null for anything else. */
++export function reusedKeyPackageId(response: unknown): string | null {
++  if (!response || typeof response !== 'object') return null;
++  const body = response as { code?: unknown; package_id?: unknown };
++  if (body.code !== IDEMPOTENCY_KEY_REUSED_CODE) return null;
++  return typeof body.package_id === 'string' && UUID_RE.test(body.package_id)
++    ? body.package_id
++    : null;
++}
++
++@Catch(UnprocessableEntityException)
++export class PackageIdempotencyFilter implements ExceptionFilter {
++  private readonly envelope = new HttpExceptionFilter();
++
++  catch(exception: UnprocessableEntityException, host: ArgumentsHost): void {
++    const res = exception.getResponse();
++    // An exception caused by an ORM failure gets the generic envelope from
++    // HttpExceptionFilter, exactly as everywhere else.
++    const packageId = safeDiagnostic(exception) === exception ? reusedKeyPackageId(res) : null;
++    if (!packageId) {
++      this.envelope.catch(exception, host);
++      return;
++    }
++    const body = res as { message?: string | string[]; error?: string };
++    const status = exception.getStatus();
++    const ctx = host.switchToHttp();
++    const request = ctx.getRequest<Request & { requestId?: string }>();
++    ctx
++      .getResponse<Response>()
++      .status(status)
++      .json({
++        ...buildErrorEnvelope(request, {
++          statusCode: status,
++          code: IDEMPOTENCY_KEY_REUSED_CODE,
++          message: body.message ?? exception.message,
++          error: body.error ?? exception.name.replace(/Exception$/, ''),
++          requestId: request.requestId,
++        }),
++        package_id: packageId,
++      });
++  }
++}
+diff --git a/src/packages/packages.controller.ts b/src/packages/packages.controller.ts
+index 5b511c81..ef996b27 100644
+--- a/src/packages/packages.controller.ts
++++ b/src/packages/packages.controller.ts
+@@ -27,6 +27,7 @@ import { PrismaService } from '../prisma.service';
+ import { PackagesService } from './packages.service';
+ import { CreatePackageDto, UpdatePackageDto } from './packages.dto';
+ import { PackageValidationFilter } from './package-validation.filter';
++import { PackageIdempotencyFilter } from './package-idempotency.filter';
+ 
+ // Coach-facing CRUD for offers / packages. Coach owns their catalog and
+ // can list / create / update / archive their own rows. OWNER (platform
+@@ -45,7 +46,8 @@ import { PackageValidationFilter } from './package-validation.filter';
+ @UseGuards(JwtAuthGuard, CoachOrOwnerGuard, SubscriptionGuard)
+ // S-FEE round 4 (C-629-2): a body the DTO rejects answers 400 PACKAGE_INVALID
+ // with the field and the next action, never a code-less validation array.
+-@UseFilters(PackageValidationFilter)
++// B-675-1: a 422 IDEMPOTENCY_KEY_REUSED carries the `package_id` the key made.
++@UseFilters(PackageValidationFilter, PackageIdempotencyFilter)
+ export class CoachPackagesController {
+   constructor(private packages: PackagesService) {}
+ 
+diff --git a/src/packages/packages.service.ts b/src/packages/packages.service.ts
+index dbb3ce1d..e0d63417 100644
+--- a/src/packages/packages.service.ts
++++ b/src/packages/packages.service.ts
+@@ -99,6 +99,37 @@ export function packageCreateHash(data: Record<string, unknown>): string {
+   return createHash('sha256').update(canonical).digest('hex');
+ }
+ 
++/** Create columns the client always sets; they are always part of the hash. */
++const PACKAGE_CREATE_IDENTITY_KEYS: ReadonlySet<string> = new Set([
++  'coach_id',
++  'name',
++  'amount_cents',
++]);
++
++/**
++ * C-675-2 — what the request hash covers: the normalised create data minus
++ * every optional column still at the value the server stores when the client
++ * leaves it out (`defaults` = the same builder run on the required fields
++ * only). A column added later with a server default (the trials piece adds
++ * `trial_days ?? 0`) is then absent from the hash of a request that does not
++ * set it, so a key claimed before that deploy still replays its package
++ * instead of answering 422. This is a pure function of the normalised data:
++ * two bodies that normalise to the same row still hash the same, and two
++ * different rows never do.
++ */
++export function packageCreateFingerprint(
++  data: Record<string, unknown>,
++  defaults: Record<string, unknown>,
++): Record<string, unknown> {
++  const out: Record<string, unknown> = {};
++  for (const [k, v] of Object.entries(data)) {
++    if (PACKAGE_CREATE_IDENTITY_KEYS.has(k) || !Object.is(v ?? null, defaults[k] ?? null)) {
++      out[k] = v;
++    }
++  }
++  return out;
++}
++
+ function isUniqueViolation(err: unknown): boolean {
+   return (
+     err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002'
+@@ -211,7 +242,10 @@ export class PackagesService {
+    *     (if the first rolls back, the retry creates it);
+    *   - a crash mid-request rolls everything back, so no key is ever stuck;
+    *   - the same key with different details is 422 IDEMPOTENCY_KEY_REUSED
+-   *     naming the package that key made, so the app can adopt it.
++   *     naming the package that key made (`package_id` on the wire), so the
++   *     app can adopt it; only a live package of the caller's current
++   *     catalog is named, anything else is 410 IDEMPOTENT_PACKAGE_REMOVED;
++   *   - a replay of a package that was archived or removed since is 410.
+    * Validation runs before the claim: a definitive 4xx never burns a key.
+    */
+   async createIdempotent(
+@@ -234,7 +268,12 @@ export class PackagesService {
+     }
+     this.assertValidPricing(input);
+     const data = this.createData(coachUserId, input);
+-    const requestHash = packageCreateHash(data);
++    const requestHash = packageCreateHash(
++      packageCreateFingerprint(
++        data,
++        this.createData(coachUserId, { name: input.name, amount_cents: input.amount_cents }),
++      ),
++    );
+     try {
+       const pkg = await this.prisma.$transaction(async (tx) => {
+         const claim = await tx.workoutBuilderIdempotencyKey.create({
+@@ -300,22 +339,30 @@ export class PackagesService {
+           'This package is still being saved. Wait a few seconds, then send the same request again.',
+       });
+     }
+-    if (claim.request_hash !== requestHash) {
+-      throw new UnprocessableEntityException({
+-        code: 'IDEMPOTENCY_KEY_REUSED',
+-        message:
+-          'This Idempotency-Key already created a package with different details. Update that package, or send a new key to create another.',
+-        package_id: claim.package_id,
+-      });
+-    }
++    // B-675-1 / C-675-3: the package is looked up in the caller's CURRENT
++    // catalog before anything about it is answered. Removed, archived (DELETE
++    // :id archives) or in another catalog (a sub-coach who has since moved to
++    // another head coach) is 410, so the app starts a fresh create and never
++    // receives an id outside this catalog. Only a live package of this
++    // catalog is replayed, or named in the 422 for the app to adopt.
+     const pkg = await this.prisma.coachPackage.findFirst({
+       where: { id: claim.package_id, coach_id: coachUserId },
+     });
+-    if (!pkg) {
++    if (!pkg || pkg.archived_at) {
+       throw new GoneException({
+         code: 'IDEMPOTENT_PACKAGE_REMOVED',
++        message: pkg
++          ? 'The package this request created has since been archived. Send a new request to create it again.'
++          : 'The package this request created has since been removed. Send a new request to create it again.',
++      });
++    }
++    if (claim.request_hash !== requestHash) {
++      // PackageIdempotencyFilter puts `package_id` on the wire for this code.
++      throw new UnprocessableEntityException({
++        code: 'IDEMPOTENCY_KEY_REUSED',
+         message:
+-          'The package this request created has since been removed. Send a new request to create it again.',
++          'This Idempotency-Key already created a package with different details. Update that package (package_id), or send a new key to create another.',
++        package_id: pkg.id,
+       });
+     }
+     return pkg;
+diff --git a/test/package-idempotency.filter.spec.ts b/test/package-idempotency.filter.spec.ts
+new file mode 100644
+index 00000000..6355660e
+--- /dev/null
++++ b/test/package-idempotency.filter.spec.ts
+@@ -0,0 +1,148 @@
++/**
++ * B-675-1 (B-675-116): PackageIdempotencyFilter puts `package_id` on the wire
++ * for a 422 IDEMPOTENCY_KEY_REUSED and nothing else. Every answer is compared
++ * key for key with what the global HttpExceptionFilter writes for the same
++ * exception, so the envelope cannot drift from the one every other route uses.
++ */
++import { randomUUID } from 'node:crypto';
++import { type ArgumentsHost, UnprocessableEntityException } from '@nestjs/common';
++import { Prisma } from '@prisma/client';
++import { HttpExceptionFilter } from '../src/filters/http-exception.filter';
++import {
++  IDEMPOTENCY_KEY_REUSED_CODE,
++  PackageIdempotencyFilter,
++  reusedKeyPackageId,
++} from '../src/packages/package-idempotency.filter';
++
++type Body = Record<string, unknown>;
++
++/** Runs a filter against a recording Express double; returns status + body. */
++function wire(
++  filter: { catch(exception: UnprocessableEntityException, host: ArgumentsHost): void },
++  exception: UnprocessableEntityException,
++): { status: number; body: Body } {
++  const out = { status: 0, body: {} as Body };
++  const res = {
++    status(code: number) {
++      out.status = code;
++      return res;
++    },
++    json(b: Body) {
++      out.body = b;
++      return res;
++    },
++  };
++  const req = {
++    url: '/v1/coach/packages',
++    method: 'POST',
++    route: { path: '/v1/coach/packages' },
++    requestId: 'req-test-1',
++  };
++  const http = { getResponse: () => res, getRequest: () => req, getNext: () => undefined };
++  const host: Pick<ArgumentsHost, 'switchToHttp'> = {
++    switchToHttp: () => http as ReturnType<ArgumentsHost['switchToHttp']>,
++  };
++  filter.catch(exception, host as ArgumentsHost);
++  return out;
++}
++
++const withoutTimestamp = ({ timestamp: _t, ...rest }: Body): Body => rest;
++
++const reused = (packageId: unknown, extra: Body = {}) =>
++  new UnprocessableEntityException({
++    code: IDEMPOTENCY_KEY_REUSED_CODE,
++    message: 'This Idempotency-Key already created a package with different details.',
++    package_id: packageId,
++    ...extra,
++  });
++
++describe('B-675-1 PackageIdempotencyFilter', () => {
++  const filter = new PackageIdempotencyFilter();
++  const global = new HttpExceptionFilter();
++
++  it('adds package_id to the exact global envelope for IDEMPOTENCY_KEY_REUSED', () => {
++    const id = randomUUID();
++    const ex = reused(id);
++    const ours = wire(filter, ex);
++    const base = wire(global, ex);
++    expect(ours.status).toBe(422);
++    expect(base.body).not.toHaveProperty('package_id');
++    expect(withoutTimestamp(ours.body)).toEqual({ ...withoutTimestamp(base.body), package_id: id });
++    expect(ours.body).toMatchObject({
++      statusCode: 422,
++      code: IDEMPOTENCY_KEY_REUSED_CODE,
++      request_id: 'req-test-1',
++      path: '/v1/coach/packages',
++    });
++    expect(typeof ours.body.timestamp).toBe('string');
++  });
++
++  it('passes no other field of the exception body through', () => {
++    const id = randomUUID();
++    const ours = wire(filter, reused(id, { coach_id: 'coach-1', request_hash: 'abc', stack: 'x' }));
++    expect(Object.keys(ours.body).sort()).toEqual(
++      [
++        'code',
++        'error',
++        'message',
++        'package_id',
++        'path',
++        'request_id',
++        'statusCode',
++        'timestamp',
++      ].sort(),
++    );
++  });
++
++  it.each([
++    ['a non-UUID string', 'pkg-1'],
++    ['free text', 'coach@example.com'],
++    ['a number', 42],
++    ['missing', undefined],
++  ])('drops a package_id that is %s and answers the plain global envelope', (_label, value) => {
++    const ex = reused(value);
++    const ours = wire(filter, ex);
++    expect(ours.status).toBe(422);
++    expect(ours.body).not.toHaveProperty('package_id');
++    expect(withoutTimestamp(ours.body)).toEqual(withoutTimestamp(wire(global, ex).body));
++  });
++
++  it('leaves every other 422 to the global filter, even one that carries a package_id', () => {
++    const ex = new UnprocessableEntityException({
++      code: 'SOMETHING_ELSE',
++      message: 'Other.',
++      package_id: randomUUID(),
++    });
++    const ours = wire(filter, ex);
++    expect(ours.body).not.toHaveProperty('package_id');
++    expect(withoutTimestamp(ours.body)).toEqual(withoutTimestamp(wire(global, ex).body));
++    const plain = new UnprocessableEntityException('Plain message.');
++    expect(withoutTimestamp(wire(filter, plain).body)).toEqual(
++      withoutTimestamp(wire(global, plain).body),
++    );
++  });
++
++  it('an exception caused by an ORM failure gets the generic global envelope, no package_id', () => {
++    const cause = new Prisma.PrismaClientKnownRequestError('secret query text', {
++      code: 'P2010',
++      clientVersion: 'test',
++    });
++    const ex = new UnprocessableEntityException(
++      { code: IDEMPOTENCY_KEY_REUSED_CODE, message: 'x', package_id: randomUUID() },
++      { cause },
++    );
++    const ours = wire(filter, ex);
++    expect(ours.body).not.toHaveProperty('package_id');
++    expect(JSON.stringify(ours.body)).not.toContain('secret query text');
++    expect(withoutTimestamp(ours.body)).toEqual(withoutTimestamp(wire(global, ex).body));
++  });
++
++  it('reusedKeyPackageId reads only this code and only a UUID', () => {
++    const id = randomUUID();
++    expect(reusedKeyPackageId({ code: IDEMPOTENCY_KEY_REUSED_CODE, package_id: id })).toBe(id);
++    expect(reusedKeyPackageId({ code: 'OTHER', package_id: id })).toBeNull();
++    expect(reusedKeyPackageId({ code: IDEMPOTENCY_KEY_REUSED_CODE, package_id: 'x' })).toBeNull();
++    expect(reusedKeyPackageId('IDEMPOTENCY_KEY_REUSED')).toBeNull();
++    expect(reusedKeyPackageId(null)).toBeNull();
++  });
++});
+diff --git a/test/packages-create-idempotency-http.spec.ts b/test/packages-create-idempotency-http.spec.ts
+new file mode 100644
+index 00000000..96df570e
+--- /dev/null
++++ b/test/packages-create-idempotency-http.spec.ts
+@@ -0,0 +1,353 @@
++/**
++ * B-675-1 / C-675-2 / C-675-3 (B-675-116): idempotent package create over
++ * real HTTP. Express adapter, the production ValidationPipe options and the
++ * global HttpExceptionFilter registered exactly as src/main.ts does, the real
++ * CoachPackagesController (with its own @UseFilters) and the real
++ * PackagesService on an in-memory CoachPackage table and idempotency ledger
++ * (unique on user_id + route_key + idempotency_key; a failed transaction
++ * rolls back).
++ *
++ * Grown from the AUD-OPUS-CM2-116 probe (CI-lane run 37172560549): the service
++ * put `package_id` on the 422 exception, but the client only ever receives the
++ * error envelope, which dropped it. The mobile create path adopts a package
++ * only through that field, so without it the coach was told to tap Create
++ * package again and got the same 422 forever.
++ */
++import 'reflect-metadata';
++import { randomUUID } from 'node:crypto';
++import { readFileSync } from 'node:fs';
++import * as http from 'node:http';
++import type { AddressInfo } from 'node:net';
++import { join } from 'node:path';
++import {
++  type CanActivate,
++  type ExecutionContext,
++  type INestApplication,
++  UnauthorizedException,
++  ValidationPipe,
++} from '@nestjs/common';
++import { Test } from '@nestjs/testing';
++import { Prisma } from '@prisma/client';
++import { JwtAuthGuard } from '../src/auth/auth.guard';
++import { SubscriptionGuard } from '../src/billing/subscription.guard';
++import { CoachOrOwnerGuard } from '../src/common/guards/coach-or-owner.guard';
++import { HttpExceptionFilter } from '../src/filters/http-exception.filter';
++import { CoachPackagesController } from '../src/packages/packages.controller';
++import { PackagesService } from '../src/packages/packages.service';
++import type { PrismaService } from '../src/prisma.service';
++import type { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
++
++type Row = Record<string, unknown>;
++
++const asPrisma = (m: object): PrismaService => m as PrismaService;
++const asScope = (m: object): SubCoachScopeService => m as SubCoachScopeService;
++
++function p2002(): Prisma.PrismaClientKnownRequestError {
++  return new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
++    code: 'P2002',
++    clientVersion: 'test',
++  });
++}
++
++function makeDb() {
++  let packages: Row[] = [];
++  let ledger: Row[] = [];
++  const matches = (r: Row, where: Row) => Object.entries(where).every(([k, v]) => r[k] === v);
++  const sameKey = (a: Row, b: Row) =>
++    a.user_id === b.user_id &&
++    a.route_key === b.route_key &&
++    a.idempotency_key === b.idempotency_key;
++  const db = {
++    packages: () => packages,
++    ledger: () => ledger,
++    coachPackage: {
++      findFirst: async ({ where }: { where: Row }) => {
++        const r = packages.find((x) => matches(x, where));
++        return r ? { ...r } : null;
++      },
++      create: async ({ data }: { data: Row }) => {
++        const now = new Date();
++        const row: Row = {
++          id: randomUUID(),
++          is_active: true,
++          archived_at: null,
++          first_published_at: null,
++          stripe_price_id: null,
++          stripe_product_id: null,
++          recurring_stripe_price_id: null,
++          created_at: now,
++          updated_at: now,
++          ...data,
++        };
++        packages.push(row);
++        return { ...row };
++      },
++      update: async ({ where, data }: { where: Row; data: Row }) => {
++        const row = packages.find((x) => matches(x, where));
++        if (!row) throw new Error('package row not found');
++        Object.assign(row, data, { updated_at: new Date() });
++        return { ...row };
++      },
++    },
++    // Live buyers the archive guard and the pricing lock count (none here).
++    clientPurchase: { count: async () => 0 },
++    // The pricing lock's row lock (SELECT ... FOR UPDATE).
++    $queryRaw: async () => [],
++    workoutBuilderIdempotencyKey: {
++      create: async ({ data }: { data: Row }) => {
++        if (ledger.some((r) => sameKey(r, data))) throw p2002();
++        const row: Row = { ...data, id: randomUUID() };
++        ledger.push(row);
++        return { ...row };
++      },
++      update: async ({ where, data }: { where: { id: string }; data: Row }) => {
++        const r = ledger.find((x) => x.id === where.id);
++        if (!r) throw new Error('ledger row not found');
++        Object.assign(r, data);
++        return { ...r };
++      },
++      findUnique: async ({
++        where,
++      }: {
++        where: { WorkoutBuilderIdempotencyKey_user_route_key_key: Row };
++      }) => {
++        const r = ledger.find((x) =>
++          sameKey(x, where.WorkoutBuilderIdempotencyKey_user_route_key_key),
++        );
++        return r ? { ...r } : null;
++      },
++    },
++    // Sequential requests only: a failed callback restores both tables.
++    $transaction: async <T>(cb: (tx: object) => Promise<T>): Promise<T> => {
++      const pkgs = packages.map((r) => ({ ...r }));
++      const led = ledger.map((r) => ({ ...r }));
++      try {
++        return await cb(db);
++      } catch (err) {
++        packages = pkgs;
++        ledger = led;
++        throw err;
++      }
++    },
++  };
++  return db;
++}
++
++const H_USER = 'x-test-user';
++
++class HeaderAuthGuard implements CanActivate {
++  canActivate(ctx: ExecutionContext): boolean {
++    const req = ctx.switchToHttp().getRequest();
++    const id = req.headers[H_USER];
++    if (typeof id !== 'string' || !id) throw new UnauthorizedException();
++    req.user = { id, role: 'coach' };
++    return true;
++  }
++}
++
++interface HttpResult {
++  status: number;
++  headers: http.IncomingHttpHeaders;
++  body: Row;
++}
++
++const PATH = '/v1/coach/packages';
++// The wire DTO names the cadence billing_interval / billing_interval_count.
++const BODY = {
++  name: 'North coaching',
++  description: 'Coaching for strength.',
++  amount_cents: 4900,
++  currency: 'usd',
++  billing_type: 'recurring',
++  billing_interval: 'month',
++  billing_interval_count: 1,
++};
++
++describe('B-675 idempotent package create over HTTP (production pipe + global filter)', () => {
++  let app: INestApplication;
++  let db: ReturnType<typeof makeDb>;
++  let svc: PackagesService;
++  let baseUrl: string;
++  // sub-coach id -> head coach id (what SubCoachScopeService answers).
++  let heads: Record<string, string>;
++
++  function call(
++    method: string,
++    path: string,
++    opts: { user?: string; key?: string; body?: unknown } = {},
++  ): Promise<HttpResult> {
++    return new Promise((resolve, reject) => {
++      const payload = opts.body === undefined ? undefined : JSON.stringify(opts.body);
++      const headers: Record<string, string> = { [H_USER]: opts.user ?? 'coach-1' };
++      if (opts.key) headers['idempotency-key'] = opts.key;
++      if (payload !== undefined) {
++        headers['content-type'] = 'application/json';
++        headers['content-length'] = Buffer.byteLength(payload).toString();
++      }
++      const req = http.request(`${baseUrl}${path}`, { method, headers }, (res) => {
++        let data = '';
++        res.on('data', (c) => (data += c));
++        res.on('end', () =>
++          resolve({
++            status: res.statusCode ?? 0,
++            headers: res.headers,
++            body: data.length ? JSON.parse(data) : {},
++          }),
++        );
++      });
++      req.on('error', reject);
++      if (payload !== undefined) req.write(payload);
++      req.end();
++    });
++  }
++
++  beforeEach(async () => {
++    db = makeDb();
++    heads = {};
++    svc = new PackagesService(
++      asPrisma(db),
++      asScope({ getHeadCoachIdForSubCoach: async (id: string) => heads[id] ?? null }),
++    );
++    const allow: CanActivate = { canActivate: () => true };
++    const moduleRef = await Test.createTestingModule({
++      controllers: [CoachPackagesController],
++      providers: [{ provide: PackagesService, useValue: svc }],
++    })
++      .overrideGuard(JwtAuthGuard)
++      .useClass(HeaderAuthGuard)
++      .overrideGuard(CoachOrOwnerGuard)
++      .useValue(allow)
++      .overrideGuard(SubscriptionGuard)
++      .useValue(allow)
++      .compile();
++    app = moduleRef.createNestApplication({ logger: false });
++    app.useGlobalPipes(
++      new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
++    );
++    app.useGlobalFilters(new HttpExceptionFilter());
++    await app.listen(0, '127.0.0.1');
++    const addr = app.getHttpServer().address() as AddressInfo;
++    baseUrl = `http://127.0.0.1:${addr.port}`;
++  });
++
++  afterEach(async () => {
++    await app.close();
++  });
++
++  it('control: main.ts registers HttpExceptionFilter globally, as this harness does', () => {
++    const main = readFileSync(join(__dirname, '../src/main.ts'), 'utf8');
++    expect(main).toMatch(/useGlobalFilters\(new HttpExceptionFilter\(\)/);
++  });
++
++  it('control: the same key and body replays the same package with Idempotent-Replayed', async () => {
++    const a = await call('POST', PATH, { key: 'key-http-replay-01', body: BODY });
++    const b = await call('POST', PATH, { key: 'key-http-replay-01', body: BODY });
++    expect(a.status).toBe(201);
++    expect(a.headers['idempotent-replayed']).toBeUndefined();
++    expect(b.status).toBe(201);
++    expect(b.headers['idempotent-replayed']).toBe('true');
++    expect(b.body.id).toBe(a.body.id);
++    expect(db.packages()).toHaveLength(1);
++  });
++
++  it('B-675-1: the 422 IDEMPOTENCY_KEY_REUSED body on the wire names the package the key made', async () => {
++    const first = await call('POST', PATH, { key: 'key-http-reused-01', body: BODY });
++    expect(first.status).toBe(201);
++    const r = await call('POST', PATH, {
++      key: 'key-http-reused-01',
++      body: { ...BODY, amount_cents: 5900 },
++    });
++    expect(r.status).toBe(422);
++    expect(r.body).toMatchObject({
++      statusCode: 422,
++      code: 'IDEMPOTENCY_KEY_REUSED',
++      package_id: first.body.id,
++      path: PATH,
++    });
++    expect(typeof r.body.message).toBe('string');
++    expect(typeof r.body.timestamp).toBe('string');
++    // The standard envelope plus exactly one allow-listed field.
++    expect(Object.keys(r.body).sort()).toEqual(
++      ['code', 'error', 'message', 'package_id', 'path', 'statusCode', 'timestamp'].sort(),
++    );
++    expect(db.packages()).toHaveLength(1);
++  });
++
++  it('B-675-1: the adopted id is real: PATCHing it with the current details updates that one package', async () => {
++    const first = await call('POST', PATH, { key: 'key-http-adopt-001', body: BODY });
++    const r = await call('POST', PATH, {
++      key: 'key-http-adopt-001',
++      body: { ...BODY, amount_cents: 5900 },
++    });
++    expect(r.status).toBe(422);
++    const patched = await call('PATCH', `${PATH}/${String(r.body.package_id)}`, {
++      body: { amount_cents: 5900 },
++    });
++    expect(patched.status).toBe(200);
++    expect(patched.body).toMatchObject({ id: first.body.id, amount_cents: 5900 });
++    expect(db.packages()).toHaveLength(1);
++  });
++
++  it('B-675-1: a sub-coach who moved to another head coach never receives the old catalog package id', async () => {
++    heads['sub-1'] = 'coach-1';
++    const first = await call('POST', PATH, { user: 'sub-1', key: 'key-http-moved-01', body: BODY });
++    expect(first.status).toBe(201);
++    expect(first.body.coach_id).toBe('coach-1');
++    heads['sub-1'] = 'coach-2';
++    for (const body of [{ ...BODY, amount_cents: 5900 }, BODY]) {
++      const r = await call('POST', PATH, { user: 'sub-1', key: 'key-http-moved-01', body });
++      expect(r.status).toBe(410);
++      expect(r.body).toMatchObject({ statusCode: 410, code: 'IDEMPOTENT_PACKAGE_REMOVED' });
++      expect(r.body).not.toHaveProperty('package_id');
++      expect(JSON.stringify(r.body)).not.toContain(String(first.body.id));
++      expect(r.headers['idempotent-replayed']).toBeUndefined();
++    }
++    // The fresh create the app then sends lands on the new catalog.
++    const fresh = await call('POST', PATH, { user: 'sub-1', key: 'key-http-moved-02', body: BODY });
++    expect(fresh.status).toBe(201);
++    expect(fresh.body.coach_id).toBe('coach-2');
++  });
++
++  it('C-675-3: a retry after the coach archived the package is 410 with a next action, not a 201 replay', async () => {
++    const first = await call('POST', PATH, { key: 'key-http-archive-1', body: BODY });
++    const del = await call('DELETE', `${PATH}/${String(first.body.id)}`);
++    expect(del.status).toBe(200);
++    expect(del.body.archived_at).toBeTruthy();
++    const r = await call('POST', PATH, { key: 'key-http-archive-1', body: BODY });
++    expect(r.status).toBe(410);
++    expect(r.body).toMatchObject({ statusCode: 410, code: 'IDEMPOTENT_PACKAGE_REMOVED' });
++    expect(String(r.body.message)).toMatch(/archived/);
++    expect(String(r.body.message)).toMatch(/new request/);
++    expect(String(r.body.message)).not.toMatch(/\b(we|our|us)\b/i);
++    expect(r.body).not.toHaveProperty('package_id');
++    expect(r.headers['idempotent-replayed']).toBeUndefined();
++  });
++
++  it('C-675-3: an archived package is not adopted through the 422 either', async () => {
++    const first = await call('POST', PATH, { key: 'key-http-archive-2', body: BODY });
++    await call('DELETE', `${PATH}/${String(first.body.id)}`);
++    const r = await call('POST', PATH, {
++      key: 'key-http-archive-2',
++      body: { ...BODY, amount_cents: 5900 },
++    });
++    expect(r.status).toBe(410);
++    expect(r.body).toMatchObject({ code: 'IDEMPOTENT_PACKAGE_REMOVED' });
++    expect(r.body).not.toHaveProperty('package_id');
++  });
++
++  it('C-675-2: a key claimed before the server added a defaulted column still replays the same package', async () => {
++    const first = await call('POST', PATH, { key: 'key-http-default-1', body: BODY });
++    expect(first.status).toBe(201);
++    // A later deploy adds a column the server fills with a default when the
++    // client leaves it out (the trials piece adds `trial_days ?? 0`).
++    const original = Reflect.get(svc, 'createData') as (coach: string, input: Row) => Row;
++    Reflect.set(svc, 'createData', function (this: PackagesService, coach: string, input: Row) {
++      return { ...original.call(this, coach, input), trial_days: input.trial_days ?? 0 };
++    });
++    const r = await call('POST', PATH, { key: 'key-http-default-1', body: BODY });
++    expect(r.status).toBe(201);
++    expect(r.headers['idempotent-replayed']).toBe('true');
++    expect(r.body.id).toBe(first.body.id);
++    expect(db.packages()).toHaveLength(1);
++  });
++});
+diff --git a/test/packages-create-idempotency.spec.ts b/test/packages-create-idempotency.spec.ts
+index e6b809fe..ac72a741 100644
+--- a/test/packages-create-idempotency.spec.ts
++++ b/test/packages-create-idempotency.spec.ts
+@@ -17,6 +17,7 @@ import { CoachPackagesController } from '../src/packages/packages.controller';
+ import {
+   PACKAGE_CREATE_ROUTE_KEY,
+   PackagesService,
++  packageCreateFingerprint,
+   packageCreateHash,
+ } from '../src/packages/packages.service';
+ 
+@@ -264,6 +265,44 @@ describe('OR-112-16 package create is idempotent per Idempotency-Key', () => {
+     );
+   });
+ 
++  it('C-675-3: a replay whose package the coach archived is 410 with a next action, never the archived row', async () => {
++    const db = makeDb();
++    const svc = service(db);
++    await svc.createIdempotent('coach-1', INPUT, 'key-archived-1');
++    // DELETE /v1/coach/packages/:id archives (is_active=false, archived_at set).
++    Object.assign(db.packages[0], { archived_at: new Date(), is_active: false });
++    for (const input of [INPUT, { ...INPUT, amount_cents: 5900 }]) {
++      const err = await svc
++        .createIdempotent('coach-1', input, 'key-archived-1')
++        .catch((e: unknown) => e);
++      expect(err).toBeInstanceOf(GoneException);
++      const body = (err as GoneException).getResponse() as Record<string, unknown>;
++      expect(body).toMatchObject({ code: 'IDEMPOTENT_PACKAGE_REMOVED' });
++      expect(body).not.toHaveProperty('package_id');
++      expect(String(body.message)).toBe(
++        'The package this request created has since been archived. Send a new request to create it again.',
++      );
++    }
++    expect(db.packages).toHaveLength(1);
++  });
++
++  it("B-675-1: the 422 names a package only in the caller's current catalog; a moved sub-coach gets 410", async () => {
++    const db = makeDb();
++    const svc = service(db);
++    // sub-1 created on coach-1's catalog, then moved to coach-2.
++    const made = await svc.createIdempotent('coach-1', INPUT, 'key-moved-01', 'sub-1');
++    expect(made.pkg.coach_id).toBe('coach-1');
++    for (const input of [INPUT, { ...INPUT, amount_cents: 5900 }]) {
++      const err = await svc
++        .createIdempotent('coach-2', input, 'key-moved-01', 'sub-1')
++        .catch((e: unknown) => e);
++      expect(err).toBeInstanceOf(GoneException);
++      const body = (err as GoneException).getResponse() as Record<string, unknown>;
++      expect(body).toMatchObject({ code: 'IDEMPOTENT_PACKAGE_REMOVED' });
++      expect(JSON.stringify(body)).not.toContain(made.pkg.id);
++    }
++  });
++
+   it('a unique violation from the package insert itself is surfaced, never reported as "still being saved"', async () => {
+     const db = makeDb();
+     const svc = service(db);
+@@ -287,6 +326,99 @@ describe('OR-112-16 package create is idempotent per Idempotency-Key', () => {
+     expect(h('USD')).toBe(h('usd'));
+     expect(packageCreateHash({ a: 1, b: 2 })).toBe(packageCreateHash({ b: 2, a: 1 }));
+   });
++
++  it('a body that leaves out a defaulted field replays the key a body that set it to the default claimed', async () => {
++    const db = makeDb();
++    const svc = service(db);
++    const { description: _d, interval_count: _c, currency: _cur, ...bare } = INPUT;
++    const a = await svc.createIdempotent(
++      'coach-1',
++      { ...bare, description: null, currency: 'USD', interval_count: 1, duration_periods: null },
++      'key-defaults-1',
++    );
++    const b = await svc.createIdempotent('coach-1', bare, 'key-defaults-1');
++    expect(b.replayed).toBe(true);
++    expect(b.pkg.id).toBe(a.pkg.id);
++    expect(db.packages).toHaveLength(1);
++  });
++
++  it('C-675-2: a column the server adds later with a default leaves old hashes alone; a non-default value is different details', async () => {
++    const db = makeDb();
++    const svc = service(db);
++    const made = await svc.createIdempotent('coach-1', INPUT, 'key-trial-01');
++    // The trials piece adds `trial_days: input.trial_days ?? 0` to the row.
++    const original = Reflect.get(svc, 'createData') as (
++      coach: string,
++      input: Record<string, unknown>,
++    ) => Record<string, unknown>;
++    Reflect.set(
++      svc,
++      'createData',
++      function (this: PackagesService, coach: string, input: Record<string, unknown>) {
++        return { ...original.call(this, coach, input), trial_days: input.trial_days ?? 0 };
++      },
++    );
++    const same = await svc.createIdempotent('coach-1', INPUT, 'key-trial-01');
++    expect(same).toMatchObject({ replayed: true, pkg: { id: made.pkg.id } });
++    const explicitDefault = await svc.createIdempotent(
++      'coach-1',
++      { ...INPUT, trial_days: 0 } as typeof INPUT,
++      'key-trial-01',
++    );
++    expect(explicitDefault.pkg.id).toBe(made.pkg.id);
++    const err = await svc
++      .createIdempotent('coach-1', { ...INPUT, trial_days: 7 } as typeof INPUT, 'key-trial-01')
++      .catch((e: unknown) => e);
++    expect(err).toBeInstanceOf(UnprocessableEntityException);
++    expect((err as UnprocessableEntityException).getResponse()).toMatchObject({
++      code: 'IDEMPOTENCY_KEY_REUSED',
++      package_id: made.pkg.id,
++    });
++    expect(db.packages).toHaveLength(1);
++  });
++
++  it('C-675-2: the fingerprint drops only optional columns at their default and keeps the identity', () => {
++    const defaults = {
++      coach_id: 'c',
++      name: 'N',
++      amount_cents: 4900,
++      currency: 'usd',
++      trial_days: 0,
++    };
++    const row = { ...defaults, interval: 'month' };
++    expect(packageCreateFingerprint(row, defaults)).toEqual({
++      coach_id: 'c',
++      name: 'N',
++      amount_cents: 4900,
++      interval: 'month',
++    });
++    const before = packageCreateFingerprint(
++      { coach_id: 'c', name: 'N', amount_cents: 4900, currency: 'usd' },
++      { coach_id: 'c', name: 'N', amount_cents: 4900, currency: 'usd' },
++    );
++    expect(packageCreateHash(packageCreateFingerprint(defaults, defaults))).toBe(
++      packageCreateHash(before),
++    );
++    expect(
++      packageCreateHash(packageCreateFingerprint({ ...defaults, trial_days: 7 }, defaults)),
++    ).not.toBe(packageCreateHash(before));
++    // null and absent are the same value, as in packageCreateHash.
++    expect(packageCreateFingerprint({ ...defaults, description: null }, defaults)).toEqual(
++      packageCreateFingerprint(defaults, defaults),
++    );
++    // Identity keys always count, even though they equal their own defaults row.
++    const named = (name: string, amount: number) => {
++      const d = { ...defaults, name, amount_cents: amount };
++      return packageCreateHash(packageCreateFingerprint(d, d));
++    };
++    expect(packageCreateFingerprint(defaults, defaults)).toEqual({
++      coach_id: 'c',
++      name: 'N',
++      amount_cents: 4900,
++    });
++    expect(named('M', 4900)).not.toBe(named('N', 4900));
++    expect(named('N', 5900)).not.toBe(named('N', 4900));
++  });
+ });
+ 
+ describe('OR-112-16 controller forwards Idempotency-Key and marks replays', () => {

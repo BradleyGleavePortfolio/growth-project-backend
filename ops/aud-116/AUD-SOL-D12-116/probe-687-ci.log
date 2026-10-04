@@ -1,0 +1,49 @@
+targeted	Targeted jest	﻿2026-10-04T02:33:55.3012792Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T02:33:55.3013003Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T02:33:55.3013226Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T02:33:55.3013499Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T02:33:55.3013701Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T02:33:55.3013864Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T02:33:55.3067229Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T02:33:55.3067450Z env:
+targeted	Targeted jest	2026-10-04T02:33:55.3067577Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T02:33:55.3067782Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T02:33:55.3067958Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T02:33:55.3147594Z specs: test/aud-sol-d12-116-d1.spec.ts test/stripe-connect-api.service.spec.ts test/dunning-lockout-guard.spec.ts
+targeted	Targeted jest	2026-10-04T02:34:02.1156254Z FAIL test/aud-sol-d12-116-d1.spec.ts (6.124 s)
+targeted	Targeted jest	2026-10-04T02:34:02.1157389Z   AUD-SOL-D12-116 D1 acceptance probes
+targeted	Targeted jest	2026-10-04T02:34:02.1158747Z     ✓ control: a grant within the first page waives a lock (6 ms)
+targeted	Targeted jest	2026-10-04T02:34:02.1159280Z     ✕ a valid live grant after 20 non-waiving rows must still waive the lock (4 ms)
+targeted	Targeted jest	2026-10-04T02:34:02.1159789Z     ✓ control: adapter preserves operation-replay receipt true (3 ms)
+targeted	Targeted jest	2026-10-04T02:34:02.1160182Z     ✓ control: adapter preserves operation-replay receipt false
+targeted	Targeted jest	2026-10-04T02:34:02.1160332Z 
+targeted	Targeted jest	2026-10-04T02:34:02.1160635Z   ● AUD-SOL-D12-116 D1 acceptance probes › a valid live grant after 20 non-waiving rows must still waive the lock
+targeted	Targeted jest	2026-10-04T02:34:02.1161265Z 
+targeted	Targeted jest	2026-10-04T02:34:02.1161359Z     expect(received).toMatchObject(expected)
+targeted	Targeted jest	2026-10-04T02:34:02.1161484Z 
+targeted	Targeted jest	2026-10-04T02:34:02.1161546Z     - Expected  - 2
+targeted	Targeted jest	2026-10-04T02:34:02.1161679Z     + Received  + 2
+targeted	Targeted jest	2026-10-04T02:34:02.1161752Z 
+targeted	Targeted jest	2026-10-04T02:34:02.1161805Z       Object {
+targeted	Targeted jest	2026-10-04T02:34:02.1161932Z     -   "locked": false,
+targeted	Targeted jest	2026-10-04T02:34:02.1164509Z     -   "waived": true,
+targeted	Targeted jest	2026-10-04T02:34:02.1164799Z     +   "locked": true,
+targeted	Targeted jest	2026-10-04T02:34:02.1165011Z     +   "waived": false,
+targeted	Targeted jest	2026-10-04T02:34:02.1165211Z       }
+targeted	Targeted jest	2026-10-04T02:34:02.1165306Z 
+targeted	Targeted jest	2026-10-04T02:34:02.1165909Z     ^[[0m ^[[90m 44 |^[[39m   it(^[[32m'a valid live grant after 20 non-waiving rows must still waive the lock'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T02:34:02.1166952Z      ^[[90m 45 |^[[39m     expect(^[[36mawait^[[39m effectiveLock(accessFixture(^[[35m20^[[39m)^[[33m.^[[39mclient()^[[33m,^[[39m ^[[32m'client-a'^[[39m^[[33m,^[[39m ^[[33mNOW^[[39m))
+targeted	Targeted jest	2026-10-04T02:34:02.1168055Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 46 |^[[39m       ^[[33m.^[[39mtoMatchObject({ waived^[[33m:^[[39m ^[[36mtrue^[[39m^[[33m,^[[39m locked^[[33m:^[[39m ^[[36mfalse^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:02.1168636Z      ^[[90m    |^[[39m        ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:34:02.1168945Z      ^[[90m 47 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:02.1169197Z      ^[[90m 48 |^[[39m
+targeted	Targeted jest	2026-10-04T02:34:02.1170049Z      ^[[90m 49 |^[[39m   it^[[33m.^[[39meach([^[[36mtrue^[[39m^[[33m,^[[39m ^[[36mfalse^[[39m])(^[[32m'control: adapter preserves operation-replay receipt %s'^[[39m^[[33m,^[[39m ^[[36masync^[[39m (replayed) ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T02:34:02.1170632Z 
+targeted	Targeted jest	2026-10-04T02:34:02.1170853Z       at Object.<anonymous> (test/aud-sol-d12-116-d1.spec.ts:46:8)
+targeted	Targeted jest	2026-10-04T02:34:02.1171078Z 
+targeted	Targeted jest	2026-10-04T02:34:02.1186390Z Test Suites: 1 failed, 1 total
+targeted	Targeted jest	2026-10-04T02:34:02.1186716Z Tests:       1 failed, 3 passed, 4 total
+targeted	Targeted jest	2026-10-04T02:34:02.1186980Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T02:34:02.1187186Z Time:        6.274 s
+targeted	Targeted jest	2026-10-04T02:34:02.1187814Z Ran all test suites matching test/aud-sol-d12-116-d1.spec.ts|test/stripe-connect-api.service.spec.ts|test/dunning-lockout-guard.spec.ts.
+targeted	Targeted jest	2026-10-04T02:34:02.2777555Z ##[error]Process completed with exit code 1.

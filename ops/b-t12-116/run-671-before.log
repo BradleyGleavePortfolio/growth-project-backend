@@ -1,0 +1,757 @@
+targeted	Set up job	﻿2026-10-04T03:28:42.6680925Z Current runner version: '2.337.0'
+targeted	Set up job	2026-10-04T03:28:42.6716325Z ##[group]Runner Image Provisioner
+targeted	Set up job	2026-10-04T03:28:42.6717725Z Hosted Compute Agent
+targeted	Set up job	2026-10-04T03:28:42.6719523Z Version: 20260901.588
+targeted	Set up job	2026-10-04T03:28:42.6720836Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	Set up job	2026-10-04T03:28:42.6722267Z Build Date: 2026-09-01T19:56:44Z
+targeted	Set up job	2026-10-04T03:28:42.6724007Z Worker ID: {be0e0e3c-f2c5-4dc4-8154-d99cb8cccdc2}
+targeted	Set up job	2026-10-04T03:28:42.6725323Z Azure Region: eastus2
+targeted	Set up job	2026-10-04T03:28:42.6726394Z ##[endgroup]
+targeted	Set up job	2026-10-04T03:28:42.6730957Z ##[group]Operating System
+targeted	Set up job	2026-10-04T03:28:42.6732128Z Ubuntu
+targeted	Set up job	2026-10-04T03:28:42.6733482Z 24.04.5
+targeted	Set up job	2026-10-04T03:28:42.6734453Z LTS
+targeted	Set up job	2026-10-04T03:28:42.6735418Z ##[endgroup]
+targeted	Set up job	2026-10-04T03:28:42.6736568Z ##[group]Runner Image
+targeted	Set up job	2026-10-04T03:28:42.6737690Z Image: ubuntu-24.04
+targeted	Set up job	2026-10-04T03:28:42.6738926Z Version: 20260927.320.1
+targeted	Set up job	2026-10-04T03:28:42.6741132Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	Set up job	2026-10-04T03:28:42.6744675Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	Set up job	2026-10-04T03:28:42.6746515Z ##[endgroup]
+targeted	Set up job	2026-10-04T03:28:42.6748864Z ##[group]GITHUB_TOKEN Permissions
+targeted	Set up job	2026-10-04T03:28:42.6751809Z Contents: read
+targeted	Set up job	2026-10-04T03:28:42.6753327Z Metadata: read
+targeted	Set up job	2026-10-04T03:28:42.6754442Z Packages: read
+targeted	Set up job	2026-10-04T03:28:42.6755492Z ##[endgroup]
+targeted	Set up job	2026-10-04T03:28:42.6758496Z Secret source: Actions
+targeted	Set up job	2026-10-04T03:28:42.6760176Z Cache mode: write
+targeted	Set up job	2026-10-04T03:28:42.6761924Z Prepare workflow directory
+targeted	Set up job	2026-10-04T03:28:42.7390858Z Prepare all required actions
+targeted	Set up job	2026-10-04T03:28:42.7460861Z Getting action download info
+targeted	Set up job	2026-10-04T03:28:42.9920953Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	Set up job	2026-10-04T03:28:43.0986465Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	Set up job	2026-10-04T03:28:43.2878737Z Complete job name: targeted
+targeted	Initialize containers	﻿2026-10-04T03:28:43.3395294Z ##[group]Checking docker version
+targeted	Initialize containers	2026-10-04T03:28:43.3408411Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+targeted	Initialize containers	2026-10-04T03:28:43.4432095Z '1.48'
+targeted	Initialize containers	2026-10-04T03:28:43.4451912Z Docker daemon API version: '1.48'
+targeted	Initialize containers	2026-10-04T03:28:43.4453103Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+targeted	Initialize containers	2026-10-04T03:28:43.4610463Z '1.48'
+targeted	Initialize containers	2026-10-04T03:28:43.4623385Z Docker client API version: '1.48'
+targeted	Initialize containers	2026-10-04T03:28:43.4628688Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T03:28:43.4631840Z ##[group]Clean up resources from previous jobs
+targeted	Initialize containers	2026-10-04T03:28:43.4637667Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=c3f91c"
+targeted	Initialize containers	2026-10-04T03:28:43.4793255Z ##[command]/usr/bin/docker network prune --force --filter "label=c3f91c"
+targeted	Initialize containers	2026-10-04T03:28:43.4937819Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T03:28:43.4938402Z ##[group]Create local container network
+targeted	Initialize containers	2026-10-04T03:28:43.4949100Z ##[command]/usr/bin/docker network create --label c3f91c github_network_c23ed539511f4ecf9ce9f77c905a0a51
+targeted	Initialize containers	2026-10-04T03:28:43.5444420Z f5b3760df23d75b02d553e40fce4fd5728b8d63f0417bb9c5564bd04b88c21d3
+targeted	Initialize containers	2026-10-04T03:28:43.5465092Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T03:28:43.5489642Z ##[group]Starting postgres service container
+targeted	Initialize containers	2026-10-04T03:28:43.5511547Z ##[command]/usr/bin/docker pull postgres:15
+targeted	Initialize containers	2026-10-04T03:28:43.8393383Z 15: Pulling from library/postgres
+targeted	Initialize containers	2026-10-04T03:28:43.9291380Z 6b37362b3da7: Pulling fs layer
+targeted	Initialize containers	2026-10-04T03:28:43.9293064Z 0d791b2b75ae: Pulling fs layer
+targeted	Initialize containers	2026-10-04T03:28:43.9294033Z 0d39881c83f7: Pulling fs layer
+targeted	Initialize containers	2026-10-04T03:28:43.9294965Z c95afe7c234f: Pulling fs layer
+targeted	Initialize containers	2026-10-04T03:28:43.9295928Z bc176b99a33a: Pulling fs layer
+targeted	Initialize containers	2026-10-04T03:28:43.9296889Z 08a5cd487deb: Pulling fs layer
+targeted	Initialize containers	2026-10-04T03:28:43.9298085Z eb4d92aaee0a: Pulling fs layer
+targeted	Initialize containers	2026-10-04T03:28:43.9298774Z 75a4dff090e8: Pulling fs layer
+targeted	Initialize containers	2026-10-04T03:28:43.9299327Z afe9a40fb214: Pulling fs layer
+targeted	Initialize containers	2026-10-04T03:28:43.9299898Z ca5e97c0cd7d: Pulling fs layer
+targeted	Initialize containers	2026-10-04T03:28:43.9300513Z 53fa82bdba52: Pulling fs layer
+targeted	Initialize containers	2026-10-04T03:28:43.9301074Z 7b9c6b8e5e6e: Pulling fs layer
+targeted	Initialize containers	2026-10-04T03:28:43.9301948Z b65147f15943: Pulling fs layer
+targeted	Initialize containers	2026-10-04T03:28:43.9302494Z 170d9ea1cd85: Pulling fs layer
+targeted	Initialize containers	2026-10-04T03:28:43.9303318Z c95afe7c234f: Waiting
+targeted	Initialize containers	2026-10-04T03:28:43.9303815Z bc176b99a33a: Waiting
+targeted	Initialize containers	2026-10-04T03:28:43.9304309Z ca5e97c0cd7d: Waiting
+targeted	Initialize containers	2026-10-04T03:28:43.9304792Z 53fa82bdba52: Waiting
+targeted	Initialize containers	2026-10-04T03:28:43.9305293Z 08a5cd487deb: Waiting
+targeted	Initialize containers	2026-10-04T03:28:43.9305784Z eb4d92aaee0a: Waiting
+targeted	Initialize containers	2026-10-04T03:28:43.9306279Z 7b9c6b8e5e6e: Waiting
+targeted	Initialize containers	2026-10-04T03:28:43.9306767Z b65147f15943: Waiting
+targeted	Initialize containers	2026-10-04T03:28:43.9307268Z 75a4dff090e8: Waiting
+targeted	Initialize containers	2026-10-04T03:28:43.9307794Z afe9a40fb214: Waiting
+targeted	Initialize containers	2026-10-04T03:28:43.9308290Z 170d9ea1cd85: Waiting
+targeted	Initialize containers	2026-10-04T03:28:44.0059974Z 0d791b2b75ae: Verifying Checksum
+targeted	Initialize containers	2026-10-04T03:28:44.0060992Z 0d791b2b75ae: Download complete
+targeted	Initialize containers	2026-10-04T03:28:44.0724701Z 0d39881c83f7: Verifying Checksum
+targeted	Initialize containers	2026-10-04T03:28:44.0726060Z 0d39881c83f7: Download complete
+targeted	Initialize containers	2026-10-04T03:28:44.0938551Z c95afe7c234f: Verifying Checksum
+targeted	Initialize containers	2026-10-04T03:28:44.0940694Z c95afe7c234f: Download complete
+targeted	Initialize containers	2026-10-04T03:28:44.1380213Z 6b37362b3da7: Verifying Checksum
+targeted	Initialize containers	2026-10-04T03:28:44.1381607Z 6b37362b3da7: Download complete
+targeted	Initialize containers	2026-10-04T03:28:44.1819447Z 08a5cd487deb: Verifying Checksum
+targeted	Initialize containers	2026-10-04T03:28:44.1820927Z 08a5cd487deb: Download complete
+targeted	Initialize containers	2026-10-04T03:28:44.1882987Z eb4d92aaee0a: Verifying Checksum
+targeted	Initialize containers	2026-10-04T03:28:44.1884830Z eb4d92aaee0a: Download complete
+targeted	Initialize containers	2026-10-04T03:28:44.1950259Z bc176b99a33a: Verifying Checksum
+targeted	Initialize containers	2026-10-04T03:28:44.1951766Z bc176b99a33a: Download complete
+targeted	Initialize containers	2026-10-04T03:28:44.2307871Z 75a4dff090e8: Download complete
+targeted	Initialize containers	2026-10-04T03:28:44.2453816Z ca5e97c0cd7d: Verifying Checksum
+targeted	Initialize containers	2026-10-04T03:28:44.2455493Z ca5e97c0cd7d: Download complete
+targeted	Initialize containers	2026-10-04T03:28:44.2817569Z 53fa82bdba52: Verifying Checksum
+targeted	Initialize containers	2026-10-04T03:28:44.2819468Z 53fa82bdba52: Download complete
+targeted	Initialize containers	2026-10-04T03:28:44.2967950Z 7b9c6b8e5e6e: Verifying Checksum
+targeted	Initialize containers	2026-10-04T03:28:44.2969404Z 7b9c6b8e5e6e: Download complete
+targeted	Initialize containers	2026-10-04T03:28:44.3298921Z b65147f15943: Verifying Checksum
+targeted	Initialize containers	2026-10-04T03:28:44.3301045Z b65147f15943: Download complete
+targeted	Initialize containers	2026-10-04T03:28:44.3470002Z 170d9ea1cd85: Verifying Checksum
+targeted	Initialize containers	2026-10-04T03:28:44.3473825Z 170d9ea1cd85: Download complete
+targeted	Initialize containers	2026-10-04T03:28:44.6758264Z afe9a40fb214: Verifying Checksum
+targeted	Initialize containers	2026-10-04T03:28:44.6760212Z afe9a40fb214: Download complete
+targeted	Initialize containers	2026-10-04T03:28:45.2238885Z 6b37362b3da7: Pull complete
+targeted	Initialize containers	2026-10-04T03:28:45.4927984Z 0d791b2b75ae: Pull complete
+targeted	Initialize containers	2026-10-04T03:28:45.6653153Z 0d39881c83f7: Pull complete
+targeted	Initialize containers	2026-10-04T03:28:45.7029250Z c95afe7c234f: Pull complete
+targeted	Initialize containers	2026-10-04T03:28:46.0032647Z bc176b99a33a: Pull complete
+targeted	Initialize containers	2026-10-04T03:28:46.0799374Z 08a5cd487deb: Pull complete
+targeted	Initialize containers	2026-10-04T03:28:46.0873263Z eb4d92aaee0a: Pull complete
+targeted	Initialize containers	2026-10-04T03:28:46.0978935Z 75a4dff090e8: Pull complete
+targeted	Initialize containers	2026-10-04T03:28:49.0387646Z afe9a40fb214: Pull complete
+targeted	Initialize containers	2026-10-04T03:28:49.0517965Z ca5e97c0cd7d: Pull complete
+targeted	Initialize containers	2026-10-04T03:28:49.0616992Z 53fa82bdba52: Pull complete
+targeted	Initialize containers	2026-10-04T03:28:49.0698817Z 7b9c6b8e5e6e: Pull complete
+targeted	Initialize containers	2026-10-04T03:28:49.0782035Z b65147f15943: Pull complete
+targeted	Initialize containers	2026-10-04T03:28:49.0864355Z 170d9ea1cd85: Pull complete
+targeted	Initialize containers	2026-10-04T03:28:49.0900109Z Digest: sha256:724292da1f2e50bdccfc3302ce75bbba7f4a6076701b588cc795fcac65683550
+targeted	Initialize containers	2026-10-04T03:28:49.0910163Z Status: Downloaded newer image for postgres:15
+targeted	Initialize containers	2026-10-04T03:28:49.0919771Z docker.io/library/postgres:15
+targeted	Initialize containers	2026-10-04T03:28:49.0981619Z ##[command]/usr/bin/docker create --name 0f64fff444e94e3ea7b064703f21ae49_postgres15_c6f2af --label c3f91c --network github_network_c23ed539511f4ecf9ce9f77c905a0a51 --network-alias postgres -p 5432:5432 --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10 -e "POSTGRES_USER=postgres" -e "POSTGRES_PASSWORD=postgres" -e "POSTGRES_DB=postgres" -e GITHUB_ACTIONS=true -e CI=true postgres:15
+targeted	Initialize containers	2026-10-04T03:28:49.1230226Z 4319af34ded9120fe6bb7e7cf91e7bbf0ad7a23f3afea494246f9aaf95f674ae
+targeted	Initialize containers	2026-10-04T03:28:49.1254087Z ##[command]/usr/bin/docker start 4319af34ded9120fe6bb7e7cf91e7bbf0ad7a23f3afea494246f9aaf95f674ae
+targeted	Initialize containers	2026-10-04T03:28:49.3471600Z 4319af34ded9120fe6bb7e7cf91e7bbf0ad7a23f3afea494246f9aaf95f674ae
+targeted	Initialize containers	2026-10-04T03:28:49.3491260Z ##[command]/usr/bin/docker ps --all --filter id=4319af34ded9120fe6bb7e7cf91e7bbf0ad7a23f3afea494246f9aaf95f674ae --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+targeted	Initialize containers	2026-10-04T03:28:49.3619850Z 4319af34ded9120fe6bb7e7cf91e7bbf0ad7a23f3afea494246f9aaf95f674ae Up Less than a second (health: starting)
+targeted	Initialize containers	2026-10-04T03:28:49.3638900Z ##[command]/usr/bin/docker port 4319af34ded9120fe6bb7e7cf91e7bbf0ad7a23f3afea494246f9aaf95f674ae
+targeted	Initialize containers	2026-10-04T03:28:49.3774043Z 5432/tcp -> 0.0.0.0:5432
+targeted	Initialize containers	2026-10-04T03:28:49.3774799Z 5432/tcp -> [::]:5432
+targeted	Initialize containers	2026-10-04T03:28:49.3820317Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T03:28:49.3821620Z ##[group]Starting redis service container
+targeted	Initialize containers	2026-10-04T03:28:49.3823242Z ##[command]/usr/bin/docker pull redis:7-alpine
+targeted	Initialize containers	2026-10-04T03:28:49.6489646Z 7-alpine: Pulling from library/redis
+targeted	Initialize containers	2026-10-04T03:28:49.7262038Z 16333ee0c00f: Pulling fs layer
+targeted	Initialize containers	2026-10-04T03:28:49.7266860Z 83234986c742: Pulling fs layer
+targeted	Initialize containers	2026-10-04T03:28:49.7267819Z 7eb50503c2b0: Pulling fs layer
+targeted	Initialize containers	2026-10-04T03:28:49.7268624Z 1522f9c6f453: Pulling fs layer
+targeted	Initialize containers	2026-10-04T03:28:49.7269493Z 9928009b15c8: Pulling fs layer
+targeted	Initialize containers	2026-10-04T03:28:49.7270261Z 4f4fb700ef54: Pulling fs layer
+targeted	Initialize containers	2026-10-04T03:28:49.7270966Z 4eb14bae0e1d: Pulling fs layer
+targeted	Initialize containers	2026-10-04T03:28:49.7271655Z 9928009b15c8: Waiting
+targeted	Initialize containers	2026-10-04T03:28:49.7272380Z 4f4fb700ef54: Waiting
+targeted	Initialize containers	2026-10-04T03:28:49.7273426Z 4eb14bae0e1d: Waiting
+targeted	Initialize containers	2026-10-04T03:28:49.7274197Z 1522f9c6f453: Waiting
+targeted	Initialize containers	2026-10-04T03:28:49.7745606Z 83234986c742: Verifying Checksum
+targeted	Initialize containers	2026-10-04T03:28:49.7749707Z 83234986c742: Download complete
+targeted	Initialize containers	2026-10-04T03:28:49.7937132Z 7eb50503c2b0: Verifying Checksum
+targeted	Initialize containers	2026-10-04T03:28:49.7938470Z 7eb50503c2b0: Download complete
+targeted	Initialize containers	2026-10-04T03:28:49.8315038Z 16333ee0c00f: Download complete
+targeted	Initialize containers	2026-10-04T03:28:49.8415580Z 9928009b15c8: Verifying Checksum
+targeted	Initialize containers	2026-10-04T03:28:49.8417575Z 9928009b15c8: Download complete
+targeted	Initialize containers	2026-10-04T03:28:49.8855023Z 4f4fb700ef54: Verifying Checksum
+targeted	Initialize containers	2026-10-04T03:28:49.8858369Z 4f4fb700ef54: Download complete
+targeted	Initialize containers	2026-10-04T03:28:49.8930714Z 4eb14bae0e1d: Verifying Checksum
+targeted	Initialize containers	2026-10-04T03:28:49.8931930Z 4eb14bae0e1d: Download complete
+targeted	Initialize containers	2026-10-04T03:28:49.9286711Z 1522f9c6f453: Verifying Checksum
+targeted	Initialize containers	2026-10-04T03:28:49.9287866Z 1522f9c6f453: Download complete
+targeted	Initialize containers	2026-10-04T03:28:49.9895728Z 16333ee0c00f: Pull complete
+targeted	Initialize containers	2026-10-04T03:28:50.0161015Z 83234986c742: Pull complete
+targeted	Initialize containers	2026-10-04T03:28:50.1563847Z 7eb50503c2b0: Pull complete
+targeted	Initialize containers	2026-10-04T03:28:50.3520705Z 1522f9c6f453: Pull complete
+targeted	Initialize containers	2026-10-04T03:28:50.3582066Z 9928009b15c8: Pull complete
+targeted	Initialize containers	2026-10-04T03:28:50.3661036Z 4f4fb700ef54: Pull complete
+targeted	Initialize containers	2026-10-04T03:28:50.3758474Z 4eb14bae0e1d: Pull complete
+targeted	Initialize containers	2026-10-04T03:28:50.3790838Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+targeted	Initialize containers	2026-10-04T03:28:50.3802142Z Status: Downloaded newer image for redis:7-alpine
+targeted	Initialize containers	2026-10-04T03:28:50.3809689Z docker.io/library/redis:7-alpine
+targeted	Initialize containers	2026-10-04T03:28:50.3825383Z ##[command]/usr/bin/docker create --name 254fdfe35c1d48bb9b506632b48eb565_redis7alpine_51d2c3 --label c3f91c --network github_network_c23ed539511f4ecf9ce9f77c905a0a51 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+targeted	Initialize containers	2026-10-04T03:28:50.4033616Z 30bbd54e76fdc40112dd45e8bf7f5d75a8e432cfb39d8c12b1324cee291ab4c1
+targeted	Initialize containers	2026-10-04T03:28:50.4045442Z ##[command]/usr/bin/docker start 30bbd54e76fdc40112dd45e8bf7f5d75a8e432cfb39d8c12b1324cee291ab4c1
+targeted	Initialize containers	2026-10-04T03:28:50.5330732Z 30bbd54e76fdc40112dd45e8bf7f5d75a8e432cfb39d8c12b1324cee291ab4c1
+targeted	Initialize containers	2026-10-04T03:28:50.5346601Z ##[command]/usr/bin/docker ps --all --filter id=30bbd54e76fdc40112dd45e8bf7f5d75a8e432cfb39d8c12b1324cee291ab4c1 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+targeted	Initialize containers	2026-10-04T03:28:50.5482199Z 30bbd54e76fdc40112dd45e8bf7f5d75a8e432cfb39d8c12b1324cee291ab4c1 Up Less than a second (health: starting)
+targeted	Initialize containers	2026-10-04T03:28:50.5495621Z ##[command]/usr/bin/docker port 30bbd54e76fdc40112dd45e8bf7f5d75a8e432cfb39d8c12b1324cee291ab4c1
+targeted	Initialize containers	2026-10-04T03:28:50.5608944Z 6379/tcp -> 0.0.0.0:6379
+targeted	Initialize containers	2026-10-04T03:28:50.5609750Z 6379/tcp -> [::]:6379
+targeted	Initialize containers	2026-10-04T03:28:50.5621959Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T03:28:50.5634572Z ##[group]Waiting for all services to be ready
+targeted	Initialize containers	2026-10-04T03:28:50.5647630Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 4319af34ded9120fe6bb7e7cf91e7bbf0ad7a23f3afea494246f9aaf95f674ae
+targeted	Initialize containers	2026-10-04T03:28:50.5760511Z starting
+targeted	Initialize containers	2026-10-04T03:28:50.5780600Z postgres service is starting, waiting 2 seconds before checking again.
+targeted	Initialize containers	2026-10-04T03:28:52.5780951Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 4319af34ded9120fe6bb7e7cf91e7bbf0ad7a23f3afea494246f9aaf95f674ae
+targeted	Initialize containers	2026-10-04T03:28:52.5911847Z starting
+targeted	Initialize containers	2026-10-04T03:28:52.5914686Z postgres service is starting, waiting 4 seconds before checking again.
+targeted	Initialize containers	2026-10-04T03:28:56.9000753Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 4319af34ded9120fe6bb7e7cf91e7bbf0ad7a23f3afea494246f9aaf95f674ae
+targeted	Initialize containers	2026-10-04T03:28:56.9123617Z healthy
+targeted	Initialize containers	2026-10-04T03:28:56.9167824Z postgres service is healthy.
+targeted	Initialize containers	2026-10-04T03:28:56.9168691Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 30bbd54e76fdc40112dd45e8bf7f5d75a8e432cfb39d8c12b1324cee291ab4c1
+targeted	Initialize containers	2026-10-04T03:28:56.9283617Z healthy
+targeted	Initialize containers	2026-10-04T03:28:56.9296270Z redis service is healthy.
+targeted	Initialize containers	2026-10-04T03:28:56.9296917Z ##[endgroup]
+targeted	Run actions/checkout@v6	﻿2026-10-04T03:28:56.9659739Z ##[group]Run actions/checkout@v6
+targeted	Run actions/checkout@v6	2026-10-04T03:28:56.9660331Z with:
+targeted	Run actions/checkout@v6	2026-10-04T03:28:56.9660638Z   repository: BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T03:28:56.9663767Z   token: ***
+targeted	Run actions/checkout@v6	2026-10-04T03:28:56.9663975Z   ssh-strict: true
+targeted	Run actions/checkout@v6	2026-10-04T03:28:56.9664179Z   ssh-user: git
+targeted	Run actions/checkout@v6	2026-10-04T03:28:56.9664386Z   persist-credentials: true
+targeted	Run actions/checkout@v6	2026-10-04T03:28:56.9664618Z   clean: true
+targeted	Run actions/checkout@v6	2026-10-04T03:28:56.9664825Z   sparse-checkout-cone-mode: true
+targeted	Run actions/checkout@v6	2026-10-04T03:28:56.9665092Z   fetch-depth: 1
+targeted	Run actions/checkout@v6	2026-10-04T03:28:56.9665283Z   fetch-tags: false
+targeted	Run actions/checkout@v6	2026-10-04T03:28:56.9665490Z   show-progress: true
+targeted	Run actions/checkout@v6	2026-10-04T03:28:56.9665698Z   lfs: false
+targeted	Run actions/checkout@v6	2026-10-04T03:28:56.9665879Z   submodules: false
+targeted	Run actions/checkout@v6	2026-10-04T03:28:56.9666082Z   set-safe-directory: true
+targeted	Run actions/checkout@v6	2026-10-04T03:28:56.9666331Z   allow-unsafe-pr-checkout: false
+targeted	Run actions/checkout@v6	2026-10-04T03:28:56.9666816Z env:
+targeted	Run actions/checkout@v6	2026-10-04T03:28:56.9667260Z   DATABASE_URL: ***localhost:5432/postgres
+targeted	Run actions/checkout@v6	2026-10-04T03:28:56.9667687Z   DIRECT_URL: ***localhost:5432/postgres
+targeted	Run actions/checkout@v6	2026-10-04T03:28:56.9668126Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+targeted	Run actions/checkout@v6	2026-10-04T03:28:56.9668466Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.0668493Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.0669946Z ##[group]Getting Git version info
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.0670438Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.0671105Z [command]/usr/bin/git version
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.0771567Z git version 2.55.0
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.0795922Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.0809908Z Temporarily overriding HOME='/home/runner/work/_temp/5c43f21f-480b-4177-b0c0-c9a3aaf44a46' before making global git config changes
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.0810751Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.0816575Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.0871126Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.0875258Z ##[group]Determining repository object format
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.0877793Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.0878229Z ##[group]Initializing the repository
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.0882204Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.0999544Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1000712Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1001308Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1001757Z hint: call:
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1001972Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1002304Z hint: 	git config --global init.defaultBranch <name>
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1002900Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1003238Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1003799Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1004253Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1004467Z hint: 	git branch -m <name>
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1004716Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1005068Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1014565Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1027149Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1079103Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1079584Z ##[group]Disabling automatic garbage collection
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1083282Z [command]/usr/bin/git config --local gc.auto 0
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1111799Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1112226Z ##[group]Setting up auth
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1113549Z Removing SSH command configuration
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1119826Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1149433Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1509759Z Removing HTTP extra header
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1517386Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1550842Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1764044Z Removing includeIf entries pointing to credentials config files
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1770764Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.1803092Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.2029908Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-91aaeb41-d859-488a-b401-74677d1a47bd.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.2067429Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-91aaeb41-d859-488a-b401-74677d1a47bd.config
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.2097401Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-91aaeb41-d859-488a-b401-74677d1a47bd.config
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.2143026Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-91aaeb41-d859-488a-b401-74677d1a47bd.config
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.2180086Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-91aaeb41-d859-488a-b401-74677d1a47bd.config
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.2213747Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.2214585Z ##[group]Fetching the repository
+targeted	Run actions/checkout@v6	2026-10-04T03:28:57.2223469Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +c2ba494a72deed7efacb1e70ac1e587ae1867a87:refs/remotes/origin/ci/B-T12-116-671-before
+targeted	Run actions/checkout@v6	2026-10-04T03:28:58.4059283Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T03:28:58.4060859Z  * [new ref]         c2ba494a72deed7efacb1e70ac1e587ae1867a87 -> origin/ci/B-T12-116-671-before
+targeted	Run actions/checkout@v6	2026-10-04T03:28:58.4072229Z [command]/usr/bin/git branch --list --remote origin/ci/B-T12-116-671-before
+targeted	Run actions/checkout@v6	2026-10-04T03:28:58.4095928Z   origin/ci/B-T12-116-671-before
+targeted	Run actions/checkout@v6	2026-10-04T03:28:58.4106829Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-T12-116-671-before
+targeted	Run actions/checkout@v6	2026-10-04T03:28:58.4128667Z c2ba494a72deed7efacb1e70ac1e587ae1867a87
+targeted	Run actions/checkout@v6	2026-10-04T03:28:58.4138478Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T03:28:58.4138925Z ##[group]Determining the checkout info
+targeted	Run actions/checkout@v6	2026-10-04T03:28:58.4139373Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T03:28:58.4140935Z [command]/usr/bin/git sparse-checkout disable
+targeted	Run actions/checkout@v6	2026-10-04T03:28:58.4191949Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	Run actions/checkout@v6	2026-10-04T03:28:58.4217846Z ##[group]Checking out the ref
+targeted	Run actions/checkout@v6	2026-10-04T03:28:58.4222037Z [command]/usr/bin/git checkout --progress --force -B ci/B-T12-116-671-before refs/remotes/origin/ci/B-T12-116-671-before
+targeted	Run actions/checkout@v6	2026-10-04T03:28:58.6383427Z Switched to a new branch 'ci/B-T12-116-671-before'
+targeted	Run actions/checkout@v6	2026-10-04T03:28:58.6388548Z branch 'ci/B-T12-116-671-before' set up to track 'origin/ci/B-T12-116-671-before'.
+targeted	Run actions/checkout@v6	2026-10-04T03:28:58.6400072Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T03:28:58.6444555Z [command]/usr/bin/git log -1 --format=%H
+targeted	Run actions/checkout@v6	2026-10-04T03:28:58.6467744Z c2ba494a72deed7efacb1e70ac1e587ae1867a87
+targeted	Run actions/setup-node@v6	﻿2026-10-04T03:28:58.6714046Z ##[group]Run actions/setup-node@v6
+targeted	Run actions/setup-node@v6	2026-10-04T03:28:58.6714353Z with:
+targeted	Run actions/setup-node@v6	2026-10-04T03:28:58.6714547Z   node-version: 20
+targeted	Run actions/setup-node@v6	2026-10-04T03:28:58.6714754Z   cache: npm
+targeted	Run actions/setup-node@v6	2026-10-04T03:28:58.6714949Z   check-latest: false
+targeted	Run actions/setup-node@v6	2026-10-04T03:28:58.6717647Z   token: ***
+targeted	Run actions/setup-node@v6	2026-10-04T03:28:58.6717870Z   package-manager-cache: true
+targeted	Run actions/setup-node@v6	2026-10-04T03:28:58.6718112Z env:
+targeted	Run actions/setup-node@v6	2026-10-04T03:28:58.6718490Z   DATABASE_URL: ***localhost:5432/postgres
+targeted	Run actions/setup-node@v6	2026-10-04T03:28:58.6718930Z   DIRECT_URL: ***localhost:5432/postgres
+targeted	Run actions/setup-node@v6	2026-10-04T03:28:58.6719360Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+targeted	Run actions/setup-node@v6	2026-10-04T03:28:58.6719651Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T03:28:58.8119588Z Attempting to download 20...
+targeted	Run actions/setup-node@v6	2026-10-04T03:28:59.3511773Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+targeted	Run actions/setup-node@v6	2026-10-04T03:28:59.7040055Z Extracting ...
+targeted	Run actions/setup-node@v6	2026-10-04T03:28:59.7160807Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/fa69321a-43c3-4e1e-933b-9418cf37ef6c -f /home/runner/work/_temp/7ac4001e-dd1e-4e47-af96-13a950626efe
+targeted	Run actions/setup-node@v6	2026-10-04T03:29:00.7336565Z Adding to the cache ...
+targeted	Run actions/setup-node@v6	2026-10-04T03:29:02.5177857Z ##[group]Environment details
+targeted	Run actions/setup-node@v6	2026-10-04T03:29:02.7529359Z node: v20.20.2
+targeted	Run actions/setup-node@v6	2026-10-04T03:29:02.7529843Z npm: 10.8.2
+targeted	Run actions/setup-node@v6	2026-10-04T03:29:02.7530163Z yarn: 1.22.22
+targeted	Run actions/setup-node@v6	2026-10-04T03:29:02.7530856Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T03:29:02.7551802Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+targeted	Run actions/setup-node@v6	2026-10-04T03:29:02.8596505Z /home/runner/.npm
+targeted	Run actions/setup-node@v6	2026-10-04T03:29:02.9373135Z Cache hit for: node-cache-Linux-x64-npm-1c658f1a35f7b309848c416454e12a0f8c258736d5e30a9676088e8641c298ba
+targeted	Run actions/setup-node@v6	2026-10-04T03:29:03.3989002Z Received 86861520 of 86861520 (100.0%), 196.3 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-04T03:29:03.3990121Z Cache Size: ~83 MB (86861520 B)
+targeted	Run actions/setup-node@v6	2026-10-04T03:29:03.4047014Z [command]/usr/bin/tar -xf /home/runner/work/_temp/2a866890-de7b-439b-9c87-33f2ccce7a25/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+targeted	Run actions/setup-node@v6	2026-10-04T03:29:03.5750682Z Cache restored successfully
+targeted	Run actions/setup-node@v6	2026-10-04T03:29:03.5800373Z Cache restored from key: node-cache-Linux-x64-npm-1c658f1a35f7b309848c416454e12a0f8c258736d5e30a9676088e8641c298ba
+targeted	Run npm ci	﻿2026-10-04T03:29:03.5977727Z ##[group]Run npm ci
+targeted	Run npm ci	2026-10-04T03:29:03.5978032Z ^[[36;1mnpm ci^[[0m
+targeted	Run npm ci	2026-10-04T03:29:03.6237321Z shell: /usr/bin/bash -e {0}
+targeted	Run npm ci	2026-10-04T03:29:03.6237646Z env:
+targeted	Run npm ci	2026-10-04T03:29:03.6238158Z   DATABASE_URL: ***localhost:5432/postgres
+targeted	Run npm ci	2026-10-04T03:29:03.6238663Z   DIRECT_URL: ***localhost:5432/postgres
+targeted	Run npm ci	2026-10-04T03:29:03.6239200Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+targeted	Run npm ci	2026-10-04T03:29:03.6239775Z ##[endgroup]
+targeted	Run npm ci	2026-10-04T03:29:09.4188301Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	Run npm ci	2026-10-04T03:29:10.5248452Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+targeted	Run npm ci	2026-10-04T03:29:11.7209863Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T03:29:13.0179930Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T03:29:13.0382181Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T03:29:13.1026101Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T03:29:25.7995952Z 
+targeted	Run npm ci	2026-10-04T03:29:25.7996831Z > growth-project-backend@1.0.0 postinstall
+targeted	Run npm ci	2026-10-04T03:29:25.7997924Z > prisma generate
+targeted	Run npm ci	2026-10-04T03:29:25.7998304Z 
+targeted	Run npm ci	2026-10-04T03:29:26.7342973Z Prisma schema loaded from prisma/schema.prisma
+targeted	Run npm ci	2026-10-04T03:29:30.5715688Z ┌─────────────────────────────────────────────────────────┐
+targeted	Run npm ci	2026-10-04T03:29:30.5717152Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+targeted	Run npm ci	2026-10-04T03:29:30.5718325Z │                                                         │
+targeted	Run npm ci	2026-10-04T03:29:30.5719469Z │  This is a major update - please follow the guide at    │
+targeted	Run npm ci	2026-10-04T03:29:30.5720760Z │  https://pris.ly/d/major-version-upgrade                │
+targeted	Run npm ci	2026-10-04T03:29:30.5721913Z │                                                         │
+targeted	Run npm ci	2026-10-04T03:29:30.5722976Z │  Run the following to update                            │
+targeted	Run npm ci	2026-10-04T03:29:30.5723935Z │    npm i --save-dev prisma@latest                       │
+targeted	Run npm ci	2026-10-04T03:29:30.5724764Z │    npm i @prisma/client@latest                          │
+targeted	Run npm ci	2026-10-04T03:29:30.5725640Z └─────────────────────────────────────────────────────────┘
+targeted	Run npm ci	2026-10-04T03:29:30.5726041Z 
+targeted	Run npm ci	2026-10-04T03:29:30.5726694Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.10s
+targeted	Run npm ci	2026-10-04T03:29:30.5727239Z 
+targeted	Run npm ci	2026-10-04T03:29:30.5727834Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	Run npm ci	2026-10-04T03:29:30.5728416Z 
+targeted	Run npm ci	2026-10-04T03:29:30.5728989Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+targeted	Run npm ci	2026-10-04T03:29:30.5729547Z 
+targeted	Run npm ci	2026-10-04T03:29:30.6260695Z 
+targeted	Run npm ci	2026-10-04T03:29:30.6261536Z > growth-project-backend@1.0.0 prepare
+targeted	Run npm ci	2026-10-04T03:29:30.6262156Z > lefthook install
+targeted	Run npm ci	2026-10-04T03:29:30.6262310Z 
+targeted	Run npm ci	2026-10-04T03:29:30.6770080Z sync hooks: ✔️(pre-commit, commit-msg)
+targeted	Run npm ci	2026-10-04T03:29:30.6933331Z 
+targeted	Run npm ci	2026-10-04T03:29:30.6933972Z added 1117 packages, and audited 1118 packages in 27s
+targeted	Run npm ci	2026-10-04T03:29:30.6934472Z 
+targeted	Run npm ci	2026-10-04T03:29:30.6934653Z 202 packages are looking for funding
+targeted	Run npm ci	2026-10-04T03:29:30.6935325Z   run `npm fund` for details
+targeted	Run npm ci	2026-10-04T03:29:30.6971073Z 
+targeted	Run npm ci	2026-10-04T03:29:30.6971471Z 4 vulnerabilities (1 moderate, 3 high)
+targeted	Run npm ci	2026-10-04T03:29:30.6971879Z 
+targeted	Run npm ci	2026-10-04T03:29:30.6972287Z To address issues that do not require attention, run:
+targeted	Run npm ci	2026-10-04T03:29:30.6973235Z   npm audit fix
+targeted	Run npm ci	2026-10-04T03:29:30.6973467Z 
+targeted	Run npm ci	2026-10-04T03:29:30.6974224Z To address all issues (including breaking changes), run:
+targeted	Run npm ci	2026-10-04T03:29:30.6974890Z   npm audit fix --force
+targeted	Run npm ci	2026-10-04T03:29:30.6975172Z 
+targeted	Run npm ci	2026-10-04T03:29:30.6975407Z Run `npm audit` for details.
+targeted	Run npx prisma generate	﻿2026-10-04T03:29:30.7584255Z ##[group]Run npx prisma generate
+targeted	Run npx prisma generate	2026-10-04T03:29:30.7584605Z ^[[36;1mnpx prisma generate^[[0m
+targeted	Run npx prisma generate	2026-10-04T03:29:30.7648687Z shell: /usr/bin/bash -e {0}
+targeted	Run npx prisma generate	2026-10-04T03:29:30.7648949Z env:
+targeted	Run npx prisma generate	2026-10-04T03:29:30.7649404Z   DATABASE_URL: ***localhost:5432/postgres
+targeted	Run npx prisma generate	2026-10-04T03:29:30.7649832Z   DIRECT_URL: ***localhost:5432/postgres
+targeted	Run npx prisma generate	2026-10-04T03:29:30.7650271Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+targeted	Run npx prisma generate	2026-10-04T03:29:30.7650573Z ##[endgroup]
+targeted	Run npx prisma generate	2026-10-04T03:29:32.0397202Z Prisma schema loaded from prisma/schema.prisma
+targeted	Run npx prisma generate	2026-10-04T03:29:36.0080698Z 
+targeted	Run npx prisma generate	2026-10-04T03:29:36.0081822Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.08s
+targeted	Run npx prisma generate	2026-10-04T03:29:36.0082282Z 
+targeted	Run npx prisma generate	2026-10-04T03:29:36.0083123Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	Run npx prisma generate	2026-10-04T03:29:36.0083630Z 
+targeted	Run npx prisma generate	2026-10-04T03:29:36.0084259Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+targeted	Run npx prisma generate	2026-10-04T03:29:36.0084743Z 
+targeted	Targeted jest	﻿2026-10-04T03:29:36.1213997Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T03:29:36.1214353Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T03:29:36.1214748Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T03:29:36.1215260Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T03:29:36.1215628Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T03:29:36.1215931Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T03:29:36.1278905Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T03:29:36.1279270Z env:
+targeted	Targeted jest	2026-10-04T03:29:36.1279737Z   DATABASE_URL: ***localhost:5432/postgres
+targeted	Targeted jest	2026-10-04T03:29:36.1280171Z   DIRECT_URL: ***localhost:5432/postgres
+targeted	Targeted jest	2026-10-04T03:29:36.1280612Z   MWB3_TEST_DATABASE_URL: ***localhost:5432/postgres
+targeted	Targeted jest	2026-10-04T03:29:36.1280961Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T03:29:36.1281301Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T03:29:36.1281605Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T03:29:36.1376902Z specs: test/b-trials-t1-fix-round-6.spec.ts test/b-trials-usage-concurrency.live.spec.ts test/b-trials-one-trial-rule.spec.ts
+targeted	Targeted jest	2026-10-04T03:29:46.3665604Z ^[[31m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-2 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.3684891Z ^[[31m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-old started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.3692828Z ^[[31m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-b started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.3800750Z PASS test/b-trials-one-trial-rule.spec.ts (9.203 s)
+targeted	Targeted jest	2026-10-04T03:29:46.3803345Z ^[[32m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.3805596Z ^[[32m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.3806943Z ^[[32m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.3808184Z ^[[32m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.3809780Z ^[[32m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.3811002Z ^[[32m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.3812207Z ^[[32m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.3813724Z ^[[32m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.3814977Z ^[[32m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.3816193Z ^[[32m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.3817409Z ^[[32m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.3818918Z ^[[32m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.3820158Z ^[[32m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.3821367Z ^[[32m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.3822569Z ^[[32m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.3824071Z ^[[32m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.3825454Z ^[[32m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.3826774Z ^[[32m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.6222605Z ^[[31m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.6389659Z ^[[31m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.6393037Z ^[[31m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.6417162Z ^[[31m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.6435457Z ^[[31m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.6458880Z ^[[31m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-2 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.6495577Z ^[[31m[Nest] 3539  - ^[[39m10/04/2026, 3:29:46 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-2 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.6980134Z FAIL test/b-trials-t1-fix-round-6.spec.ts
+targeted	Targeted jest	2026-10-04T03:29:46.6982468Z   ● B-671-1 — concurrent starts of one purchase are never a second trial › two concurrent starts of one unreserved purchase both own the trial (one started row)
+targeted	Targeted jest	2026-10-04T03:29:46.6984016Z 
+targeted	Targeted jest	2026-10-04T03:29:46.6984530Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T03:29:46.6985036Z 
+targeted	Targeted jest	2026-10-04T03:29:46.6985241Z     - Expected  - 1
+targeted	Targeted jest	2026-10-04T03:29:46.6985745Z     + Received  + 1
+targeted	Targeted jest	2026-10-04T03:29:46.6986243Z 
+targeted	Targeted jest	2026-10-04T03:29:46.6986480Z       Array [
+targeted	Targeted jest	2026-10-04T03:29:46.6986994Z         "owned",
+targeted	Targeted jest	2026-10-04T03:29:46.6987546Z     -   "owned",
+targeted	Targeted jest	2026-10-04T03:29:46.6987904Z     +   "conflict",
+targeted	Targeted jest	2026-10-04T03:29:46.6988287Z       ]
+targeted	Targeted jest	2026-10-04T03:29:46.6988476Z 
+targeted	Targeted jest	2026-10-04T03:29:46.6988892Z     ^[[0m ^[[90m 50 |^[[39m       service^[[33m.^[[39mmarkStarted(db^[[33m,^[[39m start)^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.6989828Z      ^[[90m 51 |^[[39m     ])^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.6990704Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 52 |^[[39m     expect(outcomes)^[[33m.^[[39mtoEqual([^[[32m'owned'^[[39m^[[33m,^[[39m ^[[32m'owned'^[[39m])^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.6991498Z      ^[[90m    |^[[39m                      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.6992261Z      ^[[90m 53 |^[[39m     expect(table^[[33m.^[[39mrows)^[[33m.^[[39mtoHaveLength(^[[35m1^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.6993935Z      ^[[90m 54 |^[[39m     expect(table^[[33m.^[[39mrows[^[[35m0^[[39m])^[[33m.^[[39mtoMatchObject({ purchase_id^[[33m:^[[39m ^[[32m'pur-1'^[[39m^[[33m,^[[39m status^[[33m:^[[39m ^[[32m'started'^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.6994909Z      ^[[90m 55 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T03:29:46.6995147Z 
+targeted	Targeted jest	2026-10-04T03:29:46.6995483Z       at Object.<anonymous> (test/b-trials-t1-fix-round-6.spec.ts:52:22)
+targeted	Targeted jest	2026-10-04T03:29:46.6995878Z 
+targeted	Targeted jest	2026-10-04T03:29:46.6996558Z   ● B-671-1 — concurrent starts of one purchase are never a second trial › three concurrent starts of one unreserved purchase all own the trial
+targeted	Targeted jest	2026-10-04T03:29:46.6997159Z 
+targeted	Targeted jest	2026-10-04T03:29:46.6997422Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T03:29:46.6997722Z 
+targeted	Targeted jest	2026-10-04T03:29:46.6997846Z     - Expected  - 2
+targeted	Targeted jest	2026-10-04T03:29:46.6998232Z     + Received  + 2
+targeted	Targeted jest	2026-10-04T03:29:46.6998383Z 
+targeted	Targeted jest	2026-10-04T03:29:46.6998560Z       Array [
+targeted	Targeted jest	2026-10-04T03:29:46.6998828Z         "owned",
+targeted	Targeted jest	2026-10-04T03:29:46.6999212Z     -   "owned",
+targeted	Targeted jest	2026-10-04T03:29:46.6999493Z     -   "owned",
+targeted	Targeted jest	2026-10-04T03:29:46.6999817Z     +   "conflict",
+targeted	Targeted jest	2026-10-04T03:29:46.7000171Z     +   "conflict",
+targeted	Targeted jest	2026-10-04T03:29:46.7000482Z       ]
+targeted	Targeted jest	2026-10-04T03:29:46.7000665Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7001050Z     ^[[0m ^[[90m 62 |^[[39m       service^[[33m.^[[39mmarkStarted(db^[[33m,^[[39m start)^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7001628Z      ^[[90m 63 |^[[39m     ])^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7002568Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 64 |^[[39m     expect(outcomes)^[[33m.^[[39mtoEqual([^[[32m'owned'^[[39m^[[33m,^[[39m ^[[32m'owned'^[[39m^[[33m,^[[39m ^[[32m'owned'^[[39m])^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7003768Z      ^[[90m    |^[[39m                      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7004550Z      ^[[90m 65 |^[[39m     expect(table^[[33m.^[[39mrows)^[[33m.^[[39mtoHaveLength(^[[35m1^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7005129Z      ^[[90m 66 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7005489Z      ^[[90m 67 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T03:29:46.7005831Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7006174Z       at Object.<anonymous> (test/b-trials-t1-fix-round-6.spec.ts:64:22)
+targeted	Targeted jest	2026-10-04T03:29:46.7006562Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7007247Z   ● B-671-1 — concurrent starts of one purchase are never a second trial › a lost takeover of a released row by the same purchase still owns the trial
+targeted	Targeted jest	2026-10-04T03:29:46.7008065Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7008326Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T03:29:46.7008622Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7008745Z     - Expected  - 1
+targeted	Targeted jest	2026-10-04T03:29:46.7009170Z     + Received  + 1
+targeted	Targeted jest	2026-10-04T03:29:46.7009327Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7009474Z       Array [
+targeted	Targeted jest	2026-10-04T03:29:46.7009745Z         "owned",
+targeted	Targeted jest	2026-10-04T03:29:46.7010128Z     -   "owned",
+targeted	Targeted jest	2026-10-04T03:29:46.7010417Z     +   "conflict",
+targeted	Targeted jest	2026-10-04T03:29:46.7010780Z       ]
+targeted	Targeted jest	2026-10-04T03:29:46.7010949Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7011358Z     ^[[0m ^[[90m 86 |^[[39m       service^[[33m.^[[39mmarkStarted(db^[[33m,^[[39m start)^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7011950Z      ^[[90m 87 |^[[39m     ])^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7012930Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 88 |^[[39m     expect(outcomes)^[[33m.^[[39mtoEqual([^[[32m'owned'^[[39m^[[33m,^[[39m ^[[32m'owned'^[[39m])^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7013704Z      ^[[90m    |^[[39m                      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7014490Z      ^[[90m 89 |^[[39m     expect(table^[[33m.^[[39mrows)^[[33m.^[[39mtoHaveLength(^[[35m1^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7015424Z      ^[[90m 90 |^[[39m     expect(table^[[33m.^[[39mrows[^[[35m0^[[39m])^[[33m.^[[39mtoMatchObject({
+targeted	Targeted jest	2026-10-04T03:29:46.7016308Z      ^[[90m 91 |^[[39m       purchase_id^[[33m:^[[39m ^[[32m'pur-1'^[[39m^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T03:29:46.7016652Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7016921Z       at Object.<anonymous> (test/b-trials-t1-fix-round-6.spec.ts:88:22)
+targeted	Targeted jest	2026-10-04T03:29:46.7017271Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7018168Z   ● B-671-1 — concurrent starts of one purchase are never a second trial › a reservation for the same purchase that commits between the read and the insert is started, not refused
+targeted	Targeted jest	2026-10-04T03:29:46.7018888Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7019138Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T03:29:46.7019449Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7019592Z     Expected: "owned"
+targeted	Targeted jest	2026-10-04T03:29:46.7019998Z     Received: "conflict"
+targeted	Targeted jest	2026-10-04T03:29:46.7020205Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7020414Z     ^[[0m ^[[90m 119 |^[[39m       }^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7020952Z      ^[[90m 120 |^[[39m     }^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7022006Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 121 |^[[39m     expect(^[[36mawait^[[39m service^[[33m.^[[39mmarkStarted(stub^[[33m<^[[39m^[[33mDb^[[39m^[[33m>^[[39m(racing)^[[33m,^[[39m start))^[[33m.^[[39mtoBe(^[[32m'owned'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7023278Z      ^[[90m     |^[[39m                                                                ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7024041Z      ^[[90m 122 |^[[39m     expect(table^[[33m.^[[39mrows)^[[33m.^[[39mtoHaveLength(^[[35m1^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7025224Z      ^[[90m 123 |^[[39m     expect(table^[[33m.^[[39mrows[^[[35m0^[[39m])^[[33m.^[[39mtoMatchObject({ purchase_id^[[33m:^[[39m ^[[32m'pur-1'^[[39m^[[33m,^[[39m status^[[33m:^[[39m ^[[32m'started'^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7026811Z      ^[[90m 124 |^[[39m     expect((table^[[33m.^[[39mrows[^[[35m0^[[39m]^[[33m.^[[39mtrial_ends_at ^[[36mas^[[39m ^[[33mDate^[[39m)^[[33m.^[[39mtoISOString())^[[33m.^[[39mtoBe(^[[33mEND^[[39m^[[33m.^[[39mtoISOString())^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T03:29:46.7027559Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7027832Z       at Object.<anonymous> (test/b-trials-t1-fix-round-6.spec.ts:121:64)
+targeted	Targeted jest	2026-10-04T03:29:46.7028178Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7028861Z   ● C-671-1 — a trial that never started never reads "ended" › a checkout reservation (pending, trial days, no trial end) reads none
+targeted	Targeted jest	2026-10-04T03:29:46.7029413Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7029593Z     expect(received).toMatchObject(expected)
+targeted	Targeted jest	2026-10-04T03:29:46.7029896Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7030081Z     - Expected  - 1
+targeted	Targeted jest	2026-10-04T03:29:46.7030410Z     + Received  + 1
+targeted	Targeted jest	2026-10-04T03:29:46.7030597Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7030710Z       Object {
+targeted	Targeted jest	2026-10-04T03:29:46.7031085Z         "ends_at": null,
+targeted	Targeted jest	2026-10-04T03:29:46.7031443Z     -   "state": "none",
+targeted	Targeted jest	2026-10-04T03:29:46.7031787Z     +   "state": "ended",
+targeted	Targeted jest	2026-10-04T03:29:46.7032162Z         "trial_days": 7,
+targeted	Targeted jest	2026-10-04T03:29:46.7032825Z         "will_charge": false,
+targeted	Targeted jest	2026-10-04T03:29:46.7033421Z       }
+targeted	Targeted jest	2026-10-04T03:29:46.7033882Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7034113Z     ^[[0m ^[[90m 172 |^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7035000Z      ^[[90m 173 |^[[39m   it(^[[32m'a checkout reservation (pending, trial days, no trial end) reads none'^[[39m^[[33m,^[[39m () ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T03:29:46.7036065Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 174 |^[[39m     expect(purchaseTrialView(row^[[33m,^[[39m ^[[33mNOW^[[39m))^[[33m.^[[39mtoMatchObject({
+targeted	Targeted jest	2026-10-04T03:29:46.7036907Z      ^[[90m     |^[[39m                                         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7037555Z      ^[[90m 175 |^[[39m       state^[[33m:^[[39m ^[[32m'none'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7038142Z      ^[[90m 176 |^[[39m       trial_days^[[33m:^[[39m ^[[35m7^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7038823Z      ^[[90m 177 |^[[39m       ends_at^[[33m:^[[39m ^[[36mnull^[[39m^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T03:29:46.7039152Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7039423Z       at Object.<anonymous> (test/b-trials-t1-fix-round-6.spec.ts:174:41)
+targeted	Targeted jest	2026-10-04T03:29:46.7039766Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7040386Z   ● C-671-1 — a trial that never started never reads "ended" › an expired or failed attempt that never started reads none
+targeted	Targeted jest	2026-10-04T03:29:46.7040896Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7041150Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T03:29:46.7041772Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7041973Z     Expected: "none"
+targeted	Targeted jest	2026-10-04T03:29:46.7042308Z     Received: "ended"
+targeted	Targeted jest	2026-10-04T03:29:46.7042507Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7043363Z     ^[[0m ^[[90m 182 |^[[39m   it(^[[32m'an expired or failed attempt that never started reads none'^[[39m^[[33m,^[[39m () ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T03:29:46.7044810Z      ^[[90m 183 |^[[39m     ^[[36mfor^[[39m (^[[36mconst^[[39m status ^[[36mof^[[39m [^[[32m'incomplete_expired'^[[39m^[[33m,^[[39m ^[[32m'incomplete'^[[39m^[[33m,^[[39m ^[[32m'failed'^[[39m^[[33m,^[[39m ^[[32m'canceled'^[[39m]) {
+targeted	Targeted jest	2026-10-04T03:29:46.7046293Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 184 |^[[39m       expect(purchaseTrialView({ ^[[33m...^[[39mrow^[[33m,^[[39m status }^[[33m,^[[39m ^[[33mNOW^[[39m)^[[33m.^[[39mstate)^[[33m.^[[39mtoBe(^[[32m'none'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7047381Z      ^[[90m     |^[[39m                                                                ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7047873Z      ^[[90m 185 |^[[39m     }
+targeted	Targeted jest	2026-10-04T03:29:46.7048246Z      ^[[90m 186 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7048777Z      ^[[90m 187 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T03:29:46.7048950Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7049256Z       at Object.<anonymous> (test/b-trials-t1-fix-round-6.spec.ts:184:64)
+targeted	Targeted jest	2026-10-04T03:29:46.7049636Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7050141Z   ● C-671-3 — trial amounts use the currency minor unit › zero-decimal currencies are not divided by 100
+targeted	Targeted jest	2026-10-04T03:29:46.7050564Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7050808Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T03:29:46.7051094Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7051318Z     Expected: "¥4,900"
+targeted	Targeted jest	2026-10-04T03:29:46.7051715Z     Received: "¥49"
+targeted	Targeted jest	2026-10-04T03:29:46.7051870Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7052409Z     ^[[0m ^[[90m 198 |^[[39m describe(^[[32m'C-671-3 — trial amounts use the currency minor unit'^[[39m^[[33m,^[[39m () ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T03:29:46.7053630Z      ^[[90m 199 |^[[39m   it(^[[32m'zero-decimal currencies are not divided by 100'^[[39m^[[33m,^[[39m () ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T03:29:46.7054698Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 200 |^[[39m     expect(formatTrialAmount(^[[35m4900^[[39m^[[33m,^[[39m ^[[32m'jpy'^[[39m))^[[33m.^[[39mtoBe(^[[32m'¥4,900'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7055624Z      ^[[90m     |^[[39m                                            ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7056514Z      ^[[90m 201 |^[[39m     expect(formatTrialAmount(^[[35m4900^[[39m^[[33m,^[[39m ^[[32m'krw'^[[39m))^[[33m.^[[39mtoBe(^[[32m'₩4,900'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7057225Z      ^[[90m 202 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7057660Z      ^[[90m 203 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T03:29:46.7057829Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7058150Z       at Object.<anonymous> (test/b-trials-t1-fix-round-6.spec.ts:200:44)
+targeted	Targeted jest	2026-10-04T03:29:46.7058568Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7058962Z   ● C-672-5 — the charge line names tax when tax may apply › tax may apply: "plus any tax"
+targeted	Targeted jest	2026-10-04T03:29:46.7059522Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7059777Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T03:29:46.7060031Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7060566Z     Expected: "Your free trial ends on Oct 12. Your card will be charged $49 plus any tax then. Cancel anytime before."
+targeted	Targeted jest	2026-10-04T03:29:46.7061487Z     Received: "Your free trial ends on Oct 12. Your card will be charged $49 then. Cancel anytime before."
+targeted	Targeted jest	2026-10-04T03:29:46.7061894Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7062117Z     ^[[0m ^[[90m 226 |^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7062858Z      ^[[90m 227 |^[[39m   it(^[[32m'tax may apply: "plus any tax"'^[[39m^[[33m,^[[39m () ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T03:29:46.7063892Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 228 |^[[39m     expect(trialEndingCopy(copyInput({ taxMayApply^[[33m:^[[39m ^[[36mtrue^[[39m }))^[[33m.^[[39mbody)^[[33m.^[[39mtoBe(
+targeted	Targeted jest	2026-10-04T03:29:46.7064867Z      ^[[90m     |^[[39m                                                                    ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7065882Z      ^[[90m 229 |^[[39m       ^[[32m'Your free trial ends on Oct 12. Your card will be charged $49 plus any tax then. Cancel anytime before.'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7066669Z      ^[[90m 230 |^[[39m     )^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:29:46.7067090Z      ^[[90m 231 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T03:29:46.7067464Z 
+targeted	Targeted jest	2026-10-04T03:29:46.7067814Z       at Object.<anonymous> (test/b-trials-t1-fix-round-6.spec.ts:228:68)
+targeted	Targeted jest	2026-10-04T03:29:46.7068152Z 
+targeted	Targeted jest	2026-10-04T03:29:50.3393922Z ^[[31m[Nest] 3539  - ^[[39m10/04/2026, 3:29:50 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase b671-live-pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T03:29:50.3876040Z ^[[31m[Nest] 3539  - ^[[39m10/04/2026, 3:29:50 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase b671-live-pur-2 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T03:29:50.4191286Z ^[[31m[Nest] 3539  - ^[[39m10/04/2026, 3:29:50 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase b671-live-pur-3b started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T03:29:50.4717513Z FAIL test/b-trials-usage-concurrency.live.spec.ts
+targeted	Targeted jest	2026-10-04T03:29:50.4720560Z   ● B-671-1 live: one trial per client per coach across transactions (Postgres) › B-671-1: two starts of one unreserved purchase in separate transactions both own the trial
+targeted	Targeted jest	2026-10-04T03:29:50.4722075Z 
+targeted	Targeted jest	2026-10-04T03:29:50.4723064Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T03:29:50.4724073Z 
+targeted	Targeted jest	2026-10-04T03:29:50.4724571Z     - Expected  - 1
+targeted	Targeted jest	2026-10-04T03:29:50.4725302Z     + Received  + 1
+targeted	Targeted jest	2026-10-04T03:29:50.4725899Z 
+targeted	Targeted jest	2026-10-04T03:29:50.4726408Z       Array [
+targeted	Targeted jest	2026-10-04T03:29:50.4727136Z         "owned",
+targeted	Targeted jest	2026-10-04T03:29:50.4727963Z     -   "owned",
+targeted	Targeted jest	2026-10-04T03:29:50.4728854Z     +   "conflict",
+targeted	Targeted jest	2026-10-04T03:29:50.4729637Z       ]
+targeted	Targeted jest	2026-10-04T03:29:50.4730285Z 
+targeted	Targeted jest	2026-10-04T03:29:50.4731401Z     ^[[0m ^[[90m 142 |^[[39m       (tx) ^[[33m=>^[[39m svc^[[33m.^[[39mmarkStarted(tx^[[33m,^[[39m args)^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T03:29:50.4732973Z      ^[[90m 143 |^[[39m     )^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:29:50.4734727Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 144 |^[[39m     expect([a^[[33m,^[[39m b])^[[33m.^[[39mtoEqual([^[[32m'owned'^[[39m^[[33m,^[[39m ^[[32m'owned'^[[39m])^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:29:50.4736283Z      ^[[90m     |^[[39m                    ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T03:29:50.4737916Z      ^[[90m 145 |^[[39m     ^[[36mconst^[[39m rows ^[[33m=^[[39m ^[[36mawait^[[39m prisma^[[33m.^[[39mpackageTrialUsage^[[33m.^[[39mfindMany({
+targeted	Targeted jest	2026-10-04T03:29:50.4740309Z      ^[[90m 146 |^[[39m       where^[[33m:^[[39m { client_user_id^[[33m:^[[39m ^[[33mCLIENTS^[[39m[^[[35m0^[[39m]^[[33m,^[[39m coach_user_id^[[33m:^[[39m ^[[33mCOACH^[[39m }^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T03:29:50.4742009Z      ^[[90m 147 |^[[39m     })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T03:29:50.4743315Z 
+targeted	Targeted jest	2026-10-04T03:29:50.4744166Z       at Object.<anonymous> (test/b-trials-usage-concurrency.live.spec.ts:144:20)
+targeted	Targeted jest	2026-10-04T03:29:50.4745464Z 
+targeted	Targeted jest	2026-10-04T03:29:50.4747125Z   ● B-671-1 live: one trial per client per coach across transactions (Postgres) › B-671-1 takeover: two starts of one purchase over a released row both own the trial
+targeted	Targeted jest	2026-10-04T03:29:50.4748740Z 
+targeted	Targeted jest	2026-10-04T03:29:50.4749390Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T03:29:50.4750105Z 
+targeted	Targeted jest	2026-10-04T03:29:50.4750604Z     - Expected  - 1
+targeted	Targeted jest	2026-10-04T03:29:50.4751503Z     + Received  + 1
+targeted	Targeted jest	2026-10-04T03:29:50.4752052Z 
+targeted	Targeted jest	2026-10-04T03:29:50.4752466Z       Array [
+targeted	Targeted jest	2026-10-04T03:29:50.4753465Z         "owned",
+targeted	Targeted jest	2026-10-04T03:29:50.4754046Z     -   "owned",
+targeted	Targeted jest	2026-10-04T03:29:50.4754616Z     +   "conflict",
+targeted	Targeted jest	2026-10-04T03:29:50.4755243Z       ]
+targeted	Targeted jest	2026-10-04T03:29:50.4755646Z 
+targeted	Targeted jest	2026-10-04T03:29:50.4756605Z     ^[[0m ^[[90m 168 |^[[39m       (tx) ^[[33m=>^[[39m svc^[[33m.^[[39mmarkStarted(tx^[[33m,^[[39m args)^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T03:29:50.4757807Z      ^[[90m 169 |^[[39m     )^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:29:50.4759354Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 170 |^[[39m     expect([a^[[33m,^[[39m b])^[[33m.^[[39mtoEqual([^[[32m'owned'^[[39m^[[33m,^[[39m ^[[32m'owned'^[[39m])^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:29:50.4760804Z      ^[[90m     |^[[39m                    ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T03:29:50.4763005Z      ^[[90m 171 |^[[39m     ^[[36mconst^[[39m rows ^[[33m=^[[39m ^[[36mawait^[[39m prisma^[[33m.^[[39mpackageTrialUsage^[[33m.^[[39mfindMany({
+targeted	Targeted jest	2026-10-04T03:29:50.4765074Z      ^[[90m 172 |^[[39m       where^[[33m:^[[39m { client_user_id^[[33m:^[[39m ^[[33mCLIENTS^[[39m[^[[35m1^[[39m]^[[33m,^[[39m coach_user_id^[[33m:^[[39m ^[[33mCOACH^[[39m }^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T03:29:50.4765998Z      ^[[90m 173 |^[[39m     })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T03:29:50.4766328Z 
+targeted	Targeted jest	2026-10-04T03:29:50.4766750Z       at Object.<anonymous> (test/b-trials-usage-concurrency.live.spec.ts:170:20)
+targeted	Targeted jest	2026-10-04T03:29:50.4767215Z 
+targeted	Targeted jest	2026-10-04T03:29:50.4767537Z Test Suites: 2 failed, 1 passed, 3 total
+targeted	Targeted jest	2026-10-04T03:29:50.4768021Z Tests:       10 failed, 28 passed, 38 total
+targeted	Targeted jest	2026-10-04T03:29:50.4768461Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T03:29:50.4768816Z Time:        13.532 s
+targeted	Targeted jest	2026-10-04T03:29:50.4769728Z Ran all test suites matching test/b-trials-t1-fix-round-6.spec.ts|test/b-trials-usage-concurrency.live.spec.ts|test/b-trials-one-trial-rule.spec.ts.
+targeted	Targeted jest	2026-10-04T03:29:50.7477573Z ##[error]Process completed with exit code 1.
+targeted	Post Run actions/checkout@v6	﻿2026-10-04T03:29:50.7596598Z Post job cleanup.
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.8421742Z [command]/usr/bin/git version
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.8459577Z git version 2.55.0
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.8497998Z Temporarily overriding HOME='/home/runner/work/_temp/ec0fa405-7bac-4bee-889b-915852c3efb8' before making global git config changes
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.8499042Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.8503933Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.8544681Z Removing SSH command configuration
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.8546057Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.8573698Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.8794969Z Removing HTTP extra header
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.8800181Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.8832484Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.9055789Z Removing includeIf entries pointing to credentials config files
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.9056466Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.9083688Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.9085736Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.9086938Z includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.9087792Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.9093455Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.9116030Z /home/runner/work/_temp/git-credentials-91aaeb41-d859-488a-b401-74677d1a47bd.config
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.9128248Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-91aaeb41-d859-488a-b401-74677d1a47bd.config
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.9162139Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.9182010Z /home/runner/work/_temp/git-credentials-91aaeb41-d859-488a-b401-74677d1a47bd.config
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.9191516Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-91aaeb41-d859-488a-b401-74677d1a47bd.config
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.9223455Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.9243766Z /github/runner_temp/git-credentials-91aaeb41-d859-488a-b401-74677d1a47bd.config
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.9253996Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-91aaeb41-d859-488a-b401-74677d1a47bd.config
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.9286107Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.9306767Z /github/runner_temp/git-credentials-91aaeb41-d859-488a-b401-74677d1a47bd.config
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.9322329Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-91aaeb41-d859-488a-b401-74677d1a47bd.config
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.9347005Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Post Run actions/checkout@v6	2026-10-04T03:29:50.9563556Z Removing credentials config '/home/runner/work/_temp/git-credentials-91aaeb41-d859-488a-b401-74677d1a47bd.config'
+targeted	Stop containers	﻿2026-10-04T03:29:50.9674956Z Print service container logs: 0f64fff444e94e3ea7b064703f21ae49_postgres15_c6f2af
+targeted	Stop containers	2026-10-04T03:29:50.9679302Z ##[command]/usr/bin/docker logs --details 4319af34ded9120fe6bb7e7cf91e7bbf0ad7a23f3afea494246f9aaf95f674ae
+targeted	Stop containers	2026-10-04T03:29:50.9832005Z  initdb: warning: enabling "trust" authentication for local connections
+targeted	Stop containers	2026-10-04T03:29:50.9834307Z  initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+targeted	Stop containers	2026-10-04T03:29:50.9836073Z  The files belonging to this database system will be owned by user "postgres".
+targeted	Stop containers	2026-10-04T03:29:50.9837180Z  This user must also own the server process.
+targeted	Stop containers	2026-10-04T03:29:50.9838058Z  
+targeted	Stop containers	2026-10-04T03:29:50.9838396Z  The database cluster will be initialized with locale "en_US.utf8".
+targeted	Stop containers	2026-10-04T03:29:50.9839337Z  The default database encoding has accordingly been set to "UTF8".
+targeted	Stop containers	2026-10-04T03:29:50.9840459Z  The default text search configuration will be set to "english".
+targeted	Stop containers	2026-10-04T03:29:50.9840944Z  
+targeted	Stop containers	2026-10-04T03:29:50.9841798Z  Data page checksums are disabled.
+targeted	Stop containers	2026-10-04T03:29:50.9842072Z  
+targeted	Stop containers	2026-10-04T03:29:50.9842845Z  fixing permissions on existing directory /var/lib/postgresql/data ... ok
+targeted	Stop containers	2026-10-04T03:29:50.9845563Z  creating subdirectories ... ok
+targeted	Stop containers	2026-10-04T03:29:50.9846174Z  selecting dynamic shared memory implementation ... posix
+targeted	Stop containers	2026-10-04T03:29:50.9847102Z  selecting default max_connections ... 100
+targeted	Stop containers	2026-10-04T03:29:50.9847822Z  selecting default shared_buffers ... 128MB
+targeted	Stop containers	2026-10-04T03:29:50.9848847Z  selecting default time zone ... Etc/UTC
+targeted	Stop containers	2026-10-04T03:29:50.9849168Z  creating configuration files ... ok
+targeted	Stop containers	2026-10-04T03:29:50.9849465Z  running bootstrap script ... ok
+targeted	Stop containers	2026-10-04T03:29:50.9849931Z  performing post-bootstrap initialization ... ok
+targeted	Stop containers	2026-10-04T03:29:50.9850255Z  syncing data to disk ... ok
+targeted	Stop containers	2026-10-04T03:29:50.9850494Z  
+targeted	Stop containers	2026-10-04T03:29:50.9850666Z  
+targeted	Stop containers	2026-10-04T03:29:50.9851054Z  Success. You can now start the database server using:
+targeted	Stop containers	2026-10-04T03:29:50.9851363Z  
+targeted	Stop containers	2026-10-04T03:29:50.9851615Z      pg_ctl -D /var/lib/postgresql/data -l logfile start
+targeted	Stop containers	2026-10-04T03:29:50.9851920Z  
+targeted	Stop containers	2026-10-04T03:29:50.9852864Z  waiting for server to start....2026-10-04 03:28:50.049 UTC [48] LOG:  starting PostgreSQL 15.19 (Debian 15.19-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+targeted	Stop containers	2026-10-04T03:29:50.9854751Z  2026-10-04 03:28:50.050 UTC [48] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+targeted	Stop containers	2026-10-04T03:29:50.9856096Z  2026-10-04 03:28:50.053 UTC [51] LOG:  database system was shut down at 2026-10-04 03:28:49 UTC
+targeted	Stop containers	2026-10-04T03:29:50.9857309Z  2026-10-04 03:28:50.056 UTC [48] LOG:  database system is ready to accept connections
+targeted	Stop containers	2026-10-04T03:29:50.9859414Z   done
+targeted	Stop containers	2026-10-04T03:29:50.9859645Z  server started
+targeted	Stop containers	2026-10-04T03:29:50.9860028Z  
+targeted	Stop containers	2026-10-04T03:29:50.9860880Z  /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+targeted	Stop containers	2026-10-04T03:29:50.9861828Z  
+targeted	Stop containers	2026-10-04T03:29:50.9862301Z  2026-10-04 03:28:50.175 UTC [48] LOG:  received fast shutdown request
+targeted	Stop containers	2026-10-04T03:29:50.9863707Z  waiting for server to shut down....2026-10-04 03:28:50.175 UTC [48] LOG:  aborting any active transactions
+targeted	Stop containers	2026-10-04T03:29:50.9865244Z  2026-10-04 03:28:50.179 UTC [48] LOG:  background worker "logical replication launcher" (PID 54) exited with exit code 1
+targeted	Stop containers	2026-10-04T03:29:50.9866520Z  2026-10-04 03:28:50.179 UTC [49] LOG:  shutting down
+targeted	Stop containers	2026-10-04T03:29:50.9867104Z  2026-10-04 03:28:50.179 UTC [49] LOG:  checkpoint starting: shutdown immediate
+targeted	Stop containers	2026-10-04T03:29:50.9868340Z  2026-10-04 03:28:50.182 UTC [49] LOG:  checkpoint complete: wrote 3 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.004 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB
+targeted	Stop containers	2026-10-04T03:29:50.9869665Z  2026-10-04 03:28:50.300 UTC [1] LOG:  starting PostgreSQL 15.19 (Debian 15.19-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+targeted	Stop containers	2026-10-04T03:29:50.9870420Z  2026-10-04 03:28:50.300 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+targeted	Stop containers	2026-10-04T03:29:50.9871164Z  2026-10-04 03:28:50.300 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+targeted	Stop containers	2026-10-04T03:29:50.9871848Z  2026-10-04 03:28:50.301 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+targeted	Stop containers	2026-10-04T03:29:50.9872436Z  2026-10-04 03:28:50.304 UTC [62] LOG:  database system was shut down at 2026-10-04 03:28:50 UTC
+targeted	Stop containers	2026-10-04T03:29:50.9873521Z  2026-10-04 03:28:50.308 UTC [1] LOG:  database system is ready to accept connections
+targeted	Stop containers	2026-10-04T03:29:50.9874241Z  2026-10-04 03:28:50.188 UTC [48] LOG:  database system is shut down
+targeted	Stop containers	2026-10-04T03:29:50.9874589Z   done
+targeted	Stop containers	2026-10-04T03:29:50.9874778Z  server stopped
+targeted	Stop containers	2026-10-04T03:29:50.9875074Z  
+targeted	Stop containers	2026-10-04T03:29:50.9875412Z  PostgreSQL init process complete; ready for start up.
+targeted	Stop containers	2026-10-04T03:29:50.9875725Z  
+targeted	Stop containers	2026-10-04T03:29:50.9882171Z Stop and remove container: 0f64fff444e94e3ea7b064703f21ae49_postgres15_c6f2af
+targeted	Stop containers	2026-10-04T03:29:50.9887553Z ##[command]/usr/bin/docker rm --force 4319af34ded9120fe6bb7e7cf91e7bbf0ad7a23f3afea494246f9aaf95f674ae
+targeted	Stop containers	2026-10-04T03:29:51.1245630Z 4319af34ded9120fe6bb7e7cf91e7bbf0ad7a23f3afea494246f9aaf95f674ae
+targeted	Stop containers	2026-10-04T03:29:51.1265942Z Print service container logs: 254fdfe35c1d48bb9b506632b48eb565_redis7alpine_51d2c3
+targeted	Stop containers	2026-10-04T03:29:51.1267400Z ##[command]/usr/bin/docker logs --details 30bbd54e76fdc40112dd45e8bf7f5d75a8e432cfb39d8c12b1324cee291ab4c1
+targeted	Stop containers	2026-10-04T03:29:51.1384732Z  1:C 04 Oct 2026 03:28:50.540 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+targeted	Stop containers	2026-10-04T03:29:51.1387189Z  1:C 04 Oct 2026 03:28:50.540 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+targeted	Stop containers	2026-10-04T03:29:51.1393878Z  1:C 04 Oct 2026 03:28:50.541 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+targeted	Stop containers	2026-10-04T03:29:51.1395260Z  1:C 04 Oct 2026 03:28:50.541 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+targeted	Stop containers	2026-10-04T03:29:51.1396009Z  1:M 04 Oct 2026 03:28:50.541 * monotonic clock: POSIX clock_gettime
+targeted	Stop containers	2026-10-04T03:29:51.1396420Z  1:M 04 Oct 2026 03:28:50.541 * Running mode=standalone, port=6379.
+targeted	Stop containers	2026-10-04T03:29:51.1396818Z  1:M 04 Oct 2026 03:28:50.542 * Server initialized
+targeted	Stop containers	2026-10-04T03:29:51.1397174Z  1:M 04 Oct 2026 03:28:50.542 * Ready to accept connections tcp
+targeted	Stop containers	2026-10-04T03:29:51.1399151Z Stop and remove container: 254fdfe35c1d48bb9b506632b48eb565_redis7alpine_51d2c3
+targeted	Stop containers	2026-10-04T03:29:51.1399962Z ##[command]/usr/bin/docker rm --force 30bbd54e76fdc40112dd45e8bf7f5d75a8e432cfb39d8c12b1324cee291ab4c1
+targeted	Stop containers	2026-10-04T03:29:51.2527981Z 30bbd54e76fdc40112dd45e8bf7f5d75a8e432cfb39d8c12b1324cee291ab4c1
+targeted	Stop containers	2026-10-04T03:29:51.2573109Z Remove container network: github_network_c23ed539511f4ecf9ce9f77c905a0a51
+targeted	Stop containers	2026-10-04T03:29:51.2577574Z ##[command]/usr/bin/docker network rm github_network_c23ed539511f4ecf9ce9f77c905a0a51
+targeted	Stop containers	2026-10-04T03:29:51.3606253Z github_network_c23ed539511f4ecf9ce9f77c905a0a51
+targeted	Complete job	﻿2026-10-04T03:29:51.3676758Z Cleaning up orphan processes

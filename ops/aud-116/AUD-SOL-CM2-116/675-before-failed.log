@@ -1,0 +1,46 @@
+targeted	Targeted jest	﻿2026-10-04T02:44:31.1724077Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T02:44:31.1724460Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T02:44:31.1724875Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T02:44:31.1725396Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T02:44:31.1725785Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T02:44:31.1726092Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T02:44:31.1790676Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T02:44:31.1791139Z env:
+targeted	Targeted jest	2026-10-04T02:44:31.1791440Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T02:44:31.1791892Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T02:44:31.1792304Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T02:44:31.1891233Z specs: test/aud-sol-cm2-package-postgres.spec.ts --testNamePattern=same-key HTTP creates
+targeted	Targeted jest	2026-10-04T02:44:41.0411468Z FAIL test/aud-sol-cm2-package-postgres.spec.ts
+targeted	Targeted jest	2026-10-04T02:44:41.0413560Z   ● Test suite failed to run
+targeted	Targeted jest	2026-10-04T02:44:41.0414304Z 
+targeted	Targeted jest	2026-10-04T02:44:41.0415862Z     ^[[96mtest/aud-sol-cm2-package-postgres.spec.ts^[[0m:^[[93m189^[[0m:^[[93m20^[[0m - ^[[91merror^[[0m^[[90m TS2571: ^[[0mObject is of type 'unknown'.
+targeted	Targeted jest	2026-10-04T02:44:41.0417137Z 
+targeted	Targeted jest	2026-10-04T02:44:41.0418162Z     ^[[7m189^[[0m     const second = create(new PackagesService(prisma, scope), 'audit-key-concurrent-commit')
+targeted	Targeted jest	2026-10-04T02:44:41.0419886Z     ^[[7m   ^[[0m ^[[91m                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^[[0m
+targeted	Targeted jest	2026-10-04T02:44:41.0421805Z     ^[[96mtest/aud-sol-cm2-package-postgres.spec.ts^[[0m:^[[93m206^[[0m:^[[93m19^[[0m - ^[[91merror^[[0m^[[90m TS2571: ^[[0mObject is of type 'unknown'.
+targeted	Targeted jest	2026-10-04T02:44:41.0423826Z 
+targeted	Targeted jest	2026-10-04T02:44:41.0424676Z     ^[[7m206^[[0m     const first = create(held.service, 'audit-key-concurrent-rollback')
+targeted	Targeted jest	2026-10-04T02:44:41.0426008Z     ^[[7m   ^[[0m ^[[91m                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^[[0m
+targeted	Targeted jest	2026-10-04T02:44:41.0427780Z     ^[[96mtest/aud-sol-cm2-package-postgres.spec.ts^[[0m:^[[93m213^[[0m:^[[93m12^[[0m - ^[[91merror^[[0m^[[90m TS18046: ^[[0m'result' is of type 'unknown'.
+targeted	Targeted jest	2026-10-04T02:44:41.0428923Z 
+targeted	Targeted jest	2026-10-04T02:44:41.0429515Z     ^[[7m213^[[0m     expect(result.replayed).toBe(false);
+targeted	Targeted jest	2026-10-04T02:44:41.0430413Z     ^[[7m   ^[[0m ^[[91m           ~~~~~~^[[0m
+targeted	Targeted jest	2026-10-04T02:44:41.0431972Z     ^[[96mtest/aud-sol-cm2-package-postgres.spec.ts^[[0m:^[[93m231^[[0m:^[[93m12^[[0m - ^[[91merror^[[0m^[[90m TS18046: ^[[0m'b' is of type 'unknown'.
+targeted	Targeted jest	2026-10-04T02:44:41.0433341Z 
+targeted	Targeted jest	2026-10-04T02:44:41.0434147Z     ^[[7m231^[[0m     expect(b.pkg.id).toBe(a.pkg.id);
+targeted	Targeted jest	2026-10-04T02:44:41.0435094Z     ^[[7m   ^[[0m ^[[91m           ~^[[0m
+targeted	Targeted jest	2026-10-04T02:44:41.0436613Z     ^[[96mtest/aud-sol-cm2-package-postgres.spec.ts^[[0m:^[[93m231^[[0m:^[[93m27^[[0m - ^[[91merror^[[0m^[[90m TS18046: ^[[0m'a' is of type 'unknown'.
+targeted	Targeted jest	2026-10-04T02:44:41.0437698Z 
+targeted	Targeted jest	2026-10-04T02:44:41.0438286Z     ^[[7m231^[[0m     expect(b.pkg.id).toBe(a.pkg.id);
+targeted	Targeted jest	2026-10-04T02:44:41.0439199Z     ^[[7m   ^[[0m ^[[91m                          ~^[[0m
+targeted	Targeted jest	2026-10-04T02:44:41.0440916Z     ^[[96mtest/aud-sol-cm2-package-postgres.spec.ts^[[0m:^[[93m232^[[0m:^[[93m12^[[0m - ^[[91merror^[[0m^[[90m TS18046: ^[[0m'b' is of type 'unknown'.
+targeted	Targeted jest	2026-10-04T02:44:41.0441995Z 
+targeted	Targeted jest	2026-10-04T02:44:41.0442566Z     ^[[7m232^[[0m     expect(b.replayed).toBe(true);
+targeted	Targeted jest	2026-10-04T02:44:41.0443729Z     ^[[7m   ^[[0m ^[[91m           ~^[[0m
+targeted	Targeted jest	2026-10-04T02:44:41.0444251Z 
+targeted	Targeted jest	2026-10-04T02:44:41.0453123Z Test Suites: 1 failed, 1 total
+targeted	Targeted jest	2026-10-04T02:44:41.0454018Z Tests:       0 total
+targeted	Targeted jest	2026-10-04T02:44:41.0454691Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T02:44:41.0455324Z Time:        9.035 s
+targeted	Targeted jest	2026-10-04T02:44:41.0456770Z Ran all test suites matching test/aud-sol-cm2-package-postgres.spec.ts with tests matching "same-key HTTP creates".
+targeted	Targeted jest	2026-10-04T02:44:41.2199339Z ##[error]Process completed with exit code 1.

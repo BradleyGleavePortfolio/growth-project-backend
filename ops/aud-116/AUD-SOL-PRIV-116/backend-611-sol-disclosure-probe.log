@@ -1,0 +1,40 @@
+targeted	Targeted jest	﻿2026-10-04T02:34:44.1478292Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T02:34:44.1478658Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T02:34:44.1479063Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T02:34:44.1479582Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T02:34:44.1479948Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T02:34:44.1480588Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T02:34:44.1549769Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T02:34:44.1550132Z env:
+targeted	Targeted jest	2026-10-04T02:34:44.1550482Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T02:34:44.1550865Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T02:34:44.1551188Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T02:34:44.1652819Z specs: test/audit-611-sol-sentry-disclosure.spec.ts
+targeted	Targeted jest	2026-10-04T02:34:53.6081969Z FAIL test/audit-611-sol-sentry-disclosure.spec.ts (8.411 s)
+targeted	Targeted jest	2026-10-04T02:34:53.6082947Z   #611 diagnostic disclosure matches the id-only Sentry boundary
+targeted	Targeted jest	2026-10-04T02:34:53.6085312Z     ✕ does not tell customers crash/performance reports include their email (5 ms)
+targeted	Targeted jest	2026-10-04T02:34:53.6086190Z     ✓ the procedure of record describes opaque id only, never email
+targeted	Targeted jest	2026-10-04T02:34:53.6086484Z 
+targeted	Targeted jest	2026-10-04T02:34:53.6087103Z   ● #611 diagnostic disclosure matches the id-only Sentry boundary › does not tell customers crash/performance reports include their email
+targeted	Targeted jest	2026-10-04T02:34:53.6087966Z 
+targeted	Targeted jest	2026-10-04T02:34:53.6088125Z     expect(received).not.toMatch(expected)
+targeted	Targeted jest	2026-10-04T02:34:53.6088333Z 
+targeted	Targeted jest	2026-10-04T02:34:53.6088485Z     Expected pattern: not /email address/i
+targeted	Targeted jest	2026-10-04T02:34:53.6089908Z     Received string:      "Device, usage and diagnostic data — IP address, browser or device type, app version, request times and security logs; product analytics events and screen views linked to your account ID; and crash and performance reports that include your account ID and email address."
+targeted	Targeted jest	2026-10-04T02:34:53.6091154Z 
+targeted	Targeted jest	2026-10-04T02:34:53.6091494Z     ^[[0m ^[[90m 13 |^[[39m     expect(diagnosticItem)^[[33m.^[[39mtoBeDefined()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:53.6092201Z      ^[[90m 14 |^[[39m     expect(diagnosticItem)^[[33m.^[[39mtoContain(^[[32m'account ID'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:53.6093076Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 15 |^[[39m     expect(diagnosticItem)^[[33m.^[[39mnot^[[33m.^[[39mtoMatch(^[[35m/email address/i^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:53.6093771Z      ^[[90m    |^[[39m                                ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:34:53.6094341Z      ^[[90m 16 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:34:53.6094776Z      ^[[90m 17 |^[[39m
+targeted	Targeted jest	2026-10-04T02:34:53.6095756Z      ^[[90m 18 |^[[39m   it(^[[32m'the procedure of record describes opaque id only, never email'^[[39m^[[33m,^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T02:34:53.6096412Z 
+targeted	Targeted jest	2026-10-04T02:34:53.6096874Z       at Object.<anonymous> (test/audit-611-sol-sentry-disclosure.spec.ts:15:32)
+targeted	Targeted jest	2026-10-04T02:34:53.6097375Z 
+targeted	Targeted jest	2026-10-04T02:34:53.6114038Z Test Suites: 1 failed, 1 total
+targeted	Targeted jest	2026-10-04T02:34:53.6114593Z Tests:       1 failed, 1 passed, 2 total
+targeted	Targeted jest	2026-10-04T02:34:53.6115043Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T02:34:53.6115301Z Time:        8.647 s
+targeted	Targeted jest	2026-10-04T02:34:53.6115728Z Ran all test suites matching test/audit-611-sol-sentry-disclosure.spec.ts.
+targeted	Targeted jest	2026-10-04T02:34:53.7844203Z ##[error]Process completed with exit code 1.

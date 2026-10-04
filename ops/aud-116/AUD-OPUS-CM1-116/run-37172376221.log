@@ -1,0 +1,51 @@
+targeted	Targeted jest	﻿2026-10-04T02:53:22.4505960Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T02:53:22.4506329Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T02:53:22.4506740Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T02:53:22.4507266Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T02:53:22.4507651Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T02:53:22.4507966Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T02:53:22.4571424Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T02:53:22.4571812Z env:
+targeted	Targeted jest	2026-10-04T02:53:22.4572060Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T02:53:22.4572451Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T02:53:22.4572812Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T02:53:22.4668032Z specs: test/audit-cm1-676-window-cents.spec.ts
+targeted	Targeted jest	2026-10-04T02:53:35.3522821Z FAIL test/audit-cm1-676-window-cents.spec.ts (11.841 s)
+targeted	Targeted jest	2026-10-04T02:53:35.3529803Z   AUD-OPUS-CM1-116 — Money reports each refund as the writer posted it
+targeted	Targeted jest	2026-10-04T02:53:35.3532184Z     ✕ two unequal partial refunds: the first window keeps the cents posted for the first refund (28 ms)
+targeted	Targeted jest	2026-10-04T02:53:35.3561271Z 
+targeted	Targeted jest	2026-10-04T02:53:35.3592451Z   ● AUD-OPUS-CM1-116 — Money reports each refund as the writer posted it › two unequal partial refunds: the first window keeps the cents posted for the first refund
+targeted	Targeted jest	2026-10-04T02:53:35.3593420Z 
+targeted	Targeted jest	2026-10-04T02:53:35.3600617Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T02:53:35.3601982Z 
+targeted	Targeted jest	2026-10-04T02:53:35.3602207Z     - Expected  - 3
+targeted	Targeted jest	2026-10-04T02:53:35.3602616Z     + Received  + 3
+targeted	Targeted jest	2026-10-04T02:53:35.3602847Z 
+targeted	Targeted jest	2026-10-04T02:53:35.3602994Z       Object {
+targeted	Targeted jest	2026-10-04T02:53:35.3603417Z     -   "first_window_after": 97,
+targeted	Targeted jest	2026-10-04T02:53:35.3603925Z     +   "first_window_after": 96,
+targeted	Targeted jest	2026-10-04T02:53:35.3604423Z         "first_window_before": 97,
+targeted	Targeted jest	2026-10-04T02:53:35.3604954Z     -   "first_window_csv_unchanged": true,
+targeted	Targeted jest	2026-10-04T02:53:35.3605796Z     +   "first_window_csv_unchanged": false,
+targeted	Targeted jest	2026-10-04T02:53:35.3606326Z         "posted_first": 97,
+targeted	Targeted jest	2026-10-04T02:53:35.3606763Z         "posted_second": 98,
+targeted	Targeted jest	2026-10-04T02:53:35.3607256Z     -   "second_window_after": 98,
+targeted	Targeted jest	2026-10-04T02:53:35.3607766Z     +   "second_window_after": 99,
+targeted	Targeted jest	2026-10-04T02:53:35.3608215Z       }
+targeted	Targeted jest	2026-10-04T02:53:35.3608405Z 
+targeted	Targeted jest	2026-10-04T02:53:35.3609055Z     ^[[0m ^[[90m 177 |^[[39m       second_window_after^[[33m:^[[39m secondAfter^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T02:53:35.3610411Z      ^[[90m 178 |^[[39m       first_window_csv_unchanged^[[33m:^[[39m csvAfter ^[[33m===^[[39m csvBefore^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T02:53:35.3611848Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 179 |^[[39m     })^[[33m.^[[39mtoEqual({
+targeted	Targeted jest	2026-10-04T02:53:35.3612650Z      ^[[90m     |^[[39m        ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:53:35.3613528Z      ^[[90m 180 |^[[39m       posted_first^[[33m:^[[39m postedFirst^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T02:53:35.3614574Z      ^[[90m 181 |^[[39m       first_window_before^[[33m:^[[39m postedFirst^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T02:53:35.3615729Z      ^[[90m 182 |^[[39m       first_window_after^[[33m:^[[39m postedFirst^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T02:53:35.3616288Z 
+targeted	Targeted jest	2026-10-04T02:53:35.3616784Z       at Object.<anonymous> (test/audit-cm1-676-window-cents.spec.ts:179:8)
+targeted	Targeted jest	2026-10-04T02:53:35.3617342Z 
+targeted	Targeted jest	2026-10-04T02:53:35.3617599Z Test Suites: 1 failed, 1 total
+targeted	Targeted jest	2026-10-04T02:53:35.3618141Z Tests:       1 failed, 1 total
+targeted	Targeted jest	2026-10-04T02:53:35.3618610Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T02:53:35.3619041Z Time:        12.09 s
+targeted	Targeted jest	2026-10-04T02:53:35.3619788Z Ran all test suites matching test/audit-cm1-676-window-cents.spec.ts.
+targeted	Targeted jest	2026-10-04T02:53:35.5488140Z ##[error]Process completed with exit code 1.

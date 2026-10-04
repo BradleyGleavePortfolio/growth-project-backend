@@ -1,0 +1,31 @@
+    }
+
+    if (status === 'trialing' && !entitled) {
+      // B-TRIALS-2 — no card on the subscription right now. Before the trial
+      // started that means no access (card up front). After it started
+      // (the card was saved, then removed) the client keeps the trial they
+      // were promised until its end; Stripe cancels at the trial end
+      // (missing_payment_method=cancel), so nothing is ever charged. Same
+      // rule as B-RECUR's purchase-aware subscriptionGrantsAccess (#654).
+      const started = await this.trialUsage.hasStarted(db, purchase.id);
+      return { data, conflict: false, entitled: started };
+    }
+    if (status === 'trialing' && entitled) {
+      const outcome = await this.trialUsage.markStarted(db, {
+        purchaseId: purchase.id,
+        clientUserId: purchase.client_user_id,
+        coachUserId: purchase.coach_user_id,
+        packageId: purchase.package_id,
+        trialDays: (data.trial_days as number | undefined) ?? purchase.trial_days ?? 0,
+        trialEndsAt,
+      });
+      if (outcome === 'conflict') {
+        if (this.trialConflicts && sub.id) {
+          await this.trialConflicts.owe(db, { purchaseId: purchase.id, subscriptionId: sub.id });
+        }
+        return { data, conflict: true, entitled: false };
+      }
+      // B-656-3 — a trial that starts inside the warning window gets its
+      // notice now (its trial_will_end event may have come before the card).
+      const noticeId = this.trialNotices
+        ? await this.trialNotices.recordIfDue(db, {

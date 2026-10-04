@@ -1,0 +1,704 @@
+﻿2026-10-04T02:52:37.7081404Z Current runner version: '2.337.0'
+2026-10-04T02:52:37.7115930Z ##[group]Runner Image Provisioner
+2026-10-04T02:52:37.7117503Z Hosted Compute Agent
+2026-10-04T02:52:37.7118478Z Version: 20260901.588
+2026-10-04T02:52:37.7119454Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-04T02:52:37.7121082Z Build Date: 2026-09-01T19:56:44Z
+2026-10-04T02:52:37.7122275Z Worker ID: {0fc01037-4c5a-4143-a8fd-33c407462881}
+2026-10-04T02:52:37.7123531Z Azure Region: eastus2
+2026-10-04T02:52:37.7124575Z ##[endgroup]
+2026-10-04T02:52:37.7127263Z ##[group]Operating System
+2026-10-04T02:52:37.7128410Z Ubuntu
+2026-10-04T02:52:37.7129234Z 24.04.5
+2026-10-04T02:52:37.7130470Z LTS
+2026-10-04T02:52:37.7131443Z ##[endgroup]
+2026-10-04T02:52:37.7132414Z ##[group]Runner Image
+2026-10-04T02:52:37.7133447Z Image: ubuntu-24.04
+2026-10-04T02:52:37.7134437Z Version: 20260927.320.1
+2026-10-04T02:52:37.7136591Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-04T02:52:37.7139311Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-04T02:52:37.7141369Z ##[endgroup]
+2026-10-04T02:52:37.7143442Z ##[group]GITHUB_TOKEN Permissions
+2026-10-04T02:52:37.7146305Z Contents: read
+2026-10-04T02:52:37.7147430Z Metadata: read
+2026-10-04T02:52:37.7148405Z Packages: read
+2026-10-04T02:52:37.7149335Z ##[endgroup]
+2026-10-04T02:52:37.7152761Z Secret source: Actions
+2026-10-04T02:52:37.7154195Z Cache mode: write
+2026-10-04T02:52:37.7155766Z Prepare workflow directory
+2026-10-04T02:52:37.7783949Z Prepare all required actions
+2026-10-04T02:52:37.7856152Z Getting action download info
+2026-10-04T02:52:37.9941280Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-04T02:52:38.1099826Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-04T02:52:38.3413335Z Complete job name: targeted
+2026-10-04T02:52:38.3929623Z ##[group]Checking docker version
+2026-10-04T02:52:38.3943103Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-04T02:52:38.4762871Z '1.48'
+2026-10-04T02:52:38.4773913Z Docker daemon API version: '1.48'
+2026-10-04T02:52:38.4774718Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-04T02:52:38.4933328Z '1.48'
+2026-10-04T02:52:38.4946507Z Docker client API version: '1.48'
+2026-10-04T02:52:38.4952822Z ##[endgroup]
+2026-10-04T02:52:38.4956543Z ##[group]Clean up resources from previous jobs
+2026-10-04T02:52:38.4961997Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=145a1a"
+2026-10-04T02:52:38.5105617Z ##[command]/usr/bin/docker network prune --force --filter "label=145a1a"
+2026-10-04T02:52:38.5227060Z ##[endgroup]
+2026-10-04T02:52:38.5227594Z ##[group]Create local container network
+2026-10-04T02:52:38.5237832Z ##[command]/usr/bin/docker network create --label 145a1a github_network_bc95138f1c704faba7e7639a81908ec9
+2026-10-04T02:52:38.5737362Z 2f5537460efb2d154683d615b7c152b3a3342c4c44ba0dd8834649325bb364e8
+2026-10-04T02:52:38.5757222Z ##[endgroup]
+2026-10-04T02:52:38.5782182Z ##[group]Starting redis service container
+2026-10-04T02:52:38.5803522Z ##[command]/usr/bin/docker pull redis:7-alpine
+2026-10-04T02:52:38.8496843Z 7-alpine: Pulling from library/redis
+2026-10-04T02:52:38.9310977Z 16333ee0c00f: Pulling fs layer
+2026-10-04T02:52:38.9312105Z 83234986c742: Pulling fs layer
+2026-10-04T02:52:38.9312729Z 7eb50503c2b0: Pulling fs layer
+2026-10-04T02:52:38.9313530Z 1522f9c6f453: Pulling fs layer
+2026-10-04T02:52:38.9314113Z 9928009b15c8: Pulling fs layer
+2026-10-04T02:52:38.9314664Z 4f4fb700ef54: Pulling fs layer
+2026-10-04T02:52:38.9315182Z 4eb14bae0e1d: Pulling fs layer
+2026-10-04T02:52:38.9315684Z 1522f9c6f453: Waiting
+2026-10-04T02:52:38.9316137Z 9928009b15c8: Waiting
+2026-10-04T02:52:38.9316585Z 4f4fb700ef54: Waiting
+2026-10-04T02:52:38.9317032Z 4eb14bae0e1d: Waiting
+2026-10-04T02:52:39.0731275Z 83234986c742: Verifying Checksum
+2026-10-04T02:52:39.0732436Z 83234986c742: Download complete
+2026-10-04T02:52:39.0818519Z 7eb50503c2b0: Verifying Checksum
+2026-10-04T02:52:39.0819927Z 7eb50503c2b0: Download complete
+2026-10-04T02:52:39.1226477Z 16333ee0c00f: Download complete
+2026-10-04T02:52:39.1321227Z 9928009b15c8: Verifying Checksum
+2026-10-04T02:52:39.1322827Z 9928009b15c8: Download complete
+2026-10-04T02:52:39.1736369Z 4f4fb700ef54: Verifying Checksum
+2026-10-04T02:52:39.1737779Z 4f4fb700ef54: Download complete
+2026-10-04T02:52:39.1825877Z 4eb14bae0e1d: Verifying Checksum
+2026-10-04T02:52:39.1827298Z 4eb14bae0e1d: Download complete
+2026-10-04T02:52:39.2011538Z 1522f9c6f453: Verifying Checksum
+2026-10-04T02:52:39.2012589Z 1522f9c6f453: Download complete
+2026-10-04T02:52:39.2365409Z 16333ee0c00f: Pull complete
+2026-10-04T02:52:39.2617149Z 83234986c742: Pull complete
+2026-10-04T02:52:39.4027305Z 7eb50503c2b0: Pull complete
+2026-10-04T02:52:39.5884633Z 1522f9c6f453: Pull complete
+2026-10-04T02:52:39.5979544Z 9928009b15c8: Pull complete
+2026-10-04T02:52:39.6054849Z 4f4fb700ef54: Pull complete
+2026-10-04T02:52:39.6157883Z 4eb14bae0e1d: Pull complete
+2026-10-04T02:52:39.6192713Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+2026-10-04T02:52:39.6208558Z Status: Downloaded newer image for redis:7-alpine
+2026-10-04T02:52:39.6221293Z docker.io/library/redis:7-alpine
+2026-10-04T02:52:39.6275801Z ##[command]/usr/bin/docker create --name 7b6f67dcebae4d758011b877ffa400c7_redis7alpine_0e59c4 --label 145a1a --network github_network_bc95138f1c704faba7e7639a81908ec9 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+2026-10-04T02:52:39.6525024Z 43abd83359fcbf013a908b02803002b8335f8818d25c165ba469fb990e4d4a6f
+2026-10-04T02:52:39.6547017Z ##[command]/usr/bin/docker start 43abd83359fcbf013a908b02803002b8335f8818d25c165ba469fb990e4d4a6f
+2026-10-04T02:52:39.8602761Z 43abd83359fcbf013a908b02803002b8335f8818d25c165ba469fb990e4d4a6f
+2026-10-04T02:52:39.8616364Z ##[command]/usr/bin/docker ps --all --filter id=43abd83359fcbf013a908b02803002b8335f8818d25c165ba469fb990e4d4a6f --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-04T02:52:39.8743365Z 43abd83359fcbf013a908b02803002b8335f8818d25c165ba469fb990e4d4a6f Up Less than a second (health: starting)
+2026-10-04T02:52:39.8762067Z ##[command]/usr/bin/docker port 43abd83359fcbf013a908b02803002b8335f8818d25c165ba469fb990e4d4a6f
+2026-10-04T02:52:39.8881848Z 6379/tcp -> 0.0.0.0:6379
+2026-10-04T02:52:39.8882722Z 6379/tcp -> [::]:6379
+2026-10-04T02:52:39.8924970Z ##[endgroup]
+2026-10-04T02:52:39.8933252Z ##[group]Waiting for all services to be ready
+2026-10-04T02:52:39.8946298Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 43abd83359fcbf013a908b02803002b8335f8818d25c165ba469fb990e4d4a6f
+2026-10-04T02:52:39.9059865Z starting
+2026-10-04T02:52:39.9080943Z redis service is starting, waiting 2 seconds before checking again.
+2026-10-04T02:52:41.9088324Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 43abd83359fcbf013a908b02803002b8335f8818d25c165ba469fb990e4d4a6f
+2026-10-04T02:52:41.9213461Z starting
+2026-10-04T02:52:41.9227000Z redis service is starting, waiting 4 seconds before checking again.
+2026-10-04T02:52:45.9911826Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 43abd83359fcbf013a908b02803002b8335f8818d25c165ba469fb990e4d4a6f
+2026-10-04T02:52:46.0036739Z healthy
+2026-10-04T02:52:46.0052733Z redis service is healthy.
+2026-10-04T02:52:46.0053167Z ##[endgroup]
+2026-10-04T02:52:46.0336861Z ##[group]Run actions/checkout@v6
+2026-10-04T02:52:46.0337461Z with:
+2026-10-04T02:52:46.0337765Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T02:52:46.0340392Z   token: ***
+2026-10-04T02:52:46.0340619Z   ssh-strict: true
+2026-10-04T02:52:46.0340824Z   ssh-user: git
+2026-10-04T02:52:46.0341037Z   persist-credentials: true
+2026-10-04T02:52:46.0341505Z   clean: true
+2026-10-04T02:52:46.0341717Z   sparse-checkout-cone-mode: true
+2026-10-04T02:52:46.0341965Z   fetch-depth: 1
+2026-10-04T02:52:46.0342159Z   fetch-tags: false
+2026-10-04T02:52:46.0342369Z   show-progress: true
+2026-10-04T02:52:46.0342579Z   lfs: false
+2026-10-04T02:52:46.0342763Z   submodules: false
+2026-10-04T02:52:46.0342968Z   set-safe-directory: true
+2026-10-04T02:52:46.0343212Z   allow-unsafe-pr-checkout: false
+2026-10-04T02:52:46.0343748Z ##[endgroup]
+2026-10-04T02:52:46.1374011Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T02:52:46.1375688Z ##[group]Getting Git version info
+2026-10-04T02:52:46.1376336Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T02:52:46.1377303Z [command]/usr/bin/git version
+2026-10-04T02:52:46.1384169Z git version 2.55.0
+2026-10-04T02:52:46.1408460Z ##[endgroup]
+2026-10-04T02:52:46.1423450Z Temporarily overriding HOME='/home/runner/work/_temp/8c12e166-fd20-4e9c-a77e-1f1a27bdf078' before making global git config changes
+2026-10-04T02:52:46.1424337Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T02:52:46.1431049Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T02:52:46.1478465Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T02:52:46.1483054Z ##[group]Determining repository object format
+2026-10-04T02:52:46.1485357Z ##[endgroup]
+2026-10-04T02:52:46.1489821Z ##[group]Initializing the repository
+2026-10-04T02:52:46.1490661Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T02:52:46.1591002Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-04T02:52:46.1591894Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-04T02:52:46.1592481Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-04T02:52:46.1592935Z hint: call:
+2026-10-04T02:52:46.1593143Z hint:
+2026-10-04T02:52:46.1593466Z hint: 	git config --global init.defaultBranch <name>
+2026-10-04T02:52:46.1593819Z hint:
+2026-10-04T02:52:46.1594143Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-04T02:52:46.1594704Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-04T02:52:46.1595129Z hint:
+2026-10-04T02:52:46.1595361Z hint: 	git branch -m <name>
+2026-10-04T02:52:46.1595610Z hint:
+2026-10-04T02:52:46.1595966Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-04T02:52:46.1600959Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-04T02:52:46.1609577Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T02:52:46.1656366Z ##[endgroup]
+2026-10-04T02:52:46.1656813Z ##[group]Disabling automatic garbage collection
+2026-10-04T02:52:46.1660717Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-04T02:52:46.1689230Z ##[endgroup]
+2026-10-04T02:52:46.1689598Z ##[group]Setting up auth
+2026-10-04T02:52:46.1691269Z Removing SSH command configuration
+2026-10-04T02:52:46.1697273Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T02:52:46.1727419Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T02:52:46.2074534Z Removing HTTP extra header
+2026-10-04T02:52:46.2079950Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T02:52:46.2109521Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T02:52:46.2323637Z Removing includeIf entries pointing to credentials config files
+2026-10-04T02:52:46.2329916Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T02:52:46.2360987Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T02:52:46.2584436Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-e36c90a6-f180-4579-af80-20d4733f6499.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-04T02:52:46.2621551Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-e36c90a6-f180-4579-af80-20d4733f6499.config
+2026-10-04T02:52:46.2650698Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-e36c90a6-f180-4579-af80-20d4733f6499.config
+2026-10-04T02:52:46.2682515Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-e36c90a6-f180-4579-af80-20d4733f6499.config
+2026-10-04T02:52:46.2722035Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-e36c90a6-f180-4579-af80-20d4733f6499.config
+2026-10-04T02:52:46.2749685Z ##[endgroup]
+2026-10-04T02:52:46.2750522Z ##[group]Fetching the repository
+2026-10-04T02:52:46.2758323Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +d3e7560f26f9b9f03a9e8691364684be1ab98ff6:refs/remotes/origin/ci/B-RECUR-116-680-before
+2026-10-04T02:52:47.5272623Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T02:52:47.5273928Z  * [new ref]         d3e7560f26f9b9f03a9e8691364684be1ab98ff6 -> origin/ci/B-RECUR-116-680-before
+2026-10-04T02:52:47.5284610Z [command]/usr/bin/git branch --list --remote origin/ci/B-RECUR-116-680-before
+2026-10-04T02:52:47.5310406Z   origin/ci/B-RECUR-116-680-before
+2026-10-04T02:52:47.5319409Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-RECUR-116-680-before
+2026-10-04T02:52:47.5340970Z d3e7560f26f9b9f03a9e8691364684be1ab98ff6
+2026-10-04T02:52:47.5345888Z ##[endgroup]
+2026-10-04T02:52:47.5346627Z ##[group]Determining the checkout info
+2026-10-04T02:52:47.5347643Z ##[endgroup]
+2026-10-04T02:52:47.5352426Z [command]/usr/bin/git sparse-checkout disable
+2026-10-04T02:52:47.5401286Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-04T02:52:47.5428709Z ##[group]Checking out the ref
+2026-10-04T02:52:47.5433133Z [command]/usr/bin/git checkout --progress --force -B ci/B-RECUR-116-680-before refs/remotes/origin/ci/B-RECUR-116-680-before
+2026-10-04T02:52:47.7611477Z Switched to a new branch 'ci/B-RECUR-116-680-before'
+2026-10-04T02:52:47.7615941Z branch 'ci/B-RECUR-116-680-before' set up to track 'origin/ci/B-RECUR-116-680-before'.
+2026-10-04T02:52:47.7626453Z ##[endgroup]
+2026-10-04T02:52:47.7669955Z [command]/usr/bin/git log -1 --format=%H
+2026-10-04T02:52:47.7696404Z d3e7560f26f9b9f03a9e8691364684be1ab98ff6
+2026-10-04T02:52:47.7951972Z ##[group]Run actions/setup-node@v6
+2026-10-04T02:52:47.7952271Z with:
+2026-10-04T02:52:47.7952467Z   node-version: 20
+2026-10-04T02:52:47.7952673Z   cache: npm
+2026-10-04T02:52:47.7952869Z   check-latest: false
+2026-10-04T02:52:47.7955115Z   token: ***
+2026-10-04T02:52:47.7955332Z   package-manager-cache: true
+2026-10-04T02:52:47.7955576Z ##[endgroup]
+2026-10-04T02:52:47.9334650Z Attempting to download 20...
+2026-10-04T02:52:48.4330290Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-04T02:52:48.7339200Z Extracting ...
+2026-10-04T02:52:48.7462330Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/b5e0f72a-628e-4a22-ad5d-e7491e56338a -f /home/runner/work/_temp/47d9d6f4-5768-4e11-92fa-2926561e3cfe
+2026-10-04T02:52:49.7738338Z Adding to the cache ...
+2026-10-04T02:52:51.5369733Z ##[group]Environment details
+2026-10-04T02:52:51.7607199Z node: v20.20.2
+2026-10-04T02:52:51.7607793Z npm: 10.8.2
+2026-10-04T02:52:51.7608229Z yarn: 1.22.22
+2026-10-04T02:52:51.7609026Z ##[endgroup]
+2026-10-04T02:52:51.7629930Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+2026-10-04T02:52:51.8646506Z /home/runner/.npm
+2026-10-04T02:52:51.9458283Z Cache hit for: node-cache-Linux-x64-npm-1c658f1a35f7b309848c416454e12a0f8c258736d5e30a9676088e8641c298ba
+2026-10-04T02:52:52.4148896Z Received 86861520 of 86861520 (100.0%), 193.1 MBs/sec
+2026-10-04T02:52:52.4149666Z Cache Size: ~83 MB (86861520 B)
+2026-10-04T02:52:52.4182095Z [command]/usr/bin/tar -xf /home/runner/work/_temp/50da8465-6a36-4e58-942f-3356b1adda3d/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+2026-10-04T02:52:52.5961690Z Cache restored successfully
+2026-10-04T02:52:52.6012323Z Cache restored from key: node-cache-Linux-x64-npm-1c658f1a35f7b309848c416454e12a0f8c258736d5e30a9676088e8641c298ba
+2026-10-04T02:52:52.6232741Z ##[group]Run npm ci
+2026-10-04T02:52:52.6233031Z npm ci
+2026-10-04T02:52:52.6438670Z shell: /usr/bin/bash -e {0}
+2026-10-04T02:52:52.6439011Z ##[endgroup]
+2026-10-04T02:52:58.4947467Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-04T02:52:59.6756976Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-04T02:53:00.8441857Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T02:53:02.1601422Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T02:53:02.1604482Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T02:53:02.2219584Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T02:53:15.2880272Z 
+2026-10-04T02:53:15.2881376Z > growth-project-backend@1.0.0 postinstall
+2026-10-04T02:53:15.2881989Z > prisma generate
+2026-10-04T02:53:15.2882222Z 
+2026-10-04T02:53:16.2289294Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T02:53:20.0383672Z ┌─────────────────────────────────────────────────────────┐
+2026-10-04T02:53:20.0385083Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+2026-10-04T02:53:20.0386014Z │                                                         │
+2026-10-04T02:53:20.0386935Z │  This is a major update - please follow the guide at    │
+2026-10-04T02:53:20.0387936Z │  https://pris.ly/d/major-version-upgrade                │
+2026-10-04T02:53:20.0388871Z │                                                         │
+2026-10-04T02:53:20.0389713Z │  Run the following to update                            │
+2026-10-04T02:53:20.0390843Z │    npm i --save-dev prisma@latest                       │
+2026-10-04T02:53:20.0392169Z │    npm i @prisma/client@latest                          │
+2026-10-04T02:53:20.0393096Z └─────────────────────────────────────────────────────────┘
+2026-10-04T02:53:20.0393525Z 
+2026-10-04T02:53:20.0394265Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.11s
+2026-10-04T02:53:20.0394855Z 
+2026-10-04T02:53:20.0395491Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T02:53:20.0396144Z 
+2026-10-04T02:53:20.0396770Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+2026-10-04T02:53:20.0397294Z 
+2026-10-04T02:53:20.0931533Z 
+2026-10-04T02:53:20.0932039Z > growth-project-backend@1.0.0 prepare
+2026-10-04T02:53:20.0932617Z > lefthook install
+2026-10-04T02:53:20.0932829Z 
+2026-10-04T02:53:20.1427313Z sync hooks: ✔️(commit-msg, pre-commit)
+2026-10-04T02:53:20.1606237Z 
+2026-10-04T02:53:20.1606988Z added 1117 packages, and audited 1118 packages in 27s
+2026-10-04T02:53:20.1607510Z 
+2026-10-04T02:53:20.1607818Z 202 packages are looking for funding
+2026-10-04T02:53:20.1608382Z   run `npm fund` for details
+2026-10-04T02:53:20.1658801Z 
+2026-10-04T02:53:20.1659667Z 4 vulnerabilities (1 moderate, 3 high)
+2026-10-04T02:53:20.1660480Z 
+2026-10-04T02:53:20.1661273Z To address issues that do not require attention, run:
+2026-10-04T02:53:20.1661943Z   npm audit fix
+2026-10-04T02:53:20.1662193Z 
+2026-10-04T02:53:20.1662613Z To address all issues (including breaking changes), run:
+2026-10-04T02:53:20.1663250Z   npm audit fix --force
+2026-10-04T02:53:20.1665133Z 
+2026-10-04T02:53:20.1665384Z Run `npm audit` for details.
+2026-10-04T02:53:20.2322168Z ##[group]Run npx prisma generate
+2026-10-04T02:53:20.2322653Z npx prisma generate
+2026-10-04T02:53:20.2389532Z shell: /usr/bin/bash -e {0}
+2026-10-04T02:53:20.2389796Z ##[endgroup]
+2026-10-04T02:53:21.4398909Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T02:53:25.2305627Z 
+2026-10-04T02:53:25.2306873Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.06s
+2026-10-04T02:53:25.2307558Z 
+2026-10-04T02:53:25.2308194Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T02:53:25.2308715Z 
+2026-10-04T02:53:25.2309159Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+2026-10-04T02:53:25.2309612Z 
+2026-10-04T02:53:25.3506811Z ##[group]Run set -euo pipefail
+2026-10-04T02:53:25.3507164Z set -euo pipefail
+2026-10-04T02:53:25.3507558Z test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+2026-10-04T02:53:25.3508038Z mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+2026-10-04T02:53:25.3508394Z echo "specs: ${SPECS[*]}"
+2026-10-04T02:53:25.3508692Z npx jest --ci --runInBand "${SPECS[@]}"
+2026-10-04T02:53:25.3572076Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T02:53:25.3572417Z env:
+2026-10-04T02:53:25.3572630Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-04T02:53:25.3572999Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-04T02:53:25.3573319Z ##[endgroup]
+2026-10-04T02:53:25.3667435Z specs: test/b-recur-116-fix-round-3.spec.ts
+2026-10-04T02:53:40.0696853Z [Nest] 3081  - 10/04/2026, 2:53:40 AM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false
+2026-10-04T02:53:40.0916202Z [Nest] 3081  - 10/04/2026, 2:53:40 AM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false
+2026-10-04T02:53:40.0941106Z [Nest] 3081  - 10/04/2026, 2:53:40 AM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false
+2026-10-04T02:53:40.0967428Z [Nest] 3081  - 10/04/2026, 2:53:40 AM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false
+2026-10-04T02:53:40.1002262Z [Nest] 3081  - 10/04/2026, 2:53:40 AM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false
+2026-10-04T02:53:40.1026175Z [Nest] 3081  - 10/04/2026, 2:53:40 AM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false
+2026-10-04T02:53:40.1060737Z [Nest] 3081  - 10/04/2026, 2:53:40 AM    WARN [SubscriptionCheckoutService] could not cancel stale subscription sub_1: Stripe unavailable; Stripe expires it after 23 h
+2026-10-04T02:53:40.1064164Z [Nest] 3081  - 10/04/2026, 2:53:40 AM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed
+2026-10-04T02:53:40.1092820Z [Nest] 3081  - 10/04/2026, 2:53:40 AM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false
+2026-10-04T02:53:40.1097268Z [Nest] 3081  - 10/04/2026, 2:53:40 AM    WARN [SubscriptionCheckoutService] could not cancel stale subscription sub_1: Stripe unavailable; Stripe expires it after 23 h
+2026-10-04T02:53:40.1099587Z [Nest] 3081  - 10/04/2026, 2:53:40 AM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed
+2026-10-04T02:53:40.1134387Z [Nest] 3081  - 10/04/2026, 2:53:40 AM    WARN [SubscriptionCheckoutService] could not cancel stale subscription sub_1: Stripe unavailable; Stripe expires it after 23 h
+2026-10-04T02:53:40.1232984Z [Nest] 3081  - 10/04/2026, 2:53:40 AM   ERROR [SubscriptionCheckoutService] subscription sub_1 has no payable PaymentIntent or SetupIntent and is not paid; canceling it
+2026-10-04T02:53:40.1237221Z [Nest] 3081  - 10/04/2026, 2:53:40 AM    WARN [SubscriptionCheckoutService] could not cancel stale subscription sub_1: Stripe unavailable; Stripe expires it after 23 h
+2026-10-04T02:53:40.1260988Z [Nest] 3081  - 10/04/2026, 2:53:40 AM    WARN [SubscriptionCheckoutService] could not cancel stale subscription sub_1: Stripe unavailable; Stripe expires it after 23 h
+2026-10-04T02:53:40.1264309Z [Nest] 3081  - 10/04/2026, 2:53:40 AM     LOG [SubscriptionCheckoutService] billing.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed
+2026-10-04T02:53:40.2479857Z FAIL test/b-recur-116-fix-round-3.spec.ts (13.831 s)
+2026-10-04T02:53:40.2483612Z   B-654-5 narrowed / C-654-8 an uncertain create is never resent blindly
+2026-10-04T02:53:40.2487853Z     ✕ (failed before) trial create uncertain, retried after Stripe dropped the key: the attempt binds its own subscription, no second one (12 ms)
+2026-10-04T02:53:40.2490535Z     ✕ (failed before) paid plan, same: found by metadata.tgp_purchase_id and bound, never re-created (2 ms)
+2026-10-04T02:53:40.2492870Z     ✕ (failed before) past the key window with nothing on Stripe: the attempt ends (timed_out), nothing is created; a new key starts fresh (2 ms)
+2026-10-04T02:53:40.2495044Z     ✕ (failed before) inside the key window a lookup miss resends the pinned request, after the lookup (3 ms)
+2026-10-04T02:53:40.2497046Z     ✕ (failed before) Stripe unreadable before a resend: PAYMENT_RETRY, nothing sent, the attempt stays retryable (2 ms)
+2026-10-04T02:53:40.2499176Z     ✕ (failed before) a found subscription that Stripe already ended ends the attempt, never re-created (2 ms)
+2026-10-04T02:53:40.2501627Z   B-654-8 an attempt is never ended while its subscription may still charge
+2026-10-04T02:53:40.2503653Z     ✕ (failed before) same key, terms changed, the cancel fails: PAYMENT_RETRY and the attempt stays open; the retry cancels, then terms_changed (3 ms)
+2026-10-04T02:53:40.2514931Z     ✕ (failed before) uncertain create, terms changed, the cancel fails: retryable, never expired (3 ms)
+2026-10-04T02:53:40.2516683Z     ✕ (failed before) a new key while the stale attempt cannot be canceled: no second subscription is minted (2 ms)
+2026-10-04T02:53:40.2518592Z     ✕ (failed before) an open attempt whose subscription is past_due on Stripe is the plan: ALREADY_ACTIVE, never expired (7 ms)
+2026-10-04T02:53:40.2521002Z     ✕ (failed before) no sheet and the cancel fails: SETUP_UNAVAILABLE without ending it; the same key cancels, then ends it (3 ms)
+2026-10-04T02:53:40.2523169Z     ✓ control: the cancel answer is lost after Stripe canceled it: reconciled from Stripe, the attempt ends (2 ms)
+2026-10-04T02:53:40.2524706Z   B-654-9 / C-654-10 a caught error reaches logs only as an allow-listed label
+2026-10-04T02:53:40.2526115Z     ✕ (failed before) an Error whose name was set from data logs a fixed label (2 ms)
+2026-10-04T02:53:40.2527642Z     ✕ (failed before) an identifier-shaped code outside the allow-list is never logged (1 ms)
+2026-10-04T02:53:40.2529373Z     ✕ (failed before) a Stripe error with an unknown code and type logs only allow-listed parts (1 ms)
+2026-10-04T02:53:40.2531521Z     ✕ controls: known Stripe, Prisma and network codes and class names stay readable (1 ms)
+2026-10-04T02:53:40.2533248Z     ✕ (failed before) a same-key replay whose Stripe check fails logs no message (1 ms)
+2026-10-04T02:53:40.2534739Z     ✕ (failed before) a failed stale-trial cleanup logs no message (2 ms)
+2026-10-04T02:53:40.2536028Z     ✕ (failed before) a failed cancel logs no message (1 ms)
+2026-10-04T02:53:40.2537435Z     ✕ (failed before) webhook: a failed setup_intent.succeeded lookup logs no message (16 ms)
+2026-10-04T02:53:40.2538266Z 
+2026-10-04T02:53:40.2540687Z   ● B-654-5 narrowed / C-654-8 an uncertain create is never resent blindly › (failed before) trial create uncertain, retried after Stripe dropped the key: the attempt binds its own subscription, no second one
+2026-10-04T02:53:40.2542332Z 
+2026-10-04T02:53:40.2542855Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T02:53:40.2543505Z 
+2026-10-04T02:53:40.2543815Z     Expected: "sub_1"
+2026-10-04T02:53:40.2544337Z     Received: "sub_2"
+2026-10-04T02:53:40.2544687Z 
+2026-10-04T02:53:40.2545304Z       128 |     ageAttempt(HOURS_25);
+2026-10-04T02:53:40.2546566Z       129 |     const out = await buy(svc, KEY1);
+2026-10-04T02:53:40.2548121Z     > 130 |     expect(out.subscription_id).toBe('sub_1');
+2026-10-04T02:53:40.2549371Z           |                                 ^
+2026-10-04T02:53:40.2550752Z       131 |     expect(out.mode).toBe('setup');
+2026-10-04T02:53:40.2552105Z       132 |     expect(stripe._subs.size).toBe(1);
+2026-10-04T02:53:40.2553732Z       133 |     expect(stripe.createSubscription).toHaveBeenCalledTimes(1);
+2026-10-04T02:53:40.2554650Z 
+2026-10-04T02:53:40.2555232Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:130:33)
+2026-10-04T02:53:40.2555871Z 
+2026-10-04T02:53:40.2557270Z   ● B-654-5 narrowed / C-654-8 an uncertain create is never resent blindly › (failed before) paid plan, same: found by metadata.tgp_purchase_id and bound, never re-created
+2026-10-04T02:53:40.2558398Z 
+2026-10-04T02:53:40.2558887Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T02:53:40.2559837Z 
+2026-10-04T02:53:40.2560417Z     Expected: "sub_1"
+2026-10-04T02:53:40.2561028Z     Received: "sub_2"
+2026-10-04T02:53:40.2561471Z 
+2026-10-04T02:53:40.2562119Z       141 |     pruneStripeKeys();
+2026-10-04T02:53:40.2563260Z       142 |     const out = await buy(svc, KEY1);
+2026-10-04T02:53:40.2564578Z     > 143 |     expect(out.subscription_id).toBe('sub_1');
+2026-10-04T02:53:40.2566005Z           |                                 ^
+2026-10-04T02:53:40.2567422Z       144 |     expect(out.client_secret).toBe('pi_1_secret_x');
+2026-10-04T02:53:40.2569064Z       145 |     expect(stripe._subs.size).toBe(1);
+2026-10-04T02:53:40.2570921Z       146 |     expect(stripe.createSubscription).toHaveBeenCalledTimes(1);
+2026-10-04T02:53:40.2571756Z 
+2026-10-04T02:53:40.2572240Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:143:33)
+2026-10-04T02:53:40.2572806Z 
+2026-10-04T02:53:40.2574264Z   ● B-654-5 narrowed / C-654-8 an uncertain create is never resent blindly › (failed before) past the key window with nothing on Stripe: the attempt ends (timed_out), nothing is created; a new key starts fresh
+2026-10-04T02:53:40.2575604Z 
+2026-10-04T02:53:40.2575909Z     expected a coded error
+2026-10-04T02:53:40.2576305Z 
+2026-10-04T02:53:40.2577637Z        96 |     return { status: err.getStatus?.(), body: err.getResponse?.() };
+2026-10-04T02:53:40.2579076Z        97 |   }
+2026-10-04T02:53:40.2580456Z     >  98 |   throw new Error('expected a coded error');
+2026-10-04T02:53:40.2581580Z           |         ^
+2026-10-04T02:53:40.2582369Z        99 | }
+2026-10-04T02:53:40.2582886Z       100 |
+2026-10-04T02:53:40.2585499Z       101 | const buy = (svc: SubscriptionCheckoutService, key: string, over: Record<string, unknown> = {}) =>
+2026-10-04T02:53:40.2587233Z 
+2026-10-04T02:53:40.2587746Z       at codeOf (test/b-recur-116-fix-round-3.spec.ts:98:9)
+2026-10-04T02:53:40.2588829Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:154:15)
+2026-10-04T02:53:40.2589549Z 
+2026-10-04T02:53:40.2591334Z   ● B-654-5 narrowed / C-654-8 an uncertain create is never resent blindly › (failed before) inside the key window a lookup miss resends the pinned request, after the lookup
+2026-10-04T02:53:40.2592683Z 
+2026-10-04T02:53:40.2593204Z     expect(jest.fn()).toHaveBeenCalledTimes(expected)
+2026-10-04T02:53:40.2593834Z 
+2026-10-04T02:53:40.2594221Z     Expected number of calls: 1
+2026-10-04T02:53:40.2594923Z     Received number of calls: 0
+2026-10-04T02:53:40.2595396Z 
+2026-10-04T02:53:40.2596437Z       171 |     const out = await buy(svc, KEY1);
+2026-10-04T02:53:40.2598179Z       172 |     expect(out.subscription_id).toBe('sub_1');
+2026-10-04T02:53:40.2600430Z     > 173 |     expect(stripe.listSubscriptionsForCustomer).toHaveBeenCalledTimes(1);
+2026-10-04T02:53:40.2602217Z           |                                                 ^
+2026-10-04T02:53:40.2604272Z       174 |     const lookedUp = stripe.listSubscriptionsForCustomer.mock.invocationCallOrder[0];
+2026-10-04T02:53:40.2607090Z       175 |     const resent = stripe.createSubscription.mock.invocationCallOrder[1];
+2026-10-04T02:53:40.2608939Z       176 |     expect(lookedUp).toBeLessThan(resent);
+2026-10-04T02:53:40.2609785Z 
+2026-10-04T02:53:40.2610439Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:173:49)
+2026-10-04T02:53:40.2610806Z 
+2026-10-04T02:53:40.2611738Z   ● B-654-5 narrowed / C-654-8 an uncertain create is never resent blindly › (failed before) Stripe unreadable before a resend: PAYMENT_RETRY, nothing sent, the attempt stays retryable
+2026-10-04T02:53:40.2612448Z 
+2026-10-04T02:53:40.2612569Z     expected a coded error
+2026-10-04T02:53:40.2612735Z 
+2026-10-04T02:53:40.2613565Z        96 |     return { status: err.getStatus?.(), body: err.getResponse?.() };
+2026-10-04T02:53:40.2614370Z        97 |   }
+2026-10-04T02:53:40.2615082Z     >  98 |   throw new Error('expected a coded error');
+2026-10-04T02:53:40.2615731Z           |         ^
+2026-10-04T02:53:40.2616074Z        99 | }
+2026-10-04T02:53:40.2616346Z       100 |
+2026-10-04T02:53:40.2617599Z       101 | const buy = (svc: SubscriptionCheckoutService, key: string, over: Record<string, unknown> = {}) =>
+2026-10-04T02:53:40.2618492Z 
+2026-10-04T02:53:40.2618702Z       at codeOf (test/b-recur-116-fix-round-3.spec.ts:98:9)
+2026-10-04T02:53:40.2619198Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:186:15)
+2026-10-04T02:53:40.2619539Z 
+2026-10-04T02:53:40.2620728Z   ● B-654-5 narrowed / C-654-8 an uncertain create is never resent blindly › (failed before) a found subscription that Stripe already ended ends the attempt, never re-created
+2026-10-04T02:53:40.2621494Z 
+2026-10-04T02:53:40.2621604Z     expected a coded error
+2026-10-04T02:53:40.2621784Z 
+2026-10-04T02:53:40.2622845Z        96 |     return { status: err.getStatus?.(), body: err.getResponse?.() };
+2026-10-04T02:53:40.2623639Z        97 |   }
+2026-10-04T02:53:40.2624336Z     >  98 |   throw new Error('expected a coded error');
+2026-10-04T02:53:40.2624971Z           |         ^
+2026-10-04T02:53:40.2625313Z        99 | }
+2026-10-04T02:53:40.2625586Z       100 |
+2026-10-04T02:53:40.2626822Z       101 | const buy = (svc: SubscriptionCheckoutService, key: string, over: Record<string, unknown> = {}) =>
+2026-10-04T02:53:40.2627713Z 
+2026-10-04T02:53:40.2627910Z       at codeOf (test/b-recur-116-fix-round-3.spec.ts:98:9)
+2026-10-04T02:53:40.2628434Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:204:15)
+2026-10-04T02:53:40.2628743Z 
+2026-10-04T02:53:40.2629734Z   ● B-654-8 an attempt is never ended while its subscription may still charge › (failed before) same key, terms changed, the cancel fails: PAYMENT_RETRY and the attempt stays open; the retry cancels, then terms_changed
+2026-10-04T02:53:40.2630689Z 
+2026-10-04T02:53:40.2630900Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T02:53:40.2631159Z 
+2026-10-04T02:53:40.2631256Z     Expected: 503
+2026-10-04T02:53:40.2631482Z     Received: 409
+2026-10-04T02:53:40.2631605Z 
+2026-10-04T02:53:40.2633062Z       219 |     stripe.cancelSubscription.mockRejectedValueOnce(unavailable());
+2026-10-04T02:53:40.2634824Z       220 |     const r = await codeOf(buy(svc, KEY1, { expected_amount_cents: 5900 }));
+2026-10-04T02:53:40.2635906Z     > 221 |     expect(r.status).toBe(503);
+2026-10-04T02:53:40.2636531Z           |                      ^
+2026-10-04T02:53:40.2637229Z       222 |     expect(r.body.code).toBe('PAYMENT_RETRY');
+2026-10-04T02:53:40.2638201Z       223 |     expect(prisma._purchases[0].status).toBe('pending');
+2026-10-04T02:53:40.2639322Z       224 |     expect(stripe._subs.get('sub_1').status).toBe('incomplete');
+2026-10-04T02:53:40.2639885Z 
+2026-10-04T02:53:40.2640323Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:221:22)
+2026-10-04T02:53:40.2640645Z 
+2026-10-04T02:53:40.2641455Z   ● B-654-8 an attempt is never ended while its subscription may still charge › (failed before) uncertain create, terms changed, the cancel fails: retryable, never expired
+2026-10-04T02:53:40.2642123Z 
+2026-10-04T02:53:40.2642314Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T02:53:40.2642569Z 
+2026-10-04T02:53:40.2642696Z     Expected: "PAYMENT_RETRY"
+2026-10-04T02:53:40.2643025Z     Received: "SUBSCRIPTION_ATTEMPT_EXPIRED"
+2026-10-04T02:53:40.2643228Z 
+2026-10-04T02:53:40.2643755Z       236 |     stripe.cancelSubscription.mockRejectedValueOnce(unavailable());
+2026-10-04T02:53:40.2644942Z       237 |     const r = await codeOf(buy(svc, KEY1, { expected_amount_cents: 5900 }));
+2026-10-04T02:53:40.2646100Z     > 238 |     expect(r.body.code).toBe('PAYMENT_RETRY');
+2026-10-04T02:53:40.2646791Z           |                         ^
+2026-10-04T02:53:40.2648029Z       239 |     expect(prisma._purchases[0].status).toBe('pending');
+2026-10-04T02:53:40.2649414Z       240 |     expect(prisma._purchases[0].stripe_checkout_session_id).toMatch(/^sub-retry-/);
+2026-10-04T02:53:40.2650943Z       241 |     const again = await codeOf(buy(svc, KEY1, { expected_amount_cents: 5900 }));
+2026-10-04T02:53:40.2651583Z 
+2026-10-04T02:53:40.2651852Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:238:25)
+2026-10-04T02:53:40.2652174Z 
+2026-10-04T02:53:40.2653036Z   ● B-654-8 an attempt is never ended while its subscription may still charge › (failed before) a new key while the stale attempt cannot be canceled: no second subscription is minted
+2026-10-04T02:53:40.2653743Z 
+2026-10-04T02:53:40.2653856Z     expected a coded error
+2026-10-04T02:53:40.2654009Z 
+2026-10-04T02:53:40.2654806Z        96 |     return { status: err.getStatus?.(), body: err.getResponse?.() };
+2026-10-04T02:53:40.2655569Z        97 |   }
+2026-10-04T02:53:40.2656253Z     >  98 |   throw new Error('expected a coded error');
+2026-10-04T02:53:40.2656890Z           |         ^
+2026-10-04T02:53:40.2657244Z        99 | }
+2026-10-04T02:53:40.2657718Z       100 |
+2026-10-04T02:53:40.2658957Z       101 | const buy = (svc: SubscriptionCheckoutService, key: string, over: Record<string, unknown> = {}) =>
+2026-10-04T02:53:40.2659824Z 
+2026-10-04T02:53:40.2660033Z       at codeOf (test/b-recur-116-fix-round-3.spec.ts:98:9)
+2026-10-04T02:53:40.2660881Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:251:15)
+2026-10-04T02:53:40.2661208Z 
+2026-10-04T02:53:40.2662110Z   ● B-654-8 an attempt is never ended while its subscription may still charge › (failed before) an open attempt whose subscription is past_due on Stripe is the plan: ALREADY_ACTIVE, never expired
+2026-10-04T02:53:40.2662859Z 
+2026-10-04T02:53:40.2662960Z     expected a coded error
+2026-10-04T02:53:40.2663133Z 
+2026-10-04T02:53:40.2663922Z        96 |     return { status: err.getStatus?.(), body: err.getResponse?.() };
+2026-10-04T02:53:40.2664675Z        97 |   }
+2026-10-04T02:53:40.2665352Z     >  98 |   throw new Error('expected a coded error');
+2026-10-04T02:53:40.2665990Z           |         ^
+2026-10-04T02:53:40.2666331Z        99 | }
+2026-10-04T02:53:40.2666591Z       100 |
+2026-10-04T02:53:40.2667820Z       101 | const buy = (svc: SubscriptionCheckoutService, key: string, over: Record<string, unknown> = {}) =>
+2026-10-04T02:53:40.2668677Z 
+2026-10-04T02:53:40.2668877Z       at codeOf (test/b-recur-116-fix-round-3.spec.ts:98:9)
+2026-10-04T02:53:40.2669372Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:265:15)
+2026-10-04T02:53:40.2669695Z 
+2026-10-04T02:53:40.2670732Z   ● B-654-8 an attempt is never ended while its subscription may still charge › (failed before) no sheet and the cancel fails: SETUP_UNAVAILABLE without ending it; the same key cancels, then ends it
+2026-10-04T02:53:40.2671513Z 
+2026-10-04T02:53:40.2671860Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T02:53:40.2672142Z 
+2026-10-04T02:53:40.2672245Z     Expected: "pending"
+2026-10-04T02:53:40.2672515Z     Received: "expired"
+2026-10-04T02:53:40.2672659Z 
+2026-10-04T02:53:40.2673183Z       280 |     const r = await codeOf(buy(svc, KEY1));
+2026-10-04T02:53:40.2674162Z       281 |     expect(r.body.code).toBe('SUBSCRIPTION_SETUP_UNAVAILABLE');
+2026-10-04T02:53:40.2675222Z     > 282 |     expect(prisma._purchases[0].status).toBe('pending');
+2026-10-04T02:53:40.2676022Z           |                                         ^
+2026-10-04T02:53:40.2676920Z       283 |     expect(prisma._purchases[0].stripe_subscription_id).toBe('sub_1');
+2026-10-04T02:53:40.2677932Z       284 |     const again = await codeOf(buy(svc, KEY1));
+2026-10-04T02:53:40.2678937Z       285 |     expect(again.body.code).toBe('SUBSCRIPTION_SETUP_UNAVAILABLE');
+2026-10-04T02:53:40.2679430Z 
+2026-10-04T02:53:40.2679686Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:282:41)
+2026-10-04T02:53:40.2679999Z 
+2026-10-04T02:53:40.2680834Z   ● B-654-9 / C-654-10 a caught error reaches logs only as an allow-listed label › (failed before) an Error whose name was set from data logs a fixed label
+2026-10-04T02:53:40.2681557Z 
+2026-10-04T02:53:40.2681759Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T02:53:40.2682017Z 
+2026-10-04T02:53:40.2682196Z     Expected substring: not "a.person@example.test"
+2026-10-04T02:53:40.2682996Z     Received string:        "[[],[[\"checkout state read skipped purchase=00000000-0000-4000-8000-000000000001 error=client a.person@example.test\"]],[]]"
+2026-10-04T02:53:40.2683570Z 
+2026-10-04T02:53:40.2683957Z       321 |     err.name = `client ${CANARY}`;
+2026-10-04T02:53:40.2684748Z       322 |     const logged = await loggedAfterStateRead(err);
+2026-10-04T02:53:40.2685619Z     > 323 |     expect(logged).not.toContain(CANARY);
+2026-10-04T02:53:40.2686267Z           |                        ^
+2026-10-04T02:53:40.2686878Z       324 |     expect(logged).toContain('error=error');
+2026-10-04T02:53:40.2687395Z       325 |   });
+2026-10-04T02:53:40.2687703Z       326 |
+2026-10-04T02:53:40.2687874Z 
+2026-10-04T02:53:40.2688133Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:323:24)
+2026-10-04T02:53:40.2688452Z 
+2026-10-04T02:53:40.2689191Z   ● B-654-9 / C-654-10 a caught error reaches logs only as an allow-listed label › (failed before) an identifier-shaped code outside the allow-list is never logged
+2026-10-04T02:53:40.2689813Z 
+2026-10-04T02:53:40.2690011Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T02:53:40.2690390Z 
+2026-10-04T02:53:40.2690578Z     Expected substring: not "a.person-example.test"
+2026-10-04T02:53:40.2691343Z     Received string:        "[[],[[\"checkout state read skipped purchase=00000000-0000-4000-8000-000000000001 error=a.person-example.test\"]],[]]"
+2026-10-04T02:53:40.2691871Z 
+2026-10-04T02:53:40.2692630Z       329 |       Object.assign(new Error('boom'), { code: 'a.person-example.test' }),
+2026-10-04T02:53:40.2693412Z       330 |     );
+2026-10-04T02:53:40.2694279Z     > 331 |     expect(logged).not.toContain('a.person-example.test');
+2026-10-04T02:53:40.2695009Z           |                        ^
+2026-10-04T02:53:40.2695401Z       332 |   });
+2026-10-04T02:53:40.2695707Z       333 |
+2026-10-04T02:53:40.2696595Z       334 |   it('(failed before) a Stripe error with an unknown code and type logs only allow-listed parts', async () => {
+2026-10-04T02:53:40.2697207Z 
+2026-10-04T02:53:40.2697459Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:331:24)
+2026-10-04T02:53:40.2697761Z 
+2026-10-04T02:53:40.2698528Z   ● B-654-9 / C-654-10 a caught error reaches logs only as an allow-listed label › (failed before) a Stripe error with an unknown code and type logs only allow-listed parts
+2026-10-04T02:53:40.2699170Z 
+2026-10-04T02:53:40.2699359Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T02:53:40.2699638Z 
+2026-10-04T02:53:40.2699786Z     Expected substring: not "canary"
+2026-10-04T02:53:40.2700778Z     Received string:        "[[],[[\"checkout state read skipped purchase=00000000-0000-4000-8000-000000000001 error=cus_canary.value\"]],[]]"
+2026-10-04T02:53:40.2701303Z 
+2026-10-04T02:53:40.2702143Z       336 |       new StripeConnectApiError('m', 400, 'cus_canary.value', 'canary_type'),
+2026-10-04T02:53:40.2702967Z       337 |     );
+2026-10-04T02:53:40.2703619Z     > 338 |     expect(logged).not.toContain('canary');
+2026-10-04T02:53:40.2704445Z           |                        ^
+2026-10-04T02:53:40.2705148Z       339 |     expect(logged).toContain('error=stripe:other:400:other');
+2026-10-04T02:53:40.2705704Z       340 |   });
+2026-10-04T02:53:40.2706010Z       341 |
+2026-10-04T02:53:40.2706173Z 
+2026-10-04T02:53:40.2706420Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:338:24)
+2026-10-04T02:53:40.2706721Z 
+2026-10-04T02:53:40.2707444Z   ● B-654-9 / C-654-10 a caught error reaches logs only as an allow-listed label › controls: known Stripe, Prisma and network codes and class names stay readable
+2026-10-04T02:53:40.2708050Z 
+2026-10-04T02:53:40.2708209Z     expect(received).toContain(expected) // indexOf
+2026-10-04T02:53:40.2708444Z 
+2026-10-04T02:53:40.2708727Z     Expected substring: "error=stripe:invalid_request_error:404:resource_missing"
+2026-10-04T02:53:40.2709548Z     Received string:    "[[],[[\"checkout state read skipped purchase=00000000-0000-4000-8000-000000000001 error=resource_missing\"]],[]]"
+2026-10-04T02:53:40.2710236Z 
+2026-10-04T02:53:40.2711109Z       345 |         new StripeConnectApiError('m', 404, 'resource_missing', 'invalid_request_error'),
+2026-10-04T02:53:40.2711961Z       346 |       ),
+2026-10-04T02:53:40.2712743Z     > 347 |     ).toContain('error=stripe:invalid_request_error:404:resource_missing');
+2026-10-04T02:53:40.2713429Z           |       ^
+2026-10-04T02:53:40.2713783Z       348 |     expect(
+2026-10-04T02:53:40.2714801Z       349 |       await loggedAfterStateRead(Object.assign(new Error(CANARY), { code: 'P2002' })),
+2026-10-04T02:53:40.2715804Z       350 |     ).toContain('error=P2002');
+2026-10-04T02:53:40.2716115Z 
+2026-10-04T02:53:40.2716371Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:347:7)
+2026-10-04T02:53:40.2716674Z 
+2026-10-04T02:53:40.2717524Z   ● B-654-9 / C-654-10 a caught error reaches logs only as an allow-listed label › (failed before) a same-key replay whose Stripe check fails logs no message
+2026-10-04T02:53:40.2718126Z 
+2026-10-04T02:53:40.2718324Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T02:53:40.2718573Z 
+2026-10-04T02:53:40.2718757Z     Expected substring: not "a.person@example.test"
+2026-10-04T02:53:40.2719575Z     Received string:        "[[],[[\"replay secret check skipped purchase=00000000-0000-4000-8000-000000000001: No such customer for a.person@example.test\"]],[]]"
+2026-10-04T02:53:40.2720308Z 
+2026-10-04T02:53:40.2720670Z       367 |       await buy(svc, KEY1);
+2026-10-04T02:53:40.2721511Z       368 |       expect(logs.text()).toContain('replay secret check skipped');
+2026-10-04T02:53:40.2722490Z     > 369 |       expect(logs.text()).not.toContain(CANARY);
+2026-10-04T02:53:40.2723203Z           |                               ^
+2026-10-04T02:53:40.2723661Z       370 |     } finally {
+2026-10-04T02:53:40.2724101Z       371 |       logs.restore();
+2026-10-04T02:53:40.2724510Z       372 |     }
+2026-10-04T02:53:40.2724681Z 
+2026-10-04T02:53:40.2724912Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:369:31)
+2026-10-04T02:53:40.2725236Z 
+2026-10-04T02:53:40.2725865Z   ● B-654-9 / C-654-10 a caught error reaches logs only as an allow-listed label › (failed before) a failed stale-trial cleanup logs no message
+2026-10-04T02:53:40.2726592Z 
+2026-10-04T02:53:40.2726791Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T02:53:40.2727041Z 
+2026-10-04T02:53:40.2727205Z     Expected substring: not "a.person@example.test"
+2026-10-04T02:53:40.2727942Z     Received string:        "[[],[[\"stale trial attempt kept purchase=00000000-0000-4000-8000-000000000001: for a.person@example.test\"]],[]]"
+2026-10-04T02:53:40.2728467Z 
+2026-10-04T02:53:40.2728925Z       383 |       expect(out.subscription_id).toBe('sub_2');
+2026-10-04T02:53:40.2729819Z       384 |       expect(logs.text()).toContain('stale trial attempt kept');
+2026-10-04T02:53:40.2730922Z     > 385 |       expect(logs.text()).not.toContain(CANARY);
+2026-10-04T02:53:40.2731612Z           |                               ^
+2026-10-04T02:53:40.2732060Z       386 |     } finally {
+2026-10-04T02:53:40.2732490Z       387 |       logs.restore();
+2026-10-04T02:53:40.2732901Z       388 |     }
+2026-10-04T02:53:40.2733065Z 
+2026-10-04T02:53:40.2733316Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:385:31)
+2026-10-04T02:53:40.2733628Z 
+2026-10-04T02:53:40.2734198Z   ● B-654-9 / C-654-10 a caught error reaches logs only as an allow-listed label › (failed before) a failed cancel logs no message
+2026-10-04T02:53:40.2734696Z 
+2026-10-04T02:53:40.2734885Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T02:53:40.2735134Z 
+2026-10-04T02:53:40.2735310Z     Expected substring: not "a.person@example.test"
+2026-10-04T02:53:40.2736507Z     Received string:        "[[[\"billing.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed\"]],[[\"could not cancel stale subscription sub_1: for a.person@example.test; Stripe expires it after 23 h\"]],[]]"
+2026-10-04T02:53:40.2737421Z 
+2026-10-04T02:53:40.2737991Z       399 |       expect(stripe.cancelSubscription).toHaveBeenCalledWith('sub_1');
+2026-10-04T02:53:40.2738902Z       400 |       expect(logs.text()).toContain('sub_1');
+2026-10-04T02:53:40.2739933Z     > 401 |       expect(logs.text()).not.toContain(CANARY);
+2026-10-04T02:53:40.2740977Z           |                               ^
+2026-10-04T02:53:40.2741441Z       402 |     } finally {
+2026-10-04T02:53:40.2741872Z       403 |       logs.restore();
+2026-10-04T02:53:40.2742279Z       404 |     }
+2026-10-04T02:53:40.2742452Z 
+2026-10-04T02:53:40.2742704Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:401:31)
+2026-10-04T02:53:40.2743003Z 
+2026-10-04T02:53:40.2743749Z   ● B-654-9 / C-654-10 a caught error reaches logs only as an allow-listed label › (failed before) webhook: a failed setup_intent.succeeded lookup logs no message
+2026-10-04T02:53:40.2744364Z 
+2026-10-04T02:53:40.2744557Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T02:53:40.2744800Z 
+2026-10-04T02:53:40.2744987Z     Expected substring: not "a.person@example.test"
+2026-10-04T02:53:40.2745662Z     Received string:        "[[],[[\"setup_intent.succeeded lookup failed si=seti_T1: reset for a.person@example.test\"]],[]]"
+2026-10-04T02:53:40.2746139Z 
+2026-10-04T02:53:40.2746791Z       425 |       await expect(handler.handle(ev, prisma, pre)).rejects.toThrow();
+2026-10-04T02:53:40.2747898Z       426 |       expect(logs.text()).toContain('setup_intent.succeeded lookup failed');
+2026-10-04T02:53:40.2748906Z     > 427 |       expect(logs.text()).not.toContain(CANARY);
+2026-10-04T02:53:40.2749762Z           |                               ^
+2026-10-04T02:53:40.2750344Z       428 |     } finally {
+2026-10-04T02:53:40.2750801Z       429 |       logs.restore();
+2026-10-04T02:53:40.2751209Z       430 |     }
+2026-10-04T02:53:40.2751382Z 
+2026-10-04T02:53:40.2751629Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:427:31)
+2026-10-04T02:53:40.2751940Z 
+2026-10-04T02:53:40.2752098Z Test Suites: 1 failed, 1 total
+2026-10-04T02:53:40.2752436Z Tests:       19 failed, 1 passed, 20 total
+2026-10-04T02:53:40.2752746Z Snapshots:   0 total
+2026-10-04T02:53:40.2753003Z Time:        14.072 s
+2026-10-04T02:53:40.2753427Z Ran all test suites matching test/b-recur-116-fix-round-3.spec.ts.
+2026-10-04T02:53:40.4538935Z ##[error]Process completed with exit code 1.
+2026-10-04T02:53:40.4660602Z Post job cleanup.
+2026-10-04T02:53:40.5492898Z [command]/usr/bin/git version
+2026-10-04T02:53:40.5529634Z git version 2.55.0
+2026-10-04T02:53:40.5572076Z Temporarily overriding HOME='/home/runner/work/_temp/896c45c1-9d8c-4691-a10d-7eb086d9c956' before making global git config changes
+2026-10-04T02:53:40.5573602Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T02:53:40.5576622Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T02:53:40.5607869Z Removing SSH command configuration
+2026-10-04T02:53:40.5614052Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T02:53:40.5647202Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T02:53:40.5867931Z Removing HTTP extra header
+2026-10-04T02:53:40.5873113Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T02:53:40.5907291Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T02:53:40.6123919Z Removing includeIf entries pointing to credentials config files
+2026-10-04T02:53:40.6131586Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T02:53:40.6157987Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T02:53:40.6159554Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T02:53:40.6160943Z includeif.gitdir:/github/workspace/.git.path
+2026-10-04T02:53:40.6161760Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T02:53:40.6167915Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T02:53:40.6188928Z /home/runner/work/_temp/git-credentials-e36c90a6-f180-4579-af80-20d4733f6499.config
+2026-10-04T02:53:40.6199511Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-e36c90a6-f180-4579-af80-20d4733f6499.config
+2026-10-04T02:53:40.6234340Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T02:53:40.6255291Z /home/runner/work/_temp/git-credentials-e36c90a6-f180-4579-af80-20d4733f6499.config
+2026-10-04T02:53:40.6264758Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-e36c90a6-f180-4579-af80-20d4733f6499.config
+2026-10-04T02:53:40.6295479Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-04T02:53:40.6315759Z /github/runner_temp/git-credentials-e36c90a6-f180-4579-af80-20d4733f6499.config
+2026-10-04T02:53:40.6323745Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-e36c90a6-f180-4579-af80-20d4733f6499.config
+2026-10-04T02:53:40.6361625Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T02:53:40.6381891Z /github/runner_temp/git-credentials-e36c90a6-f180-4579-af80-20d4733f6499.config
+2026-10-04T02:53:40.6390501Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-e36c90a6-f180-4579-af80-20d4733f6499.config
+2026-10-04T02:53:40.6422828Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T02:53:40.6651803Z Removing credentials config '/home/runner/work/_temp/git-credentials-e36c90a6-f180-4579-af80-20d4733f6499.config'
+2026-10-04T02:53:40.6787263Z Print service container logs: 7b6f67dcebae4d758011b877ffa400c7_redis7alpine_0e59c4
+2026-10-04T02:53:40.6792190Z ##[command]/usr/bin/docker logs --details 43abd83359fcbf013a908b02803002b8335f8818d25c165ba469fb990e4d4a6f
+2026-10-04T02:53:40.6915729Z  1:C 04 Oct 2026 02:52:39.865 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+2026-10-04T02:53:40.6917486Z  1:C 04 Oct 2026 02:52:39.865 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+2026-10-04T02:53:40.6918077Z  1:C 04 Oct 2026 02:52:39.865 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+2026-10-04T02:53:40.6918987Z  1:C 04 Oct 2026 02:52:39.865 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+2026-10-04T02:53:40.6919700Z  1:M 04 Oct 2026 02:52:39.865 * monotonic clock: POSIX clock_gettime
+2026-10-04T02:53:40.6920345Z  1:M 04 Oct 2026 02:52:39.865 * Running mode=standalone, port=6379.
+2026-10-04T02:53:40.6920762Z  1:M 04 Oct 2026 02:52:39.866 * Server initialized
+2026-10-04T02:53:40.6921108Z  1:M 04 Oct 2026 02:52:39.866 * Ready to accept connections tcp
+2026-10-04T02:53:40.6939698Z Stop and remove container: 7b6f67dcebae4d758011b877ffa400c7_redis7alpine_0e59c4
+2026-10-04T02:53:40.6945187Z ##[command]/usr/bin/docker rm --force 43abd83359fcbf013a908b02803002b8335f8818d25c165ba469fb990e4d4a6f
+2026-10-04T02:53:40.8392369Z 43abd83359fcbf013a908b02803002b8335f8818d25c165ba469fb990e4d4a6f
+2026-10-04T02:53:40.8418665Z Remove container network: github_network_bc95138f1c704faba7e7639a81908ec9
+2026-10-04T02:53:40.8423871Z ##[command]/usr/bin/docker network rm github_network_bc95138f1c704faba7e7639a81908ec9
+2026-10-04T02:53:40.9476130Z github_network_bc95138f1c704faba7e7639a81908ec9
+2026-10-04T02:53:40.9543769Z Cleaning up orphan processes

@@ -1,0 +1,853 @@
+﻿2026-10-04T03:55:13.6362738Z Current runner version: '2.337.0'
+2026-10-04T03:55:13.6391425Z ##[group]Runner Image Provisioner
+2026-10-04T03:55:13.6392360Z Hosted Compute Agent
+2026-10-04T03:55:13.6393075Z Version: 20260901.588
+2026-10-04T03:55:13.6393738Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-04T03:55:13.6394495Z Build Date: 2026-09-01T19:56:44Z
+2026-10-04T03:55:13.6395183Z Worker ID: {a7e692a1-2fc1-48f7-83b3-a4f4c1e937be}
+2026-10-04T03:55:13.6395893Z Azure Region: westus2
+2026-10-04T03:55:13.6396520Z ##[endgroup]
+2026-10-04T03:55:13.6398248Z ##[group]Operating System
+2026-10-04T03:55:13.6398977Z Ubuntu
+2026-10-04T03:55:13.6399532Z 24.04.5
+2026-10-04T03:55:13.6400427Z LTS
+2026-10-04T03:55:13.6401476Z ##[endgroup]
+2026-10-04T03:55:13.6402041Z ##[group]Runner Image
+2026-10-04T03:55:13.6402629Z Image: ubuntu-24.04
+2026-10-04T03:55:13.6403248Z Version: 20260927.320.1
+2026-10-04T03:55:13.6404500Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-04T03:55:13.6406182Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-04T03:55:13.6407131Z ##[endgroup]
+2026-10-04T03:55:13.6408522Z ##[group]GITHUB_TOKEN Permissions
+2026-10-04T03:55:13.6410983Z Contents: read
+2026-10-04T03:55:13.6411755Z Metadata: read
+2026-10-04T03:55:13.6412354Z Packages: read
+2026-10-04T03:55:13.6412950Z ##[endgroup]
+2026-10-04T03:55:13.6415282Z Secret source: Actions
+2026-10-04T03:55:13.6416310Z Cache mode: write
+2026-10-04T03:55:13.6417069Z Prepare workflow directory
+2026-10-04T03:55:13.6895915Z Prepare all required actions
+2026-10-04T03:55:13.6947456Z Getting action download info
+2026-10-04T03:55:14.0488686Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-04T03:55:14.1557472Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-04T03:55:14.3520607Z Complete job name: targeted
+2026-10-04T03:55:14.4072198Z ##[group]Checking docker version
+2026-10-04T03:55:14.4088085Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-04T03:55:14.4960663Z '1.48'
+2026-10-04T03:55:14.4972293Z Docker daemon API version: '1.48'
+2026-10-04T03:55:14.4973080Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-04T03:55:14.5148679Z '1.48'
+2026-10-04T03:55:14.5163533Z Docker client API version: '1.48'
+2026-10-04T03:55:14.5169224Z ##[endgroup]
+2026-10-04T03:55:14.5172684Z ##[group]Clean up resources from previous jobs
+2026-10-04T03:55:14.5178727Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=376848"
+2026-10-04T03:55:14.5338526Z ##[command]/usr/bin/docker network prune --force --filter "label=376848"
+2026-10-04T03:55:14.5477887Z ##[endgroup]
+2026-10-04T03:55:14.5478458Z ##[group]Create local container network
+2026-10-04T03:55:14.5489479Z ##[command]/usr/bin/docker network create --label 376848 github_network_22066e76ceb649a098f30be85821d4d6
+2026-10-04T03:55:14.6006512Z ed1252a34c68815b5d2f275f9d410167bfa04ce7fb0c4497c19b3a7f32fb9388
+2026-10-04T03:55:14.6031816Z ##[endgroup]
+2026-10-04T03:55:14.6056288Z ##[group]Starting redis service container
+2026-10-04T03:55:14.6079559Z ##[command]/usr/bin/docker pull redis:7-alpine
+2026-10-04T03:55:15.5243945Z 7-alpine: Pulling from library/redis
+2026-10-04T03:55:15.7755031Z 16333ee0c00f: Pulling fs layer
+2026-10-04T03:55:15.7756569Z 83234986c742: Pulling fs layer
+2026-10-04T03:55:15.7757952Z 7eb50503c2b0: Pulling fs layer
+2026-10-04T03:55:15.7759277Z 1522f9c6f453: Pulling fs layer
+2026-10-04T03:55:15.7760896Z 9928009b15c8: Pulling fs layer
+2026-10-04T03:55:15.7762292Z 4f4fb700ef54: Pulling fs layer
+2026-10-04T03:55:15.7763192Z 4eb14bae0e1d: Pulling fs layer
+2026-10-04T03:55:15.7763962Z 9928009b15c8: Waiting
+2026-10-04T03:55:15.7764641Z 4f4fb700ef54: Waiting
+2026-10-04T03:55:15.7765317Z 4eb14bae0e1d: Waiting
+2026-10-04T03:55:16.0205381Z 1522f9c6f453: Waiting
+2026-10-04T03:55:16.0206544Z 83234986c742: Verifying Checksum
+2026-10-04T03:55:16.0207286Z 83234986c742: Download complete
+2026-10-04T03:55:16.0423381Z 7eb50503c2b0: Download complete
+2026-10-04T03:55:16.0985702Z 16333ee0c00f: Verifying Checksum
+2026-10-04T03:55:16.0987255Z 16333ee0c00f: Download complete
+2026-10-04T03:55:16.2088861Z 16333ee0c00f: Pull complete
+2026-10-04T03:55:16.2348514Z 83234986c742: Pull complete
+2026-10-04T03:55:16.2842705Z 9928009b15c8: Verifying Checksum
+2026-10-04T03:55:16.2843457Z 9928009b15c8: Download complete
+2026-10-04T03:55:16.3215419Z 4f4fb700ef54: Download complete
+2026-10-04T03:55:16.3509344Z 1522f9c6f453: Verifying Checksum
+2026-10-04T03:55:16.3510372Z 1522f9c6f453: Download complete
+2026-10-04T03:55:16.3897288Z 7eb50503c2b0: Pull complete
+2026-10-04T03:55:16.5227458Z 4eb14bae0e1d: Verifying Checksum
+2026-10-04T03:55:16.5228222Z 4eb14bae0e1d: Download complete
+2026-10-04T03:55:16.5845085Z 1522f9c6f453: Pull complete
+2026-10-04T03:55:16.5923247Z 9928009b15c8: Pull complete
+2026-10-04T03:55:16.5995538Z 4f4fb700ef54: Pull complete
+2026-10-04T03:55:16.6090031Z 4eb14bae0e1d: Pull complete
+2026-10-04T03:55:16.6141533Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+2026-10-04T03:55:16.6153388Z Status: Downloaded newer image for redis:7-alpine
+2026-10-04T03:55:16.6161624Z docker.io/library/redis:7-alpine
+2026-10-04T03:55:16.6198233Z ##[command]/usr/bin/docker create --name 9c2a6fb3bac24421bfdf25ee10b68071_redis7alpine_100aea --label 376848 --network github_network_22066e76ceb649a098f30be85821d4d6 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+2026-10-04T03:55:16.6477494Z 7513f36fb069f833f20ee827476c852d03a3f58239c1e4407b4512baee04b65b
+2026-10-04T03:55:16.6502630Z ##[command]/usr/bin/docker start 7513f36fb069f833f20ee827476c852d03a3f58239c1e4407b4512baee04b65b
+2026-10-04T03:55:16.9988258Z 7513f36fb069f833f20ee827476c852d03a3f58239c1e4407b4512baee04b65b
+2026-10-04T03:55:17.0010182Z ##[command]/usr/bin/docker ps --all --filter id=7513f36fb069f833f20ee827476c852d03a3f58239c1e4407b4512baee04b65b --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-04T03:55:17.0142465Z 7513f36fb069f833f20ee827476c852d03a3f58239c1e4407b4512baee04b65b Up Less than a second (health: starting)
+2026-10-04T03:55:17.0163063Z ##[command]/usr/bin/docker port 7513f36fb069f833f20ee827476c852d03a3f58239c1e4407b4512baee04b65b
+2026-10-04T03:55:17.0285484Z 6379/tcp -> 0.0.0.0:6379
+2026-10-04T03:55:17.0286287Z 6379/tcp -> [::]:6379
+2026-10-04T03:55:17.0333938Z ##[endgroup]
+2026-10-04T03:55:17.0342877Z ##[group]Waiting for all services to be ready
+2026-10-04T03:55:17.0356809Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 7513f36fb069f833f20ee827476c852d03a3f58239c1e4407b4512baee04b65b
+2026-10-04T03:55:17.0478173Z starting
+2026-10-04T03:55:17.0498043Z redis service is starting, waiting 2 seconds before checking again.
+2026-10-04T03:55:19.0497956Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 7513f36fb069f833f20ee827476c852d03a3f58239c1e4407b4512baee04b65b
+2026-10-04T03:55:19.0625131Z starting
+2026-10-04T03:55:19.0638872Z redis service is starting, waiting 3 seconds before checking again.
+2026-10-04T03:55:22.8254007Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 7513f36fb069f833f20ee827476c852d03a3f58239c1e4407b4512baee04b65b
+2026-10-04T03:55:22.8404739Z healthy
+2026-10-04T03:55:22.8424341Z redis service is healthy.
+2026-10-04T03:55:22.8425167Z ##[endgroup]
+2026-10-04T03:55:22.8734493Z ##[group]Run actions/checkout@v6
+2026-10-04T03:55:22.8735127Z with:
+2026-10-04T03:55:22.8735446Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T03:55:22.8738421Z   token: ***
+2026-10-04T03:55:22.8738636Z   ssh-strict: true
+2026-10-04T03:55:22.8738845Z   ssh-user: git
+2026-10-04T03:55:22.8739061Z   persist-credentials: true
+2026-10-04T03:55:22.8739310Z   clean: true
+2026-10-04T03:55:22.8740233Z   sparse-checkout-cone-mode: true
+2026-10-04T03:55:22.8740654Z   fetch-depth: 1
+2026-10-04T03:55:22.8740867Z   fetch-tags: false
+2026-10-04T03:55:22.8741109Z   show-progress: true
+2026-10-04T03:55:22.8741353Z   lfs: false
+2026-10-04T03:55:22.8741545Z   submodules: false
+2026-10-04T03:55:22.8741755Z   set-safe-directory: true
+2026-10-04T03:55:22.8742002Z   allow-unsafe-pr-checkout: false
+2026-10-04T03:55:22.8742646Z ##[endgroup]
+2026-10-04T03:55:22.9867641Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T03:55:22.9870131Z ##[group]Getting Git version info
+2026-10-04T03:55:22.9870730Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T03:55:22.9871566Z [command]/usr/bin/git version
+2026-10-04T03:55:22.9871838Z git version 2.55.0
+2026-10-04T03:55:22.9881371Z ##[endgroup]
+2026-10-04T03:55:22.9888055Z Temporarily overriding HOME='/home/runner/work/_temp/bef3fe76-b79d-4a93-967c-871c116cd062' before making global git config changes
+2026-10-04T03:55:22.9889418Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T03:55:22.9894697Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T03:55:22.9948681Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T03:55:22.9953846Z ##[group]Determining repository object format
+2026-10-04T03:55:22.9956401Z ##[endgroup]
+2026-10-04T03:55:22.9957121Z ##[group]Initializing the repository
+2026-10-04T03:55:22.9961854Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T03:55:23.0076683Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-04T03:55:23.0077987Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-04T03:55:23.0079002Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-04T03:55:23.0080303Z hint: call:
+2026-10-04T03:55:23.0080766Z hint:
+2026-10-04T03:55:23.0081247Z hint: 	git config --global init.defaultBranch <name>
+2026-10-04T03:55:23.0081825Z hint:
+2026-10-04T03:55:23.0082432Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-04T03:55:23.0083363Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-04T03:55:23.0084099Z hint:
+2026-10-04T03:55:23.0084357Z hint: 	git branch -m <name>
+2026-10-04T03:55:23.0084632Z hint:
+2026-10-04T03:55:23.0085033Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-04T03:55:23.0086202Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-04T03:55:23.0092256Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T03:55:23.0144610Z ##[endgroup]
+2026-10-04T03:55:23.0145278Z ##[group]Disabling automatic garbage collection
+2026-10-04T03:55:23.0150273Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-04T03:55:23.0182158Z ##[endgroup]
+2026-10-04T03:55:23.0182777Z ##[group]Setting up auth
+2026-10-04T03:55:23.0188970Z Removing SSH command configuration
+2026-10-04T03:55:23.0191961Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T03:55:23.0225924Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T03:55:23.0566083Z Removing HTTP extra header
+2026-10-04T03:55:23.0572490Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T03:55:23.0607672Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T03:55:23.0843330Z Removing includeIf entries pointing to credentials config files
+2026-10-04T03:55:23.0851802Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T03:55:23.0887180Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T03:55:23.1118653Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-5d2f3bac-60f7-4e16-8ff4-dc371221f6c8.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-04T03:55:23.1157548Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-5d2f3bac-60f7-4e16-8ff4-dc371221f6c8.config
+2026-10-04T03:55:23.1188959Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-5d2f3bac-60f7-4e16-8ff4-dc371221f6c8.config
+2026-10-04T03:55:23.1223990Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-5d2f3bac-60f7-4e16-8ff4-dc371221f6c8.config
+2026-10-04T03:55:23.1256553Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-5d2f3bac-60f7-4e16-8ff4-dc371221f6c8.config
+2026-10-04T03:55:23.1326350Z ##[endgroup]
+2026-10-04T03:55:23.1336958Z ##[group]Fetching the repository
+2026-10-04T03:55:23.1337981Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +8876bea79cb35582b694ed76babd866620ba11bd:refs/remotes/origin/ci/B-CI2-116-sbom-before
+2026-10-04T03:55:24.4343100Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T03:55:24.4344336Z  * [new ref]         8876bea79cb35582b694ed76babd866620ba11bd -> origin/ci/B-CI2-116-sbom-before
+2026-10-04T03:55:24.4356334Z [command]/usr/bin/git branch --list --remote origin/ci/B-CI2-116-sbom-before
+2026-10-04T03:55:24.4383744Z   origin/ci/B-CI2-116-sbom-before
+2026-10-04T03:55:24.4394054Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-CI2-116-sbom-before
+2026-10-04T03:55:24.4419712Z 8876bea79cb35582b694ed76babd866620ba11bd
+2026-10-04T03:55:24.4424325Z ##[endgroup]
+2026-10-04T03:55:24.4424949Z ##[group]Determining the checkout info
+2026-10-04T03:55:24.4425790Z ##[endgroup]
+2026-10-04T03:55:24.4431248Z [command]/usr/bin/git sparse-checkout disable
+2026-10-04T03:55:24.4486915Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-04T03:55:24.4518391Z ##[group]Checking out the ref
+2026-10-04T03:55:24.4525229Z [command]/usr/bin/git checkout --progress --force -B ci/B-CI2-116-sbom-before refs/remotes/origin/ci/B-CI2-116-sbom-before
+2026-10-04T03:55:24.6712175Z Switched to a new branch 'ci/B-CI2-116-sbom-before'
+2026-10-04T03:55:24.6716841Z branch 'ci/B-CI2-116-sbom-before' set up to track 'origin/ci/B-CI2-116-sbom-before'.
+2026-10-04T03:55:24.6726607Z ##[endgroup]
+2026-10-04T03:55:24.6773666Z [command]/usr/bin/git log -1 --format=%H
+2026-10-04T03:55:24.6802203Z 8876bea79cb35582b694ed76babd866620ba11bd
+2026-10-04T03:55:24.7076476Z ##[group]Run actions/setup-node@v6
+2026-10-04T03:55:24.7076778Z with:
+2026-10-04T03:55:24.7076976Z   node-version: 20
+2026-10-04T03:55:24.7077187Z   cache: npm
+2026-10-04T03:55:24.7077384Z   check-latest: false
+2026-10-04T03:55:24.7080344Z   token: ***
+2026-10-04T03:55:24.7080568Z   package-manager-cache: true
+2026-10-04T03:55:24.7080818Z ##[endgroup]
+2026-10-04T03:55:24.8568178Z Attempting to download 20...
+2026-10-04T03:55:25.3159230Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-04T03:55:25.7601011Z Extracting ...
+2026-10-04T03:55:25.7737268Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/d1b3b595-b5f2-4bac-993c-5b08e6da9665 -f /home/runner/work/_temp/b5b30b77-2db8-4f65-b6c2-34e04f80416a
+2026-10-04T03:55:26.7702342Z Adding to the cache ...
+2026-10-04T03:55:28.6414376Z ##[group]Environment details
+2026-10-04T03:55:28.8749332Z node: v20.20.2
+2026-10-04T03:55:28.8749730Z npm: 10.8.2
+2026-10-04T03:55:28.8750360Z yarn: 1.22.22
+2026-10-04T03:55:28.8751057Z ##[endgroup]
+2026-10-04T03:55:28.8769121Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+2026-10-04T03:55:28.9832976Z /home/runner/.npm
+2026-10-04T03:55:29.2303095Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T03:55:30.5446739Z Received 0 of 86828135 (0.0%), 0.0 MBs/sec
+2026-10-04T03:55:31.2385413Z Received 86828135 of 86828135 (100.0%), 48.9 MBs/sec
+2026-10-04T03:55:31.2386565Z Cache Size: ~83 MB (86828135 B)
+2026-10-04T03:55:31.2503488Z [command]/usr/bin/tar -xf /home/runner/work/_temp/f20fc09d-b2e4-43ea-86d6-b0d88697f7d3/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+2026-10-04T03:55:31.4198214Z Cache restored successfully
+2026-10-04T03:55:31.4247651Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T03:55:31.4444556Z ##[group]Run npm ci
+2026-10-04T03:55:31.4444865Z npm ci
+2026-10-04T03:55:31.4674100Z shell: /usr/bin/bash -e {0}
+2026-10-04T03:55:31.4674472Z ##[endgroup]
+2026-10-04T03:55:37.6503758Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-04T03:55:38.9295648Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-04T03:55:40.1497891Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T03:55:41.6786359Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T03:55:41.6877441Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T03:55:41.7513434Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T03:55:55.4334502Z 
+2026-10-04T03:55:55.4335336Z > growth-project-backend@1.0.0 postinstall
+2026-10-04T03:55:55.4336073Z > prisma generate
+2026-10-04T03:55:55.4336316Z 
+2026-10-04T03:55:56.4210416Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T03:56:00.3400809Z ┌─────────────────────────────────────────────────────────┐
+2026-10-04T03:56:00.3402114Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+2026-10-04T03:56:00.3402591Z 
+2026-10-04T03:56:00.3403447Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.16s
+2026-10-04T03:56:00.3404113Z 
+2026-10-04T03:56:00.3404972Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T03:56:00.3406045Z │                                                         │
+2026-10-04T03:56:00.3406943Z │  This is a major update - please follow the guide at    │
+2026-10-04T03:56:00.3407891Z │  https://pris.ly/d/major-version-upgrade                │
+2026-10-04T03:56:00.3409289Z │                                                         │
+2026-10-04T03:56:00.3410726Z │  Run the following to update                            │
+2026-10-04T03:56:00.3411633Z │    npm i --save-dev prisma@latest                       │
+2026-10-04T03:56:00.3412495Z │    npm i @prisma/client@latest                          │
+2026-10-04T03:56:00.3413406Z └─────────────────────────────────────────────────────────┘
+2026-10-04T03:56:00.3413807Z 
+2026-10-04T03:56:00.3414683Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+2026-10-04T03:56:00.3415471Z 
+2026-10-04T03:56:00.3963248Z 
+2026-10-04T03:56:00.3964085Z > growth-project-backend@1.0.0 prepare
+2026-10-04T03:56:00.3964684Z > lefthook install
+2026-10-04T03:56:00.3964924Z 
+2026-10-04T03:56:00.4485519Z sync hooks: ✔️(pre-commit, commit-msg)
+2026-10-04T03:56:00.4659434Z 
+2026-10-04T03:56:00.4660675Z added 1115 packages, and audited 1116 packages in 29s
+2026-10-04T03:56:00.4661071Z 
+2026-10-04T03:56:00.4661271Z 202 packages are looking for funding
+2026-10-04T03:56:00.4661624Z   run `npm fund` for details
+2026-10-04T03:56:00.4694156Z 
+2026-10-04T03:56:00.4694547Z 3 high severity vulnerabilities
+2026-10-04T03:56:00.4695363Z 
+2026-10-04T03:56:00.4695925Z To address all issues (including breaking changes), run:
+2026-10-04T03:56:00.4696550Z   npm audit fix --force
+2026-10-04T03:56:00.4696804Z 
+2026-10-04T03:56:00.4697021Z Run `npm audit` for details.
+2026-10-04T03:56:00.5346420Z ##[group]Run npx prisma generate
+2026-10-04T03:56:00.5346779Z npx prisma generate
+2026-10-04T03:56:00.5424192Z shell: /usr/bin/bash -e {0}
+2026-10-04T03:56:00.5424503Z ##[endgroup]
+2026-10-04T03:56:01.8357770Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T03:56:05.8488932Z 
+2026-10-04T03:56:05.8491142Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.24s
+2026-10-04T03:56:05.8491644Z 
+2026-10-04T03:56:05.8492112Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T03:56:05.8492595Z 
+2026-10-04T03:56:05.8493263Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+2026-10-04T03:56:05.8493874Z 
+2026-10-04T03:56:05.9747317Z ##[group]Run set -euo pipefail
+2026-10-04T03:56:05.9747678Z set -euo pipefail
+2026-10-04T03:56:05.9748076Z test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+2026-10-04T03:56:05.9748585Z mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+2026-10-04T03:56:05.9748957Z echo "specs: ${SPECS[*]}"
+2026-10-04T03:56:05.9749260Z npx jest --ci --runInBand "${SPECS[@]}"
+2026-10-04T03:56:05.9813695Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T03:56:05.9814083Z env:
+2026-10-04T03:56:05.9814333Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-04T03:56:05.9814693Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-04T03:56:05.9815014Z ##[endgroup]
+2026-10-04T03:56:05.9924307Z specs: test/ci/assert-prod-sbom-determinism.spec.ts test/ci/delivery-artifact.spec.ts
+2026-10-04T03:56:17.7624948Z PASS test/ci/delivery-artifact.spec.ts (10.65 s)
+2026-10-04T03:56:28.9411749Z FAIL test/ci/assert-prod-sbom-determinism.spec.ts (11.173 s)
+2026-10-04T03:56:28.9414794Z   ● assert-prod-sbom.sh gives the same verdict on every run (B-CI2-116) › SBOM larger than the pipe buffer: grep -q exits while the writer is still blocked › fails on jest in every run
+2026-10-04T03:56:28.9415990Z 
+2026-10-04T03:56:28.9416331Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T03:56:28.9416736Z 
+2026-10-04T03:56:28.9416910Z     - Expected  -  1
+2026-10-04T03:56:28.9417294Z     + Received  + 17
+2026-10-04T03:56:28.9417517Z 
+2026-10-04T03:56:28.9417668Z     - Array []
+2026-10-04T03:56:28.9418004Z     + Array [
+2026-10-04T03:56:28.9418328Z     +   Object {
+2026-10-04T03:56:28.9418626Z     +     "code": 1,
+2026-10-04T03:56:28.9419221Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9420638Z     +     "run": 0,
+2026-10-04T03:56:28.9420864Z     +   },
+2026-10-04T03:56:28.9421064Z     +   Object {
+2026-10-04T03:56:28.9421508Z     +     "code": 1,
+2026-10-04T03:56:28.9422376Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9423219Z     +     "run": 1,
+2026-10-04T03:56:28.9423555Z     +   },
+2026-10-04T03:56:28.9423877Z     +   Object {
+2026-10-04T03:56:28.9424216Z     +     "code": 1,
+2026-10-04T03:56:28.9425113Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9426029Z     +     "run": 2,
+2026-10-04T03:56:28.9426388Z     +   },
+2026-10-04T03:56:28.9426713Z     + ]
+2026-10-04T03:56:28.9426907Z 
+2026-10-04T03:56:28.9427529Z       146 |           LARGE_RUNS,
+2026-10-04T03:56:28.9428325Z       147 |         );
+2026-10-04T03:56:28.9430046Z     > 148 |         expect(wrong(runs, 1, TOOL_FOUND(tool))).toEqual([]);
+2026-10-04T03:56:28.9431532Z           |                                                  ^
+2026-10-04T03:56:28.9432450Z       149 |       }, 60_000);
+2026-10-04T03:56:28.9433105Z       150 |     }
+2026-10-04T03:56:28.9433600Z       151 |
+2026-10-04T03:56:28.9433858Z 
+2026-10-04T03:56:28.9434401Z       at Object.<anonymous> (test/ci/assert-prod-sbom-determinism.spec.ts:148:50)
+2026-10-04T03:56:28.9435007Z 
+2026-10-04T03:56:28.9436523Z   ● assert-prod-sbom.sh gives the same verdict on every run (B-CI2-116) › SBOM larger than the pipe buffer: grep -q exits while the writer is still blocked › fails on ts-jest in every run
+2026-10-04T03:56:28.9437789Z 
+2026-10-04T03:56:28.9438144Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T03:56:28.9438619Z 
+2026-10-04T03:56:28.9438857Z     - Expected  -  1
+2026-10-04T03:56:28.9439268Z     + Received  + 17
+2026-10-04T03:56:28.9439501Z 
+2026-10-04T03:56:28.9440348Z     - Array []
+2026-10-04T03:56:28.9440789Z     + Array [
+2026-10-04T03:56:28.9441154Z     +   Object {
+2026-10-04T03:56:28.9441539Z     +     "code": 1,
+2026-10-04T03:56:28.9442521Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9443488Z     +     "run": 0,
+2026-10-04T03:56:28.9443854Z     +   },
+2026-10-04T03:56:28.9444197Z     +   Object {
+2026-10-04T03:56:28.9444575Z     +     "code": 1,
+2026-10-04T03:56:28.9445573Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9446552Z     +     "run": 1,
+2026-10-04T03:56:28.9446926Z     +   },
+2026-10-04T03:56:28.9447281Z     +   Object {
+2026-10-04T03:56:28.9447671Z     +     "code": 1,
+2026-10-04T03:56:28.9448748Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9449665Z     +     "run": 2,
+2026-10-04T03:56:28.9450290Z     +   },
+2026-10-04T03:56:28.9450618Z     + ]
+2026-10-04T03:56:28.9450805Z 
+2026-10-04T03:56:28.9451330Z       146 |           LARGE_RUNS,
+2026-10-04T03:56:28.9452049Z       147 |         );
+2026-10-04T03:56:28.9453457Z     > 148 |         expect(wrong(runs, 1, TOOL_FOUND(tool))).toEqual([]);
+2026-10-04T03:56:28.9454830Z           |                                                  ^
+2026-10-04T03:56:28.9455716Z       149 |       }, 60_000);
+2026-10-04T03:56:28.9456354Z       150 |     }
+2026-10-04T03:56:28.9456847Z       151 |
+2026-10-04T03:56:28.9457382Z 
+2026-10-04T03:56:28.9457904Z       at Object.<anonymous> (test/ci/assert-prod-sbom-determinism.spec.ts:148:50)
+2026-10-04T03:56:28.9458538Z 
+2026-10-04T03:56:28.9460319Z   ● assert-prod-sbom.sh gives the same verdict on every run (B-CI2-116) › SBOM larger than the pipe buffer: grep -q exits while the writer is still blocked › fails on ts-node in every run
+2026-10-04T03:56:28.9461551Z 
+2026-10-04T03:56:28.9461901Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T03:56:28.9462350Z 
+2026-10-04T03:56:28.9462534Z     - Expected  -  1
+2026-10-04T03:56:28.9462963Z     + Received  + 17
+2026-10-04T03:56:28.9463329Z 
+2026-10-04T03:56:28.9463497Z     - Array []
+2026-10-04T03:56:28.9463872Z     + Array [
+2026-10-04T03:56:28.9464080Z     +   Object {
+2026-10-04T03:56:28.9464280Z     +     "code": 1,
+2026-10-04T03:56:28.9464851Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9465391Z     +     "run": 0,
+2026-10-04T03:56:28.9465595Z     +   },
+2026-10-04T03:56:28.9465784Z     +   Object {
+2026-10-04T03:56:28.9465983Z     +     "code": 1,
+2026-10-04T03:56:28.9466504Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9467004Z     +     "run": 1,
+2026-10-04T03:56:28.9467204Z     +   },
+2026-10-04T03:56:28.9467387Z     +   Object {
+2026-10-04T03:56:28.9467582Z     +     "code": 1,
+2026-10-04T03:56:28.9468085Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9468576Z     +     "run": 2,
+2026-10-04T03:56:28.9468766Z     +   },
+2026-10-04T03:56:28.9468951Z     + ]
+2026-10-04T03:56:28.9469052Z 
+2026-10-04T03:56:28.9469355Z       146 |           LARGE_RUNS,
+2026-10-04T03:56:28.9470047Z       147 |         );
+2026-10-04T03:56:28.9470902Z     > 148 |         expect(wrong(runs, 1, TOOL_FOUND(tool))).toEqual([]);
+2026-10-04T03:56:28.9471895Z           |                                                  ^
+2026-10-04T03:56:28.9472409Z       149 |       }, 60_000);
+2026-10-04T03:56:28.9472770Z       150 |     }
+2026-10-04T03:56:28.9473029Z       151 |
+2026-10-04T03:56:28.9473174Z 
+2026-10-04T03:56:28.9473456Z       at Object.<anonymous> (test/ci/assert-prod-sbom-determinism.spec.ts:148:50)
+2026-10-04T03:56:28.9473786Z 
+2026-10-04T03:56:28.9474618Z   ● assert-prod-sbom.sh gives the same verdict on every run (B-CI2-116) › SBOM larger than the pipe buffer: grep -q exits while the writer is still blocked › fails on @nestjs/cli in every run
+2026-10-04T03:56:28.9475305Z 
+2026-10-04T03:56:28.9475484Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T03:56:28.9475722Z 
+2026-10-04T03:56:28.9475826Z     - Expected  -  1
+2026-10-04T03:56:28.9476045Z     + Received  + 17
+2026-10-04T03:56:28.9476172Z 
+2026-10-04T03:56:28.9476253Z     - Array []
+2026-10-04T03:56:28.9476451Z     + Array [
+2026-10-04T03:56:28.9476640Z     +   Object {
+2026-10-04T03:56:28.9476845Z     +     "code": 1,
+2026-10-04T03:56:28.9477373Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9477881Z     +     "run": 0,
+2026-10-04T03:56:28.9478075Z     +   },
+2026-10-04T03:56:28.9478264Z     +   Object {
+2026-10-04T03:56:28.9478455Z     +     "code": 1,
+2026-10-04T03:56:28.9478956Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9479455Z     +     "run": 1,
+2026-10-04T03:56:28.9479643Z     +   },
+2026-10-04T03:56:28.9479970Z     +   Object {
+2026-10-04T03:56:28.9480176Z     +     "code": 1,
+2026-10-04T03:56:28.9480674Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9481394Z     +     "run": 2,
+2026-10-04T03:56:28.9481594Z     +   },
+2026-10-04T03:56:28.9481769Z     + ]
+2026-10-04T03:56:28.9481869Z 
+2026-10-04T03:56:28.9482126Z       146 |           LARGE_RUNS,
+2026-10-04T03:56:28.9482523Z       147 |         );
+2026-10-04T03:56:28.9483292Z     > 148 |         expect(wrong(runs, 1, TOOL_FOUND(tool))).toEqual([]);
+2026-10-04T03:56:28.9484048Z           |                                                  ^
+2026-10-04T03:56:28.9484548Z       149 |       }, 60_000);
+2026-10-04T03:56:28.9484915Z       150 |     }
+2026-10-04T03:56:28.9485176Z       151 |
+2026-10-04T03:56:28.9485320Z 
+2026-10-04T03:56:28.9485607Z       at Object.<anonymous> (test/ci/assert-prod-sbom-determinism.spec.ts:148:50)
+2026-10-04T03:56:28.9485938Z 
+2026-10-04T03:56:28.9486765Z   ● assert-prod-sbom.sh gives the same verdict on every run (B-CI2-116) › SBOM larger than the pipe buffer: grep -q exits while the writer is still blocked › fails on @nestjs/testing in every run
+2026-10-04T03:56:28.9487456Z 
+2026-10-04T03:56:28.9487635Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T03:56:28.9487865Z 
+2026-10-04T03:56:28.9487960Z     - Expected  -  1
+2026-10-04T03:56:28.9488178Z     + Received  + 17
+2026-10-04T03:56:28.9488305Z 
+2026-10-04T03:56:28.9488393Z     - Array []
+2026-10-04T03:56:28.9488586Z     + Array [
+2026-10-04T03:56:28.9488773Z     +   Object {
+2026-10-04T03:56:28.9488963Z     +     "code": 1,
+2026-10-04T03:56:28.9489490Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9490143Z     +     "run": 0,
+2026-10-04T03:56:28.9490341Z     +   },
+2026-10-04T03:56:28.9490525Z     +   Object {
+2026-10-04T03:56:28.9490725Z     +     "code": 1,
+2026-10-04T03:56:28.9491227Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9491866Z     +     "run": 1,
+2026-10-04T03:56:28.9492067Z     +   },
+2026-10-04T03:56:28.9492245Z     +   Object {
+2026-10-04T03:56:28.9492442Z     +     "code": 1,
+2026-10-04T03:56:28.9492944Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9493434Z     +     "run": 2,
+2026-10-04T03:56:28.9493626Z     +   },
+2026-10-04T03:56:28.9493803Z     + ]
+2026-10-04T03:56:28.9493909Z 
+2026-10-04T03:56:28.9494161Z       146 |           LARGE_RUNS,
+2026-10-04T03:56:28.9494556Z       147 |         );
+2026-10-04T03:56:28.9495313Z     > 148 |         expect(wrong(runs, 1, TOOL_FOUND(tool))).toEqual([]);
+2026-10-04T03:56:28.9496065Z           |                                                  ^
+2026-10-04T03:56:28.9496558Z       149 |       }, 60_000);
+2026-10-04T03:56:28.9496905Z       150 |     }
+2026-10-04T03:56:28.9497157Z       151 |
+2026-10-04T03:56:28.9497298Z 
+2026-10-04T03:56:28.9497573Z       at Object.<anonymous> (test/ci/assert-prod-sbom-determinism.spec.ts:148:50)
+2026-10-04T03:56:28.9497898Z 
+2026-10-04T03:56:28.9498675Z   ● assert-prod-sbom.sh gives the same verdict on every run (B-CI2-116) › SBOM larger than the pipe buffer: grep -q exits while the writer is still blocked › fails on eslint in every run
+2026-10-04T03:56:28.9499334Z 
+2026-10-04T03:56:28.9499509Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T03:56:28.9499736Z 
+2026-10-04T03:56:28.9499956Z     - Expected  -  1
+2026-10-04T03:56:28.9500172Z     + Received  + 17
+2026-10-04T03:56:28.9500441Z 
+2026-10-04T03:56:28.9500527Z     - Array []
+2026-10-04T03:56:28.9500721Z     + Array [
+2026-10-04T03:56:28.9500907Z     +   Object {
+2026-10-04T03:56:28.9501104Z     +     "code": 1,
+2026-10-04T03:56:28.9501624Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9502128Z     +     "run": 0,
+2026-10-04T03:56:28.9502323Z     +   },
+2026-10-04T03:56:28.9502503Z     +   Object {
+2026-10-04T03:56:28.9502693Z     +     "code": 1,
+2026-10-04T03:56:28.9503199Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9503691Z     +     "run": 1,
+2026-10-04T03:56:28.9503879Z     +   },
+2026-10-04T03:56:28.9504065Z     +   Object {
+2026-10-04T03:56:28.9504257Z     +     "code": 1,
+2026-10-04T03:56:28.9504756Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9505259Z     +     "run": 2,
+2026-10-04T03:56:28.9505446Z     +   },
+2026-10-04T03:56:28.9505623Z     + ]
+2026-10-04T03:56:28.9505726Z 
+2026-10-04T03:56:28.9505982Z       146 |           LARGE_RUNS,
+2026-10-04T03:56:28.9506372Z       147 |         );
+2026-10-04T03:56:28.9507128Z     > 148 |         expect(wrong(runs, 1, TOOL_FOUND(tool))).toEqual([]);
+2026-10-04T03:56:28.9507881Z           |                                                  ^
+2026-10-04T03:56:28.9508362Z       149 |       }, 60_000);
+2026-10-04T03:56:28.9508708Z       150 |     }
+2026-10-04T03:56:28.9508964Z       151 |
+2026-10-04T03:56:28.9509099Z 
+2026-10-04T03:56:28.9509382Z       at Object.<anonymous> (test/ci/assert-prod-sbom-determinism.spec.ts:148:50)
+2026-10-04T03:56:28.9509706Z 
+2026-10-04T03:56:28.9510670Z   ● assert-prod-sbom.sh gives the same verdict on every run (B-CI2-116) › SBOM larger than the pipe buffer: grep -q exits while the writer is still blocked › fails on typescript-eslint in every run
+2026-10-04T03:56:28.9511365Z 
+2026-10-04T03:56:28.9511670Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T03:56:28.9511911Z 
+2026-10-04T03:56:28.9512002Z     - Expected  -  1
+2026-10-04T03:56:28.9512221Z     + Received  + 17
+2026-10-04T03:56:28.9512343Z 
+2026-10-04T03:56:28.9512427Z     - Array []
+2026-10-04T03:56:28.9512620Z     + Array [
+2026-10-04T03:56:28.9512811Z     +   Object {
+2026-10-04T03:56:28.9513004Z     +     "code": 1,
+2026-10-04T03:56:28.9513528Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9514037Z     +     "run": 0,
+2026-10-04T03:56:28.9514229Z     +   },
+2026-10-04T03:56:28.9514409Z     +   Object {
+2026-10-04T03:56:28.9514637Z     +     "code": 1,
+2026-10-04T03:56:28.9515145Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9515655Z     +     "run": 1,
+2026-10-04T03:56:28.9515845Z     +   },
+2026-10-04T03:56:28.9516026Z     +   Object {
+2026-10-04T03:56:28.9516223Z     +     "code": 1,
+2026-10-04T03:56:28.9516721Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9517214Z     +     "run": 2,
+2026-10-04T03:56:28.9517409Z     +   },
+2026-10-04T03:56:28.9517584Z     + ]
+2026-10-04T03:56:28.9517689Z 
+2026-10-04T03:56:28.9517930Z       146 |           LARGE_RUNS,
+2026-10-04T03:56:28.9518326Z       147 |         );
+2026-10-04T03:56:28.9519091Z     > 148 |         expect(wrong(runs, 1, TOOL_FOUND(tool))).toEqual([]);
+2026-10-04T03:56:28.9519988Z           |                                                  ^
+2026-10-04T03:56:28.9521279Z       149 |       }, 60_000);
+2026-10-04T03:56:28.9521891Z       150 |     }
+2026-10-04T03:56:28.9522347Z       151 |
+2026-10-04T03:56:28.9522590Z 
+2026-10-04T03:56:28.9523078Z       at Object.<anonymous> (test/ci/assert-prod-sbom-determinism.spec.ts:148:50)
+2026-10-04T03:56:28.9523505Z 
+2026-10-04T03:56:28.9524339Z   ● assert-prod-sbom.sh gives the same verdict on every run (B-CI2-116) › SBOM larger than the pipe buffer: grep -q exits while the writer is still blocked › fails on lefthook in every run
+2026-10-04T03:56:28.9525024Z 
+2026-10-04T03:56:28.9525213Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T03:56:28.9525443Z 
+2026-10-04T03:56:28.9525538Z     - Expected  -  1
+2026-10-04T03:56:28.9525754Z     + Received  + 17
+2026-10-04T03:56:28.9525879Z 
+2026-10-04T03:56:28.9525964Z     - Array []
+2026-10-04T03:56:28.9526157Z     + Array [
+2026-10-04T03:56:28.9526354Z     +   Object {
+2026-10-04T03:56:28.9526553Z     +     "code": 1,
+2026-10-04T03:56:28.9527088Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9527600Z     +     "run": 0,
+2026-10-04T03:56:28.9527799Z     +   },
+2026-10-04T03:56:28.9527979Z     +   Object {
+2026-10-04T03:56:28.9528176Z     +     "code": 1,
+2026-10-04T03:56:28.9528683Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9529177Z     +     "run": 1,
+2026-10-04T03:56:28.9529367Z     +   },
+2026-10-04T03:56:28.9529547Z     +   Object {
+2026-10-04T03:56:28.9529742Z     +     "code": 1,
+2026-10-04T03:56:28.9530428Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9530922Z     +     "run": 2,
+2026-10-04T03:56:28.9531119Z     +   },
+2026-10-04T03:56:28.9531295Z     + ]
+2026-10-04T03:56:28.9531404Z 
+2026-10-04T03:56:28.9531648Z       146 |           LARGE_RUNS,
+2026-10-04T03:56:28.9532044Z       147 |         );
+2026-10-04T03:56:28.9533276Z     > 148 |         expect(wrong(runs, 1, TOOL_FOUND(tool))).toEqual([]);
+2026-10-04T03:56:28.9534202Z           |                                                  ^
+2026-10-04T03:56:28.9534713Z       149 |       }, 60_000);
+2026-10-04T03:56:28.9535070Z       150 |     }
+2026-10-04T03:56:28.9535335Z       151 |
+2026-10-04T03:56:28.9535474Z 
+2026-10-04T03:56:28.9535761Z       at Object.<anonymous> (test/ci/assert-prod-sbom-determinism.spec.ts:148:50)
+2026-10-04T03:56:28.9536097Z 
+2026-10-04T03:56:28.9536891Z   ● assert-prod-sbom.sh gives the same verdict on every run (B-CI2-116) › SBOM larger than the pipe buffer: grep -q exits while the writer is still blocked › fails on danger in every run
+2026-10-04T03:56:28.9537570Z 
+2026-10-04T03:56:28.9537754Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T03:56:28.9537999Z 
+2026-10-04T03:56:28.9538096Z     - Expected  -  1
+2026-10-04T03:56:28.9538315Z     + Received  + 17
+2026-10-04T03:56:28.9538445Z 
+2026-10-04T03:56:28.9538532Z     - Array []
+2026-10-04T03:56:28.9538730Z     + Array [
+2026-10-04T03:56:28.9538920Z     +   Object {
+2026-10-04T03:56:28.9539123Z     +     "code": 1,
+2026-10-04T03:56:28.9539650Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9540316Z     +     "run": 0,
+2026-10-04T03:56:28.9540517Z     +   },
+2026-10-04T03:56:28.9540698Z     +   Object {
+2026-10-04T03:56:28.9540889Z     +     "code": 1,
+2026-10-04T03:56:28.9541401Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9542099Z     +     "run": 1,
+2026-10-04T03:56:28.9542289Z     +   },
+2026-10-04T03:56:28.9542475Z     +   Object {
+2026-10-04T03:56:28.9542669Z     +     "code": 1,
+2026-10-04T03:56:28.9543175Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9543671Z     +     "run": 2,
+2026-10-04T03:56:28.9543859Z     +   },
+2026-10-04T03:56:28.9544034Z     + ]
+2026-10-04T03:56:28.9544138Z 
+2026-10-04T03:56:28.9544393Z       146 |           LARGE_RUNS,
+2026-10-04T03:56:28.9544786Z       147 |         );
+2026-10-04T03:56:28.9545562Z     > 148 |         expect(wrong(runs, 1, TOOL_FOUND(tool))).toEqual([]);
+2026-10-04T03:56:28.9546327Z           |                                                  ^
+2026-10-04T03:56:28.9546816Z       149 |       }, 60_000);
+2026-10-04T03:56:28.9547168Z       150 |     }
+2026-10-04T03:56:28.9547430Z       151 |
+2026-10-04T03:56:28.9547567Z 
+2026-10-04T03:56:28.9547853Z       at Object.<anonymous> (test/ci/assert-prod-sbom-determinism.spec.ts:148:50)
+2026-10-04T03:56:28.9548256Z 
+2026-10-04T03:56:28.9549091Z   ● assert-prod-sbom.sh gives the same verdict on every run (B-CI2-116) › SBOM larger than the pipe buffer: grep -q exits while the writer is still blocked › fails on @cyclonedx/cdxgen in every run
+2026-10-04T03:56:28.9550011Z 
+2026-10-04T03:56:28.9550200Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T03:56:28.9550438Z 
+2026-10-04T03:56:28.9550527Z     - Expected  -  1
+2026-10-04T03:56:28.9550745Z     + Received  + 17
+2026-10-04T03:56:28.9550867Z 
+2026-10-04T03:56:28.9550953Z     - Array []
+2026-10-04T03:56:28.9551143Z     + Array [
+2026-10-04T03:56:28.9551335Z     +   Object {
+2026-10-04T03:56:28.9551528Z     +     "code": 1,
+2026-10-04T03:56:28.9552050Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9552566Z     +     "run": 0,
+2026-10-04T03:56:28.9552760Z     +   },
+2026-10-04T03:56:28.9553088Z     +   Object {
+2026-10-04T03:56:28.9553292Z     +     "code": 1,
+2026-10-04T03:56:28.9553791Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9554286Z     +     "run": 1,
+2026-10-04T03:56:28.9554479Z     +   },
+2026-10-04T03:56:28.9554657Z     +   Object {
+2026-10-04T03:56:28.9554848Z     +     "code": 1,
+2026-10-04T03:56:28.9555371Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9555869Z     +     "run": 2,
+2026-10-04T03:56:28.9556057Z     +   },
+2026-10-04T03:56:28.9556230Z     + ]
+2026-10-04T03:56:28.9556333Z 
+2026-10-04T03:56:28.9556583Z       146 |           LARGE_RUNS,
+2026-10-04T03:56:28.9556976Z       147 |         );
+2026-10-04T03:56:28.9557736Z     > 148 |         expect(wrong(runs, 1, TOOL_FOUND(tool))).toEqual([]);
+2026-10-04T03:56:28.9558485Z           |                                                  ^
+2026-10-04T03:56:28.9558969Z       149 |       }, 60_000);
+2026-10-04T03:56:28.9559317Z       150 |     }
+2026-10-04T03:56:28.9559570Z       151 |
+2026-10-04T03:56:28.9559708Z 
+2026-10-04T03:56:28.9560120Z       at Object.<anonymous> (test/ci/assert-prod-sbom-determinism.spec.ts:148:50)
+2026-10-04T03:56:28.9560447Z 
+2026-10-04T03:56:28.9561243Z   ● assert-prod-sbom.sh gives the same verdict on every run (B-CI2-116) › SBOM larger than the pipe buffer: grep -q exits while the writer is still blocked › fails on supertest in every run
+2026-10-04T03:56:28.9562051Z 
+2026-10-04T03:56:28.9562226Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T03:56:28.9562460Z 
+2026-10-04T03:56:28.9562554Z     - Expected  -  1
+2026-10-04T03:56:28.9562766Z     + Received  + 17
+2026-10-04T03:56:28.9562907Z 
+2026-10-04T03:56:28.9562987Z     - Array []
+2026-10-04T03:56:28.9563180Z     + Array [
+2026-10-04T03:56:28.9563373Z     +   Object {
+2026-10-04T03:56:28.9563564Z     +     "code": 1,
+2026-10-04T03:56:28.9564080Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9564591Z     +     "run": 0,
+2026-10-04T03:56:28.9564785Z     +   },
+2026-10-04T03:56:28.9564967Z     +   Object {
+2026-10-04T03:56:28.9565163Z     +     "code": 1,
+2026-10-04T03:56:28.9565662Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9566157Z     +     "run": 1,
+2026-10-04T03:56:28.9566353Z     +   },
+2026-10-04T03:56:28.9566534Z     +   Object {
+2026-10-04T03:56:28.9566726Z     +     "code": 1,
+2026-10-04T03:56:28.9567228Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9567722Z     +     "run": 2,
+2026-10-04T03:56:28.9567914Z     +   },
+2026-10-04T03:56:28.9568093Z     + ]
+2026-10-04T03:56:28.9568191Z 
+2026-10-04T03:56:28.9568434Z       146 |           LARGE_RUNS,
+2026-10-04T03:56:28.9568822Z       147 |         );
+2026-10-04T03:56:28.9569584Z     > 148 |         expect(wrong(runs, 1, TOOL_FOUND(tool))).toEqual([]);
+2026-10-04T03:56:28.9570487Z           |                                                  ^
+2026-10-04T03:56:28.9570967Z       149 |       }, 60_000);
+2026-10-04T03:56:28.9571318Z       150 |     }
+2026-10-04T03:56:28.9571583Z       151 |
+2026-10-04T03:56:28.9571722Z 
+2026-10-04T03:56:28.9571988Z       at Object.<anonymous> (test/ci/assert-prod-sbom-determinism.spec.ts:148:50)
+2026-10-04T03:56:28.9572312Z 
+2026-10-04T03:56:28.9573384Z   ● assert-prod-sbom.sh gives the same verdict on every run (B-CI2-116) › SBOM larger than the pipe buffer: grep -q exits while the writer is still blocked › passes a clean SBOM in every run (every required package found)
+2026-10-04T03:56:28.9574163Z 
+2026-10-04T03:56:28.9574332Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T03:56:28.9574564Z 
+2026-10-04T03:56:28.9574657Z     - Expected  -  1
+2026-10-04T03:56:28.9574869Z     + Received  + 17
+2026-10-04T03:56:28.9575000Z 
+2026-10-04T03:56:28.9575080Z     - Array []
+2026-10-04T03:56:28.9575285Z     + Array [
+2026-10-04T03:56:28.9575473Z     +   Object {
+2026-10-04T03:56:28.9575663Z     +     "code": 1,
+2026-10-04T03:56:28.9576179Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9576684Z     +     "run": 0,
+2026-10-04T03:56:28.9576877Z     +   },
+2026-10-04T03:56:28.9577062Z     +   Object {
+2026-10-04T03:56:28.9577258Z     +     "code": 1,
+2026-10-04T03:56:28.9577758Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9578255Z     +     "run": 1,
+2026-10-04T03:56:28.9578443Z     +   },
+2026-10-04T03:56:28.9578621Z     +   Object {
+2026-10-04T03:56:28.9578809Z     +     "code": 1,
+2026-10-04T03:56:28.9579311Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9579923Z     +     "run": 2,
+2026-10-04T03:56:28.9580118Z     +   },
+2026-10-04T03:56:28.9580297Z     + ]
+2026-10-04T03:56:28.9580397Z 
+2026-10-04T03:56:28.9580991Z       152 |     it('passes a clean SBOM in every run (every required package found)', async () => {
+2026-10-04T03:56:28.9582404Z       153 |       const runs = await runMany(fixture([...RUNTIME, ...PADDING]), LARGE_RUNS);
+2026-10-04T03:56:28.9583557Z     > 154 |       expect(wrong(runs, 0, PASSED)).toEqual([]);
+2026-10-04T03:56:28.9584262Z           |                                      ^
+2026-10-04T03:56:28.9584733Z       155 |     }, 60_000);
+2026-10-04T03:56:28.9585072Z       156 |
+2026-10-04T03:56:28.9585571Z       157 |     for (const pkg of REQUIRE) {
+2026-10-04T03:56:28.9585897Z 
+2026-10-04T03:56:28.9586176Z       at Object.<anonymous> (test/ci/assert-prod-sbom-determinism.spec.ts:154:38)
+2026-10-04T03:56:28.9586507Z 
+2026-10-04T03:56:28.9587376Z   ● assert-prod-sbom.sh gives the same verdict on every run (B-CI2-116) › SBOM larger than the pipe buffer: grep -q exits while the writer is still blocked › still fails when @prisma/client is really missing
+2026-10-04T03:56:28.9588108Z 
+2026-10-04T03:56:28.9588287Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T03:56:28.9588524Z 
+2026-10-04T03:56:28.9588612Z     - Expected  -  1
+2026-10-04T03:56:28.9588849Z     + Received  + 17
+2026-10-04T03:56:28.9588970Z 
+2026-10-04T03:56:28.9589055Z     - Array []
+2026-10-04T03:56:28.9589248Z     + Array [
+2026-10-04T03:56:28.9589435Z     +   Object {
+2026-10-04T03:56:28.9589633Z     +     "code": 1,
+2026-10-04T03:56:28.9590279Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9590787Z     +     "run": 0,
+2026-10-04T03:56:28.9590990Z     +   },
+2026-10-04T03:56:28.9591171Z     +   Object {
+2026-10-04T03:56:28.9591363Z     +     "code": 1,
+2026-10-04T03:56:28.9591880Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9592376Z     +     "run": 1,
+2026-10-04T03:56:28.9592567Z     +   },
+2026-10-04T03:56:28.9592880Z     +   Object {
+2026-10-04T03:56:28.9593078Z     +     "code": 1,
+2026-10-04T03:56:28.9593580Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9594080Z     +     "run": 2,
+2026-10-04T03:56:28.9594270Z     +   },
+2026-10-04T03:56:28.9594446Z     + ]
+2026-10-04T03:56:28.9594549Z 
+2026-10-04T03:56:28.9595173Z       167 |             new RegExp(`required runtime package '${pkg.replace(/[./]/g, '\\$&')}' missing`),
+2026-10-04T03:56:28.9595837Z       168 |           ),
+2026-10-04T03:56:28.9596304Z     > 169 |         ).toEqual([]);
+2026-10-04T03:56:28.9596771Z           |           ^
+2026-10-04T03:56:28.9597205Z       170 |       }, 60_000);
+2026-10-04T03:56:28.9597554Z       171 |     }
+2026-10-04T03:56:28.9597861Z       172 |   });
+2026-10-04T03:56:28.9598037Z 
+2026-10-04T03:56:28.9598316Z       at Object.<anonymous> (test/ci/assert-prod-sbom-determinism.spec.ts:169:11)
+2026-10-04T03:56:28.9598641Z 
+2026-10-04T03:56:28.9599475Z   ● assert-prod-sbom.sh gives the same verdict on every run (B-CI2-116) › SBOM larger than the pipe buffer: grep -q exits while the writer is still blocked › still fails when prisma is really missing
+2026-10-04T03:56:28.9600296Z 
+2026-10-04T03:56:28.9600471Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T03:56:28.9600706Z 
+2026-10-04T03:56:28.9600796Z     - Expected  -  1
+2026-10-04T03:56:28.9601015Z     + Received  + 17
+2026-10-04T03:56:28.9601136Z 
+2026-10-04T03:56:28.9601221Z     - Array []
+2026-10-04T03:56:28.9601552Z     + Array [
+2026-10-04T03:56:28.9601742Z     +   Object {
+2026-10-04T03:56:28.9601936Z     +     "code": 1,
+2026-10-04T03:56:28.9602456Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9602965Z     +     "run": 0,
+2026-10-04T03:56:28.9603159Z     +   },
+2026-10-04T03:56:28.9603342Z     +   Object {
+2026-10-04T03:56:28.9603537Z     +     "code": 1,
+2026-10-04T03:56:28.9604037Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9604532Z     +     "run": 1,
+2026-10-04T03:56:28.9604726Z     +   },
+2026-10-04T03:56:28.9604908Z     +   Object {
+2026-10-04T03:56:28.9605097Z     +     "code": 1,
+2026-10-04T03:56:28.9605596Z     +     "first": "::error::assert-prod-sbom: required runtime package '@nestjs/core' missing from production SBOM",
+2026-10-04T03:56:28.9606090Z     +     "run": 2,
+2026-10-04T03:56:28.9606282Z     +   },
+2026-10-04T03:56:28.9606458Z     + ]
+2026-10-04T03:56:28.9606563Z 
+2026-10-04T03:56:28.9607172Z       167 |             new RegExp(`required runtime package '${pkg.replace(/[./]/g, '\\$&')}' missing`),
+2026-10-04T03:56:28.9607833Z       168 |           ),
+2026-10-04T03:56:28.9608300Z     > 169 |         ).toEqual([]);
+2026-10-04T03:56:28.9608743Z           |           ^
+2026-10-04T03:56:28.9609167Z       170 |       }, 60_000);
+2026-10-04T03:56:28.9609523Z       171 |     }
+2026-10-04T03:56:28.9609942Z       172 |   });
+2026-10-04T03:56:28.9610130Z 
+2026-10-04T03:56:28.9610403Z       at Object.<anonymous> (test/ci/assert-prod-sbom-determinism.spec.ts:169:11)
+2026-10-04T03:56:28.9610728Z 
+2026-10-04T03:56:28.9610944Z Test Suites: 1 failed, 1 passed, 2 total
+2026-10-04T03:56:28.9611309Z Tests:       14 failed, 107 passed, 121 total
+2026-10-04T03:56:28.9611610Z Snapshots:   0 total
+2026-10-04T03:56:28.9611839Z Time:        22.09 s
+2026-10-04T03:56:28.9612552Z Ran all test suites matching test/ci/assert-prod-sbom-determinism.spec.ts|test/ci/delivery-artifact.spec.ts.
+2026-10-04T03:56:29.2295085Z ##[error]Process completed with exit code 1.
+2026-10-04T03:56:29.2438678Z Post job cleanup.
+2026-10-04T03:56:29.3344137Z [command]/usr/bin/git version
+2026-10-04T03:56:29.3384558Z git version 2.55.0
+2026-10-04T03:56:29.3429036Z Temporarily overriding HOME='/home/runner/work/_temp/3421bc5e-c6ed-48f4-a14a-568599553812' before making global git config changes
+2026-10-04T03:56:29.3430923Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T03:56:29.3436609Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T03:56:29.3474569Z Removing SSH command configuration
+2026-10-04T03:56:29.3481801Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T03:56:29.3522677Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T03:56:29.3769607Z Removing HTTP extra header
+2026-10-04T03:56:29.3777587Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T03:56:29.3818981Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T03:56:29.4057671Z Removing includeIf entries pointing to credentials config files
+2026-10-04T03:56:29.4066591Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T03:56:29.4097005Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T03:56:29.4099116Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T03:56:29.4100570Z includeif.gitdir:/github/workspace/.git.path
+2026-10-04T03:56:29.4101337Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T03:56:29.4108745Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T03:56:29.4135031Z /home/runner/work/_temp/git-credentials-5d2f3bac-60f7-4e16-8ff4-dc371221f6c8.config
+2026-10-04T03:56:29.4147874Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-5d2f3bac-60f7-4e16-8ff4-dc371221f6c8.config
+2026-10-04T03:56:29.4194323Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T03:56:29.4220334Z /home/runner/work/_temp/git-credentials-5d2f3bac-60f7-4e16-8ff4-dc371221f6c8.config
+2026-10-04T03:56:29.4231005Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-5d2f3bac-60f7-4e16-8ff4-dc371221f6c8.config
+2026-10-04T03:56:29.4267429Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-04T03:56:29.4293926Z /github/runner_temp/git-credentials-5d2f3bac-60f7-4e16-8ff4-dc371221f6c8.config
+2026-10-04T03:56:29.4316652Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-5d2f3bac-60f7-4e16-8ff4-dc371221f6c8.config
+2026-10-04T03:56:29.4351018Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T03:56:29.4377554Z /github/runner_temp/git-credentials-5d2f3bac-60f7-4e16-8ff4-dc371221f6c8.config
+2026-10-04T03:56:29.4387421Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-5d2f3bac-60f7-4e16-8ff4-dc371221f6c8.config
+2026-10-04T03:56:29.4426020Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T03:56:29.4680171Z Removing credentials config '/home/runner/work/_temp/git-credentials-5d2f3bac-60f7-4e16-8ff4-dc371221f6c8.config'
+2026-10-04T03:56:29.4807614Z Print service container logs: 9c2a6fb3bac24421bfdf25ee10b68071_redis7alpine_100aea
+2026-10-04T03:56:29.4812942Z ##[command]/usr/bin/docker logs --details 7513f36fb069f833f20ee827476c852d03a3f58239c1e4407b4512baee04b65b
+2026-10-04T03:56:29.4951503Z  1:C 04 Oct 2026 03:55:17.005 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+2026-10-04T03:56:29.4953460Z  1:C 04 Oct 2026 03:55:17.005 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+2026-10-04T03:56:29.4954068Z  1:C 04 Oct 2026 03:55:17.005 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+2026-10-04T03:56:29.4955054Z  1:C 04 Oct 2026 03:55:17.005 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+2026-10-04T03:56:29.4955776Z  1:M 04 Oct 2026 03:55:17.005 * monotonic clock: POSIX clock_gettime
+2026-10-04T03:56:29.4956197Z  1:M 04 Oct 2026 03:55:17.006 * Running mode=standalone, port=6379.
+2026-10-04T03:56:29.4956554Z  1:M 04 Oct 2026 03:55:17.006 * Server initialized
+2026-10-04T03:56:29.4956906Z  1:M 04 Oct 2026 03:55:17.006 * Ready to accept connections tcp
+2026-10-04T03:56:29.4971977Z Stop and remove container: 9c2a6fb3bac24421bfdf25ee10b68071_redis7alpine_100aea
+2026-10-04T03:56:29.4977536Z ##[command]/usr/bin/docker rm --force 7513f36fb069f833f20ee827476c852d03a3f58239c1e4407b4512baee04b65b
+2026-10-04T03:56:29.6933695Z 7513f36fb069f833f20ee827476c852d03a3f58239c1e4407b4512baee04b65b
+2026-10-04T03:56:29.6961003Z Remove container network: github_network_22066e76ceb649a098f30be85821d4d6
+2026-10-04T03:56:29.6965458Z ##[command]/usr/bin/docker network rm github_network_22066e76ceb649a098f30be85821d4d6
+2026-10-04T03:56:29.8903930Z github_network_22066e76ceb649a098f30be85821d4d6
+2026-10-04T03:56:29.9003159Z Cleaning up orphan processes

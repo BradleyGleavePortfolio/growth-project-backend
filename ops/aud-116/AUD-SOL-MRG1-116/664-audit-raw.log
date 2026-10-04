@@ -1,0 +1,231 @@
+﻿2026-10-04T02:28:41.4855269Z Current runner version: '2.337.0'
+2026-10-04T02:28:41.4881521Z ##[group]Runner Image Provisioner
+2026-10-04T02:28:41.4882462Z Hosted Compute Agent
+2026-10-04T02:28:41.4883284Z Version: 20260901.588
+2026-10-04T02:28:41.4883981Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-04T02:28:41.4884767Z Build Date: 2026-09-01T19:56:44Z
+2026-10-04T02:28:41.4885486Z Worker ID: {b63b417a-dd82-4b2d-9d50-af2f8a7e85dc}
+2026-10-04T02:28:41.4886317Z Azure Region: eastus2
+2026-10-04T02:28:41.4886917Z ##[endgroup]
+2026-10-04T02:28:41.4888466Z ##[group]Operating System
+2026-10-04T02:28:41.4889145Z Ubuntu
+2026-10-04T02:28:41.4889708Z 24.04.5
+2026-10-04T02:28:41.4890267Z LTS
+2026-10-04T02:28:41.4890782Z ##[endgroup]
+2026-10-04T02:28:41.4891314Z ##[group]Runner Image
+2026-10-04T02:28:41.4891979Z Image: ubuntu-24.04
+2026-10-04T02:28:41.4892572Z Version: 20260927.320.1
+2026-10-04T02:28:41.4894391Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-04T02:28:41.4895947Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-04T02:28:41.4896991Z ##[endgroup]
+2026-10-04T02:28:41.4898123Z ##[group]GITHUB_TOKEN Permissions
+2026-10-04T02:28:41.4900037Z Contents: read
+2026-10-04T02:28:41.4900669Z Metadata: read
+2026-10-04T02:28:41.4901343Z ##[endgroup]
+2026-10-04T02:28:41.4904367Z Secret source: Actions
+2026-10-04T02:28:41.4906106Z Cache mode: write
+2026-10-04T02:28:41.4907445Z Prepare workflow directory
+2026-10-04T02:28:41.5244963Z Prepare all required actions
+2026-10-04T02:28:41.5293601Z Getting action download info
+2026-10-04T02:28:41.7715193Z Download action repository 'actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10' (SHA:df4cb1c069e1874edd31b4311f1884172cec0e10)
+2026-10-04T02:28:41.8870215Z Download action repository 'actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e' (SHA:48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e)
+2026-10-04T02:28:42.1215031Z Complete job name: npm audit (high+critical, whole graph)
+2026-10-04T02:28:42.1974559Z ##[group]Run actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+2026-10-04T02:28:42.1975621Z with:
+2026-10-04T02:28:42.1976069Z   persist-credentials: false
+2026-10-04T02:28:42.1976751Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T02:28:42.1980658Z   token: ***
+2026-10-04T02:28:42.1981086Z   ssh-strict: true
+2026-10-04T02:28:42.1981520Z   ssh-user: git
+2026-10-04T02:28:42.1981940Z   clean: true
+2026-10-04T02:28:42.1982385Z   sparse-checkout-cone-mode: true
+2026-10-04T02:28:42.1983239Z   fetch-depth: 1
+2026-10-04T02:28:42.1983738Z   fetch-tags: false
+2026-10-04T02:28:42.1984211Z   show-progress: true
+2026-10-04T02:28:42.1984692Z   lfs: false
+2026-10-04T02:28:42.1985116Z   submodules: false
+2026-10-04T02:28:42.1985572Z   set-safe-directory: true
+2026-10-04T02:28:42.1986317Z ##[endgroup]
+2026-10-04T02:28:42.2961829Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T02:28:42.2964024Z ##[group]Getting Git version info
+2026-10-04T02:28:42.2965102Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T02:28:42.2966287Z [command]/usr/bin/git version
+2026-10-04T02:28:42.3086544Z git version 2.55.0
+2026-10-04T02:28:42.3109117Z ##[endgroup]
+2026-10-04T02:28:42.3123676Z Temporarily overriding HOME='/home/runner/work/_temp/bac0cc21-9688-4dac-928b-b149fb545d98' before making global git config changes
+2026-10-04T02:28:42.3126005Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T02:28:42.3128478Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T02:28:42.3177576Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T02:28:42.3181423Z ##[group]Determining repository object format
+2026-10-04T02:28:42.3183907Z ##[endgroup]
+2026-10-04T02:28:42.3184786Z ##[group]Initializing the repository
+2026-10-04T02:28:42.3189641Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T02:28:42.3318527Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-04T02:28:42.3320033Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-04T02:28:42.3321779Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-04T02:28:42.3323379Z hint: call:
+2026-10-04T02:28:42.3324159Z hint:
+2026-10-04T02:28:42.3325029Z hint: 	git config --global init.defaultBranch <name>
+2026-10-04T02:28:42.3326065Z hint:
+2026-10-04T02:28:42.3326701Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-04T02:28:42.3327686Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-04T02:28:42.3328623Z hint:
+2026-10-04T02:28:42.3329324Z hint: 	git branch -m <name>
+2026-10-04T02:28:42.3329870Z hint:
+2026-10-04T02:28:42.3330524Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-04T02:28:42.3331816Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-04T02:28:42.3334874Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T02:28:42.3383740Z ##[endgroup]
+2026-10-04T02:28:42.3384521Z ##[group]Disabling automatic garbage collection
+2026-10-04T02:28:42.3387367Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-04T02:28:42.3416744Z ##[endgroup]
+2026-10-04T02:28:42.3417865Z ##[group]Setting up auth
+2026-10-04T02:28:42.3418630Z Removing SSH command configuration
+2026-10-04T02:28:42.3423910Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T02:28:42.3454938Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T02:28:42.3814398Z Removing HTTP extra header
+2026-10-04T02:28:42.3822145Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T02:28:42.3852406Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T02:28:42.4061654Z Removing includeIf entries pointing to credentials config files
+2026-10-04T02:28:42.4067715Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T02:28:42.4099076Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T02:28:42.4317997Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-c56ad95a-4d6f-4ab3-948d-c51451434479.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-04T02:28:42.4354180Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-c56ad95a-4d6f-4ab3-948d-c51451434479.config
+2026-10-04T02:28:42.4386037Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-c56ad95a-4d6f-4ab3-948d-c51451434479.config
+2026-10-04T02:28:42.4426265Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-c56ad95a-4d6f-4ab3-948d-c51451434479.config
+2026-10-04T02:28:42.4456891Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-c56ad95a-4d6f-4ab3-948d-c51451434479.config
+2026-10-04T02:28:42.4484728Z ##[endgroup]
+2026-10-04T02:28:42.4485514Z ##[group]Fetching the repository
+2026-10-04T02:28:42.4492118Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +9a8f19f1a200e55241edc091f83dba1badccdd7f:refs/remotes/pull/664/merge
+2026-10-04T02:28:43.6429914Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T02:28:43.6434465Z  * [new ref]         9a8f19f1a200e55241edc091f83dba1badccdd7f -> pull/664/merge
+2026-10-04T02:28:43.6439048Z ##[endgroup]
+2026-10-04T02:28:43.6440436Z ##[group]Determining the checkout info
+2026-10-04T02:28:43.6441872Z ##[endgroup]
+2026-10-04T02:28:43.6454018Z [command]/usr/bin/git sparse-checkout disable
+2026-10-04T02:28:43.6496431Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-04T02:28:43.6527571Z ##[group]Checking out the ref
+2026-10-04T02:28:43.6529894Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/664/merge
+2026-10-04T02:28:43.8655547Z Note: switching to 'refs/remotes/pull/664/merge'.
+2026-10-04T02:28:43.8656587Z 
+2026-10-04T02:28:43.8657207Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-10-04T02:28:43.8658704Z changes and commit them, and you can discard any commits you make in this
+2026-10-04T02:28:43.8660132Z state without impacting any branches by switching back to a branch.
+2026-10-04T02:28:43.8660960Z 
+2026-10-04T02:28:43.8661540Z If you want to create a new branch to retain commits you create, you may
+2026-10-04T02:28:43.8663247Z do so (now or later) by using -c with the switch command. Example:
+2026-10-04T02:28:43.8664124Z 
+2026-10-04T02:28:43.8664483Z   git switch -c <new-branch-name>
+2026-10-04T02:28:43.8665079Z 
+2026-10-04T02:28:43.8665438Z Or undo this operation with:
+2026-10-04T02:28:43.8665971Z 
+2026-10-04T02:28:43.8666527Z   git switch -
+2026-10-04T02:28:43.8667218Z 
+2026-10-04T02:28:43.8668043Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-10-04T02:28:43.8669177Z 
+2026-10-04T02:28:43.8670371Z HEAD is now at 9a8f19f Merge d35333d38791a68334e0343b8dc27aa8b3d234f2 into d23fa31773f2e7f14781d243db35067d949f421a
+2026-10-04T02:28:43.8674494Z ##[endgroup]
+2026-10-04T02:28:43.8712079Z [command]/usr/bin/git log -1 --format=%H
+2026-10-04T02:28:43.8737062Z 9a8f19f1a200e55241edc091f83dba1badccdd7f
+2026-10-04T02:28:43.8748436Z ##[group]Removing auth
+2026-10-04T02:28:43.8749519Z Removing SSH command configuration
+2026-10-04T02:28:43.8752306Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T02:28:43.8786564Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T02:28:43.9005946Z Removing HTTP extra header
+2026-10-04T02:28:43.9009453Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T02:28:43.9044357Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T02:28:43.9261300Z Removing includeIf entries pointing to credentials config files
+2026-10-04T02:28:43.9264987Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T02:28:43.9290958Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T02:28:43.9294986Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T02:28:43.9298060Z includeif.gitdir:/github/workspace/.git.path
+2026-10-04T02:28:43.9299918Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T02:28:43.9305346Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T02:28:43.9320460Z /home/runner/work/_temp/git-credentials-c56ad95a-4d6f-4ab3-948d-c51451434479.config
+2026-10-04T02:28:43.9331446Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-c56ad95a-4d6f-4ab3-948d-c51451434479.config
+2026-10-04T02:28:43.9364411Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T02:28:43.9384247Z /home/runner/work/_temp/git-credentials-c56ad95a-4d6f-4ab3-948d-c51451434479.config
+2026-10-04T02:28:43.9394467Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-c56ad95a-4d6f-4ab3-948d-c51451434479.config
+2026-10-04T02:28:43.9424518Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-04T02:28:43.9445137Z /github/runner_temp/git-credentials-c56ad95a-4d6f-4ab3-948d-c51451434479.config
+2026-10-04T02:28:43.9458093Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-c56ad95a-4d6f-4ab3-948d-c51451434479.config
+2026-10-04T02:28:43.9524926Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T02:28:43.9547949Z /github/runner_temp/git-credentials-c56ad95a-4d6f-4ab3-948d-c51451434479.config
+2026-10-04T02:28:43.9560262Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-c56ad95a-4d6f-4ab3-948d-c51451434479.config
+2026-10-04T02:28:43.9600589Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T02:28:43.9816087Z Removing credentials config '/home/runner/work/_temp/git-credentials-c56ad95a-4d6f-4ab3-948d-c51451434479.config'
+2026-10-04T02:28:43.9824029Z ##[endgroup]
+2026-10-04T02:28:44.0314594Z ##[group]Run actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+2026-10-04T02:28:44.0316305Z with:
+2026-10-04T02:28:44.0317175Z   node-version: 20.20.1
+2026-10-04T02:28:44.0318202Z   check-latest: false
+2026-10-04T02:28:44.0328178Z   token: ***
+2026-10-04T02:28:44.0329158Z   package-manager-cache: true
+2026-10-04T02:28:44.0330254Z ##[endgroup]
+2026-10-04T02:28:44.1826766Z Attempting to download 20.20.1...
+2026-10-04T02:28:44.7672125Z Acquiring 20.20.1 - x64 from https://github.com/actions/node-versions/releases/download/20.20.1-22746716736/node-20.20.1-linux-x64.tar.gz
+2026-10-04T02:28:45.2072301Z Extracting ...
+2026-10-04T02:28:45.2190916Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/adbf5642-7ca2-40ec-805c-69f6b80519a7 -f /home/runner/work/_temp/6a628c27-e438-4803-8f8b-3fe0dd9290ef
+2026-10-04T02:28:46.2501254Z Adding to the cache ...
+2026-10-04T02:28:48.0399562Z ##[group]Environment details
+2026-10-04T02:28:48.2553410Z node: v20.20.1
+2026-10-04T02:28:48.2553871Z npm: 10.8.2
+2026-10-04T02:28:48.2554217Z yarn: 1.22.22
+2026-10-04T02:28:48.2554973Z ##[endgroup]
+2026-10-04T02:28:48.2761361Z ##[group]Run set -euo pipefail
+2026-10-04T02:28:48.2761749Z [36;1mset -euo pipefail[0m
+2026-10-04T02:28:48.2761998Z [36;1mnode -v[0m
+2026-10-04T02:28:48.2762201Z [36;1mnpm -v[0m
+2026-10-04T02:28:48.3061410Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T02:28:48.3061888Z ##[endgroup]
+2026-10-04T02:28:48.3194499Z v20.20.1
+2026-10-04T02:28:48.4001927Z 10.8.2
+2026-10-04T02:28:48.4078002Z ##[group]Run set -euo pipefail
+2026-10-04T02:28:48.4078366Z [36;1mset -euo pipefail[0m
+2026-10-04T02:28:48.4078771Z [36;1m# Whole graph, stated explicitly: --include beats any ambient --omit /[0m
+2026-10-04T02:28:48.4079297Z [36;1m# NODE_ENV=production config, and --package-lock-only audits the[0m
+2026-10-04T02:28:48.4079789Z [36;1m# committed lockfile without needing node_modules — so nothing[0m
+2026-10-04T02:28:48.4080281Z [36;1m# installs and no dependency lifecycle script runs just to audit it.[0m
+2026-10-04T02:28:48.4080817Z [36;1m# Flags per npm v10 docs: https://docs.npmjs.com/cli/v10/commands/npm-audit/[0m
+2026-10-04T02:28:48.4081590Z [36;1m# npm's exit code is CAPTURED, never discarded: the gate fails on any[0m
+2026-10-04T02:28:48.4082076Z [36;1m# exit other than 0/1, on unreadable/error JSON, and on an exit that[0m
+2026-10-04T02:28:48.4082538Z [36;1m# disagrees with the findings. The gate's own exit is the verdict[0m
+2026-10-04T02:28:48.4083318Z [36;1m# (set -e): no fallback, no soft-fail.[0m
+2026-10-04T02:28:48.4083733Z [36;1maudit_json="${RUNNER_TEMP:?RUNNER_TEMP is not set}/npm-audit.json"[0m
+2026-10-04T02:28:48.4084136Z [36;1maudit_exit=0[0m
+2026-10-04T02:28:48.4084428Z [36;1mtimeout 300 npm audit --package-lock-only \[0m
+2026-10-04T02:28:48.4084845Z [36;1m  --include=prod --include=dev --include=optional --include=peer \[0m
+2026-10-04T02:28:48.4085307Z [36;1m  --audit-level=high --json >"$audit_json" || audit_exit=$?[0m
+2026-10-04T02:28:48.4085684Z [36;1mnode scripts/ci/audit-gate.mjs \[0m
+2026-10-04T02:28:48.4086026Z [36;1m  --audit "$audit_json" --audit-exit "$audit_exit" \[0m
+2026-10-04T02:28:48.4086490Z [36;1m  --lockfile package-lock.json --exceptions .github/audit-exceptions.json[0m
+2026-10-04T02:28:48.4149014Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T02:28:48.4149381Z ##[endgroup]
+2026-10-04T02:28:49.3540027Z [audit-gate] today (UTC) 2026-10-04; exception horizon 31 days
+2026-10-04T02:28:49.3628767Z [audit-gate] high/critical vulnerabilities in the whole graph: 3
+2026-10-04T02:28:49.3631159Z [audit-gate] covered: high "braces" (chain: braces)
+2026-10-04T02:28:49.3632205Z [audit-gate] covered: high "danger" (chain: danger <- micromatch <- braces)
+2026-10-04T02:28:49.3633433Z [audit-gate] covered: high "micromatch" (chain: micromatch <- braces)
+2026-10-04T02:28:49.3670312Z ##[warning]braces node_modules/braces@3.0.3 excepted until 2026-10-31 (27 days left). Ruling: OR-114-2 (operator agent 114, 2026-10-02): keep the audit gate fail-closed; narrowest time-boxed dev-only exception. Reason: CVE-2026-93687 stack-exhaustion DoS via deeply nested patterns; no patched braces exists on npm (latest 3.0.3). The only lockfile copy (node_modules/braces 3.0.3) is dev-only, reached through micromatch from danger (CI tooling), never installed in the production runtime image (Dockerfile runtime stage uses npm ci --omit=dev).
+2026-10-04T02:28:49.3679538Z [audit-gate] APPLIED EXCEPTION advisory=GHSA-vfj7-8cjw-p6xm package=braces locked=node_modules/braces@3.0.3 max_version=3.0.3 expires=2026-10-31 days_left=27
+2026-10-04T02:28:49.3681663Z [audit-gate]   reason: CVE-2026-93687 stack-exhaustion DoS via deeply nested patterns; no patched braces exists on npm (latest 3.0.3). The only lockfile copy (node_modules/braces 3.0.3) is dev-only, reached through micromatch from danger (CI tooling), never installed in the production runtime image (Dockerfile runtime stage uses npm ci --omit=dev).
+2026-10-04T02:28:49.3683779Z [audit-gate]   owner_ruling: OR-114-2 (operator agent 114, 2026-10-02): keep the audit gate fail-closed; narrowest time-boxed dev-only exception
+2026-10-04T02:28:49.7081593Z [audit-gate] registry check for braces: no stable release above 3.0.3 (latest 3.0.3)
+2026-10-04T02:28:49.7083410Z [audit-gate] PASS: every high/critical finding is explained by a valid, dev-only, time-boxed exception (or there are none)
+2026-10-04T02:28:49.7224652Z Post job cleanup.
+2026-10-04T02:28:49.8557971Z Post job cleanup.
+2026-10-04T02:28:49.9380402Z [command]/usr/bin/git version
+2026-10-04T02:28:49.9415961Z git version 2.55.0
+2026-10-04T02:28:49.9457352Z Temporarily overriding HOME='/home/runner/work/_temp/1aadc748-1859-481d-90d7-89fdd8d8a64c' before making global git config changes
+2026-10-04T02:28:49.9458962Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T02:28:49.9463717Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T02:28:49.9495904Z Removing SSH command configuration
+2026-10-04T02:28:49.9503065Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T02:28:49.9561109Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T02:28:49.9801537Z Removing HTTP extra header
+2026-10-04T02:28:49.9803970Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T02:28:49.9816786Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T02:28:50.0029428Z Removing includeIf entries pointing to credentials config files
+2026-10-04T02:28:50.0035680Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T02:28:50.0066790Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T02:28:50.0412403Z Cleaning up orphan processes

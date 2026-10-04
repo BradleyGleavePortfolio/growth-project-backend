@@ -1,0 +1,641 @@
+﻿2026-10-04T02:35:16.4314450Z Current runner version: '2.337.0'
+2026-10-04T02:35:16.4342191Z ##[group]Runner Image Provisioner
+2026-10-04T02:35:16.4343138Z Hosted Compute Agent
+2026-10-04T02:35:16.4343773Z Version: 20260901.588
+2026-10-04T02:35:16.4344550Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-04T02:35:16.4345400Z Build Date: 2026-09-01T19:56:44Z
+2026-10-04T02:35:16.4346145Z Worker ID: {b96add42-4582-4c5e-a877-0ab85b729853}
+2026-10-04T02:35:16.4347317Z Azure Region: centralus
+2026-10-04T02:35:16.4348267Z ##[endgroup]
+2026-10-04T02:35:16.4350167Z ##[group]Operating System
+2026-10-04T02:35:16.4350838Z Ubuntu
+2026-10-04T02:35:16.4351376Z 24.04.5
+2026-10-04T02:35:16.4352456Z LTS
+2026-10-04T02:35:16.4353084Z ##[endgroup]
+2026-10-04T02:35:16.4353685Z ##[group]Runner Image
+2026-10-04T02:35:16.4354451Z Image: ubuntu-24.04
+2026-10-04T02:35:16.4355081Z Version: 20260927.320.1
+2026-10-04T02:35:16.4356642Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-04T02:35:16.4358318Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-04T02:35:16.4359425Z ##[endgroup]
+2026-10-04T02:35:16.4360730Z ##[group]GITHUB_TOKEN Permissions
+2026-10-04T02:35:16.4362985Z Contents: read
+2026-10-04T02:35:16.4363633Z Metadata: read
+2026-10-04T02:35:16.4364310Z Packages: read
+2026-10-04T02:35:16.4364877Z ##[endgroup]
+2026-10-04T02:35:16.4367323Z Secret source: Actions
+2026-10-04T02:35:16.4368409Z Cache mode: write
+2026-10-04T02:35:16.4369412Z Prepare workflow directory
+2026-10-04T02:35:16.4818740Z Prepare all required actions
+2026-10-04T02:35:16.4867245Z Getting action download info
+2026-10-04T02:35:16.7333309Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-04T02:35:16.8486013Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-04T02:35:17.0913670Z Complete job name: targeted
+2026-10-04T02:35:17.1443228Z ##[group]Checking docker version
+2026-10-04T02:35:17.1457220Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-04T02:35:18.3242537Z '1.48'
+2026-10-04T02:35:18.3254270Z Docker daemon API version: '1.48'
+2026-10-04T02:35:18.3255452Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-04T02:35:18.3420063Z '1.48'
+2026-10-04T02:35:18.3432755Z Docker client API version: '1.48'
+2026-10-04T02:35:18.3440055Z ##[endgroup]
+2026-10-04T02:35:18.3443904Z ##[group]Clean up resources from previous jobs
+2026-10-04T02:35:18.3450532Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=ed7263"
+2026-10-04T02:35:18.3637994Z ##[command]/usr/bin/docker network prune --force --filter "label=ed7263"
+2026-10-04T02:35:18.3831957Z ##[endgroup]
+2026-10-04T02:35:18.3833257Z ##[group]Create local container network
+2026-10-04T02:35:18.3845579Z ##[command]/usr/bin/docker network create --label ed7263 github_network_ce569d71431f4a14a1efa413642d4526
+2026-10-04T02:35:18.4430841Z 80723485f67328ed36d4d0d95117c5c2381ee5322d7c397b16bfe00bffbfa006
+2026-10-04T02:35:18.4455284Z ##[endgroup]
+2026-10-04T02:35:18.4483889Z ##[group]Starting redis service container
+2026-10-04T02:35:18.4507707Z ##[command]/usr/bin/docker pull redis:7-alpine
+2026-10-04T02:35:19.0593712Z 7-alpine: Pulling from library/redis
+2026-10-04T02:35:19.1941790Z 16333ee0c00f: Pulling fs layer
+2026-10-04T02:35:19.1943312Z 83234986c742: Pulling fs layer
+2026-10-04T02:35:19.1944433Z 7eb50503c2b0: Pulling fs layer
+2026-10-04T02:35:19.1945304Z 1522f9c6f453: Pulling fs layer
+2026-10-04T02:35:19.1945972Z 9928009b15c8: Pulling fs layer
+2026-10-04T02:35:19.1946775Z 4f4fb700ef54: Pulling fs layer
+2026-10-04T02:35:19.1947416Z 4eb14bae0e1d: Pulling fs layer
+2026-10-04T02:35:19.1947989Z 1522f9c6f453: Waiting
+2026-10-04T02:35:19.1948498Z 9928009b15c8: Waiting
+2026-10-04T02:35:19.1948998Z 4f4fb700ef54: Waiting
+2026-10-04T02:35:19.1949510Z 4eb14bae0e1d: Waiting
+2026-10-04T02:35:19.3426493Z 83234986c742: Verifying Checksum
+2026-10-04T02:35:19.3428348Z 83234986c742: Download complete
+2026-10-04T02:35:19.3566104Z 7eb50503c2b0: Verifying Checksum
+2026-10-04T02:35:19.3567128Z 7eb50503c2b0: Download complete
+2026-10-04T02:35:19.4188625Z 16333ee0c00f: Verifying Checksum
+2026-10-04T02:35:19.4189544Z 16333ee0c00f: Download complete
+2026-10-04T02:35:19.4803045Z 9928009b15c8: Verifying Checksum
+2026-10-04T02:35:19.4803797Z 9928009b15c8: Download complete
+2026-10-04T02:35:19.5414639Z 4f4fb700ef54: Verifying Checksum
+2026-10-04T02:35:19.5416134Z 4f4fb700ef54: Download complete
+2026-10-04T02:35:19.5538523Z 16333ee0c00f: Pull complete
+2026-10-04T02:35:19.5823076Z 1522f9c6f453: Verifying Checksum
+2026-10-04T02:35:19.5823807Z 1522f9c6f453: Download complete
+2026-10-04T02:35:19.6185454Z 4eb14bae0e1d: Verifying Checksum
+2026-10-04T02:35:19.6186201Z 4eb14bae0e1d: Download complete
+2026-10-04T02:35:21.9750469Z 83234986c742: Pull complete
+2026-10-04T02:35:22.1133168Z 7eb50503c2b0: Pull complete
+2026-10-04T02:35:22.3050918Z 1522f9c6f453: Pull complete
+2026-10-04T02:35:22.3151401Z 9928009b15c8: Pull complete
+2026-10-04T02:35:22.3227231Z 4f4fb700ef54: Pull complete
+2026-10-04T02:35:22.3341120Z 4eb14bae0e1d: Pull complete
+2026-10-04T02:35:22.3382770Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+2026-10-04T02:35:22.3396348Z Status: Downloaded newer image for redis:7-alpine
+2026-10-04T02:35:22.3405042Z docker.io/library/redis:7-alpine
+2026-10-04T02:35:22.3442619Z ##[command]/usr/bin/docker create --name f2f0591e92b7483db7198b15b7c75009_redis7alpine_b68d38 --label ed7263 --network github_network_ce569d71431f4a14a1efa413642d4526 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+2026-10-04T02:35:22.3704179Z e4affc76ef89f03b24f574b5889b2a7c023c49854f1c9a1fb8ea93cb7a15e02d
+2026-10-04T02:35:22.3730636Z ##[command]/usr/bin/docker start e4affc76ef89f03b24f574b5889b2a7c023c49854f1c9a1fb8ea93cb7a15e02d
+2026-10-04T02:35:23.1782287Z e4affc76ef89f03b24f574b5889b2a7c023c49854f1c9a1fb8ea93cb7a15e02d
+2026-10-04T02:35:23.1807061Z ##[command]/usr/bin/docker ps --all --filter id=e4affc76ef89f03b24f574b5889b2a7c023c49854f1c9a1fb8ea93cb7a15e02d --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-04T02:35:23.1965546Z e4affc76ef89f03b24f574b5889b2a7c023c49854f1c9a1fb8ea93cb7a15e02d Up Less than a second (health: starting)
+2026-10-04T02:35:23.2002995Z ##[command]/usr/bin/docker port e4affc76ef89f03b24f574b5889b2a7c023c49854f1c9a1fb8ea93cb7a15e02d
+2026-10-04T02:35:23.2147376Z 6379/tcp -> 0.0.0.0:6379
+2026-10-04T02:35:23.2148177Z 6379/tcp -> [::]:6379
+2026-10-04T02:35:23.2197880Z ##[endgroup]
+2026-10-04T02:35:23.2207011Z ##[group]Waiting for all services to be ready
+2026-10-04T02:35:23.2220635Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" e4affc76ef89f03b24f574b5889b2a7c023c49854f1c9a1fb8ea93cb7a15e02d
+2026-10-04T02:35:23.2353838Z starting
+2026-10-04T02:35:23.2377001Z redis service is starting, waiting 2 seconds before checking again.
+2026-10-04T02:35:25.2374598Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" e4affc76ef89f03b24f574b5889b2a7c023c49854f1c9a1fb8ea93cb7a15e02d
+2026-10-04T02:35:25.2541540Z starting
+2026-10-04T02:35:25.2556636Z redis service is starting, waiting 4 seconds before checking again.
+2026-10-04T02:35:29.2643914Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" e4affc76ef89f03b24f574b5889b2a7c023c49854f1c9a1fb8ea93cb7a15e02d
+2026-10-04T02:35:29.2766182Z healthy
+2026-10-04T02:35:29.2797401Z redis service is healthy.
+2026-10-04T02:35:29.2798083Z ##[endgroup]
+2026-10-04T02:35:29.3092342Z ##[group]Run actions/checkout@v6
+2026-10-04T02:35:29.3092929Z with:
+2026-10-04T02:35:29.3093295Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T02:35:29.3095847Z   token: ***
+2026-10-04T02:35:29.3096060Z   ssh-strict: true
+2026-10-04T02:35:29.3096746Z   ssh-user: git
+2026-10-04T02:35:29.3096972Z   persist-credentials: true
+2026-10-04T02:35:29.3097217Z   clean: true
+2026-10-04T02:35:29.3097430Z   sparse-checkout-cone-mode: true
+2026-10-04T02:35:29.3097685Z   fetch-depth: 1
+2026-10-04T02:35:29.3097882Z   fetch-tags: false
+2026-10-04T02:35:29.3098086Z   show-progress: true
+2026-10-04T02:35:29.3098291Z   lfs: false
+2026-10-04T02:35:29.3098477Z   submodules: false
+2026-10-04T02:35:29.3098681Z   set-safe-directory: true
+2026-10-04T02:35:29.3098929Z   allow-unsafe-pr-checkout: false
+2026-10-04T02:35:29.3099478Z ##[endgroup]
+2026-10-04T02:35:29.4219891Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T02:35:29.4222555Z ##[group]Getting Git version info
+2026-10-04T02:35:29.4223422Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T02:35:29.4224645Z [command]/usr/bin/git version
+2026-10-04T02:35:29.4225113Z git version 2.55.0
+2026-10-04T02:35:29.4241356Z ##[endgroup]
+2026-10-04T02:35:29.4256518Z Temporarily overriding HOME='/home/runner/work/_temp/1edd4c67-8b64-405b-821c-19e610533e75' before making global git config changes
+2026-10-04T02:35:29.4261756Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T02:35:29.4262711Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T02:35:29.4311736Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T02:35:29.4316444Z ##[group]Determining repository object format
+2026-10-04T02:35:29.4319308Z ##[endgroup]
+2026-10-04T02:35:29.4320098Z ##[group]Initializing the repository
+2026-10-04T02:35:29.4324196Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T02:35:29.4423692Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-04T02:35:29.4424982Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-04T02:35:29.4426139Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-04T02:35:29.4427257Z hint: call:
+2026-10-04T02:35:29.4427645Z hint:
+2026-10-04T02:35:29.4428770Z hint: 	git config --global init.defaultBranch <name>
+2026-10-04T02:35:29.4429343Z hint:
+2026-10-04T02:35:29.4429764Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-04T02:35:29.4430381Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-04T02:35:29.4430844Z hint:
+2026-10-04T02:35:29.4431083Z hint: 	git branch -m <name>
+2026-10-04T02:35:29.4431359Z hint:
+2026-10-04T02:35:29.4431765Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-04T02:35:29.4432585Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-04T02:35:29.4438783Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T02:35:29.4488312Z ##[endgroup]
+2026-10-04T02:35:29.4488783Z ##[group]Disabling automatic garbage collection
+2026-10-04T02:35:29.4492895Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-04T02:35:29.4525014Z ##[endgroup]
+2026-10-04T02:35:29.4525819Z ##[group]Setting up auth
+2026-10-04T02:35:29.4527091Z Removing SSH command configuration
+2026-10-04T02:35:29.4534556Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T02:35:29.4567921Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T02:35:29.4900474Z Removing HTTP extra header
+2026-10-04T02:35:29.4906190Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T02:35:29.4940292Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T02:35:29.5156607Z Removing includeIf entries pointing to credentials config files
+2026-10-04T02:35:29.5164442Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T02:35:29.5197061Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T02:35:29.5426032Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-14ef1f76-464f-405a-b524-b902bf5ec4ba.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-04T02:35:29.5467056Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-14ef1f76-464f-405a-b524-b902bf5ec4ba.config
+2026-10-04T02:35:29.5499532Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-14ef1f76-464f-405a-b524-b902bf5ec4ba.config
+2026-10-04T02:35:29.5531707Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-14ef1f76-464f-405a-b524-b902bf5ec4ba.config
+2026-10-04T02:35:29.5562277Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-14ef1f76-464f-405a-b524-b902bf5ec4ba.config
+2026-10-04T02:35:29.5597213Z ##[endgroup]
+2026-10-04T02:35:29.5597621Z ##[group]Fetching the repository
+2026-10-04T02:35:29.5605569Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +0b135c0c2614ed66a0d91ecc8698f27562f5173b:refs/remotes/origin/audit/AUD-SOL-CM1-116/674-boundaries-v2
+2026-10-04T02:35:31.0469386Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T02:35:31.0470631Z  * [new ref]         0b135c0c2614ed66a0d91ecc8698f27562f5173b -> origin/audit/AUD-SOL-CM1-116/674-boundaries-v2
+2026-10-04T02:35:31.0481743Z [command]/usr/bin/git branch --list --remote origin/audit/AUD-SOL-CM1-116/674-boundaries-v2
+2026-10-04T02:35:31.0508992Z   origin/audit/AUD-SOL-CM1-116/674-boundaries-v2
+2026-10-04T02:35:31.0519043Z [command]/usr/bin/git rev-parse refs/remotes/origin/audit/AUD-SOL-CM1-116/674-boundaries-v2
+2026-10-04T02:35:31.0543752Z 0b135c0c2614ed66a0d91ecc8698f27562f5173b
+2026-10-04T02:35:31.0548336Z ##[endgroup]
+2026-10-04T02:35:31.0548957Z ##[group]Determining the checkout info
+2026-10-04T02:35:31.0550369Z ##[endgroup]
+2026-10-04T02:35:31.0556967Z [command]/usr/bin/git sparse-checkout disable
+2026-10-04T02:35:31.0614838Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-04T02:35:31.0644830Z ##[group]Checking out the ref
+2026-10-04T02:35:31.0649956Z [command]/usr/bin/git checkout --progress --force -B audit/AUD-SOL-CM1-116/674-boundaries-v2 refs/remotes/origin/audit/AUD-SOL-CM1-116/674-boundaries-v2
+2026-10-04T02:35:31.2838459Z Switched to a new branch 'audit/AUD-SOL-CM1-116/674-boundaries-v2'
+2026-10-04T02:35:31.2843294Z branch 'audit/AUD-SOL-CM1-116/674-boundaries-v2' set up to track 'origin/audit/AUD-SOL-CM1-116/674-boundaries-v2'.
+2026-10-04T02:35:31.2853858Z ##[endgroup]
+2026-10-04T02:35:31.2901287Z [command]/usr/bin/git log -1 --format=%H
+2026-10-04T02:35:31.2925785Z 0b135c0c2614ed66a0d91ecc8698f27562f5173b
+2026-10-04T02:35:31.3202467Z ##[group]Run actions/setup-node@v6
+2026-10-04T02:35:31.3202777Z with:
+2026-10-04T02:35:31.3202970Z   node-version: 20
+2026-10-04T02:35:31.3203173Z   cache: npm
+2026-10-04T02:35:31.3203364Z   check-latest: false
+2026-10-04T02:35:31.3205699Z   token: ***
+2026-10-04T02:35:31.3205923Z   package-manager-cache: true
+2026-10-04T02:35:31.3206174Z ##[endgroup]
+2026-10-04T02:35:31.4626898Z Attempting to download 20...
+2026-10-04T02:35:32.1597398Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-04T02:35:32.6397193Z Extracting ...
+2026-10-04T02:35:32.6520191Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/a5363ab9-bfae-42b3-8630-04614c48b051 -f /home/runner/work/_temp/9b898e52-2c47-4691-ae12-61f42b5f6352
+2026-10-04T02:35:33.6823138Z Adding to the cache ...
+2026-10-04T02:35:35.5636599Z ##[group]Environment details
+2026-10-04T02:35:35.7869031Z node: v20.20.2
+2026-10-04T02:35:35.7869404Z npm: 10.8.2
+2026-10-04T02:35:35.7869615Z yarn: 1.22.22
+2026-10-04T02:35:35.7870085Z ##[endgroup]
+2026-10-04T02:35:35.7888676Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+2026-10-04T02:35:35.8931203Z /home/runner/.npm
+2026-10-04T02:35:36.0305278Z Cache hit for: node-cache-Linux-x64-npm-1c658f1a35f7b309848c416454e12a0f8c258736d5e30a9676088e8641c298ba
+2026-10-04T02:35:37.2067794Z Received 78472912 of 86861520 (90.3%), 74.8 MBs/sec
+2026-10-04T02:35:37.2643821Z Received 86861520 of 86861520 (100.0%), 78.3 MBs/sec
+2026-10-04T02:35:37.2645149Z Cache Size: ~83 MB (86861520 B)
+2026-10-04T02:35:37.2678235Z [command]/usr/bin/tar -xf /home/runner/work/_temp/0000b02b-db9f-4b49-8adc-1fe77536d939/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+2026-10-04T02:35:37.4458905Z Cache restored successfully
+2026-10-04T02:35:37.4509036Z Cache restored from key: node-cache-Linux-x64-npm-1c658f1a35f7b309848c416454e12a0f8c258736d5e30a9676088e8641c298ba
+2026-10-04T02:35:37.4804974Z ##[group]Run npm ci
+2026-10-04T02:35:37.4805285Z [36;1mnpm ci[0m
+2026-10-04T02:35:37.5020266Z shell: /usr/bin/bash -e {0}
+2026-10-04T02:35:37.5020665Z ##[endgroup]
+2026-10-04T02:35:43.5027985Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-04T02:35:44.3418826Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-04T02:35:45.9932447Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T02:35:47.3851996Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T02:35:47.4108725Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T02:35:47.4654995Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T02:36:00.2177815Z 
+2026-10-04T02:36:00.2179014Z > growth-project-backend@1.0.0 postinstall
+2026-10-04T02:36:00.2179637Z > prisma generate
+2026-10-04T02:36:00.2182842Z 
+2026-10-04T02:36:01.1658346Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T02:36:05.0440963Z ┌─────────────────────────────────────────────────────────┐
+2026-10-04T02:36:05.0442486Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+2026-10-04T02:36:05.0443609Z │                                                         │
+2026-10-04T02:36:05.0444775Z │  This is a major update - please follow the guide at    │
+2026-10-04T02:36:05.0446067Z │  https://pris.ly/d/major-version-upgrade                │
+2026-10-04T02:36:05.0448132Z │                                                         │
+2026-10-04T02:36:05.0449194Z │  Run the following to update                            │
+2026-10-04T02:36:05.0450260Z │    npm i --save-dev prisma@latest                       │
+2026-10-04T02:36:05.0451281Z │    npm i @prisma/client@latest                          │
+2026-10-04T02:36:05.0452338Z └─────────────────────────────────────────────────────────┘
+2026-10-04T02:36:05.0452753Z 
+2026-10-04T02:36:05.0453375Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.16s
+2026-10-04T02:36:05.0453876Z 
+2026-10-04T02:36:05.0454343Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T02:36:05.0454781Z 
+2026-10-04T02:36:05.0455414Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+2026-10-04T02:36:05.0456001Z 
+2026-10-04T02:36:05.1003820Z 
+2026-10-04T02:36:05.1004930Z > growth-project-backend@1.0.0 prepare
+2026-10-04T02:36:05.1005687Z > lefthook install
+2026-10-04T02:36:05.1005974Z 
+2026-10-04T02:36:05.1507822Z sync hooks: ✔️(commit-msg, pre-commit)
+2026-10-04T02:36:05.1678080Z 
+2026-10-04T02:36:05.1678926Z added 1117 packages, and audited 1118 packages in 28s
+2026-10-04T02:36:05.1679238Z 
+2026-10-04T02:36:05.1679415Z 202 packages are looking for funding
+2026-10-04T02:36:05.1679765Z   run `npm fund` for details
+2026-10-04T02:36:05.1733086Z 
+2026-10-04T02:36:05.1733577Z 4 vulnerabilities (1 moderate, 3 high)
+2026-10-04T02:36:05.1734222Z 
+2026-10-04T02:36:05.1734714Z To address issues that do not require attention, run:
+2026-10-04T02:36:05.1735347Z   npm audit fix
+2026-10-04T02:36:05.1735548Z 
+2026-10-04T02:36:05.1735921Z To address all issues (including breaking changes), run:
+2026-10-04T02:36:05.1736755Z   npm audit fix --force
+2026-10-04T02:36:05.1737008Z 
+2026-10-04T02:36:05.1737216Z Run `npm audit` for details.
+2026-10-04T02:36:05.2356858Z ##[group]Run npx prisma generate
+2026-10-04T02:36:05.2357235Z [36;1mnpx prisma generate[0m
+2026-10-04T02:36:05.2433151Z shell: /usr/bin/bash -e {0}
+2026-10-04T02:36:05.2433455Z ##[endgroup]
+2026-10-04T02:36:06.4772169Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T02:36:10.2681306Z 
+2026-10-04T02:36:10.2686939Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.09s
+2026-10-04T02:36:10.2687452Z 
+2026-10-04T02:36:10.2687961Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T02:36:10.2688454Z 
+2026-10-04T02:36:10.2688870Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+2026-10-04T02:36:10.2689311Z 
+2026-10-04T02:36:10.3881323Z ##[group]Run set -euo pipefail
+2026-10-04T02:36:10.3881674Z [36;1mset -euo pipefail[0m
+2026-10-04T02:36:10.3882083Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-04T02:36:10.3882592Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-04T02:36:10.3883031Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-04T02:36:10.3883350Z [36;1mnpx jest --ci --runInBand "${SPECS[@]}"[0m
+2026-10-04T02:36:10.3947173Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T02:36:10.3947533Z env:
+2026-10-04T02:36:10.3947768Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-04T02:36:10.3948136Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-04T02:36:10.3948479Z ##[endgroup]
+2026-10-04T02:36:10.4043286Z specs: test/audit-sol-cm1-674-boundaries.spec.ts test/refund-reversal-once.spec.ts test/refund-reversal-review.spec.ts test/refund-reversal-reconcile.spec.ts
+2026-10-04T02:36:24.6225373Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:24 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-late purchase=p-late code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:24.6290926Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:24 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-x purchase=p-x code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:24.6322142Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:24 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-u purchase=p-u code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:24.6354805Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:24 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-late purchase=p-late code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:24.6381552Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:24 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-late purchase=p-late code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:24.6721377Z PASS test/refund-reversal-reconcile.spec.ts (13.182 s)
+2026-10-04T02:36:25.1227866Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-late purchase=p-late code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1266116Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-late purchase=p-late code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1289453Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-late purchase=p-late code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1378148Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-00 purchase=p-old-00 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1380469Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-01 purchase=p-old-01 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1382957Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-02 purchase=p-old-02 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1385998Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-03 purchase=p-old-03 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1389831Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-04 purchase=p-old-04 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1393437Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-05 purchase=p-old-05 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1397503Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-06 purchase=p-old-06 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1401149Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-07 purchase=p-old-07 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1404701Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-08 purchase=p-old-08 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1408611Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-09 purchase=p-old-09 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1412711Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-10 purchase=p-old-10 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1416954Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-11 purchase=p-old-11 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1420531Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-12 purchase=p-old-12 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1424042Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-13 purchase=p-old-13 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1427779Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-14 purchase=p-old-14 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1431390Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-15 purchase=p-old-15 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1434881Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-16 purchase=p-old-16 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1438607Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-17 purchase=p-old-17 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1442134Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-18 purchase=p-old-18 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1445864Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-19 purchase=p-old-19 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1449768Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-20 purchase=p-old-20 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1453297Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-21 purchase=p-old-21 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1457049Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-22 purchase=p-old-22 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1460566Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-23 purchase=p-old-23 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1463620Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-24 purchase=p-old-24 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1466658Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-25 purchase=p-old-25 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1469266Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-26 purchase=p-old-26 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1471845Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-27 purchase=p-old-27 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1474377Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-28 purchase=p-old-28 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1477187Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-29 purchase=p-old-29 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1479743Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-30 purchase=p-old-30 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1539910Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-31 purchase=p-old-31 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1543667Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-32 purchase=p-old-32 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1547622Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-33 purchase=p-old-33 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1551264Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-34 purchase=p-old-34 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1555259Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-35 purchase=p-old-35 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1559170Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-36 purchase=p-old-36 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1562768Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-37 purchase=p-old-37 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1567024Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-38 purchase=p-old-38 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1570462Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-39 purchase=p-old-39 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1574035Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-40 purchase=p-old-40 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1578230Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-41 purchase=p-old-41 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1581874Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-42 purchase=p-old-42 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1585326Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-43 purchase=p-old-43 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1589110Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-44 purchase=p-old-44 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1592566Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-45 purchase=p-old-45 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1596255Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-46 purchase=p-old-46 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1600276Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-47 purchase=p-old-47 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1603780Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-48 purchase=p-old-48 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1607557Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-49 purchase=p-old-49 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1611214Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-50 purchase=p-old-50 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1614603Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-51 purchase=p-old-51 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1618151Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-52 purchase=p-old-52 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1621479Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-53 purchase=p-old-53 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1624794Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-54 purchase=p-old-54 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1628346Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-55 purchase=p-old-55 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1631882Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-56 purchase=p-old-56 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1635173Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-57 purchase=p-old-57 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1638776Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-58 purchase=p-old-58 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:25.1642163Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:25 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-old-59 purchase=p-old-59 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:26.7115717Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-002 refund=r-m-002 code=error[39m
+2026-10-04T02:36:26.7117751Z PASS test/refund-reversal-review.spec.ts
+2026-10-04T02:36:26.7119742Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-005 refund=r-m-005 code=error[39m
+2026-10-04T02:36:26.7122025Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-008 refund=r-m-008 code=error[39m
+2026-10-04T02:36:26.7124212Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-011 refund=r-m-011 code=error[39m
+2026-10-04T02:36:26.7126720Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-014 refund=r-m-014 code=error[39m
+2026-10-04T02:36:26.7128756Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-017 refund=r-m-017 code=error[39m
+2026-10-04T02:36:26.7131148Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-020 refund=r-m-020 code=error[39m
+2026-10-04T02:36:26.7133189Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-023 refund=r-m-023 code=error[39m
+2026-10-04T02:36:26.7135222Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-026 refund=r-m-026 code=error[39m
+2026-10-04T02:36:26.7137146Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-029 refund=r-m-029 code=error[39m
+2026-10-04T02:36:26.7138669Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-032 refund=r-m-032 code=error[39m
+2026-10-04T02:36:26.7140190Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-035 refund=r-m-035 code=error[39m
+2026-10-04T02:36:26.7141733Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-038 refund=r-m-038 code=error[39m
+2026-10-04T02:36:26.7143425Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-041 refund=r-m-041 code=error[39m
+2026-10-04T02:36:26.7144954Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-044 refund=r-m-044 code=error[39m
+2026-10-04T02:36:26.7146601Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-047 refund=r-m-047 code=error[39m
+2026-10-04T02:36:26.7148123Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-050 refund=r-m-050 code=error[39m
+2026-10-04T02:36:26.7149625Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-053 refund=r-m-053 code=error[39m
+2026-10-04T02:36:26.7151143Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-056 refund=r-m-056 code=error[39m
+2026-10-04T02:36:26.7152647Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-059 refund=r-m-059 code=error[39m
+2026-10-04T02:36:26.7154164Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-062 refund=r-m-062 code=error[39m
+2026-10-04T02:36:26.7155676Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-065 refund=r-m-065 code=error[39m
+2026-10-04T02:36:26.7157295Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-068 refund=r-m-068 code=error[39m
+2026-10-04T02:36:26.7158810Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-071 refund=r-m-071 code=error[39m
+2026-10-04T02:36:26.7160453Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-074 refund=r-m-074 code=error[39m
+2026-10-04T02:36:26.7162021Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-077 refund=r-m-077 code=error[39m
+2026-10-04T02:36:26.7163549Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-080 refund=r-m-080 code=error[39m
+2026-10-04T02:36:26.7165069Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-083 refund=r-m-083 code=error[39m
+2026-10-04T02:36:26.7166725Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-086 refund=r-m-086 code=error[39m
+2026-10-04T02:36:26.7168287Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-089 refund=r-m-089 code=error[39m
+2026-10-04T02:36:26.7169822Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-092 refund=r-m-092 code=error[39m
+2026-10-04T02:36:26.7171485Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-095 refund=r-m-095 code=error[39m
+2026-10-04T02:36:26.7173008Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-098 refund=r-m-098 code=error[39m
+2026-10-04T02:36:26.7174519Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-101 refund=r-m-101 code=error[39m
+2026-10-04T02:36:26.7176027Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-104 refund=r-m-104 code=error[39m
+2026-10-04T02:36:26.7177680Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-107 refund=r-m-107 code=error[39m
+2026-10-04T02:36:26.7179195Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-110 refund=r-m-110 code=error[39m
+2026-10-04T02:36:26.7180701Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-113 refund=r-m-113 code=error[39m
+2026-10-04T02:36:26.7182206Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-116 refund=r-m-116 code=error[39m
+2026-10-04T02:36:26.7183716Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-m-119 refund=r-m-119 code=error[39m
+2026-10-04T02:36:26.7185217Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-00 refund=r-a-00 code=error[39m
+2026-10-04T02:36:26.7186828Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-01 refund=r-a-01 code=error[39m
+2026-10-04T02:36:26.7188483Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-02 refund=r-a-02 code=error[39m
+2026-10-04T02:36:26.7190014Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-03 refund=r-a-03 code=error[39m
+2026-10-04T02:36:26.7191516Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-04 refund=r-a-04 code=error[39m
+2026-10-04T02:36:26.7193011Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-05 refund=r-a-05 code=error[39m
+2026-10-04T02:36:26.7194512Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-06 refund=r-a-06 code=error[39m
+2026-10-04T02:36:26.7196006Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-07 refund=r-a-07 code=error[39m
+2026-10-04T02:36:26.7197624Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-08 refund=r-a-08 code=error[39m
+2026-10-04T02:36:26.7199258Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-09 refund=r-a-09 code=error[39m
+2026-10-04T02:36:26.7200755Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-10 refund=r-a-10 code=error[39m
+2026-10-04T02:36:26.7202259Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-11 refund=r-a-11 code=error[39m
+2026-10-04T02:36:26.7203754Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-12 refund=r-a-12 code=error[39m
+2026-10-04T02:36:26.7205247Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-13 refund=r-a-13 code=error[39m
+2026-10-04T02:36:26.7206857Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-14 refund=r-a-14 code=error[39m
+2026-10-04T02:36:26.7208360Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-15 refund=r-a-15 code=error[39m
+2026-10-04T02:36:26.7209861Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-16 refund=r-a-16 code=error[39m
+2026-10-04T02:36:26.7211346Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-17 refund=r-a-17 code=error[39m
+2026-10-04T02:36:26.7212842Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-18 refund=r-a-18 code=error[39m
+2026-10-04T02:36:26.7214333Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-19 refund=r-a-19 code=error[39m
+2026-10-04T02:36:26.7215820Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-00 refund=r-a-00 code=error[39m
+2026-10-04T02:36:26.7217947Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-01 refund=r-a-01 code=error[39m
+2026-10-04T02:36:26.7220664Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-02 refund=r-a-02 code=error[39m
+2026-10-04T02:36:26.7223428Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-03 refund=r-a-03 code=error[39m
+2026-10-04T02:36:26.7226600Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-04 refund=r-a-04 code=error[39m
+2026-10-04T02:36:26.7229433Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-05 refund=r-a-05 code=error[39m
+2026-10-04T02:36:26.7231984Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-06 refund=r-a-06 code=error[39m
+2026-10-04T02:36:26.7233605Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-07 refund=r-a-07 code=error[39m
+2026-10-04T02:36:26.7235377Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-08 refund=r-a-08 code=error[39m
+2026-10-04T02:36:26.7237123Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-09 refund=r-a-09 code=error[39m
+2026-10-04T02:36:26.7238667Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-10 refund=r-a-10 code=error[39m
+2026-10-04T02:36:26.7240172Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-11 refund=r-a-11 code=error[39m
+2026-10-04T02:36:26.7241683Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-12 refund=r-a-12 code=error[39m
+2026-10-04T02:36:26.7243177Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-13 refund=r-a-13 code=error[39m
+2026-10-04T02:36:26.7244677Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-14 refund=r-a-14 code=error[39m
+2026-10-04T02:36:26.7246163Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-15 refund=r-a-15 code=error[39m
+2026-10-04T02:36:26.7247897Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-16 refund=r-a-16 code=error[39m
+2026-10-04T02:36:26.7249391Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-17 refund=r-a-17 code=error[39m
+2026-10-04T02:36:26.7250881Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-18 refund=r-a-18 code=error[39m
+2026-10-04T02:36:26.7252502Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-00 refund=r-a-00 code=error[39m
+2026-10-04T02:36:26.7254006Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-01 refund=r-a-01 code=error[39m
+2026-10-04T02:36:26.7255507Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-02 refund=r-a-02 code=error[39m
+2026-10-04T02:36:26.7258220Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-03 refund=r-a-03 code=error[39m
+2026-10-04T02:36:26.7259765Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-04 refund=r-a-04 code=error[39m
+2026-10-04T02:36:26.7261282Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-05 refund=r-a-05 code=error[39m
+2026-10-04T02:36:26.7262783Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-06 refund=r-a-06 code=error[39m
+2026-10-04T02:36:26.7264423Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-07 refund=r-a-07 code=error[39m
+2026-10-04T02:36:26.7265918Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-08 refund=r-a-08 code=error[39m
+2026-10-04T02:36:26.7267611Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-09 refund=r-a-09 code=error[39m
+2026-10-04T02:36:26.7269111Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-10 refund=r-a-10 code=error[39m
+2026-10-04T02:36:26.7270610Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-11 refund=r-a-11 code=error[39m
+2026-10-04T02:36:26.7272118Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-12 refund=r-a-12 code=error[39m
+2026-10-04T02:36:26.7273640Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-13 refund=r-a-13 code=error[39m
+2026-10-04T02:36:26.7275143Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-14 refund=r-a-14 code=error[39m
+2026-10-04T02:36:26.7276753Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-15 refund=r-a-15 code=error[39m
+2026-10-04T02:36:26.7278263Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-16 refund=r-a-16 code=error[39m
+2026-10-04T02:36:26.7279767Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-17 refund=r-a-17 code=error[39m
+2026-10-04T02:36:26.7281382Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-18 refund=r-a-18 code=error[39m
+2026-10-04T02:36:26.7282889Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-19 refund=r-a-19 code=error[39m
+2026-10-04T02:36:26.7284397Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-20 refund=r-a-20 code=error[39m
+2026-10-04T02:36:26.7285899Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-21 refund=r-a-21 code=error[39m
+2026-10-04T02:36:26.7287526Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-22 refund=r-a-22 code=error[39m
+2026-10-04T02:36:26.7289028Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-23 refund=r-a-23 code=error[39m
+2026-10-04T02:36:26.7290528Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-24 refund=r-a-24 code=error[39m
+2026-10-04T02:36:26.7292157Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-25 refund=r-a-25 code=error[39m
+2026-10-04T02:36:26.7293667Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-26 refund=r-a-26 code=error[39m
+2026-10-04T02:36:26.7295163Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-27 refund=r-a-27 code=error[39m
+2026-10-04T02:36:26.7296778Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-28 refund=r-a-28 code=error[39m
+2026-10-04T02:36:26.7298291Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-29 refund=r-a-29 code=error[39m
+2026-10-04T02:36:26.7299782Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-30 refund=r-a-30 code=error[39m
+2026-10-04T02:36:26.7301278Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-31 refund=r-a-31 code=error[39m
+2026-10-04T02:36:26.7302766Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-32 refund=r-a-32 code=error[39m
+2026-10-04T02:36:26.7304262Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-33 refund=r-a-33 code=error[39m
+2026-10-04T02:36:26.7305758Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-34 refund=r-a-34 code=error[39m
+2026-10-04T02:36:26.7307365Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-35 refund=r-a-35 code=error[39m
+2026-10-04T02:36:26.7309028Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-36 refund=r-a-36 code=error[39m
+2026-10-04T02:36:26.7310530Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-37 refund=r-a-37 code=error[39m
+2026-10-04T02:36:26.7312035Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-38 refund=r-a-38 code=error[39m
+2026-10-04T02:36:26.7313532Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-39 refund=r-a-39 code=error[39m
+2026-10-04T02:36:26.7315031Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-40 refund=r-a-40 code=error[39m
+2026-10-04T02:36:26.7316647Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-41 refund=r-a-41 code=error[39m
+2026-10-04T02:36:26.7318157Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-42 refund=r-a-42 code=error[39m
+2026-10-04T02:36:26.7319786Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-43 refund=r-a-43 code=error[39m
+2026-10-04T02:36:26.7321281Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-44 refund=r-a-44 code=error[39m
+2026-10-04T02:36:26.7322786Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-00 refund=r-a-00 code=error[39m
+2026-10-04T02:36:26.7324278Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-01 refund=r-a-01 code=error[39m
+2026-10-04T02:36:26.7325778Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-02 refund=r-a-02 code=error[39m
+2026-10-04T02:36:26.7327394Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-03 refund=r-a-03 code=error[39m
+2026-10-04T02:36:26.7328891Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-04 refund=r-a-04 code=error[39m
+2026-10-04T02:36:26.7330407Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-05 refund=r-a-05 code=error[39m
+2026-10-04T02:36:26.7331899Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-06 refund=r-a-06 code=error[39m
+2026-10-04T02:36:26.7333401Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-07 refund=r-a-07 code=error[39m
+2026-10-04T02:36:26.7334898Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-08 refund=r-a-08 code=error[39m
+2026-10-04T02:36:26.7336629Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-09 refund=r-a-09 code=error[39m
+2026-10-04T02:36:26.7338163Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-10 refund=r-a-10 code=error[39m
+2026-10-04T02:36:26.7339659Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-11 refund=r-a-11 code=error[39m
+2026-10-04T02:36:26.7341168Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-12 refund=r-a-12 code=error[39m
+2026-10-04T02:36:26.7342661Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:26 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-a-13 refund=r-a-13 code=error[39m
+2026-10-04T02:36:27.2228287Z [31m[Nest] 3058  - [39m10/04/2026, 2:36:27 AM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=refund-1 purchase=p-1 code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+2026-10-04T02:36:27.2273458Z PASS test/refund-reversal-once.spec.ts
+2026-10-04T02:36:27.9647250Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:27 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-1 refund=refund-1 code=error[39m
+2026-10-04T02:36:27.9650670Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:27 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-1 refund=refund-1 code=error[39m
+2026-10-04T02:36:27.9653580Z [33m[Nest] 3058  - [39m10/04/2026, 2:36:27 AM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-1 refund=refund-1 code=error[39m
+2026-10-04T02:36:28.0330106Z FAIL test/audit-sol-cm1-674-boundaries.spec.ts
+2026-10-04T02:36:28.0332306Z   ● Sol independent M1 boundary probes at 9a512028 › owner JWT reaches the newly added review endpoint, without a second mutually exclusive bearer
+2026-10-04T02:36:28.0333662Z 
+2026-10-04T02:36:28.0334211Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T02:36:28.0334904Z 
+2026-10-04T02:36:28.0335292Z     Expected: 200
+2026-10-04T02:36:28.0335905Z     Received: 401
+2026-10-04T02:36:28.0336632Z 
+2026-10-04T02:36:28.0338019Z     [0m [90m 44 |[39m         [33mAuthorization[39m[33m:[39m [32m'***'[39m[33m,[39m
+2026-10-04T02:36:28.0339223Z      [90m 45 |[39m       } })[33m;[39m
+2026-10-04T02:36:28.0358339Z     [31m[1m>[22m[39m[90m 46 |[39m       expect(ownerResponse[33m.[39mstatus)[33m.[39mtoBe([35m200[39m)[33m;[39m
+2026-10-04T02:36:28.0359552Z      [90m    |[39m                                    [31m[1m^[22m[39m
+2026-10-04T02:36:28.0360305Z      [90m 47 |[39m     } [36mfinally[39m {
+2026-10-04T02:36:28.0361104Z      [90m 48 |[39m       [36mawait[39m app[33m.[39mclose()[33m;[39m
+2026-10-04T02:36:28.0362623Z      [90m 49 |[39m       [36mif[39m (old [33m===[39m undefined) [36mdelete[39m process[33m.[39menv[33m.[39m[33mADMIN_SERVICE_TOKEN[39m[33m;[39m[0m
+2026-10-04T02:36:28.0363512Z 
+2026-10-04T02:36:28.0363974Z       at Object.<anonymous> (test/audit-sol-cm1-674-boundaries.spec.ts:46:36)
+2026-10-04T02:36:28.0364532Z 
+2026-10-04T02:36:28.0365399Z   ● Sol independent M1 boundary probes at 9a512028 › scheduler failure logger does not emit arbitrary exception text
+2026-10-04T02:36:28.0366236Z 
+2026-10-04T02:36:28.0366757Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T02:36:28.0367161Z 
+2026-10-04T02:36:28.0367449Z     Expected substring: not "AUDIT_PRIVATE_CANARY"
+2026-10-04T02:36:28.0368541Z     Received string:        "[[\"refund transfer reversal retry failed: AUDIT_PRIVATE_CANARY_contact_at_example_invalid\"]]"
+2026-10-04T02:36:28.0369320Z 
+2026-10-04T02:36:28.0370189Z     [0m [90m 62 |[39m       [36mawait[39m scheduler[33m.[39mhandleCron()[33m;[39m
+2026-10-04T02:36:28.0371225Z      [90m 63 |[39m       expect(log)[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T02:36:28.0373019Z     [31m[1m>[22m[39m[90m 64 |[39m       expect([33mJSON[39m[33m.[39mstringify(log[33m.[39mmock[33m.[39mcalls))[33m.[39mnot[33m.[39mtoContain([32m'AUDIT_PRIVATE_CANARY'[39m)[33m;[39m
+2026-10-04T02:36:28.0374588Z      [90m    |[39m                                                  [31m[1m^[22m[39m
+2026-10-04T02:36:28.0375324Z      [90m 65 |[39m     } [36mfinally[39m {
+2026-10-04T02:36:28.0376046Z      [90m 66 |[39m       log[33m.[39mmockRestore()[33m;[39m
+2026-10-04T02:36:28.0376932Z      [90m 67 |[39m     }[0m
+2026-10-04T02:36:28.0377202Z 
+2026-10-04T02:36:28.0377638Z       at Object.<anonymous> (test/audit-sol-cm1-674-boundaries.spec.ts:64:50)
+2026-10-04T02:36:28.0378173Z 
+2026-10-04T02:36:28.0379036Z   ● Sol independent M1 boundary probes at 9a512028 › webhook-before-record cannot consume the next distinct refund share
+2026-10-04T02:36:28.0379829Z 
+2026-10-04T02:36:28.0380140Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T02:36:28.0380553Z 
+2026-10-04T02:36:28.0380703Z     Expected: 244
+2026-10-04T02:36:28.0381060Z     Received: 123
+2026-10-04T02:36:28.0381265Z 
+2026-10-04T02:36:28.0382452Z     [0m [90m 94 |[39m     expect(h[33m.[39mrefund([32m'r-one'[39m)[33m.[39mtransfer_reversed)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+2026-10-04T02:36:28.0384148Z      [90m 95 |[39m     expect(h[33m.[39mrefund([32m'r-two'[39m)[33m.[39mtransfer_reversed)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+2026-10-04T02:36:28.0385798Z     [31m[1m>[22m[39m[90m 96 |[39m     expect(h[33m.[39mstripeTotal([32m'tr_p-race'[39m))[33m.[39mtoBe([35m244[39m)[33m;[39m
+2026-10-04T02:36:28.0387380Z      [90m    |[39m                                        [31m[1m^[22m[39m
+2026-10-04T02:36:28.0388541Z      [90m 97 |[39m     expect(h[33m.[39mheadCoach([32m'p-race'[39m))[33m.[39mtoBe([35m244[39m)[33m;[39m
+2026-10-04T02:36:28.0389434Z      [90m 98 |[39m   })[33m;[39m
+2026-10-04T02:36:28.0389925Z      [90m 99 |[39m[0m
+2026-10-04T02:36:28.0390169Z 
+2026-10-04T02:36:28.0390610Z       at Object.<anonymous> (test/audit-sol-cm1-674-boundaries.spec.ts:96:40)
+2026-10-04T02:36:28.0391147Z 
+2026-10-04T02:36:28.0392124Z   ● Sol independent M1 boundary probes at 9a512028 › two distinct refund transactions add both local transfer and ledger reversals
+2026-10-04T02:36:28.0392967Z 
+2026-10-04T02:36:28.0393262Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T02:36:28.0393668Z 
+2026-10-04T02:36:28.0393839Z     - Expected  - 2
+2026-10-04T02:36:28.0394214Z     + Received  + 2
+2026-10-04T02:36:28.0394434Z 
+2026-10-04T02:36:28.0394573Z       Object {
+2026-10-04T02:36:28.0394922Z     -   "ledger": 150,
+2026-10-04T02:36:28.0395298Z     -   "transfer": 150,
+2026-10-04T02:36:28.0395688Z     +   "ledger": 50,
+2026-10-04T02:36:28.0396061Z     +   "transfer": 50,
+2026-10-04T02:36:28.0396658Z       }
+2026-10-04T02:36:28.0396844Z 
+2026-10-04T02:36:28.0397718Z     [0m [90m 161 |[39m     expect(stripe[33m.[39mreverseTransfer)[33m.[39mtoHaveBeenCalledTimes([35m2[39m)[33m;[39m
+2026-10-04T02:36:28.0399544Z      [90m 162 |[39m     expect({ transfer[33m:[39m transfer[33m.[39mreversed_amount_cents[33m,[39m ledger[33m:[39m entry[33m.[39mreversed_cents })
+2026-10-04T02:36:28.0401444Z     [31m[1m>[22m[39m[90m 163 |[39m       [33m.[39mtoEqual({ transfer[33m:[39m [35m150[39m[33m,[39m ledger[33m:[39m [35m150[39m })[33m;[39m
+2026-10-04T02:36:28.0402571Z      [90m     |[39m        [31m[1m^[22m[39m
+2026-10-04T02:36:28.0403168Z      [90m 164 |[39m   })[33m;[39m
+2026-10-04T02:36:28.0403707Z      [90m 165 |[39m })[33m;[39m
+2026-10-04T02:36:28.0404193Z      [90m 166 |[39m[0m
+2026-10-04T02:36:28.0404418Z 
+2026-10-04T02:36:28.0405066Z       at Object.<anonymous> (test/audit-sol-cm1-674-boundaries.spec.ts:163:8)
+2026-10-04T02:36:28.0405619Z 
+2026-10-04T02:36:28.0405912Z Test Suites: 1 failed, 3 passed, 4 total
+2026-10-04T02:36:28.0406746Z Tests:       4 failed, 35 passed, 39 total
+2026-10-04T02:36:28.0407260Z Snapshots:   0 total
+2026-10-04T02:36:28.0407651Z Time:        16.802 s
+2026-10-04T02:36:28.0409292Z Ran all test suites matching test/audit-sol-cm1-674-boundaries.spec.ts|test/refund-reversal-once.spec.ts|test/refund-reversal-review.spec.ts|test/refund-reversal-reconcile.spec.ts.
+2026-10-04T02:36:28.2659361Z ##[error]Process completed with exit code 1.
+2026-10-04T02:36:28.2781775Z Post job cleanup.
+2026-10-04T02:36:28.3614211Z [command]/usr/bin/git version
+2026-10-04T02:36:28.3650180Z git version 2.55.0
+2026-10-04T02:36:28.3689997Z Temporarily overriding HOME='/home/runner/work/_temp/326ef008-513c-4b53-b60b-17ae773a0319' before making global git config changes
+2026-10-04T02:36:28.3691742Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T02:36:28.3695225Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T02:36:28.3726076Z Removing SSH command configuration
+2026-10-04T02:36:28.3733312Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T02:36:28.3770347Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T02:36:28.3992242Z Removing HTTP extra header
+2026-10-04T02:36:28.3997518Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T02:36:28.4030273Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T02:36:28.4251591Z Removing includeIf entries pointing to credentials config files
+2026-10-04T02:36:28.4258149Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T02:36:28.4284750Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T02:36:28.4286762Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T02:36:28.4288133Z includeif.gitdir:/github/workspace/.git.path
+2026-10-04T02:36:28.4289125Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T02:36:28.4295778Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T02:36:28.4317619Z /home/runner/work/_temp/git-credentials-14ef1f76-464f-405a-b524-b902bf5ec4ba.config
+2026-10-04T02:36:28.4329792Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-14ef1f76-464f-405a-b524-b902bf5ec4ba.config
+2026-10-04T02:36:28.4367234Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T02:36:28.4389152Z /home/runner/work/_temp/git-credentials-14ef1f76-464f-405a-b524-b902bf5ec4ba.config
+2026-10-04T02:36:28.4399361Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-14ef1f76-464f-405a-b524-b902bf5ec4ba.config
+2026-10-04T02:36:28.4435806Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-04T02:36:28.4457084Z /github/runner_temp/git-credentials-14ef1f76-464f-405a-b524-b902bf5ec4ba.config
+2026-10-04T02:36:28.4465031Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-14ef1f76-464f-405a-b524-b902bf5ec4ba.config
+2026-10-04T02:36:28.4496282Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T02:36:28.4516807Z /github/runner_temp/git-credentials-14ef1f76-464f-405a-b524-b902bf5ec4ba.config
+2026-10-04T02:36:28.4524793Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-14ef1f76-464f-405a-b524-b902bf5ec4ba.config
+2026-10-04T02:36:28.4558053Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T02:36:28.4786028Z Removing credentials config '/home/runner/work/_temp/git-credentials-14ef1f76-464f-405a-b524-b902bf5ec4ba.config'
+2026-10-04T02:36:28.4905723Z Print service container logs: f2f0591e92b7483db7198b15b7c75009_redis7alpine_b68d38
+2026-10-04T02:36:28.4910539Z ##[command]/usr/bin/docker logs --details e4affc76ef89f03b24f574b5889b2a7c023c49854f1c9a1fb8ea93cb7a15e02d
+2026-10-04T02:36:28.5040800Z  1:C 04 Oct 2026 02:35:23.184 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+2026-10-04T02:36:28.5042992Z  1:C 04 Oct 2026 02:35:23.185 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+2026-10-04T02:36:28.5043774Z  1:C 04 Oct 2026 02:35:23.185 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+2026-10-04T02:36:28.5044884Z  1:C 04 Oct 2026 02:35:23.185 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+2026-10-04T02:36:28.5045825Z  1:M 04 Oct 2026 02:35:23.185 * monotonic clock: POSIX clock_gettime
+2026-10-04T02:36:28.5046661Z  1:M 04 Oct 2026 02:35:23.185 * Running mode=standalone, port=6379.
+2026-10-04T02:36:28.5047265Z  1:M 04 Oct 2026 02:35:23.186 * Server initialized
+2026-10-04T02:36:28.5058612Z  1:M 04 Oct 2026 02:35:23.186 * Ready to accept connections tcp
+2026-10-04T02:36:28.5066037Z Stop and remove container: f2f0591e92b7483db7198b15b7c75009_redis7alpine_b68d38
+2026-10-04T02:36:28.5071138Z ##[command]/usr/bin/docker rm --force e4affc76ef89f03b24f574b5889b2a7c023c49854f1c9a1fb8ea93cb7a15e02d
+2026-10-04T02:36:28.6726786Z e4affc76ef89f03b24f574b5889b2a7c023c49854f1c9a1fb8ea93cb7a15e02d
+2026-10-04T02:36:28.6763531Z Remove container network: github_network_ce569d71431f4a14a1efa413642d4526
+2026-10-04T02:36:28.6768522Z ##[command]/usr/bin/docker network rm github_network_ce569d71431f4a14a1efa413642d4526
+2026-10-04T02:36:28.7932096Z github_network_ce569d71431f4a14a1efa413642d4526
+2026-10-04T02:36:28.8006024Z Cleaning up orphan processes

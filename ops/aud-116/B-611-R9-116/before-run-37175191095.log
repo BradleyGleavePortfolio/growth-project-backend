@@ -1,0 +1,454 @@
+﻿2026-10-04T03:52:18.0710608Z Current runner version: '2.337.0'
+2026-10-04T03:52:18.0735953Z ##[group]Runner Image Provisioner
+2026-10-04T03:52:18.0736807Z Hosted Compute Agent
+2026-10-04T03:52:18.0738081Z Version: 20260901.588
+2026-10-04T03:52:18.0738761Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-04T03:52:18.0739544Z Build Date: 2026-09-01T19:56:44Z
+2026-10-04T03:52:18.0740307Z Worker ID: {f300f0d6-40dc-4b2c-975f-1beced8cf2fc}
+2026-10-04T03:52:18.0741021Z Azure Region: westus
+2026-10-04T03:52:18.0741654Z ##[endgroup]
+2026-10-04T03:52:18.0743329Z ##[group]Operating System
+2026-10-04T03:52:18.0743980Z Ubuntu
+2026-10-04T03:52:18.0744679Z 24.04.5
+2026-10-04T03:52:18.0745193Z LTS
+2026-10-04T03:52:18.0746142Z ##[endgroup]
+2026-10-04T03:52:18.0746750Z ##[group]Runner Image
+2026-10-04T03:52:18.0747692Z Image: ubuntu-24.04
+2026-10-04T03:52:18.0748328Z Version: 20260927.320.1
+2026-10-04T03:52:18.0749630Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-04T03:52:18.0751275Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-04T03:52:18.0752247Z ##[endgroup]
+2026-10-04T03:52:18.0753470Z ##[group]GITHUB_TOKEN Permissions
+2026-10-04T03:52:18.0755437Z Contents: read
+2026-10-04T03:52:18.0756155Z Metadata: read
+2026-10-04T03:52:18.0756730Z Packages: read
+2026-10-04T03:52:18.0757562Z ##[endgroup]
+2026-10-04T03:52:18.0759765Z Secret source: Actions
+2026-10-04T03:52:18.0760805Z Cache mode: write
+2026-10-04T03:52:18.0761659Z Prepare workflow directory
+2026-10-04T03:52:18.1263624Z Prepare all required actions
+2026-10-04T03:52:18.1311281Z Getting action download info
+2026-10-04T03:52:18.5018630Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-04T03:52:18.6312272Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-04T03:52:18.8838524Z Complete job name: targeted
+2026-10-04T03:52:18.9518173Z ##[group]Checking docker version
+2026-10-04T03:52:18.9532441Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-04T03:52:19.0471066Z '1.48'
+2026-10-04T03:52:19.0487278Z Docker daemon API version: '1.48'
+2026-10-04T03:52:19.0488661Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-04T03:52:19.0657371Z '1.48'
+2026-10-04T03:52:19.0669880Z Docker client API version: '1.48'
+2026-10-04T03:52:19.0674659Z ##[endgroup]
+2026-10-04T03:52:19.0678041Z ##[group]Clean up resources from previous jobs
+2026-10-04T03:52:19.0683200Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=90baf4"
+2026-10-04T03:52:19.0828697Z ##[command]/usr/bin/docker network prune --force --filter "label=90baf4"
+2026-10-04T03:52:19.0963344Z ##[endgroup]
+2026-10-04T03:52:19.0963913Z ##[group]Create local container network
+2026-10-04T03:52:19.0974463Z ##[command]/usr/bin/docker network create --label 90baf4 github_network_b119b6195c81459582da0012699f5a71
+2026-10-04T03:52:19.1500802Z 6da6a02f97600e88839123120227233e5a14513cd59e13370f9f680ca0c7df96
+2026-10-04T03:52:19.1534843Z ##[endgroup]
+2026-10-04T03:52:19.1560411Z ##[group]Starting redis service container
+2026-10-04T03:52:19.1583450Z ##[command]/usr/bin/docker pull redis:7-alpine
+2026-10-04T03:52:20.0383971Z 7-alpine: Pulling from library/redis
+2026-10-04T03:52:20.3131742Z 16333ee0c00f: Pulling fs layer
+2026-10-04T03:52:20.3133354Z 83234986c742: Pulling fs layer
+2026-10-04T03:52:20.3134956Z 7eb50503c2b0: Pulling fs layer
+2026-10-04T03:52:20.3136074Z 1522f9c6f453: Pulling fs layer
+2026-10-04T03:52:20.3137318Z 9928009b15c8: Pulling fs layer
+2026-10-04T03:52:20.3138388Z 4f4fb700ef54: Pulling fs layer
+2026-10-04T03:52:20.3139469Z 4eb14bae0e1d: Pulling fs layer
+2026-10-04T03:52:20.3140882Z 9928009b15c8: Waiting
+2026-10-04T03:52:20.3141847Z 4f4fb700ef54: Waiting
+2026-10-04T03:52:20.3142880Z 4eb14bae0e1d: Waiting
+2026-10-04T03:52:20.3143884Z 1522f9c6f453: Waiting
+2026-10-04T03:52:20.5266475Z 7eb50503c2b0: Verifying Checksum
+2026-10-04T03:52:20.5268269Z 7eb50503c2b0: Download complete
+2026-10-04T03:52:20.5306507Z 83234986c742: Verifying Checksum
+2026-10-04T03:52:20.5308051Z 83234986c742: Download complete
+2026-10-04T03:52:20.5401278Z 16333ee0c00f: Download complete
+2026-10-04T03:52:20.6508090Z 16333ee0c00f: Pull complete
+2026-10-04T03:52:20.7628680Z 9928009b15c8: Verifying Checksum
+2026-10-04T03:52:20.7632340Z 4f4fb700ef54: Verifying Checksum
+2026-10-04T03:52:20.7633287Z 4f4fb700ef54: Download complete
+2026-10-04T03:52:20.7634148Z 9928009b15c8: Download complete
+2026-10-04T03:52:20.8034487Z 1522f9c6f453: Verifying Checksum
+2026-10-04T03:52:20.8035173Z 1522f9c6f453: Download complete
+2026-10-04T03:52:20.9749441Z 4eb14bae0e1d: Verifying Checksum
+2026-10-04T03:52:20.9750873Z 4eb14bae0e1d: Download complete
+2026-10-04T03:52:22.7634274Z 83234986c742: Pull complete
+2026-10-04T03:52:22.9028972Z 7eb50503c2b0: Pull complete
+2026-10-04T03:52:23.0946220Z 1522f9c6f453: Pull complete
+2026-10-04T03:52:23.1039701Z 9928009b15c8: Pull complete
+2026-10-04T03:52:23.1159793Z 4f4fb700ef54: Pull complete
+2026-10-04T03:52:23.1271216Z 4eb14bae0e1d: Pull complete
+2026-10-04T03:52:23.1316182Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+2026-10-04T03:52:23.1330330Z Status: Downloaded newer image for redis:7-alpine
+2026-10-04T03:52:23.1338631Z docker.io/library/redis:7-alpine
+2026-10-04T03:52:23.1377308Z ##[command]/usr/bin/docker create --name e410407f89a94e83a6c686f6c90e431b_redis7alpine_3a1066 --label 90baf4 --network github_network_b119b6195c81459582da0012699f5a71 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+2026-10-04T03:52:23.1632162Z 50fff7535077db8ed7ebb799b240f8ae457de5f368b84c81238259f78e723ccc
+2026-10-04T03:52:23.1653633Z ##[command]/usr/bin/docker start 50fff7535077db8ed7ebb799b240f8ae457de5f368b84c81238259f78e723ccc
+2026-10-04T03:52:23.3720483Z 50fff7535077db8ed7ebb799b240f8ae457de5f368b84c81238259f78e723ccc
+2026-10-04T03:52:23.3739513Z ##[command]/usr/bin/docker ps --all --filter id=50fff7535077db8ed7ebb799b240f8ae457de5f368b84c81238259f78e723ccc --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-04T03:52:23.3870318Z 50fff7535077db8ed7ebb799b240f8ae457de5f368b84c81238259f78e723ccc Up Less than a second (health: starting)
+2026-10-04T03:52:23.3888957Z ##[command]/usr/bin/docker port 50fff7535077db8ed7ebb799b240f8ae457de5f368b84c81238259f78e723ccc
+2026-10-04T03:52:23.4008099Z 6379/tcp -> 0.0.0.0:6379
+2026-10-04T03:52:23.4008473Z 6379/tcp -> [::]:6379
+2026-10-04T03:52:23.4050733Z ##[endgroup]
+2026-10-04T03:52:23.4059480Z ##[group]Waiting for all services to be ready
+2026-10-04T03:52:23.4073061Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 50fff7535077db8ed7ebb799b240f8ae457de5f368b84c81238259f78e723ccc
+2026-10-04T03:52:23.4190634Z starting
+2026-10-04T03:52:23.4210681Z redis service is starting, waiting 2 seconds before checking again.
+2026-10-04T03:52:25.4214153Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 50fff7535077db8ed7ebb799b240f8ae457de5f368b84c81238259f78e723ccc
+2026-10-04T03:52:25.4335902Z starting
+2026-10-04T03:52:25.4348342Z redis service is starting, waiting 3 seconds before checking again.
+2026-10-04T03:52:29.1463912Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 50fff7535077db8ed7ebb799b240f8ae457de5f368b84c81238259f78e723ccc
+2026-10-04T03:52:29.1585456Z healthy
+2026-10-04T03:52:29.1601901Z redis service is healthy.
+2026-10-04T03:52:29.1602550Z ##[endgroup]
+2026-10-04T03:52:29.1890798Z ##[group]Run actions/checkout@v6
+2026-10-04T03:52:29.1891404Z with:
+2026-10-04T03:52:29.1891700Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T03:52:29.1894276Z   token: ***
+2026-10-04T03:52:29.1894509Z   ssh-strict: true
+2026-10-04T03:52:29.1894713Z   ssh-user: git
+2026-10-04T03:52:29.1894918Z   persist-credentials: true
+2026-10-04T03:52:29.1895379Z   clean: true
+2026-10-04T03:52:29.1895589Z   sparse-checkout-cone-mode: true
+2026-10-04T03:52:29.1895841Z   fetch-depth: 1
+2026-10-04T03:52:29.1896038Z   fetch-tags: false
+2026-10-04T03:52:29.1896242Z   show-progress: true
+2026-10-04T03:52:29.1896449Z   lfs: false
+2026-10-04T03:52:29.1896635Z   submodules: false
+2026-10-04T03:52:29.1896840Z   set-safe-directory: true
+2026-10-04T03:52:29.1897446Z   allow-unsafe-pr-checkout: false
+2026-10-04T03:52:29.1898029Z ##[endgroup]
+2026-10-04T03:52:29.2974058Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T03:52:29.2975716Z ##[group]Getting Git version info
+2026-10-04T03:52:29.2976269Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T03:52:29.2977216Z [command]/usr/bin/git version
+2026-10-04T03:52:29.3022758Z git version 2.55.0
+2026-10-04T03:52:29.3048451Z ##[endgroup]
+2026-10-04T03:52:29.3062839Z Temporarily overriding HOME='/home/runner/work/_temp/1c26b9a6-a73c-4f3d-a70c-5c2c94d9b1ad' before making global git config changes
+2026-10-04T03:52:29.3064173Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T03:52:29.3069157Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T03:52:29.3119287Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T03:52:29.3124059Z ##[group]Determining repository object format
+2026-10-04T03:52:29.3126503Z ##[endgroup]
+2026-10-04T03:52:29.3127313Z ##[group]Initializing the repository
+2026-10-04T03:52:29.3131745Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T03:52:29.3241630Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-04T03:52:29.3242576Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-04T03:52:29.3243447Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-04T03:52:29.3244119Z hint: call:
+2026-10-04T03:52:29.3244431Z hint:
+2026-10-04T03:52:29.3244947Z hint: 	git config --global init.defaultBranch <name>
+2026-10-04T03:52:29.3245431Z hint:
+2026-10-04T03:52:29.3245924Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-04T03:52:29.3246845Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-04T03:52:29.3247520Z hint:
+2026-10-04T03:52:29.3247769Z hint: 	git branch -m <name>
+2026-10-04T03:52:29.3248011Z hint:
+2026-10-04T03:52:29.3248372Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-04T03:52:29.3249089Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-04T03:52:29.3256813Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T03:52:29.3301718Z ##[endgroup]
+2026-10-04T03:52:29.3302394Z ##[group]Disabling automatic garbage collection
+2026-10-04T03:52:29.3305718Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-04T03:52:29.3335076Z ##[endgroup]
+2026-10-04T03:52:29.3335924Z ##[group]Setting up auth
+2026-10-04T03:52:29.3336472Z Removing SSH command configuration
+2026-10-04T03:52:29.3343195Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T03:52:29.3374407Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T03:52:29.3712248Z Removing HTTP extra header
+2026-10-04T03:52:29.3718287Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T03:52:29.3751239Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T03:52:29.3969816Z Removing includeIf entries pointing to credentials config files
+2026-10-04T03:52:29.3977849Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T03:52:29.4008674Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T03:52:29.4234265Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-793282b8-fd51-46c7-a89c-d5cfeaf130bf.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-04T03:52:29.4272486Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-793282b8-fd51-46c7-a89c-d5cfeaf130bf.config
+2026-10-04T03:52:29.4303123Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-793282b8-fd51-46c7-a89c-d5cfeaf130bf.config
+2026-10-04T03:52:29.4335478Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-793282b8-fd51-46c7-a89c-d5cfeaf130bf.config
+2026-10-04T03:52:29.4368100Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-793282b8-fd51-46c7-a89c-d5cfeaf130bf.config
+2026-10-04T03:52:29.4394872Z ##[endgroup]
+2026-10-04T03:52:29.4395267Z ##[group]Fetching the repository
+2026-10-04T03:52:29.4403828Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +925bc5d22146e506cfb089940c0149dee0d892c2:refs/remotes/origin/ci/B-611-R9-116-611-before
+2026-10-04T03:52:30.8032385Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T03:52:30.8033616Z  * [new ref]         925bc5d22146e506cfb089940c0149dee0d892c2 -> origin/ci/B-611-R9-116-611-before
+2026-10-04T03:52:30.8045534Z [command]/usr/bin/git branch --list --remote origin/ci/B-611-R9-116-611-before
+2026-10-04T03:52:30.8071378Z   origin/ci/B-611-R9-116-611-before
+2026-10-04T03:52:30.8080489Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-611-R9-116-611-before
+2026-10-04T03:52:30.8102767Z 925bc5d22146e506cfb089940c0149dee0d892c2
+2026-10-04T03:52:30.8106861Z ##[endgroup]
+2026-10-04T03:52:30.8107667Z ##[group]Determining the checkout info
+2026-10-04T03:52:30.8108349Z ##[endgroup]
+2026-10-04T03:52:30.8118147Z [command]/usr/bin/git sparse-checkout disable
+2026-10-04T03:52:30.8165060Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-04T03:52:30.8194816Z ##[group]Checking out the ref
+2026-10-04T03:52:30.8199053Z [command]/usr/bin/git checkout --progress --force -B ci/B-611-R9-116-611-before refs/remotes/origin/ci/B-611-R9-116-611-before
+2026-10-04T03:52:31.0342597Z Switched to a new branch 'ci/B-611-R9-116-611-before'
+2026-10-04T03:52:31.0348010Z branch 'ci/B-611-R9-116-611-before' set up to track 'origin/ci/B-611-R9-116-611-before'.
+2026-10-04T03:52:31.0356406Z ##[endgroup]
+2026-10-04T03:52:31.0400863Z [command]/usr/bin/git log -1 --format=%H
+2026-10-04T03:52:31.0424390Z 925bc5d22146e506cfb089940c0149dee0d892c2
+2026-10-04T03:52:31.0679649Z ##[group]Run actions/setup-node@v6
+2026-10-04T03:52:31.0679942Z with:
+2026-10-04T03:52:31.0680133Z   node-version: 20
+2026-10-04T03:52:31.0680326Z   cache: npm
+2026-10-04T03:52:31.0680518Z   check-latest: false
+2026-10-04T03:52:31.0682790Z   token: ***
+2026-10-04T03:52:31.0683013Z   package-manager-cache: true
+2026-10-04T03:52:31.0683261Z ##[endgroup]
+2026-10-04T03:52:31.2113279Z Attempting to download 20...
+2026-10-04T03:52:31.8000922Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-04T03:52:32.2503264Z Extracting ...
+2026-10-04T03:52:32.2625970Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/d1a2fcb8-9796-494b-8886-e3163311283d -f /home/runner/work/_temp/fa706f18-fce6-4c6b-a83b-74937c156dfc
+2026-10-04T03:52:33.2688668Z Adding to the cache ...
+2026-10-04T03:52:35.1647487Z ##[group]Environment details
+2026-10-04T03:52:35.5337242Z node: v20.20.2
+2026-10-04T03:52:35.5337662Z npm: 10.8.2
+2026-10-04T03:52:35.5337961Z yarn: 1.22.22
+2026-10-04T03:52:35.5338510Z ##[endgroup]
+2026-10-04T03:52:35.5358725Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+2026-10-04T03:52:35.6412489Z /home/runner/.npm
+2026-10-04T03:52:35.9024847Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T03:52:37.1754435Z Received 0 of 86828135 (0.0%), 0.0 MBs/sec
+2026-10-04T03:52:37.8585507Z Received 86828135 of 86828135 (100.0%), 49.2 MBs/sec
+2026-10-04T03:52:37.8586691Z Cache Size: ~83 MB (86828135 B)
+2026-10-04T03:52:37.8643503Z [command]/usr/bin/tar -xf /home/runner/work/_temp/56e80007-42d6-42f8-9f24-de8fbdd4c4b2/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+2026-10-04T03:52:38.0380721Z Cache restored successfully
+2026-10-04T03:52:38.0430049Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T03:52:38.0619481Z ##[group]Run npm ci
+2026-10-04T03:52:38.0619771Z npm ci
+2026-10-04T03:52:38.0912234Z shell: /usr/bin/bash -e {0}
+2026-10-04T03:52:38.0912564Z ##[endgroup]
+2026-10-04T03:52:43.8813206Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-04T03:52:45.1068278Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-04T03:52:46.1540511Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T03:52:47.6362508Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T03:52:47.6430588Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T03:52:47.6933036Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T03:53:00.5208002Z 
+2026-10-04T03:53:00.5208908Z > growth-project-backend@1.0.0 postinstall
+2026-10-04T03:53:00.5209345Z > prisma generate
+2026-10-04T03:53:00.5209492Z 
+2026-10-04T03:53:01.4390685Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T03:53:05.2188277Z ┌─────────────────────────────────────────────────────────┐
+2026-10-04T03:53:05.2189990Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+2026-10-04T03:53:05.2190644Z 
+2026-10-04T03:53:05.2193601Z │                                                         │
+2026-10-04T03:53:05.2194932Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.11s
+2026-10-04T03:53:05.2198126Z │  This is a major update - please follow the guide at    │
+2026-10-04T03:53:05.2199112Z │  https://pris.ly/d/major-version-upgrade                │
+2026-10-04T03:53:05.2199960Z │                                                         │
+2026-10-04T03:53:05.2201224Z │  Run the following to update                            │
+2026-10-04T03:53:05.2202135Z │    npm i --save-dev prisma@latest                       │
+2026-10-04T03:53:05.2203186Z │    npm i @prisma/client@latest                          │
+2026-10-04T03:53:05.2204170Z └─────────────────────────────────────────────────────────┘
+2026-10-04T03:53:05.2204707Z 
+2026-10-04T03:53:05.2205549Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T03:53:05.2206192Z 
+2026-10-04T03:53:05.2207344Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+2026-10-04T03:53:05.2208181Z 
+2026-10-04T03:53:05.2735225Z 
+2026-10-04T03:53:05.2735988Z > growth-project-backend@1.0.0 prepare
+2026-10-04T03:53:05.2736527Z > lefthook install
+2026-10-04T03:53:05.2736668Z 
+2026-10-04T03:53:05.3256460Z sync hooks: ✔️(commit-msg, pre-commit)
+2026-10-04T03:53:05.3445663Z 
+2026-10-04T03:53:05.3446460Z added 1115 packages, and audited 1116 packages in 27s
+2026-10-04T03:53:05.3446762Z 
+2026-10-04T03:53:05.3447059Z 202 packages are looking for funding
+2026-10-04T03:53:05.3447412Z   run `npm fund` for details
+2026-10-04T03:53:05.3479997Z 
+2026-10-04T03:53:05.3480310Z 3 high severity vulnerabilities
+2026-10-04T03:53:05.3481096Z 
+2026-10-04T03:53:05.3481619Z To address all issues (including breaking changes), run:
+2026-10-04T03:53:05.3482282Z   npm audit fix --force
+2026-10-04T03:53:05.3482551Z 
+2026-10-04T03:53:05.3482764Z Run `npm audit` for details.
+2026-10-04T03:53:05.4108196Z ##[group]Run npx prisma generate
+2026-10-04T03:53:05.4108700Z npx prisma generate
+2026-10-04T03:53:05.4173753Z shell: /usr/bin/bash -e {0}
+2026-10-04T03:53:05.4174033Z ##[endgroup]
+2026-10-04T03:53:06.6845849Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T03:53:10.4510000Z 
+2026-10-04T03:53:10.4511580Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.09s
+2026-10-04T03:53:10.4512131Z 
+2026-10-04T03:53:10.4512604Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T03:53:10.4513046Z 
+2026-10-04T03:53:10.4513423Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+2026-10-04T03:53:10.4513796Z 
+2026-10-04T03:53:10.5689325Z ##[group]Run set -euo pipefail
+2026-10-04T03:53:10.5689671Z set -euo pipefail
+2026-10-04T03:53:10.5690067Z test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+2026-10-04T03:53:10.5690567Z mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+2026-10-04T03:53:10.5690929Z echo "specs: ${SPECS[*]}"
+2026-10-04T03:53:10.5691220Z npx jest --ci --runInBand "${SPECS[@]}"
+2026-10-04T03:53:10.5754578Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T03:53:10.5754937Z env:
+2026-10-04T03:53:10.5755158Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-04T03:53:10.5755515Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-04T03:53:10.5755856Z ##[endgroup]
+2026-10-04T03:53:10.5850779Z specs: test/privacy-apple-unlink-path.spec.ts test/privacy-round8-retention.spec.ts
+2026-10-04T03:53:20.6514190Z PASS test/privacy-round8-retention.spec.ts (9.009 s)
+2026-10-04T03:53:20.8416831Z FAIL test/privacy-apple-unlink-path.spec.ts
+2026-10-04T03:53:20.8419978Z   ● #611 B-611-17 / B-611-12: the Sign in with Apple removal path is Apple’s current one › both pages render the one shared sentence, pinned word for word
+2026-10-04T03:53:20.8421381Z 
+2026-10-04T03:53:20.8421980Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T03:53:20.8422445Z 
+2026-10-04T03:53:20.8426394Z     Expected: "If you used Sign in with Apple, deleting your account ends the app’s link to your Apple Account. To remove the app from your Apple Account as well, on your iPhone open Settings, tap your name, then Sign in with Apple, choose the app, tap Delete and follow the steps on screen to confirm. On the web, sign in at account.apple.com, go to Sign-In & Security, select Sign in with Apple, choose the app and stop using Sign in with Apple for it."
+2026-10-04T03:53:20.8432155Z     Received: "If you used Sign in with Apple, deleting your account ends the app’s link to your Apple ID. To remove the app from your Apple ID as well, on your iPhone open Settings, tap your name, then Sign-In & Security, then Sign in with Apple, choose the app and stop using it with your Apple ID."
+2026-10-04T03:53:20.8433988Z 
+2026-10-04T03:53:20.8435205Z       86 | describe('#611 B-611-17 / B-611-12: the Sign in with Apple removal path is Apple’s current one', () => {
+2026-10-04T03:53:20.8437255Z       87 |   it('both pages render the one shared sentence, pinned word for word', () => {
+2026-10-04T03:53:20.8439246Z     > 88 |     expect(trust.SIGN_IN_WITH_APPLE_DELETION_TEXT).toBe(APPLE_NOW);
+2026-10-04T03:53:20.8440695Z          |                                                    ^
+2026-10-04T03:53:20.8441874Z       89 |     expect(privacyDeletion).toContain(APPLE_NOW);
+2026-10-04T03:53:20.8443061Z       90 |     expect(helpInApp).toContain(APPLE_NOW);
+2026-10-04T03:53:20.8443828Z       91 |     // The help page takes the shared constant; it keeps no copy of its own.
+2026-10-04T03:53:20.8444216Z 
+2026-10-04T03:53:20.8444488Z       at Object.<anonymous> (test/privacy-apple-unlink-path.spec.ts:88:52)
+2026-10-04T03:53:20.8444792Z 
+2026-10-04T03:53:20.8446121Z   ● #611 B-611-17 / B-611-12: the Sign in with Apple removal path is Apple’s current one › the iPhone steps follow Apple’s order: Settings, your name, Sign in with Apple, the app, Delete, confirm
+2026-10-04T03:53:20.8448050Z 
+2026-10-04T03:53:20.8448419Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T03:53:20.8448871Z 
+2026-10-04T03:53:20.8449041Z     Expected: true
+2026-10-04T03:53:20.8449427Z     Received: false
+2026-10-04T03:53:20.8449661Z 
+2026-10-04T03:53:20.8450122Z       107 |         'confirm',
+2026-10-04T03:53:20.8451518Z       108 |       ].map((marker) => step.indexOf(marker));
+2026-10-04T03:53:20.8453265Z     > 109 |       expect(order.every((at) => at >= 0)).toBe(true);
+2026-10-04T03:53:20.8454647Z           |                                            ^
+2026-10-04T03:53:20.8456088Z       110 |       expect([...order].sort((a, b) => a - b)).toEqual(order);
+2026-10-04T03:53:20.8457940Z       111 |       expect(step).not.toContain('Sign-In & Security');
+2026-10-04T03:53:20.8458995Z       112 |     }
+2026-10-04T03:53:20.8459284Z 
+2026-10-04T03:53:20.8459752Z       at Object.<anonymous> (test/privacy-apple-unlink-path.spec.ts:109:44)
+2026-10-04T03:53:20.8460288Z 
+2026-10-04T03:53:20.8461662Z   ● #611 B-611-17 / B-611-12: the Sign in with Apple removal path is Apple’s current one › Sign-In & Security appears only as the account.apple.com step, on every policy page
+2026-10-04T03:53:20.8462749Z 
+2026-10-04T03:53:20.8463044Z     expect(received).toContain(expected) // indexOf
+2026-10-04T03:53:20.8463517Z 
+2026-10-04T03:53:20.8463783Z     Expected substring: "account.apple.com"
+2026-10-04T03:53:20.8465526Z     Received string:    "To remove the app from your Apple ID as well, on your iPhone open Settings, tap your name, then Sign-In & Security, then Sign in with Apple, choose the app and stop using it with your Apple ID."
+2026-10-04T03:53:20.8466606Z 
+2026-10-04T03:53:20.8467700Z       116 |     for (const text of [privacy, health, deleteHelp]) {
+2026-10-04T03:53:20.8469456Z       117 |       for (const s of sentences(text).filter((x) => x.includes('Sign-In & Security'))) {
+2026-10-04T03:53:20.8471073Z     > 118 |         expect(s).toContain('account.apple.com');
+2026-10-04T03:53:20.8472200Z           |                   ^
+2026-10-04T03:53:20.8473388Z       119 |         expect(s).not.toMatch(/\biPhone\b|\bSettings\b/);
+2026-10-04T03:53:20.8474320Z       120 |       }
+2026-10-04T03:53:20.8475627Z       121 |       expect(text).not.toMatch(/Settings, tap your name, then Sign-In & Security/);
+2026-10-04T03:53:20.8476504Z 
+2026-10-04T03:53:20.8477180Z       at Object.<anonymous> (test/privacy-apple-unlink-path.spec.ts:118:19)
+2026-10-04T03:53:20.8477751Z 
+2026-10-04T03:53:20.8478898Z   ● #611 B-611-17 / B-611-12: the Sign in with Apple removal path is Apple’s current one › the account is called Apple Account, as Apple names it
+2026-10-04T03:53:20.8479810Z 
+2026-10-04T03:53:20.8480078Z     expect(received).not.toMatch(expected)
+2026-10-04T03:53:20.8480443Z 
+2026-10-04T03:53:20.8480693Z     Expected pattern: not /\bApple ID\b/
+2026-10-04T03:53:20.8610750Z     Received string:      " The Growth Project Privacy Consumer Health Privacy Terms Security Status Privacy Policy Last reviewed 2026-10-03 The Growth Project (“TGP”, “we”, “us”) provides personal-training software used by independent coaches and the people they coach, including Roman, an AI assistant inside the app. This policy explains what personal data we collect, where it comes from, why we use it, who receives it, how long we keep it and the choices you have. It describes the app as it works today; features that are switched on only for some accounts are marked “if enabled”. It is a company-drafted statement of practice, and counsel review is recommended. Personal training only TGP is a personal-training service. It is not a medical service, it does not diagnose or treat any condition, and nothing in the app, from Roman or from your coach is medical advice. We collect health and fitness information only to deliver personal training that you ask for. Consumer health data Much of what you share with TGP is health information, for example your consultation answers, body measurements, food logs, sleep and heart-rate data. Our Consumer Health Data Privacy Policy describes that data, who receives it and how to exercise your rights over it, including the rights of Washington residents under the My Health My Data Act (RCW 19.373). Read the Consumer Health Data Privacy Policy What we collect Depending on how you use TGP, we collect: Account and contact details — your name, email address (an Apple private relay address if you choose Hide My Email with Sign in with Apple), optional phone number, account role (client or coach), the invite code you used and the coach you are connected to. Passwords are handled by our authentication provider and are never stored in plain text. Identifiers — your TGP account ID, sign-in identifiers from Supabase, Apple or Google, and your device’s push-notification token. Consultation answers — your goal and why it matters, the sex used for nutrition formulas, date of birth, height, weight and goal weight, activity level, sleep, training experience and preferences, injuries, session length, training days and time, where you train and your equipment, how you eat, foods you avoid, meals per day, tracking history and what gets in the way, and your answers to the readiness questions (heart condition, chest pain, dizziness, bone or joint problems, medication, pregnancy or another reason) with any notes you add. We also store what we work out from them: your calorie and macro targets and the training plan you are assigned. Earlier versions of your answers are kept while your account exists. Coaching logs — meals and foods you log, macros, water, fasting, workouts (exercises, sets, reps, load and duration), check-ins (mood, energy, sleep and notes), habits, weight and progress entries. Apple Health or Health Connect data, only if you connect it — steps, active energy, heart rate, resting heart rate, heart-rate variability, VO2 max, workouts and distance, weight, body fat, blood pressure, sleep, blood-oxygen saturation, respiratory rate and body temperature, with the source, time and time zone of each reading. Apple Health is on iPhone; Health Connect is on Android. The app reads this data with your permission and sends it to our servers so you and your coach can see it; it does not write data back to Apple Health or Health Connect. Messages and community content — messages with your coach; posts, comments and reactions in the community spaces your coach runs, your space memberships and when you joined them; direct messages and voice notes if enabled; and reports and blocks you make. Roman conversations — what you write to Roman and Roman’s replies. Payments — card details are entered into Stripe’s checkout and are collected by Stripe. We receive and store payment status, amounts, currency, the package or subscription purchased, refunds, invoices, billing email, and your card brand, last four digits and expiry month. For coaches we also store Stripe payout status and amounts, the bank name and last four digits of the payout account, and AI-credit balances and spending. We never receive or store full card or bank account numbers. Support — conversations in in-app support chat (provided by Crisp) together with your name, email, role, plan and account workspace, and emails you send us. Device, usage and diagnostic data — IP address, browser or device type, app version, request times and security logs; product analytics events and screen views linked to your account ID; and crash and performance reports linked to your account ID, with no name or email address attached. Food searches — the words you search for when logging food. Where it comes from You, when you sign up, complete the consultation, log, message, post or contact support. Your phone’s Apple Health or Health Connect store, only after you grant permission in the app. Your coach, who sets your plan and targets and writes to you. Our own systems and Roman, which calculate targets, generate plans and replies, and record how the app is used. Apple or Google, when you sign in with them, and Stripe, which tells us whether a payment succeeded. Other members, when they reply to you or mention you in a community space. How we use it To run your personal training: build your plan and targets, show your progress, and let you and your coach work together. To power Roman and your coach’s AI drafts about you, after you agree (see “Roman and AI” below). To send the messages you expect: account emails, reminders and push notifications. To provide support, keep the service safe and secure, prevent abuse, moderate the community and fix problems. To understand, in aggregate, which parts of the app work and which do not. To process payments and coach payouts, and to meet legal, tax and accounting duties. We do not sell personal data. We do not use health data for advertising or marketing, we do not show third-party ads, and we do not track you across other companies’ apps or websites. We do not use your data to train AI models. Health and fitness data is never used for advertising or for data mining other than to improve health management, and is used for health research only with your permission. Who can see your data You. Your coach, and any coach on their team who is assigned to you: your profile, consultation answers including readiness answers, targets and plan, logs, check-ins, connected health data and your messages with them. If any readiness answer is yes, your coach is told so they can adjust your training. Members of a community space you belong to: what you post, comment or react there, and your name. Coaches can sort the members of their spaces by when they joined. Roman conversations are not visible to your coach, assistant coaches or any coach-facing screen. They are stored securely; TGP staff can access them only for support, safety and debugging. TGP staff, only when needed to provide support, keep people safe, fix problems, secure the service or meet a legal duty. The service providers listed below, only to run the service for us. Some coaches run programmes alongside a clinic partner. No account, consultation, coaching, health, wearable or Roman data is exchanged with any clinic partner, and clinic partners have no access to the app or to your data. Roman and AI Roman is an AI assistant powered by Anthropic. At the start of the consultation the app shows two separate boxes on one screen. The first, which you need to tick to continue, covers the personal-training waiver and lets TGP and your coach collect and use your information to coach you. The second is optional and starts unticked: it lets Roman and your coach’s AI drafts use your information, names Anthropic as the AI provider and lists the data it receives. If you leave it unticked, nothing about you is sent to Anthropic, and your plan, your coach, the community and Roman’s guided tour work as usual. When you use Roman, we send Anthropic your message, the earlier turns of that conversation, and context drawn from your own account: your profile, consultation and readiness answers, food logs, workouts and workout history, check-ins, wearable, health and sleep data, messages with your coach and the community posts you write. When your coach asks for an AI draft about you, the same kinds of data are sent. Only your own data is used — never another client’s, and never your coach’s private notes about you. Roman conversations are kept until you delete them or your account. You can delete a conversation at any time in the app, which removes its messages from our database straight away. You can allow or withdraw the optional AI agreement at any time in Settings > Privacy > Roman and AI; when you withdraw it, Roman and AI drafts about you stop until you agree again. If we turn it on, coaches can also use AI inbox sorting in the community. Anthropic sorts the community posts and messages a coach has not yet answered into five groups (urgent, a win to celebrate, a form check, general, no action needed) and writes a short summary of each for the coach. Sorting only includes posts and messages from members who ticked the optional AI box; everything else stays in the coach’s regular inbox, unsorted. For each item it receives up to 240 characters of the text, the name of the member who wrote it, the cohort name and how many hours ago it was posted. It only sorts and summarises: it never replies, posts or acts on anything, and only the coach sees the result. Perplexity, if enabled, is used to write short generic encouragement after your first logged milestones (it receives only the type of milestone, not your data). Roman gives general fitness and nutrition guidance, not medical advice. If something sounds like an emergency, Roman points you to 911; if you are in crisis, to 988. Service providers We use these providers to run the service. Each receives only what it needs for its job and processes it on our behalf. We do not sell data to them, and we do not let them use your data for their own advertising. Supabase — sign-in, database and file storage (for example voice notes, if enabled). Fly.io — hosting for our servers. Stripe — card payments, invoices and coach payouts. Anthropic — Roman and coach AI drafts, after you agree; sorting and summarising a coach’s unanswered community posts and messages for that coach, if turned on, only for members who agreed. Perplexity — generic milestone messages, if enabled. PostHog — product analytics. Session recording is off. Sentry — crash and performance monitoring. Crisp — in-app support chat. Resend — account and notification emails. Mux — hosting and playback of the videos coaches upload. It receives the video files, with no name, email or account details attached. When a video is uploaded or played, the device connects to Mux directly, so Mux also receives its IP address and device type. Expo, with Apple and Google push services — delivery of push notifications. Apple and Google — Sign in with Apple and Google sign-in, if you choose them. Apple Health (iPhone) and Health Connect (Android) — the on-device health stores you can choose to connect. We read from them; we do not send your TGP data to them. USDA FoodData Central and Open Food Facts — food search. Our servers send them only the words you search for, never your name, account or health data. Search results are cached for 24 hours. Legal reasons We may disclose information when the law requires it, to protect someone’s safety, or to protect TGP and its users from fraud or abuse. If TGP is reorganised or sold, personal data would move only under this policy, and we would tell you first. How long we keep it Account, consultation, coaching, health and community data — while your account is open, until you delete it or ask us to delete it. Roman conversations — kept until you delete them or your account. Food search results — 24 hours in our cache. Payment, invoice and tax records — as long as the law requires. Security and audit logs — as long as needed to protect the service and meet legal duties. Backups — database backups and copies are never kept more than six months after a confirmed deletion request. Copies of the database made before an update to the service are deleted 30 days after the update is verified, and never kept beyond 90 days. Error reports in Sentry — 90 days. Email logs in Resend — 30 days. Product analytics in PostHog — a deleted person is removed from PostHog within 30 days of the deletion. What Anthropic receives — Anthropic deletes what it receives within 30 days, except where its usage policy or the law requires it to keep it longer. Deleting your account Unless a shorter period is listed above, your information is kept while your account is open. Deletion can be started in the app or by email. You can delete your account in the app: Settings, then Delete account. You confirm with your password or Sign in with Apple, and deletion is scheduled straight away with a 14-day grace period during which you can cancel. After that, your profile, consultation answers, logs, connected health data, Roman conversations, notifications and community memberships are permanently deleted, and the content of your community posts and messages is removed. If you used Sign in with Apple, deleting your account ends the app’s link to your Apple ID. To remove the app from your Apple ID as well, on your iPhone open Settings, tap your name, then Sign-In & Security, then Sign in with Apple, choose the app and stop using it with your Apple ID. We keep only what we must: the payment records the law requires; security and audit logs; one deletion record with a random reference, the date and the result; and a closed-account record with no name, contact details or profile, holding only an internal account number, the account type and dates such as when the account was opened and closed, so the records we must keep still point to one closed account. While removing your sign-in account at your sign-in provider is still being retried, we also keep that provider’s account ID. Once it is removed, we keep only a one-way code made from it, for 30 days, so the app can tell you the account was deleted if you sign in again; then the code is discarded. You can also ask us to delete your account, or only some of your health data, by emailing Bradleyapple1031@gmail.com. We tell our service providers about deletion requests so they delete their copies too. At Stripe, deletion requests are handled with Stripe’s redaction tools; Stripe keeps the payment records the law requires. How to delete your account, with or without the app De-identified information After an account is deleted, de-identified, aggregated information that cannot identify the person may be kept. TGP takes reasonable measures so it cannot be linked to anyone, commits publicly to keep and use it only in de-identified form and never to try to re-identify it, and requires by contract anyone it shares it with to do the same. Your rights and choices See and download your data — in the app (Trust & Privacy, then Request data export) or by email. Correct your data — in the app, or by email. Delete your account or specific data — as described above. Withdraw your AI agreement — Roman and AI drafts about you stop. Disconnect Apple Health or Health Connect — at any time in the app or in your phone’s settings; we stop receiving new readings. Turn off push notifications — in your phone’s settings. To exercise any right, email Bradleyapple1031@gmail.com from the address on your account. We may ask you to confirm your identity, we never require you to create a new account, and we respond within 30 days. Where privacy laws give you more rights (for example in Washington, California, the UK or the EEA), we honour them. If we decline a request you can appeal, as described in the Consumer Health Data Privacy Policy. Children You must be 16 or older to use TGP. The service is not directed to children under 16 and we do not knowingly collect their data. If you believe a child under 16 has an account, email us and we will delete it. Security We protect data with encryption in transit and at rest, access controls and monitoring. No system is perfectly secure; our Security page describes what we do today. Security Changes When we change this policy we update the date at the top and, for material changes, tell you in the app or by email first. We will not collect new categories of health data, or use it for new purposes, without telling you and asking for your agreement first. Contact For privacy questions or requests, email Bradleyapple1031@gmail.com. We aim to reply within five business days. This policy is a company-drafted statement of practice; counsel review is recommended before relying on it for compliance with any specific regulation. The Growth Project Privacy Policy · Consumer Health Data Privacy Policy · Delete your account Bradleyapple1031@gmail.com "
+2026-10-04T03:53:20.8701454Z 
+2026-10-04T03:53:20.8702107Z       125 |   it('the account is called Apple Account, as Apple names it', () => {
+2026-10-04T03:53:20.8703202Z       126 |     for (const text of [privacy, health, deleteHelp]) {
+2026-10-04T03:53:20.8704361Z     > 127 |       expect(text).not.toMatch(/\bApple ID\b/);
+2026-10-04T03:53:20.8705451Z           |                        ^
+2026-10-04T03:53:20.8705819Z       128 |     }
+2026-10-04T03:53:20.8706502Z       129 |     expect(privacyDeletion).toContain('your Apple Account');
+2026-10-04T03:53:20.8708776Z       130 |     expect(helpInApp).toContain('your Apple Account');
+2026-10-04T03:53:20.8709476Z 
+2026-10-04T03:53:20.8709970Z       at Object.<anonymous> (test/privacy-apple-unlink-path.spec.ts:127:24)
+2026-10-04T03:53:20.8710519Z 
+2026-10-04T03:53:20.8711647Z   ● #611 B-611-17 / B-611-12: the Sign in with Apple removal path is Apple’s current one › both pages link to Apple’s maintained instructions
+2026-10-04T03:53:20.8712572Z 
+2026-10-04T03:53:20.8712904Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T03:53:20.8713344Z 
+2026-10-04T03:53:20.8713677Z     Expected: "https://support.apple.com/en-us/102571"
+2026-10-04T03:53:20.8714259Z     Received: undefined
+2026-10-04T03:53:20.8714519Z 
+2026-10-04T03:53:20.8714757Z       132 |
+2026-10-04T03:53:20.8715863Z       133 |   it('both pages link to Apple’s maintained instructions', () => {
+2026-10-04T03:53:20.8718211Z     > 134 |     expect(Reflect.get(trust, 'APPLE_SIGN_IN_SUPPORT_URL')).toBe(APPLE_SUPPORT_URL);
+2026-10-04T03:53:20.8720125Z           |                                                             ^
+2026-10-04T03:53:20.8721599Z       135 |     const anchor = `<a href="${APPLE_SUPPORT_URL}">${APPLE_LINK_LABEL}</a>`;
+2026-10-04T03:53:20.8723168Z       136 |     for (const html of [privacyHtml, helpHtml]) {
+2026-10-04T03:53:20.8724385Z       137 |       expect(html).toContain(anchor);
+2026-10-04T03:53:20.8724911Z 
+2026-10-04T03:53:20.8725371Z       at Object.<anonymous> (test/privacy-apple-unlink-path.spec.ts:134:61)
+2026-10-04T03:53:20.8725927Z 
+2026-10-04T03:53:20.8726885Z   ● #611 B-611-17 / B-611-12: the Sign in with Apple removal path is Apple’s current one › procedures §0 record the path and its source
+2026-10-04T03:53:20.8727640Z 
+2026-10-04T03:53:20.8727828Z     expect(received).toContain(expected) // indexOf
+2026-10-04T03:53:20.8728084Z 
+2026-10-04T03:53:20.8728317Z     Expected substring: "https://support.apple.com/en-us/102571"
+2026-10-04T03:53:20.8729908Z     Received string:    "Sign in with Apple: #608 revokes the Apple token when `APPLE_TEAM_ID`, `APPLE_SIGNIN_KEY_ID` and `APPLE_SIGNIN_PRIVATE_KEY` are set. **UNVERIFIED (owner):** the key is not created yet, so the outcome is `not_configured`. The app then tells the person how to remove the app from their Apple ID.·
+2026-10-04T03:53:20.8737200Z     **Operator ruling (agent 116, 2026-10-03, on Opus RG-1 at #611 `5eac8f21`):** the policy must be true on the day it publishes, and production has no Sign in with Apple key yet. So the Privacy Policy does **not** claim that deletion revokes Sign in with Apple. It says what is true today: deleting the account ends the app's link to the Apple ID (the deletion run removes the Supabase sign-in identity), and the person can remove the app from their Apple ID in iPhone Settings (`SIGN_IN_WITH_APPLE_DELETION_TEXT` in `src/public-pages/trust-pages.html.ts`). **Follow-up:** once the owner sets the Apple key secrets in production and a deletion shows `apple_revocation=revoked`, a follow-up PR restores the revocation sentence.·
+2026-10-04T03:53:20.8741777Z     "
+2026-10-04T03:53:20.8741977Z 
+2026-10-04T03:53:20.8742999Z       150 |   it('procedures §0 record the path and its source', () => {
+2026-10-04T03:53:20.8745119Z       151 |     const s0 = between(DOC, 'Sign in with Apple: #608 revokes', 'Everything below covers');
+2026-10-04T03:53:20.8747160Z     > 152 |     expect(s0).toContain(APPLE_SUPPORT_URL);
+2026-10-04T03:53:20.8748248Z           |                ^
+2026-10-04T03:53:20.8749485Z       153 |     expect(s0).toContain('Settings > [your name] > Sign in with Apple');
+2026-10-04T03:53:20.8751245Z       154 |     expect(s0).toContain('account.apple.com > Sign-In & Security > Sign in with Apple');
+2026-10-04T03:53:20.8752637Z       155 |     expect(s0).not.toMatch(/\bApple ID\b/);
+2026-10-04T03:53:20.8753009Z 
+2026-10-04T03:53:20.8753273Z       at Object.<anonymous> (test/privacy-apple-unlink-path.spec.ts:152:16)
+2026-10-04T03:53:20.8753597Z 
+2026-10-04T03:53:20.8753953Z Test Suites: 1 failed, 1 passed, 2 total
+2026-10-04T03:53:20.8754651Z Tests:       6 failed, 17 passed, 23 total
+2026-10-04T03:53:20.8755472Z Snapshots:   0 total
+2026-10-04T03:53:20.8755900Z Time:        9.445 s
+2026-10-04T03:53:20.8756688Z Ran all test suites matching test/privacy-apple-unlink-path.spec.ts|test/privacy-round8-retention.spec.ts.
+2026-10-04T03:53:21.1217792Z ##[error]Process completed with exit code 1.
+2026-10-04T03:53:21.1336438Z Post job cleanup.
+2026-10-04T03:53:21.2195587Z [command]/usr/bin/git version
+2026-10-04T03:53:21.2232726Z git version 2.55.0
+2026-10-04T03:53:21.2274021Z Temporarily overriding HOME='/home/runner/work/_temp/ad31efda-23f3-4add-839f-462f823f6674' before making global git config changes
+2026-10-04T03:53:21.2275646Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T03:53:21.2280594Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T03:53:21.2311420Z Removing SSH command configuration
+2026-10-04T03:53:21.2318156Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T03:53:21.2354835Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T03:53:21.2582574Z Removing HTTP extra header
+2026-10-04T03:53:21.2587510Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T03:53:21.2620520Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T03:53:21.2838915Z Removing includeIf entries pointing to credentials config files
+2026-10-04T03:53:21.2845664Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T03:53:21.2872959Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T03:53:21.2874568Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T03:53:21.2875730Z includeif.gitdir:/github/workspace/.git.path
+2026-10-04T03:53:21.2876563Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T03:53:21.2884524Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T03:53:21.2905896Z /home/runner/work/_temp/git-credentials-793282b8-fd51-46c7-a89c-d5cfeaf130bf.config
+2026-10-04T03:53:21.2917583Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-793282b8-fd51-46c7-a89c-d5cfeaf130bf.config
+2026-10-04T03:53:21.2952644Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T03:53:21.2975544Z /home/runner/work/_temp/git-credentials-793282b8-fd51-46c7-a89c-d5cfeaf130bf.config
+2026-10-04T03:53:21.2985104Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-793282b8-fd51-46c7-a89c-d5cfeaf130bf.config
+2026-10-04T03:53:21.3017222Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-04T03:53:21.3037293Z /github/runner_temp/git-credentials-793282b8-fd51-46c7-a89c-d5cfeaf130bf.config
+2026-10-04T03:53:21.3045332Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-793282b8-fd51-46c7-a89c-d5cfeaf130bf.config
+2026-10-04T03:53:21.3076162Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T03:53:21.3096464Z /github/runner_temp/git-credentials-793282b8-fd51-46c7-a89c-d5cfeaf130bf.config
+2026-10-04T03:53:21.3106111Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-793282b8-fd51-46c7-a89c-d5cfeaf130bf.config
+2026-10-04T03:53:21.3139840Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T03:53:21.3373037Z Removing credentials config '/home/runner/work/_temp/git-credentials-793282b8-fd51-46c7-a89c-d5cfeaf130bf.config'
+2026-10-04T03:53:21.3499712Z Print service container logs: e410407f89a94e83a6c686f6c90e431b_redis7alpine_3a1066
+2026-10-04T03:53:21.3504319Z ##[command]/usr/bin/docker logs --details 50fff7535077db8ed7ebb799b240f8ae457de5f368b84c81238259f78e723ccc
+2026-10-04T03:53:21.3633632Z  1:C 04 Oct 2026 03:52:23.378 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+2026-10-04T03:53:21.3635698Z  1:C 04 Oct 2026 03:52:23.378 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+2026-10-04T03:53:21.3636270Z  1:C 04 Oct 2026 03:52:23.378 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+2026-10-04T03:53:21.3637750Z  1:C 04 Oct 2026 03:52:23.378 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+2026-10-04T03:53:21.3638632Z  1:M 04 Oct 2026 03:52:23.378 * monotonic clock: POSIX clock_gettime
+2026-10-04T03:53:21.3639220Z  1:M 04 Oct 2026 03:52:23.379 * Running mode=standalone, port=6379.
+2026-10-04T03:53:21.3639621Z  1:M 04 Oct 2026 03:52:23.379 * Server initialized
+2026-10-04T03:53:21.3640010Z  1:M 04 Oct 2026 03:52:23.379 * Ready to accept connections tcp
+2026-10-04T03:53:21.3658922Z Stop and remove container: e410407f89a94e83a6c686f6c90e431b_redis7alpine_3a1066
+2026-10-04T03:53:21.3663611Z ##[command]/usr/bin/docker rm --force 50fff7535077db8ed7ebb799b240f8ae457de5f368b84c81238259f78e723ccc
+2026-10-04T03:53:21.7556678Z 50fff7535077db8ed7ebb799b240f8ae457de5f368b84c81238259f78e723ccc
+2026-10-04T03:53:21.7584129Z Remove container network: github_network_b119b6195c81459582da0012699f5a71
+2026-10-04T03:53:21.7589139Z ##[command]/usr/bin/docker network rm github_network_b119b6195c81459582da0012699f5a71
+2026-10-04T03:53:21.8581046Z github_network_b119b6195c81459582da0012699f5a71
+2026-10-04T03:53:21.8656203Z Cleaning up orphan processes

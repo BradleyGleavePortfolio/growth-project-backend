@@ -1,0 +1,144 @@
+[heavy] waiting for a slot: npx jest --config /home/user/workspace/ops/bci116/exp/jest.transpile.js --cacheDirectory=/tmp/bci116-jc-c --ci --runInBand --logHeapUsage src/data-export/data-export.spec.ts src/exercise-catalog/exercise-video-provider.service.spec.ts src/exercise-library/exercise-library.service.spec.ts src/talent-marketplace/__tests__/admin-applications.controller.http.spec.ts src/talent-marketplace/__tests__/admin-moderation.controller.http.spec.ts src/talent-marketplace/__tests__/apply.controller.http.spec.ts src/talent-marketplace/__tests__/public-listing.controller.http.spec.ts src/wearables/connector-registry.spec.ts src/wearables/connectors/fitbit/fitbit.registry.spec.ts src/workout-builder/workout-builder.service.spec.ts test/account-deletion/admin-force-delete-step-up.spec.ts test/ai-consent/ai-consent-dunning-lockout.e2e.spec.ts test/ai-consent/ai-consent.controller.spec.ts test/ai-consent/ai-consent.service.spec.ts test/c03-select-role-reparent.regression.spec.ts test/coach-alerts-emitters.spec.ts test/coach-alerts-push-delivery.spec.ts test/coach-empty-states.e2e.spec.ts test/coach.service.sub-coach-scope.spec.ts test/community/ack/community-v2-2-ack.e2e.spec.ts test/community/community-dms.e2e.spec.ts test/community/community-foundation.e2e.spec.ts test/community/community-messages.e2e.spec.ts test/community/community-moderation.e2e.spec.ts test/community/community-plan-context.e2e.spec.ts test/community/community-posts.e2e.spec.ts test/community/community-reactions.e2e.spec.ts test/community/community-v1-6-feature-flag.e2e.spec.ts test/community/events/community-events.e2e.spec.ts test/contracts/importer-contract.spec.ts test/cross-tenant-isolation.spec.ts test/data-export.service.spec.ts test/diagnostic-quiz-off.spec.ts test/diagnostic.controller.spec.ts test/dunning-v2-lockout-guard.e2e.spec.ts test/dunning-v2-lockout-privacy-exact.spec.ts test/guest-checkout-pii-scrub.service.spec.ts test/guest-checkout-reconciliation.service.spec.ts test/guest-checkout.service.spec.ts test/health-readiness-bounded.spec.ts test/health-readiness-public.spec.ts test/invite-grant-authorization.spec.ts test/invite-grant.spec.ts test/landing-pages.public.controller.spec.ts test/login-account-lock.spec.ts test/ltv-metrics.service.spec.ts test/marketplace-idempotency.service.spec.ts test/module-graph.spec.ts test/notifications.controller.spec.ts test/observability/orm-composed-http.spec.ts test/openapi-spec.spec.ts test/packages-pricing-http.spec.ts test/payouts-v2.spec.ts test/pr14-guest-recurring-lp-attribution.spec.ts test/roles-enforced.spec.ts test/roman/roman-chats.controller.spec.ts test/scout/entities/scout-entities.contract.spec.ts test/scout/entities/scout-entities.service.spec.ts test/secrets/secrets-dual-key.spec.ts test/share-link.service.spec.ts test/storefront.service.spec.ts test/sub-coach-analytics.service.spec.ts test/sub-coach-assignment.service.spec.ts test/sub-coach-capacity.service.spec.ts test/sub-coach-idempotency.service.spec.ts test/sub-coach-reassign.service.spec.ts test/sub-coach-scope.service.spec.ts test/talent-connect-webhook.spec.ts test/talent-marketplace-connect-adapter.service.spec.ts test/timeline.controller.spec.ts test/timeline.service.spec.ts test/transformation-scorecard-finance-columns.spec.ts test/wearables/connector-registry.spec.ts test/wearables/maintenance/wearable-processed-event-prune.scheduler.spec.ts test/wearables/maintenance/wearable-processed-event-prune.service.spec.ts test/wearables/wearables-module.integration.spec.ts test/well-known.controller.spec.ts test/workout-builder.service.spec.ts
+PASS test/scout/entities/scout-entities.service.spec.ts (13.995 s, 110 MB heap size)
+PASS test/ltv-metrics.service.spec.ts (136 MB heap size)
+[31m[Nest] 22267  - [39m10/04/2026, 2:44:21 AM [31m  ERROR[39m [38;5;3m[GuestCheckoutService] [39m[31mStripe createPaymentIntent failed (code=card_declined http=402)[39m
+[31m[Nest] 22267  - [39m10/04/2026, 2:44:21 AM [31m  ERROR[39m [38;5;3m[GuestCheckoutService] [39m[31mconvertGuestToUser: Supabase user creation failed for gc-fail (tag=Error)[39m
+[31m[Nest] 22267  - [39m10/04/2026, 2:44:21 AM [31m  ERROR[39m [38;5;3m[GuestCheckoutService] [39m[31mconvertGuestToUser: Supabase user creation failed for gc-term (tag=Error)[39m
+[31m[Nest] 22267  - [39m10/04/2026, 2:44:21 AM [31m  ERROR[39m [38;5;3m[GuestCheckoutService] [39m[31mGuestCheckout gc-term reached conversion_failed_terminal after 5 retries (last_error=supabase:Error)[39m
+[31m[Nest] 22267  - [39m10/04/2026, 2:44:21 AM [31m  ERROR[39m [38;5;3m[GuestCheckoutService] [39m[31mhandlePaymentSucceeded crashed (tag=Error)[39m
+[31m[Nest] 22267  - [39m10/04/2026, 2:44:21 AM [31m  ERROR[39m [38;5;3m[GuestCheckoutService] [39m[31mhandlePaymentFailed crashed (tag=Error)[39m
+[31m[Nest] 22267  - [39m10/04/2026, 2:44:21 AM [31m  ERROR[39m [38;5;3m[GuestCheckoutService] [39m[31mhandleChargeRefunded crashed (tag=Error) — propagating for Stripe retry[39m
+[31m[Nest] 22267  - [39m10/04/2026, 2:44:21 AM [31m  ERROR[39m [38;5;3m[GuestCheckoutService] [39m[31mhandleDisputeOpened crashed (tag=Error) — propagating for Stripe retry[39m
+PASS test/guest-checkout.service.spec.ts (258 MB heap size)
+PASS test/contracts/importer-contract.spec.ts (57.174 s, 723 MB heap size)
+PASS test/invite-grant.spec.ts (762 MB heap size)
+PASS test/workout-builder.service.spec.ts (298 MB heap size)
+PASS test/payouts-v2.spec.ts (342 MB heap size)
+PASS test/ai-consent/ai-consent.service.spec.ts (371 MB heap size)
+[31m[Nest] 22267  - [39m10/04/2026, 2:45:22 AM [31m  ERROR[39m [38;5;3m[GuestCheckoutService] [39m[31mmintRecurringForGuest: subscription sub_broken returned without expanded payment_intent — refusing to surface broken client_secret[39m
+PASS test/pr14-guest-recurring-lp-attribution.spec.ts (402 MB heap size)
+FAIL test/login-account-lock.spec.ts (457 MB heap size)
+  ● per-account lock on live Redis behind withFailOpenStorage (production shape) › requires THROTTLER_LIVE_REDIS_URL in CI (refusing to skip a live-storage proof)
+
+    THROTTLER_LIVE_REDIS_URL is not set in CI; the live Redis service is missing
+
+    [0m [90m 19 |[39m     describe(name[33m,[39m () [33m=>[39m {
+     [90m 20 |[39m       it([32m'requires THROTTLER_LIVE_REDIS_URL in CI (refusing to skip a live-storage proof)'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 21 |[39m         [36mthrow[39m [36mnew[39m [33mError[39m([32m'THROTTLER_LIVE_REDIS_URL is not set in CI; the live Redis service is missing'[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 22 |[39m       })[33m;[39m
+     [90m 23 |[39m     })[33m;[39m
+     [90m 24 |[39m     [36mreturn[39m[33m;[39m[0m
+
+      at Object.<anonymous> (test/support/live-redis.ts:21:15)
+
+[33m[Nest] 22267  - [39m10/04/2026, 2:45:24 AM [33m   WARN[39m [38;5;3m[LoginThrottleResetService] [39m[33mlogin throttle lock check unavailable (fail closed): throttler storage backend does not support isBlocked[39m
+[33m[Nest] 22267  - [39m10/04/2026, 2:45:24 AM [33m   WARN[39m [38;5;3m[LoginThrottleResetService] [39m[33mlogin throttle lock check unavailable (fail closed): throttler storage backend does not support isBlocked[39m
+[33m[Nest] 22267  - [39m10/04/2026, 2:45:24 AM [33m   WARN[39m [38;5;3m[LoginThrottleResetService] [39m[33mlogin throttle lock check unavailable (fail closed): throttler storage backend does not support isBlocked[39m
+[33m[Nest] 22267  - [39m10/04/2026, 2:45:24 AM [33m   WARN[39m [38;5;3m[LoginThrottleResetService] [39m[33mlogin throttle lock check unavailable (fail closed): throttler storage backend does not support isBlocked[39m
+PASS test/roles-enforced.spec.ts (638 MB heap size)
+PASS test/landing-pages.public.controller.spec.ts (391 MB heap size)
+[31m[Nest] 22267  - [39m10/04/2026, 2:45:28 AM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.delete_failed session=s_today stage=read: DatabaseRequestError: Database request failed (P2024)[39m
+[31m[Nest] 22267  - [39m10/04/2026, 2:45:28 AM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.delete_failed session=s_today stage=erase: DatabaseRequestError: Database request failed (P2024)[39m
+[31m[Nest] 22267  - [39m10/04/2026, 2:45:28 AM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.delete_all_failed stage=read erased_before=0: DatabaseRequestError: Database request failed (P2024)[39m
+[31m[Nest] 22267  - [39m10/04/2026, 2:45:28 AM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.delete_all_failed stage=read erased_before=1: DatabaseRequestError: Database request failed (P2024)[39m
+[31m[Nest] 22267  - [39m10/04/2026, 2:45:28 AM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.delete_all_failed session=s_today erased_before=0: DatabaseRequestError: Database request failed (P2024)[39m
+[31m[Nest] 22267  - [39m10/04/2026, 2:45:28 AM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.delete_all_failed stage=count erased_before=50: DatabaseRequestError: Database request failed (P2024)[39m
+PASS test/roman/roman-chats.controller.spec.ts (419 MB heap size)
+PASS test/wearables/connector-registry.spec.ts (590 MB heap size)
+[32m[Nest] 22267  - [39m10/04/2026, 2:45:32 AM [32m    LOG[39m [38;5;3m[TalentConnectWebhookService] [39m[32maccount.updated evt_acct_1 processed acct=acct_123 onboarded=true[39m
+[32m[Nest] 22267  - [39m10/04/2026, 2:45:32 AM [32m    LOG[39m [38;5;3m[TalentConnectWebhookService] [39m[32maccount.updated evt_acct_1 processed acct=acct_123 onboarded=false[39m
+[32m[Nest] 22267  - [39m10/04/2026, 2:45:32 AM [32m    LOG[39m [38;5;3m[TalentConnectWebhookService] [39m[32maccount.updated evt_acct_1 processed acct=acct_123 onboarded=true[39m
+[33m[Nest] 22267  - [39m10/04/2026, 2:45:32 AM [33m   WARN[39m [38;5;3m[TalentConnectWebhookService] [39m[33maccount.updated evt_acct_1 missing account id in payload[39m
+PASS test/talent-connect-webhook.spec.ts (415 MB heap size)
+PASS test/packages-pricing-http.spec.ts (460 MB heap size)
+PASS test/invite-grant-authorization.spec.ts (503 MB heap size)
+PASS test/community/ack/community-v2-2-ack.e2e.spec.ts (545 MB heap size)
+PASS test/secrets/secrets-dual-key.spec.ts (606 MB heap size)
+PASS test/ai-consent/ai-consent.controller.spec.ts (661 MB heap size)
+PASS test/module-graph.spec.ts (624 MB heap size)
+PASS test/sub-coach-reassign.service.spec.ts (650 MB heap size)
+PASS test/transformation-scorecard-finance-columns.spec.ts (711 MB heap size)
+PASS test/dunning-v2-lockout-guard.e2e.spec.ts (746 MB heap size)
+PASS test/scout/entities/scout-entities.contract.spec.ts (783 MB heap size)
+PASS test/timeline.service.spec.ts (804 MB heap size)
+PASS test/marketplace-idempotency.service.spec.ts (825 MB heap size)
+PASS test/coach-alerts-emitters.spec.ts (898 MB heap size)
+[31m[Nest] 22267  - [39m10/04/2026, 2:45:44 AM [31m  ERROR[39m [38;5;3m[StorefrontService] [39m[31mSTRIPE_PUBLISHABLE_KEY unset — public storefront cannot confirm payments.[39m
+PASS test/storefront.service.spec.ts (573 MB heap size)
+[31m[Nest] 22267  - [39m10/04/2026, 2:45:46 AM [31m  ERROR[39m [38;5;3m[RecentAuthGuard] [39m[31mRECENT_AUTH_SECRET is not configured or is shorter than 32 characters — sensitive action blocked[39m
+PASS test/account-deletion/admin-force-delete-step-up.spec.ts (631 MB heap size)
+PASS test/data-export.service.spec.ts (660 MB heap size)
+PASS test/sub-coach-scope.service.spec.ts (686 MB heap size)
+PASS test/wearables/wearables-module.integration.spec.ts (773 MB heap size)
+PASS test/sub-coach-idempotency.service.spec.ts (800 MB heap size)
+PASS test/ai-consent/ai-consent-dunning-lockout.e2e.spec.ts (841 MB heap size)
+{"timestamp":"2026-10-04T02:45:49.313Z","level":"log","context":"RoutesResolver","message":"DiagnosticController {/diagnostic-fixture}:"}
+{"timestamp":"2026-10-04T02:45:49.316Z","level":"log","context":"RouterExplorer","message":"Mapped {/diagnostic-fixture/:id, GET} route"}
+{"timestamp":"2026-10-04T02:45:49.318Z","level":"log","context":"NestApplication","message":"Nest application successfully started"}
+PASS test/observability/orm-composed-http.spec.ts (877 MB heap size)
+[31m[Nest] 22267  - [39m10/04/2026, 2:45:49 AM [31m  ERROR[39m [38;5;3m[ShareLinkService] [39m[31mFailed to mint unique share_token after 5 attempts for package pkg-1[39m
+PASS test/share-link.service.spec.ts (899 MB heap size)
+[31m[Nest] 22267  - [39m10/04/2026, 2:45:50 AM [31m  ERROR[39m [38;5;3m[TalentConnectAdapter] [39m[31mTalent Connect onboarding-link failed [2b6eecfc-46b2-4981-ac5e-2b0a4bd617c1] Error: stripe exploded with sk_[REDACTED] in the message[39m
+[31m[Nest] 22267  - [39m10/04/2026, 2:45:50 AM [31m  ERROR[39m [38;5;3m[TalentConnectAdapter] [39m[31mTalent Connect onboarding-link unavailable [deb2ef0f-7cc9-4aa8-be53-6f12f3f9aaa7] ServiceUnavailableException: Stripe Connect is not configured on this environment.[39m
+[31m[Nest] 22267  - [39m10/04/2026, 2:46:00 AM [31m  ERROR[39m [38;5;3m[TalentConnectAdapter] [39m[31mTalent Connect onboarding-link timed out after 10000ms[39m
+[31m[Nest] 22267  - [39m10/04/2026, 2:45:50 AM [31m  ERROR[39m [38;5;3m[TalentConnectAdapter] [39m[31mTalent Connect status failed [df6272b1-0bd4-4d24-b9e4-6ae3981719fd] Error: boom[39m
+PASS test/talent-marketplace-connect-adapter.service.spec.ts (645 MB heap size)
+PASS test/community/community-v1-6-feature-flag.e2e.spec.ts (685 MB heap size)
+PASS test/notifications.controller.spec.ts (722 MB heap size)
+PASS test/timeline.controller.spec.ts (745 MB heap size)
+PASS test/cross-tenant-isolation.spec.ts (767 MB heap size)
+[31m[Nest] 22267  - [39m10/04/2026, 2:45:52 AM [31m  ERROR[39m [38;5;3m[WellKnownController] [39m[31mAPPLE_TEAM_ID unset in production — refusing to serve stub AASA. Set APPLE_TEAM_ID and redeploy.[39m
+[31m[Nest] 22267  - [39m10/04/2026, 2:45:52 AM [31m  ERROR[39m [38;5;3m[WellKnownController] [39m[31mAPPLE_TEAM_ID unset in production — refusing to serve stub AASA. Set APPLE_TEAM_ID and redeploy.[39m
+[31m[Nest] 22267  - [39m10/04/2026, 2:45:52 AM [31m  ERROR[39m [38;5;3m[WellKnownController] [39m[31mANDROID_CERT_SHA256_FINGERPRINTS unset in production — refusing to serve stub assetlinks.json. Set ANDROID_CERT_SHA256_FINGERPRINTS (or ANDROID_SHA256_FINGERPRINT) and redeploy.[39m
+PASS test/well-known.controller.spec.ts (781 MB heap size)
+PASS test/coach-alerts-push-delivery.spec.ts (800 MB heap size)
+PASS test/wearables/maintenance/wearable-processed-event-prune.service.spec.ts (823 MB heap size)
+PASS src/talent-marketplace/__tests__/apply.controller.http.spec.ts (871 MB heap size)
+PASS src/talent-marketplace/__tests__/admin-applications.controller.http.spec.ts (920 MB heap size)
+PASS test/diagnostic-quiz-off.spec.ts (932 MB heap size)
+{"timestamp":"2026-10-04T02:45:58.724Z","level":"log","context":"HTTP","request_id":"1646530f73e51c23ceb173c12ac60142","message":"GET /healthz 200","method":"GET","path":"/healthz","status":200,"latency_ms":0}
+PASS test/coach-empty-states.e2e.spec.ts (955 MB heap size)
+PASS src/talent-marketplace/__tests__/admin-moderation.controller.http.spec.ts (1004 MB heap size)
+PASS test/sub-coach-analytics.service.spec.ts (1018 MB heap size)
+PASS test/wearables/maintenance/wearable-processed-event-prune.scheduler.spec.ts (1037 MB heap size)
+[31m[Nest] 22267  - [39m10/04/2026, 2:46:00 AM [31m  ERROR[39m [38;5;3m[GuestCheckoutPiiScrubService] [39m[31mGuestCheckoutPiiScrub: row gc-broken scrub failed: boom[39m
+[31m[Nest] 22267  - [39m10/04/2026, 2:46:00 AM [31m  ERROR[39m [38;5;3m[GuestCheckoutPiiScrubService] [39m[31mGuestCheckoutPiiScrub tick crashed: GUEST_CHECKOUT_PII_SALT is required in production/staging. Refusing to run the scrub with a dev fallback.[39m
+PASS test/guest-checkout-pii-scrub.service.spec.ts (1056 MB heap size)
+PASS src/talent-marketplace/__tests__/public-listing.controller.http.spec.ts (1107 MB heap size)
+PASS test/openapi-spec.spec.ts (1007 MB heap size)
+PASS test/diagnostic.controller.spec.ts (1047 MB heap size)
+PASS test/c03-select-role-reparent.regression.spec.ts (1076 MB heap size)
+PASS test/health-readiness-bounded.spec.ts (1097 MB heap size)
+PASS test/health-readiness-public.spec.ts (1123 MB heap size)
+PASS test/coach.service.sub-coach-scope.spec.ts (1149 MB heap size)
+PASS test/sub-coach-capacity.service.spec.ts (1164 MB heap size)
+PASS test/sub-coach-assignment.service.spec.ts (1176 MB heap size)
+[31m[Nest] 22267  - [39m10/04/2026, 2:46:11 AM [31m  ERROR[39m [38;5;3m[GuestCheckoutReconciliationService] [39m[31mreconcilePaidCheckout crashed for gc-broken: boom[39m
+[31m[Nest] 22267  - [39m10/04/2026, 2:46:11 AM [31m  ERROR[39m [38;5;3m[GuestCheckoutReconciliationService] [39m[31mGuestCheckoutReconciliation tick crashed: prisma down[39m
+PASS test/guest-checkout-reconciliation.service.spec.ts (1207 MB heap size)
+PASS test/dunning-v2-lockout-privacy-exact.spec.ts (1219 MB heap size)
+
+Summary of all failing tests
+FAIL test/login-account-lock.spec.ts (457 MB heap size)
+  ● per-account lock on live Redis behind withFailOpenStorage (production shape) › requires THROTTLER_LIVE_REDIS_URL in CI (refusing to skip a live-storage proof)
+
+    THROTTLER_LIVE_REDIS_URL is not set in CI; the live Redis service is missing
+
+    [0m [90m 19 |[39m     describe(name[33m,[39m () [33m=>[39m {
+     [90m 20 |[39m       it([32m'requires THROTTLER_LIVE_REDIS_URL in CI (refusing to skip a live-storage proof)'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 21 |[39m         [36mthrow[39m [36mnew[39m [33mError[39m([32m'THROTTLER_LIVE_REDIS_URL is not set in CI; the live Redis service is missing'[39m)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 22 |[39m       })[33m;[39m
+     [90m 23 |[39m     })[33m;[39m
+     [90m 24 |[39m     [36mreturn[39m[33m;[39m[0m
+
+      at Object.<anonymous> (test/support/live-redis.ts:21:15)
+
+
+Test Suites: 1 failed, 8 skipped, 63 passed, 64 of 72 total
+Tests:       1 failed, 99 skipped, 5 todo, 1022 passed, 1127 total
+Snapshots:   0 total
+Time:        131.752 s
+Ran all test suites matching src/data-export/data-export.spec.ts|src/exercise-catalog/exercise-video-provider.service.spec.ts|src/exercise-library/exercise-library.service.spec.ts|src/talent-marketplace/__tests__/admin-applications.controller.http.spec.ts|src/talent-marketplace/__tests__/admin-moderation.controller.http.spec.ts|src/talent-marketplace/__tests__/apply.controller.http.spec.ts|src/talent-marketplace/__tests__/public-listing.controller.http.spec.ts|src/wearables/connector-registry.spec.ts|src/wearables/connectors/fitbit/fitbit.registry.spec.ts|src/workout-builder/workout-builder.service.spec.ts|test/account-deletion/admin-force-delete-step-up.spec.ts|test/ai-consent/ai-consent-dunning-lockout.e2e.spec.ts|test/ai-consent/ai-consent.controller.spec.ts|test/ai-consent/ai-consent.service.spec.ts|test/c03-select-role-reparent.regression.spec.ts|test/coach-alerts-emitters.spec.ts|test/coach-alerts-push-delivery.spec.ts|test/coach-empty-states.e2e.spec.ts|test/coach.service.sub-coach-scope.spec.ts|test/community/ack/community-v2-2-ack.e2e.spec.ts|test/community/community-dms.e2e.spec.ts|test/community/community-foundation.e2e.spec.ts|test/community/community-messages.e2e.spec.ts|test/community/community-moderation.e2e.spec.ts|test/community/community-plan-context.e2e.spec.ts|test/community/community-posts.e2e.spec.ts|test/community/community-reactions.e2e.spec.ts|test/community/community-v1-6-feature-flag.e2e.spec.ts|test/community/events/community-events.e2e.spec.ts|test/contracts/importer-contract.spec.ts|test/cross-tenant-isolation.spec.ts|test/data-export.service.spec.ts|test/diagnostic-quiz-off.spec.ts|test/diagnostic.controller.spec.ts|test/dunning-v2-lockout-guard.e2e.spec.ts|test/dunning-v2-lockout-privacy-exact.spec.ts|test/guest-checkout-pii-scrub.service.spec.ts|test/guest-checkout-reconciliation.service.spec.ts|test/guest-checkout.service.spec.ts|test/health-readiness-bounded.spec.ts|test/health-readiness-public.spec.ts|test/invite-grant-authorization.spec.ts|test/invite-grant.spec.ts|test/landing-pages.public.controller.spec.ts|test/login-account-lock.spec.ts|test/ltv-metrics.service.spec.ts|test/marketplace-idempotency.service.spec.ts|test/module-graph.spec.ts|test/notifications.controller.spec.ts|test/observability/orm-composed-http.spec.ts|test/openapi-spec.spec.ts|test/packages-pricing-http.spec.ts|test/payouts-v2.spec.ts|test/pr14-guest-recurring-lp-attribution.spec.ts|test/roles-enforced.spec.ts|test/roman/roman-chats.controller.spec.ts|test/scout/entities/scout-entities.contract.spec.ts|test/scout/entities/scout-entities.service.spec.ts|test/secrets/secrets-dual-key.spec.ts|test/share-link.service.spec.ts|test/storefront.service.spec.ts|test/sub-coach-analytics.service.spec.ts|test/sub-coach-assignment.service.spec.ts|test/sub-coach-capacity.service.spec.ts|test/sub-coach-idempotency.service.spec.ts|test/sub-coach-reassign.service.spec.ts|test/sub-coach-scope.service.spec.ts|test/talent-connect-webhook.spec.ts|test/talent-marketplace-connect-adapter.service.spec.ts|test/timeline.controller.spec.ts|test/timeline.service.spec.ts|test/transformation-scorecard-finance-columns.spec.ts|test/wearables/connector-registry.spec.ts|test/wearables/maintenance/wearable-processed-event-prune.scheduler.spec.ts|test/wearables/maintenance/wearable-processed-event-prune.service.spec.ts|test/wearables/wearables-module.integration.spec.ts|test/well-known.controller.spec.ts|test/workout-builder.service.spec.ts.
+EXIT=1 WALL=139s

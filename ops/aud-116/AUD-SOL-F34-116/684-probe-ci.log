@@ -1,0 +1,65 @@
+targeted	Targeted jest	﻿2026-10-04T02:35:33.5012442Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T02:35:33.5012786Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T02:35:33.5013124Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T02:35:33.5013562Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T02:35:33.5013912Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T02:35:33.5014205Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T02:35:33.5050930Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T02:35:33.5051341Z env:
+targeted	Targeted jest	2026-10-04T02:35:33.5051571Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T02:35:33.5051928Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T02:35:33.5052219Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T02:35:33.5117982Z specs: test/audit-sol-f34-684.spec.ts test/purchase-split-handler.service.spec.ts test/s-fee-settlement-sweep.spec.ts test/reconciliation.service.spec.ts
+targeted	Targeted jest	2026-10-04T02:35:42.5949322Z PASS test/s-fee-settlement-sweep.spec.ts (8.305 s)
+targeted	Targeted jest	2026-10-04T02:35:42.5951223Z ^[[95m[Nest] 2879  - ^[[39m10/04/2026, 2:35:42 AM ^[[95m  DEBUG^[[39m ^[[38;5;3m[SettlementSweepCron] ^[[39m^[[95mSFEE_SWEEP_SKIPPED_LOCK_HELD another machine is running the sweep^[[39m
+targeted	Targeted jest	2026-10-04T02:35:42.5989636Z ^[[32m[Nest] 2879  - ^[[39m10/04/2026, 2:35:42 AM ^[[32m    LOG^[[39m ^[[38;5;3m[SettlementSweepCron] ^[[39m^[[32mSFEE_SWEEP_DONE attempted=1 succeeded=1 failed=0 settlements_settled=0^[[39m
+targeted	Targeted jest	2026-10-04T02:35:42.6019476Z ^[[32m[Nest] 2879  - ^[[39m10/04/2026, 2:35:42 AM ^[[32m    LOG^[[39m ^[[38;5;3m[SettlementSweepCron] ^[[39m^[[32mSFEE_SWEEP_DONE attempted=1 succeeded=1 failed=0 settlements_settled=0^[[39m
+targeted	Targeted jest	2026-10-04T02:35:42.6021556Z ^[[32m[Nest] 2879  - ^[[39m10/04/2026, 2:35:42 AM ^[[32m    LOG^[[39m ^[[38;5;3m[SettlementSweepCron] ^[[39m^[[32mSFEE_SWEEP_DONE attempted=1 succeeded=1 failed=0 settlements_settled=0^[[39m
+targeted	Targeted jest	2026-10-04T02:35:42.6022656Z ^[[32m[Nest] 2879  - ^[[39m10/04/2026, 2:35:42 AM ^[[32m    LOG^[[39m ^[[38;5;3m[SettlementSweepCron] ^[[39m^[[32mSFEE_SWEEP_DONE attempted=1 succeeded=1 failed=0 settlements_settled=0^[[39m
+targeted	Targeted jest	2026-10-04T02:35:42.6023708Z ^[[32m[Nest] 2879  - ^[[39m10/04/2026, 2:35:42 AM ^[[32m    LOG^[[39m ^[[38;5;3m[SettlementSweepCron] ^[[39m^[[32mSFEE_SWEEP_DONE attempted=2 succeeded=1 failed=1 settlements_settled=0^[[39m
+targeted	Targeted jest	2026-10-04T02:35:43.0540046Z ^[[33m[Nest] 2879  - ^[[39m10/04/2026, 2:35:43 AM ^[[33m   WARN^[[39m ^[[38;5;3m[ReconciliationService] ^[[39m^[[33mresolveChargeId failed pi=pi_dead: stripe down^[[39m
+targeted	Targeted jest	2026-10-04T02:35:43.0559178Z PASS test/reconciliation.service.spec.ts
+targeted	Targeted jest	2026-10-04T02:35:43.4186176Z PASS test/purchase-split-handler.service.spec.ts
+targeted	Targeted jest	2026-10-04T02:35:43.9634191Z ^[[33m[Nest] 2879  - ^[[39m10/04/2026, 2:35:43 AM ^[[33m   WARN^[[39m ^[[38;5;3m[ChargeSettlementService] ^[[39m^[[33msettleCharge: head coach head-1 has no connected account; sub-coach sub-1 keeps the split for charge=ch_test^[[39m
+targeted	Targeted jest	2026-10-04T02:35:43.9635397Z FAIL test/audit-sol-f34-684.spec.ts
+targeted	Targeted jest	2026-10-04T02:35:43.9636740Z   ● Independent F4 actual-service boundary probes › truncated latest-10 refund list still uses the canonical cumulative amount_refunded
+targeted	Targeted jest	2026-10-04T02:35:43.9637552Z 
+targeted	Targeted jest	2026-10-04T02:35:43.9637825Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T02:35:43.9638132Z 
+targeted	Targeted jest	2026-10-04T02:35:43.9638340Z     Expected: 4900
+targeted	Targeted jest	2026-10-04T02:35:43.9638634Z     Received: 4000
+targeted	Targeted jest	2026-10-04T02:35:43.9638808Z 
+targeted	Targeted jest	2026-10-04T02:35:43.9639168Z     ^[[0m ^[[90m 86 |^[[39m     ^[[36mawait^[[39m refunds^[[33m.^[[39mhandle(event)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:35:43.9640281Z      ^[[90m 87 |^[[39m     expect(db^[[33m.^[[39mpurchases[^[[35m0^[[39m])^[[33m.^[[39mtoMatchObject({ status^[[33m:^[[39m ^[[32m'refunded'^[[39m^[[33m,^[[39m entitlement_active^[[33m:^[[39m ^[[36mfalse^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:35:43.9641569Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 88 |^[[39m     expect(db^[[33m.^[[39msettlements[^[[35m0^[[39m]^[[33m.^[[39mrefunded_cents)^[[33m.^[[39mtoBe(^[[35m4^[[39m_900)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:35:43.9642444Z      ^[[90m    |^[[39m                                              ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:35:43.9643151Z      ^[[90m 89 |^[[39m     expect(stripe^[[33m.^[[39mnetTo(^[[32m'acct_audit'^[[39m))^[[33m.^[[39mtoBe(^[[35m0^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:35:43.9644597Z      ^[[90m 90 |^[[39m     expect(db^[[33m.^[[39mrecoveries[^[[35m0^[[39m]^[[33m.^[[39mamount_cents)^[[33m.^[[39mtoBe(^[[35m270^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:35:43.9645355Z      ^[[90m 91 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T02:35:43.9645556Z 
+targeted	Targeted jest	2026-10-04T02:35:43.9645867Z       at Object.<anonymous> (test/audit-sol-f34-684.spec.ts:88:46)
+targeted	Targeted jest	2026-10-04T02:35:43.9646210Z 
+targeted	Targeted jest	2026-10-04T02:35:43.9646847Z   ● Independent F4 actual-service boundary probes › failed in-app delivery must not send message bodies or arbitrary errors to logs
+targeted	Targeted jest	2026-10-04T02:35:43.9647582Z 
+targeted	Targeted jest	2026-10-04T02:35:43.9647891Z     expect(received).not.toContain(expected) // indexOf
+targeted	Targeted jest	2026-10-04T02:35:43.9648164Z 
+targeted	Targeted jest	2026-10-04T02:35:43.9648479Z     Expected substring: not "AUDIT_NOTICE_BODY_contact_at_example_invalid"
+targeted	Targeted jest	2026-10-04T02:35:43.9649358Z     Received string:        "SFEE_NOTICE_INAPP_FAILED notice=pan-66 payee=coach_audit: AUDIT_NOTICE_BODY_contact_at_example_invalid"
+targeted	Targeted jest	2026-10-04T02:35:43.9649879Z 
+targeted	Targeted jest	2026-10-04T02:35:43.9650320Z     ^[[0m ^[[90m 101 |^[[39m     ^[[36mawait^[[39m refunds^[[33m.^[[39mdeliverPayoutNotices(^[[32m'ch_audit'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:35:43.9651391Z      ^[[90m 102 |^[[39m     expect(db^[[33m.^[[39mnotices^[[33m?^[[39m^[[33m.^[[39m[^[[35m0^[[39m]^[[33m.^[[39minapp_status)^[[33m.^[[39mtoBe(^[[32m'failed'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:35:43.9652740Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 103 |^[[39m     expect(warns^[[33m.^[[39mmock^[[33m.^[[39mcalls^[[33m.^[[39mmap((c) ^[[33m=>^[[39m ^[[33mString^[[39m(c[^[[35m0^[[39m]))^[[33m.^[[39mjoin(^[[32m'\n'^[[39m))^[[33m.^[[39mnot^[[33m.^[[39mtoContain(canary)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:35:43.9655459Z      ^[[90m     |^[[39m                                                                      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:35:43.9655977Z      ^[[90m 104 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:35:43.9656460Z      ^[[90m 105 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:35:43.9656829Z      ^[[90m 106 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T02:35:43.9657035Z 
+targeted	Targeted jest	2026-10-04T02:35:43.9657275Z       at Object.<anonymous> (test/audit-sol-f34-684.spec.ts:103:70)
+targeted	Targeted jest	2026-10-04T02:35:43.9657847Z 
+targeted	Targeted jest	2026-10-04T02:35:43.9659044Z ^[[33m[Nest] 2879  - ^[[39m10/04/2026, 2:35:43 AM ^[[33m   WARN^[[39m ^[[38;5;3m[ChargeSettlementService] ^[[39m^[[33msettleCharge waiting charge=ch_test: The selling coach has no connected Stripe account; the payout waits until they finish payout setup.^[[39m
+targeted	Targeted jest	2026-10-04T02:35:43.9662332Z Test Suites: 1 failed, 3 passed, 4 total
+targeted	Targeted jest	2026-10-04T02:35:43.9662948Z Tests:       2 failed, 31 passed, 33 total
+targeted	Targeted jest	2026-10-04T02:35:43.9663332Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T02:35:43.9663673Z Time:        9.875 s
+targeted	Targeted jest	2026-10-04T02:35:43.9664553Z Ran all test suites matching test/audit-sol-f34-684.spec.ts|test/purchase-split-handler.service.spec.ts|test/s-fee-settlement-sweep.spec.ts|test/reconciliation.service.spec.ts.
+targeted	Targeted jest	2026-10-04T02:35:44.1816969Z ##[error]Process completed with exit code 1.

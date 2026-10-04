@@ -1,0 +1,71 @@
+targeted	Targeted jest	﻿2026-10-04T03:12:31.2686362Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T03:12:31.2686746Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T03:12:31.2687155Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T03:12:31.2687655Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T03:12:31.2688017Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T03:12:31.2688319Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T03:12:31.2754495Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T03:12:31.2754857Z env:
+targeted	Targeted jest	2026-10-04T03:12:31.2755086Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T03:12:31.2755450Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T03:12:31.2755775Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T03:12:31.2849999Z specs: test/aud-sol-t12-116-notice-probe.spec.ts
+targeted	Targeted jest	2026-10-04T03:12:43.3516171Z ^[[33m[Nest] 3075  - ^[[39m10/04/2026, 3:12:43 AM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T03:12:43.3518958Z ^[[33m[Nest] 3075  - ^[[39m10/04/2026, 3:12:43 AM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T03:12:43.3549085Z ^[[33m[Nest] 3075  - ^[[39m10/04/2026, 3:12:43 AM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T03:12:43.3907079Z ^[[33m[Nest] 3075  - ^[[39m10/09/2026, 5:02:01 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice push outcome dropped (lease lost) notice=notice-p-3^[[39m
+targeted	Targeted jest	2026-10-04T03:12:43.4167052Z FAIL test/aud-sol-t12-116-notice-probe.spec.ts (11.089 s)
+targeted	Targeted jest	2026-10-04T03:12:43.4169795Z   AUD-SOL-T12-116 — prior boundary controls at exact T2 head
+targeted	Targeted jest	2026-10-04T03:12:43.4171864Z     ✓ B-656-3: 100 noticed rows do not starve 20 missing rows; ties are deterministic (77 ms)
+targeted	Targeted jest	2026-10-04T03:12:43.4173525Z     ✓ B-656-3: concurrent reconciliations insert each missing notice once (11 ms)
+targeted	Targeted jest	2026-10-04T03:12:43.4175178Z     ✓ B-656-5: a failed default-card lookup sends nothing or spends attempts; recovery charges truthfully (4 ms)
+targeted	Targeted jest	2026-10-04T03:12:43.4176903Z     ✓ B-656-5: unknown while recording is retained through reconciliation, not false no-card copy (2 ms)
+targeted	Targeted jest	2026-10-04T03:12:43.4178221Z     ✓ B-656-5: confirmed absent, present and unknown are distinct
+targeted	Targeted jest	2026-10-04T03:12:43.4179286Z     ✓ B-656-2/4: current mute suppresses push, not billing email (1 ms)
+targeted	Targeted jest	2026-10-04T03:12:43.4180676Z     ✓ B-656-2: staggered entrants under a fresh lease make one push (6 ms)
+targeted	Targeted jest	2026-10-04T03:12:43.4181997Z     ✓ B-656-7: helper canaries and actual notice catch never emit arbitrary names (1 ms)
+targeted	Targeted jest	2026-10-04T03:12:43.4183122Z   AUD-SOL-T12-116 — new notice-worker counterexamples
+targeted	Targeted jest	2026-10-04T03:12:43.4184667Z     ✕ pending notices for 50 canceled purchases cannot permanently hide a healthy later notice (7 ms)
+targeted	Targeted jest	2026-10-04T03:12:43.4186267Z     ✕ after slow earlier rows, a fresh channel claim must not expire before its provider finishes (9 ms)
+targeted	Targeted jest	2026-10-04T03:12:43.4187024Z 
+targeted	Targeted jest	2026-10-04T03:12:43.4188245Z   ● AUD-SOL-T12-116 — new notice-worker counterexamples › pending notices for 50 canceled purchases cannot permanently hide a healthy later notice
+targeted	Targeted jest	2026-10-04T03:12:43.4189292Z 
+targeted	Targeted jest	2026-10-04T03:12:43.4189641Z     expect(jest.fn()).toHaveBeenCalledTimes(expected)
+targeted	Targeted jest	2026-10-04T03:12:43.4190089Z 
+targeted	Targeted jest	2026-10-04T03:12:43.4190343Z     Expected number of calls: 1
+targeted	Targeted jest	2026-10-04T03:12:43.4190885Z     Received number of calls: 0
+targeted	Targeted jest	2026-10-04T03:12:43.4191234Z 
+targeted	Targeted jest	2026-10-04T03:12:43.4192010Z     ^[[0m ^[[90m 214 |^[[39m     ^[[36mawait^[[39m w^[[33m.^[[39mservice^[[33m.^[[39msweep(^[[33mNOW^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:12:43.4194259Z      ^[[90m 215 |^[[39m     ^[[36mawait^[[39m w^[[33m.^[[39mservice^[[33m.^[[39msweep(^[[36mnew^[[39m ^[[33mDate^[[39m(^[[33mNOW^[[39m^[[33m.^[[39mgetTime() ^[[33m+^[[39m ^[[35m600^[[39m_000))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:12:43.4196438Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 216 |^[[39m     expect(w^[[33m.^[[39mnotifications^[[33m.^[[39mpushToUser)^[[33m.^[[39mtoHaveBeenCalledTimes(^[[35m1^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:12:43.4198507Z      ^[[90m     |^[[39m                                        ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T03:12:43.4200522Z      ^[[90m 217 |^[[39m     expect(w^[[33m.^[[39mnotices^[[33m.^[[39mrows[^[[35m50^[[39m])^[[33m.^[[39mtoMatchObject({ push_status^[[33m:^[[39m ^[[32m'delivered'^[[39m^[[33m,^[[39m email_status^[[33m:^[[39m ^[[32m'sent'^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:12:43.4202163Z      ^[[90m 218 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:12:43.4202773Z      ^[[90m 219 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T03:12:43.4203057Z 
+targeted	Targeted jest	2026-10-04T03:12:43.4203845Z       at Object.<anonymous> (test/aud-sol-t12-116-notice-probe.spec.ts:216:40)
+targeted	Targeted jest	2026-10-04T03:12:43.4204467Z 
+targeted	Targeted jest	2026-10-04T03:12:43.4205746Z   ● AUD-SOL-T12-116 — new notice-worker counterexamples › after slow earlier rows, a fresh channel claim must not expire before its provider finishes
+targeted	Targeted jest	2026-10-04T03:12:43.4206803Z 
+targeted	Targeted jest	2026-10-04T03:12:43.4207103Z     expect(received).toHaveLength(expected)
+targeted	Targeted jest	2026-10-04T03:12:43.4207450Z 
+targeted	Targeted jest	2026-10-04T03:12:43.4207627Z     Expected length: 1
+targeted	Targeted jest	2026-10-04T03:12:43.4208064Z     Received length: 2
+targeted	Targeted jest	2026-10-04T03:12:43.4215310Z     Received array:  [["client-a", "Your free trial", "Your free trial ends on Oct 12. Your card will be charged $49 then. Cancel anytime before.", {"actionScreen": "ClientPackages", "deep_link": "tgp://plan", "kind": "trial_ending", "purchase_id": "p-3"}, {Symbol(kEvents): Map {}, Symbol(events.maxEventTargetListeners): 10, Symbol(events.maxEventTargetListenersWarned): false, Symbol(kHandlers): Map {}, Symbol(kAborted): false, Symbol(kReason): undefined, Symbol(kComposite): false}], ["client-a", "Your free trial", "Your free trial ends on Oct 12. Your card will be charged $49 then. Cancel anytime before.", {"actionScreen": "ClientPackages", "deep_link": "tgp://plan", "kind": "trial_ending", "purchase_id": "p-3"}, {Symbol(kEvents): Map {}, Symbol(events.maxEventTargetListeners): 10, Symbol(events.maxEventTargetListenersWarned): false, Symbol(kHandlers): Map {}, Symbol(kAborted): false, Symbol(kReason): undefined, Symbol(kComposite): false}]]
+targeted	Targeted jest	2026-10-04T03:12:43.4221303Z 
+targeted	Targeted jest	2026-10-04T03:12:43.4222691Z     ^[[0m ^[[90m 263 |^[[39m     ^[[36mconst^[[39m forThird ^[[33m=^[[39m w^[[33m.^[[39mnotifications^[[33m.^[[39mpushToUser^[[33m.^[[39mmock^[[33m.^[[39mcalls^[[33m.^[[39mfilter((args) ^[[33m=>^[[39m
+targeted	Targeted jest	2026-10-04T03:12:43.4224433Z      ^[[90m 264 |^[[39m       (args[^[[35m3^[[39m] ^[[36mas^[[39m { purchase_id^[[33m?^[[39m^[[33m:^[[39m string } ^[[33m|^[[39m undefined)^[[33m?^[[39m^[[33m.^[[39mpurchase_id ^[[33m===^[[39m ^[[32m'p-3'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:12:43.4225454Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 265 |^[[39m     expect(forThird)^[[33m.^[[39mtoHaveLength(^[[35m1^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:12:43.4226022Z      ^[[90m     |^[[39m                      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T03:12:43.4226395Z      ^[[90m 266 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:12:43.4226715Z      ^[[90m 267 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:12:43.4226998Z      ^[[90m 268 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T03:12:43.4227182Z 
+targeted	Targeted jest	2026-10-04T03:12:43.4227446Z       at Object.<anonymous> (test/aud-sol-t12-116-notice-probe.spec.ts:265:22)
+targeted	Targeted jest	2026-10-04T03:12:43.4227769Z 
+targeted	Targeted jest	2026-10-04T03:12:43.4227936Z Test Suites: 1 failed, 1 total
+targeted	Targeted jest	2026-10-04T03:12:43.4228262Z Tests:       2 failed, 8 passed, 10 total
+targeted	Targeted jest	2026-10-04T03:12:43.4228557Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T03:12:43.4228794Z Time:        11.334 s
+targeted	Targeted jest	2026-10-04T03:12:43.4229209Z Ran all test suites matching test/aud-sol-t12-116-notice-probe.spec.ts.
+targeted	Targeted jest	2026-10-04T03:12:43.6918318Z ##[error]Process completed with exit code 1.

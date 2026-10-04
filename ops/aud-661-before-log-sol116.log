@@ -1,0 +1,604 @@
+﻿2026-10-04T02:44:51.9591906Z Current runner version: '2.337.0'
+2026-10-04T02:44:51.9616998Z ##[group]Runner Image Provisioner
+2026-10-04T02:44:51.9618085Z Hosted Compute Agent
+2026-10-04T02:44:51.9618721Z Version: 20260901.588
+2026-10-04T02:44:51.9619490Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-04T02:44:51.9620217Z Build Date: 2026-09-01T19:56:44Z
+2026-10-04T02:44:51.9620921Z Worker ID: {ef218350-ffac-46ba-9f5d-028d3a6c8c64}
+2026-10-04T02:44:51.9621676Z Azure Region: eastus
+2026-10-04T02:44:51.9622236Z ##[endgroup]
+2026-10-04T02:44:51.9623757Z ##[group]Operating System
+2026-10-04T02:44:51.9624440Z Ubuntu
+2026-10-04T02:44:51.9625295Z 24.04.5
+2026-10-04T02:44:51.9625970Z LTS
+2026-10-04T02:44:51.9626555Z ##[endgroup]
+2026-10-04T02:44:51.9627193Z ##[group]Runner Image
+2026-10-04T02:44:51.9627795Z Image: ubuntu-24.04
+2026-10-04T02:44:51.9628796Z Version: 20260927.320.1
+2026-10-04T02:44:51.9630124Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-04T02:44:51.9631737Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-04T02:44:51.9632705Z ##[endgroup]
+2026-10-04T02:44:51.9633929Z ##[group]GITHUB_TOKEN Permissions
+2026-10-04T02:44:51.9636072Z Contents: read
+2026-10-04T02:44:51.9636916Z Metadata: read
+2026-10-04T02:44:51.9637504Z Packages: read
+2026-10-04T02:44:51.9638457Z ##[endgroup]
+2026-10-04T02:44:51.9640741Z Secret source: Actions
+2026-10-04T02:44:51.9641718Z Cache mode: write
+2026-10-04T02:44:51.9642723Z Prepare workflow directory
+2026-10-04T02:44:52.0064053Z Prepare all required actions
+2026-10-04T02:44:52.0112030Z Getting action download info
+2026-10-04T02:44:52.2195980Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-04T02:44:52.3457727Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-04T02:44:52.5397741Z Complete job name: targeted
+2026-10-04T02:44:52.5908799Z ##[group]Checking docker version
+2026-10-04T02:44:52.5922253Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-04T02:44:52.6938590Z '1.48'
+2026-10-04T02:44:52.6951642Z Docker daemon API version: '1.48'
+2026-10-04T02:44:52.6952425Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-04T02:44:52.7113855Z '1.48'
+2026-10-04T02:44:52.7127504Z Docker client API version: '1.48'
+2026-10-04T02:44:52.7132958Z ##[endgroup]
+2026-10-04T02:44:52.7136772Z ##[group]Clean up resources from previous jobs
+2026-10-04T02:44:52.7142475Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=65bdc6"
+2026-10-04T02:44:52.7282494Z ##[command]/usr/bin/docker network prune --force --filter "label=65bdc6"
+2026-10-04T02:44:52.7404885Z ##[endgroup]
+2026-10-04T02:44:52.7405405Z ##[group]Create local container network
+2026-10-04T02:44:52.7415048Z ##[command]/usr/bin/docker network create --label 65bdc6 github_network_93a8aaf6a4174bb898d8525bf54dbaf2
+2026-10-04T02:44:52.7898798Z f9bcd2497a92a1df4efe13a1fb5d6fce9548640f813f43d110ce5a572ad46077
+2026-10-04T02:44:52.7916746Z ##[endgroup]
+2026-10-04T02:44:52.7941923Z ##[group]Starting redis service container
+2026-10-04T02:44:52.7964407Z ##[command]/usr/bin/docker pull redis:7-alpine
+2026-10-04T02:44:53.0640908Z 7-alpine: Pulling from library/redis
+2026-10-04T02:44:53.1374070Z 16333ee0c00f: Pulling fs layer
+2026-10-04T02:44:53.1374923Z 83234986c742: Pulling fs layer
+2026-10-04T02:44:53.1375576Z 7eb50503c2b0: Pulling fs layer
+2026-10-04T02:44:53.1376307Z 1522f9c6f453: Pulling fs layer
+2026-10-04T02:44:53.1376992Z 9928009b15c8: Pulling fs layer
+2026-10-04T02:44:53.1377540Z 4f4fb700ef54: Pulling fs layer
+2026-10-04T02:44:53.1378409Z 4eb14bae0e1d: Pulling fs layer
+2026-10-04T02:44:53.1378922Z 1522f9c6f453: Waiting
+2026-10-04T02:44:53.1379535Z 9928009b15c8: Waiting
+2026-10-04T02:44:53.1380273Z 4f4fb700ef54: Waiting
+2026-10-04T02:44:53.1381060Z 4eb14bae0e1d: Waiting
+2026-10-04T02:44:53.1665511Z 83234986c742: Verifying Checksum
+2026-10-04T02:44:53.1666891Z 83234986c742: Download complete
+2026-10-04T02:44:53.1710265Z 7eb50503c2b0: Verifying Checksum
+2026-10-04T02:44:53.1712396Z 7eb50503c2b0: Download complete
+2026-10-04T02:44:53.1908233Z 16333ee0c00f: Verifying Checksum
+2026-10-04T02:44:53.1909439Z 16333ee0c00f: Download complete
+2026-10-04T02:44:53.1996410Z 9928009b15c8: Verifying Checksum
+2026-10-04T02:44:53.1999414Z 9928009b15c8: Download complete
+2026-10-04T02:44:53.2209414Z 4f4fb700ef54: Verifying Checksum
+2026-10-04T02:44:53.2210704Z 4f4fb700ef54: Download complete
+2026-10-04T02:44:53.2267193Z 4eb14bae0e1d: Download complete
+2026-10-04T02:44:53.2523458Z 1522f9c6f453: Verifying Checksum
+2026-10-04T02:44:53.2524441Z 1522f9c6f453: Download complete
+2026-10-04T02:44:53.3080722Z 16333ee0c00f: Pull complete
+2026-10-04T02:44:53.3355215Z 83234986c742: Pull complete
+2026-10-04T02:44:53.4798316Z 7eb50503c2b0: Pull complete
+2026-10-04T02:44:53.6683177Z 1522f9c6f453: Pull complete
+2026-10-04T02:44:53.6778929Z 9928009b15c8: Pull complete
+2026-10-04T02:44:53.6858460Z 4f4fb700ef54: Pull complete
+2026-10-04T02:44:53.6970857Z 4eb14bae0e1d: Pull complete
+2026-10-04T02:44:53.7008911Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+2026-10-04T02:44:53.7021543Z Status: Downloaded newer image for redis:7-alpine
+2026-10-04T02:44:53.7029532Z docker.io/library/redis:7-alpine
+2026-10-04T02:44:53.7064222Z ##[command]/usr/bin/docker create --name fd2da7adcff94751bc3b13fb82439c9a_redis7alpine_1f21e5 --label 65bdc6 --network github_network_93a8aaf6a4174bb898d8525bf54dbaf2 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+2026-10-04T02:44:53.7323482Z b59949d13f916c507fdf21cbb2937e87fc1fc64ef67745cf8ce3114c05552453
+2026-10-04T02:44:53.7347042Z ##[command]/usr/bin/docker start b59949d13f916c507fdf21cbb2937e87fc1fc64ef67745cf8ce3114c05552453
+2026-10-04T02:44:53.9659782Z b59949d13f916c507fdf21cbb2937e87fc1fc64ef67745cf8ce3114c05552453
+2026-10-04T02:44:53.9671802Z ##[command]/usr/bin/docker ps --all --filter id=b59949d13f916c507fdf21cbb2937e87fc1fc64ef67745cf8ce3114c05552453 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-04T02:44:53.9794212Z b59949d13f916c507fdf21cbb2937e87fc1fc64ef67745cf8ce3114c05552453 Up Less than a second (health: starting)
+2026-10-04T02:44:53.9812985Z ##[command]/usr/bin/docker port b59949d13f916c507fdf21cbb2937e87fc1fc64ef67745cf8ce3114c05552453
+2026-10-04T02:44:53.9942853Z 6379/tcp -> 0.0.0.0:6379
+2026-10-04T02:44:53.9943595Z 6379/tcp -> [::]:6379
+2026-10-04T02:44:53.9986762Z ##[endgroup]
+2026-10-04T02:44:53.9995872Z ##[group]Waiting for all services to be ready
+2026-10-04T02:44:54.0009801Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" b59949d13f916c507fdf21cbb2937e87fc1fc64ef67745cf8ce3114c05552453
+2026-10-04T02:44:54.0126328Z starting
+2026-10-04T02:44:54.0145741Z redis service is starting, waiting 2 seconds before checking again.
+2026-10-04T02:44:56.0142305Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" b59949d13f916c507fdf21cbb2937e87fc1fc64ef67745cf8ce3114c05552453
+2026-10-04T02:44:56.0260167Z starting
+2026-10-04T02:44:56.0272398Z redis service is starting, waiting 4 seconds before checking again.
+2026-10-04T02:45:00.3212236Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" b59949d13f916c507fdf21cbb2937e87fc1fc64ef67745cf8ce3114c05552453
+2026-10-04T02:45:00.3336709Z healthy
+2026-10-04T02:45:00.3352576Z redis service is healthy.
+2026-10-04T02:45:00.3353333Z ##[endgroup]
+2026-10-04T02:45:00.3652223Z ##[group]Run actions/checkout@v6
+2026-10-04T02:45:00.3652846Z with:
+2026-10-04T02:45:00.3653162Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T02:45:00.3656219Z   token: ***
+2026-10-04T02:45:00.3656437Z   ssh-strict: true
+2026-10-04T02:45:00.3656654Z   ssh-user: git
+2026-10-04T02:45:00.3656883Z   persist-credentials: true
+2026-10-04T02:45:00.3657381Z   clean: true
+2026-10-04T02:45:00.3657619Z   sparse-checkout-cone-mode: true
+2026-10-04T02:45:00.3658085Z   fetch-depth: 1
+2026-10-04T02:45:00.3658301Z   fetch-tags: false
+2026-10-04T02:45:00.3658513Z   show-progress: true
+2026-10-04T02:45:00.3658728Z   lfs: false
+2026-10-04T02:45:00.3658926Z   submodules: false
+2026-10-04T02:45:00.3659141Z   set-safe-directory: true
+2026-10-04T02:45:00.3659400Z   allow-unsafe-pr-checkout: false
+2026-10-04T02:45:00.3659961Z ##[endgroup]
+2026-10-04T02:45:00.4730561Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T02:45:00.4732154Z ##[group]Getting Git version info
+2026-10-04T02:45:00.4732697Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T02:45:00.4733413Z [command]/usr/bin/git version
+2026-10-04T02:45:00.4757713Z git version 2.55.0
+2026-10-04T02:45:00.4782259Z ##[endgroup]
+2026-10-04T02:45:00.4796860Z Temporarily overriding HOME='/home/runner/work/_temp/97a2f499-1607-4f3b-af30-0e93c0a6b2a0' before making global git config changes
+2026-10-04T02:45:00.4798483Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T02:45:00.4803032Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T02:45:00.4855001Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T02:45:00.4859907Z ##[group]Determining repository object format
+2026-10-04T02:45:00.4862320Z ##[endgroup]
+2026-10-04T02:45:00.4863005Z ##[group]Initializing the repository
+2026-10-04T02:45:00.4867138Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T02:45:00.4988015Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-04T02:45:00.4989177Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-04T02:45:00.4990096Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-04T02:45:00.4990855Z hint: call:
+2026-10-04T02:45:00.4991213Z hint:
+2026-10-04T02:45:00.4991710Z hint: 	git config --global init.defaultBranch <name>
+2026-10-04T02:45:00.4992298Z hint:
+2026-10-04T02:45:00.4992846Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-04T02:45:00.4993796Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-04T02:45:00.4994477Z hint:
+2026-10-04T02:45:00.4994726Z hint: 	git branch -m <name>
+2026-10-04T02:45:00.4995007Z hint:
+2026-10-04T02:45:00.4995408Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-04T02:45:00.4998390Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-04T02:45:00.5005684Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T02:45:00.5058283Z ##[endgroup]
+2026-10-04T02:45:00.5059015Z ##[group]Disabling automatic garbage collection
+2026-10-04T02:45:00.5062731Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-04T02:45:00.5094768Z ##[endgroup]
+2026-10-04T02:45:00.5095635Z ##[group]Setting up auth
+2026-10-04T02:45:00.5096209Z Removing SSH command configuration
+2026-10-04T02:45:00.5102288Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T02:45:00.5134624Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T02:45:00.5513624Z Removing HTTP extra header
+2026-10-04T02:45:00.5519148Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T02:45:00.5549856Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T02:45:00.5762803Z Removing includeIf entries pointing to credentials config files
+2026-10-04T02:45:00.5769312Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T02:45:00.5798322Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T02:45:00.6016923Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-60fac667-ab43-4f56-a090-2a7122c4ee19.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-04T02:45:00.6051997Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-60fac667-ab43-4f56-a090-2a7122c4ee19.config
+2026-10-04T02:45:00.6083484Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-60fac667-ab43-4f56-a090-2a7122c4ee19.config
+2026-10-04T02:45:00.6117405Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-60fac667-ab43-4f56-a090-2a7122c4ee19.config
+2026-10-04T02:45:00.6146901Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-60fac667-ab43-4f56-a090-2a7122c4ee19.config
+2026-10-04T02:45:00.6182123Z ##[endgroup]
+2026-10-04T02:45:00.6182877Z ##[group]Fetching the repository
+2026-10-04T02:45:00.6191624Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +ab7d1fe44676bdf5dd1ab4555107c5a667efb766:refs/remotes/origin/ci/B-661-116-661-before
+2026-10-04T02:45:02.0043849Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T02:45:02.0058687Z  * [new ref]         ab7d1fe44676bdf5dd1ab4555107c5a667efb766 -> origin/ci/B-661-116-661-before
+2026-10-04T02:45:02.0061024Z [command]/usr/bin/git branch --list --remote origin/ci/B-661-116-661-before
+2026-10-04T02:45:02.0083355Z   origin/ci/B-661-116-661-before
+2026-10-04T02:45:02.0092503Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-661-116-661-before
+2026-10-04T02:45:02.0114644Z ab7d1fe44676bdf5dd1ab4555107c5a667efb766
+2026-10-04T02:45:02.0118850Z ##[endgroup]
+2026-10-04T02:45:02.0119257Z ##[group]Determining the checkout info
+2026-10-04T02:45:02.0120194Z ##[endgroup]
+2026-10-04T02:45:02.0124298Z [command]/usr/bin/git sparse-checkout disable
+2026-10-04T02:45:02.0174041Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-04T02:45:02.0200482Z ##[group]Checking out the ref
+2026-10-04T02:45:02.0204471Z [command]/usr/bin/git checkout --progress --force -B ci/B-661-116-661-before refs/remotes/origin/ci/B-661-116-661-before
+2026-10-04T02:45:02.2351383Z Switched to a new branch 'ci/B-661-116-661-before'
+2026-10-04T02:45:02.2357116Z branch 'ci/B-661-116-661-before' set up to track 'origin/ci/B-661-116-661-before'.
+2026-10-04T02:45:02.2367370Z ##[endgroup]
+2026-10-04T02:45:02.2418993Z [command]/usr/bin/git log -1 --format=%H
+2026-10-04T02:45:02.2438611Z ab7d1fe44676bdf5dd1ab4555107c5a667efb766
+2026-10-04T02:45:02.2691902Z ##[group]Run actions/setup-node@v6
+2026-10-04T02:45:02.2692237Z with:
+2026-10-04T02:45:02.2692434Z   node-version: 20
+2026-10-04T02:45:02.2692640Z   cache: npm
+2026-10-04T02:45:02.2692836Z   check-latest: false
+2026-10-04T02:45:02.2695674Z   token: ***
+2026-10-04T02:45:02.2695896Z   package-manager-cache: true
+2026-10-04T02:45:02.2696159Z ##[endgroup]
+2026-10-04T02:45:02.4237895Z Attempting to download 20...
+2026-10-04T02:45:02.9627128Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-04T02:45:03.3649266Z Extracting ...
+2026-10-04T02:45:03.3804794Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/ae9dacac-c1dd-4afe-a0cd-a6dc15178a20 -f /home/runner/work/_temp/5205d61c-9f99-4b4b-ba60-6e97cf7a2b4f
+2026-10-04T02:45:04.3769752Z Adding to the cache ...
+2026-10-04T02:45:06.2098825Z ##[group]Environment details
+2026-10-04T02:45:06.4320564Z node: v20.20.2
+2026-10-04T02:45:06.4321146Z npm: 10.8.2
+2026-10-04T02:45:06.4321660Z yarn: 1.22.22
+2026-10-04T02:45:06.4322803Z ##[endgroup]
+2026-10-04T02:45:06.4341731Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+2026-10-04T02:45:06.5403785Z /home/runner/.npm
+2026-10-04T02:45:06.6055102Z Cache hit for: node-cache-Linux-x64-npm-1c658f1a35f7b309848c416454e12a0f8c258736d5e30a9676088e8641c298ba
+2026-10-04T02:45:07.1376930Z Received 86861520 of 86861520 (100.0%), 175.5 MBs/sec
+2026-10-04T02:45:07.1378496Z Cache Size: ~83 MB (86861520 B)
+2026-10-04T02:45:07.1409803Z [command]/usr/bin/tar -xf /home/runner/work/_temp/d40c0f41-fa83-4dc6-960e-1c05282ac6a7/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+2026-10-04T02:45:07.3236607Z Cache restored successfully
+2026-10-04T02:45:07.3286232Z Cache restored from key: node-cache-Linux-x64-npm-1c658f1a35f7b309848c416454e12a0f8c258736d5e30a9676088e8641c298ba
+2026-10-04T02:45:07.3468810Z ##[group]Run npm ci
+2026-10-04T02:45:07.3469223Z [36;1mnpm ci[0m
+2026-10-04T02:45:07.3708428Z shell: /usr/bin/bash -e {0}
+2026-10-04T02:45:07.3708917Z ##[endgroup]
+2026-10-04T02:45:13.0275753Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-04T02:45:14.1115818Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-04T02:45:15.0730946Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T02:45:16.3644609Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T02:45:16.4138889Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T02:45:16.4333229Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T02:45:29.4356801Z 
+2026-10-04T02:45:29.4357769Z > growth-project-backend@1.0.0 postinstall
+2026-10-04T02:45:29.4358656Z > prisma generate
+2026-10-04T02:45:29.4358870Z 
+2026-10-04T02:45:30.3762397Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T02:45:34.0559991Z ┌─────────────────────────────────────────────────────────┐
+2026-10-04T02:45:34.0562153Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+2026-10-04T02:45:34.0563388Z │                                                         │
+2026-10-04T02:45:34.0564193Z │  This is a major update - please follow the guide at    │
+2026-10-04T02:45:34.0564885Z │  https://pris.ly/d/major-version-upgrade                │
+2026-10-04T02:45:34.0565635Z │                                                         │
+2026-10-04T02:45:34.0566239Z │  Run the following to update                            │
+2026-10-04T02:45:34.0566927Z │    npm i --save-dev prisma@latest                       │
+2026-10-04T02:45:34.0567511Z │    npm i @prisma/client@latest                          │
+2026-10-04T02:45:34.0569384Z └─────────────────────────────────────────────────────────┘
+2026-10-04T02:45:34.0569662Z 
+2026-10-04T02:45:34.0579281Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.03s
+2026-10-04T02:45:34.0608641Z 
+2026-10-04T02:45:34.0613820Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T02:45:34.0614235Z 
+2026-10-04T02:45:34.0614788Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+2026-10-04T02:45:34.0615297Z 
+2026-10-04T02:45:34.1105603Z 
+2026-10-04T02:45:34.1106338Z > growth-project-backend@1.0.0 prepare
+2026-10-04T02:45:34.1107203Z > lefthook install
+2026-10-04T02:45:34.1107504Z 
+2026-10-04T02:45:34.1606034Z sync hooks: ✔️(commit-msg, pre-commit)
+2026-10-04T02:45:34.1786164Z 
+2026-10-04T02:45:34.1786880Z added 1117 packages, and audited 1118 packages in 27s
+2026-10-04T02:45:34.1787373Z 
+2026-10-04T02:45:34.1787694Z 202 packages are looking for funding
+2026-10-04T02:45:34.1788387Z   run `npm fund` for details
+2026-10-04T02:45:34.1824806Z 
+2026-10-04T02:45:34.1825268Z 4 vulnerabilities (1 moderate, 3 high)
+2026-10-04T02:45:34.1825838Z 
+2026-10-04T02:45:34.1826321Z To address issues that do not require attention, run:
+2026-10-04T02:45:34.1826894Z   npm audit fix
+2026-10-04T02:45:34.1827098Z 
+2026-10-04T02:45:34.1827466Z To address all issues (including breaking changes), run:
+2026-10-04T02:45:34.1828275Z   npm audit fix --force
+2026-10-04T02:45:34.1828532Z 
+2026-10-04T02:45:34.1828764Z Run `npm audit` for details.
+2026-10-04T02:45:34.2459833Z ##[group]Run npx prisma generate
+2026-10-04T02:45:34.2460165Z [36;1mnpx prisma generate[0m
+2026-10-04T02:45:34.2525621Z shell: /usr/bin/bash -e {0}
+2026-10-04T02:45:34.2525888Z ##[endgroup]
+2026-10-04T02:45:35.6212338Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T02:45:39.3877382Z 
+2026-10-04T02:45:39.3878976Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.03s
+2026-10-04T02:45:39.3879480Z 
+2026-10-04T02:45:39.3879951Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T02:45:39.3880412Z 
+2026-10-04T02:45:39.3880798Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+2026-10-04T02:45:39.3881202Z 
+2026-10-04T02:45:39.5061594Z ##[group]Run set -euo pipefail
+2026-10-04T02:45:39.5061952Z [36;1mset -euo pipefail[0m
+2026-10-04T02:45:39.5062352Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-04T02:45:39.5062867Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-04T02:45:39.5063252Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-04T02:45:39.5063556Z [36;1mnpx jest --ci --runInBand "${SPECS[@]}"[0m
+2026-10-04T02:45:39.5126811Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T02:45:39.5127164Z env:
+2026-10-04T02:45:39.5127391Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-04T02:45:39.5127754Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-04T02:45:39.5128227Z ##[endgroup]
+2026-10-04T02:45:39.5225586Z specs: test/checkout-webhook-handler.spec.ts test/cancel-pending-on-refund.spec.ts
+2026-10-04T02:45:52.7786091Z FAIL test/checkout-webhook-handler.spec.ts (12.205 s)
+2026-10-04T02:45:52.7789392Z   ● B-661-3 a late-delivered earlier decline never revokes a successful retry › failed, then succeeded, then an earlier decline arrives late: the purchase stays paid and entitled
+2026-10-04T02:45:52.7790698Z 
+2026-10-04T02:45:52.7791089Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T02:45:52.7791550Z 
+2026-10-04T02:45:52.7791734Z     Expected: "paid"
+2026-10-04T02:45:52.7792198Z     Received: "payment_failed"
+2026-10-04T02:45:52.7792502Z 
+2026-10-04T02:45:52.7792817Z     [0m [90m 1123 |[39m
+2026-10-04T02:45:52.7794249Z      [90m 1124 |[39m   [36mfunction[39m expectPaidAndEntitled(prisma[33m:[39m [33mReturnType[39m[33m<[39m[36mtypeof[39m makePrisma[33m>[39m) {
+2026-10-04T02:45:52.7796933Z     [31m[1m>[22m[39m[90m 1125 |[39m     expect(prisma[33m.[39m_purchases[[35m0[39m][33m.[39mstatus)[33m.[39mtoBe([32m'paid'[39m)[33m;[39m
+2026-10-04T02:45:52.7798658Z      [90m      |[39m                                         [31m[1m^[22m[39m
+2026-10-04T02:45:52.7800244Z      [90m 1126 |[39m     expect(prisma[33m.[39m_purchases[[35m0[39m][33m.[39mentitlement_active)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+2026-10-04T02:45:52.7802316Z      [90m 1127 |[39m     expect(prisma[33m.[39m_purchases[[35m0[39m][33m.[39mlast_error)[33m.[39mtoBeNull()[33m;[39m
+2026-10-04T02:45:52.7804269Z      [90m 1128 |[39m     expect(prisma[33m.[39m_purchases[[35m0[39m][33m.[39mstripe_client_secret)[33m.[39mtoBeNull()[33m;[39m[0m
+2026-10-04T02:45:52.7805138Z 
+2026-10-04T02:45:52.7805674Z       at expectPaidAndEntitled (test/checkout-webhook-handler.spec.ts:1125:41)
+2026-10-04T02:45:52.7806725Z       at Object.<anonymous> (test/checkout-webhook-handler.spec.ts:1147:5)
+2026-10-04T02:45:52.7807295Z 
+2026-10-04T02:45:52.7809021Z   ● B-661-3 a late-delivered earlier decline never revokes a successful retry › the same late decline on the no-transaction path asks Stripe inline and stays paid
+2026-10-04T02:45:52.7810129Z 
+2026-10-04T02:45:52.7810493Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T02:45:52.7810959Z 
+2026-10-04T02:45:52.7811140Z     Expected: "paid"
+2026-10-04T02:45:52.7811632Z     Received: "payment_failed"
+2026-10-04T02:45:52.7811930Z 
+2026-10-04T02:45:52.7812202Z     [0m [90m 1123 |[39m
+2026-10-04T02:45:52.7813657Z      [90m 1124 |[39m   [36mfunction[39m expectPaidAndEntitled(prisma[33m:[39m [33mReturnType[39m[33m<[39m[36mtypeof[39m makePrisma[33m>[39m) {
+2026-10-04T02:45:52.7815785Z     [31m[1m>[22m[39m[90m 1125 |[39m     expect(prisma[33m.[39m_purchases[[35m0[39m][33m.[39mstatus)[33m.[39mtoBe([32m'paid'[39m)[33m;[39m
+2026-10-04T02:45:52.7817228Z      [90m      |[39m                                         [31m[1m^[22m[39m
+2026-10-04T02:45:52.7819105Z      [90m 1126 |[39m     expect(prisma[33m.[39m_purchases[[35m0[39m][33m.[39mentitlement_active)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+2026-10-04T02:45:52.7821362Z      [90m 1127 |[39m     expect(prisma[33m.[39m_purchases[[35m0[39m][33m.[39mlast_error)[33m.[39mtoBeNull()[33m;[39m
+2026-10-04T02:45:52.7823307Z      [90m 1128 |[39m     expect(prisma[33m.[39m_purchases[[35m0[39m][33m.[39mstripe_client_secret)[33m.[39mtoBeNull()[33m;[39m[0m
+2026-10-04T02:45:52.7824173Z 
+2026-10-04T02:45:52.7824710Z       at expectPaidAndEntitled (test/checkout-webhook-handler.spec.ts:1125:41)
+2026-10-04T02:45:52.7825774Z       at Object.<anonymous> (test/checkout-webhook-handler.spec.ts:1162:5)
+2026-10-04T02:45:52.7826335Z 
+2026-10-04T02:45:52.7828409Z   ● B-661-3 a late-delivered earlier decline never revokes a successful retry › Stripe cannot confirm the PaymentIntent status: the webhook transaction throws (Stripe redelivers) and the paid purchase is untouched
+2026-10-04T02:45:52.7829949Z 
+2026-10-04T02:45:52.7830226Z     expect(received).rejects.toThrow()
+2026-10-04T02:45:52.7830586Z 
+2026-10-04T02:45:52.7830876Z     Received promise resolved instead of rejected
+2026-10-04T02:45:52.7831667Z     Resolved to value: {"claimed": true, "purchase_id": "cp-r3"}
+2026-10-04T02:45:52.7832134Z 
+2026-10-04T02:45:52.7833413Z     [0m [90m 1174 |[39m     [36mconst[39m callsBeforeTx [33m=[39m stripe[33m.[39mretrievePaymentIntent[33m.[39mmock[33m.[39mcalls[33m.[39mlength[33m;[39m
+2026-10-04T02:45:52.7834660Z      [90m 1175 |[39m
+2026-10-04T02:45:52.7836265Z     [31m[1m>[22m[39m[90m 1176 |[39m     [36mawait[39m expect(svc[33m.[39mhandle(event[33m,[39m txFixture(prisma)[33m,[39m prefetched))[33m.[39mrejects[33m.[39mtoThrow(
+2026-10-04T02:45:52.7837782Z      [90m      |[39m           [31m[1m^[22m[39m
+2026-10-04T02:45:52.7869199Z      [90m 1177 |[39m       [33mServiceUnavailableException[39m[33m,[39m
+2026-10-04T02:45:52.7870387Z      [90m 1178 |[39m     )[33m;[39m
+2026-10-04T02:45:52.7871328Z      [90m 1179 |[39m     [90m// No Stripe HTTP inside the webhook transaction.[39m[0m
+2026-10-04T02:45:52.7871921Z 
+2026-10-04T02:45:52.7872304Z       at expect (node_modules/expect/build/index.js:2116:15)
+2026-10-04T02:45:52.7873272Z       at Object.<anonymous> (test/checkout-webhook-handler.spec.ts:1176:11)
+2026-10-04T02:45:52.7873868Z 
+2026-10-04T02:45:52.7875577Z   ● B-661-3 a late-delivered earlier decline never revokes a successful retry › a success that commits between the decline reading the purchase and writing it wins; the redelivered decline is a no-op
+2026-10-04T02:45:52.7876975Z 
+2026-10-04T02:45:52.7877264Z     expect(received).rejects.toThrow()
+2026-10-04T02:45:52.7877631Z 
+2026-10-04T02:45:52.7878169Z     Received promise resolved instead of rejected
+2026-10-04T02:45:52.7878990Z     Resolved to value: {"claimed": true, "purchase_id": "cp-r3"}
+2026-10-04T02:45:52.7879499Z 
+2026-10-04T02:45:52.7879904Z     [0m [90m 1199 |[39m     })[33m;[39m
+2026-10-04T02:45:52.7880507Z      [90m 1200 |[39m
+2026-10-04T02:45:52.7882137Z     [31m[1m>[22m[39m[90m 1201 |[39m     [36mawait[39m expect(svc[33m.[39mhandle(event[33m,[39m txFixture(prisma)[33m,[39m prefetched))[33m.[39mrejects[33m.[39mtoThrow(
+2026-10-04T02:45:52.7883520Z      [90m      |[39m           [31m[1m^[22m[39m
+2026-10-04T02:45:52.7884420Z      [90m 1202 |[39m       [33mServiceUnavailableException[39m[33m,[39m
+2026-10-04T02:45:52.7885256Z      [90m 1203 |[39m     )[33m;[39m
+2026-10-04T02:45:52.7886104Z      [90m 1204 |[39m     expectPaidAndEntitled(prisma)[33m;[39m[0m
+2026-10-04T02:45:52.7886596Z 
+2026-10-04T02:45:52.7886952Z       at expect (node_modules/expect/build/index.js:2116:15)
+2026-10-04T02:45:52.7888099Z       at Object.<anonymous> (test/checkout-webhook-handler.spec.ts:1201:11)
+2026-10-04T02:45:52.7888704Z 
+2026-10-04T02:45:52.7890106Z   ● B-661-3 a late-delivered earlier decline never revokes a successful retry › a decline never rewrites a purchase in status refunded (its own events own that state)
+2026-10-04T02:45:52.7891284Z 
+2026-10-04T02:45:52.7891644Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T02:45:52.7892115Z 
+2026-10-04T02:45:52.7892298Z     Expected: "refunded"
+2026-10-04T02:45:52.7893101Z     Received: "payment_failed"
+2026-10-04T02:45:52.7893449Z 
+2026-10-04T02:45:52.7894727Z     [0m [90m 1268 |[39m       [36mconst[39m result [33m=[39m [36mawait[39m deliver(svc[33m,[39m prisma[33m,[39m declined([32m'evt_r3_final'[39m))[33m;[39m
+2026-10-04T02:45:52.7896487Z      [90m 1269 |[39m       expect(result[33m.[39mclaimed)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+2026-10-04T02:45:52.7908620Z     [31m[1m>[22m[39m[90m 1270 |[39m       expect(prisma[33m.[39m_purchases[[35m0[39m][33m.[39mstatus)[33m.[39mtoBe(status)[33m;[39m
+2026-10-04T02:45:52.7909691Z      [90m      |[39m                                           [31m[1m^[22m[39m
+2026-10-04T02:45:52.7910531Z      [90m 1271 |[39m       expect(prisma[33m.[39m_purchases[[35m0[39m][33m.[39mentitlement_active)[33m.[39mtoBe(entitled)[33m;[39m
+2026-10-04T02:45:52.7911504Z      [90m 1272 |[39m       expect(prisma[33m.[39m_purchases[[35m0[39m][33m.[39mlast_error)[33m.[39mtoBeNull()[33m;[39m
+2026-10-04T02:45:52.7912448Z      [90m 1273 |[39m       expect(stripe[33m.[39mretrievePaymentIntent)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m[0m
+2026-10-04T02:45:52.7912905Z 
+2026-10-04T02:45:52.7913106Z       at test/checkout-webhook-handler.spec.ts:1270:43
+2026-10-04T02:45:52.7913441Z 
+2026-10-04T02:45:52.7914173Z   ● B-661-3 a late-delivered earlier decline never revokes a successful retry › a decline never rewrites a purchase in status disputed (its own events own that state)
+2026-10-04T02:45:52.7914821Z 
+2026-10-04T02:45:52.7915018Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T02:45:52.7915268Z 
+2026-10-04T02:45:52.7915601Z     Expected: "disputed"
+2026-10-04T02:45:52.7915883Z     Received: "payment_failed"
+2026-10-04T02:45:52.7916045Z 
+2026-10-04T02:45:52.7916699Z     [0m [90m 1268 |[39m       [36mconst[39m result [33m=[39m [36mawait[39m deliver(svc[33m,[39m prisma[33m,[39m declined([32m'evt_r3_final'[39m))[33m;[39m
+2026-10-04T02:45:52.7917628Z      [90m 1269 |[39m       expect(result[33m.[39mclaimed)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+2026-10-04T02:45:52.7918847Z     [31m[1m>[22m[39m[90m 1270 |[39m       expect(prisma[33m.[39m_purchases[[35m0[39m][33m.[39mstatus)[33m.[39mtoBe(status)[33m;[39m
+2026-10-04T02:45:52.7919562Z      [90m      |[39m                                           [31m[1m^[22m[39m
+2026-10-04T02:45:52.7920354Z      [90m 1271 |[39m       expect(prisma[33m.[39m_purchases[[35m0[39m][33m.[39mentitlement_active)[33m.[39mtoBe(entitled)[33m;[39m
+2026-10-04T02:45:52.7921276Z      [90m 1272 |[39m       expect(prisma[33m.[39m_purchases[[35m0[39m][33m.[39mlast_error)[33m.[39mtoBeNull()[33m;[39m
+2026-10-04T02:45:52.7922189Z      [90m 1273 |[39m       expect(stripe[33m.[39mretrievePaymentIntent)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m[0m
+2026-10-04T02:45:52.7922640Z 
+2026-10-04T02:45:52.7922825Z       at test/checkout-webhook-handler.spec.ts:1270:43
+2026-10-04T02:45:52.7923070Z 
+2026-10-04T02:45:52.7923800Z   ● B-661-3 a late-delivered earlier decline never revokes a successful retry › a decline never rewrites a purchase in status chargeback_lost (its own events own that state)
+2026-10-04T02:45:52.7924424Z 
+2026-10-04T02:45:52.7924617Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T02:45:52.7924852Z 
+2026-10-04T02:45:52.7924975Z     Expected: "chargeback_lost"
+2026-10-04T02:45:52.7925351Z     Received: "payment_failed"
+2026-10-04T02:45:52.7925517Z 
+2026-10-04T02:45:52.7926164Z     [0m [90m 1268 |[39m       [36mconst[39m result [33m=[39m [36mawait[39m deliver(svc[33m,[39m prisma[33m,[39m declined([32m'evt_r3_final'[39m))[33m;[39m
+2026-10-04T02:45:52.7927075Z      [90m 1269 |[39m       expect(result[33m.[39mclaimed)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+2026-10-04T02:45:52.7928431Z     [31m[1m>[22m[39m[90m 1270 |[39m       expect(prisma[33m.[39m_purchases[[35m0[39m][33m.[39mstatus)[33m.[39mtoBe(status)[33m;[39m
+2026-10-04T02:45:52.7929188Z      [90m      |[39m                                           [31m[1m^[22m[39m
+2026-10-04T02:45:52.7929971Z      [90m 1271 |[39m       expect(prisma[33m.[39m_purchases[[35m0[39m][33m.[39mentitlement_active)[33m.[39mtoBe(entitled)[33m;[39m
+2026-10-04T02:45:52.7930886Z      [90m 1272 |[39m       expect(prisma[33m.[39m_purchases[[35m0[39m][33m.[39mlast_error)[33m.[39mtoBeNull()[33m;[39m
+2026-10-04T02:45:52.7931789Z      [90m 1273 |[39m       expect(stripe[33m.[39mretrievePaymentIntent)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m[0m
+2026-10-04T02:45:52.7932235Z 
+2026-10-04T02:45:52.7932418Z       at test/checkout-webhook-handler.spec.ts:1270:43
+2026-10-04T02:45:52.7932657Z 
+2026-10-04T02:45:52.7933403Z   ● B-661-3 a late-delivered earlier decline never revokes a successful retry › a decline never rewrites a purchase in status canceled (its own events own that state)
+2026-10-04T02:45:52.7934009Z 
+2026-10-04T02:45:52.7934205Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T02:45:52.7934440Z 
+2026-10-04T02:45:52.7934542Z     Expected: "canceled"
+2026-10-04T02:45:52.7934810Z     Received: "payment_failed"
+2026-10-04T02:45:52.7934974Z 
+2026-10-04T02:45:52.7935608Z     [0m [90m 1268 |[39m       [36mconst[39m result [33m=[39m [36mawait[39m deliver(svc[33m,[39m prisma[33m,[39m declined([32m'evt_r3_final'[39m))[33m;[39m
+2026-10-04T02:45:52.7936500Z      [90m 1269 |[39m       expect(result[33m.[39mclaimed)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+2026-10-04T02:45:52.7937370Z     [31m[1m>[22m[39m[90m 1270 |[39m       expect(prisma[33m.[39m_purchases[[35m0[39m][33m.[39mstatus)[33m.[39mtoBe(status)[33m;[39m
+2026-10-04T02:45:52.7938517Z      [90m      |[39m                                           [31m[1m^[22m[39m
+2026-10-04T02:45:52.7939302Z      [90m 1271 |[39m       expect(prisma[33m.[39m_purchases[[35m0[39m][33m.[39mentitlement_active)[33m.[39mtoBe(entitled)[33m;[39m
+2026-10-04T02:45:52.7940219Z      [90m 1272 |[39m       expect(prisma[33m.[39m_purchases[[35m0[39m][33m.[39mlast_error)[33m.[39mtoBeNull()[33m;[39m
+2026-10-04T02:45:52.7941120Z      [90m 1273 |[39m       expect(stripe[33m.[39mretrievePaymentIntent)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m[0m
+2026-10-04T02:45:52.7941564Z 
+2026-10-04T02:45:52.7941755Z       at test/checkout-webhook-handler.spec.ts:1270:43
+2026-10-04T02:45:52.7941988Z 
+2026-10-04T02:45:52.7942680Z   ● B-661-3 a late-delivered earlier decline never revokes a successful retry › a decline never rewrites a purchase in status expired (its own events own that state)
+2026-10-04T02:45:52.7943305Z 
+2026-10-04T02:45:52.7943490Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T02:45:52.7943736Z 
+2026-10-04T02:45:52.7943836Z     Expected: "expired"
+2026-10-04T02:45:52.7944099Z     Received: "payment_failed"
+2026-10-04T02:45:52.7944264Z 
+2026-10-04T02:45:52.7944901Z     [0m [90m 1268 |[39m       [36mconst[39m result [33m=[39m [36mawait[39m deliver(svc[33m,[39m prisma[33m,[39m declined([32m'evt_r3_final'[39m))[33m;[39m
+2026-10-04T02:45:52.7945798Z      [90m 1269 |[39m       expect(result[33m.[39mclaimed)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+2026-10-04T02:45:52.7946665Z     [31m[1m>[22m[39m[90m 1270 |[39m       expect(prisma[33m.[39m_purchases[[35m0[39m][33m.[39mstatus)[33m.[39mtoBe(status)[33m;[39m
+2026-10-04T02:45:52.7947379Z      [90m      |[39m                                           [31m[1m^[22m[39m
+2026-10-04T02:45:52.7948296Z      [90m 1271 |[39m       expect(prisma[33m.[39m_purchases[[35m0[39m][33m.[39mentitlement_active)[33m.[39mtoBe(entitled)[33m;[39m
+2026-10-04T02:45:52.7949230Z      [90m 1272 |[39m       expect(prisma[33m.[39m_purchases[[35m0[39m][33m.[39mlast_error)[33m.[39mtoBeNull()[33m;[39m
+2026-10-04T02:45:52.7950285Z      [90m 1273 |[39m       expect(stripe[33m.[39mretrievePaymentIntent)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m[0m
+2026-10-04T02:45:52.7950744Z 
+2026-10-04T02:45:52.7950922Z       at test/checkout-webhook-handler.spec.ts:1270:43
+2026-10-04T02:45:52.7951157Z 
+2026-10-04T02:45:52.7951923Z   ● B-661-3 a late-delivered earlier decline never revokes a successful retry › a decline of another PaymentIntent never adopts a pending purchase that holds its own PaymentIntent
+2026-10-04T02:45:52.7952572Z 
+2026-10-04T02:45:52.7952750Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T02:45:52.7952987Z 
+2026-10-04T02:45:52.7953083Z     Expected: false
+2026-10-04T02:45:52.7953296Z     Received: true
+2026-10-04T02:45:52.7953423Z 
+2026-10-04T02:45:52.7953589Z     [0m [90m 1299 |[39m       }[33m,[39m
+2026-10-04T02:45:52.7953938Z      [90m 1300 |[39m     })[33m;[39m
+2026-10-04T02:45:52.7954546Z     [31m[1m>[22m[39m[90m 1301 |[39m     expect(result[33m.[39mclaimed)[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+2026-10-04T02:45:52.7955155Z      [90m      |[39m                            [31m[1m^[22m[39m
+2026-10-04T02:45:52.7955909Z      [90m 1302 |[39m     expect(prisma[33m.[39m_purchases[[35m0[39m][33m.[39mstatus)[33m.[39mtoBe([32m'pending'[39m)[33m;[39m
+2026-10-04T02:45:52.7956668Z      [90m 1303 |[39m     [90m// Its own PaymentIntent's success can still find it.[39m
+2026-10-04T02:45:52.7957573Z      [90m 1304 |[39m     expect(prisma[33m.[39m_purchases[[35m0[39m][33m.[39mstripe_payment_intent_id)[33m.[39mtoBe([32m'pi_sheet'[39m)[33m;[39m[0m
+2026-10-04T02:45:52.7958226Z 
+2026-10-04T02:45:52.7958486Z       at Object.<anonymous> (test/checkout-webhook-handler.spec.ts:1301:28)
+2026-10-04T02:45:52.7958793Z 
+2026-10-04T02:45:52.7959826Z   ● B-661-3 a late-delivered earlier decline never revokes a successful retry › the metadata fallback adopts the pending purchase without a PaymentIntent, never a newer one that holds its own
+2026-10-04T02:45:52.7960527Z 
+2026-10-04T02:45:52.7960678Z     expect(received).toMatchObject(expected)
+2026-10-04T02:45:52.7960895Z 
+2026-10-04T02:45:52.7960997Z     - Expected  - 1
+2026-10-04T02:45:52.7961227Z     + Received  + 1
+2026-10-04T02:45:52.7961355Z 
+2026-10-04T02:45:52.7961442Z       Object {
+2026-10-04T02:45:52.7961648Z         "claimed": true,
+2026-10-04T02:45:52.7961917Z     -   "purchase_id": "cp-hosted",
+2026-10-04T02:45:52.7962220Z     +   "purchase_id": "cp-sheet",
+2026-10-04T02:45:52.7962466Z       }
+2026-10-04T02:45:52.7962574Z 
+2026-10-04T02:45:52.7962745Z     [0m [90m 1338 |[39m       }[33m,[39m
+2026-10-04T02:45:52.7963092Z      [90m 1339 |[39m     })[33m;[39m
+2026-10-04T02:45:52.7963997Z     [31m[1m>[22m[39m[90m 1340 |[39m     expect(result)[33m.[39mtoMatchObject({ claimed[33m:[39m [36mtrue[39m[33m,[39m purchase_id[33m:[39m [32m'cp-hosted'[39m })[33m;[39m
+2026-10-04T02:45:52.7964818Z      [90m      |[39m                    [31m[1m^[22m[39m
+2026-10-04T02:45:52.7965591Z      [90m 1341 |[39m     expect(prisma[33m.[39m_purchases[[35m1[39m][33m.[39mstatus)[33m.[39mtoBe([32m'payment_failed'[39m)[33m;[39m
+2026-10-04T02:45:52.7966664Z      [90m 1342 |[39m     expect(prisma[33m.[39m_purchases[[35m1[39m][33m.[39mstripe_payment_intent_id)[33m.[39mtoBe([32m'pi_hosted'[39m)[33m;[39m
+2026-10-04T02:45:52.7967711Z      [90m 1343 |[39m     expect(prisma[33m.[39m_purchases[[35m0[39m][33m.[39mstatus)[33m.[39mtoBe([32m'pending'[39m)[33m;[39m[0m
+2026-10-04T02:45:52.7968432Z 
+2026-10-04T02:45:52.7968692Z       at Object.<anonymous> (test/checkout-webhook-handler.spec.ts:1340:20)
+2026-10-04T02:45:52.7969007Z 
+2026-10-04T02:45:52.7969810Z   ● B-661-3 a late-delivered earlier decline never revokes a successful retry › prefetchForOuterTx asks Stripe for the PaymentIntent status only when the purchase already settled
+2026-10-04T02:45:52.7970478Z 
+2026-10-04T02:45:52.7970658Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T02:45:52.7970897Z 
+2026-10-04T02:45:52.7970989Z     - Expected  - 5
+2026-10-04T02:45:52.7971210Z     + Received  + 1
+2026-10-04T02:45:52.7971620Z 
+2026-10-04T02:45:52.7971727Z     - Object {
+2026-10-04T02:45:52.7971991Z     -   "paymentIntentStatusById": Object {
+2026-10-04T02:45:52.7972324Z     -     "pi_r3": "succeeded",
+2026-10-04T02:45:52.7972567Z     -   },
+2026-10-04T02:45:52.7972750Z     - }
+2026-10-04T02:45:52.7972942Z     + Object {}
+2026-10-04T02:45:52.7973059Z 
+2026-10-04T02:45:52.7973546Z     [0m [90m 1353 |[39m     prisma[33m.[39m_purchases[[35m0[39m][33m.[39mstatus [33m=[39m [32m'paid'[39m[33m;[39m
+2026-10-04T02:45:52.7974701Z      [90m 1354 |[39m     stripe[33m.[39mretrievePaymentIntent[33m.[39mmockResolvedValue({ id[33m:[39m [32m'pi_r3'[39m[33m,[39m status[33m:[39m [32m'succeeded'[39m })[33m;[39m
+2026-10-04T02:45:52.7975925Z     [31m[1m>[22m[39m[90m 1355 |[39m     expect([36mawait[39m svc[33m.[39mprefetchForOuterTx(declined([32m'evt_r3_pf_2'[39m)))[33m.[39mtoEqual({
+2026-10-04T02:45:52.7976752Z      [90m      |[39m                                                                   [31m[1m^[22m[39m
+2026-10-04T02:45:52.7977474Z      [90m 1356 |[39m       paymentIntentStatusById[33m:[39m { pi_r3[33m:[39m [32m'succeeded'[39m }[33m,[39m
+2026-10-04T02:45:52.7978290Z      [90m 1357 |[39m     })[33m;[39m
+2026-10-04T02:45:52.7979023Z      [90m 1358 |[39m     expect(stripe[33m.[39mretrievePaymentIntent)[33m.[39mtoHaveBeenCalledWith([32m'pi_r3'[39m)[33m;[39m[0m
+2026-10-04T02:45:52.7979518Z 
+2026-10-04T02:45:52.7979773Z       at Object.<anonymous> (test/checkout-webhook-handler.spec.ts:1355:67)
+2026-10-04T02:45:52.7980081Z 
+2026-10-04T02:45:52.7981284Z [33m[Nest] 3068  - [39m10/04/2026, 2:45:52 AM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33minvoice.paid resync skipped for sub=sub_inv_skip: outer tx held without a prefetched subscription (no Stripe HTTP in tx)[39m
+2026-10-04T02:45:53.2620129Z [32m[Nest] 3068  - [39m10/04/2026, 2:45:53 AM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-1 reason=refund[39m
+2026-10-04T02:45:53.2622191Z [32m[Nest] 3068  - [39m10/04/2026, 2:45:53 AM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-1 reason=dispute[39m
+2026-10-04T02:45:53.2624273Z [95m[Nest] 3068  - [39m10/04/2026, 2:45:53 AM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mcancelPendingForPurchase: no pending/due drops for purchase=pur-1 (replay or never-entitled) reason=dispute[39m
+2026-10-04T02:45:53.2626255Z [32m[Nest] 3068  - [39m10/04/2026, 2:45:53 AM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=refund[39m
+2026-10-04T02:45:53.2628543Z [33m[Nest] 3068  - [39m10/04/2026, 2:45:53 AM [33m   WARN[39m [38;5;3m[PurchaseFanoutService] [39m[33mcancelPendingForPurchase: no scheduledDrop client available (purchase=pur-1, reason=refund) — skipping[39m
+2026-10-04T02:45:53.2630179Z [32m[Nest] 3068  - [39m10/04/2026, 2:45:53 AM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-1 reason=refund[39m
+2026-10-04T02:45:53.2631766Z [32m[Nest] 3068  - [39m10/04/2026, 2:45:53 AM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-target reason=subscription_canceled[39m
+2026-10-04T02:45:53.2633370Z [32m[Nest] 3068  - [39m10/04/2026, 2:45:53 AM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=subscription_canceled[39m
+2026-10-04T02:45:53.2634936Z [32m[Nest] 3068  - [39m10/04/2026, 2:45:53 AM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=payment_failed[39m
+2026-10-04T02:45:53.2636869Z [32m[Nest] 3068  - [39m10/04/2026, 2:45:53 AM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=payment_failed[39m
+2026-10-04T02:45:53.2639239Z [32m[Nest] 3068  - [39m10/04/2026, 2:45:53 AM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-target reason=dispute[39m
+2026-10-04T02:45:53.2640942Z [32m[Nest] 3068  - [39m10/04/2026, 2:45:53 AM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=refund[39m
+2026-10-04T02:45:53.2642420Z [32m[Nest] 3068  - [39m10/04/2026, 2:45:53 AM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=refund[39m
+2026-10-04T02:45:53.2671805Z FAIL test/cancel-pending-on-refund.spec.ts
+2026-10-04T02:45:53.2673180Z   ● CheckoutWebhookHandlerService.applyPaymentIntentFailed × cancelPendingForPurchase › B-661-3: does NOT cancel drops when the late decline names a PaymentIntent that succeeded
+2026-10-04T02:45:53.2673911Z 
+2026-10-04T02:45:53.2674107Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T02:45:53.2674359Z 
+2026-10-04T02:45:53.2674460Z     Expected: "paid"
+2026-10-04T02:45:53.2674724Z     Received: "payment_failed"
+2026-10-04T02:45:53.2674896Z 
+2026-10-04T02:45:53.2675609Z     [0m [90m 449 |[39m   it([32m'B-661-3: does NOT cancel drops when the late decline names a PaymentIntent that succeeded'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+2026-10-04T02:45:53.2676886Z      [90m 450 |[39m     [36mconst[39m { dropStore[33m,[39m purchase } [33m=[39m [36mawait[39m deliverDeclineOfEntitledPurchase([32m'succeeded'[39m)[33m;[39m
+2026-10-04T02:45:53.2678513Z     [31m[1m>[22m[39m[90m 451 |[39m     expect(purchase[33m.[39mstatus)[33m.[39mtoBe([32m'paid'[39m)[33m;[39m
+2026-10-04T02:45:53.2679156Z      [90m     |[39m                             [31m[1m^[22m[39m
+2026-10-04T02:45:53.2679826Z      [90m 452 |[39m     expect(purchase[33m.[39mentitlement_active)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+2026-10-04T02:45:53.2680703Z      [90m 453 |[39m     expect(dropStore[33m.[39m_rows[[35m0[39m][33m.[39mstatus)[33m.[39mtoBe([32m'pending'[39m)[33m;[39m
+2026-10-04T02:45:53.2681298Z      [90m 454 |[39m   })[33m;[39m[0m
+2026-10-04T02:45:53.2681486Z 
+2026-10-04T02:45:53.2681735Z       at Object.<anonymous> (test/cancel-pending-on-refund.spec.ts:451:29)
+2026-10-04T02:45:53.2682046Z 
+2026-10-04T02:45:53.2697338Z Test Suites: 2 failed, 2 total
+2026-10-04T02:45:53.2697873Z Tests:       13 failed, 50 passed, 63 total
+2026-10-04T02:45:53.2698614Z Snapshots:   0 total
+2026-10-04T02:45:53.2698874Z Time:        12.937 s
+2026-10-04T02:45:53.2699478Z Ran all test suites matching test/checkout-webhook-handler.spec.ts|test/cancel-pending-on-refund.spec.ts.
+2026-10-04T02:45:53.5447137Z ##[error]Process completed with exit code 1.
+2026-10-04T02:45:53.5565236Z Post job cleanup.
+2026-10-04T02:45:53.6450564Z [command]/usr/bin/git version
+2026-10-04T02:45:53.6491237Z git version 2.55.0
+2026-10-04T02:45:53.6534593Z Temporarily overriding HOME='/home/runner/work/_temp/d6651472-1ec6-4546-ac28-fb1709201fdd' before making global git config changes
+2026-10-04T02:45:53.6536239Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T02:45:53.6541301Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T02:45:53.6571969Z Removing SSH command configuration
+2026-10-04T02:45:53.6578421Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T02:45:53.6611276Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T02:45:53.6837472Z Removing HTTP extra header
+2026-10-04T02:45:53.6842336Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T02:45:53.6875462Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T02:45:53.7091202Z Removing includeIf entries pointing to credentials config files
+2026-10-04T02:45:53.7097046Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T02:45:53.7123781Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T02:45:53.7125469Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T02:45:53.7126728Z includeif.gitdir:/github/workspace/.git.path
+2026-10-04T02:45:53.7127594Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T02:45:53.7133343Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T02:45:53.7155403Z /home/runner/work/_temp/git-credentials-60fac667-ab43-4f56-a090-2a7122c4ee19.config
+2026-10-04T02:45:53.7166137Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-60fac667-ab43-4f56-a090-2a7122c4ee19.config
+2026-10-04T02:45:53.7200216Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T02:45:53.7220819Z /home/runner/work/_temp/git-credentials-60fac667-ab43-4f56-a090-2a7122c4ee19.config
+2026-10-04T02:45:53.7229885Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-60fac667-ab43-4f56-a090-2a7122c4ee19.config
+2026-10-04T02:45:53.7261121Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-04T02:45:53.7281113Z /github/runner_temp/git-credentials-60fac667-ab43-4f56-a090-2a7122c4ee19.config
+2026-10-04T02:45:53.7288860Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-60fac667-ab43-4f56-a090-2a7122c4ee19.config
+2026-10-04T02:45:53.7318994Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T02:45:53.7338435Z /github/runner_temp/git-credentials-60fac667-ab43-4f56-a090-2a7122c4ee19.config
+2026-10-04T02:45:53.7346264Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-60fac667-ab43-4f56-a090-2a7122c4ee19.config
+2026-10-04T02:45:53.7377722Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T02:45:53.7588236Z Removing credentials config '/home/runner/work/_temp/git-credentials-60fac667-ab43-4f56-a090-2a7122c4ee19.config'
+2026-10-04T02:45:53.7709283Z Print service container logs: fd2da7adcff94751bc3b13fb82439c9a_redis7alpine_1f21e5
+2026-10-04T02:45:53.7714272Z ##[command]/usr/bin/docker logs --details b59949d13f916c507fdf21cbb2937e87fc1fc64ef67745cf8ce3114c05552453
+2026-10-04T02:45:53.7839264Z  1:C 04 Oct 2026 02:44:53.971 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+2026-10-04T02:45:53.7841540Z  1:C 04 Oct 2026 02:44:53.971 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+2026-10-04T02:45:53.7842130Z  1:C 04 Oct 2026 02:44:53.971 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+2026-10-04T02:45:53.7843496Z  1:C 04 Oct 2026 02:44:53.971 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+2026-10-04T02:45:53.7844442Z  1:M 04 Oct 2026 02:44:53.971 * monotonic clock: POSIX clock_gettime
+2026-10-04T02:45:53.7844858Z  1:M 04 Oct 2026 02:44:53.972 * Running mode=standalone, port=6379.
+2026-10-04T02:45:53.7845245Z  1:M 04 Oct 2026 02:44:53.972 * Server initialized
+2026-10-04T02:45:53.7845608Z  1:M 04 Oct 2026 02:44:53.972 * Ready to accept connections tcp
+2026-10-04T02:45:53.7864101Z Stop and remove container: fd2da7adcff94751bc3b13fb82439c9a_redis7alpine_1f21e5
+2026-10-04T02:45:53.7869038Z ##[command]/usr/bin/docker rm --force b59949d13f916c507fdf21cbb2937e87fc1fc64ef67745cf8ce3114c05552453
+2026-10-04T02:45:53.9286845Z b59949d13f916c507fdf21cbb2937e87fc1fc64ef67745cf8ce3114c05552453
+2026-10-04T02:45:53.9313842Z Remove container network: github_network_93a8aaf6a4174bb898d8525bf54dbaf2
+2026-10-04T02:45:53.9318549Z ##[command]/usr/bin/docker network rm github_network_93a8aaf6a4174bb898d8525bf54dbaf2
+2026-10-04T02:45:54.0594939Z github_network_93a8aaf6a4174bb898d8525bf54dbaf2
+2026-10-04T02:45:54.0669455Z Cleaning up orphan processes

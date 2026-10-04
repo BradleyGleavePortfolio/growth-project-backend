@@ -1,0 +1,138 @@
+﻿2026-10-04T03:12:01.6934064Z ##[group]Run set -euo pipefail
+2026-10-04T03:12:01.6934343Z [36;1mset -euo pipefail[0m
+2026-10-04T03:12:01.6934658Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-04T03:12:01.6935056Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-04T03:12:01.6935343Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-04T03:12:01.6935574Z [36;1mnpx jest --ci --runInBand "${SPECS[@]}"[0m
+2026-10-04T03:12:01.6992945Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T03:12:01.6993225Z env:
+2026-10-04T03:12:01.6993408Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-04T03:12:01.6993703Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-04T03:12:01.6993973Z ##[endgroup]
+2026-10-04T03:12:01.7074497Z specs: test/packages-create-idempotency-http.spec.ts
+2026-10-04T03:12:11.3591636Z FAIL test/packages-create-idempotency-http.spec.ts (8.842 s)
+2026-10-04T03:12:11.3621166Z   B-675 idempotent package create over HTTP (production pipe + global filter)
+2026-10-04T03:12:11.3671490Z     ✓ control: main.ts registers HttpExceptionFilter globally, as this harness does (94 ms)
+2026-10-04T03:12:11.3672685Z     ✓ control: the same key and body replays the same package with Idempotent-Replayed (46 ms)
+2026-10-04T03:12:11.3701133Z     ✕ B-675-1: the 422 IDEMPOTENCY_KEY_REUSED body on the wire names the package the key made (20 ms)
+2026-10-04T03:12:11.3731309Z     ✕ B-675-1: the adopted id is real: PATCHing it with the current details updates that one package (25 ms)
+2026-10-04T03:12:11.3761074Z     ✕ B-675-1: a sub-coach who moved to another head coach never receives the old catalog package id (16 ms)
+2026-10-04T03:12:11.3791102Z     ✕ C-675-3: a retry after the coach archived the package is 410 with a next action, not a 201 replay (25 ms)
+2026-10-04T03:12:11.3820858Z     ✕ C-675-3: an archived package is not adopted through the 422 either (62 ms)
+2026-10-04T03:12:11.3851014Z     ✕ C-675-2: a key claimed before the server added a defaulted column still replays the same package (44 ms)
+2026-10-04T03:12:11.3880355Z 
+2026-10-04T03:12:11.3911383Z   ● B-675 idempotent package create over HTTP (production pipe + global filter) › B-675-1: the 422 IDEMPOTENCY_KEY_REUSED body on the wire names the package the key made
+2026-10-04T03:12:11.3940341Z 
+2026-10-04T03:12:11.3970723Z     expect(received).toMatchObject(expected)
+2026-10-04T03:12:11.4000360Z 
+2026-10-04T03:12:11.4030766Z     - Expected  - 1
+2026-10-04T03:12:11.4060593Z     + Received  + 0
+2026-10-04T03:12:11.4120392Z 
+2026-10-04T03:12:11.4150683Z       Object {
+2026-10-04T03:12:11.4180711Z         "code": "IDEMPOTENCY_KEY_REUSED",
+2026-10-04T03:12:11.4210764Z     -   "package_id": "3cc11243-cff4-43e1-963b-9c8fb29cf8e1",
+2026-10-04T03:12:11.4240658Z         "path": "/v1/coach/packages",
+2026-10-04T03:12:11.4270604Z         "statusCode": 422,
+2026-10-04T03:12:11.4300537Z       }
+2026-10-04T03:12:11.4330342Z 
+2026-10-04T03:12:11.4361002Z     [0m [90m 259 |[39m     })[33m;[39m
+2026-10-04T03:12:11.4384618Z      [90m 260 |[39m     expect(r[33m.[39mstatus)[33m.[39mtoBe([35m422[39m)[33m;[39m
+2026-10-04T03:12:11.4420935Z     [31m[1m>[22m[39m[90m 261 |[39m     expect(r[33m.[39mbody)[33m.[39mtoMatchObject({
+2026-10-04T03:12:11.4450820Z      [90m     |[39m                    [31m[1m^[22m[39m
+2026-10-04T03:12:11.4481002Z      [90m 262 |[39m       statusCode[33m:[39m [35m422[39m[33m,[39m
+2026-10-04T03:12:11.4510863Z      [90m 263 |[39m       code[33m:[39m [32m'IDEMPOTENCY_KEY_REUSED'[39m[33m,[39m
+2026-10-04T03:12:11.4540936Z      [90m 264 |[39m       package_id[33m:[39m first[33m.[39mbody[33m.[39mid[33m,[39m[0m
+2026-10-04T03:12:11.4570457Z 
+2026-10-04T03:12:11.4571039Z       at Object.<anonymous> (test/packages-create-idempotency-http.spec.ts:261:20)
+2026-10-04T03:12:11.4571471Z 
+2026-10-04T03:12:11.4572523Z   ● B-675 idempotent package create over HTTP (production pipe + global filter) › B-675-1: the adopted id is real: PATCHing it with the current details updates that one package
+2026-10-04T03:12:11.4573874Z 
+2026-10-04T03:12:11.4574091Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T03:12:11.4574372Z 
+2026-10-04T03:12:11.4574477Z     Expected: 200
+2026-10-04T03:12:11.4574722Z     Received: 404
+2026-10-04T03:12:11.4574864Z 
+2026-10-04T03:12:11.4575306Z     [0m [90m 284 |[39m       body[33m:[39m { amount_cents[33m:[39m [35m5900[39m }[33m,[39m
+2026-10-04T03:12:11.4575861Z      [90m 285 |[39m     })[33m;[39m
+2026-10-04T03:12:11.4576554Z     [31m[1m>[22m[39m[90m 286 |[39m     expect(patched[33m.[39mstatus)[33m.[39mtoBe([35m200[39m)[33m;[39m
+2026-10-04T03:12:11.4577279Z      [90m     |[39m                            [31m[1m^[22m[39m
+2026-10-04T03:12:11.4578424Z      [90m 287 |[39m     expect(patched[33m.[39mbody)[33m.[39mtoMatchObject({ id[33m:[39m first[33m.[39mbody[33m.[39mid[33m,[39m amount_cents[33m:[39m [35m5900[39m })[33m;[39m
+2026-10-04T03:12:11.4579541Z      [90m 288 |[39m     expect(db[33m.[39mpackages())[33m.[39mtoHaveLength([35m1[39m)[33m;[39m
+2026-10-04T03:12:11.4580127Z      [90m 289 |[39m   })[33m;[39m[0m
+2026-10-04T03:12:11.4610555Z 
+2026-10-04T03:12:11.4610923Z       at Object.<anonymous> (test/packages-create-idempotency-http.spec.ts:286:28)
+2026-10-04T03:12:11.4611312Z 
+2026-10-04T03:12:11.4612241Z   ● B-675 idempotent package create over HTTP (production pipe + global filter) › B-675-1: a sub-coach who moved to another head coach never receives the old catalog package id
+2026-10-04T03:12:11.4612967Z 
+2026-10-04T03:12:11.4613181Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T03:12:11.4613777Z 
+2026-10-04T03:12:11.4613876Z     Expected: 410
+2026-10-04T03:12:11.4614112Z     Received: 422
+2026-10-04T03:12:11.4614239Z 
+2026-10-04T03:12:11.4615085Z     [0m [90m 297 |[39m     [36mfor[39m ([36mconst[39m body [36mof[39m [{ [33m...[39m[33mBODY[39m[33m,[39m amount_cents[33m:[39m [35m5900[39m }[33m,[39m [33mBODY[39m]) {
+2026-10-04T03:12:11.4616847Z      [90m 298 |[39m       [36mconst[39m r [33m=[39m [36mawait[39m call([32m'POST'[39m[33m,[39m [33mPATH[39m[33m,[39m { user[33m:[39m [32m'sub-1'[39m[33m,[39m key[33m:[39m [32m'key-http-moved-01'[39m[33m,[39m body })[33m;[39m
+2026-10-04T03:12:11.4618169Z     [31m[1m>[22m[39m[90m 299 |[39m       expect(r[33m.[39mstatus)[33m.[39mtoBe([35m410[39m)[33m;[39m
+2026-10-04T03:12:11.4618825Z      [90m     |[39m                        [31m[1m^[22m[39m
+2026-10-04T03:12:11.4619939Z      [90m 300 |[39m       expect(r[33m.[39mbody)[33m.[39mtoMatchObject({ statusCode[33m:[39m [35m410[39m[33m,[39m code[33m:[39m [32m'IDEMPOTENT_PACKAGE_REMOVED'[39m })[33m;[39m
+2026-10-04T03:12:11.4621338Z      [90m 301 |[39m       expect(r[33m.[39mbody)[33m.[39mnot[33m.[39mtoHaveProperty([32m'package_id'[39m)[33m;[39m
+2026-10-04T03:12:11.4622661Z      [90m 302 |[39m       expect([33mJSON[39m[33m.[39mstringify(r[33m.[39mbody))[33m.[39mnot[33m.[39mtoContain([33mString[39m(first[33m.[39mbody[33m.[39mid))[33m;[39m[0m
+2026-10-04T03:12:11.4623360Z 
+2026-10-04T03:12:11.4623692Z       at Object.<anonymous> (test/packages-create-idempotency-http.spec.ts:299:24)
+2026-10-04T03:12:11.4624088Z 
+2026-10-04T03:12:11.4625004Z   ● B-675 idempotent package create over HTTP (production pipe + global filter) › C-675-3: a retry after the coach archived the package is 410 with a next action, not a 201 replay
+2026-10-04T03:12:11.4625742Z 
+2026-10-04T03:12:11.4625952Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T03:12:11.4626230Z 
+2026-10-04T03:12:11.4626324Z     Expected: 410
+2026-10-04T03:12:11.4626577Z     Received: 201
+2026-10-04T03:12:11.4626708Z 
+2026-10-04T03:12:11.4627198Z     [0m [90m 315 |[39m     expect(del[33m.[39mbody[33m.[39marchived_at)[33m.[39mtoBeTruthy()[33m;[39m
+2026-10-04T03:12:11.4628636Z      [90m 316 |[39m     [36mconst[39m r [33m=[39m [36mawait[39m call([32m'POST'[39m[33m,[39m [33mPATH[39m[33m,[39m { key[33m:[39m [32m'key-http-archive-1'[39m[33m,[39m body[33m:[39m [33mBODY[39m })[33m;[39m
+2026-10-04T03:12:11.4630084Z     [31m[1m>[22m[39m[90m 317 |[39m     expect(r[33m.[39mstatus)[33m.[39mtoBe([35m410[39m)[33m;[39m
+2026-10-04T03:12:11.4630877Z      [90m     |[39m                      [31m[1m^[22m[39m
+2026-10-04T03:12:11.4631987Z      [90m 318 |[39m     expect(r[33m.[39mbody)[33m.[39mtoMatchObject({ statusCode[33m:[39m [35m410[39m[33m,[39m code[33m:[39m [32m'IDEMPOTENT_PACKAGE_REMOVED'[39m })[33m;[39m
+2026-10-04T03:12:11.4633238Z      [90m 319 |[39m     expect([33mString[39m(r[33m.[39mbody[33m.[39mmessage))[33m.[39mtoMatch([35m/archived/[39m)[33m;[39m
+2026-10-04T03:12:11.4634378Z      [90m 320 |[39m     expect([33mString[39m(r[33m.[39mbody[33m.[39mmessage))[33m.[39mtoMatch([35m/new request/[39m)[33m;[39m[0m
+2026-10-04T03:12:11.4634901Z 
+2026-10-04T03:12:11.4635233Z       at Object.<anonymous> (test/packages-create-idempotency-http.spec.ts:317:22)
+2026-10-04T03:12:11.4635612Z 
+2026-10-04T03:12:11.4636360Z   ● B-675 idempotent package create over HTTP (production pipe + global filter) › C-675-3: an archived package is not adopted through the 422 either
+2026-10-04T03:12:11.4637086Z 
+2026-10-04T03:12:11.4637292Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T03:12:11.4637571Z 
+2026-10-04T03:12:11.4637676Z     Expected: 410
+2026-10-04T03:12:11.4637905Z     Received: 422
+2026-10-04T03:12:11.4638043Z 
+2026-10-04T03:12:11.4638628Z     [0m [90m 331 |[39m       body[33m:[39m { [33m...[39m[33mBODY[39m[33m,[39m amount_cents[33m:[39m [35m5900[39m }[33m,[39m
+2026-10-04T03:12:11.4639532Z      [90m 332 |[39m     })[33m;[39m
+2026-10-04T03:12:11.4670369Z     [31m[1m>[22m[39m[90m 333 |[39m     expect(r[33m.[39mstatus)[33m.[39mtoBe([35m410[39m)[33m;[39m
+2026-10-04T03:12:11.4671134Z      [90m     |[39m                      [31m[1m^[22m[39m
+2026-10-04T03:12:11.4672063Z      [90m 334 |[39m     expect(r[33m.[39mbody)[33m.[39mtoMatchObject({ code[33m:[39m [32m'IDEMPOTENT_PACKAGE_REMOVED'[39m })[33m;[39m
+2026-10-04T03:12:11.4673132Z      [90m 335 |[39m     expect(r[33m.[39mbody)[33m.[39mnot[33m.[39mtoHaveProperty([32m'package_id'[39m)[33m;[39m
+2026-10-04T03:12:11.4673797Z      [90m 336 |[39m   })[33m;[39m[0m
+2026-10-04T03:12:11.4674004Z 
+2026-10-04T03:12:11.4674371Z       at Object.<anonymous> (test/packages-create-idempotency-http.spec.ts:333:22)
+2026-10-04T03:12:11.4674768Z 
+2026-10-04T03:12:11.4675672Z   ● B-675 idempotent package create over HTTP (production pipe + global filter) › C-675-2: a key claimed before the server added a defaulted column still replays the same package
+2026-10-04T03:12:11.4676423Z 
+2026-10-04T03:12:11.4676653Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T03:12:11.4676930Z 
+2026-10-04T03:12:11.4677025Z     Expected: 201
+2026-10-04T03:12:11.4677270Z     Received: 422
+2026-10-04T03:12:11.4677397Z 
+2026-10-04T03:12:11.4677597Z     [0m [90m 346 |[39m     })[33m;[39m
+2026-10-04T03:12:11.4678824Z      [90m 347 |[39m     [36mconst[39m r [33m=[39m [36mawait[39m call([32m'POST'[39m[33m,[39m [33mPATH[39m[33m,[39m { key[33m:[39m [32m'key-http-default-1'[39m[33m,[39m body[33m:[39m [33mBODY[39m })[33m;[39m
+2026-10-04T03:12:11.4680104Z     [31m[1m>[22m[39m[90m 348 |[39m     expect(r[33m.[39mstatus)[33m.[39mtoBe([35m201[39m)[33m;[39m
+2026-10-04T03:12:11.4680922Z      [90m     |[39m                      [31m[1m^[22m[39m
+2026-10-04T03:12:11.4681780Z      [90m 349 |[39m     expect(r[33m.[39mheaders[[32m'idempotent-replayed'[39m])[33m.[39mtoBe([32m'true'[39m)[33m;[39m
+2026-10-04T03:12:11.4682812Z      [90m 350 |[39m     expect(r[33m.[39mbody[33m.[39mid)[33m.[39mtoBe(first[33m.[39mbody[33m.[39mid)[33m;[39m
+2026-10-04T03:12:11.4683705Z      [90m 351 |[39m     expect(db[33m.[39mpackages())[33m.[39mtoHaveLength([35m1[39m)[33m;[39m[0m
+2026-10-04T03:12:11.4684324Z 
+2026-10-04T03:12:11.4684665Z       at Object.<anonymous> (test/packages-create-idempotency-http.spec.ts:348:22)
+2026-10-04T03:12:11.4685050Z 
+2026-10-04T03:12:11.4685217Z Test Suites: 1 failed, 1 total
+2026-10-04T03:12:11.4685592Z Tests:       6 failed, 2 passed, 8 total
+2026-10-04T03:12:11.4685911Z Snapshots:   0 total
+2026-10-04T03:12:11.4686170Z Time:        9.029 s
+2026-10-04T03:12:11.4686665Z Ran all test suites matching test/packages-create-idempotency-http.spec.ts.
+2026-10-04T03:12:11.7560783Z ##[error]Process completed with exit code 1.

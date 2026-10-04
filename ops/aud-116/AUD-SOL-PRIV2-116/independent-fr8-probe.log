@@ -1,0 +1,37 @@
+targeted	Targeted jest	﻿2026-10-04T03:34:13.3140514Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T03:34:13.3140845Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T03:34:13.3141216Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T03:34:13.3141669Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T03:34:13.3142013Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T03:34:13.3142308Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T03:34:13.3182468Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T03:34:13.3182799Z env:
+targeted	Targeted jest	2026-10-04T03:34:13.3183014Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T03:34:13.3183363Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T03:34:13.3183659Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T03:34:13.3252952Z specs: test/audit-611-sol-fr8-truth.spec.ts test/privacy-diagnostics-disclosure.spec.ts test/privacy-round8-retention.spec.ts test/privacy-owner-answers.spec.ts test/privacy-restore-split.spec.ts test/trust-pages.spec.ts test/help-delete-account.spec.ts test/sentry-config.spec.ts
+targeted	Targeted jest	2026-10-04T03:34:23.1274563Z PASS test/trust-pages.spec.ts (8.835 s)
+targeted	Targeted jest	2026-10-04T03:34:23.4067412Z PASS test/help-delete-account.spec.ts
+targeted	Targeted jest	2026-10-04T03:34:23.5237133Z PASS test/privacy-round8-retention.spec.ts
+targeted	Targeted jest	2026-10-04T03:34:23.6134854Z PASS test/privacy-owner-answers.spec.ts
+targeted	Targeted jest	2026-10-04T03:34:24.0373890Z PASS test/privacy-diagnostics-disclosure.spec.ts
+targeted	Targeted jest	2026-10-04T03:34:24.1304081Z PASS test/privacy-restore-split.spec.ts
+targeted	Targeted jest	2026-10-04T03:34:24.2038229Z FAIL test/audit-611-sol-fr8-truth.spec.ts
+targeted	Targeted jest	2026-10-04T03:34:24.2039009Z   ● Test suite failed to run
+targeted	Targeted jest	2026-10-04T03:34:24.2039188Z 
+targeted	Targeted jest	2026-10-04T03:34:24.2040529Z     ^[[96mtest/audit-611-sol-fr8-truth.spec.ts^[[0m:^[[93m30^[[0m:^[[93m11^[[0m - ^[[91merror^[[0m^[[90m TS2741: ^[[0mProperty 'type' is missing in type '{ event_id: string; exception: { values: { type: string; value: string; }[]; }; user: { id: string; email: string; username: string; }; request: { url: string; }; }' but required in type 'ErrorEvent'.
+targeted	Targeted jest	2026-10-04T03:34:24.2041556Z 
+targeted	Targeted jest	2026-10-04T03:34:24.2041763Z     ^[[7m30^[[0m     const event: Sentry.ErrorEvent = {
+targeted	Targeted jest	2026-10-04T03:34:24.2042133Z     ^[[7m  ^[[0m ^[[91m          ~~~~~^[[0m
+targeted	Targeted jest	2026-10-04T03:34:24.2042298Z 
+targeted	Targeted jest	2026-10-04T03:34:24.2042649Z       ^[[96mnode_modules/@sentry/core/build/types/types/event.d.ts^[[0m:^[[93m71^[[0m:^[[93m5^[[0m
+targeted	Targeted jest	2026-10-04T03:34:24.2043253Z         ^[[7m71^[[0m     type: undefined;
+targeted	Targeted jest	2026-10-04T03:34:24.2043587Z         ^[[7m  ^[[0m ^[[96m    ~~~~^[[0m
+targeted	Targeted jest	2026-10-04T03:34:24.2043870Z         'type' is declared here.
+targeted	Targeted jest	2026-10-04T03:34:24.2044039Z 
+targeted	Targeted jest	2026-10-04T03:34:24.2113502Z Test Suites: 1 failed, 6 passed, 7 total
+targeted	Targeted jest	2026-10-04T03:34:24.2113955Z Tests:       89 passed, 89 total
+targeted	Targeted jest	2026-10-04T03:34:24.2114224Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T03:34:24.2114477Z Time:        10.136 s
+targeted	Targeted jest	2026-10-04T03:34:24.2115840Z Ran all test suites matching test/audit-611-sol-fr8-truth.spec.ts|test/privacy-diagnostics-disclosure.spec.ts|test/privacy-round8-retention.spec.ts|test/privacy-owner-answers.spec.ts|test/privacy-restore-split.spec.ts|test/trust-pages.spec.ts|test/help-delete-account.spec.ts|test/sentry-config.spec.ts.
+targeted	Targeted jest	2026-10-04T03:34:24.9018792Z ##[error]Process completed with exit code 1.

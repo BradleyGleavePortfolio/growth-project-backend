@@ -1,0 +1,407 @@
+targeted	UNKNOWN STEP	﻿2026-10-03T18:31:49.9524931Z Current runner version: '2.337.0'
+targeted	UNKNOWN STEP	2026-10-03T18:31:49.9559235Z ##[group]Runner Image Provisioner
+targeted	UNKNOWN STEP	2026-10-03T18:31:49.9560533Z Hosted Compute Agent
+targeted	UNKNOWN STEP	2026-10-03T18:31:49.9561537Z Version: 20260901.588
+targeted	UNKNOWN STEP	2026-10-03T18:31:49.9562682Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	UNKNOWN STEP	2026-10-03T18:31:49.9563863Z Build Date: 2026-09-01T19:56:44Z
+targeted	UNKNOWN STEP	2026-10-03T18:31:49.9565916Z Worker ID: {9f5a8b2d-3a6b-4016-8e76-4eda209aedbe}
+targeted	UNKNOWN STEP	2026-10-03T18:31:49.9567116Z Azure Region: eastus
+targeted	UNKNOWN STEP	2026-10-03T18:31:49.9568040Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:31:49.9570496Z ##[group]Operating System
+targeted	UNKNOWN STEP	2026-10-03T18:31:49.9571478Z Ubuntu
+targeted	UNKNOWN STEP	2026-10-03T18:31:49.9572492Z 24.04.5
+targeted	UNKNOWN STEP	2026-10-03T18:31:49.9573328Z LTS
+targeted	UNKNOWN STEP	2026-10-03T18:31:49.9574459Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:31:49.9575457Z ##[group]Runner Image
+targeted	UNKNOWN STEP	2026-10-03T18:31:49.9576463Z Image: ubuntu-24.04
+targeted	UNKNOWN STEP	2026-10-03T18:31:49.9577454Z Version: 20260927.320.1
+targeted	UNKNOWN STEP	2026-10-03T18:31:49.9579499Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	UNKNOWN STEP	2026-10-03T18:31:49.9582350Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	UNKNOWN STEP	2026-10-03T18:31:49.9583954Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:31:49.9586347Z ##[group]GITHUB_TOKEN Permissions
+targeted	UNKNOWN STEP	2026-10-03T18:31:49.9589264Z Contents: read
+targeted	UNKNOWN STEP	2026-10-03T18:31:49.9590271Z Metadata: read
+targeted	UNKNOWN STEP	2026-10-03T18:31:49.9591214Z Packages: read
+targeted	UNKNOWN STEP	2026-10-03T18:31:49.9592166Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:31:49.9595490Z Secret source: Actions
+targeted	UNKNOWN STEP	2026-10-03T18:31:49.9597088Z Cache mode: write
+targeted	UNKNOWN STEP	2026-10-03T18:31:49.9598570Z Prepare workflow directory
+targeted	UNKNOWN STEP	2026-10-03T18:31:50.0223922Z Prepare all required actions
+targeted	UNKNOWN STEP	2026-10-03T18:31:50.0296395Z Getting action download info
+targeted	UNKNOWN STEP	2026-10-03T18:31:50.2663978Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	UNKNOWN STEP	2026-10-03T18:31:50.3665769Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	UNKNOWN STEP	2026-10-03T18:31:50.5664574Z Complete job name: targeted
+targeted	UNKNOWN STEP	2026-10-03T18:31:50.6194378Z ##[group]Checking docker version
+targeted	UNKNOWN STEP	2026-10-03T18:31:50.6208708Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+targeted	UNKNOWN STEP	2026-10-03T18:31:50.7042553Z '1.48'
+targeted	UNKNOWN STEP	2026-10-03T18:31:50.7058043Z Docker daemon API version: '1.48'
+targeted	UNKNOWN STEP	2026-10-03T18:31:50.7058826Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+targeted	UNKNOWN STEP	2026-10-03T18:31:50.7227534Z '1.48'
+targeted	UNKNOWN STEP	2026-10-03T18:31:50.7239449Z Docker client API version: '1.48'
+targeted	UNKNOWN STEP	2026-10-03T18:31:50.7245694Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:31:50.7248615Z ##[group]Clean up resources from previous jobs
+targeted	UNKNOWN STEP	2026-10-03T18:31:50.7254677Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=88fc36"
+targeted	UNKNOWN STEP	2026-10-03T18:31:50.7402134Z ##[command]/usr/bin/docker network prune --force --filter "label=88fc36"
+targeted	UNKNOWN STEP	2026-10-03T18:31:50.7532821Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:31:50.7533366Z ##[group]Create local container network
+targeted	UNKNOWN STEP	2026-10-03T18:31:50.7544528Z ##[command]/usr/bin/docker network create --label 88fc36 github_network_868fa654a21c48079b911d46fac07e44
+targeted	UNKNOWN STEP	2026-10-03T18:31:50.8055513Z 8c319d5fd47809ad28963b8bb04762faae7e45064b1cc34e27b2886c30a8e05d
+targeted	UNKNOWN STEP	2026-10-03T18:31:50.8075733Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:31:50.8100976Z ##[group]Starting redis service container
+targeted	UNKNOWN STEP	2026-10-03T18:31:50.8122685Z ##[command]/usr/bin/docker pull redis:7-alpine
+targeted	UNKNOWN STEP	2026-10-03T18:31:51.0502432Z 7-alpine: Pulling from library/redis
+targeted	UNKNOWN STEP	2026-10-03T18:31:51.1189420Z 16333ee0c00f: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-03T18:31:51.1190512Z 83234986c742: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-03T18:31:51.1191444Z 7eb50503c2b0: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-03T18:31:51.1192775Z 1522f9c6f453: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-03T18:31:51.1193566Z 9928009b15c8: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-03T18:31:51.1194888Z 4f4fb700ef54: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-03T18:31:51.1195474Z 4eb14bae0e1d: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-03T18:31:51.1196024Z 9928009b15c8: Waiting
+targeted	UNKNOWN STEP	2026-10-03T18:31:51.1196516Z 4f4fb700ef54: Waiting
+targeted	UNKNOWN STEP	2026-10-03T18:31:51.1197013Z 4eb14bae0e1d: Waiting
+targeted	UNKNOWN STEP	2026-10-03T18:31:51.1197513Z 1522f9c6f453: Waiting
+targeted	UNKNOWN STEP	2026-10-03T18:31:51.1454523Z 83234986c742: Verifying Checksum
+targeted	UNKNOWN STEP	2026-10-03T18:31:51.1455855Z 83234986c742: Download complete
+targeted	UNKNOWN STEP	2026-10-03T18:31:51.1489195Z 7eb50503c2b0: Download complete
+targeted	UNKNOWN STEP	2026-10-03T18:31:51.1742682Z 16333ee0c00f: Verifying Checksum
+targeted	UNKNOWN STEP	2026-10-03T18:31:51.1744951Z 16333ee0c00f: Download complete
+targeted	UNKNOWN STEP	2026-10-03T18:31:51.1760865Z 9928009b15c8: Download complete
+targeted	UNKNOWN STEP	2026-10-03T18:31:51.2028701Z 4eb14bae0e1d: Verifying Checksum
+targeted	UNKNOWN STEP	2026-10-03T18:31:51.2030726Z 4eb14bae0e1d: Download complete
+targeted	UNKNOWN STEP	2026-10-03T18:31:51.2031663Z 4f4fb700ef54: Verifying Checksum
+targeted	UNKNOWN STEP	2026-10-03T18:31:51.2032775Z 4f4fb700ef54: Download complete
+targeted	UNKNOWN STEP	2026-10-03T18:31:51.2367977Z 1522f9c6f453: Verifying Checksum
+targeted	UNKNOWN STEP	2026-10-03T18:31:51.2369091Z 1522f9c6f453: Download complete
+targeted	UNKNOWN STEP	2026-10-03T18:31:51.2979444Z 16333ee0c00f: Pull complete
+targeted	UNKNOWN STEP	2026-10-03T18:31:53.9273803Z 83234986c742: Pull complete
+targeted	UNKNOWN STEP	2026-10-03T18:31:54.0743590Z 7eb50503c2b0: Pull complete
+targeted	UNKNOWN STEP	2026-10-03T18:31:54.2815452Z 1522f9c6f453: Pull complete
+targeted	UNKNOWN STEP	2026-10-03T18:31:54.2931469Z 9928009b15c8: Pull complete
+targeted	UNKNOWN STEP	2026-10-03T18:31:54.3017283Z 4f4fb700ef54: Pull complete
+targeted	UNKNOWN STEP	2026-10-03T18:31:54.3114397Z 4eb14bae0e1d: Pull complete
+targeted	UNKNOWN STEP	2026-10-03T18:31:54.3151371Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+targeted	UNKNOWN STEP	2026-10-03T18:31:54.3162801Z Status: Downloaded newer image for redis:7-alpine
+targeted	UNKNOWN STEP	2026-10-03T18:31:54.3170648Z docker.io/library/redis:7-alpine
+targeted	UNKNOWN STEP	2026-10-03T18:31:54.3217740Z ##[command]/usr/bin/docker create --name 1695372f47b04853ac33c0a13bfe1e06_redis7alpine_8c20bc --label 88fc36 --network github_network_868fa654a21c48079b911d46fac07e44 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+targeted	UNKNOWN STEP	2026-10-03T18:31:54.3472834Z 6138eb5a81384c776e5fa40cf4ff2dec67e697e0a67d509a96f91219666c91d3
+targeted	UNKNOWN STEP	2026-10-03T18:31:54.3497592Z ##[command]/usr/bin/docker start 6138eb5a81384c776e5fa40cf4ff2dec67e697e0a67d509a96f91219666c91d3
+targeted	UNKNOWN STEP	2026-10-03T18:31:54.5537576Z 6138eb5a81384c776e5fa40cf4ff2dec67e697e0a67d509a96f91219666c91d3
+targeted	UNKNOWN STEP	2026-10-03T18:31:54.5557012Z ##[command]/usr/bin/docker ps --all --filter id=6138eb5a81384c776e5fa40cf4ff2dec67e697e0a67d509a96f91219666c91d3 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+targeted	UNKNOWN STEP	2026-10-03T18:31:54.5686849Z 6138eb5a81384c776e5fa40cf4ff2dec67e697e0a67d509a96f91219666c91d3 Up Less than a second (health: starting)
+targeted	UNKNOWN STEP	2026-10-03T18:31:54.5706284Z ##[command]/usr/bin/docker port 6138eb5a81384c776e5fa40cf4ff2dec67e697e0a67d509a96f91219666c91d3
+targeted	UNKNOWN STEP	2026-10-03T18:31:54.5829789Z 6379/tcp -> 0.0.0.0:6379
+targeted	UNKNOWN STEP	2026-10-03T18:31:54.5830236Z 6379/tcp -> [::]:6379
+targeted	UNKNOWN STEP	2026-10-03T18:31:54.5876010Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:31:54.5885343Z ##[group]Waiting for all services to be ready
+targeted	UNKNOWN STEP	2026-10-03T18:31:54.5898712Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 6138eb5a81384c776e5fa40cf4ff2dec67e697e0a67d509a96f91219666c91d3
+targeted	UNKNOWN STEP	2026-10-03T18:31:54.6022152Z starting
+targeted	UNKNOWN STEP	2026-10-03T18:31:54.6045465Z redis service is starting, waiting 2 seconds before checking again.
+targeted	UNKNOWN STEP	2026-10-03T18:31:56.6056440Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 6138eb5a81384c776e5fa40cf4ff2dec67e697e0a67d509a96f91219666c91d3
+targeted	UNKNOWN STEP	2026-10-03T18:31:56.6182349Z starting
+targeted	UNKNOWN STEP	2026-10-03T18:31:56.6195766Z redis service is starting, waiting 4 seconds before checking again.
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.6898010Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 6138eb5a81384c776e5fa40cf4ff2dec67e697e0a67d509a96f91219666c91d3
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.7023507Z healthy
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.7040386Z redis service is healthy.
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.7041248Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.7350607Z ##[group]Run actions/checkout@v6
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.7351274Z with:
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.7351623Z   repository: BradleyGleavePortfolio/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.7355139Z   token: ***
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.7355413Z   ssh-strict: true
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.7355669Z   ssh-user: git
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.7355928Z   persist-credentials: true
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.7356229Z   clean: true
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.7356783Z   sparse-checkout-cone-mode: true
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.7357088Z   fetch-depth: 1
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.7357331Z   fetch-tags: false
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.7357587Z   show-progress: true
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.7357837Z   lfs: false
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.7358069Z   submodules: false
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.7358327Z   set-safe-directory: true
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.7358624Z   allow-unsafe-pr-checkout: false
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.7359271Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8448380Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8450728Z ##[group]Getting Git version info
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8451303Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8452067Z [command]/usr/bin/git version
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8452375Z git version 2.55.0
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8476045Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8491669Z Temporarily overriding HOME='/home/runner/work/_temp/1ea6ace7-c088-47d4-9d8d-46deeb1868f3' before making global git config changes
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8493200Z Adding repository directory to the temporary git global config as a safe directory
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8498324Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8551922Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8557327Z ##[group]Determining repository object format
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8559930Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8560760Z ##[group]Initializing the repository
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8565141Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8668075Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8669208Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8670131Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8670643Z hint: call:
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8670926Z hint:
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8671319Z hint: 	git config --global init.defaultBranch <name>
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8671717Z hint:
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8672085Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8672671Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8673141Z hint:
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8673403Z hint: 	git branch -m <name>
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8673696Z hint:
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8674282Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8679607Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8691169Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8740698Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8741515Z ##[group]Disabling automatic garbage collection
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8745003Z [command]/usr/bin/git config --local gc.auto 0
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8775865Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8776575Z ##[group]Setting up auth
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8777993Z Removing SSH command configuration
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8785012Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.8817614Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.9164289Z Removing HTTP extra header
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.9169751Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.9203233Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.9422716Z Removing includeIf entries pointing to credentials config files
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.9429668Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.9465735Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.9699898Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-55e02169-2862-4797-80bb-fef50ef378e1.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.9741960Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-55e02169-2862-4797-80bb-fef50ef378e1.config
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.9774906Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-55e02169-2862-4797-80bb-fef50ef378e1.config
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.9810156Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-55e02169-2862-4797-80bb-fef50ef378e1.config
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.9845114Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-55e02169-2862-4797-80bb-fef50ef378e1.config
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.9881264Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.9882143Z ##[group]Fetching the repository
+targeted	UNKNOWN STEP	2026-10-03T18:32:00.9891675Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +f062d31a738c4e8b034d08e03f43564ee99bb7ac:refs/remotes/origin/ci/B-TRIALS-3-656-r5-after
+targeted	UNKNOWN STEP	2026-10-03T18:32:02.1887119Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-03T18:32:02.1888753Z  * [new ref]         f062d31a738c4e8b034d08e03f43564ee99bb7ac -> origin/ci/B-TRIALS-3-656-r5-after
+targeted	UNKNOWN STEP	2026-10-03T18:32:02.1900319Z [command]/usr/bin/git branch --list --remote origin/ci/B-TRIALS-3-656-r5-after
+targeted	UNKNOWN STEP	2026-10-03T18:32:02.1926690Z   origin/ci/B-TRIALS-3-656-r5-after
+targeted	UNKNOWN STEP	2026-10-03T18:32:02.1937402Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-TRIALS-3-656-r5-after
+targeted	UNKNOWN STEP	2026-10-03T18:32:02.1960711Z f062d31a738c4e8b034d08e03f43564ee99bb7ac
+targeted	UNKNOWN STEP	2026-10-03T18:32:02.1965711Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:32:02.1966431Z ##[group]Determining the checkout info
+targeted	UNKNOWN STEP	2026-10-03T18:32:02.1967408Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:32:02.1972839Z [command]/usr/bin/git sparse-checkout disable
+targeted	UNKNOWN STEP	2026-10-03T18:32:02.2025219Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	UNKNOWN STEP	2026-10-03T18:32:02.2054998Z ##[group]Checking out the ref
+targeted	UNKNOWN STEP	2026-10-03T18:32:02.2060223Z [command]/usr/bin/git checkout --progress --force -B ci/B-TRIALS-3-656-r5-after refs/remotes/origin/ci/B-TRIALS-3-656-r5-after
+targeted	UNKNOWN STEP	2026-10-03T18:32:02.4193441Z Switched to a new branch 'ci/B-TRIALS-3-656-r5-after'
+targeted	UNKNOWN STEP	2026-10-03T18:32:02.4198430Z branch 'ci/B-TRIALS-3-656-r5-after' set up to track 'origin/ci/B-TRIALS-3-656-r5-after'.
+targeted	UNKNOWN STEP	2026-10-03T18:32:02.4210141Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:32:02.4260617Z [command]/usr/bin/git log -1 --format=%H
+targeted	UNKNOWN STEP	2026-10-03T18:32:02.4289383Z f062d31a738c4e8b034d08e03f43564ee99bb7ac
+targeted	UNKNOWN STEP	2026-10-03T18:32:02.4559395Z ##[group]Run actions/setup-node@v6
+targeted	UNKNOWN STEP	2026-10-03T18:32:02.4559723Z with:
+targeted	UNKNOWN STEP	2026-10-03T18:32:02.4559924Z   node-version: 20
+targeted	UNKNOWN STEP	2026-10-03T18:32:02.4560134Z   cache: npm
+targeted	UNKNOWN STEP	2026-10-03T18:32:02.4560335Z   check-latest: false
+targeted	UNKNOWN STEP	2026-10-03T18:32:02.4563020Z   token: ***
+targeted	UNKNOWN STEP	2026-10-03T18:32:02.4563247Z   package-manager-cache: true
+targeted	UNKNOWN STEP	2026-10-03T18:32:02.4563508Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:32:02.6024587Z Attempting to download 20...
+targeted	UNKNOWN STEP	2026-10-03T18:32:03.0759115Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+targeted	UNKNOWN STEP	2026-10-03T18:32:03.4117972Z Extracting ...
+targeted	UNKNOWN STEP	2026-10-03T18:32:03.4247539Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/f0efcb53-3d31-42c2-805b-311b213bfdff -f /home/runner/work/_temp/c08a62dd-600d-4f18-8422-523a9e01153f
+targeted	UNKNOWN STEP	2026-10-03T18:32:04.4390556Z Adding to the cache ...
+targeted	UNKNOWN STEP	2026-10-03T18:32:06.3550202Z ##[group]Environment details
+targeted	UNKNOWN STEP	2026-10-03T18:32:06.5865103Z node: v20.20.2
+targeted	UNKNOWN STEP	2026-10-03T18:32:06.5865631Z npm: 10.8.2
+targeted	UNKNOWN STEP	2026-10-03T18:32:06.5866073Z yarn: 1.22.22
+targeted	UNKNOWN STEP	2026-10-03T18:32:06.5866918Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:32:06.5887112Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+targeted	UNKNOWN STEP	2026-10-03T18:32:06.6937007Z /home/runner/.npm
+targeted	UNKNOWN STEP	2026-10-03T18:32:06.7532030Z Cache hit for: node-cache-Linux-x64-npm-1c658f1a35f7b309848c416454e12a0f8c258736d5e30a9676088e8641c298ba
+targeted	UNKNOWN STEP	2026-10-03T18:32:07.2926245Z Received 86861520 of 86861520 (100.0%), 172.6 MBs/sec
+targeted	UNKNOWN STEP	2026-10-03T18:32:07.2927492Z Cache Size: ~83 MB (86861520 B)
+targeted	UNKNOWN STEP	2026-10-03T18:32:07.2958808Z [command]/usr/bin/tar -xf /home/runner/work/_temp/b58ccdc5-10a5-40f8-87f7-fb48ca4b4291/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+targeted	UNKNOWN STEP	2026-10-03T18:32:07.4705254Z Cache restored successfully
+targeted	UNKNOWN STEP	2026-10-03T18:32:07.4751789Z Cache restored from key: node-cache-Linux-x64-npm-1c658f1a35f7b309848c416454e12a0f8c258736d5e30a9676088e8641c298ba
+targeted	UNKNOWN STEP	2026-10-03T18:32:07.4955371Z ##[group]Run npm ci
+targeted	UNKNOWN STEP	2026-10-03T18:32:07.4955703Z ^[[36;1mnpm ci^[[0m
+targeted	UNKNOWN STEP	2026-10-03T18:32:07.5162988Z shell: /usr/bin/bash -e {0}
+targeted	UNKNOWN STEP	2026-10-03T18:32:07.5163366Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:32:13.4083917Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	UNKNOWN STEP	2026-10-03T18:32:14.5524284Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+targeted	UNKNOWN STEP	2026-10-03T18:32:15.5509895Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-03T18:32:17.0149064Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-03T18:32:17.0518266Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-03T18:32:17.0958434Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-03T18:32:30.6860504Z 
+targeted	UNKNOWN STEP	2026-10-03T18:32:30.6861273Z > growth-project-backend@1.0.0 postinstall
+targeted	UNKNOWN STEP	2026-10-03T18:32:30.6861964Z > prisma generate
+targeted	UNKNOWN STEP	2026-10-03T18:32:30.6862201Z 
+targeted	UNKNOWN STEP	2026-10-03T18:32:31.6380121Z Prisma schema loaded from prisma/schema.prisma
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.5211231Z ┌─────────────────────────────────────────────────────────┐
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.5211808Z 
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.5212734Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.5214422Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.18s
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.5215053Z 
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.5215873Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.5216835Z 
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.5217899Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.5218756Z 
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.5242851Z │                                                         │
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.5244582Z │  This is a major update - please follow the guide at    │
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.5245777Z │  https://pris.ly/d/major-version-upgrade                │
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.5246836Z │                                                         │
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.5247800Z │  Run the following to update                            │
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.5248822Z │    npm i --save-dev prisma@latest                       │
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.5249875Z │    npm i @prisma/client@latest                          │
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.5250918Z └─────────────────────────────────────────────────────────┘
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.5853466Z 
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.5854405Z > growth-project-backend@1.0.0 prepare
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.5854889Z > lefthook install
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.5855034Z 
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.6411226Z sync hooks: ✔️(commit-msg, pre-commit)
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.6601982Z 
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.6603020Z added 1117 packages, and audited 1118 packages in 28s
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.6604337Z 
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.6604838Z 202 packages are looking for funding
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.6605486Z   run `npm fund` for details
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.6643306Z 
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.6643768Z 4 vulnerabilities (1 moderate, 3 high)
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.6645390Z 
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.6660739Z To address issues that do not require attention, run:
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.6661541Z   npm audit fix
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.6661812Z 
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.6662253Z To address all issues (including breaking changes), run:
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.6662906Z   npm audit fix --force
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.6663208Z 
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.6663440Z Run `npm audit` for details.
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.7321358Z ##[group]Run npx prisma generate
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.7321723Z ^[[36;1mnpx prisma generate^[[0m
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.7393295Z shell: /usr/bin/bash -e {0}
+targeted	UNKNOWN STEP	2026-10-03T18:32:35.7393611Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:32:37.1729211Z Prisma schema loaded from prisma/schema.prisma
+targeted	UNKNOWN STEP	2026-10-03T18:32:41.0121219Z 
+targeted	UNKNOWN STEP	2026-10-03T18:32:41.0123083Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.11s
+targeted	UNKNOWN STEP	2026-10-03T18:32:41.0123895Z 
+targeted	UNKNOWN STEP	2026-10-03T18:32:41.0124980Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	UNKNOWN STEP	2026-10-03T18:32:41.0125755Z 
+targeted	UNKNOWN STEP	2026-10-03T18:32:41.0126880Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+targeted	UNKNOWN STEP	2026-10-03T18:32:41.0127564Z 
+targeted	UNKNOWN STEP	2026-10-03T18:32:41.1365158Z ##[group]Run npx tsc --noEmit
+targeted	UNKNOWN STEP	2026-10-03T18:32:41.1365517Z ^[[36;1mnpx tsc --noEmit^[[0m
+targeted	UNKNOWN STEP	2026-10-03T18:32:41.1427644Z shell: /usr/bin/bash -e {0}
+targeted	UNKNOWN STEP	2026-10-03T18:32:41.1427904Z env:
+targeted	UNKNOWN STEP	2026-10-03T18:32:41.1428143Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	UNKNOWN STEP	2026-10-03T18:32:41.1428432Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:33:36.0094414Z ##[group]Run set -euo pipefail
+targeted	UNKNOWN STEP	2026-10-03T18:33:36.0094993Z ^[[36;1mset -euo pipefail^[[0m
+targeted	UNKNOWN STEP	2026-10-03T18:33:36.0095658Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	UNKNOWN STEP	2026-10-03T18:33:36.0096513Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	UNKNOWN STEP	2026-10-03T18:33:36.0097174Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	UNKNOWN STEP	2026-10-03T18:33:36.0097716Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	UNKNOWN STEP	2026-10-03T18:33:36.0172948Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	UNKNOWN STEP	2026-10-03T18:33:36.0173321Z env:
+targeted	UNKNOWN STEP	2026-10-03T18:33:36.0173555Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	UNKNOWN STEP	2026-10-03T18:33:36.0173927Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	UNKNOWN STEP	2026-10-03T18:33:36.0174554Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:33:36.0278413Z specs: test/b-trials-3-fix-round.spec.ts test/b-trials-notice-and-webhook.spec.ts test/b-trials-package-rules.spec.ts test/client-purchases-field-select.spec.ts
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.0402083Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.0451067Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.0471384Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel failed for purchase pur-1 attempt=1 code=http_503 (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.0505658Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.0534322Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.0577078Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.0597225Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.0640076Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.0712480Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:34:11 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel failed for purchase pur-1 attempt=1 code=timeout (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.0731495Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.0739372Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel failed for purchase pur-1 attempt=1 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.0743389Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel failed for purchase pur-1 attempt=2 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.0746501Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel failed for purchase pur-1 attempt=3 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.0751395Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel failed for purchase pur-1 attempt=4 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.0755227Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel failed for purchase pur-1 attempt=5 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.0773314Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.0781062Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.0807127Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.0847586Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.1480543Z ^[[33m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.1483756Z ^[[33m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.1487134Z ^[[33m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.1490228Z ^[[33m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.1493067Z ^[[33m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice push outcome dropped (lease lost) notice=row_1^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.1496287Z ^[[33m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice email outcome dropped (lease lost) notice=row_1^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.3301133Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.3305447Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel failed for purchase pur-1 attempt=1 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.3309217Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel failed for purchase pur-1 attempt=2 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.3313444Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel failed for purchase pur-1 attempt=3 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.3317566Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.3327938Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.3332331Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel failed for purchase pur-1 attempt=1 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.3335501Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel failed for purchase pur-1 attempt=2 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.3337674Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict: cancel failed for purchase pur-1 attempt=3 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.3340605Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialConflictService] ^[[39m^[[31mtrial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:51.3479521Z PASS test/b-trials-3-fix-round.spec.ts (14.233 s)
+targeted	UNKNOWN STEP	2026-10-03T18:33:53.2471126Z ^[[33m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:53.2473719Z ^[[33m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=row_1 code=card_state_unknown^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:53.2476385Z ^[[33m[Nest] 3320  - ^[[39m10/03/2026, 6:33:51 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:53.2677306Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:53 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[31mtrial notice reconcile errored: TypeError^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:53.2730463Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:53 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[31mtrial notice reconcile errored: TypeError^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:53.2758520Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:53 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[31mtrial notice reconcile errored: TypeError^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:53.2829004Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:53 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:53.2918697Z ^[[31m[Nest] 3320  - ^[[39m10/03/2026, 6:33:53 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[BillingService] ^[[39m^[[31mStripe event handler failed event=evt_t2 type=customer.subscription.trial_will_end: db down^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:53.3282431Z PASS test/b-trials-notice-and-webhook.spec.ts
+targeted	UNKNOWN STEP	2026-10-03T18:33:54.5534968Z ^[[33m[Nest] 3320  - ^[[39m10/03/2026, 6:33:53 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mtrial conflict: cancelled subscription sub_1 (TRIAL_ALREADY_USED)^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:54.5537764Z ^[[32m[Nest] 3320  - ^[[39m10/03/2026, 6:33:54 PM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:54.5675704Z PASS test/b-trials-package-rules.spec.ts
+targeted	UNKNOWN STEP	2026-10-03T18:33:55.5836104Z ^[[32m[Nest] 3320  - ^[[39m10/03/2026, 6:33:54 PM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:33:55.5901049Z PASS test/client-purchases-field-select.spec.ts
+targeted	UNKNOWN STEP	2026-10-03T18:33:55.5931042Z 
+targeted	UNKNOWN STEP	2026-10-03T18:33:55.5949876Z Test Suites: 4 passed, 4 total
+targeted	UNKNOWN STEP	2026-10-03T18:33:55.5950856Z Tests:       96 passed, 96 total
+targeted	UNKNOWN STEP	2026-10-03T18:33:55.5951924Z Snapshots:   0 total
+targeted	UNKNOWN STEP	2026-10-03T18:33:55.5952683Z Time:        18.726 s
+targeted	UNKNOWN STEP	2026-10-03T18:33:55.5954606Z Ran all test suites matching test/b-trials-3-fix-round.spec.ts|test/b-trials-notice-and-webhook.spec.ts|test/b-trials-package-rules.spec.ts|test/client-purchases-field-select.spec.ts.
+targeted	UNKNOWN STEP	2026-10-03T18:33:55.9143479Z Post job cleanup.
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.0354435Z Cache hit occurred on the primary key node-cache-Linux-x64-npm-1c658f1a35f7b309848c416454e12a0f8c258736d5e30a9676088e8641c298ba, not saving cache.
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.0482030Z Post job cleanup.
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.1345540Z [command]/usr/bin/git version
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.1383927Z git version 2.55.0
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.1426237Z Temporarily overriding HOME='/home/runner/work/_temp/b1834b84-8fa5-4b8a-8286-7e358f979cd3' before making global git config changes
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.1427937Z Adding repository directory to the temporary git global config as a safe directory
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.1432563Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.1467067Z Removing SSH command configuration
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.1473639Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.1510844Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.1748858Z Removing HTTP extra header
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.1757594Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.1796541Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.2034337Z Removing includeIf entries pointing to credentials config files
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.2041901Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.2073202Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.2075054Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.2076256Z includeif.gitdir:/github/workspace/.git.path
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.2077070Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.2086154Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.2136408Z /home/runner/work/_temp/git-credentials-55e02169-2862-4797-80bb-fef50ef378e1.config
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.2139995Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-55e02169-2862-4797-80bb-fef50ef378e1.config
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.2184500Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.2215788Z /home/runner/work/_temp/git-credentials-55e02169-2862-4797-80bb-fef50ef378e1.config
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.2230100Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-55e02169-2862-4797-80bb-fef50ef378e1.config
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.2278389Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.2307639Z /github/runner_temp/git-credentials-55e02169-2862-4797-80bb-fef50ef378e1.config
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.2318730Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-55e02169-2862-4797-80bb-fef50ef378e1.config
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.2362125Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.2392702Z /github/runner_temp/git-credentials-55e02169-2862-4797-80bb-fef50ef378e1.config
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.2404808Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-55e02169-2862-4797-80bb-fef50ef378e1.config
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.2448639Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.2719880Z Removing credentials config '/home/runner/work/_temp/git-credentials-55e02169-2862-4797-80bb-fef50ef378e1.config'
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.2890440Z Print service container logs: 1695372f47b04853ac33c0a13bfe1e06_redis7alpine_8c20bc
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.2897075Z ##[command]/usr/bin/docker logs --details 6138eb5a81384c776e5fa40cf4ff2dec67e697e0a67d509a96f91219666c91d3
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.3038089Z  1:C 03 Oct 2026 18:31:54.558 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.3048482Z  1:C 03 Oct 2026 18:31:54.558 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.3049324Z  1:C 03 Oct 2026 18:31:54.558 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.3050258Z  1:C 03 Oct 2026 18:31:54.558 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.3050989Z  1:M 03 Oct 2026 18:31:54.558 * monotonic clock: POSIX clock_gettime
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.3051411Z  1:M 03 Oct 2026 18:31:54.558 * Running mode=standalone, port=6379.
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.3051785Z  1:M 03 Oct 2026 18:31:54.559 * Server initialized
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.3052128Z  1:M 03 Oct 2026 18:31:54.559 * Ready to accept connections tcp
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.3059182Z Stop and remove container: 1695372f47b04853ac33c0a13bfe1e06_redis7alpine_8c20bc
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.3064923Z ##[command]/usr/bin/docker rm --force 6138eb5a81384c776e5fa40cf4ff2dec67e697e0a67d509a96f91219666c91d3
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.4406409Z 6138eb5a81384c776e5fa40cf4ff2dec67e697e0a67d509a96f91219666c91d3
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.4434732Z Remove container network: github_network_868fa654a21c48079b911d46fac07e44
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.4439808Z ##[command]/usr/bin/docker network rm github_network_868fa654a21c48079b911d46fac07e44
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.5334319Z github_network_868fa654a21c48079b911d46fac07e44
+targeted	UNKNOWN STEP	2026-10-03T18:33:56.5410816Z Cleaning up orphan processes

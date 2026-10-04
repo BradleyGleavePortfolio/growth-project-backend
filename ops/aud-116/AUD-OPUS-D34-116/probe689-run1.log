@@ -1,0 +1,100 @@
+targeted	Targeted jest	﻿2026-10-04T03:00:11.3410371Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T03:00:11.3410744Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T03:00:11.3411158Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T03:00:11.3411664Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T03:00:11.3412033Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T03:00:11.3412326Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T03:00:11.3476382Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T03:00:11.3476759Z env:
+targeted	Targeted jest	2026-10-04T03:00:11.3476990Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T03:00:11.3477392Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T03:00:11.3477734Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T03:00:11.3577184Z specs: test/audit-opus-d34-689-dispute-paths.probe.spec.ts
+targeted	Targeted jest	2026-10-04T03:00:24.4748011Z ^[[32m[Nest] 3142  - ^[[39m10/05/2026, 4:00:00 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":0,"scheduled_for":"2026-10-05T16:00:00.000Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.4769580Z ^[[32m[Nest] 3142  - ^[[39m10/05/2026, 4:00:00 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":1,"scheduled_for":"2026-10-08T16:00:00.000Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.4828269Z ^[[32m[Nest] 3142  - ^[[39m10/05/2026, 4:00:00 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":2,"scheduled_for":"2026-10-12T16:00:00.000Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.4841367Z ^[[32m[Nest] 3142  - ^[[39m10/05/2026, 4:00:00 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":3,"scheduled_for":"2026-10-19T16:00:00.000Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.4945794Z ^[[32m[Nest] 3142  - ^[[39m10/05/2026, 4:00:00 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","invoice_id":"in_r1","amount_cents":15000,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.5642937Z ^[[32m[Nest] 3142  - ^[[39m10/15/2026, 4:07:00 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[32m{"event":"dunning_v2.locked","dunning_state_id":"dunningState_1","purchase_id":"purchase-1","entered_at":"2026-10-05T16:00:00.000Z"}^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.6982644Z ^[[32m[Nest] 3142  - ^[[39m10/16/2026, 4:00:00 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.recovered","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index_at_recovery":3}^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.7281010Z ^[[32m[Nest] 3142  - ^[[39m10/05/2026, 4:00:00 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":0,"scheduled_for":"2026-10-05T16:00:00.000Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.7342673Z ^[[32m[Nest] 3142  - ^[[39m10/05/2026, 4:00:00 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":1,"scheduled_for":"2026-10-08T16:00:00.000Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.7392947Z ^[[32m[Nest] 3142  - ^[[39m10/05/2026, 4:00:00 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":2,"scheduled_for":"2026-10-12T16:00:00.000Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.7422850Z ^[[32m[Nest] 3142  - ^[[39m10/05/2026, 4:00:00 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":3,"scheduled_for":"2026-10-19T16:00:00.000Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.7452243Z ^[[32m[Nest] 3142  - ^[[39m10/05/2026, 4:00:00 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","invoice_id":"in_r1","amount_cents":15000,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.7781081Z ^[[32m[Nest] 3142  - ^[[39m10/15/2026, 4:07:00 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[32m{"event":"dunning_v2.locked","dunning_state_id":"dunningState_1","purchase_id":"purchase-1","entered_at":"2026-10-05T16:00:00.000Z"}^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.7876939Z ^[[32m[Nest] 3142  - ^[[39m10/16/2026, 4:00:00 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.recovered","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index_at_recovery":3}^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.8113164Z ^[[32m[Nest] 3142  - ^[[39m10/05/2026, 4:00:00 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":0,"scheduled_for":"2026-10-05T16:00:00.000Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.8117593Z ^[[32m[Nest] 3142  - ^[[39m10/05/2026, 4:00:00 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":1,"scheduled_for":"2026-10-08T16:00:00.000Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.8122484Z ^[[32m[Nest] 3142  - ^[[39m10/05/2026, 4:00:00 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":2,"scheduled_for":"2026-10-12T16:00:00.000Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.8126572Z ^[[32m[Nest] 3142  - ^[[39m10/05/2026, 4:00:00 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":3,"scheduled_for":"2026-10-19T16:00:00.000Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.8130822Z ^[[32m[Nest] 3142  - ^[[39m10/05/2026, 4:00:00 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","invoice_id":"in_r1","amount_cents":15000,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.8323229Z ^[[32m[Nest] 3142  - ^[[39m10/06/2026, 4:00:00 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.recovered","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index_at_recovery":0}^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.8412257Z ^[[32m[Nest] 3142  - ^[[39m10/18/2026, 4:00:00 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.recovered","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index_at_recovery":2}^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.8415818Z ^[[32m[Nest] 3142  - ^[[39m10/18/2026, 4:00:00 PM ^[[32m    LOG^[[39m ^[[38;5;3m[ClientBillingService] ^[[39m^[[32m{"event":"billing.client_cancel_paid_meanwhile","purchase_id":"purchase-1","access_ends_at":"2026-11-04T16:00:00.000Z"}^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.8771523Z FAIL test/audit-opus-d34-689-dispute-paths.probe.spec.ts (12.465 s)
+targeted	Targeted jest	2026-10-04T03:00:24.8772691Z   AUDIT PROBE #689: card update / cancel never settle a disputed payment
+targeted	Targeted jest	2026-10-04T03:00:24.8774126Z     ✓ C1 control: payment cycle -> Day-10 lock -> card update pays and unlocks (252 ms)
+targeted	Targeted jest	2026-10-04T03:00:24.8775649Z     ✕ P1: a dispute recorded during a payment cycle survives the in-app card update that pays the renewal (85 ms)
+targeted	Targeted jest	2026-10-04T03:00:24.8777431Z     ✕ P2: a cancel during a dispute cycle does not resolve the dispute cycle or claim the reversed payment went through (33 ms)
+targeted	Targeted jest	2026-10-04T03:00:24.8778275Z 
+targeted	Targeted jest	2026-10-04T03:00:24.8779674Z   ● AUDIT PROBE #689: card update / cancel never settle a disputed payment › P1: a dispute recorded during a payment cycle survives the in-app card update that pays the renewal
+targeted	Targeted jest	2026-10-04T03:00:24.8780980Z 
+targeted	Targeted jest	2026-10-04T03:00:24.8781256Z     expect(received).toMatchObject(expected)
+targeted	Targeted jest	2026-10-04T03:00:24.8781970Z 
+targeted	Targeted jest	2026-10-04T03:00:24.8782142Z     - Expected  - 5
+targeted	Targeted jest	2026-10-04T03:00:24.8782530Z     + Received  + 5
+targeted	Targeted jest	2026-10-04T03:00:24.8782753Z 
+targeted	Targeted jest	2026-10-04T03:00:24.8782906Z       Object {
+targeted	Targeted jest	2026-10-04T03:00:24.8783317Z     -   "dispute_cycle_open": true,
+targeted	Targeted jest	2026-10-04T03:00:24.8783839Z     -   "plan_dispute_open": true,
+targeted	Targeted jest	2026-10-04T03:00:24.8784324Z     -   "quote_disputes": 1,
+targeted	Targeted jest	2026-10-04T03:00:24.8784818Z     -   "state_status": "active",
+targeted	Targeted jest	2026-10-04T03:00:24.8785265Z     -   "still_locked": true,
+targeted	Targeted jest	2026-10-04T03:00:24.8785751Z     +   "dispute_cycle_open": false,
+targeted	Targeted jest	2026-10-04T03:00:24.8786253Z     +   "plan_dispute_open": false,
+targeted	Targeted jest	2026-10-04T03:00:24.8786683Z     +   "quote_disputes": 0,
+targeted	Targeted jest	2026-10-04T03:00:24.8787175Z     +   "state_status": "resolved",
+targeted	Targeted jest	2026-10-04T03:00:24.8787698Z     +   "still_locked": false,
+targeted	Targeted jest	2026-10-04T03:00:24.8788179Z       }
+targeted	Targeted jest	2026-10-04T03:00:24.8788377Z 
+targeted	Targeted jest	2026-10-04T03:00:24.8789244Z     ^[[0m ^[[90m 216 |^[[39m     ^[[90m// Expected: the renewal is paid (money truth), the dispute cycle is kept.^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.8791155Z      ^[[90m 217 |^[[39m     expect(res^[[33m.^[[39mamount_paid_cents)^[[33m.^[[39mtoBe(^[[35m15000^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.8792454Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 218 |^[[39m     expect(observed)^[[33m.^[[39mtoMatchObject({
+targeted	Targeted jest	2026-10-04T03:00:24.8793443Z      ^[[90m     |^[[39m                      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.8794751Z      ^[[90m 219 |^[[39m       quote_disputes^[[33m:^[[39m ^[[35m1^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.8795753Z      ^[[90m 220 |^[[39m       plan_dispute_open^[[33m:^[[39m ^[[36mtrue^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.8796780Z      ^[[90m 221 |^[[39m       state_status^[[33m:^[[39m ^[[32m'active'^[[39m^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T03:00:24.8797270Z 
+targeted	Targeted jest	2026-10-04T03:00:24.8797838Z       at Object.<anonymous> (test/audit-opus-d34-689-dispute-paths.probe.spec.ts:218:22)
+targeted	Targeted jest	2026-10-04T03:00:24.8798471Z 
+targeted	Targeted jest	2026-10-04T03:00:24.8821378Z   ● AUDIT PROBE #689: card update / cancel never settle a disputed payment › P2: a cancel during a dispute cycle does not resolve the dispute cycle or claim the reversed payment went through
+targeted	Targeted jest	2026-10-04T03:00:24.8822663Z 
+targeted	Targeted jest	2026-10-04T03:00:24.8822979Z     expect(received).toMatchObject(expected)
+targeted	Targeted jest	2026-10-04T03:00:24.8823358Z 
+targeted	Targeted jest	2026-10-04T03:00:24.8823529Z     - Expected  - 2
+targeted	Targeted jest	2026-10-04T03:00:24.8823921Z     + Received  + 2
+targeted	Targeted jest	2026-10-04T03:00:24.8824139Z 
+targeted	Targeted jest	2026-10-04T03:00:24.8824290Z       Object {
+targeted	Targeted jest	2026-10-04T03:00:24.8824732Z     -   "paid_period_kept": false,
+targeted	Targeted jest	2026-10-04T03:00:24.8825308Z     -   "says_payment_went_through": false,
+targeted	Targeted jest	2026-10-04T03:00:24.8825883Z     +   "paid_period_kept": true,
+targeted	Targeted jest	2026-10-04T03:00:24.8826441Z     +   "says_payment_went_through": true,
+targeted	Targeted jest	2026-10-04T03:00:24.8826907Z       }
+targeted	Targeted jest	2026-10-04T03:00:24.8827103Z 
+targeted	Targeted jest	2026-10-04T03:00:24.8827945Z     ^[[0m ^[[90m 276 |^[[39m     ^[[90m// Expected: the dispute cycle is not settled by a cancel, and the reply^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.8829160Z      ^[[90m 277 |^[[39m     ^[[90m// never says the reversed payment went through.^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.8830591Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 278 |^[[39m     expect(observed)^[[33m.^[[39mtoMatchObject({
+targeted	Targeted jest	2026-10-04T03:00:24.8831577Z      ^[[90m     |^[[39m                      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.8832659Z      ^[[90m 279 |^[[39m       says_payment_went_through^[[33m:^[[39m ^[[36mfalse^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.8833766Z      ^[[90m 280 |^[[39m       paid_period_kept^[[33m:^[[39m ^[[36mfalse^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T03:00:24.8834653Z      ^[[90m 281 |^[[39m     })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T03:00:24.8835020Z 
+targeted	Targeted jest	2026-10-04T03:00:24.8835587Z       at Object.<anonymous> (test/audit-opus-d34-689-dispute-paths.probe.spec.ts:278:22)
+targeted	Targeted jest	2026-10-04T03:00:24.8836234Z 
+targeted	Targeted jest	2026-10-04T03:00:24.8836542Z Test Suites: 1 failed, 1 total
+targeted	Targeted jest	2026-10-04T03:00:24.8837141Z Tests:       2 failed, 1 passed, 3 total
+targeted	Targeted jest	2026-10-04T03:00:24.8837777Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T03:00:24.8838218Z Time:        12.707 s
+targeted	Targeted jest	2026-10-04T03:00:24.8839059Z Ran all test suites matching test/audit-opus-d34-689-dispute-paths.probe.spec.ts.
+targeted	Targeted jest	2026-10-04T03:00:25.1627399Z ##[error]Process completed with exit code 1.

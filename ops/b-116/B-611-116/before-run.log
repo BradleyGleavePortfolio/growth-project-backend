@@ -1,0 +1,684 @@
+﻿2026-10-04T02:53:50.6165367Z Current runner version: '2.337.0'
+2026-10-04T02:53:50.6192776Z ##[group]Runner Image Provisioner
+2026-10-04T02:53:50.6193800Z Hosted Compute Agent
+2026-10-04T02:53:50.6194551Z Version: 20260901.588
+2026-10-04T02:53:50.6195294Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-04T02:53:50.6196631Z Build Date: 2026-09-01T19:56:44Z
+2026-10-04T02:53:50.6197470Z Worker ID: {e113eb12-3dd7-4d68-ad9e-34e01669367e}
+2026-10-04T02:53:50.6198402Z Azure Region: eastus
+2026-10-04T02:53:50.6199117Z ##[endgroup]
+2026-10-04T02:53:50.6200838Z ##[group]Operating System
+2026-10-04T02:53:50.6201686Z Ubuntu
+2026-10-04T02:53:50.6202300Z 24.04.5
+2026-10-04T02:53:50.6202929Z LTS
+2026-10-04T02:53:50.6203594Z ##[endgroup]
+2026-10-04T02:53:50.6204319Z ##[group]Runner Image
+2026-10-04T02:53:50.6205034Z Image: ubuntu-24.04
+2026-10-04T02:53:50.6205703Z Version: 20260927.320.1
+2026-10-04T02:53:50.6207325Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-04T02:53:50.6209370Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-04T02:53:50.6210745Z ##[endgroup]
+2026-10-04T02:53:50.6212187Z ##[group]GITHUB_TOKEN Permissions
+2026-10-04T02:53:50.6214489Z Contents: read
+2026-10-04T02:53:50.6215228Z Metadata: read
+2026-10-04T02:53:50.6215907Z Packages: read
+2026-10-04T02:53:50.6216559Z ##[endgroup]
+2026-10-04T02:53:50.6219049Z Secret source: Actions
+2026-10-04T02:53:50.6220190Z Cache mode: write
+2026-10-04T02:53:50.6221427Z Prepare workflow directory
+2026-10-04T02:53:50.6681394Z Prepare all required actions
+2026-10-04T02:53:50.6735744Z Getting action download info
+2026-10-04T02:53:50.8377371Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-04T02:53:50.9151830Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-04T02:53:51.0956573Z Complete job name: targeted
+2026-10-04T02:53:51.1358496Z ##[group]Checking docker version
+2026-10-04T02:53:51.1369211Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-04T02:53:51.2152332Z '1.48'
+2026-10-04T02:53:51.2165750Z Docker daemon API version: '1.48'
+2026-10-04T02:53:51.2166370Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-04T02:53:51.2295884Z '1.48'
+2026-10-04T02:53:51.2306581Z Docker client API version: '1.48'
+2026-10-04T02:53:51.2310881Z ##[endgroup]
+2026-10-04T02:53:51.2312974Z ##[group]Clean up resources from previous jobs
+2026-10-04T02:53:51.2317536Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=612da0"
+2026-10-04T02:53:51.2431805Z ##[command]/usr/bin/docker network prune --force --filter "label=612da0"
+2026-10-04T02:53:51.2535134Z ##[endgroup]
+2026-10-04T02:53:51.2535552Z ##[group]Create local container network
+2026-10-04T02:53:51.2543630Z ##[command]/usr/bin/docker network create --label 612da0 github_network_a01019a78ded42d5ab2e40a81500ca77
+2026-10-04T02:53:51.2957521Z 1924c4f592c683346c1889637052cbbc4ec9639c8b5701b03750d5b5c1891842
+2026-10-04T02:53:51.2965173Z ##[endgroup]
+2026-10-04T02:53:51.2985639Z ##[group]Starting redis service container
+2026-10-04T02:53:51.3002795Z ##[command]/usr/bin/docker pull redis:7-alpine
+2026-10-04T02:53:51.5519365Z 7-alpine: Pulling from library/redis
+2026-10-04T02:53:51.6520854Z 16333ee0c00f: Pulling fs layer
+2026-10-04T02:53:51.6522001Z 83234986c742: Pulling fs layer
+2026-10-04T02:53:51.6523050Z 7eb50503c2b0: Pulling fs layer
+2026-10-04T02:53:51.6524086Z 1522f9c6f453: Pulling fs layer
+2026-10-04T02:53:51.6525176Z 9928009b15c8: Pulling fs layer
+2026-10-04T02:53:51.6526096Z 4f4fb700ef54: Pulling fs layer
+2026-10-04T02:53:51.6526931Z 4eb14bae0e1d: Pulling fs layer
+2026-10-04T02:53:51.6527737Z 9928009b15c8: Waiting
+2026-10-04T02:53:51.6528465Z 4f4fb700ef54: Waiting
+2026-10-04T02:53:51.6529185Z 4eb14bae0e1d: Waiting
+2026-10-04T02:53:51.6529937Z 1522f9c6f453: Waiting
+2026-10-04T02:53:51.6839580Z 83234986c742: Verifying Checksum
+2026-10-04T02:53:51.6841488Z 83234986c742: Download complete
+2026-10-04T02:53:51.6859753Z 7eb50503c2b0: Download complete
+2026-10-04T02:53:51.7100965Z 16333ee0c00f: Download complete
+2026-10-04T02:53:51.7141668Z 9928009b15c8: Verifying Checksum
+2026-10-04T02:53:51.7143373Z 9928009b15c8: Download complete
+2026-10-04T02:53:51.7383550Z 4eb14bae0e1d: Verifying Checksum
+2026-10-04T02:53:51.7468324Z 4eb14bae0e1d: Download complete
+2026-10-04T02:53:51.7469859Z 4f4fb700ef54: Verifying Checksum
+2026-10-04T02:53:51.7471550Z 4f4fb700ef54: Download complete
+2026-10-04T02:53:51.7473001Z 1522f9c6f453: Verifying Checksum
+2026-10-04T02:53:51.7474587Z 1522f9c6f453: Download complete
+2026-10-04T02:53:51.8682463Z 16333ee0c00f: Pull complete
+2026-10-04T02:53:52.0222293Z 83234986c742: Pull complete
+2026-10-04T02:53:52.1377507Z 7eb50503c2b0: Pull complete
+2026-10-04T02:53:52.4275520Z 1522f9c6f453: Pull complete
+2026-10-04T02:53:52.4353478Z 9928009b15c8: Pull complete
+2026-10-04T02:53:52.4431105Z 4f4fb700ef54: Pull complete
+2026-10-04T02:53:52.4519572Z 4eb14bae0e1d: Pull complete
+2026-10-04T02:53:52.4556546Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+2026-10-04T02:53:52.4569665Z Status: Downloaded newer image for redis:7-alpine
+2026-10-04T02:53:52.4578071Z docker.io/library/redis:7-alpine
+2026-10-04T02:53:52.4608545Z ##[command]/usr/bin/docker create --name 135ccb5fd9bd49bfad36c8b1c91fe276_redis7alpine_386244 --label 612da0 --network github_network_a01019a78ded42d5ab2e40a81500ca77 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+2026-10-04T02:53:52.4837665Z c1a82b6ab8bfd3e4bfd9a186038304be44fd4037453243dad9004a9fb432ba20
+2026-10-04T02:53:52.4858371Z ##[command]/usr/bin/docker start c1a82b6ab8bfd3e4bfd9a186038304be44fd4037453243dad9004a9fb432ba20
+2026-10-04T02:53:52.8388059Z c1a82b6ab8bfd3e4bfd9a186038304be44fd4037453243dad9004a9fb432ba20
+2026-10-04T02:53:52.8405463Z ##[command]/usr/bin/docker ps --all --filter id=c1a82b6ab8bfd3e4bfd9a186038304be44fd4037453243dad9004a9fb432ba20 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-04T02:53:52.8521562Z c1a82b6ab8bfd3e4bfd9a186038304be44fd4037453243dad9004a9fb432ba20 Up Less than a second (health: starting)
+2026-10-04T02:53:52.8531920Z ##[command]/usr/bin/docker port c1a82b6ab8bfd3e4bfd9a186038304be44fd4037453243dad9004a9fb432ba20
+2026-10-04T02:53:52.8641840Z 6379/tcp -> 0.0.0.0:6379
+2026-10-04T02:53:52.8642129Z 6379/tcp -> [::]:6379
+2026-10-04T02:53:52.8681459Z ##[endgroup]
+2026-10-04T02:53:52.8688675Z ##[group]Waiting for all services to be ready
+2026-10-04T02:53:52.8699691Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" c1a82b6ab8bfd3e4bfd9a186038304be44fd4037453243dad9004a9fb432ba20
+2026-10-04T02:53:52.8818937Z starting
+2026-10-04T02:53:52.8828768Z redis service is starting, waiting 2 seconds before checking again.
+2026-10-04T02:53:54.8830156Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" c1a82b6ab8bfd3e4bfd9a186038304be44fd4037453243dad9004a9fb432ba20
+2026-10-04T02:53:54.8936085Z starting
+2026-10-04T02:53:54.8956417Z redis service is starting, waiting 3 seconds before checking again.
+2026-10-04T02:53:58.6788865Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" c1a82b6ab8bfd3e4bfd9a186038304be44fd4037453243dad9004a9fb432ba20
+2026-10-04T02:53:58.6896203Z healthy
+2026-10-04T02:53:58.6909872Z redis service is healthy.
+2026-10-04T02:53:58.6910790Z ##[endgroup]
+2026-10-04T02:53:58.7138840Z ##[group]Run actions/checkout@v6
+2026-10-04T02:53:58.7139260Z with:
+2026-10-04T02:53:58.7139507Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T02:53:58.7141780Z   token: ***
+2026-10-04T02:53:58.7141989Z   ssh-strict: true
+2026-10-04T02:53:58.7142204Z   ssh-user: git
+2026-10-04T02:53:58.7142384Z   persist-credentials: true
+2026-10-04T02:53:58.7142584Z   clean: true
+2026-10-04T02:53:58.7143021Z   sparse-checkout-cone-mode: true
+2026-10-04T02:53:58.7143227Z   fetch-depth: 1
+2026-10-04T02:53:58.7143394Z   fetch-tags: false
+2026-10-04T02:53:58.7143583Z   show-progress: true
+2026-10-04T02:53:58.7143766Z   lfs: false
+2026-10-04T02:53:58.7143927Z   submodules: false
+2026-10-04T02:53:58.7144102Z   set-safe-directory: true
+2026-10-04T02:53:58.7144346Z   allow-unsafe-pr-checkout: false
+2026-10-04T02:53:58.7144737Z ##[endgroup]
+2026-10-04T02:53:58.7993002Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T02:53:58.7994261Z ##[group]Getting Git version info
+2026-10-04T02:53:58.7994663Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T02:53:58.7995186Z [command]/usr/bin/git version
+2026-10-04T02:53:58.8186920Z git version 2.55.0
+2026-10-04T02:53:58.8206034Z ##[endgroup]
+2026-10-04T02:53:58.8217549Z Temporarily overriding HOME='/home/runner/work/_temp/b31feb03-5ede-4021-beba-bf9b6b04086a' before making global git config changes
+2026-10-04T02:53:58.8218273Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T02:53:58.8221970Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T02:53:58.8268567Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T02:53:58.8272237Z ##[group]Determining repository object format
+2026-10-04T02:53:58.8274526Z ##[endgroup]
+2026-10-04T02:53:58.8275106Z ##[group]Initializing the repository
+2026-10-04T02:53:58.8277751Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T02:53:58.8401429Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-04T02:53:58.8401971Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-04T02:53:58.8402629Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-04T02:53:58.8403122Z hint: call:
+2026-10-04T02:53:58.8403359Z hint:
+2026-10-04T02:53:58.8403745Z hint: 	git config --global init.defaultBranch <name>
+2026-10-04T02:53:58.8404147Z hint:
+2026-10-04T02:53:58.8404510Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-04T02:53:58.8405169Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-04T02:53:58.8405613Z hint:
+2026-10-04T02:53:58.8405823Z hint: 	git branch -m <name>
+2026-10-04T02:53:58.8406142Z hint:
+2026-10-04T02:53:58.8406566Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-04T02:53:58.8407202Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-04T02:53:58.8413532Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T02:53:58.8458459Z ##[endgroup]
+2026-10-04T02:53:58.8458978Z ##[group]Disabling automatic garbage collection
+2026-10-04T02:53:58.8462469Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-04T02:53:58.8487668Z ##[endgroup]
+2026-10-04T02:53:58.8488104Z ##[group]Setting up auth
+2026-10-04T02:53:58.8489052Z Removing SSH command configuration
+2026-10-04T02:53:58.8493685Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T02:53:58.8519212Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T02:53:58.8821890Z Removing HTTP extra header
+2026-10-04T02:53:58.8826398Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T02:53:58.8852124Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T02:53:58.9032103Z Removing includeIf entries pointing to credentials config files
+2026-10-04T02:53:58.9036984Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T02:53:58.9062163Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T02:53:58.9248080Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-9035addd-a8f5-4a7f-909b-da453ebd64d0.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-04T02:53:58.9279924Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-9035addd-a8f5-4a7f-909b-da453ebd64d0.config
+2026-10-04T02:53:58.9305133Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-9035addd-a8f5-4a7f-909b-da453ebd64d0.config
+2026-10-04T02:53:58.9333281Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-9035addd-a8f5-4a7f-909b-da453ebd64d0.config
+2026-10-04T02:53:58.9358298Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-9035addd-a8f5-4a7f-909b-da453ebd64d0.config
+2026-10-04T02:53:58.9406400Z ##[endgroup]
+2026-10-04T02:53:58.9406861Z ##[group]Fetching the repository
+2026-10-04T02:53:58.9413110Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +09c637f506d74b69aa241ed5381a02a064f77edf:refs/remotes/origin/ci/B-611-116-611-before
+2026-10-04T02:54:00.3729270Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T02:54:00.3730151Z  * [new ref]         09c637f506d74b69aa241ed5381a02a064f77edf -> origin/ci/B-611-116-611-before
+2026-10-04T02:54:00.3740675Z [command]/usr/bin/git branch --list --remote origin/ci/B-611-116-611-before
+2026-10-04T02:54:00.3760351Z   origin/ci/B-611-116-611-before
+2026-10-04T02:54:00.3767934Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-611-116-611-before
+2026-10-04T02:54:00.3786206Z 09c637f506d74b69aa241ed5381a02a064f77edf
+2026-10-04T02:54:00.3789385Z ##[endgroup]
+2026-10-04T02:54:00.3789763Z ##[group]Determining the checkout info
+2026-10-04T02:54:00.3791249Z ##[endgroup]
+2026-10-04T02:54:00.3794616Z [command]/usr/bin/git sparse-checkout disable
+2026-10-04T02:54:00.3878695Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-04T02:54:00.3903595Z ##[group]Checking out the ref
+2026-10-04T02:54:00.3907149Z [command]/usr/bin/git checkout --progress --force -B ci/B-611-116-611-before refs/remotes/origin/ci/B-611-116-611-before
+2026-10-04T02:54:00.5582453Z Switched to a new branch 'ci/B-611-116-611-before'
+2026-10-04T02:54:00.5586028Z branch 'ci/B-611-116-611-before' set up to track 'origin/ci/B-611-116-611-before'.
+2026-10-04T02:54:00.5605815Z ##[endgroup]
+2026-10-04T02:54:00.5638596Z [command]/usr/bin/git log -1 --format=%H
+2026-10-04T02:54:00.5657246Z 09c637f506d74b69aa241ed5381a02a064f77edf
+2026-10-04T02:54:00.5863515Z ##[group]Run actions/setup-node@v6
+2026-10-04T02:54:00.5863742Z with:
+2026-10-04T02:54:00.5863902Z   node-version: 20
+2026-10-04T02:54:00.5864069Z   cache: npm
+2026-10-04T02:54:00.5864228Z   check-latest: false
+2026-10-04T02:54:00.5866159Z   token: ***
+2026-10-04T02:54:00.5866341Z   package-manager-cache: true
+2026-10-04T02:54:00.5866550Z ##[endgroup]
+2026-10-04T02:54:00.6955441Z Attempting to download 20...
+2026-10-04T02:54:01.1191718Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-04T02:54:01.3734234Z Extracting ...
+2026-10-04T02:54:01.3824444Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/9d285ce6-534a-406b-aff2-c31efa2fdc1d -f /home/runner/work/_temp/8e602395-9b57-4644-8e91-0c909a71dee0
+2026-10-04T02:54:02.2297486Z Adding to the cache ...
+2026-10-04T02:54:04.0524273Z ##[group]Environment details
+2026-10-04T02:54:04.2441894Z node: v20.20.2
+2026-10-04T02:54:04.2442126Z npm: 10.8.2
+2026-10-04T02:54:04.2442308Z yarn: 1.22.22
+2026-10-04T02:54:04.2442728Z ##[endgroup]
+2026-10-04T02:54:04.2458175Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+2026-10-04T02:54:04.3344834Z /home/runner/.npm
+2026-10-04T02:54:04.3925585Z Cache hit for: node-cache-Linux-x64-npm-1c658f1a35f7b309848c416454e12a0f8c258736d5e30a9676088e8641c298ba
+2026-10-04T02:54:04.9223203Z Received 86861520 of 86861520 (100.0%), 179.7 MBs/sec
+2026-10-04T02:54:04.9224243Z Cache Size: ~83 MB (86861520 B)
+2026-10-04T02:54:04.9250975Z [command]/usr/bin/tar -xf /home/runner/work/_temp/bf913f16-376c-4416-b6f6-75e5402df738/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+2026-10-04T02:54:05.0639781Z Cache restored successfully
+2026-10-04T02:54:05.0680327Z Cache restored from key: node-cache-Linux-x64-npm-1c658f1a35f7b309848c416454e12a0f8c258736d5e30a9676088e8641c298ba
+2026-10-04T02:54:05.0858072Z ##[group]Run npm ci
+2026-10-04T02:54:05.0858321Z npm ci
+2026-10-04T02:54:05.1044445Z shell: /usr/bin/bash -e {0}
+2026-10-04T02:54:05.1044789Z ##[endgroup]
+2026-10-04T02:54:09.7872517Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-04T02:54:10.5883317Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-04T02:54:11.3821202Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T02:54:12.4500429Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T02:54:12.4704686Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T02:54:12.4957427Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T02:54:22.9116090Z 
+2026-10-04T02:54:22.9116800Z > growth-project-backend@1.0.0 postinstall
+2026-10-04T02:54:22.9117147Z > prisma generate
+2026-10-04T02:54:22.9117261Z 
+2026-10-04T02:54:23.6507311Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T02:54:26.7685268Z ┌─────────────────────────────────────────────────────────┐
+2026-10-04T02:54:26.7686189Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+2026-10-04T02:54:26.7686547Z 
+2026-10-04T02:54:26.7686987Z │                                                         │
+2026-10-04T02:54:26.7687544Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.74s
+2026-10-04T02:54:26.7688249Z │  This is a major update - please follow the guide at    │
+2026-10-04T02:54:26.7688641Z 
+2026-10-04T02:54:26.7689109Z │  https://pris.ly/d/major-version-upgrade                │
+2026-10-04T02:54:26.7689841Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T02:54:26.7692096Z │                                                         │
+2026-10-04T02:54:26.7692915Z │  Run the following to update                            │
+2026-10-04T02:54:26.7693537Z │    npm i --save-dev prisma@latest                       │
+2026-10-04T02:54:26.7694436Z │    npm i @prisma/client@latest                          │
+2026-10-04T02:54:26.7695081Z └─────────────────────────────────────────────────────────┘
+2026-10-04T02:54:26.7695626Z 
+2026-10-04T02:54:26.7696331Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+2026-10-04T02:54:26.7696924Z 
+2026-10-04T02:54:26.8202628Z 
+2026-10-04T02:54:26.8203230Z > growth-project-backend@1.0.0 prepare
+2026-10-04T02:54:26.8203690Z > lefthook install
+2026-10-04T02:54:26.8203873Z 
+2026-10-04T02:54:26.8821611Z sync hooks: ✔️(pre-commit, commit-msg)
+2026-10-04T02:54:26.9065042Z 
+2026-10-04T02:54:26.9066921Z added 1117 packages, and audited 1118 packages in 22s
+2026-10-04T02:54:26.9067288Z 
+2026-10-04T02:54:26.9067535Z 202 packages are looking for funding
+2026-10-04T02:54:26.9068437Z   run `npm fund` for details
+2026-10-04T02:54:26.9146501Z 
+2026-10-04T02:54:26.9147787Z 4 vulnerabilities (1 moderate, 3 high)
+2026-10-04T02:54:26.9148847Z 
+2026-10-04T02:54:26.9150699Z To address issues that do not require attention, run:
+2026-10-04T02:54:26.9152347Z   npm audit fix
+2026-10-04T02:54:26.9152521Z 
+2026-10-04T02:54:26.9152826Z To address all issues (including breaking changes), run:
+2026-10-04T02:54:26.9153496Z   npm audit fix --force
+2026-10-04T02:54:26.9153743Z 
+2026-10-04T02:54:26.9153905Z Run `npm audit` for details.
+2026-10-04T02:54:26.9793999Z ##[group]Run npx prisma generate
+2026-10-04T02:54:26.9794273Z npx prisma generate
+2026-10-04T02:54:26.9851675Z shell: /usr/bin/bash -e {0}
+2026-10-04T02:54:26.9851913Z ##[endgroup]
+2026-10-04T02:54:27.9654114Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T02:54:30.9545231Z 
+2026-10-04T02:54:30.9546668Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.60s
+2026-10-04T02:54:30.9547014Z 
+2026-10-04T02:54:30.9547306Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T02:54:30.9547584Z 
+2026-10-04T02:54:30.9547825Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+2026-10-04T02:54:30.9548064Z 
+2026-10-04T02:54:31.0549137Z ##[group]Run set -euo pipefail
+2026-10-04T02:54:31.0549399Z set -euo pipefail
+2026-10-04T02:54:31.0549723Z test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+2026-10-04T02:54:31.0550116Z mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+2026-10-04T02:54:31.0550402Z echo "specs: ${SPECS[*]}"
+2026-10-04T02:54:31.0550894Z npx jest --ci --runInBand "${SPECS[@]}"
+2026-10-04T02:54:31.0608392Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T02:54:31.0608675Z env:
+2026-10-04T02:54:31.0608865Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-04T02:54:31.0609154Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-04T02:54:31.0609437Z ##[endgroup]
+2026-10-04T02:54:31.0690336Z specs: test/privacy-diagnostics-disclosure.spec.ts test/privacy-round8-retention.spec.ts test/privacy-owner-answers.spec.ts
+2026-10-04T02:54:39.2561139Z FAIL test/privacy-round8-retention.spec.ts (7.364 s)
+2026-10-04T02:54:39.2565166Z   ● #611 B-611-10: /help/delete-account keeps the same list as the Privacy Policy › lists the closed-account record, the sign-in provider ID and the 30-day one-way code
+2026-10-04T02:54:39.2565908Z 
+2026-10-04T02:54:39.2566123Z     expect(received).toContain(expected) // indexOf
+2026-10-04T02:54:39.2566417Z 
+2026-10-04T02:54:39.2567451Z     Expected substring: "Closed account: a closed-account record with no name, contact details or profile, holding only an internal account number, the account type and dates such as when the account was opened and closed"
+2026-10-04T02:54:39.2572108Z     Received string:    "What we keep, and for how long Payment and tax records held by Stripe, our payment processor, for as long as the law requires. Our own copies keep only amounts, dates and payment references, with no name or contact details. One deletion record with a random reference, the date and the result. It holds no name, email or account details. If you coach: your clients are not deleted. They keep their own data and the plans you assigned them, without your contact details, and are no longer linked to you. Backups: database backups and copies are never kept more than six months after a confirmed deletion request. Copies of the database made before an update to the service are deleted 30 days after the update is verified, and never kept beyond 90 days. Security and audit logs: as long as needed to protect the service and meet legal duties. "
+2026-10-04T02:54:39.2584124Z 
+2026-10-04T02:54:39.2584868Z        96 |     expect(privacyDeletion).toContain(CLOSED_ACCOUNT);
+2026-10-04T02:54:39.2585911Z        97 |     expect(privacyDeletion).toContain(ONE_WAY_CODE);
+2026-10-04T02:54:39.2587137Z     >  98 |     expect(helpKeep).toContain(`Closed account: ${CLOSED_ACCOUNT}`);
+2026-10-04T02:54:39.2588024Z           |                      ^
+2026-10-04T02:54:39.2588819Z        99 |     expect(helpKeep).toContain(HELP_PROVIDER_ID);
+2026-10-04T02:54:39.2589461Z       100 |   });
+2026-10-04T02:54:39.2589843Z       101 |
+2026-10-04T02:54:39.2590037Z 
+2026-10-04T02:54:39.2590668Z       at Object.<anonymous> (test/privacy-round8-retention.spec.ts:98:22)
+2026-10-04T02:54:39.2591053Z 
+2026-10-04T02:54:39.2592278Z   ● #611 B-611-10: /help/delete-account keeps the same list as the Privacy Policy › lists Anthropic’s 30-day copy, de-identified information and the vendor windows
+2026-10-04T02:54:39.2593053Z 
+2026-10-04T02:54:39.2593283Z     expect(received).toContain(expected) // indexOf
+2026-10-04T02:54:39.2593586Z 
+2026-10-04T02:54:39.2594423Z     Expected substring: "What Anthropic received: Anthropic deletes what it receives within 30 days, except where its usage policy or the law requires it to keep it longer."
+2026-10-04T02:54:39.2598016Z     Received string:    "What we keep, and for how long Payment and tax records held by Stripe, our payment processor, for as long as the law requires. Our own copies keep only amounts, dates and payment references, with no name or contact details. One deletion record with a random reference, the date and the result. It holds no name, email or account details. If you coach: your clients are not deleted. They keep their own data and the plans you assigned them, without your contact details, and are no longer linked to you. Backups: database backups and copies are never kept more than six months after a confirmed deletion request. Copies of the database made before an update to the service are deleted 30 days after the update is verified, and never kept beyond 90 days. Security and audit logs: as long as needed to protect the service and meet legal duties. "
+2026-10-04T02:54:39.2600167Z 
+2026-10-04T02:54:39.2600318Z       101 |
+2026-10-04T02:54:39.2601352Z       102 |   it('lists Anthropic’s 30-day copy, de-identified information and the vendor windows', () => {
+2026-10-04T02:54:39.2602174Z     > 103 |     expect(helpKeep).toContain(`What Anthropic received: ${ANTHROPIC}`);
+2026-10-04T02:54:39.2602713Z           |                      ^
+2026-10-04T02:54:39.2603273Z       104 |     expect(helpKeep).toContain(`De-identified information: ${DEIDENTIFIED}`);
+2026-10-04T02:54:39.2603890Z       105 |     expect(helpKeep).toContain(HELP_VENDOR_WINDOWS);
+2026-10-04T02:54:39.2604288Z       106 |   });
+2026-10-04T02:54:39.2604433Z 
+2026-10-04T02:54:39.2604909Z       at Object.<anonymous> (test/privacy-round8-retention.spec.ts:103:22)
+2026-10-04T02:54:39.2605149Z 
+2026-10-04T02:54:39.2605682Z   ● #611 B-611-10: /help/delete-account keeps the same list as the Privacy Policy › every item the Privacy Policy keeps has its counterpart on the help page
+2026-10-04T02:54:39.2606099Z 
+2026-10-04T02:54:39.2606215Z     expect(received).toMatch(expected)
+2026-10-04T02:54:39.2606367Z 
+2026-10-04T02:54:39.2606535Z     Expected pattern: /Closed account: a closed-account record/
+2026-10-04T02:54:39.2609096Z     Received string:  "What we keep, and for how long Payment and tax records held by Stripe, our payment processor, for as long as the law requires. Our own copies keep only amounts, dates and payment references, with no name or contact details. One deletion record with a random reference, the date and the result. It holds no name, email or account details. If you coach: your clients are not deleted. They keep their own data and the plans you assigned them, without your contact details, and are no longer linked to you. Backups: database backups and copies are never kept more than six months after a confirmed deletion request. Copies of the database made before an update to the service are deleted 30 days after the update is verified, and never kept beyond 90 days. Security and audit logs: as long as needed to protect the service and meet legal duties. "
+2026-10-04T02:54:39.2611417Z 
+2026-10-04T02:54:39.2611748Z       131 |     for (const [onPrivacy, onHelp] of pairs) {
+2026-10-04T02:54:39.2612262Z       132 |       expect(privacy).toMatch(onPrivacy);
+2026-10-04T02:54:39.2612766Z     > 133 |       expect(helpKeep).toMatch(onHelp);
+2026-10-04T02:54:39.2613186Z           |                        ^
+2026-10-04T02:54:39.2613463Z       134 |     }
+2026-10-04T02:54:39.2613713Z       135 |   });
+2026-10-04T02:54:39.2613957Z       136 |
+2026-10-04T02:54:39.2614074Z 
+2026-10-04T02:54:39.2614267Z       at Object.<anonymous> (test/privacy-round8-retention.spec.ts:133:24)
+2026-10-04T02:54:39.2614499Z 
+2026-10-04T02:54:39.2615098Z   ● #611 B-611-10: /help/delete-account keeps the same list as the Privacy Policy › the shared strings are exported once and used by both pages
+2026-10-04T02:54:39.2615497Z 
+2026-10-04T02:54:39.2615649Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T02:54:39.2615832Z 
+2026-10-04T02:54:39.2615913Z     Expected: "string"
+2026-10-04T02:54:39.2616102Z     Received: "undefined"
+2026-10-04T02:54:39.2616221Z 
+2026-10-04T02:54:39.2616344Z       143 |     ]) {
+2026-10-04T02:54:39.2616921Z       144 |       const value: unknown = Reflect.get(trust, name);
+2026-10-04T02:54:39.2617618Z     > 145 |       expect(typeof value).toBe('string');
+2026-10-04T02:54:39.2618102Z           |                            ^
+2026-10-04T02:54:39.2618642Z       146 |       if (typeof value !== 'string') continue;
+2026-10-04T02:54:39.2619164Z       147 |       expect(privacy).toContain(value);
+2026-10-04T02:54:39.2619630Z       148 |       expect(deleteHelp).toContain(value);
+2026-10-04T02:54:39.2619856Z 
+2026-10-04T02:54:39.2620056Z       at Object.<anonymous> (test/privacy-round8-retention.spec.ts:145:28)
+2026-10-04T02:54:39.2620284Z 
+2026-10-04T02:54:39.2620962Z   ● #611 B-611-11: the procedures that create database copies carry the published limits › deploy runbook §2 step 3 states the §1.1 rules and drops "S3 bucket, etc."
+2026-10-04T02:54:39.2621400Z 
+2026-10-04T02:54:39.2621516Z     expect(received).toMatch(expected)
+2026-10-04T02:54:39.2621801Z 
+2026-10-04T02:54:39.2621950Z     Expected pattern: /one owner-controlled location/
+2026-10-04T02:54:39.2622369Z     Received string:  "3. **Take a reference dump before any deploy that includes a migration**,
+2026-10-04T02:54:39.2622796Z        and be precise about what it is:·
+2026-10-04T02:54:39.2623027Z        ```sh
+2026-10-04T02:54:39.2623248Z        pg_dump \"$STAGING_DATABASE_URL\" \\
+2026-10-04T02:54:39.2623550Z          --file backups/staging-$(date +%F-%H%M).sql
+2026-10-04T02:54:39.2623812Z        ```·
+2026-10-04T02:54:39.2624080Z        Store the dump somewhere durable (1Password vault attachment, S3
+2026-10-04T02:54:39.2624539Z        bucket, etc.) — never commit it. Do **not** add `--no-owner --no-acl`:
+2026-10-04T02:54:39.2624939Z        the S1 privilege/RLS migration's state _is_ owners, grants and
+2026-10-04T02:54:39.2625325Z        policies, and a dump that excludes them cannot reproduce it. Even a
+2026-10-04T02:54:39.2625716Z        full dump is a reference copy for diagnosis and comparison; **this
+2026-10-04T02:54:39.2626117Z        repository contains no demonstrated restore procedure for a live
+2026-10-04T02:54:39.2626507Z        database** (no drill, no ACL/owner restoration proof), so a dump load
+2026-10-04T02:54:39.2627069Z        must not be presented or planned as the rollback route (see §3 step 4).·
+2026-10-04T02:54:39.2627369Z     "
+2026-10-04T02:54:39.2627460Z 
+2026-10-04T02:54:39.2627924Z       154 |   it('deploy runbook §2 step 3 states the §1.1 rules and drops "S3 bucket, etc."', () => {
+2026-10-04T02:54:39.2628846Z       155 |     const step = between(RUNBOOK, '3. **Take a reference dump before any deploy', '4. **Deploy.**');
+2026-10-04T02:54:39.2629676Z     > 156 |     expect(step).toMatch(/one owner-controlled location/);
+2026-10-04T02:54:39.2630163Z           |                  ^
+2026-10-04T02:54:39.2630732Z       157 |     expect(step).toMatch(/named with (its|the) date/);
+2026-10-04T02:54:39.2631522Z       158 |     expect(step).toMatch(/30 days after the deploy (it was taken for )?is verified/);
+2026-10-04T02:54:39.2632244Z       159 |     expect(step).toMatch(/never (keep it|kept) (for )?more than 90 days/i);
+2026-10-04T02:54:39.2632567Z 
+2026-10-04T02:54:39.2632759Z       at Object.<anonymous> (test/privacy-round8-retention.spec.ts:156:18)
+2026-10-04T02:54:39.2632992Z 
+2026-10-04T02:54:39.2633450Z   ● #611 B-611-11: the procedures that create database copies carry the published limits › deploy runbook §3 step 1 points to the same limits
+2026-10-04T02:54:39.2633835Z 
+2026-10-04T02:54:39.2633946Z     expect(received).toMatch(expected)
+2026-10-04T02:54:39.2634096Z 
+2026-10-04T02:54:39.2634252Z     Expected pattern: /30 days/
+2026-10-04T02:54:39.2634644Z     Received string:  "1. **Backup before deploy** with `pg_dump` (§2 step 3).
+2026-10-04T02:54:39.2634936Z     "
+2026-10-04T02:54:39.2635028Z 
+2026-10-04T02:54:39.2635397Z       165 |   it('deploy runbook §3 step 1 points to the same limits', () => {
+2026-10-04T02:54:39.2636230Z       166 |     const step = between(RUNBOOK, '1. **Backup before deploy**', '2. **Run the migration');
+2026-10-04T02:54:39.2636955Z     > 167 |     expect(step).toMatch(/30 days/);
+2026-10-04T02:54:39.2637371Z           |                  ^
+2026-10-04T02:54:39.2637768Z       168 |     expect(step).toMatch(/90 days/);
+2026-10-04T02:54:39.2638347Z       169 |     expect(step).toContain('privacy/vendor-deletion-and-backups.md');
+2026-10-04T02:54:39.2638933Z       170 |   });
+2026-10-04T02:54:39.2639079Z 
+2026-10-04T02:54:39.2639271Z       at Object.<anonymous> (test/privacy-round8-retention.spec.ts:167:18)
+2026-10-04T02:54:39.2639499Z 
+2026-10-04T02:54:39.2640064Z   ● #611 B-611-11: the procedures that create database copies carry the published limits › the business continuity plan weekly export follows §1.1, including old S3 versions
+2026-10-04T02:54:39.2640600Z 
+2026-10-04T02:54:39.2640729Z     expect(received).toContain(expected) // indexOf
+2026-10-04T02:54:39.2640905Z 
+2026-10-04T02:54:39.2641083Z     Expected substring: "privacy/vendor-deletion-and-backups.md"
+2026-10-04T02:54:39.2641438Z     Received string:    "### Manual backup cadence·
+2026-10-04T02:54:39.2641826Z     In addition to Supabase automated backups, perform a manual export weekly:·
+2026-10-04T02:54:39.2642137Z     ```bash
+2026-10-04T02:54:39.2642353Z     # Run from a secure machine with DATABASE_URL set
+2026-10-04T02:54:39.2642737Z     pg_dump \"$DATABASE_URL\" --no-password -F c -f \"backup_$(date +%Y%m%d).dump\"
+2026-10-04T02:54:39.2643147Z     # Upload to <<BACKUP_STORAGE_LOCATION>> with versioning enabled
+2026-10-04T02:54:39.2643439Z     ```·
+2026-10-04T02:54:39.2644078Z     Manual backup location: `<<BACKUP_STORAGE_LOCATION>>` (e.g. S3 bucket `The Growth Project, LLC-db-backups` with versioning enabled and lifecycle policy to expire after 90 days).·
+2026-10-04T02:54:39.2644627Z     "
+2026-10-04T02:54:39.2644713Z 
+2026-10-04T02:54:39.2645180Z       172 |   it('the business continuity plan weekly export follows §1.1, including old S3 versions', () => {
+2026-10-04T02:54:39.2646108Z       173 |     const cadence = between(BCP, '### Manual backup cadence', '### Backup test cadence');
+2026-10-04T02:54:39.2646955Z     > 174 |     expect(cadence).toContain('privacy/vendor-deletion-and-backups.md');
+2026-10-04T02:54:39.2647486Z           |                     ^
+2026-10-04T02:54:39.2647911Z       175 |     expect(cadence).toMatch(/90 days/);
+2026-10-04T02:54:39.2648513Z       176 |     expect(cadence).toMatch(/noncurrent/i);
+2026-10-04T02:54:39.2648903Z       177 |   });
+2026-10-04T02:54:39.2649057Z 
+2026-10-04T02:54:39.2649262Z       at Object.<anonymous> (test/privacy-round8-retention.spec.ts:174:21)
+2026-10-04T02:54:39.2649496Z 
+2026-10-04T02:54:39.2650056Z   ● #611 B-611-11: the procedures that create database copies carry the published limits › procedures §1.1 no longer quotes the runbook’s open-ended storage line as current
+2026-10-04T02:54:39.2650601Z 
+2026-10-04T02:54:39.2650798Z     expect(received).not.toMatch(expected)
+2026-10-04T02:54:39.2650996Z 
+2026-10-04T02:54:39.2651111Z     Expected pattern: not /S3 bucket, etc/
+2026-10-04T02:54:39.2651457Z     Received string:      "### 1.1 Our own database dumps (operator-held copies)
+2026-10-04T02:54:39.2651687Z 
+2026-10-04T02:54:39.2652957Z     **Fact (repo).** `docs/deploy-runbook.md` §2 step 3 / §3 tells the operator to `pg_dump` a reference copy before any deploy with a migration, and store it \"somewhere durable (1Password vault attachment, S3 bucket, etc.)\". The business continuity plan template also proposes a weekly manual export. These are full copies of personal data. **Nothing ages them out automatically.**
+2026-10-04T02:54:39.2653919Z 
+2026-10-04T02:54:39.2654237Z     **Procedure (ADOPTED by the owner 2026-10-03, O-611-4; the 30-day and 90-day limits are published on the policies):**
+2026-10-04T02:54:39.2654777Z     - Every dump is named with its date and stored only in one owner-controlled location.
+2026-10-04T02:54:39.2655203Z     - Delete a dump 30 days after the deploy it was taken for is verified.
+2026-10-04T02:54:39.2655814Z     - Never keep any dump for more than 90 days. That bound alone keeps the six-month promise, even if a dump is taken the day before a deletion request.
+2026-10-04T02:54:39.2656903Z     - On the first working day of each month, the owner lists the stored dumps and deletes any older than these limits. The check goes in the quarterly review log (`docs/soc2/runbook-quarterly-review.md`).
+2026-10-04T02:54:39.2657687Z     - A dump is never copied to a laptop disk outside the vault. If one is, it is deleted the same day.
+2026-10-04T02:54:39.2657969Z 
+2026-10-04T02:54:39.2658046Z     "
+2026-10-04T02:54:39.2658140Z 
+2026-10-04T02:54:39.2658605Z       179 |   it('procedures §1.1 no longer quotes the runbook’s open-ended storage line as current', () => {
+2026-10-04T02:54:39.2659510Z       180 |     const dumps = between(DOC, '### 1.1 Our own database dumps', '### 1.2 Restores');
+2026-10-04T02:54:39.2660286Z     > 181 |     expect(dumps).not.toMatch(/S3 bucket, etc/);
+2026-10-04T02:54:39.2660944Z           |                       ^
+2026-10-04T02:54:39.2661498Z       182 |     expect(dumps).not.toMatch(/Nothing ages them out automatically/);
+2026-10-04T02:54:39.2661945Z       183 |   });
+2026-10-04T02:54:39.2662210Z       184 | });
+2026-10-04T02:54:39.2662346Z 
+2026-10-04T02:54:39.2662545Z       at Object.<anonymous> (test/privacy-round8-retention.spec.ts:181:23)
+2026-10-04T02:54:39.2662774Z 
+2026-10-04T02:54:39.2663159Z   ● #611 C-611-13..16 and the Sign in with Apple ruling › C-611-13: Mux also receives the device IP address and device type
+2026-10-04T02:54:39.2663472Z 
+2026-10-04T02:54:39.2663605Z     expect(received).toContain(expected) // indexOf
+2026-10-04T02:54:39.2663811Z 
+2026-10-04T02:54:39.2664761Z     Expected substring: "Mux — hosting and playback of the videos coaches upload. It receives the video files, with no name, email or account details attached. When a video is uploaded or played, the device connects to Mux directly, so Mux also receives its IP address and device type."
+2026-10-04T02:54:39.2719564Z     Received string:    " The Growth Project Privacy Consumer Health Privacy Terms Security Status Privacy Policy Last reviewed 2026-10-03 The Growth Project (“TGP”, “we”, “us”) provides personal-training software used by independent coaches and the people they coach, including Roman, an AI assistant inside the app. This policy explains what personal data we collect, where it comes from, why we use it, who receives it, how long we keep it and the choices you have. It describes the app as it works today; features that are switched on only for some accounts are marked “if enabled”. It is a company-drafted statement of practice, and counsel review is recommended. Personal training only TGP is a personal-training service. It is not a medical service, it does not diagnose or treat any condition, and nothing in the app, from Roman or from your coach is medical advice. We collect health and fitness information only to deliver personal training that you ask for. Consumer health data Much of what you share with TGP is health information, for example your consultation answers, body measurements, food logs, sleep and heart-rate data. Our Consumer Health Data Privacy Policy describes that data, who receives it and how to exercise your rights over it, including the rights of Washington residents under the My Health My Data Act (RCW 19.373). Read the Consumer Health Data Privacy Policy What we collect Depending on how you use TGP, we collect: Account and contact details — your name, email address (an Apple private relay address if you choose Hide My Email with Sign in with Apple), optional phone number, account role (client or coach), the invite code you used and the coach you are connected to. Passwords are handled by our authentication provider and are never stored in plain text. Identifiers — your TGP account ID, sign-in identifiers from Supabase, Apple or Google, and your device’s push-notification token. Consultation answers — your goal and why it matters, the sex used for nutrition formulas, date of birth, height, weight and goal weight, activity level, sleep, training experience and preferences, injuries, session length, training days and time, where you train and your equipment, how you eat, foods you avoid, meals per day, tracking history and what gets in the way, and your answers to the readiness questions (heart condition, chest pain, dizziness, bone or joint problems, medication, pregnancy or another reason) with any notes you add. We also store what we work out from them: your calorie and macro targets and the training plan you are assigned. Earlier versions of your answers are kept while your account exists. Coaching logs — meals and foods you log, macros, water, fasting, workouts (exercises, sets, reps, load and duration), check-ins (mood, energy, sleep and notes), habits, weight and progress entries. Apple Health or Health Connect data, only if you connect it — steps, active energy, heart rate, resting heart rate, heart-rate variability, VO2 max, workouts and distance, weight, body fat, blood pressure, sleep, blood-oxygen saturation, respiratory rate and body temperature, with the source, time and time zone of each reading. Apple Health is on iPhone; Health Connect is on Android. The app reads this data with your permission and sends it to our servers so you and your coach can see it; it does not write data back to Apple Health or Health Connect. Messages and community content — messages with your coach; posts, comments and reactions in the community spaces your coach runs, your space memberships and when you joined them; direct messages and voice notes if enabled; and reports and blocks you make. Roman conversations — what you write to Roman and Roman’s replies. Payments — card details are entered into Stripe’s checkout and are collected by Stripe. We receive and store payment status, amounts, currency, the package or subscription purchased, refunds, invoices, billing email, and your card brand, last four digits and expiry month. For coaches we also store Stripe payout status and amounts, the bank name and last four digits of the payout account, and AI-credit balances and spending. We never receive or store full card or bank account numbers. Support — conversations in in-app support chat (provided by Crisp) together with your name, email, role, plan and account workspace, and emails you send us. Device, usage and diagnostic data — IP address, browser or device type, app version, request times and security logs; product analytics events and screen views linked to your account ID; and crash and performance reports that include your account ID and email address. Food searches — the words you search for when logging food. Where it comes from You, when you sign up, complete the consultation, log, message, post or contact support. Your phone’s Apple Health or Health Connect store, only after you grant permission in the app. Your coach, who sets your plan and targets and writes to you. Our own systems and Roman, which calculate targets, generate plans and replies, and record how the app is used. Apple or Google, when you sign in with them, and Stripe, which tells us whether a payment succeeded. Other members, when they reply to you or mention you in a community space. How we use it To run your personal training: build your plan and targets, show your progress, and let you and your coach work together. To power Roman and your coach’s AI drafts about you, after you agree (see “Roman and AI” below). To send the messages you expect: account emails, reminders and push notifications. To provide support, keep the service safe and secure, prevent abuse, moderate the community and fix problems. To understand, in aggregate, which parts of the app work and which do not. To process payments and coach payouts, and to meet legal, tax and accounting duties. We do not sell personal data. We do not use health data for advertising or marketing, we do not show third-party ads, and we do not track you across other companies’ apps or websites. We do not use your data to train AI models. Health and fitness data is never used for advertising or for data mining other than to improve health management, and is used for health research only with your permission. Who can see your data You. Your coach, and any coach on their team who is assigned to you: your profile, consultation answers including readiness answers, targets and plan, logs, check-ins, connected health data and your messages with them. If any readiness answer is yes, your coach is told so they can adjust your training. Members of a community space you belong to: what you post, comment or react there, and your name. Coaches can sort the members of their spaces by when they joined. Roman conversations are not visible to your coach, assistant coaches or any coach-facing screen. They are stored securely; TGP staff can access them only for support, safety and debugging. TGP staff, only when needed to provide support, keep people safe, fix problems, secure the service or meet a legal duty. The service providers listed below, only to run the service for us. Some coaches run programmes alongside a clinic partner. No account, consultation, coaching, health, wearable or Roman data is exchanged with any clinic partner, and clinic partners have no access to the app or to your data. Roman and AI Roman is an AI assistant powered by Anthropic. At the start of the consultation the app shows two separate boxes on one screen. The first, which you need to tick to continue, covers the personal-training waiver and lets TGP and your coach collect and use your information to coach you. The second is optional and starts unticked: it lets Roman and your coach’s AI drafts use your information, names Anthropic as the AI provider and lists the data it receives. If you leave it unticked, nothing about you is sent to Anthropic, and your plan, your coach, the community and Roman’s guided tour work as usual. When you use Roman, we send Anthropic your message, the earlier turns of that conversation, and context drawn from your own account: your profile, consultation and readiness answers, food logs, workouts and workout history, check-ins, wearable, health and sleep data, messages with your coach and the community posts you write. When your coach asks for an AI draft about you, the same kinds of data are sent. Only your own data is used — never another client’s, and never your coach’s private notes about you. Roman conversations are kept until you delete them or your account. You can delete a conversation at any time in the app, which removes its messages from our database straight away. You can allow or withdraw the optional AI agreement at any time in Settings > Privacy > Roman and AI; when you withdraw it, Roman and AI drafts about you stop until you agree again. If we turn it on, coaches can also use AI inbox sorting in the community. Anthropic sorts the community posts and messages a coach has not yet answered into five groups (urgent, a win to celebrate, a form check, general, no action needed) and writes a short summary of each for the coach. Sorting only includes posts and messages from members who ticked the optional AI box; everything else stays in the coach’s regular inbox, unsorted. For each item it receives up to 240 characters of the text, the name of the member who wrote it, the cohort name and how many hours ago it was posted. It only sorts and summarises: it never replies, posts or acts on anything, and only the coach sees the result. Perplexity, if enabled, is used to write short generic encouragement after your first logged milestones (it receives only the type of milestone, not your data). Roman gives general fitness and nutrition guidance, not medical advice. If something sounds like an emergency, Roman points you to 911; if you are in crisis, to 988. Service providers We use these providers to run the service. Each receives only what it needs for its job and processes it on our behalf. We do not sell data to them, and we do not let them use your data for their own advertising. Supabase — sign-in, database and file storage (for example voice notes, if enabled). Fly.io — hosting for our servers. Stripe — card payments, invoices and coach payouts. Anthropic — Roman and coach AI drafts, after you agree; sorting and summarising a coach’s unanswered community posts and messages for that coach, if turned on, only for members who agreed. Perplexity — generic milestone messages, if enabled. PostHog — product analytics. Session recording is off. Sentry — crash and performance monitoring. Crisp — in-app support chat. Resend — account and notification emails. Mux — hosting and playback of the videos coaches upload. It receives the video files, with no name, email or account details attached. Expo, with Apple and Google push services — delivery of push notifications. Apple and Google — Sign in with Apple and Google sign-in, if you choose them. Apple Health (iPhone) and Health Connect (Android) — the on-device health stores you can choose to connect. We read from them; we do not send your TGP data to them. USDA FoodData Central and Open Food Facts — food search. Our servers send them only the words you search for, never your name, account or health data. Search results are cached for 24 hours. Legal reasons We may disclose information when the law requires it, to protect someone’s safety, or to protect TGP and its users from fraud or abuse. If TGP is reorganised or sold, personal data would move only under this policy, and we would tell you first. How long we keep it Account, consultation, coaching, health and community data — while your account is open, until you delete it or ask us to delete it. Roman conversations — kept until you delete them or your account. Food search results — 24 hours in our cache. Payment, invoice and tax records — as long as the law requires. Security and audit logs — as long as needed to protect the service and meet legal duties. Backups — database backups and copies are never kept more than six months after a confirmed deletion request. Copies of the database made before an update to the service are deleted 30 days after the update is verified, and never kept beyond 90 days. Error reports in Sentry — 90 days. Email logs in Resend — 30 days. Product analytics in PostHog — a deleted person is removed from PostHog within 30 days of the deletion. What Anthropic receives — Anthropic deletes what it receives within 30 days, except where its usage policy or the law requires it to keep it longer. Deleting your account Your information is kept while your account is open. Deletion can be started in the app or by email. You can delete your account in the app: Settings, then Delete account. You confirm with your password or Sign in with Apple, and deletion is scheduled straight away with a 14-day grace period during which you can cancel. After that, your profile, consultation answers, logs, connected health data, Roman conversations, notifications and community memberships are permanently deleted, and the content of your community posts and messages is removed. If you used Sign in with Apple, we ask Apple to revoke TGP’s access. We keep only what we must: the payment records the law requires; security and audit logs; one deletion record with a random reference, the date and the result; and a closed-account record with no name, contact details or profile, holding only an internal account number, the account type and dates such as when the account was opened and closed, so the records we must keep still point to one closed account. While removing your sign-in account at your sign-in provider is still being retried, we also keep that provider’s account ID. Once it is removed, we keep only a one-way code made from it, for 30 days, so the app can tell you the account was deleted if you sign in again; then the code is discarded. You can also ask us to delete your account, or only some of your health data, by emailing Bradleyapple1031@gmail.com. We tell our service providers about deletion requests so they delete their copies too. At Stripe, deletion requests are handled with Stripe’s redaction tools; Stripe keeps the payment records the law requires. How to delete your account, with or without the app De-identified information After an account is deleted, de-identified, aggregated information that cannot identify the person may be kept. TGP takes reasonable measures so it cannot be linked to anyone, commits publicly to keep it only in de-identified form and never to try to re-identify it, and requires by contract anyone it shares it with to do the same. Your rights and choices See and download your data — in the app (Trust & Privacy, then Request data export) or by email. Correct your data — in the app, or by email. Delete your account or specific data — as described above. Withdraw your AI agreement — Roman and AI drafts about you stop. Disconnect Apple Health or Health Connect — at any time in the app or in your phone’s settings; we stop receiving new readings. Turn off push notifications — in your phone’s settings. To exercise any right, email Bradleyapple1031@gmail.com from the address on your account. We may ask you to confirm your identity, we never require you to create a new account, and we respond within 30 days. Where privacy laws give you more rights (for example in Washington, California, the UK or the EEA), we honour them. If we decline a request you can appeal, as described in the Consumer Health Data Privacy Policy. Children You must be 16 or older to use TGP. The service is not directed to children under 16 and we do not knowingly collect their data. If you believe a child under 16 has an account, email us and we will delete it. Security We protect data with encryption in transit and at rest, access controls and monitoring. No system is perfectly secure; our Security page describes what we do today. Security Changes When we change this policy we update the date at the top and, for material changes, tell you in the app or by email first. We will not collect new categories of health data, or use it for new purposes, without telling you and asking for your agreement first. Contact For privacy questions or requests, email Bradleyapple1031@gmail.com. We aim to reply within five business days. This policy is a company-drafted statement of practice; counsel review is recommended before relying on it for compliance with any specific regulation. The Growth Project Privacy Policy · Consumer Health Data Privacy Policy · Delete your account Bradleyapple1031@gmail.com "
+2026-10-04T02:54:39.2760333Z 
+2026-10-04T02:54:39.2760826Z       186 | describe('#611 C-611-13..16 and the Sign in with Apple ruling', () => {
+2026-10-04T02:54:39.2761544Z       187 |   it('C-611-13: Mux also receives the device IP address and device type', () => {
+2026-10-04T02:54:39.2762109Z     > 188 |     expect(privacy).toContain(
+2026-10-04T02:54:39.2762496Z           |                     ^
+2026-10-04T02:54:39.2763282Z       189 |       `Mux — hosting and playback of the videos coaches upload. It receives the video files, with no name, email or account details attached. ${MUX_DEVICE}`,
+2026-10-04T02:54:39.2763890Z       190 |     );
+2026-10-04T02:54:39.2764153Z       191 |   });
+2026-10-04T02:54:39.2764299Z 
+2026-10-04T02:54:39.2764499Z       at Object.<anonymous> (test/privacy-round8-retention.spec.ts:188:21)
+2026-10-04T02:54:39.2764728Z 
+2026-10-04T02:54:39.2765199Z   ● #611 C-611-13..16 and the Sign in with Apple ruling › C-611-14: the owner removes a person from PostHog within 21 days, inside the published 30
+2026-10-04T02:54:39.2765583Z 
+2026-10-04T02:54:39.2765690Z     expect(received).toMatch(expected)
+2026-10-04T02:54:39.2765837Z 
+2026-10-04T02:54:39.2766010Z     Expected pattern: /within 21 days of the deletion finalizing/
+2026-10-04T02:54:39.2768044Z     Received string:  "| PostHog (product analytics) | Events keyed by our user id (mobile `identify(user.id)`, server `distinctId` = user id; `src/analytics/`) | **Procedure (owner, within 30 days of the deletion finalizing):** delete the person in PostHog (Persons, or the persons API) with their events and recordings. [PostHog: controlling data storage](https://posthog.com/docs/privacy/data-storage): deletion runs asynchronously, and event data is cleared in off-peak runs. #608 does not call PostHog. | Owner (2026-10-03, O-611-5): product analytics on, session recording **off**; a deleted person is removed within 30 days of the deletion (published) |"
+2026-10-04T02:54:39.2769805Z 
+2026-10-04T02:54:39.2770443Z       194 |     const row = DOC.split('\n').find((line) => line.startsWith('| PostHog (product analytics)'));
+2026-10-04T02:54:39.2771215Z       195 |     expect(row).toBeDefined();
+2026-10-04T02:54:39.2771826Z     > 196 |     expect(row).toMatch(/within 21 days of the deletion finalizing/);
+2026-10-04T02:54:39.2772318Z           |                 ^
+2026-10-04T02:54:39.2772684Z       197 |     expect(privacy).toContain(
+2026-10-04T02:54:39.2773214Z       198 |       'a deleted person is removed from PostHog within 30 days of the deletion.',
+2026-10-04T02:54:39.2773645Z       199 |     );
+2026-10-04T02:54:39.2773791Z 
+2026-10-04T02:54:39.2773989Z       at Object.<anonymous> (test/privacy-round8-retention.spec.ts:196:17)
+2026-10-04T02:54:39.2774218Z 
+2026-10-04T02:54:39.2774669Z   ● #611 C-611-13..16 and the Sign in with Apple ruling › C-611-15: both policies commit to process de-identified data only in de-identified form
+2026-10-04T02:54:39.2775044Z 
+2026-10-04T02:54:39.2775186Z     expect(received).toContain(expected) // indexOf
+2026-10-04T02:54:39.2775365Z 
+2026-10-04T02:54:39.2776471Z     Expected substring: "After an account is deleted, de-identified, aggregated information that cannot identify the person may be kept. TGP takes reasonable measures so it cannot be linked to anyone, commits publicly to keep and use it only in de-identified form and never to try to re-identify it, and requires by contract anyone it shares it with to do the same."
+2026-10-04T02:54:39.2831608Z     Received string:    " The Growth Project Privacy Consumer Health Privacy Terms Security Status Privacy Policy Last reviewed 2026-10-03 The Growth Project (“TGP”, “we”, “us”) provides personal-training software used by independent coaches and the people they coach, including Roman, an AI assistant inside the app. This policy explains what personal data we collect, where it comes from, why we use it, who receives it, how long we keep it and the choices you have. It describes the app as it works today; features that are switched on only for some accounts are marked “if enabled”. It is a company-drafted statement of practice, and counsel review is recommended. Personal training only TGP is a personal-training service. It is not a medical service, it does not diagnose or treat any condition, and nothing in the app, from Roman or from your coach is medical advice. We collect health and fitness information only to deliver personal training that you ask for. Consumer health data Much of what you share with TGP is health information, for example your consultation answers, body measurements, food logs, sleep and heart-rate data. Our Consumer Health Data Privacy Policy describes that data, who receives it and how to exercise your rights over it, including the rights of Washington residents under the My Health My Data Act (RCW 19.373). Read the Consumer Health Data Privacy Policy What we collect Depending on how you use TGP, we collect: Account and contact details — your name, email address (an Apple private relay address if you choose Hide My Email with Sign in with Apple), optional phone number, account role (client or coach), the invite code you used and the coach you are connected to. Passwords are handled by our authentication provider and are never stored in plain text. Identifiers — your TGP account ID, sign-in identifiers from Supabase, Apple or Google, and your device’s push-notification token. Consultation answers — your goal and why it matters, the sex used for nutrition formulas, date of birth, height, weight and goal weight, activity level, sleep, training experience and preferences, injuries, session length, training days and time, where you train and your equipment, how you eat, foods you avoid, meals per day, tracking history and what gets in the way, and your answers to the readiness questions (heart condition, chest pain, dizziness, bone or joint problems, medication, pregnancy or another reason) with any notes you add. We also store what we work out from them: your calorie and macro targets and the training plan you are assigned. Earlier versions of your answers are kept while your account exists. Coaching logs — meals and foods you log, macros, water, fasting, workouts (exercises, sets, reps, load and duration), check-ins (mood, energy, sleep and notes), habits, weight and progress entries. Apple Health or Health Connect data, only if you connect it — steps, active energy, heart rate, resting heart rate, heart-rate variability, VO2 max, workouts and distance, weight, body fat, blood pressure, sleep, blood-oxygen saturation, respiratory rate and body temperature, with the source, time and time zone of each reading. Apple Health is on iPhone; Health Connect is on Android. The app reads this data with your permission and sends it to our servers so you and your coach can see it; it does not write data back to Apple Health or Health Connect. Messages and community content — messages with your coach; posts, comments and reactions in the community spaces your coach runs, your space memberships and when you joined them; direct messages and voice notes if enabled; and reports and blocks you make. Roman conversations — what you write to Roman and Roman’s replies. Payments — card details are entered into Stripe’s checkout and are collected by Stripe. We receive and store payment status, amounts, currency, the package or subscription purchased, refunds, invoices, billing email, and your card brand, last four digits and expiry month. For coaches we also store Stripe payout status and amounts, the bank name and last four digits of the payout account, and AI-credit balances and spending. We never receive or store full card or bank account numbers. Support — conversations in in-app support chat (provided by Crisp) together with your name, email, role, plan and account workspace, and emails you send us. Device, usage and diagnostic data — IP address, browser or device type, app version, request times and security logs; product analytics events and screen views linked to your account ID; and crash and performance reports that include your account ID and email address. Food searches — the words you search for when logging food. Where it comes from You, when you sign up, complete the consultation, log, message, post or contact support. Your phone’s Apple Health or Health Connect store, only after you grant permission in the app. Your coach, who sets your plan and targets and writes to you. Our own systems and Roman, which calculate targets, generate plans and replies, and record how the app is used. Apple or Google, when you sign in with them, and Stripe, which tells us whether a payment succeeded. Other members, when they reply to you or mention you in a community space. How we use it To run your personal training: build your plan and targets, show your progress, and let you and your coach work together. To power Roman and your coach’s AI drafts about you, after you agree (see “Roman and AI” below). To send the messages you expect: account emails, reminders and push notifications. To provide support, keep the service safe and secure, prevent abuse, moderate the community and fix problems. To understand, in aggregate, which parts of the app work and which do not. To process payments and coach payouts, and to meet legal, tax and accounting duties. We do not sell personal data. We do not use health data for advertising or marketing, we do not show third-party ads, and we do not track you across other companies’ apps or websites. We do not use your data to train AI models. Health and fitness data is never used for advertising or for data mining other than to improve health management, and is used for health research only with your permission. Who can see your data You. Your coach, and any coach on their team who is assigned to you: your profile, consultation answers including readiness answers, targets and plan, logs, check-ins, connected health data and your messages with them. If any readiness answer is yes, your coach is told so they can adjust your training. Members of a community space you belong to: what you post, comment or react there, and your name. Coaches can sort the members of their spaces by when they joined. Roman conversations are not visible to your coach, assistant coaches or any coach-facing screen. They are stored securely; TGP staff can access them only for support, safety and debugging. TGP staff, only when needed to provide support, keep people safe, fix problems, secure the service or meet a legal duty. The service providers listed below, only to run the service for us. Some coaches run programmes alongside a clinic partner. No account, consultation, coaching, health, wearable or Roman data is exchanged with any clinic partner, and clinic partners have no access to the app or to your data. Roman and AI Roman is an AI assistant powered by Anthropic. At the start of the consultation the app shows two separate boxes on one screen. The first, which you need to tick to continue, covers the personal-training waiver and lets TGP and your coach collect and use your information to coach you. The second is optional and starts unticked: it lets Roman and your coach’s AI drafts use your information, names Anthropic as the AI provider and lists the data it receives. If you leave it unticked, nothing about you is sent to Anthropic, and your plan, your coach, the community and Roman’s guided tour work as usual. When you use Roman, we send Anthropic your message, the earlier turns of that conversation, and context drawn from your own account: your profile, consultation and readiness answers, food logs, workouts and workout history, check-ins, wearable, health and sleep data, messages with your coach and the community posts you write. When your coach asks for an AI draft about you, the same kinds of data are sent. Only your own data is used — never another client’s, and never your coach’s private notes about you. Roman conversations are kept until you delete them or your account. You can delete a conversation at any time in the app, which removes its messages from our database straight away. You can allow or withdraw the optional AI agreement at any time in Settings > Privacy > Roman and AI; when you withdraw it, Roman and AI drafts about you stop until you agree again. If we turn it on, coaches can also use AI inbox sorting in the community. Anthropic sorts the community posts and messages a coach has not yet answered into five groups (urgent, a win to celebrate, a form check, general, no action needed) and writes a short summary of each for the coach. Sorting only includes posts and messages from members who ticked the optional AI box; everything else stays in the coach’s regular inbox, unsorted. For each item it receives up to 240 characters of the text, the name of the member who wrote it, the cohort name and how many hours ago it was posted. It only sorts and summarises: it never replies, posts or acts on anything, and only the coach sees the result. Perplexity, if enabled, is used to write short generic encouragement after your first logged milestones (it receives only the type of milestone, not your data). Roman gives general fitness and nutrition guidance, not medical advice. If something sounds like an emergency, Roman points you to 911; if you are in crisis, to 988. Service providers We use these providers to run the service. Each receives only what it needs for its job and processes it on our behalf. We do not sell data to them, and we do not let them use your data for their own advertising. Supabase — sign-in, database and file storage (for example voice notes, if enabled). Fly.io — hosting for our servers. Stripe — card payments, invoices and coach payouts. Anthropic — Roman and coach AI drafts, after you agree; sorting and summarising a coach’s unanswered community posts and messages for that coach, if turned on, only for members who agreed. Perplexity — generic milestone messages, if enabled. PostHog — product analytics. Session recording is off. Sentry — crash and performance monitoring. Crisp — in-app support chat. Resend — account and notification emails. Mux — hosting and playback of the videos coaches upload. It receives the video files, with no name, email or account details attached. Expo, with Apple and Google push services — delivery of push notifications. Apple and Google — Sign in with Apple and Google sign-in, if you choose them. Apple Health (iPhone) and Health Connect (Android) — the on-device health stores you can choose to connect. We read from them; we do not send your TGP data to them. USDA FoodData Central and Open Food Facts — food search. Our servers send them only the words you search for, never your name, account or health data. Search results are cached for 24 hours. Legal reasons We may disclose information when the law requires it, to protect someone’s safety, or to protect TGP and its users from fraud or abuse. If TGP is reorganised or sold, personal data would move only under this policy, and we would tell you first. How long we keep it Account, consultation, coaching, health and community data — while your account is open, until you delete it or ask us to delete it. Roman conversations — kept until you delete them or your account. Food search results — 24 hours in our cache. Payment, invoice and tax records — as long as the law requires. Security and audit logs — as long as needed to protect the service and meet legal duties. Backups — database backups and copies are never kept more than six months after a confirmed deletion request. Copies of the database made before an update to the service are deleted 30 days after the update is verified, and never kept beyond 90 days. Error reports in Sentry — 90 days. Email logs in Resend — 30 days. Product analytics in PostHog — a deleted person is removed from PostHog within 30 days of the deletion. What Anthropic receives — Anthropic deletes what it receives within 30 days, except where its usage policy or the law requires it to keep it longer. Deleting your account Your information is kept while your account is open. Deletion can be started in the app or by email. You can delete your account in the app: Settings, then Delete account. You confirm with your password or Sign in with Apple, and deletion is scheduled straight away with a 14-day grace period during which you can cancel. After that, your profile, consultation answers, logs, connected health data, Roman conversations, notifications and community memberships are permanently deleted, and the content of your community posts and messages is removed. If you used Sign in with Apple, we ask Apple to revoke TGP’s access. We keep only what we must: the payment records the law requires; security and audit logs; one deletion record with a random reference, the date and the result; and a closed-account record with no name, contact details or profile, holding only an internal account number, the account type and dates such as when the account was opened and closed, so the records we must keep still point to one closed account. While removing your sign-in account at your sign-in provider is still being retried, we also keep that provider’s account ID. Once it is removed, we keep only a one-way code made from it, for 30 days, so the app can tell you the account was deleted if you sign in again; then the code is discarded. You can also ask us to delete your account, or only some of your health data, by emailing Bradleyapple1031@gmail.com. We tell our service providers about deletion requests so they delete their copies too. At Stripe, deletion requests are handled with Stripe’s redaction tools; Stripe keeps the payment records the law requires. How to delete your account, with or without the app De-identified information After an account is deleted, de-identified, aggregated information that cannot identify the person may be kept. TGP takes reasonable measures so it cannot be linked to anyone, commits publicly to keep it only in de-identified form and never to try to re-identify it, and requires by contract anyone it shares it with to do the same. Your rights and choices See and download your data — in the app (Trust & Privacy, then Request data export) or by email. Correct your data — in the app, or by email. Delete your account or specific data — as described above. Withdraw your AI agreement — Roman and AI drafts about you stop. Disconnect Apple Health or Health Connect — at any time in the app or in your phone’s settings; we stop receiving new readings. Turn off push notifications — in your phone’s settings. To exercise any right, email Bradleyapple1031@gmail.com from the address on your account. We may ask you to confirm your identity, we never require you to create a new account, and we respond within 30 days. Where privacy laws give you more rights (for example in Washington, California, the UK or the EEA), we honour them. If we decline a request you can appeal, as described in the Consumer Health Data Privacy Policy. Children You must be 16 or older to use TGP. The service is not directed to children under 16 and we do not knowingly collect their data. If you believe a child under 16 has an account, email us and we will delete it. Security We protect data with encryption in transit and at rest, access controls and monitoring. No system is perfectly secure; our Security page describes what we do today. Security Changes When we change this policy we update the date at the top and, for material changes, tell you in the app or by email first. We will not collect new categories of health data, or use it for new purposes, without telling you and asking for your agreement first. Contact For privacy questions or requests, email Bradleyapple1031@gmail.com. We aim to reply within five business days. This policy is a company-drafted statement of practice; counsel review is recommended before relying on it for compliance with any specific regulation. The Growth Project Privacy Policy · Consumer Health Data Privacy Policy · Delete your account Bradleyapple1031@gmail.com "
+2026-10-04T02:54:39.2873413Z 
+2026-10-04T02:54:39.2874411Z       202 |   it('C-611-15: both policies commit to process de-identified data only in de-identified form', () => {
+2026-10-04T02:54:39.2875539Z       203 |     for (const text of [privacy, health]) {
+2026-10-04T02:54:39.2876440Z     > 204 |       expect(text).toContain(DEIDENTIFIED);
+2026-10-04T02:54:39.2877126Z           |                    ^
+2026-10-04T02:54:39.2878111Z       205 |       expect(text).not.toContain('commits publicly to keep it only in de-identified form');
+2026-10-04T02:54:39.2878885Z       206 |     }
+2026-10-04T02:54:39.2879270Z       207 |   });
+2026-10-04T02:54:39.2879508Z 
+2026-10-04T02:54:39.2879817Z       at Object.<anonymous> (test/privacy-round8-retention.spec.ts:204:20)
+2026-10-04T02:54:39.2880179Z 
+2026-10-04T02:54:39.2881096Z   ● #611 C-611-13..16 and the Sign in with Apple ruling › C-611-16: "kept while your account is open" yields to the shorter periods listed above it
+2026-10-04T02:54:39.2881738Z 
+2026-10-04T02:54:39.2881960Z     expect(received).toContain(expected) // indexOf
+2026-10-04T02:54:39.2882344Z 
+2026-10-04T02:54:39.2883243Z     Expected substring: "Deleting your account Unless a shorter period is listed above, your information is kept while your account is open. Deletion can be started in the app or by email."
+2026-10-04T02:54:39.2938405Z     Received string:    " The Growth Project Privacy Consumer Health Privacy Terms Security Status Privacy Policy Last reviewed 2026-10-03 The Growth Project (“TGP”, “we”, “us”) provides personal-training software used by independent coaches and the people they coach, including Roman, an AI assistant inside the app. This policy explains what personal data we collect, where it comes from, why we use it, who receives it, how long we keep it and the choices you have. It describes the app as it works today; features that are switched on only for some accounts are marked “if enabled”. It is a company-drafted statement of practice, and counsel review is recommended. Personal training only TGP is a personal-training service. It is not a medical service, it does not diagnose or treat any condition, and nothing in the app, from Roman or from your coach is medical advice. We collect health and fitness information only to deliver personal training that you ask for. Consumer health data Much of what you share with TGP is health information, for example your consultation answers, body measurements, food logs, sleep and heart-rate data. Our Consumer Health Data Privacy Policy describes that data, who receives it and how to exercise your rights over it, including the rights of Washington residents under the My Health My Data Act (RCW 19.373). Read the Consumer Health Data Privacy Policy What we collect Depending on how you use TGP, we collect: Account and contact details — your name, email address (an Apple private relay address if you choose Hide My Email with Sign in with Apple), optional phone number, account role (client or coach), the invite code you used and the coach you are connected to. Passwords are handled by our authentication provider and are never stored in plain text. Identifiers — your TGP account ID, sign-in identifiers from Supabase, Apple or Google, and your device’s push-notification token. Consultation answers — your goal and why it matters, the sex used for nutrition formulas, date of birth, height, weight and goal weight, activity level, sleep, training experience and preferences, injuries, session length, training days and time, where you train and your equipment, how you eat, foods you avoid, meals per day, tracking history and what gets in the way, and your answers to the readiness questions (heart condition, chest pain, dizziness, bone or joint problems, medication, pregnancy or another reason) with any notes you add. We also store what we work out from them: your calorie and macro targets and the training plan you are assigned. Earlier versions of your answers are kept while your account exists. Coaching logs — meals and foods you log, macros, water, fasting, workouts (exercises, sets, reps, load and duration), check-ins (mood, energy, sleep and notes), habits, weight and progress entries. Apple Health or Health Connect data, only if you connect it — steps, active energy, heart rate, resting heart rate, heart-rate variability, VO2 max, workouts and distance, weight, body fat, blood pressure, sleep, blood-oxygen saturation, respiratory rate and body temperature, with the source, time and time zone of each reading. Apple Health is on iPhone; Health Connect is on Android. The app reads this data with your permission and sends it to our servers so you and your coach can see it; it does not write data back to Apple Health or Health Connect. Messages and community content — messages with your coach; posts, comments and reactions in the community spaces your coach runs, your space memberships and when you joined them; direct messages and voice notes if enabled; and reports and blocks you make. Roman conversations — what you write to Roman and Roman’s replies. Payments — card details are entered into Stripe’s checkout and are collected by Stripe. We receive and store payment status, amounts, currency, the package or subscription purchased, refunds, invoices, billing email, and your card brand, last four digits and expiry month. For coaches we also store Stripe payout status and amounts, the bank name and last four digits of the payout account, and AI-credit balances and spending. We never receive or store full card or bank account numbers. Support — conversations in in-app support chat (provided by Crisp) together with your name, email, role, plan and account workspace, and emails you send us. Device, usage and diagnostic data — IP address, browser or device type, app version, request times and security logs; product analytics events and screen views linked to your account ID; and crash and performance reports that include your account ID and email address. Food searches — the words you search for when logging food. Where it comes from You, when you sign up, complete the consultation, log, message, post or contact support. Your phone’s Apple Health or Health Connect store, only after you grant permission in the app. Your coach, who sets your plan and targets and writes to you. Our own systems and Roman, which calculate targets, generate plans and replies, and record how the app is used. Apple or Google, when you sign in with them, and Stripe, which tells us whether a payment succeeded. Other members, when they reply to you or mention you in a community space. How we use it To run your personal training: build your plan and targets, show your progress, and let you and your coach work together. To power Roman and your coach’s AI drafts about you, after you agree (see “Roman and AI” below). To send the messages you expect: account emails, reminders and push notifications. To provide support, keep the service safe and secure, prevent abuse, moderate the community and fix problems. To understand, in aggregate, which parts of the app work and which do not. To process payments and coach payouts, and to meet legal, tax and accounting duties. We do not sell personal data. We do not use health data for advertising or marketing, we do not show third-party ads, and we do not track you across other companies’ apps or websites. We do not use your data to train AI models. Health and fitness data is never used for advertising or for data mining other than to improve health management, and is used for health research only with your permission. Who can see your data You. Your coach, and any coach on their team who is assigned to you: your profile, consultation answers including readiness answers, targets and plan, logs, check-ins, connected health data and your messages with them. If any readiness answer is yes, your coach is told so they can adjust your training. Members of a community space you belong to: what you post, comment or react there, and your name. Coaches can sort the members of their spaces by when they joined. Roman conversations are not visible to your coach, assistant coaches or any coach-facing screen. They are stored securely; TGP staff can access them only for support, safety and debugging. TGP staff, only when needed to provide support, keep people safe, fix problems, secure the service or meet a legal duty. The service providers listed below, only to run the service for us. Some coaches run programmes alongside a clinic partner. No account, consultation, coaching, health, wearable or Roman data is exchanged with any clinic partner, and clinic partners have no access to the app or to your data. Roman and AI Roman is an AI assistant powered by Anthropic. At the start of the consultation the app shows two separate boxes on one screen. The first, which you need to tick to continue, covers the personal-training waiver and lets TGP and your coach collect and use your information to coach you. The second is optional and starts unticked: it lets Roman and your coach’s AI drafts use your information, names Anthropic as the AI provider and lists the data it receives. If you leave it unticked, nothing about you is sent to Anthropic, and your plan, your coach, the community and Roman’s guided tour work as usual. When you use Roman, we send Anthropic your message, the earlier turns of that conversation, and context drawn from your own account: your profile, consultation and readiness answers, food logs, workouts and workout history, check-ins, wearable, health and sleep data, messages with your coach and the community posts you write. When your coach asks for an AI draft about you, the same kinds of data are sent. Only your own data is used — never another client’s, and never your coach’s private notes about you. Roman conversations are kept until you delete them or your account. You can delete a conversation at any time in the app, which removes its messages from our database straight away. You can allow or withdraw the optional AI agreement at any time in Settings > Privacy > Roman and AI; when you withdraw it, Roman and AI drafts about you stop until you agree again. If we turn it on, coaches can also use AI inbox sorting in the community. Anthropic sorts the community posts and messages a coach has not yet answered into five groups (urgent, a win to celebrate, a form check, general, no action needed) and writes a short summary of each for the coach. Sorting only includes posts and messages from members who ticked the optional AI box; everything else stays in the coach’s regular inbox, unsorted. For each item it receives up to 240 characters of the text, the name of the member who wrote it, the cohort name and how many hours ago it was posted. It only sorts and summarises: it never replies, posts or acts on anything, and only the coach sees the result. Perplexity, if enabled, is used to write short generic encouragement after your first logged milestones (it receives only the type of milestone, not your data). Roman gives general fitness and nutrition guidance, not medical advice. If something sounds like an emergency, Roman points you to 911; if you are in crisis, to 988. Service providers We use these providers to run the service. Each receives only what it needs for its job and processes it on our behalf. We do not sell data to them, and we do not let them use your data for their own advertising. Supabase — sign-in, database and file storage (for example voice notes, if enabled). Fly.io — hosting for our servers. Stripe — card payments, invoices and coach payouts. Anthropic — Roman and coach AI drafts, after you agree; sorting and summarising a coach’s unanswered community posts and messages for that coach, if turned on, only for members who agreed. Perplexity — generic milestone messages, if enabled. PostHog — product analytics. Session recording is off. Sentry — crash and performance monitoring. Crisp — in-app support chat. Resend — account and notification emails. Mux — hosting and playback of the videos coaches upload. It receives the video files, with no name, email or account details attached. Expo, with Apple and Google push services — delivery of push notifications. Apple and Google — Sign in with Apple and Google sign-in, if you choose them. Apple Health (iPhone) and Health Connect (Android) — the on-device health stores you can choose to connect. We read from them; we do not send your TGP data to them. USDA FoodData Central and Open Food Facts — food search. Our servers send them only the words you search for, never your name, account or health data. Search results are cached for 24 hours. Legal reasons We may disclose information when the law requires it, to protect someone’s safety, or to protect TGP and its users from fraud or abuse. If TGP is reorganised or sold, personal data would move only under this policy, and we would tell you first. How long we keep it Account, consultation, coaching, health and community data — while your account is open, until you delete it or ask us to delete it. Roman conversations — kept until you delete them or your account. Food search results — 24 hours in our cache. Payment, invoice and tax records — as long as the law requires. Security and audit logs — as long as needed to protect the service and meet legal duties. Backups — database backups and copies are never kept more than six months after a confirmed deletion request. Copies of the database made before an update to the service are deleted 30 days after the update is verified, and never kept beyond 90 days. Error reports in Sentry — 90 days. Email logs in Resend — 30 days. Product analytics in PostHog — a deleted person is removed from PostHog within 30 days of the deletion. What Anthropic receives — Anthropic deletes what it receives within 30 days, except where its usage policy or the law requires it to keep it longer. Deleting your account Your information is kept while your account is open. Deletion can be started in the app or by email. You can delete your account in the app: Settings, then Delete account. You confirm with your password or Sign in with Apple, and deletion is scheduled straight away with a 14-day grace period during which you can cancel. After that, your profile, consultation answers, logs, connected health data, Roman conversations, notifications and community memberships are permanently deleted, and the content of your community posts and messages is removed. If you used Sign in with Apple, we ask Apple to revoke TGP’s access. We keep only what we must: the payment records the law requires; security and audit logs; one deletion record with a random reference, the date and the result; and a closed-account record with no name, contact details or profile, holding only an internal account number, the account type and dates such as when the account was opened and closed, so the records we must keep still point to one closed account. While removing your sign-in account at your sign-in provider is still being retried, we also keep that provider’s account ID. Once it is removed, we keep only a one-way code made from it, for 30 days, so the app can tell you the account was deleted if you sign in again; then the code is discarded. You can also ask us to delete your account, or only some of your health data, by emailing Bradleyapple1031@gmail.com. We tell our service providers about deletion requests so they delete their copies too. At Stripe, deletion requests are handled with Stripe’s redaction tools; Stripe keeps the payment records the law requires. How to delete your account, with or without the app De-identified information After an account is deleted, de-identified, aggregated information that cannot identify the person may be kept. TGP takes reasonable measures so it cannot be linked to anyone, commits publicly to keep it only in de-identified form and never to try to re-identify it, and requires by contract anyone it shares it with to do the same. Your rights and choices See and download your data — in the app (Trust & Privacy, then Request data export) or by email. Correct your data — in the app, or by email. Delete your account or specific data — as described above. Withdraw your AI agreement — Roman and AI drafts about you stop. Disconnect Apple Health or Health Connect — at any time in the app or in your phone’s settings; we stop receiving new readings. Turn off push notifications — in your phone’s settings. To exercise any right, email Bradleyapple1031@gmail.com from the address on your account. We may ask you to confirm your identity, we never require you to create a new account, and we respond within 30 days. Where privacy laws give you more rights (for example in Washington, California, the UK or the EEA), we honour them. If we decline a request you can appeal, as described in the Consumer Health Data Privacy Policy. Children You must be 16 or older to use TGP. The service is not directed to children under 16 and we do not knowingly collect their data. If you believe a child under 16 has an account, email us and we will delete it. Security We protect data with encryption in transit and at rest, access controls and monitoring. No system is perfectly secure; our Security page describes what we do today. Security Changes When we change this policy we update the date at the top and, for material changes, tell you in the app or by email first. We will not collect new categories of health data, or use it for new purposes, without telling you and asking for your agreement first. Contact For privacy questions or requests, email Bradleyapple1031@gmail.com. We aim to reply within five business days. This policy is a company-drafted statement of practice; counsel review is recommended before relying on it for compliance with any specific regulation. The Growth Project Privacy Policy · Consumer Health Data Privacy Policy · Delete your account Bradleyapple1031@gmail.com "
+2026-10-04T02:54:39.2990411Z 
+2026-10-04T02:54:39.2990706Z       208 |
+2026-10-04T02:54:39.2991345Z       209 |   it('C-611-16: "kept while your account is open" yields to the shorter periods listed above it', () => {
+2026-10-04T02:54:39.2991980Z     > 210 |     expect(privacy).toContain(
+2026-10-04T02:54:39.2992370Z           |                     ^
+2026-10-04T02:54:39.2992952Z       211 |       `Deleting your account ${KEPT_WHILE_OPEN} Deletion can be started in the app or by email.`,
+2026-10-04T02:54:39.2993453Z       212 |     );
+2026-10-04T02:54:39.2993987Z       213 |     const retention = privacy.indexOf('How long we keep it');
+2026-10-04T02:54:39.2994317Z 
+2026-10-04T02:54:39.3392197Z       at Object.<anonymous> (test/privacy-round8-retention.spec.ts:210:21)
+2026-10-04T02:54:39.3392931Z 
+2026-10-04T02:54:39.3394103Z   ● #611 C-611-13..16 and the Sign in with Apple ruling › RG-1: no claim that deletion revokes Sign in with Apple; the true path is stated
+2026-10-04T02:54:39.3394998Z 
+2026-10-04T02:54:39.3395284Z     expect(received).not.toMatch(expected)
+2026-10-04T02:54:39.3395668Z 
+2026-10-04T02:54:39.3396012Z     Expected pattern: not /revoke/i
+2026-10-04T02:54:39.3451921Z     Received string:      " The Growth Project Privacy Consumer Health Privacy Terms Security Status Privacy Policy Last reviewed 2026-10-03 The Growth Project (“TGP”, “we”, “us”) provides personal-training software used by independent coaches and the people they coach, including Roman, an AI assistant inside the app. This policy explains what personal data we collect, where it comes from, why we use it, who receives it, how long we keep it and the choices you have. It describes the app as it works today; features that are switched on only for some accounts are marked “if enabled”. It is a company-drafted statement of practice, and counsel review is recommended. Personal training only TGP is a personal-training service. It is not a medical service, it does not diagnose or treat any condition, and nothing in the app, from Roman or from your coach is medical advice. We collect health and fitness information only to deliver personal training that you ask for. Consumer health data Much of what you share with TGP is health information, for example your consultation answers, body measurements, food logs, sleep and heart-rate data. Our Consumer Health Data Privacy Policy describes that data, who receives it and how to exercise your rights over it, including the rights of Washington residents under the My Health My Data Act (RCW 19.373). Read the Consumer Health Data Privacy Policy What we collect Depending on how you use TGP, we collect: Account and contact details — your name, email address (an Apple private relay address if you choose Hide My Email with Sign in with Apple), optional phone number, account role (client or coach), the invite code you used and the coach you are connected to. Passwords are handled by our authentication provider and are never stored in plain text. Identifiers — your TGP account ID, sign-in identifiers from Supabase, Apple or Google, and your device’s push-notification token. Consultation answers — your goal and why it matters, the sex used for nutrition formulas, date of birth, height, weight and goal weight, activity level, sleep, training experience and preferences, injuries, session length, training days and time, where you train and your equipment, how you eat, foods you avoid, meals per day, tracking history and what gets in the way, and your answers to the readiness questions (heart condition, chest pain, dizziness, bone or joint problems, medication, pregnancy or another reason) with any notes you add. We also store what we work out from them: your calorie and macro targets and the training plan you are assigned. Earlier versions of your answers are kept while your account exists. Coaching logs — meals and foods you log, macros, water, fasting, workouts (exercises, sets, reps, load and duration), check-ins (mood, energy, sleep and notes), habits, weight and progress entries. Apple Health or Health Connect data, only if you connect it — steps, active energy, heart rate, resting heart rate, heart-rate variability, VO2 max, workouts and distance, weight, body fat, blood pressure, sleep, blood-oxygen saturation, respiratory rate and body temperature, with the source, time and time zone of each reading. Apple Health is on iPhone; Health Connect is on Android. The app reads this data with your permission and sends it to our servers so you and your coach can see it; it does not write data back to Apple Health or Health Connect. Messages and community content — messages with your coach; posts, comments and reactions in the community spaces your coach runs, your space memberships and when you joined them; direct messages and voice notes if enabled; and reports and blocks you make. Roman conversations — what you write to Roman and Roman’s replies. Payments — card details are entered into Stripe’s checkout and are collected by Stripe. We receive and store payment status, amounts, currency, the package or subscription purchased, refunds, invoices, billing email, and your card brand, last four digits and expiry month. For coaches we also store Stripe payout status and amounts, the bank name and last four digits of the payout account, and AI-credit balances and spending. We never receive or store full card or bank account numbers. Support — conversations in in-app support chat (provided by Crisp) together with your name, email, role, plan and account workspace, and emails you send us. Device, usage and diagnostic data — IP address, browser or device type, app version, request times and security logs; product analytics events and screen views linked to your account ID; and crash and performance reports that include your account ID and email address. Food searches — the words you search for when logging food. Where it comes from You, when you sign up, complete the consultation, log, message, post or contact support. Your phone’s Apple Health or Health Connect store, only after you grant permission in the app. Your coach, who sets your plan and targets and writes to you. Our own systems and Roman, which calculate targets, generate plans and replies, and record how the app is used. Apple or Google, when you sign in with them, and Stripe, which tells us whether a payment succeeded. Other members, when they reply to you or mention you in a community space. How we use it To run your personal training: build your plan and targets, show your progress, and let you and your coach work together. To power Roman and your coach’s AI drafts about you, after you agree (see “Roman and AI” below). To send the messages you expect: account emails, reminders and push notifications. To provide support, keep the service safe and secure, prevent abuse, moderate the community and fix problems. To understand, in aggregate, which parts of the app work and which do not. To process payments and coach payouts, and to meet legal, tax and accounting duties. We do not sell personal data. We do not use health data for advertising or marketing, we do not show third-party ads, and we do not track you across other companies’ apps or websites. We do not use your data to train AI models. Health and fitness data is never used for advertising or for data mining other than to improve health management, and is used for health research only with your permission. Who can see your data You. Your coach, and any coach on their team who is assigned to you: your profile, consultation answers including readiness answers, targets and plan, logs, check-ins, connected health data and your messages with them. If any readiness answer is yes, your coach is told so they can adjust your training. Members of a community space you belong to: what you post, comment or react there, and your name. Coaches can sort the members of their spaces by when they joined. Roman conversations are not visible to your coach, assistant coaches or any coach-facing screen. They are stored securely; TGP staff can access them only for support, safety and debugging. TGP staff, only when needed to provide support, keep people safe, fix problems, secure the service or meet a legal duty. The service providers listed below, only to run the service for us. Some coaches run programmes alongside a clinic partner. No account, consultation, coaching, health, wearable or Roman data is exchanged with any clinic partner, and clinic partners have no access to the app or to your data. Roman and AI Roman is an AI assistant powered by Anthropic. At the start of the consultation the app shows two separate boxes on one screen. The first, which you need to tick to continue, covers the personal-training waiver and lets TGP and your coach collect and use your information to coach you. The second is optional and starts unticked: it lets Roman and your coach’s AI drafts use your information, names Anthropic as the AI provider and lists the data it receives. If you leave it unticked, nothing about you is sent to Anthropic, and your plan, your coach, the community and Roman’s guided tour work as usual. When you use Roman, we send Anthropic your message, the earlier turns of that conversation, and context drawn from your own account: your profile, consultation and readiness answers, food logs, workouts and workout history, check-ins, wearable, health and sleep data, messages with your coach and the community posts you write. When your coach asks for an AI draft about you, the same kinds of data are sent. Only your own data is used — never another client’s, and never your coach’s private notes about you. Roman conversations are kept until you delete them or your account. You can delete a conversation at any time in the app, which removes its messages from our database straight away. You can allow or withdraw the optional AI agreement at any time in Settings > Privacy > Roman and AI; when you withdraw it, Roman and AI drafts about you stop until you agree again. If we turn it on, coaches can also use AI inbox sorting in the community. Anthropic sorts the community posts and messages a coach has not yet answered into five groups (urgent, a win to celebrate, a form check, general, no action needed) and writes a short summary of each for the coach. Sorting only includes posts and messages from members who ticked the optional AI box; everything else stays in the coach’s regular inbox, unsorted. For each item it receives up to 240 characters of the text, the name of the member who wrote it, the cohort name and how many hours ago it was posted. It only sorts and summarises: it never replies, posts or acts on anything, and only the coach sees the result. Perplexity, if enabled, is used to write short generic encouragement after your first logged milestones (it receives only the type of milestone, not your data). Roman gives general fitness and nutrition guidance, not medical advice. If something sounds like an emergency, Roman points you to 911; if you are in crisis, to 988. Service providers We use these providers to run the service. Each receives only what it needs for its job and processes it on our behalf. We do not sell data to them, and we do not let them use your data for their own advertising. Supabase — sign-in, database and file storage (for example voice notes, if enabled). Fly.io — hosting for our servers. Stripe — card payments, invoices and coach payouts. Anthropic — Roman and coach AI drafts, after you agree; sorting and summarising a coach’s unanswered community posts and messages for that coach, if turned on, only for members who agreed. Perplexity — generic milestone messages, if enabled. PostHog — product analytics. Session recording is off. Sentry — crash and performance monitoring. Crisp — in-app support chat. Resend — account and notification emails. Mux — hosting and playback of the videos coaches upload. It receives the video files, with no name, email or account details attached. Expo, with Apple and Google push services — delivery of push notifications. Apple and Google — Sign in with Apple and Google sign-in, if you choose them. Apple Health (iPhone) and Health Connect (Android) — the on-device health stores you can choose to connect. We read from them; we do not send your TGP data to them. USDA FoodData Central and Open Food Facts — food search. Our servers send them only the words you search for, never your name, account or health data. Search results are cached for 24 hours. Legal reasons We may disclose information when the law requires it, to protect someone’s safety, or to protect TGP and its users from fraud or abuse. If TGP is reorganised or sold, personal data would move only under this policy, and we would tell you first. How long we keep it Account, consultation, coaching, health and community data — while your account is open, until you delete it or ask us to delete it. Roman conversations — kept until you delete them or your account. Food search results — 24 hours in our cache. Payment, invoice and tax records — as long as the law requires. Security and audit logs — as long as needed to protect the service and meet legal duties. Backups — database backups and copies are never kept more than six months after a confirmed deletion request. Copies of the database made before an update to the service are deleted 30 days after the update is verified, and never kept beyond 90 days. Error reports in Sentry — 90 days. Email logs in Resend — 30 days. Product analytics in PostHog — a deleted person is removed from PostHog within 30 days of the deletion. What Anthropic receives — Anthropic deletes what it receives within 30 days, except where its usage policy or the law requires it to keep it longer. Deleting your account Your information is kept while your account is open. Deletion can be started in the app or by email. You can delete your account in the app: Settings, then Delete account. You confirm with your password or Sign in with Apple, and deletion is scheduled straight away with a 14-day grace period during which you can cancel. After that, your profile, consultation answers, logs, connected health data, Roman conversations, notifications and community memberships are permanently deleted, and the content of your community posts and messages is removed. If you used Sign in with Apple, we ask Apple to revoke TGP’s access. We keep only what we must: the payment records the law requires; security and audit logs; one deletion record with a random reference, the date and the result; and a closed-account record with no name, contact details or profile, holding only an internal account number, the account type and dates such as when the account was opened and closed, so the records we must keep still point to one closed account. While removing your sign-in account at your sign-in provider is still being retried, we also keep that provider’s account ID. Once it is removed, we keep only a one-way code made from it, for 30 days, so the app can tell you the account was deleted if you sign in again; then the code is discarded. You can also ask us to delete your account, or only some of your health data, by emailing Bradleyapple1031@gmail.com. We tell our service providers about deletion requests so they delete their copies too. At Stripe, deletion requests are handled with Stripe’s redaction tools; Stripe keeps the payment records the law requires. How to delete your account, with or without the app De-identified information After an account is deleted, de-identified, aggregated information that cannot identify the person may be kept. TGP takes reasonable measures so it cannot be linked to anyone, commits publicly to keep it only in de-identified form and never to try to re-identify it, and requires by contract anyone it shares it with to do the same. Your rights and choices See and download your data — in the app (Trust & Privacy, then Request data export) or by email. Correct your data — in the app, or by email. Delete your account or specific data — as described above. Withdraw your AI agreement — Roman and AI drafts about you stop. Disconnect Apple Health or Health Connect — at any time in the app or in your phone’s settings; we stop receiving new readings. Turn off push notifications — in your phone’s settings. To exercise any right, email Bradleyapple1031@gmail.com from the address on your account. We may ask you to confirm your identity, we never require you to create a new account, and we respond within 30 days. Where privacy laws give you more rights (for example in Washington, California, the UK or the EEA), we honour them. If we decline a request you can appeal, as described in the Consumer Health Data Privacy Policy. Children You must be 16 or older to use TGP. The service is not directed to children under 16 and we do not knowingly collect their data. If you believe a child under 16 has an account, email us and we will delete it. Security We protect data with encryption in transit and at rest, access controls and monitoring. No system is perfectly secure; our Security page describes what we do today. Security Changes When we change this policy we update the date at the top and, for material changes, tell you in the app or by email first. We will not collect new categories of health data, or use it for new purposes, without telling you and asking for your agreement first. Contact For privacy questions or requests, email Bradleyapple1031@gmail.com. We aim to reply within five business days. This policy is a company-drafted statement of practice; counsel review is recommended before relying on it for compliance with any specific regulation. The Growth Project Privacy Policy · Consumer Health Data Privacy Policy · Delete your account Bradleyapple1031@gmail.com "
+2026-10-04T02:54:39.3492554Z 
+2026-10-04T02:54:39.3493231Z       218 |   it('RG-1: no claim that deletion revokes Sign in with Apple; the true path is stated', () => {
+2026-10-04T02:54:39.3493984Z       219 |     for (const text of [privacy, health, deleteHelp]) {
+2026-10-04T02:54:39.3494636Z     > 220 |       expect(text).not.toMatch(/revoke/i);
+2026-10-04T02:54:39.3495107Z           |                        ^
+2026-10-04T02:54:39.3495383Z       221 |     }
+2026-10-04T02:54:39.3495822Z       222 |     expect(privacyDeletion).toContain(APPLE_TODAY);
+2026-10-04T02:54:39.3496450Z       223 |     expect(DOC).toMatch(/restores? the revocation sentence/);
+2026-10-04T02:54:39.3496770Z 
+2026-10-04T02:54:39.3496966Z       at Object.<anonymous> (test/privacy-round8-retention.spec.ts:220:24)
+2026-10-04T02:54:39.3497199Z 
+2026-10-04T02:54:39.3497582Z   ● #611 C-611-13..16 and the Sign in with Apple ruling › the rest of the approved deletion paragraph is unchanged
+2026-10-04T02:54:39.3497887Z 
+2026-10-04T02:54:39.3498018Z     expect(received).toContain(expected) // indexOf
+2026-10-04T02:54:39.3498200Z 
+2026-10-04T02:54:39.3502969Z     Expected substring: "You can delete your account in the app: Settings, then Delete account. You confirm with your password or Sign in with Apple, and deletion is scheduled straight away with a 14-day grace period during which you can cancel. After that, your profile, consultation answers, logs, connected health data, Roman conversations, notifications and community memberships are permanently deleted, and the content of your community posts and messages is removed. If you used Sign in with Apple, deleting your account ends the app’s link to your Apple ID. To remove the app from your Apple ID as well, on your iPhone open Settings, tap your name, then Sign-In & Security, then Sign in with Apple, choose the app and stop using it with your Apple ID. We keep only what we must: the payment records the law requires; security and audit logs; one deletion record with a random reference, the date and the result; and a closed-account record with no name, contact details or profile, holding only an internal account number, the account type and dates such as when the account was opened and closed, so the records we must keep still point to one closed account. While removing your sign-in account at your sign-in provider is still being retried, we also keep that provider’s account ID. Once it is removed, we keep only a one-way code made from it, for 30 days, so the app can tell you the account was deleted if you sign in again; then the code is discarded."
+2026-10-04T02:54:39.3512532Z     Received string:    "Deleting your account Your information is kept while your account is open. Deletion can be started in the app or by email. You can delete your account in the app: Settings, then Delete account. You confirm with your password or Sign in with Apple, and deletion is scheduled straight away with a 14-day grace period during which you can cancel. After that, your profile, consultation answers, logs, connected health data, Roman conversations, notifications and community memberships are permanently deleted, and the content of your community posts and messages is removed. If you used Sign in with Apple, we ask Apple to revoke TGP’s access. We keep only what we must: the payment records the law requires; security and audit logs; one deletion record with a random reference, the date and the result; and a closed-account record with no name, contact details or profile, holding only an internal account number, the account type and dates such as when the account was opened and closed, so the records we must keep still point to one closed account. While removing your sign-in account at your sign-in provider is still being retried, we also keep that provider’s account ID. Once it is removed, we keep only a one-way code made from it, for 30 days, so the app can tell you the account was deleted if you sign in again; then the code is discarded. You can also ask us to delete your account, or only some of your health data, by emailing Bradleyapple1031@gmail.com. We tell our service providers about deletion requests so they delete their copies too. At Stripe, deletion requests are handled with Stripe’s redaction tools; Stripe keeps the payment records the law requires. How to delete your account, with or without the app "
+2026-10-04T02:54:39.3516891Z 
+2026-10-04T02:54:39.3517011Z       225 |
+2026-10-04T02:54:39.3517550Z       226 |   it('the rest of the approved deletion paragraph is unchanged', () => {
+2026-10-04T02:54:39.3518140Z     > 227 |     expect(privacyDeletion).toContain(
+2026-10-04T02:54:39.3518581Z           |                             ^
+2026-10-04T02:54:39.3520348Z       228 |       'You can delete your account in the app: Settings, then Delete account. You confirm with your password or Sign in with Apple, and deletion is scheduled straight away with a 14-day grace period during which you can cancel. After that, your profile, consultation answers, logs, connected health data, Roman conversations, notifications and community memberships are permanently deleted, and the content of your community posts and messages is removed. ' +
+2026-10-04T02:54:39.3521989Z       229 |         APPLE_TODAY +
+2026-10-04T02:54:39.3522852Z       230 |         ' We keep only what we must: the payment records the law requires; security and audit logs; one deletion record with a random reference, the date and the result; and ' +
+2026-10-04T02:54:39.3523551Z 
+2026-10-04T02:54:39.3523758Z       at Object.<anonymous> (test/privacy-round8-retention.spec.ts:227:29)
+2026-10-04T02:54:39.3523987Z 
+2026-10-04T02:54:39.3524144Z PASS test/privacy-owner-answers.spec.ts
+2026-10-04T02:54:39.7400336Z FAIL test/privacy-diagnostics-disclosure.spec.ts
+2026-10-04T02:54:39.7402166Z   ● #611 B-611-7: the diagnostic disclosure matches the id-only Sentry boundary › says crash and performance reports carry the account ID with no name or email attached
+2026-10-04T02:54:39.7402883Z 
+2026-10-04T02:54:39.7403111Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T02:54:39.7403400Z 
+2026-10-04T02:54:39.7404951Z     Expected: "Device, usage and diagnostic data — IP address, browser or device type, app version, request times and security logs; product analytics events and screen views linked to your account ID; and crash and performance reports linked to your account ID, with no name or email address attached."
+2026-10-04T02:54:39.7409127Z     Received: "Device, usage and diagnostic data — IP address, browser or device type, app version, request times and security logs; product analytics events and screen views linked to your account ID; and crash and performance reports that include your account ID and email address."
+2026-10-04T02:54:39.7410336Z 
+2026-10-04T02:54:39.7411295Z       57 |   it('says crash and performance reports carry the account ID with no name or email attached', () => {
+2026-10-04T02:54:39.7412332Z       58 |     const item = diagnosticItem();
+2026-10-04T02:54:39.7413190Z     > 59 |     expect(item).toBe(DIAGNOSTIC_ITEM);
+2026-10-04T02:54:39.7413847Z          |                  ^
+2026-10-04T02:54:39.7414351Z       60 |     expect(item).toContain(
+2026-10-04T02:54:39.7415383Z       61 |       'crash and performance reports linked to your account ID, with no name or email address attached',
+2026-10-04T02:54:39.7416214Z       62 |     );
+2026-10-04T02:54:39.7416447Z 
+2026-10-04T02:54:39.7417325Z       at Object.<anonymous> (test/privacy-diagnostics-disclosure.spec.ts:59:18)
+2026-10-04T02:54:39.7417789Z 
+2026-10-04T02:54:39.7418754Z   ● #611 B-611-7: the diagnostic disclosure matches the id-only Sentry boundary › no policy page tells a reader that error, crash or performance reports carry their email
+2026-10-04T02:54:39.7419508Z 
+2026-10-04T02:54:39.7419690Z     expect(received).toMatch(expected)
+2026-10-04T02:54:39.7419932Z 
+2026-10-04T02:54:39.7420271Z     Expected pattern: /with no name or email address attached|Resend \(email\)/
+2026-10-04T02:54:39.7421318Z     Received string:  "and crash and performance reports that include your account ID and email address."
+2026-10-04T02:54:39.7421849Z 
+2026-10-04T02:54:39.7422351Z       71 |         // not attached (or to name Resend, the email provider).
+2026-10-04T02:54:39.7423173Z       72 |         if (/email/i.test(sentence)) {
+2026-10-04T02:54:39.7424379Z     > 73 |           expect(sentence).toMatch(/with no name or email address attached|Resend \(email\)/);
+2026-10-04T02:54:39.7425340Z          |                            ^
+2026-10-04T02:54:39.7425811Z       74 |         }
+2026-10-04T02:54:39.7426175Z       75 |       }
+2026-10-04T02:54:39.7426530Z       76 |     }
+2026-10-04T02:54:39.7426735Z 
+2026-10-04T02:54:39.7427097Z       at Object.<anonymous> (test/privacy-diagnostics-disclosure.spec.ts:73:28)
+2026-10-04T02:54:39.7427520Z 
+2026-10-04T02:54:39.7428388Z   ● #611 B-611-7: the diagnostic disclosure matches the id-only Sentry boundary › the public text and the procedure of record (§6 Sentry) say the same thing
+2026-10-04T02:54:39.7429117Z 
+2026-10-04T02:54:39.7429613Z     expect(received).toContain(expected) // indexOf
+2026-10-04T02:54:39.7429895Z 
+2026-10-04T02:54:39.7430742Z     Expected substring: "The Privacy Policy says crash and performance reports are linked to the account id, with no name or email address attached."
+2026-10-04T02:54:39.7431789Z     Received string:    "## 6. Sentry (crash and error monitoring)·
+2026-10-04T02:54:39.7432246Z     **What it holds:**
+2026-10-04T02:54:39.7433084Z     - Error events from the API. `src/observability/sentry-config.ts` `beforeSend` scrubs them, and ORM errors are replaced by `safeDiagnostic`.
+2026-10-04T02:54:39.7434692Z     - Error events from the mobile app. **Fact (repo, mobile `src/services/sentry.ts`, mobile #330 merged 2026-10-02):** `setSentryUser` sets only the opaque user **id** on events, never the email.·
+2026-10-04T02:54:39.7435479Z     Events can include health details that appear in an error, as the policy says.·
+2026-10-04T02:54:39.7436705Z     **Deleted by:** age-out. **Fact (vendor), [Sentry data retention periods](https://docs.sentry.io/security-legal-pii/security/data-retention-periods/):** errors are kept 30 days (Developer) or 90 days (Team, Business), and logs 30 days. After that they can no longer be accessed. Every plan's limit is inside six months.·
+2026-10-04T02:54:39.7438155Z     **Procedure (owner, on an email deletion request that asks for it, or for a consumer health request):** in Sentry, search events by the user id and delete the matching issues or events. Otherwise let them age out.·
+2026-10-04T02:54:39.7439018Z     **Owner (2026-10-03, O-611-5):** error reports are kept 90 days (Team). The Privacy Policy retention list says so.·
+2026-10-04T02:54:39.7439405Z     ---·
+2026-10-04T02:54:39.7439578Z     "
+2026-10-04T02:54:39.7439668Z 
+2026-10-04T02:54:39.7440315Z       80 |     const sentry = DOC.slice(DOC.indexOf('## 6. Sentry'), DOC.indexOf('## 7. Resend'));
+2026-10-04T02:54:39.7441500Z       81 |     expect(sentry).toContain('sets only the opaque user **id** on events, never the email');
+2026-10-04T02:54:39.7442236Z     > 82 |     expect(sentry).toContain(
+2026-10-04T02:54:39.7442624Z          |                    ^
+2026-10-04T02:54:39.7443323Z       83 |       'The Privacy Policy says crash and performance reports are linked to the account id, with no name or email address attached.',
+2026-10-04T02:54:39.7443864Z       84 |     );
+2026-10-04T02:54:39.7444181Z       85 |     expect(privacy).toContain(
+2026-10-04T02:54:39.7444369Z 
+2026-10-04T02:54:39.7444599Z       at Object.<anonymous> (test/privacy-diagnostics-disclosure.spec.ts:82:20)
+2026-10-04T02:54:39.7444847Z 
+2026-10-04T02:54:39.7444998Z Test Suites: 2 failed, 1 passed, 3 total
+2026-10-04T02:54:39.7445284Z Tests:       17 failed, 10 passed, 27 total
+2026-10-04T02:54:39.7445523Z Snapshots:   0 total
+2026-10-04T02:54:39.7445710Z Time:        8.034 s
+2026-10-04T02:54:39.7446317Z Ran all test suites matching test/privacy-diagnostics-disclosure.spec.ts|test/privacy-round8-retention.spec.ts|test/privacy-owner-answers.spec.ts.
+2026-10-04T02:54:39.9828698Z ##[error]Process completed with exit code 1.
+2026-10-04T02:54:39.9921892Z Post job cleanup.
+2026-10-04T02:54:40.0596889Z [command]/usr/bin/git version
+2026-10-04T02:54:40.0627019Z git version 2.55.0
+2026-10-04T02:54:40.0656636Z Temporarily overriding HOME='/home/runner/work/_temp/21c25efd-3f39-4df2-81a4-10751cd631b9' before making global git config changes
+2026-10-04T02:54:40.0657785Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T02:54:40.0662288Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T02:54:40.0689394Z Removing SSH command configuration
+2026-10-04T02:54:40.0695550Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T02:54:40.0723054Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T02:54:40.0912582Z Removing HTTP extra header
+2026-10-04T02:54:40.0916583Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T02:54:40.0943736Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T02:54:40.1125838Z Removing includeIf entries pointing to credentials config files
+2026-10-04T02:54:40.1130876Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T02:54:40.1153519Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T02:54:40.1154654Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T02:54:40.1155287Z includeif.gitdir:/github/workspace/.git.path
+2026-10-04T02:54:40.1156689Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T02:54:40.1161312Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T02:54:40.1179910Z /home/runner/work/_temp/git-credentials-9035addd-a8f5-4a7f-909b-da453ebd64d0.config
+2026-10-04T02:54:40.1188218Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-9035addd-a8f5-4a7f-909b-da453ebd64d0.config
+2026-10-04T02:54:40.1216429Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T02:54:40.1235535Z /home/runner/work/_temp/git-credentials-9035addd-a8f5-4a7f-909b-da453ebd64d0.config
+2026-10-04T02:54:40.1242614Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-9035addd-a8f5-4a7f-909b-da453ebd64d0.config
+2026-10-04T02:54:40.1269261Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-04T02:54:40.1286477Z /github/runner_temp/git-credentials-9035addd-a8f5-4a7f-909b-da453ebd64d0.config
+2026-10-04T02:54:40.1293254Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-9035addd-a8f5-4a7f-909b-da453ebd64d0.config
+2026-10-04T02:54:40.1318786Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T02:54:40.1335960Z /github/runner_temp/git-credentials-9035addd-a8f5-4a7f-909b-da453ebd64d0.config
+2026-10-04T02:54:40.1342750Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-9035addd-a8f5-4a7f-909b-da453ebd64d0.config
+2026-10-04T02:54:40.1371138Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T02:54:40.1557185Z Removing credentials config '/home/runner/work/_temp/git-credentials-9035addd-a8f5-4a7f-909b-da453ebd64d0.config'
+2026-10-04T02:54:40.1666668Z Print service container logs: 135ccb5fd9bd49bfad36c8b1c91fe276_redis7alpine_386244
+2026-10-04T02:54:40.1670291Z ##[command]/usr/bin/docker logs --details c1a82b6ab8bfd3e4bfd9a186038304be44fd4037453243dad9004a9fb432ba20
+2026-10-04T02:54:40.1780194Z  1:C 04 Oct 2026 02:53:52.807 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+2026-10-04T02:54:40.1791052Z  1:C 04 Oct 2026 02:53:52.807 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+2026-10-04T02:54:40.1791626Z  1:C 04 Oct 2026 02:53:52.807 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+2026-10-04T02:54:40.1792290Z  1:C 04 Oct 2026 02:53:52.807 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+2026-10-04T02:54:40.1792813Z  1:M 04 Oct 2026 02:53:52.807 * monotonic clock: POSIX clock_gettime
+2026-10-04T02:54:40.1793121Z  1:M 04 Oct 2026 02:53:52.807 * Running mode=standalone, port=6379.
+2026-10-04T02:54:40.1793409Z  1:M 04 Oct 2026 02:53:52.808 * Server initialized
+2026-10-04T02:54:40.1793685Z  1:M 04 Oct 2026 02:53:52.808 * Ready to accept connections tcp
+2026-10-04T02:54:40.1797642Z Stop and remove container: 135ccb5fd9bd49bfad36c8b1c91fe276_redis7alpine_386244
+2026-10-04T02:54:40.1801759Z ##[command]/usr/bin/docker rm --force c1a82b6ab8bfd3e4bfd9a186038304be44fd4037453243dad9004a9fb432ba20
+2026-10-04T02:54:45.0417794Z c1a82b6ab8bfd3e4bfd9a186038304be44fd4037453243dad9004a9fb432ba20
+2026-10-04T02:54:45.0440090Z Remove container network: github_network_a01019a78ded42d5ab2e40a81500ca77
+2026-10-04T02:54:45.0443797Z ##[command]/usr/bin/docker network rm github_network_a01019a78ded42d5ab2e40a81500ca77
+2026-10-04T02:54:45.1558682Z github_network_a01019a78ded42d5ab2e40a81500ca77
+2026-10-04T02:54:45.1621299Z Cleaning up orphan processes

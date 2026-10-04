@@ -1,0 +1,150 @@
+Refreshing run status every 3 seconds. Press Ctrl+C to quit.
+
+* audit/AUD-SOL-CM2-116/675-before-http ci-lane · 37172039820
+Triggered via push less than a minute ago
+
+JOBS
+* targeted (ID 111346790671)
+  ✓ Set up job
+  ✓ Initialize containers
+  ✓ Run actions/checkout@v6
+  ✓ Run actions/setup-node@v6
+  ✓ Run npm ci
+  ✓ Run npx prisma generate
+  - Type-check (only when .ci-lane-tsc exists)
+  * Targeted jest
+  * Post Run actions/setup-node@v6
+  * Post Run actions/checkout@v6
+  * Stop containers
+Refreshing run status every 3 seconds. Press Ctrl+C to quit.
+
+* audit/AUD-SOL-CM2-116/675-before-http ci-lane · 37172039820
+Triggered via push less than a minute ago
+
+JOBS
+* targeted (ID 111346790671)
+  ✓ Set up job
+  ✓ Initialize containers
+  ✓ Run actions/checkout@v6
+  ✓ Run actions/setup-node@v6
+  ✓ Run npm ci
+  ✓ Run npx prisma generate
+  - Type-check (only when .ci-lane-tsc exists)
+  * Targeted jest
+  * Post Run actions/setup-node@v6
+  * Post Run actions/checkout@v6
+  * Stop containers
+Refreshing run status every 3 seconds. Press Ctrl+C to quit.
+
+* audit/AUD-SOL-CM2-116/675-before-http ci-lane · 37172039820
+Triggered via push less than a minute ago
+
+JOBS
+* targeted (ID 111346790671)
+  ✓ Set up job
+  ✓ Initialize containers
+  ✓ Run actions/checkout@v6
+  ✓ Run actions/setup-node@v6
+  ✓ Run npm ci
+  ✓ Run npx prisma generate
+  - Type-check (only when .ci-lane-tsc exists)
+  * Targeted jest
+  * Post Run actions/setup-node@v6
+  * Post Run actions/checkout@v6
+  * Stop containers
+Refreshing run status every 3 seconds. Press Ctrl+C to quit.
+
+* audit/AUD-SOL-CM2-116/675-before-http ci-lane · 37172039820
+Triggered via push about 1 minute ago
+
+JOBS
+* targeted (ID 111346790671)
+  ✓ Set up job
+  ✓ Initialize containers
+  ✓ Run actions/checkout@v6
+  ✓ Run actions/setup-node@v6
+  ✓ Run npm ci
+  ✓ Run npx prisma generate
+  - Type-check (only when .ci-lane-tsc exists)
+  * Targeted jest
+  * Post Run actions/setup-node@v6
+  * Post Run actions/checkout@v6
+  * Stop containers
+Refreshing run status every 3 seconds. Press Ctrl+C to quit.
+
+* audit/AUD-SOL-CM2-116/675-before-http ci-lane · 37172039820
+Triggered via push about 1 minute ago
+
+JOBS
+* targeted (ID 111346790671)
+  ✓ Set up job
+  ✓ Initialize containers
+  ✓ Run actions/checkout@v6
+  ✓ Run actions/setup-node@v6
+  ✓ Run npm ci
+  ✓ Run npx prisma generate
+  - Type-check (only when .ci-lane-tsc exists)
+  * Targeted jest
+  * Post Run actions/setup-node@v6
+  * Post Run actions/checkout@v6
+  * Stop containers
+Refreshing run status every 3 seconds. Press Ctrl+C to quit.
+
+* audit/AUD-SOL-CM2-116/675-before-http ci-lane · 37172039820
+Triggered via push about 1 minute ago
+
+JOBS
+* targeted (ID 111346790671)
+  ✓ Set up job
+  ✓ Initialize containers
+  ✓ Run actions/checkout@v6
+  ✓ Run actions/setup-node@v6
+  ✓ Run npm ci
+  ✓ Run npx prisma generate
+  - Type-check (only when .ci-lane-tsc exists)
+  * Targeted jest
+  * Post Run actions/setup-node@v6
+  * Post Run actions/checkout@v6
+  * Stop containers
+Refreshing run status every 3 seconds. Press Ctrl+C to quit.
+
+* audit/AUD-SOL-CM2-116/675-before-http ci-lane · 37172039820
+Triggered via push about 1 minute ago
+
+JOBS
+* targeted (ID 111346790671)
+  ✓ Set up job
+  ✓ Initialize containers
+  ✓ Run actions/checkout@v6
+  ✓ Run actions/setup-node@v6
+  ✓ Run npm ci
+  ✓ Run npx prisma generate
+  - Type-check (only when .ci-lane-tsc exists)
+  * Targeted jest
+  * Post Run actions/setup-node@v6
+  * Post Run actions/checkout@v6
+  * Stop containers
+X audit/AUD-SOL-CM2-116/675-before-http ci-lane · 37172039820
+Triggered via push about 1 minute ago
+
+JOBS
+* targeted (ID 111346790671)
+  ✓ Set up job
+  ✓ Initialize containers
+  ✓ Run actions/checkout@v6
+  ✓ Run actions/setup-node@v6
+  ✓ Run npm ci
+  ✓ Run npx prisma generate
+  - Type-check (only when .ci-lane-tsc exists)
+  * Targeted jest
+  * Post Run actions/setup-node@v6
+  * Post Run actions/checkout@v6
+  * Stop containers
+
+ANNOTATIONS
+X Process completed with exit code 1.
+targeted: .github#90
+
+- "The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748"
+targeted: .github#1
+

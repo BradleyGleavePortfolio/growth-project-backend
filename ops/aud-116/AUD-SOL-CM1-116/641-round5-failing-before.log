@@ -1,0 +1,732 @@
+targeted	UNKNOWN STEP	﻿2026-10-03T18:27:29.2222101Z Current runner version: '2.337.0'
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2241733Z ##[group]Runner Image Provisioner
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2242547Z Hosted Compute Agent
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2243174Z Version: 20260901.588
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2243803Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2244531Z Build Date: 2026-09-01T19:56:44Z
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2245170Z Worker ID: {070428bc-4665-49ae-ae79-64208454d161}
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2245839Z Azure Region: westcentralus
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2246416Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2247726Z ##[group]Operating System
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2248277Z Ubuntu
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2248799Z 24.04.5
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2249276Z LTS
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2250097Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2250775Z ##[group]Runner Image
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2251651Z Image: ubuntu-24.04
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2252260Z Version: 20260927.320.1
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2253430Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2254967Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2255858Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2256991Z ##[group]GITHUB_TOKEN Permissions
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2258915Z Contents: read
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2259525Z Metadata: read
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2260044Z Packages: read
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2260576Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2262603Z Secret source: Actions
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2263531Z Cache mode: write
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2264170Z Prepare workflow directory
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2656597Z Prepare all required actions
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.2703285Z Getting action download info
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.5768986Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.6859787Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.8844420Z Complete job name: targeted
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.9261692Z ##[group]Checking docker version
+targeted	UNKNOWN STEP	2026-10-03T18:27:29.9273724Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+targeted	UNKNOWN STEP	2026-10-03T18:27:30.0116629Z '1.48'
+targeted	UNKNOWN STEP	2026-10-03T18:27:30.0129489Z Docker daemon API version: '1.48'
+targeted	UNKNOWN STEP	2026-10-03T18:27:30.0130334Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+targeted	UNKNOWN STEP	2026-10-03T18:27:30.0280463Z '1.48'
+targeted	UNKNOWN STEP	2026-10-03T18:27:30.0289764Z Docker client API version: '1.48'
+targeted	UNKNOWN STEP	2026-10-03T18:27:30.0294978Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:27:30.0297471Z ##[group]Clean up resources from previous jobs
+targeted	UNKNOWN STEP	2026-10-03T18:27:30.0303058Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=08ba8e"
+targeted	UNKNOWN STEP	2026-10-03T18:27:30.0438060Z ##[command]/usr/bin/docker network prune --force --filter "label=08ba8e"
+targeted	UNKNOWN STEP	2026-10-03T18:27:30.0556218Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:27:30.0556839Z ##[group]Create local container network
+targeted	UNKNOWN STEP	2026-10-03T18:27:30.0565601Z ##[command]/usr/bin/docker network create --label 08ba8e github_network_7757d2b13e9f47979faf12da5f5fb962
+targeted	UNKNOWN STEP	2026-10-03T18:27:30.1015436Z 8179c2ce423b3a4fa7017e664b62049cea85f188284fec7475e3065948190500
+targeted	UNKNOWN STEP	2026-10-03T18:27:30.1030267Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:27:30.1055229Z ##[group]Starting redis service container
+targeted	UNKNOWN STEP	2026-10-03T18:27:30.1075076Z ##[command]/usr/bin/docker pull redis:7-alpine
+targeted	UNKNOWN STEP	2026-10-03T18:27:30.8214199Z 7-alpine: Pulling from library/redis
+targeted	UNKNOWN STEP	2026-10-03T18:27:31.0251505Z 16333ee0c00f: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-03T18:27:31.0253263Z 83234986c742: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-03T18:27:31.0254104Z 7eb50503c2b0: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-03T18:27:31.0254981Z 1522f9c6f453: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-03T18:27:31.0255833Z 9928009b15c8: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-03T18:27:31.0256655Z 4f4fb700ef54: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-03T18:27:31.0257965Z 4eb14bae0e1d: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-03T18:27:31.0258533Z 1522f9c6f453: Waiting
+targeted	UNKNOWN STEP	2026-10-03T18:27:31.0259080Z 9928009b15c8: Waiting
+targeted	UNKNOWN STEP	2026-10-03T18:27:31.0259626Z 4eb14bae0e1d: Waiting
+targeted	UNKNOWN STEP	2026-10-03T18:27:31.0260133Z 4f4fb700ef54: Waiting
+targeted	UNKNOWN STEP	2026-10-03T18:27:31.2417755Z 83234986c742: Verifying Checksum
+targeted	UNKNOWN STEP	2026-10-03T18:27:31.2420616Z 83234986c742: Download complete
+targeted	UNKNOWN STEP	2026-10-03T18:27:31.2645852Z 7eb50503c2b0: Verifying Checksum
+targeted	UNKNOWN STEP	2026-10-03T18:27:31.2647663Z 7eb50503c2b0: Download complete
+targeted	UNKNOWN STEP	2026-10-03T18:27:31.4072211Z 16333ee0c00f: Verifying Checksum
+targeted	UNKNOWN STEP	2026-10-03T18:27:31.4074832Z 16333ee0c00f: Download complete
+targeted	UNKNOWN STEP	2026-10-03T18:27:31.4516318Z 9928009b15c8: Verifying Checksum
+targeted	UNKNOWN STEP	2026-10-03T18:27:31.4519442Z 9928009b15c8: Download complete
+targeted	UNKNOWN STEP	2026-10-03T18:27:31.5138762Z 16333ee0c00f: Pull complete
+targeted	UNKNOWN STEP	2026-10-03T18:27:31.6179955Z 4f4fb700ef54: Verifying Checksum
+targeted	UNKNOWN STEP	2026-10-03T18:27:31.6180919Z 4f4fb700ef54: Download complete
+targeted	UNKNOWN STEP	2026-10-03T18:27:31.6512162Z 83234986c742: Pull complete
+targeted	UNKNOWN STEP	2026-10-03T18:27:31.6539031Z 4eb14bae0e1d: Verifying Checksum
+targeted	UNKNOWN STEP	2026-10-03T18:27:31.6539903Z 4eb14bae0e1d: Download complete
+targeted	UNKNOWN STEP	2026-10-03T18:27:31.8233108Z 7eb50503c2b0: Pull complete
+targeted	UNKNOWN STEP	2026-10-03T18:27:31.9120211Z 1522f9c6f453: Download complete
+targeted	UNKNOWN STEP	2026-10-03T18:27:32.3257824Z 1522f9c6f453: Pull complete
+targeted	UNKNOWN STEP	2026-10-03T18:27:32.3342857Z 9928009b15c8: Pull complete
+targeted	UNKNOWN STEP	2026-10-03T18:27:32.3443397Z 4f4fb700ef54: Pull complete
+targeted	UNKNOWN STEP	2026-10-03T18:27:32.3557847Z 4eb14bae0e1d: Pull complete
+targeted	UNKNOWN STEP	2026-10-03T18:27:32.3609277Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+targeted	UNKNOWN STEP	2026-10-03T18:27:32.3625763Z Status: Downloaded newer image for redis:7-alpine
+targeted	UNKNOWN STEP	2026-10-03T18:27:32.3638719Z docker.io/library/redis:7-alpine
+targeted	UNKNOWN STEP	2026-10-03T18:27:32.3682115Z ##[command]/usr/bin/docker create --name ceec6b2b61024942b7e0600eade9143f_redis7alpine_04f330 --label 08ba8e --network github_network_7757d2b13e9f47979faf12da5f5fb962 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+targeted	UNKNOWN STEP	2026-10-03T18:27:32.3927441Z 3042030b3ef6975316868ab95a3937c29d3039eb1984fab725ea413e167420f0
+targeted	UNKNOWN STEP	2026-10-03T18:27:32.3943920Z ##[command]/usr/bin/docker start 3042030b3ef6975316868ab95a3937c29d3039eb1984fab725ea413e167420f0
+targeted	UNKNOWN STEP	2026-10-03T18:27:32.5882417Z 3042030b3ef6975316868ab95a3937c29d3039eb1984fab725ea413e167420f0
+targeted	UNKNOWN STEP	2026-10-03T18:27:32.5897204Z ##[command]/usr/bin/docker ps --all --filter id=3042030b3ef6975316868ab95a3937c29d3039eb1984fab725ea413e167420f0 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+targeted	UNKNOWN STEP	2026-10-03T18:27:32.6025002Z 3042030b3ef6975316868ab95a3937c29d3039eb1984fab725ea413e167420f0 Up Less than a second (health: starting)
+targeted	UNKNOWN STEP	2026-10-03T18:27:32.6039348Z ##[command]/usr/bin/docker port 3042030b3ef6975316868ab95a3937c29d3039eb1984fab725ea413e167420f0
+targeted	UNKNOWN STEP	2026-10-03T18:27:32.6152847Z 6379/tcp -> 0.0.0.0:6379
+targeted	UNKNOWN STEP	2026-10-03T18:27:32.6154242Z 6379/tcp -> [::]:6379
+targeted	UNKNOWN STEP	2026-10-03T18:27:32.6188724Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:27:32.6197392Z ##[group]Waiting for all services to be ready
+targeted	UNKNOWN STEP	2026-10-03T18:27:32.6210299Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 3042030b3ef6975316868ab95a3937c29d3039eb1984fab725ea413e167420f0
+targeted	UNKNOWN STEP	2026-10-03T18:27:32.6323775Z starting
+targeted	UNKNOWN STEP	2026-10-03T18:27:32.6338212Z redis service is starting, waiting 2 seconds before checking again.
+targeted	UNKNOWN STEP	2026-10-03T18:27:34.6338102Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 3042030b3ef6975316868ab95a3937c29d3039eb1984fab725ea413e167420f0
+targeted	UNKNOWN STEP	2026-10-03T18:27:34.6464175Z starting
+targeted	UNKNOWN STEP	2026-10-03T18:27:34.6473797Z redis service is starting, waiting 3 seconds before checking again.
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.5091803Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 3042030b3ef6975316868ab95a3937c29d3039eb1984fab725ea413e167420f0
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.5216888Z healthy
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.5228766Z redis service is healthy.
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.5229826Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.5500972Z ##[group]Run actions/checkout@v6
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.5501641Z with:
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.5502091Z   repository: BradleyGleavePortfolio/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.5504410Z   token: ***
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.5504736Z   ssh-strict: true
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.5505070Z   ssh-user: git
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.5505565Z   persist-credentials: true
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.5505917Z   clean: true
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.5506211Z   sparse-checkout-cone-mode: true
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.5506566Z   fetch-depth: 1
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.5506872Z   fetch-tags: false
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.5507166Z   show-progress: true
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.5507460Z   lfs: false
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.5507740Z   submodules: false
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.5508034Z   set-safe-directory: true
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.5508388Z   allow-unsafe-pr-checkout: false
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.5508860Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6466201Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6467914Z ##[group]Getting Git version info
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6468571Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6469374Z [command]/usr/bin/git version
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6541558Z git version 2.55.0
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6558656Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6569861Z Temporarily overriding HOME='/home/runner/work/_temp/d5944762-ab52-496f-9760-7c3af3a0e8d2' before making global git config changes
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6570716Z Adding repository directory to the temporary git global config as a safe directory
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6574861Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6618557Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6622836Z ##[group]Determining repository object format
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6625096Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6625621Z ##[group]Initializing the repository
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6630277Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6730798Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6731908Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6733125Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6733942Z hint: call:
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6734616Z hint:
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6735460Z hint: 	git config --global init.defaultBranch <name>
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6736267Z hint:
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6737020Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6738051Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6739024Z hint:
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6739673Z hint: 	git branch -m <name>
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6740394Z hint:
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6741417Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6742707Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6745434Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6788169Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6789034Z ##[group]Disabling automatic garbage collection
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6791543Z [command]/usr/bin/git config --local gc.auto 0
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6818248Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6819034Z ##[group]Setting up auth
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6819573Z Removing SSH command configuration
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6824784Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.6850179Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.7296313Z Removing HTTP extra header
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.7300978Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.7325356Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.7494400Z Removing includeIf entries pointing to credentials config files
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.7499187Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.7523435Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.7699370Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-17a2d546-83b1-4513-af87-ec6503781221.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.7728295Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-17a2d546-83b1-4513-af87-ec6503781221.config
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.7754709Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-17a2d546-83b1-4513-af87-ec6503781221.config
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.7785685Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-17a2d546-83b1-4513-af87-ec6503781221.config
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.7814185Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-17a2d546-83b1-4513-af87-ec6503781221.config
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.7845286Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.7845875Z ##[group]Fetching the repository
+targeted	UNKNOWN STEP	2026-10-03T18:27:38.7852302Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +7dad0b5b40eb8f24437498c66d5f93352577d66e:refs/remotes/origin/ci/B-COACH-5-641-r6-before
+targeted	UNKNOWN STEP	2026-10-03T18:27:40.7614280Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-03T18:27:40.7615042Z  * [new ref]         7dad0b5b40eb8f24437498c66d5f93352577d66e -> origin/ci/B-COACH-5-641-r6-before
+targeted	UNKNOWN STEP	2026-10-03T18:27:40.7623925Z [command]/usr/bin/git branch --list --remote origin/ci/B-COACH-5-641-r6-before
+targeted	UNKNOWN STEP	2026-10-03T18:27:40.7645886Z   origin/ci/B-COACH-5-641-r6-before
+targeted	UNKNOWN STEP	2026-10-03T18:27:40.7653439Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-COACH-5-641-r6-before
+targeted	UNKNOWN STEP	2026-10-03T18:27:40.7674415Z 7dad0b5b40eb8f24437498c66d5f93352577d66e
+targeted	UNKNOWN STEP	2026-10-03T18:27:40.7676500Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:27:40.7677326Z ##[group]Determining the checkout info
+targeted	UNKNOWN STEP	2026-10-03T18:27:40.7678977Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:27:40.7702458Z [command]/usr/bin/git sparse-checkout disable
+targeted	UNKNOWN STEP	2026-10-03T18:27:40.7831931Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	UNKNOWN STEP	2026-10-03T18:27:40.7856830Z ##[group]Checking out the ref
+targeted	UNKNOWN STEP	2026-10-03T18:27:40.7859981Z [command]/usr/bin/git checkout --progress --force -B ci/B-COACH-5-641-r6-before refs/remotes/origin/ci/B-COACH-5-641-r6-before
+targeted	UNKNOWN STEP	2026-10-03T18:27:40.9576751Z Switched to a new branch 'ci/B-COACH-5-641-r6-before'
+targeted	UNKNOWN STEP	2026-10-03T18:27:40.9581557Z branch 'ci/B-COACH-5-641-r6-before' set up to track 'origin/ci/B-COACH-5-641-r6-before'.
+targeted	UNKNOWN STEP	2026-10-03T18:27:40.9587566Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:27:40.9621635Z [command]/usr/bin/git log -1 --format=%H
+targeted	UNKNOWN STEP	2026-10-03T18:27:40.9640552Z 7dad0b5b40eb8f24437498c66d5f93352577d66e
+targeted	UNKNOWN STEP	2026-10-03T18:27:40.9876010Z ##[group]Run actions/setup-node@v6
+targeted	UNKNOWN STEP	2026-10-03T18:27:40.9876389Z with:
+targeted	UNKNOWN STEP	2026-10-03T18:27:40.9876690Z   node-version: 20
+targeted	UNKNOWN STEP	2026-10-03T18:27:40.9877012Z   cache: npm
+targeted	UNKNOWN STEP	2026-10-03T18:27:40.9877290Z   check-latest: false
+targeted	UNKNOWN STEP	2026-10-03T18:27:40.9879392Z   token: ***
+targeted	UNKNOWN STEP	2026-10-03T18:27:40.9879724Z   package-manager-cache: true
+targeted	UNKNOWN STEP	2026-10-03T18:27:40.9880068Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:27:41.1182798Z Attempting to download 20...
+targeted	UNKNOWN STEP	2026-10-03T18:27:41.9484459Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+targeted	UNKNOWN STEP	2026-10-03T18:27:42.5409408Z Extracting ...
+targeted	UNKNOWN STEP	2026-10-03T18:27:42.5509298Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/0ce4b87e-e810-4665-ab64-1991146e9083 -f /home/runner/work/_temp/158ae559-30f1-4335-bb75-172bf282326b
+targeted	UNKNOWN STEP	2026-10-03T18:27:43.6399034Z Adding to the cache ...
+targeted	UNKNOWN STEP	2026-10-03T18:27:45.5180863Z ##[group]Environment details
+targeted	UNKNOWN STEP	2026-10-03T18:27:45.7259363Z node: v20.20.2
+targeted	UNKNOWN STEP	2026-10-03T18:27:45.7259788Z npm: 10.8.2
+targeted	UNKNOWN STEP	2026-10-03T18:27:45.7260634Z yarn: 1.22.22
+targeted	UNKNOWN STEP	2026-10-03T18:27:45.7261626Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:27:45.7274022Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+targeted	UNKNOWN STEP	2026-10-03T18:27:45.8184350Z /home/runner/.npm
+targeted	UNKNOWN STEP	2026-10-03T18:27:45.9924111Z Cache hit for: node-cache-Linux-x64-npm-1c658f1a35f7b309848c416454e12a0f8c258736d5e30a9676088e8641c298ba
+targeted	UNKNOWN STEP	2026-10-03T18:27:47.2091538Z Received 46137344 of 86861520 (53.1%), 44.0 MBs/sec
+targeted	UNKNOWN STEP	2026-10-03T18:27:47.3934090Z Received 86861520 of 86861520 (100.0%), 69.9 MBs/sec
+targeted	UNKNOWN STEP	2026-10-03T18:27:47.3935029Z Cache Size: ~83 MB (86861520 B)
+targeted	UNKNOWN STEP	2026-10-03T18:27:47.3966688Z [command]/usr/bin/tar -xf /home/runner/work/_temp/4a21b553-dc8e-414b-9aba-7e76ba289182/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+targeted	UNKNOWN STEP	2026-10-03T18:27:47.5035316Z Cache restored successfully
+targeted	UNKNOWN STEP	2026-10-03T18:27:47.5076462Z Cache restored from key: node-cache-Linux-x64-npm-1c658f1a35f7b309848c416454e12a0f8c258736d5e30a9676088e8641c298ba
+targeted	UNKNOWN STEP	2026-10-03T18:27:47.5247938Z ##[group]Run npm ci
+targeted	UNKNOWN STEP	2026-10-03T18:27:47.5248329Z ^[[36;1mnpm ci^[[0m
+targeted	UNKNOWN STEP	2026-10-03T18:27:47.5407910Z shell: /usr/bin/bash -e {0}
+targeted	UNKNOWN STEP	2026-10-03T18:27:47.5408304Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:27:52.6124344Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	UNKNOWN STEP	2026-10-03T18:27:52.8585179Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+targeted	UNKNOWN STEP	2026-10-03T18:27:54.7219523Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-03T18:27:55.7036637Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-03T18:27:55.7260100Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-03T18:27:55.7765798Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-03T18:28:07.3207336Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:07.3208539Z > growth-project-backend@1.0.0 postinstall
+targeted	UNKNOWN STEP	2026-10-03T18:28:07.3209515Z > prisma generate
+targeted	UNKNOWN STEP	2026-10-03T18:28:07.3209832Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:08.1417001Z Prisma schema loaded from prisma/schema.prisma
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.5737426Z ┌─────────────────────────────────────────────────────────┐
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.5738512Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.5739151Z │                                                         │
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.5739824Z │  This is a major update - please follow the guide at    │
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.5740440Z │  https://pris.ly/d/major-version-upgrade                │
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.5741044Z │                                                         │
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.5741690Z │  Run the following to update                            │
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.5742463Z │    npm i --save-dev prisma@latest                       │
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.5743067Z │    npm i @prisma/client@latest                          │
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.5743642Z └─────────────────────────────────────────────────────────┘
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.5743924Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.5744335Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.88s
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.5744671Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.5745045Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.5745354Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.5745854Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.5746297Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.6089025Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.6090331Z > growth-project-backend@1.0.0 prepare
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.6091899Z > lefthook install
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.6092263Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.6521985Z sync hooks: ✔️(pre-commit, commit-msg)
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.6656772Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.6657890Z added 1117 packages, and audited 1118 packages in 24s
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.6658432Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.6658777Z 202 packages are looking for funding
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.6659531Z   run `npm fund` for details
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.6691786Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.6693023Z 4 vulnerabilities (1 moderate, 3 high)
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.6693975Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.6694485Z To address issues that do not require attention, run:
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.6695248Z   npm audit fix
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.6695525Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.6696028Z To address all issues (including breaking changes), run:
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.6696660Z   npm audit fix --force
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.6696970Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.6697215Z Run `npm audit` for details.
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.7044579Z ##[group]Run npx prisma generate
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.7044977Z ^[[36;1mnpx prisma generate^[[0m
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.7088895Z shell: /usr/bin/bash -e {0}
+targeted	UNKNOWN STEP	2026-10-03T18:28:11.7089309Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:28:12.7662956Z Prisma schema loaded from prisma/schema.prisma
+targeted	UNKNOWN STEP	2026-10-03T18:28:16.2445128Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:16.2446573Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.89s
+targeted	UNKNOWN STEP	2026-10-03T18:28:16.2447033Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:16.2447440Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	UNKNOWN STEP	2026-10-03T18:28:16.2447841Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:16.2448342Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+targeted	UNKNOWN STEP	2026-10-03T18:28:16.2448702Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:16.3353618Z ##[group]Run set -euo pipefail
+targeted	UNKNOWN STEP	2026-10-03T18:28:16.3354008Z ^[[36;1mset -euo pipefail^[[0m
+targeted	UNKNOWN STEP	2026-10-03T18:28:16.3354532Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	UNKNOWN STEP	2026-10-03T18:28:16.3355046Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	UNKNOWN STEP	2026-10-03T18:28:16.3355448Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	UNKNOWN STEP	2026-10-03T18:28:16.3355837Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	UNKNOWN STEP	2026-10-03T18:28:16.3400186Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	UNKNOWN STEP	2026-10-03T18:28:16.3400641Z env:
+targeted	UNKNOWN STEP	2026-10-03T18:28:16.3400969Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	UNKNOWN STEP	2026-10-03T18:28:16.3401583Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	UNKNOWN STEP	2026-10-03T18:28:16.3401976Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-03T18:28:16.3476374Z specs: test/refund-reversal-review.spec.ts test/refund-reversal-reconcile.spec.ts
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.1944108Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-late purchase=p-late code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2010652Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-x purchase=p-x code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2036225Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-u purchase=p-u code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2062628Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-late purchase=p-late code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2083601Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-late purchase=p-late code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2804485Z FAIL test/refund-reversal-reconcile.spec.ts (11.015 s)
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2806510Z   ● B-641-9 / B-641-10 — one Stripe reversal settles at most one refund, and only in full › Sol probe: the same unattributed reversal cannot settle two refunds
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2807457Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2807933Z     expect(received).rejects.toMatchObject()
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2808342Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2808653Z     Received promise resolved instead of rejected
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2809868Z     Resolved to value: {"amount_cents": 122, "charge_refund_id": "r-two", "outcome": "recorded_from_stripe", "stripe_transfer_reversal_id": "trr_1"}
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2810713Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2812367Z     ^[[0m ^[[90m 214 |^[[39m     ^[[36mawait^[[39m h^[[33m.^[[39mreverseTransfer({ transfer_id^[[33m:^[[39m ^[[32m'tr_p-r'^[[39m^[[33m,^[[39m amount^[[33m:^[[39m ^[[35m122^[[39m^[[33m,^[[39m idempotencyKey^[[33m:^[[39m ^[[32m'manual-1'^[[39m })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2814612Z      ^[[90m 215 |^[[39m     ^[[36mawait^[[39m h^[[33m.^[[39msvc^[[33m.^[[39mreconcileTransferReversal(^[[32m'r-one'^[[39m^[[33m,^[[39m { stripe_transfer_reversal_id^[[33m:^[[39m ^[[32m'trr_1'^[[39m })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2815965Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 216 |^[[39m     ^[[36mawait^[[39m expect(
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2816715Z      ^[[90m     |^[[39m           ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2818079Z      ^[[90m 217 |^[[39m       h^[[33m.^[[39msvc^[[33m.^[[39mreconcileTransferReversal(^[[32m'r-two'^[[39m^[[33m,^[[39m { stripe_transfer_reversal_id^[[33m:^[[39m ^[[32m'trr_1'^[[39m })^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2819972Z      ^[[90m 218 |^[[39m     )^[[33m.^[[39mrejects^[[33m.^[[39mtoMatchObject({ response^[[33m:^[[39m { code^[[33m:^[[39m ^[[32m'TRANSFER_REVERSAL_ASSIGNED_TO_OTHER_REFUND'^[[39m } })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2821346Z      ^[[90m 219 |^[[39m     expect({^[[0m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2821705Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2822418Z       at expect (node_modules/expect/build/index.js:2116:15)
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2823280Z       at Object.<anonymous> (test/refund-reversal-reconcile.spec.ts:216:11)
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2823661Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2824732Z   ● B-641-9 / B-641-10 — one Stripe reversal settles at most one refund, and only in full › two owners assigning one reversal to two refunds at once record it once
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2825565Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2825862Z     expect(received).toHaveLength(expected)
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2826246Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2826496Z     Expected length: 1
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2826990Z     Received length: 2
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2829079Z     Received array:  [{"status": "fulfilled", "value": {"amount_cents": 122, "charge_refund_id": "r-one", "outcome": "recorded_from_stripe", "stripe_transfer_reversal_id": "trr_1"}}, {"status": "fulfilled", "value": {"amount_cents": 122, "charge_refund_id": "r-two", "outcome": "recorded_from_stripe", "stripe_transfer_reversal_id": "trr_1"}}]
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2830616Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2832201Z     ^[[0m ^[[90m 232 |^[[39m       h^[[33m.^[[39msvc^[[33m.^[[39mreconcileTransferReversal(^[[32m'r-two'^[[39m^[[33m,^[[39m { stripe_transfer_reversal_id^[[33m:^[[39m ^[[32m'trr_1'^[[39m })^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2833423Z      ^[[90m 233 |^[[39m     ])^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2834856Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 234 |^[[39m     expect(out^[[33m.^[[39mfilter((o) ^[[33m=>^[[39m o^[[33m.^[[39mstatus ^[[33m===^[[39m ^[[32m'fulfilled'^[[39m))^[[33m.^[[39mtoHaveLength(^[[35m1^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2836147Z      ^[[90m     |^[[39m                                                         ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2837993Z      ^[[90m 235 |^[[39m     ^[[36mconst^[[39m refused ^[[33m=^[[39m out^[[33m.^[[39mfind((o) ^[[33m=>^[[39m o^[[33m.^[[39mstatus ^[[33m===^[[39m ^[[32m'rejected'^[[39m) ^[[36mas^[[39m ^[[33mPromiseRejectedResult^[[39m^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2839376Z      ^[[90m 236 |^[[39m     expect(refused^[[33m.^[[39mreason)^[[33m.^[[39mtoMatchObject({
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2840676Z      ^[[90m 237 |^[[39m       response^[[33m:^[[39m { code^[[33m:^[[39m ^[[32m'TRANSFER_REVERSAL_ASSIGNED_TO_OTHER_REFUND'^[[39m }^[[33m,^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2841574Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2842048Z       at Object.<anonymous> (test/refund-reversal-reconcile.spec.ts:234:57)
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2842557Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2843665Z   ● B-641-9 / B-641-10 — one Stripe reversal settles at most one refund, and only in full › two refunds on one transfer each settle with their own reversal (multiple receipts)
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2844479Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2844853Z     expect(received).toBe(expected) // Object.is equality
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2845275Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2845445Z     Expected: "trr_2"
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2845954Z     Received: null
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2846190Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2846901Z     ^[[0m ^[[90m 251 |^[[39m     expect(h^[[33m.^[[39mstripeTotal(^[[32m'tr_p-r'^[[39m))^[[33m.^[[39mtoBe(^[[35m244^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2848128Z      ^[[90m 252 |^[[39m     expect(h^[[33m.^[[39mheadCoach(^[[32m'p-r'^[[39m))^[[33m.^[[39mtoBe(^[[35m244^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2849767Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 253 |^[[39m     expect(h^[[33m.^[[39mrefund(^[[32m'r-two'^[[39m)^[[33m.^[[39mtransfer_reversal_stripe_id)^[[33m.^[[39mtoBe(^[[32m'trr_2'^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2851034Z      ^[[90m     |^[[39m                                                           ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2852062Z      ^[[90m 254 |^[[39m   })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2852573Z      ^[[90m 255 |^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2853656Z      ^[[90m 256 |^[[39m   it(^[[32m'a replayed receipt for the same refund adds nothing'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2854378Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2854812Z       at Object.<anonymous> (test/refund-reversal-reconcile.spec.ts:253:59)
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2855320Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2856618Z   ● B-641-9 / B-641-10 — one Stripe reversal settles at most one refund, and only in full › Sol probe: an undersized receipt is refused and the refund stays owed in review
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2857416Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2857697Z     expect(received).rejects.toMatchObject()
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2858047Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2858273Z     Received promise resolved instead of rejected
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2859439Z     Resolved to value: {"amount_cents": 10, "charge_refund_id": "r-partial", "outcome": "recorded_from_stripe", "stripe_transfer_reversal_id": "trr_1"}
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2860106Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2860787Z     ^[[0m ^[[90m 272 |^[[39m       metadata^[[33m:^[[39m { tgp_charge_refund_id^[[33m:^[[39m ^[[32m'r-partial'^[[39m }^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2862042Z      ^[[90m 273 |^[[39m     })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2863350Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 274 |^[[39m     ^[[36mawait^[[39m expect(h^[[33m.^[[39msvc^[[33m.^[[39mreconcileTransferReversal(^[[32m'r-partial'^[[39m))^[[33m.^[[39mrejects^[[33m.^[[39mtoMatchObject({
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2864583Z      ^[[90m     |^[[39m           ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2865385Z      ^[[90m 275 |^[[39m       response^[[33m:^[[39m {
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2866294Z      ^[[90m 276 |^[[39m         code^[[33m:^[[39m ^[[32m'TRANSFER_REVERSAL_UNDERSIZED'^[[39m^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2867323Z      ^[[90m 277 |^[[39m         reversal_amount_cents^[[33m:^[[39m ^[[35m10^[[39m^[[33m,^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2867852Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2868205Z       at expect (node_modules/expect/build/index.js:2116:15)
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2869037Z       at Object.<anonymous> (test/refund-reversal-reconcile.spec.ts:274:11)
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2869608Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2870596Z   ● B-641-9 / B-641-10 — one Stripe reversal settles at most one refund, and only in full › an oversized receipt records what Stripe moved, capped by the transfer
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2871769Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2872044Z     expect(received).toMatchObject(expected)
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2872450Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2872647Z     - Expected  - 1
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2873142Z     + Received  + 1
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2873329Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2873533Z       Object {
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2873951Z     -   "amount_cents": 200,
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2874432Z     +   "amount_cents": 122,
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2875006Z         "outcome": "recorded_from_stripe",
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2875779Z       }
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2875950Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2876639Z     ^[[0m ^[[90m 294 |^[[39m       stripe_transfer_reversal_id^[[33m:^[[39m ^[[32m'trr_1'^[[39m^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2877390Z      ^[[90m 295 |^[[39m     })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2878808Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 296 |^[[39m     expect(out)^[[33m.^[[39mtoMatchObject({ outcome^[[33m:^[[39m ^[[32m'recorded_from_stripe'^[[39m^[[33m,^[[39m amount_cents^[[33m:^[[39m ^[[35m200^[[39m })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2880066Z      ^[[90m     |^[[39m                 ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2881050Z      ^[[90m 297 |^[[39m     expect(h^[[33m.^[[39mheadCoach(^[[32m'p-r'^[[39m))^[[33m.^[[39mtoBe(^[[35m200^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2882536Z      ^[[90m 298 |^[[39m     expect(h^[[33m.^[[39mrefund(^[[32m'r-big'^[[39m)^[[33m.^[[39mtransfer_reversed)^[[33m.^[[39mtoBe(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2883448Z      ^[[90m 299 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2883768Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2884257Z       at Object.<anonymous> (test/refund-reversal-reconcile.spec.ts:296:17)
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.2884877Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6097074Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-late purchase=p-late code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6133023Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-late purchase=p-late code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6153431Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-late purchase=p-late code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6245252Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-00 purchase=p-old-00 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6248458Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-01 purchase=p-old-01 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6251941Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-02 purchase=p-old-02 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6255004Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-03 purchase=p-old-03 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6257758Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-04 purchase=p-old-04 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6260763Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-05 purchase=p-old-05 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6264602Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-06 purchase=p-old-06 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6267554Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-07 purchase=p-old-07 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6270424Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-08 purchase=p-old-08 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6273438Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-09 purchase=p-old-09 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6276213Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-10 purchase=p-old-10 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6279052Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-11 purchase=p-old-11 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6282047Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-12 purchase=p-old-12 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6284918Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-13 purchase=p-old-13 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6287593Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-14 purchase=p-old-14 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6290758Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-15 purchase=p-old-15 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6293813Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-16 purchase=p-old-16 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6296621Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-17 purchase=p-old-17 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6299469Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-18 purchase=p-old-18 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6302447Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-19 purchase=p-old-19 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6305254Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-20 purchase=p-old-20 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6308055Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-21 purchase=p-old-21 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6311414Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-22 purchase=p-old-22 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6314276Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-23 purchase=p-old-23 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6317135Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-24 purchase=p-old-24 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6319986Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-25 purchase=p-old-25 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6322818Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-26 purchase=p-old-26 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6325786Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-27 purchase=p-old-27 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6328572Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-28 purchase=p-old-28 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6331575Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-29 purchase=p-old-29 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6335679Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-30 purchase=p-old-30 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6340250Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-31 purchase=p-old-31 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6344533Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-32 purchase=p-old-32 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6348559Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-33 purchase=p-old-33 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6351573Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-34 purchase=p-old-34 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6354059Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-35 purchase=p-old-35 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6356039Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-36 purchase=p-old-36 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6357963Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-37 purchase=p-old-37 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6360048Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-38 purchase=p-old-38 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6362085Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-39 purchase=p-old-39 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6364304Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-40 purchase=p-old-40 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6366230Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-41 purchase=p-old-41 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6368091Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-42 purchase=p-old-42 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6369657Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-43 purchase=p-old-43 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6371387Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-44 purchase=p-old-44 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6373904Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-45 purchase=p-old-45 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6413702Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-46 purchase=p-old-46 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6415952Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-47 purchase=p-old-47 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6417735Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-48 purchase=p-old-48 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6420153Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-49 purchase=p-old-49 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6422843Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-50 purchase=p-old-50 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6425294Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-51 purchase=p-old-51 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6427326Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-52 purchase=p-old-52 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6428982Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-53 purchase=p-old-53 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6430619Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-54 purchase=p-old-54 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6432427Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-55 purchase=p-old-55 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6434068Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-56 purchase=p-old-56 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6435659Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-57 purchase=p-old-57 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6437225Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-58 purchase=p-old-58 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:28.6438841Z ^[[31m[Nest] 3028  - ^[[39m10/03/2026, 6:28:28 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-old-59 purchase=p-old-59 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8823725Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-002 refund=r-m-002 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8825876Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-005 refund=r-m-005 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8827813Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-008 refund=r-m-008 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8829208Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-011 refund=r-m-011 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8830595Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-014 refund=r-m-014 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8832283Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-017 refund=r-m-017 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8833674Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-020 refund=r-m-020 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8835043Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-023 refund=r-m-023 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8836410Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-026 refund=r-m-026 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8837779Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-029 refund=r-m-029 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8839286Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-032 refund=r-m-032 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8840660Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-035 refund=r-m-035 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8842280Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-038 refund=r-m-038 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8843201Z FAIL test/refund-reversal-review.spec.ts
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8844207Z   ● B-641-8 (narrowed) — persistent failures never hold later refunds back across runs › Sol probe: 20 failing rows fill a run of 20 one-row pages; the next run reaches the fresh refund
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8844821Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8845008Z     expect(received).toEqual(expected) // deep equality
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8845322Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8845480Z     - Expected  - 3
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8845789Z     + Received  + 3
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8845971Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8846093Z       Object {
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8846440Z     -   "done": true,
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8846749Z     -   "external": 122,
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8847072Z     -   "local": 122,
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8847385Z     +   "done": false,
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8847715Z     +   "external": 0,
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8848030Z     +   "local": 0,
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8848356Z       }
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8848484Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8848899Z     ^[[0m ^[[90m 209 |^[[39m       local^[[33m:^[[39m h^[[33m.^[[39mheadCoach(^[[32m'p-z-fresh'^[[39m)^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8849649Z      ^[[90m 210 |^[[39m       done^[[33m:^[[39m h^[[33m.^[[39mrefund(^[[32m'r-z-fresh'^[[39m)^[[33m.^[[39mtransfer_reversed^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8851376Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 211 |^[[39m     })^[[33m.^[[39mtoEqual({ external^[[33m:^[[39m ^[[35m122^[[39m^[[33m,^[[39m local^[[33m:^[[39m ^[[35m122^[[39m^[[33m,^[[39m done^[[33m:^[[39m ^[[36mtrue^[[39m })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8852329Z      ^[[90m     |^[[39m        ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8852816Z      ^[[90m 212 |^[[39m   })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8853174Z      ^[[90m 213 |^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8854102Z      ^[[90m 214 |^[[39m   it(^[[32m'more failures than the page budget: every owed row is tried within a bounded number of runs'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8854667Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8854949Z       at Object.<anonymous> (test/refund-reversal-review.spec.ts:211:8)
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8855251Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8855951Z   ● B-641-8 (narrowed) — persistent failures never hold later refunds back across runs › more failures than the page budget: every owed row is tried within a bounded number of runs
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8856542Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8856773Z     expect(received).toBe(expected) // Object.is equality
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8857020Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8857157Z     Expected: 46
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8857498Z     Received: 20
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8857681Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8858417Z     ^[[0m ^[[90m 222 |^[[39m       ^[[36mfor^[[39m (^[[36mconst^[[39m c ^[[36mof^[[39m h^[[33m.^[[39mreverseTransfer^[[33m.^[[39mmock^[[33m.^[[39mcalls) tried^[[33m.^[[39madd(c[^[[35m0^[[39m]^[[33m.^[[39mtransfer_id)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8859457Z      ^[[90m 223 |^[[39m     }
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8860090Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 224 |^[[39m     expect(tried^[[33m.^[[39msize)^[[33m.^[[39mtoBe(^[[35m46^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8860694Z      ^[[90m     |^[[39m                        ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8861775Z      ^[[90m 225 |^[[39m     expect(h^[[33m.^[[39mrefund(^[[32m'r-z-fresh'^[[39m)^[[33m.^[[39mtransfer_reversed)^[[33m.^[[39mtoBe(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8862685Z      ^[[90m 226 |^[[39m     expect(h^[[33m.^[[39mstripeTotal(^[[32m'tr_p-z-fresh'^[[39m))^[[33m.^[[39mtoBe(^[[35m122^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8863375Z      ^[[90m 227 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8863600Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8863875Z       at Object.<anonymous> (test/refund-reversal-review.spec.ts:224:24)
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8864137Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8864723Z   ● B-641-11 — reversal failure logs carry ids and closed codes only › Sol probe: an arbitrary Error.name never reaches the logger
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8865180Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8865361Z     expect(received).toContain(expected) // indexOf
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8865623Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8865807Z     Expected substring: "code=error"
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8866492Z     Received string:    "head-coach transfer reverse pending purchase=p-log refund=r-log code=AUDIT_FREE_TEXT_CANARY_contact_at_example_invalid"
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8867029Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8867435Z     ^[[0m ^[[90m 249 |^[[39m     ^[[36mconst^[[39m logged ^[[33m=^[[39m ^[[36mawait^[[39m failOnce(error)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8868199Z      ^[[90m 250 |^[[39m     expect(logged)^[[33m.^[[39mtoContain(^[[32m'refund=r-log'^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8868960Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 251 |^[[39m     expect(logged)^[[33m.^[[39mtoContain(^[[32m'code=error'^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8869564Z      ^[[90m     |^[[39m                    ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8870239Z      ^[[90m 252 |^[[39m     expect(logged)^[[33m.^[[39mnot^[[33m.^[[39mtoContain(^[[32m'AUDIT_FREE_TEXT_CANARY'^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8870868Z      ^[[90m 253 |^[[39m   })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8871482Z      ^[[90m 254 |^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8871689Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8871930Z       at Object.<anonymous> (test/refund-reversal-review.spec.ts:251:20)
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8872245Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8872824Z   ● B-641-11 — reversal failure logs carry ids and closed codes only › an unknown Stripe code or a bad status is logged as a closed fallback
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8873296Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8873481Z     expect(received).toContain(expected) // indexOf
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8873755Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8873990Z     Expected substring: "code=stripe_402_other"
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8874728Z     Received string:    "head-coach transfer reverse pending purchase=p-log refund=r-log code=stripe_402_audit_free_text_canary_contact_at_example_invalid"
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8875252Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8875426Z     ^[[0m ^[[90m 262 |^[[39m       )^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8875965Z      ^[[90m 263 |^[[39m     )^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8876643Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 264 |^[[39m     expect(logged)^[[33m.^[[39mtoContain(^[[32m'code=stripe_402_other'^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8877299Z      ^[[90m     |^[[39m                    ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8877939Z      ^[[90m 265 |^[[39m     expect(logged)^[[33m.^[[39mnot^[[33m.^[[39mtoMatch(^[[35m/canary|example/^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8879078Z      ^[[90m 266 |^[[39m     expect(^[[36mawait^[[39m failOnce(^[[36mnew^[[39m ^[[33mStripeConnectApiError^[[39m(^[[32m'x'^[[39m^[[33m,^[[39m ^[[35m99999^[[39m^[[33m,^[[39m ^[[32m'rate_limit'^[[39m^[[33m,^[[39m ^[[36mnull^[[39m)))^[[33m.^[[39mtoContain(
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8880076Z      ^[[90m 267 |^[[39m       ^[[32m'code=stripe_0_rate_limit'^[[39m^[[33m,^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8880375Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8880595Z       at Object.<anonymous> (test/refund-reversal-review.spec.ts:264:20)
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8880941Z 
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8881960Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-041 refund=r-m-041 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8883353Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-044 refund=r-m-044 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8884770Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-047 refund=r-m-047 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8886210Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-050 refund=r-m-050 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8887561Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-053 refund=r-m-053 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8888952Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-056 refund=r-m-056 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8890280Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-059 refund=r-m-059 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8891872Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-062 refund=r-m-062 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8893244Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-065 refund=r-m-065 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8894636Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-068 refund=r-m-068 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8895986Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-071 refund=r-m-071 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8897378Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-074 refund=r-m-074 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8898738Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-077 refund=r-m-077 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8900123Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-080 refund=r-m-080 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8901624Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-083 refund=r-m-083 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8902979Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-086 refund=r-m-086 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8904888Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-089 refund=r-m-089 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8906239Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-092 refund=r-m-092 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8907635Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-095 refund=r-m-095 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8908977Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-098 refund=r-m-098 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8910298Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-101 refund=r-m-101 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8911866Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-104 refund=r-m-104 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8913212Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-107 refund=r-m-107 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8914602Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-110 refund=r-m-110 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8915958Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-113 refund=r-m-113 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8917388Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-116 refund=r-m-116 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8918741Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-m-119 refund=r-m-119 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8920111Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-00 refund=r-a-00 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8921770Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-01 refund=r-a-01 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8923133Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-02 refund=r-a-02 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8924516Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-03 refund=r-a-03 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8925900Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-04 refund=r-a-04 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8927289Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-05 refund=r-a-05 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8928652Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-06 refund=r-a-06 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8930012Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-07 refund=r-a-07 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8931506Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-08 refund=r-a-08 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8932853Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-09 refund=r-a-09 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8934215Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-10 refund=r-a-10 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8935568Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-11 refund=r-a-11 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8936993Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-12 refund=r-a-12 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8938305Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-13 refund=r-a-13 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8939672Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-14 refund=r-a-14 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8941034Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-15 refund=r-a-15 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8942430Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-16 refund=r-a-16 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8943798Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-17 refund=r-a-17 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8945119Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-18 refund=r-a-18 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8946512Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-19 refund=r-a-19 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8947825Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-00 refund=r-a-00 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8949173Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-01 refund=r-a-01 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8950502Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-02 refund=r-a-02 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8952108Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-03 refund=r-a-03 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8953540Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-04 refund=r-a-04 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8954877Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-05 refund=r-a-05 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8956257Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-06 refund=r-a-06 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8957593Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-07 refund=r-a-07 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8958969Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-08 refund=r-a-08 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8960297Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-09 refund=r-a-09 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8961859Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-10 refund=r-a-10 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8963267Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-11 refund=r-a-11 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8964708Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-12 refund=r-a-12 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8966047Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-13 refund=r-a-13 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8967443Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-14 refund=r-a-14 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8968778Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-15 refund=r-a-15 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8970153Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-16 refund=r-a-16 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8971578Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-17 refund=r-a-17 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8972944Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-18 refund=r-a-18 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8974301Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-19 refund=r-a-19 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8975637Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-00 refund=r-a-00 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8977085Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-01 refund=r-a-01 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8978423Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-02 refund=r-a-02 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8979803Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-03 refund=r-a-03 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8981126Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-04 refund=r-a-04 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8982633Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-05 refund=r-a-05 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8983968Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-06 refund=r-a-06 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8985311Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-07 refund=r-a-07 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8986680Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-08 refund=r-a-08 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8988065Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-09 refund=r-a-09 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8989469Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-10 refund=r-a-10 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8990770Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-11 refund=r-a-11 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8992240Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-12 refund=r-a-12 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8993577Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-13 refund=r-a-13 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8994951Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-14 refund=r-a-14 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8996305Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-15 refund=r-a-15 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8997631Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-16 refund=r-a-16 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.8999003Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-17 refund=r-a-17 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9000313Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-18 refund=r-a-18 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9001969Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-19 refund=r-a-19 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9003326Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-00 refund=r-a-00 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9004673Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-01 refund=r-a-01 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9006044Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-02 refund=r-a-02 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9007409Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-03 refund=r-a-03 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9008780Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-04 refund=r-a-04 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9010101Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-05 refund=r-a-05 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9011680Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-06 refund=r-a-06 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9013111Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-07 refund=r-a-07 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9014461Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-08 refund=r-a-08 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9015822Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-09 refund=r-a-09 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9017150Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-10 refund=r-a-10 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9018537Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-11 refund=r-a-11 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9019879Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-12 refund=r-a-12 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9021326Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-13 refund=r-a-13 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9022669Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-14 refund=r-a-14 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9024007Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-15 refund=r-a-15 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9025398Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-16 refund=r-a-16 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9026772Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-17 refund=r-a-17 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9028142Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-18 refund=r-a-18 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9029439Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-19 refund=r-a-19 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9030848Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-00 refund=r-a-00 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9032309Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-01 refund=r-a-01 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9033681Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-02 refund=r-a-02 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9035008Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-03 refund=r-a-03 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9036337Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-04 refund=r-a-04 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9037791Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-05 refund=r-a-05 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9039114Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-06 refund=r-a-06 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9040509Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-07 refund=r-a-07 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9042123Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-08 refund=r-a-08 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9043549Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-09 refund=r-a-09 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9044883Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-10 refund=r-a-10 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9046221Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-11 refund=r-a-11 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9047600Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-12 refund=r-a-12 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9048918Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-13 refund=r-a-13 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9050347Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-14 refund=r-a-14 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9051799Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-15 refund=r-a-15 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9053187Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-16 refund=r-a-16 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9054516Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-17 refund=r-a-17 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9055872Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-18 refund=r-a-18 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9057244Z ^[[33m[Nest] 3028  - ^[[39m10/03/2026, 6:28:29 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a-19 refund=r-a-19 code=Error^[[39m
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9058159Z Test Suites: 2 failed, 2 total
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9058634Z Tests:       9 failed, 19 passed, 28 total
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9059018Z Snapshots:   0 total
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9059342Z Time:        12.833 s
+targeted	UNKNOWN STEP	2026-10-03T18:28:29.9060034Z Ran all test suites matching test/refund-reversal-review.spec.ts|test/refund-reversal-reconcile.spec.ts.
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.0981918Z ##[error]Process completed with exit code 1.
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.1107054Z Post job cleanup.
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.1904286Z [command]/usr/bin/git version
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.1935720Z git version 2.55.0
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.1968034Z Temporarily overriding HOME='/home/runner/work/_temp/963ab5ba-eff3-4c85-ad03-6a30e5a178be' before making global git config changes
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.1969284Z Adding repository directory to the temporary git global config as a safe directory
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.1973762Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2000669Z Removing SSH command configuration
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2005980Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2036109Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2219992Z Removing HTTP extra header
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2224207Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2250959Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2426960Z Removing includeIf entries pointing to credentials config files
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2432522Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2456552Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2458038Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2459081Z includeif.gitdir:/github/workspace/.git.path
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2459962Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2465345Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2482657Z /home/runner/work/_temp/git-credentials-17a2d546-83b1-4513-af87-ec6503781221.config
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2491489Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-17a2d546-83b1-4513-af87-ec6503781221.config
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2522692Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2539843Z /home/runner/work/_temp/git-credentials-17a2d546-83b1-4513-af87-ec6503781221.config
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2548438Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-17a2d546-83b1-4513-af87-ec6503781221.config
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2577379Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2594752Z /github/runner_temp/git-credentials-17a2d546-83b1-4513-af87-ec6503781221.config
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2600778Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-17a2d546-83b1-4513-af87-ec6503781221.config
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2631990Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2648776Z /github/runner_temp/git-credentials-17a2d546-83b1-4513-af87-ec6503781221.config
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2655742Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-17a2d546-83b1-4513-af87-ec6503781221.config
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2687048Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2863333Z Removing credentials config '/home/runner/work/_temp/git-credentials-17a2d546-83b1-4513-af87-ec6503781221.config'
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2949975Z Print service container logs: ceec6b2b61024942b7e0600eade9143f_redis7alpine_04f330
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.2954704Z ##[command]/usr/bin/docker logs --details 3042030b3ef6975316868ab95a3937c29d3039eb1984fab725ea413e167420f0
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.3086030Z  1:C 03 Oct 2026 18:27:32.592 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.3087940Z  1:C 03 Oct 2026 18:27:32.592 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.3088595Z  1:C 03 Oct 2026 18:27:32.592 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.3089654Z  1:C 03 Oct 2026 18:27:32.592 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.3090452Z  1:M 03 Oct 2026 18:27:32.592 * monotonic clock: POSIX clock_gettime
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.3091020Z  1:M 03 Oct 2026 18:27:32.593 * Running mode=standalone, port=6379.
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.3091883Z  1:M 03 Oct 2026 18:27:32.593 * Server initialized
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.3092620Z  1:M 03 Oct 2026 18:27:32.593 * Ready to accept connections tcp
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.3104927Z Stop and remove container: ceec6b2b61024942b7e0600eade9143f_redis7alpine_04f330
+targeted	UNKNOWN STEP	2026-10-03T18:28:30.3109153Z ##[command]/usr/bin/docker rm --force 3042030b3ef6975316868ab95a3937c29d3039eb1984fab725ea413e167420f0
+targeted	UNKNOWN STEP	2026-10-03T18:28:31.8780297Z 3042030b3ef6975316868ab95a3937c29d3039eb1984fab725ea413e167420f0
+targeted	UNKNOWN STEP	2026-10-03T18:28:31.8800984Z Remove container network: github_network_7757d2b13e9f47979faf12da5f5fb962
+targeted	UNKNOWN STEP	2026-10-03T18:28:31.8805615Z ##[command]/usr/bin/docker network rm github_network_7757d2b13e9f47979faf12da5f5fb962
+targeted	UNKNOWN STEP	2026-10-03T18:28:31.9744228Z github_network_7757d2b13e9f47979faf12da5f5fb962
+targeted	UNKNOWN STEP	2026-10-03T18:28:31.9815734Z Cleaning up orphan processes

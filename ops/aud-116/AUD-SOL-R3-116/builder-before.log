@@ -1,0 +1,372 @@
+targeted	Targeted jest	﻿2026-10-04T02:53:25.3506798Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T02:53:25.3507161Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T02:53:25.3507555Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T02:53:25.3508036Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T02:53:25.3508391Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T02:53:25.3508689Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T02:53:25.3572068Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T02:53:25.3572413Z env:
+targeted	Targeted jest	2026-10-04T02:53:25.3572627Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T02:53:25.3572996Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T02:53:25.3573316Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T02:53:25.3667418Z specs: test/b-recur-116-fix-round-3.spec.ts
+targeted	Targeted jest	2026-10-04T02:53:40.0696707Z ^[[32m[Nest] 3081  - ^[[39m10/04/2026, 2:53:40 AM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.0916162Z ^[[32m[Nest] 3081  - ^[[39m10/04/2026, 2:53:40 AM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.0941088Z ^[[32m[Nest] 3081  - ^[[39m10/04/2026, 2:53:40 AM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.0967416Z ^[[32m[Nest] 3081  - ^[[39m10/04/2026, 2:53:40 AM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.1002239Z ^[[32m[Nest] 3081  - ^[[39m10/04/2026, 2:53:40 AM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.1026160Z ^[[32m[Nest] 3081  - ^[[39m10/04/2026, 2:53:40 AM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.1060723Z ^[[33m[Nest] 3081  - ^[[39m10/04/2026, 2:53:40 AM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcould not cancel stale subscription sub_1: Stripe unavailable; Stripe expires it after 23 h^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.1064155Z ^[[32m[Nest] 3081  - ^[[39m10/04/2026, 2:53:40 AM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.1092807Z ^[[32m[Nest] 3081  - ^[[39m10/04/2026, 2:53:40 AM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.1097247Z ^[[33m[Nest] 3081  - ^[[39m10/04/2026, 2:53:40 AM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcould not cancel stale subscription sub_1: Stripe unavailable; Stripe expires it after 23 h^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.1099579Z ^[[32m[Nest] 3081  - ^[[39m10/04/2026, 2:53:40 AM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.1134376Z ^[[33m[Nest] 3081  - ^[[39m10/04/2026, 2:53:40 AM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcould not cancel stale subscription sub_1: Stripe unavailable; Stripe expires it after 23 h^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.1232955Z ^[[31m[Nest] 3081  - ^[[39m10/04/2026, 2:53:40 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31msubscription sub_1 has no payable PaymentIntent or SetupIntent and is not paid; canceling it^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.1236643Z ^[[33m[Nest] 3081  - ^[[39m10/04/2026, 2:53:40 AM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcould not cancel stale subscription sub_1: Stripe unavailable; Stripe expires it after 23 h^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.1260971Z ^[[33m[Nest] 3081  - ^[[39m10/04/2026, 2:53:40 AM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcould not cancel stale subscription sub_1: Stripe unavailable; Stripe expires it after 23 h^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.1264295Z ^[[32m[Nest] 3081  - ^[[39m10/04/2026, 2:53:40 AM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2479811Z FAIL test/b-recur-116-fix-round-3.spec.ts (13.831 s)
+targeted	Targeted jest	2026-10-04T02:53:40.2483598Z   B-654-5 narrowed / C-654-8 an uncertain create is never resent blindly
+targeted	Targeted jest	2026-10-04T02:53:40.2487802Z     ✕ (failed before) trial create uncertain, retried after Stripe dropped the key: the attempt binds its own subscription, no second one (12 ms)
+targeted	Targeted jest	2026-10-04T02:53:40.2490521Z     ✕ (failed before) paid plan, same: found by metadata.tgp_purchase_id and bound, never re-created (2 ms)
+targeted	Targeted jest	2026-10-04T02:53:40.2492856Z     ✕ (failed before) past the key window with nothing on Stripe: the attempt ends (timed_out), nothing is created; a new key starts fresh (2 ms)
+targeted	Targeted jest	2026-10-04T02:53:40.2495031Z     ✕ (failed before) inside the key window a lookup miss resends the pinned request, after the lookup (3 ms)
+targeted	Targeted jest	2026-10-04T02:53:40.2497035Z     ✕ (failed before) Stripe unreadable before a resend: PAYMENT_RETRY, nothing sent, the attempt stays retryable (2 ms)
+targeted	Targeted jest	2026-10-04T02:53:40.2499162Z     ✕ (failed before) a found subscription that Stripe already ended ends the attempt, never re-created (2 ms)
+targeted	Targeted jest	2026-10-04T02:53:40.2501615Z   B-654-8 an attempt is never ended while its subscription may still charge
+targeted	Targeted jest	2026-10-04T02:53:40.2503621Z     ✕ (failed before) same key, terms changed, the cancel fails: PAYMENT_RETRY and the attempt stays open; the retry cancels, then terms_changed (3 ms)
+targeted	Targeted jest	2026-10-04T02:53:40.2514917Z     ✕ (failed before) uncertain create, terms changed, the cancel fails: retryable, never expired (3 ms)
+targeted	Targeted jest	2026-10-04T02:53:40.2516677Z     ✕ (failed before) a new key while the stale attempt cannot be canceled: no second subscription is minted (2 ms)
+targeted	Targeted jest	2026-10-04T02:53:40.2518582Z     ✕ (failed before) an open attempt whose subscription is past_due on Stripe is the plan: ALREADY_ACTIVE, never expired (7 ms)
+targeted	Targeted jest	2026-10-04T02:53:40.2520988Z     ✕ (failed before) no sheet and the cancel fails: SETUP_UNAVAILABLE without ending it; the same key cancels, then ends it (3 ms)
+targeted	Targeted jest	2026-10-04T02:53:40.2523155Z     ✓ control: the cancel answer is lost after Stripe canceled it: reconciled from Stripe, the attempt ends (2 ms)
+targeted	Targeted jest	2026-10-04T02:53:40.2524696Z   B-654-9 / C-654-10 a caught error reaches logs only as an allow-listed label
+targeted	Targeted jest	2026-10-04T02:53:40.2526104Z     ✕ (failed before) an Error whose name was set from data logs a fixed label (2 ms)
+targeted	Targeted jest	2026-10-04T02:53:40.2527615Z     ✕ (failed before) an identifier-shaped code outside the allow-list is never logged (1 ms)
+targeted	Targeted jest	2026-10-04T02:53:40.2529359Z     ✕ (failed before) a Stripe error with an unknown code and type logs only allow-listed parts (1 ms)
+targeted	Targeted jest	2026-10-04T02:53:40.2531509Z     ✕ controls: known Stripe, Prisma and network codes and class names stay readable (1 ms)
+targeted	Targeted jest	2026-10-04T02:53:40.2533238Z     ✕ (failed before) a same-key replay whose Stripe check fails logs no message (1 ms)
+targeted	Targeted jest	2026-10-04T02:53:40.2534725Z     ✕ (failed before) a failed stale-trial cleanup logs no message (2 ms)
+targeted	Targeted jest	2026-10-04T02:53:40.2536019Z     ✕ (failed before) a failed cancel logs no message (1 ms)
+targeted	Targeted jest	2026-10-04T02:53:40.2537423Z     ✕ (failed before) webhook: a failed setup_intent.succeeded lookup logs no message (16 ms)
+targeted	Targeted jest	2026-10-04T02:53:40.2538257Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2540372Z   ● B-654-5 narrowed / C-654-8 an uncertain create is never resent blindly › (failed before) trial create uncertain, retried after Stripe dropped the key: the attempt binds its own subscription, no second one
+targeted	Targeted jest	2026-10-04T02:53:40.2542322Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2542848Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T02:53:40.2543498Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2543811Z     Expected: "sub_1"
+targeted	Targeted jest	2026-10-04T02:53:40.2544334Z     Received: "sub_2"
+targeted	Targeted jest	2026-10-04T02:53:40.2544683Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2545299Z     ^[[0m ^[[90m 128 |^[[39m     ageAttempt(^[[33mHOURS_25^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2546559Z      ^[[90m 129 |^[[39m     ^[[36mconst^[[39m out ^[[33m=^[[39m ^[[36mawait^[[39m buy(svc^[[33m,^[[39m ^[[33mKEY1^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2548117Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 130 |^[[39m     expect(out^[[33m.^[[39msubscription_id)^[[33m.^[[39mtoBe(^[[32m'sub_1'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2549366Z      ^[[90m     |^[[39m                                 ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2550746Z      ^[[90m 131 |^[[39m     expect(out^[[33m.^[[39mmode)^[[33m.^[[39mtoBe(^[[32m'setup'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2552090Z      ^[[90m 132 |^[[39m     expect(stripe^[[33m.^[[39m_subs^[[33m.^[[39msize)^[[33m.^[[39mtoBe(^[[35m1^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2553727Z      ^[[90m 133 |^[[39m     expect(stripe^[[33m.^[[39mcreateSubscription)^[[33m.^[[39mtoHaveBeenCalledTimes(^[[35m1^[[39m)^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T02:53:40.2554646Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2555228Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:130:33)
+targeted	Targeted jest	2026-10-04T02:53:40.2555867Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2557263Z   ● B-654-5 narrowed / C-654-8 an uncertain create is never resent blindly › (failed before) paid plan, same: found by metadata.tgp_purchase_id and bound, never re-created
+targeted	Targeted jest	2026-10-04T02:53:40.2558393Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2558881Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T02:53:40.2559828Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2560411Z     Expected: "sub_1"
+targeted	Targeted jest	2026-10-04T02:53:40.2561022Z     Received: "sub_2"
+targeted	Targeted jest	2026-10-04T02:53:40.2561465Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2562110Z     ^[[0m ^[[90m 141 |^[[39m     pruneStripeKeys()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2563233Z      ^[[90m 142 |^[[39m     ^[[36mconst^[[39m out ^[[33m=^[[39m ^[[36mawait^[[39m buy(svc^[[33m,^[[39m ^[[33mKEY1^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2564570Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 143 |^[[39m     expect(out^[[33m.^[[39msubscription_id)^[[33m.^[[39mtoBe(^[[32m'sub_1'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2565996Z      ^[[90m     |^[[39m                                 ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2567411Z      ^[[90m 144 |^[[39m     expect(out^[[33m.^[[39mclient_secret)^[[33m.^[[39mtoBe(^[[32m'pi_1_secret_x'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2569047Z      ^[[90m 145 |^[[39m     expect(stripe^[[33m.^[[39m_subs^[[33m.^[[39msize)^[[33m.^[[39mtoBe(^[[35m1^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2570915Z      ^[[90m 146 |^[[39m     expect(stripe^[[33m.^[[39mcreateSubscription)^[[33m.^[[39mtoHaveBeenCalledTimes(^[[35m1^[[39m)^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T02:53:40.2571751Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2572236Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:143:33)
+targeted	Targeted jest	2026-10-04T02:53:40.2572803Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2574246Z   ● B-654-5 narrowed / C-654-8 an uncertain create is never resent blindly › (failed before) past the key window with nothing on Stripe: the attempt ends (timed_out), nothing is created; a new key starts fresh
+targeted	Targeted jest	2026-10-04T02:53:40.2575600Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2575905Z     expected a coded error
+targeted	Targeted jest	2026-10-04T02:53:40.2576301Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2577629Z     ^[[0m ^[[90m  96 |^[[39m     ^[[36mreturn^[[39m { status^[[33m:^[[39m err^[[33m.^[[39mgetStatus^[[33m?^[[39m^[[33m.^[[39m()^[[33m,^[[39m body^[[33m:^[[39m err^[[33m.^[[39mgetResponse^[[33m?^[[39m^[[33m.^[[39m() }^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2579069Z      ^[[90m  97 |^[[39m   }
+targeted	Targeted jest	2026-10-04T02:53:40.2580448Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m  98 |^[[39m   ^[[36mthrow^[[39m ^[[36mnew^[[39m ^[[33mError^[[39m(^[[32m'expected a coded error'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2581575Z      ^[[90m     |^[[39m         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2582364Z      ^[[90m  99 |^[[39m }
+targeted	Targeted jest	2026-10-04T02:53:40.2582882Z      ^[[90m 100 |^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2585258Z      ^[[90m 101 |^[[39m ^[[36mconst^[[39m buy ^[[33m=^[[39m (svc^[[33m:^[[39m ^[[33mSubscriptionCheckoutService^[[39m^[[33m,^[[39m key^[[33m:^[[39m string^[[33m,^[[39m over^[[33m:^[[39m ^[[33mRecord^[[39m^[[33m<^[[39m^[[33mstring^[[39m^[[33m,^[[39m unknown^[[33m>^[[39m ^[[33m=^[[39m {}) ^[[33m=>^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T02:53:40.2587203Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2587740Z       at codeOf (test/b-recur-116-fix-round-3.spec.ts:98:9)
+targeted	Targeted jest	2026-10-04T02:53:40.2588822Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:154:15)
+targeted	Targeted jest	2026-10-04T02:53:40.2589543Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2591324Z   ● B-654-5 narrowed / C-654-8 an uncertain create is never resent blindly › (failed before) inside the key window a lookup miss resends the pinned request, after the lookup
+targeted	Targeted jest	2026-10-04T02:53:40.2592678Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2593198Z     expect(jest.fn()).toHaveBeenCalledTimes(expected)
+targeted	Targeted jest	2026-10-04T02:53:40.2593828Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2594216Z     Expected number of calls: 1
+targeted	Targeted jest	2026-10-04T02:53:40.2594917Z     Received number of calls: 0
+targeted	Targeted jest	2026-10-04T02:53:40.2595391Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2596421Z     ^[[0m ^[[90m 171 |^[[39m     ^[[36mconst^[[39m out ^[[33m=^[[39m ^[[36mawait^[[39m buy(svc^[[33m,^[[39m ^[[33mKEY1^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2598172Z      ^[[90m 172 |^[[39m     expect(out^[[33m.^[[39msubscription_id)^[[33m.^[[39mtoBe(^[[32m'sub_1'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2600420Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 173 |^[[39m     expect(stripe^[[33m.^[[39mlistSubscriptionsForCustomer)^[[33m.^[[39mtoHaveBeenCalledTimes(^[[35m1^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2602210Z      ^[[90m     |^[[39m                                                 ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2604264Z      ^[[90m 174 |^[[39m     ^[[36mconst^[[39m lookedUp ^[[33m=^[[39m stripe^[[33m.^[[39mlistSubscriptionsForCustomer^[[33m.^[[39mmock^[[33m.^[[39minvocationCallOrder[^[[35m0^[[39m]^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2607075Z      ^[[90m 175 |^[[39m     ^[[36mconst^[[39m resent ^[[33m=^[[39m stripe^[[33m.^[[39mcreateSubscription^[[33m.^[[39mmock^[[33m.^[[39minvocationCallOrder[^[[35m1^[[39m]^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2608932Z      ^[[90m 176 |^[[39m     expect(lookedUp)^[[33m.^[[39mtoBeLessThan(resent)^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T02:53:40.2609769Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2610425Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:173:49)
+targeted	Targeted jest	2026-10-04T02:53:40.2610801Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2611732Z   ● B-654-5 narrowed / C-654-8 an uncertain create is never resent blindly › (failed before) Stripe unreadable before a resend: PAYMENT_RETRY, nothing sent, the attempt stays retryable
+targeted	Targeted jest	2026-10-04T02:53:40.2612444Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2612566Z     expected a coded error
+targeted	Targeted jest	2026-10-04T02:53:40.2612733Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2613561Z     ^[[0m ^[[90m  96 |^[[39m     ^[[36mreturn^[[39m { status^[[33m:^[[39m err^[[33m.^[[39mgetStatus^[[33m?^[[39m^[[33m.^[[39m()^[[33m,^[[39m body^[[33m:^[[39m err^[[33m.^[[39mgetResponse^[[33m?^[[39m^[[33m.^[[39m() }^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2614367Z      ^[[90m  97 |^[[39m   }
+targeted	Targeted jest	2026-10-04T02:53:40.2615079Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m  98 |^[[39m   ^[[36mthrow^[[39m ^[[36mnew^[[39m ^[[33mError^[[39m(^[[32m'expected a coded error'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2615728Z      ^[[90m     |^[[39m         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2616064Z      ^[[90m  99 |^[[39m }
+targeted	Targeted jest	2026-10-04T02:53:40.2616343Z      ^[[90m 100 |^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2617595Z      ^[[90m 101 |^[[39m ^[[36mconst^[[39m buy ^[[33m=^[[39m (svc^[[33m:^[[39m ^[[33mSubscriptionCheckoutService^[[39m^[[33m,^[[39m key^[[33m:^[[39m string^[[33m,^[[39m over^[[33m:^[[39m ^[[33mRecord^[[39m^[[33m<^[[39m^[[33mstring^[[39m^[[33m,^[[39m unknown^[[33m>^[[39m ^[[33m=^[[39m {}) ^[[33m=>^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T02:53:40.2618489Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2618698Z       at codeOf (test/b-recur-116-fix-round-3.spec.ts:98:9)
+targeted	Targeted jest	2026-10-04T02:53:40.2619195Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:186:15)
+targeted	Targeted jest	2026-10-04T02:53:40.2619536Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2620719Z   ● B-654-5 narrowed / C-654-8 an uncertain create is never resent blindly › (failed before) a found subscription that Stripe already ended ends the attempt, never re-created
+targeted	Targeted jest	2026-10-04T02:53:40.2621491Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2621602Z     expected a coded error
+targeted	Targeted jest	2026-10-04T02:53:40.2621782Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2622604Z     ^[[0m ^[[90m  96 |^[[39m     ^[[36mreturn^[[39m { status^[[33m:^[[39m err^[[33m.^[[39mgetStatus^[[33m?^[[39m^[[33m.^[[39m()^[[33m,^[[39m body^[[33m:^[[39m err^[[33m.^[[39mgetResponse^[[33m?^[[39m^[[33m.^[[39m() }^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2623635Z      ^[[90m  97 |^[[39m   }
+targeted	Targeted jest	2026-10-04T02:53:40.2624327Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m  98 |^[[39m   ^[[36mthrow^[[39m ^[[36mnew^[[39m ^[[33mError^[[39m(^[[32m'expected a coded error'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2624968Z      ^[[90m     |^[[39m         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2625310Z      ^[[90m  99 |^[[39m }
+targeted	Targeted jest	2026-10-04T02:53:40.2625578Z      ^[[90m 100 |^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2626817Z      ^[[90m 101 |^[[39m ^[[36mconst^[[39m buy ^[[33m=^[[39m (svc^[[33m:^[[39m ^[[33mSubscriptionCheckoutService^[[39m^[[33m,^[[39m key^[[33m:^[[39m string^[[33m,^[[39m over^[[33m:^[[39m ^[[33mRecord^[[39m^[[33m<^[[39m^[[33mstring^[[39m^[[33m,^[[39m unknown^[[33m>^[[39m ^[[33m=^[[39m {}) ^[[33m=>^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T02:53:40.2627710Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2627907Z       at codeOf (test/b-recur-116-fix-round-3.spec.ts:98:9)
+targeted	Targeted jest	2026-10-04T02:53:40.2628410Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:204:15)
+targeted	Targeted jest	2026-10-04T02:53:40.2628740Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2629730Z   ● B-654-8 an attempt is never ended while its subscription may still charge › (failed before) same key, terms changed, the cancel fails: PAYMENT_RETRY and the attempt stays open; the retry cancels, then terms_changed
+targeted	Targeted jest	2026-10-04T02:53:40.2630686Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2630897Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T02:53:40.2631157Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2631253Z     Expected: 503
+targeted	Targeted jest	2026-10-04T02:53:40.2631479Z     Received: 409
+targeted	Targeted jest	2026-10-04T02:53:40.2631602Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2633047Z     ^[[0m ^[[90m 219 |^[[39m     stripe^[[33m.^[[39mcancelSubscription^[[33m.^[[39mmockRejectedValueOnce(unavailable())^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2634814Z      ^[[90m 220 |^[[39m     ^[[36mconst^[[39m r ^[[33m=^[[39m ^[[36mawait^[[39m codeOf(buy(svc^[[33m,^[[39m ^[[33mKEY1^[[39m^[[33m,^[[39m { expected_amount_cents^[[33m:^[[39m ^[[35m5900^[[39m }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2635891Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 221 |^[[39m     expect(r^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(^[[35m503^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2636528Z      ^[[90m     |^[[39m                      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2637226Z      ^[[90m 222 |^[[39m     expect(r^[[33m.^[[39mbody^[[33m.^[[39mcode)^[[33m.^[[39mtoBe(^[[32m'PAYMENT_RETRY'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2638197Z      ^[[90m 223 |^[[39m     expect(prisma^[[33m.^[[39m_purchases[^[[35m0^[[39m]^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(^[[32m'pending'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2639319Z      ^[[90m 224 |^[[39m     expect(stripe^[[33m.^[[39m_subs^[[33m.^[[39m^[[36mget^[[39m(^[[32m'sub_1'^[[39m)^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(^[[32m'incomplete'^[[39m)^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T02:53:40.2639881Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2640319Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:221:22)
+targeted	Targeted jest	2026-10-04T02:53:40.2640642Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2641443Z   ● B-654-8 an attempt is never ended while its subscription may still charge › (failed before) uncertain create, terms changed, the cancel fails: retryable, never expired
+targeted	Targeted jest	2026-10-04T02:53:40.2642120Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2642311Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T02:53:40.2642566Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2642693Z     Expected: "PAYMENT_RETRY"
+targeted	Targeted jest	2026-10-04T02:53:40.2643022Z     Received: "SUBSCRIPTION_ATTEMPT_EXPIRED"
+targeted	Targeted jest	2026-10-04T02:53:40.2643226Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2643752Z     ^[[0m ^[[90m 236 |^[[39m     stripe^[[33m.^[[39mcancelSubscription^[[33m.^[[39mmockRejectedValueOnce(unavailable())^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2644938Z      ^[[90m 237 |^[[39m     ^[[36mconst^[[39m r ^[[33m=^[[39m ^[[36mawait^[[39m codeOf(buy(svc^[[33m,^[[39m ^[[33mKEY1^[[39m^[[33m,^[[39m { expected_amount_cents^[[33m:^[[39m ^[[35m5900^[[39m }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2646091Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 238 |^[[39m     expect(r^[[33m.^[[39mbody^[[33m.^[[39mcode)^[[33m.^[[39mtoBe(^[[32m'PAYMENT_RETRY'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2646788Z      ^[[90m     |^[[39m                         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2647563Z      ^[[90m 239 |^[[39m     expect(prisma^[[33m.^[[39m_purchases[^[[35m0^[[39m]^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(^[[32m'pending'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2649408Z      ^[[90m 240 |^[[39m     expect(prisma^[[33m.^[[39m_purchases[^[[35m0^[[39m]^[[33m.^[[39mstripe_checkout_session_id)^[[33m.^[[39mtoMatch(^[[35m/^sub-retry-/^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2650938Z      ^[[90m 241 |^[[39m     ^[[36mconst^[[39m again ^[[33m=^[[39m ^[[36mawait^[[39m codeOf(buy(svc^[[33m,^[[39m ^[[33mKEY1^[[39m^[[33m,^[[39m { expected_amount_cents^[[33m:^[[39m ^[[35m5900^[[39m }))^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T02:53:40.2651579Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2651849Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:238:25)
+targeted	Targeted jest	2026-10-04T02:53:40.2652171Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2653032Z   ● B-654-8 an attempt is never ended while its subscription may still charge › (failed before) a new key while the stale attempt cannot be canceled: no second subscription is minted
+targeted	Targeted jest	2026-10-04T02:53:40.2653740Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2653842Z     expected a coded error
+targeted	Targeted jest	2026-10-04T02:53:40.2654007Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2654802Z     ^[[0m ^[[90m  96 |^[[39m     ^[[36mreturn^[[39m { status^[[33m:^[[39m err^[[33m.^[[39mgetStatus^[[33m?^[[39m^[[33m.^[[39m()^[[33m,^[[39m body^[[33m:^[[39m err^[[33m.^[[39mgetResponse^[[33m?^[[39m^[[33m.^[[39m() }^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2655566Z      ^[[90m  97 |^[[39m   }
+targeted	Targeted jest	2026-10-04T02:53:40.2656250Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m  98 |^[[39m   ^[[36mthrow^[[39m ^[[36mnew^[[39m ^[[33mError^[[39m(^[[32m'expected a coded error'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2656887Z      ^[[90m     |^[[39m         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2657242Z      ^[[90m  99 |^[[39m }
+targeted	Targeted jest	2026-10-04T02:53:40.2657715Z      ^[[90m 100 |^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2658952Z      ^[[90m 101 |^[[39m ^[[36mconst^[[39m buy ^[[33m=^[[39m (svc^[[33m:^[[39m ^[[33mSubscriptionCheckoutService^[[39m^[[33m,^[[39m key^[[33m:^[[39m string^[[33m,^[[39m over^[[33m:^[[39m ^[[33mRecord^[[39m^[[33m<^[[39m^[[33mstring^[[39m^[[33m,^[[39m unknown^[[33m>^[[39m ^[[33m=^[[39m {}) ^[[33m=>^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T02:53:40.2659817Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2660030Z       at codeOf (test/b-recur-116-fix-round-3.spec.ts:98:9)
+targeted	Targeted jest	2026-10-04T02:53:40.2660876Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:251:15)
+targeted	Targeted jest	2026-10-04T02:53:40.2661204Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2662106Z   ● B-654-8 an attempt is never ended while its subscription may still charge › (failed before) an open attempt whose subscription is past_due on Stripe is the plan: ALREADY_ACTIVE, never expired
+targeted	Targeted jest	2026-10-04T02:53:40.2662856Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2662957Z     expected a coded error
+targeted	Targeted jest	2026-10-04T02:53:40.2663130Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2663919Z     ^[[0m ^[[90m  96 |^[[39m     ^[[36mreturn^[[39m { status^[[33m:^[[39m err^[[33m.^[[39mgetStatus^[[33m?^[[39m^[[33m.^[[39m()^[[33m,^[[39m body^[[33m:^[[39m err^[[33m.^[[39mgetResponse^[[33m?^[[39m^[[33m.^[[39m() }^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2664672Z      ^[[90m  97 |^[[39m   }
+targeted	Targeted jest	2026-10-04T02:53:40.2665349Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m  98 |^[[39m   ^[[36mthrow^[[39m ^[[36mnew^[[39m ^[[33mError^[[39m(^[[32m'expected a coded error'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2665980Z      ^[[90m     |^[[39m         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2666328Z      ^[[90m  99 |^[[39m }
+targeted	Targeted jest	2026-10-04T02:53:40.2666589Z      ^[[90m 100 |^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2667816Z      ^[[90m 101 |^[[39m ^[[36mconst^[[39m buy ^[[33m=^[[39m (svc^[[33m:^[[39m ^[[33mSubscriptionCheckoutService^[[39m^[[33m,^[[39m key^[[33m:^[[39m string^[[33m,^[[39m over^[[33m:^[[39m ^[[33mRecord^[[39m^[[33m<^[[39m^[[33mstring^[[39m^[[33m,^[[39m unknown^[[33m>^[[39m ^[[33m=^[[39m {}) ^[[33m=>^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T02:53:40.2668674Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2668875Z       at codeOf (test/b-recur-116-fix-round-3.spec.ts:98:9)
+targeted	Targeted jest	2026-10-04T02:53:40.2669369Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:265:15)
+targeted	Targeted jest	2026-10-04T02:53:40.2669692Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2670727Z   ● B-654-8 an attempt is never ended while its subscription may still charge › (failed before) no sheet and the cancel fails: SETUP_UNAVAILABLE without ending it; the same key cancels, then ends it
+targeted	Targeted jest	2026-10-04T02:53:40.2671511Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2671694Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T02:53:40.2672138Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2672243Z     Expected: "pending"
+targeted	Targeted jest	2026-10-04T02:53:40.2672497Z     Received: "expired"
+targeted	Targeted jest	2026-10-04T02:53:40.2672657Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2673180Z     ^[[0m ^[[90m 280 |^[[39m     ^[[36mconst^[[39m r ^[[33m=^[[39m ^[[36mawait^[[39m codeOf(buy(svc^[[33m,^[[39m ^[[33mKEY1^[[39m))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2674159Z      ^[[90m 281 |^[[39m     expect(r^[[33m.^[[39mbody^[[33m.^[[39mcode)^[[33m.^[[39mtoBe(^[[32m'SUBSCRIPTION_SETUP_UNAVAILABLE'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2675219Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 282 |^[[39m     expect(prisma^[[33m.^[[39m_purchases[^[[35m0^[[39m]^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(^[[32m'pending'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2676014Z      ^[[90m     |^[[39m                                         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2676913Z      ^[[90m 283 |^[[39m     expect(prisma^[[33m.^[[39m_purchases[^[[35m0^[[39m]^[[33m.^[[39mstripe_subscription_id)^[[33m.^[[39mtoBe(^[[32m'sub_1'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2677929Z      ^[[90m 284 |^[[39m     ^[[36mconst^[[39m again ^[[33m=^[[39m ^[[36mawait^[[39m codeOf(buy(svc^[[33m,^[[39m ^[[33mKEY1^[[39m))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2678934Z      ^[[90m 285 |^[[39m     expect(again^[[33m.^[[39mbody^[[33m.^[[39mcode)^[[33m.^[[39mtoBe(^[[32m'SUBSCRIPTION_SETUP_UNAVAILABLE'^[[39m)^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T02:53:40.2679428Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2679683Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:282:41)
+targeted	Targeted jest	2026-10-04T02:53:40.2679996Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2680829Z   ● B-654-9 / C-654-10 a caught error reaches logs only as an allow-listed label › (failed before) an Error whose name was set from data logs a fixed label
+targeted	Targeted jest	2026-10-04T02:53:40.2681554Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2681756Z     expect(received).not.toContain(expected) // indexOf
+targeted	Targeted jest	2026-10-04T02:53:40.2682014Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2682194Z     Expected substring: not "a.person@example.test"
+targeted	Targeted jest	2026-10-04T02:53:40.2682986Z     Received string:        "[[],[[\"checkout state read skipped purchase=00000000-0000-4000-8000-000000000001 error=client a.person@example.test\"]],[]]"
+targeted	Targeted jest	2026-10-04T02:53:40.2683568Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2683954Z     ^[[0m ^[[90m 321 |^[[39m     err^[[33m.^[[39mname ^[[33m=^[[39m ^[[32m`client ${CANARY}`^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2684744Z      ^[[90m 322 |^[[39m     ^[[36mconst^[[39m logged ^[[33m=^[[39m ^[[36mawait^[[39m loggedAfterStateRead(err)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2685615Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 323 |^[[39m     expect(logged)^[[33m.^[[39mnot^[[33m.^[[39mtoContain(^[[33mCANARY^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2686263Z      ^[[90m     |^[[39m                        ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2686875Z      ^[[90m 324 |^[[39m     expect(logged)^[[33m.^[[39mtoContain(^[[32m'error=error'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2687392Z      ^[[90m 325 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2687701Z      ^[[90m 326 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T02:53:40.2687871Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2688131Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:323:24)
+targeted	Targeted jest	2026-10-04T02:53:40.2688445Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2689187Z   ● B-654-9 / C-654-10 a caught error reaches logs only as an allow-listed label › (failed before) an identifier-shaped code outside the allow-list is never logged
+targeted	Targeted jest	2026-10-04T02:53:40.2689810Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2690008Z     expect(received).not.toContain(expected) // indexOf
+targeted	Targeted jest	2026-10-04T02:53:40.2690386Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2690575Z     Expected substring: not "a.person-example.test"
+targeted	Targeted jest	2026-10-04T02:53:40.2691322Z     Received string:        "[[],[[\"checkout state read skipped purchase=00000000-0000-4000-8000-000000000001 error=a.person-example.test\"]],[]]"
+targeted	Targeted jest	2026-10-04T02:53:40.2691869Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2692627Z     ^[[0m ^[[90m 329 |^[[39m       ^[[33mObject^[[39m^[[33m.^[[39massign(^[[36mnew^[[39m ^[[33mError^[[39m(^[[32m'boom'^[[39m)^[[33m,^[[39m { code^[[33m:^[[39m ^[[32m'a.person-example.test'^[[39m })^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2693409Z      ^[[90m 330 |^[[39m     )^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2694135Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 331 |^[[39m     expect(logged)^[[33m.^[[39mnot^[[33m.^[[39mtoContain(^[[32m'a.person-example.test'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2695006Z      ^[[90m     |^[[39m                        ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2695398Z      ^[[90m 332 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2695704Z      ^[[90m 333 |^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2696592Z      ^[[90m 334 |^[[39m   it(^[[32m'(failed before) a Stripe error with an unknown code and type logs only allow-listed parts'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T02:53:40.2697204Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2697456Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:331:24)
+targeted	Targeted jest	2026-10-04T02:53:40.2697759Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2698524Z   ● B-654-9 / C-654-10 a caught error reaches logs only as an allow-listed label › (failed before) a Stripe error with an unknown code and type logs only allow-listed parts
+targeted	Targeted jest	2026-10-04T02:53:40.2699167Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2699356Z     expect(received).not.toContain(expected) // indexOf
+targeted	Targeted jest	2026-10-04T02:53:40.2699636Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2699777Z     Expected substring: not "canary"
+targeted	Targeted jest	2026-10-04T02:53:40.2700756Z     Received string:        "[[],[[\"checkout state read skipped purchase=00000000-0000-4000-8000-000000000001 error=cus_canary.value\"]],[]]"
+targeted	Targeted jest	2026-10-04T02:53:40.2701299Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2702139Z     ^[[0m ^[[90m 336 |^[[39m       ^[[36mnew^[[39m ^[[33mStripeConnectApiError^[[39m(^[[32m'm'^[[39m^[[33m,^[[39m ^[[35m400^[[39m^[[33m,^[[39m ^[[32m'cus_canary.value'^[[39m^[[33m,^[[39m ^[[32m'canary_type'^[[39m)^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2702963Z      ^[[90m 337 |^[[39m     )^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2703615Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 338 |^[[39m     expect(logged)^[[33m.^[[39mnot^[[33m.^[[39mtoContain(^[[32m'canary'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2704441Z      ^[[90m     |^[[39m                        ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2705145Z      ^[[90m 339 |^[[39m     expect(logged)^[[33m.^[[39mtoContain(^[[32m'error=stripe:other:400:other'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2705701Z      ^[[90m 340 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2706003Z      ^[[90m 341 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T02:53:40.2706170Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2706417Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:338:24)
+targeted	Targeted jest	2026-10-04T02:53:40.2706719Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2707440Z   ● B-654-9 / C-654-10 a caught error reaches logs only as an allow-listed label › controls: known Stripe, Prisma and network codes and class names stay readable
+targeted	Targeted jest	2026-10-04T02:53:40.2708048Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2708207Z     expect(received).toContain(expected) // indexOf
+targeted	Targeted jest	2026-10-04T02:53:40.2708441Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2708724Z     Expected substring: "error=stripe:invalid_request_error:404:resource_missing"
+targeted	Targeted jest	2026-10-04T02:53:40.2709545Z     Received string:    "[[],[[\"checkout state read skipped purchase=00000000-0000-4000-8000-000000000001 error=resource_missing\"]],[]]"
+targeted	Targeted jest	2026-10-04T02:53:40.2710233Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2711098Z     ^[[0m ^[[90m 345 |^[[39m         ^[[36mnew^[[39m ^[[33mStripeConnectApiError^[[39m(^[[32m'm'^[[39m^[[33m,^[[39m ^[[35m404^[[39m^[[33m,^[[39m ^[[32m'resource_missing'^[[39m^[[33m,^[[39m ^[[32m'invalid_request_error'^[[39m)^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2711958Z      ^[[90m 346 |^[[39m       )^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2712740Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 347 |^[[39m     )^[[33m.^[[39mtoContain(^[[32m'error=stripe:invalid_request_error:404:resource_missing'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2713426Z      ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2713780Z      ^[[90m 348 |^[[39m     expect(
+targeted	Targeted jest	2026-10-04T02:53:40.2714797Z      ^[[90m 349 |^[[39m       ^[[36mawait^[[39m loggedAfterStateRead(^[[33mObject^[[39m^[[33m.^[[39massign(^[[36mnew^[[39m ^[[33mError^[[39m(^[[33mCANARY^[[39m)^[[33m,^[[39m { code^[[33m:^[[39m ^[[32m'P2002'^[[39m }))^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2715801Z      ^[[90m 350 |^[[39m     )^[[33m.^[[39mtoContain(^[[32m'error=P2002'^[[39m)^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T02:53:40.2716112Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2716368Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:347:7)
+targeted	Targeted jest	2026-10-04T02:53:40.2716671Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2717376Z   ● B-654-9 / C-654-10 a caught error reaches logs only as an allow-listed label › (failed before) a same-key replay whose Stripe check fails logs no message
+targeted	Targeted jest	2026-10-04T02:53:40.2718123Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2718316Z     expect(received).not.toContain(expected) // indexOf
+targeted	Targeted jest	2026-10-04T02:53:40.2718570Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2718754Z     Expected substring: not "a.person@example.test"
+targeted	Targeted jest	2026-10-04T02:53:40.2719572Z     Received string:        "[[],[[\"replay secret check skipped purchase=00000000-0000-4000-8000-000000000001: No such customer for a.person@example.test\"]],[]]"
+targeted	Targeted jest	2026-10-04T02:53:40.2720305Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2720667Z     ^[[0m ^[[90m 367 |^[[39m       ^[[36mawait^[[39m buy(svc^[[33m,^[[39m ^[[33mKEY1^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2721507Z      ^[[90m 368 |^[[39m       expect(logs^[[33m.^[[39mtext())^[[33m.^[[39mtoContain(^[[32m'replay secret check skipped'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2722483Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 369 |^[[39m       expect(logs^[[33m.^[[39mtext())^[[33m.^[[39mnot^[[33m.^[[39mtoContain(^[[33mCANARY^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2723194Z      ^[[90m     |^[[39m                               ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2723658Z      ^[[90m 370 |^[[39m     } ^[[36mfinally^[[39m {
+targeted	Targeted jest	2026-10-04T02:53:40.2724098Z      ^[[90m 371 |^[[39m       logs^[[33m.^[[39mrestore()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2724507Z      ^[[90m 372 |^[[39m     }^[[0m
+targeted	Targeted jest	2026-10-04T02:53:40.2724678Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2724910Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:369:31)
+targeted	Targeted jest	2026-10-04T02:53:40.2725234Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2725861Z   ● B-654-9 / C-654-10 a caught error reaches logs only as an allow-listed label › (failed before) a failed stale-trial cleanup logs no message
+targeted	Targeted jest	2026-10-04T02:53:40.2726589Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2726788Z     expect(received).not.toContain(expected) // indexOf
+targeted	Targeted jest	2026-10-04T02:53:40.2727039Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2727202Z     Expected substring: not "a.person@example.test"
+targeted	Targeted jest	2026-10-04T02:53:40.2727933Z     Received string:        "[[],[[\"stale trial attempt kept purchase=00000000-0000-4000-8000-000000000001: for a.person@example.test\"]],[]]"
+targeted	Targeted jest	2026-10-04T02:53:40.2728465Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2728922Z     ^[[0m ^[[90m 383 |^[[39m       expect(out^[[33m.^[[39msubscription_id)^[[33m.^[[39mtoBe(^[[32m'sub_2'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2729816Z      ^[[90m 384 |^[[39m       expect(logs^[[33m.^[[39mtext())^[[33m.^[[39mtoContain(^[[32m'stale trial attempt kept'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2730918Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 385 |^[[39m       expect(logs^[[33m.^[[39mtext())^[[33m.^[[39mnot^[[33m.^[[39mtoContain(^[[33mCANARY^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2731608Z      ^[[90m     |^[[39m                               ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2732056Z      ^[[90m 386 |^[[39m     } ^[[36mfinally^[[39m {
+targeted	Targeted jest	2026-10-04T02:53:40.2732487Z      ^[[90m 387 |^[[39m       logs^[[33m.^[[39mrestore()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2732898Z      ^[[90m 388 |^[[39m     }^[[0m
+targeted	Targeted jest	2026-10-04T02:53:40.2733062Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2733313Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:385:31)
+targeted	Targeted jest	2026-10-04T02:53:40.2733620Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2734194Z   ● B-654-9 / C-654-10 a caught error reaches logs only as an allow-listed label › (failed before) a failed cancel logs no message
+targeted	Targeted jest	2026-10-04T02:53:40.2734693Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2734882Z     expect(received).not.toContain(expected) // indexOf
+targeted	Targeted jest	2026-10-04T02:53:40.2735126Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2735308Z     Expected substring: not "a.person@example.test"
+targeted	Targeted jest	2026-10-04T02:53:40.2736502Z     Received string:        "[[[\"billing.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed\"]],[[\"could not cancel stale subscription sub_1: for a.person@example.test; Stripe expires it after 23 h\"]],[]]"
+targeted	Targeted jest	2026-10-04T02:53:40.2737418Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2737988Z     ^[[0m ^[[90m 399 |^[[39m       expect(stripe^[[33m.^[[39mcancelSubscription)^[[33m.^[[39mtoHaveBeenCalledWith(^[[32m'sub_1'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2738895Z      ^[[90m 400 |^[[39m       expect(logs^[[33m.^[[39mtext())^[[33m.^[[39mtoContain(^[[32m'sub_1'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2739804Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 401 |^[[39m       expect(logs^[[33m.^[[39mtext())^[[33m.^[[39mnot^[[33m.^[[39mtoContain(^[[33mCANARY^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2740972Z      ^[[90m     |^[[39m                               ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2741437Z      ^[[90m 402 |^[[39m     } ^[[36mfinally^[[39m {
+targeted	Targeted jest	2026-10-04T02:53:40.2741869Z      ^[[90m 403 |^[[39m       logs^[[33m.^[[39mrestore()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2742276Z      ^[[90m 404 |^[[39m     }^[[0m
+targeted	Targeted jest	2026-10-04T02:53:40.2742449Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2742701Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:401:31)
+targeted	Targeted jest	2026-10-04T02:53:40.2743001Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2743745Z   ● B-654-9 / C-654-10 a caught error reaches logs only as an allow-listed label › (failed before) webhook: a failed setup_intent.succeeded lookup logs no message
+targeted	Targeted jest	2026-10-04T02:53:40.2744361Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2744554Z     expect(received).not.toContain(expected) // indexOf
+targeted	Targeted jest	2026-10-04T02:53:40.2744798Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2744978Z     Expected substring: not "a.person@example.test"
+targeted	Targeted jest	2026-10-04T02:53:40.2745659Z     Received string:        "[[],[[\"setup_intent.succeeded lookup failed si=seti_T1: reset for a.person@example.test\"]],[]]"
+targeted	Targeted jest	2026-10-04T02:53:40.2746137Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2746788Z     ^[[0m ^[[90m 425 |^[[39m       ^[[36mawait^[[39m expect(handler^[[33m.^[[39mhandle(ev^[[33m,^[[39m prisma^[[33m,^[[39m pre))^[[33m.^[[39mrejects^[[33m.^[[39mtoThrow()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2747895Z      ^[[90m 426 |^[[39m       expect(logs^[[33m.^[[39mtext())^[[33m.^[[39mtoContain(^[[32m'setup_intent.succeeded lookup failed'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2748903Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 427 |^[[39m       expect(logs^[[33m.^[[39mtext())^[[33m.^[[39mnot^[[33m.^[[39mtoContain(^[[33mCANARY^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2749759Z      ^[[90m     |^[[39m                               ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2750339Z      ^[[90m 428 |^[[39m     } ^[[36mfinally^[[39m {
+targeted	Targeted jest	2026-10-04T02:53:40.2750794Z      ^[[90m 429 |^[[39m       logs^[[33m.^[[39mrestore()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T02:53:40.2751206Z      ^[[90m 430 |^[[39m     }^[[0m
+targeted	Targeted jest	2026-10-04T02:53:40.2751379Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2751625Z       at Object.<anonymous> (test/b-recur-116-fix-round-3.spec.ts:427:31)
+targeted	Targeted jest	2026-10-04T02:53:40.2751937Z 
+targeted	Targeted jest	2026-10-04T02:53:40.2752096Z Test Suites: 1 failed, 1 total
+targeted	Targeted jest	2026-10-04T02:53:40.2752433Z Tests:       19 failed, 1 passed, 20 total
+targeted	Targeted jest	2026-10-04T02:53:40.2752743Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T02:53:40.2753001Z Time:        14.072 s
+targeted	Targeted jest	2026-10-04T02:53:40.2753424Z Ran all test suites matching test/b-recur-116-fix-round-3.spec.ts.
+targeted	Targeted jest	2026-10-04T02:53:40.4538910Z ##[error]Process completed with exit code 1.

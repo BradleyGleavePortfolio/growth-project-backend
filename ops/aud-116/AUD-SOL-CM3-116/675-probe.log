@@ -1,0 +1,69 @@
+﻿2026-10-04T03:59:52.2044713Z ##[group]Run set -euo pipefail
+2026-10-04T03:59:52.2045077Z [36;1mset -euo pipefail[0m
+2026-10-04T03:59:52.2045470Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-04T03:59:52.2045966Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-04T03:59:52.2046329Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-04T03:59:52.2046975Z [36;1mnpx jest --ci --runInBand "${SPECS[@]}"[0m
+2026-10-04T03:59:52.2110426Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T03:59:52.2110777Z env:
+2026-10-04T03:59:52.2110997Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-04T03:59:52.2111359Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-04T03:59:52.2111681Z ##[endgroup]
+2026-10-04T03:59:52.2205275Z specs: test/aud-sol-cm3-675-boundaries.spec.ts test/packages-create-idempotency-http.spec.ts test/packages-create-idempotency.spec.ts test/package-idempotency.filter.spec.ts
+2026-10-04T04:00:04.3218106Z PASS test/packages-create-idempotency.spec.ts (11.034 s)
+2026-10-04T04:00:04.6527834Z FAIL test/aud-sol-cm3-675-boundaries.spec.ts
+2026-10-04T04:00:04.6528879Z   ● Test suite failed to run
+2026-10-04T04:00:04.6566898Z 
+2026-10-04T04:00:04.6598170Z     [96mtest/aud-sol-cm3-675-boundaries.spec.ts[0m:[93m409[0m:[93m7[0m - [91merror[0m[90m TS2698: [0mSpread types may only be created from object types.
+2026-10-04T04:00:04.6626806Z 
+2026-10-04T04:00:04.6657535Z     [7m409[0m       ...Reflect.apply(original, service, [coach, input]),
+2026-10-04T04:00:04.6687428Z     [7m   [0m [91m      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+2026-10-04T04:00:04.6716768Z 
+2026-10-04T04:00:05.5878099Z PASS test/packages-create-idempotency-http.spec.ts
+2026-10-04T04:00:05.9365429Z [31m[Nest] 3068  - [39m10/04/2026, 4:00:05 AM [31m  ERROR[39m [38;5;3m[HttpExceptionFilter] [39m[31mUnhandled error at POST /v1/coach/packages: Database request failed (P2010)[39m
+2026-10-04T04:00:05.9367860Z DatabaseRequestError: Database request failed (P2010)
+2026-10-04T04:00:05.9369299Z     at safeDiagnostic (/home/runner/work/growth-project-backend/growth-project-backend/src/observability/orm-diagnostics.ts:17:20)
+2026-10-04T04:00:05.9371233Z     at HttpExceptionFilter.catch (/home/runner/work/growth-project-backend/growth-project-backend/src/filters/http-exception.filter.ts:24:38)
+2026-10-04T04:00:05.9373360Z     at PackageIdempotencyFilter.catch (/home/runner/work/growth-project-backend/growth-project-backend/src/packages/package-idempotency.filter.ts:46:26)
+2026-10-04T04:00:05.9375549Z     at wire (/home/runner/work/growth-project-backend/growth-project-backend/test/package-idempotency.filter.spec.ts:45:15)
+2026-10-04T04:00:05.9377806Z     at Object.<anonymous> (/home/runner/work/growth-project-backend/growth-project-backend/test/package-idempotency.filter.spec.ts:134:18)
+2026-10-04T04:00:05.9379868Z     at Promise.finally.completed (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:1561:28)
+2026-10-04T04:00:05.9381189Z     at new Promise (<anonymous>)
+2026-10-04T04:00:05.9382541Z     at callAsyncCircusFn (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:1501:10)
+2026-10-04T04:00:05.9384605Z     at _callCircusTest (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:1011:40)
+2026-10-04T04:00:05.9387069Z     at _runTest (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:951:3)
+2026-10-04T04:00:05.9388934Z     at /home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:853:7
+2026-10-04T04:00:05.9390909Z     at _runTestsForDescribeBlock (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:866:11)
+2026-10-04T04:00:05.9393103Z     at _runTestsForDescribeBlock (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:861:11)
+2026-10-04T04:00:05.9395652Z     at run (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:765:3)
+2026-10-04T04:00:05.9398159Z     at runAndTransformResultsToJestFormat (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:1993:21)
+2026-10-04T04:00:05.9400451Z     at jestAdapter (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/runner.js:111:19)
+2026-10-04T04:00:05.9402288Z     at runTestInternal (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-runner/build/index.js:276:16)
+2026-10-04T04:00:05.9404048Z     at runTest (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-runner/build/index.js:344:7)
+2026-10-04T04:00:05.9407030Z [31m[Nest] 3068  - [39m10/04/2026, 4:00:05 AM [31m  ERROR[39m [38;5;3m[HttpExceptionFilter] [39m[31mUnhandled error at POST /v1/coach/packages: Database request failed (P2010)[39m
+2026-10-04T04:00:05.9408726Z DatabaseRequestError: Database request failed (P2010)
+2026-10-04T04:00:05.9410095Z     at safeDiagnostic (/home/runner/work/growth-project-backend/growth-project-backend/src/observability/orm-diagnostics.ts:17:20)
+2026-10-04T04:00:05.9411998Z     at HttpExceptionFilter.catch (/home/runner/work/growth-project-backend/growth-project-backend/src/filters/http-exception.filter.ts:24:38)
+2026-10-04T04:00:05.9414261Z     at wire (/home/runner/work/growth-project-backend/growth-project-backend/test/package-idempotency.filter.spec.ts:45:15)
+2026-10-04T04:00:05.9416050Z     at Object.<anonymous> (/home/runner/work/growth-project-backend/growth-project-backend/test/package-idempotency.filter.spec.ts:137:66)
+2026-10-04T04:00:05.9418419Z     at Promise.finally.completed (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:1561:28)
+2026-10-04T04:00:05.9419735Z     at new Promise (<anonymous>)
+2026-10-04T04:00:05.9421054Z     at callAsyncCircusFn (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:1501:10)
+2026-10-04T04:00:05.9423046Z     at _callCircusTest (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:1011:40)
+2026-10-04T04:00:05.9424885Z     at _runTest (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:951:3)
+2026-10-04T04:00:05.9426881Z     at /home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:853:7
+2026-10-04T04:00:05.9428699Z     at _runTestsForDescribeBlock (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:866:11)
+2026-10-04T04:00:05.9430814Z     at _runTestsForDescribeBlock (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:861:11)
+2026-10-04T04:00:05.9432832Z     at run (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:765:3)
+2026-10-04T04:00:05.9434884Z     at runAndTransformResultsToJestFormat (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/jestAdapterInit.js:1993:21)
+2026-10-04T04:00:05.9437189Z     at jestAdapter (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-circus/build/runner.js:111:19)
+2026-10-04T04:00:05.9439044Z     at runTestInternal (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-runner/build/index.js:276:16)
+2026-10-04T04:00:05.9440770Z     at runTest (/home/runner/work/growth-project-backend/growth-project-backend/node_modules/jest-runner/build/index.js:344:7)
+2026-10-04T04:00:05.9442026Z PASS test/package-idempotency.filter.spec.ts
+2026-10-04T04:00:05.9452204Z 
+2026-10-04T04:00:05.9460409Z Test Suites: 1 failed, 3 passed, 4 total
+2026-10-04T04:00:05.9461061Z Tests:       36 passed, 36 total
+2026-10-04T04:00:05.9461566Z Snapshots:   0 total
+2026-10-04T04:00:05.9461981Z Time:        12.903 s
+2026-10-04T04:00:05.9463734Z Ran all test suites matching test/aud-sol-cm3-675-boundaries.spec.ts|test/packages-create-idempotency-http.spec.ts|test/packages-create-idempotency.spec.ts|test/package-idempotency.filter.spec.ts.
+2026-10-04T04:00:06.2284598Z ##[error]Process completed with exit code 1.
