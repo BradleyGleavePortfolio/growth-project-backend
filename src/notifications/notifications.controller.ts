@@ -3,6 +3,7 @@ import {
   Get,
   Patch,
   Post,
+  Put,
   Body,
   Param,
   Query,
@@ -21,6 +22,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import {
   UpdateNotificationPreferencesDto,
   GetNotificationsQueryDto,
+  UpdateTimeZoneDto,
 } from './notifications.dto';
 import { THROTTLER_NAMES } from '../throttler/throttler.config';
 
@@ -37,6 +39,7 @@ import { THROTTLER_NAMES } from '../throttler/throttler.config';
  *   POST /notifications/mark-all-read   — mark all notifications read
  *   GET  /notifications/preferences     — fetch channel preferences
  *   PATCH /notifications/preferences    — update channel preferences
+ *   PUT  /notifications/timezone        — store the device IANA zone
  *
  * The Phase 6B PUT /notifications/preferences is preserved as PATCH
  * (PATCH is semantically correct for partial updates). The old PUT
@@ -107,6 +110,20 @@ export class NotificationsController {
       ...auditContext(req),
       actorRole: req.user.role,
     });
+  }
+
+  // B-NOTIF-4 (Opus B-647-1, Sol B-647-2): the device's IANA zone, sent by
+  // the mobile app on sign-in, on foreground when it changed, and at
+  // onboarding. Booking times in notifications and quiet hours use it.
+  // 400 TIMEZONE_INVALID for an unknown name; a UTC alias is acknowledged
+  // with stored=false and never replaces a real zone. Same write budget as
+  // preferences.
+  @Throttle({ [THROTTLER_NAMES.NOTIFICATIONS_PREFS]: { ttl: 60_000, limit: 30 } })
+  @Put('timezone')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Store the user's device time zone (IANA name)" })
+  async setTimeZone(@Request() req: AuthedRequest, @Body() body: UpdateTimeZoneDto) {
+    return this.notificationsService.setTimeZone(req.user.id, body.timezone, body.source ?? 'device');
   }
 }
 
