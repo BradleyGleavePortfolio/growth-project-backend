@@ -4011,7 +4011,10 @@ model SplitLedgerEntry {
   // reversed back to the platform. Always <= amount_cents.
   reversed_cents            Int            @default(0)
   // Idempotency-key we sent to Stripe when posting this slice. Lets the
-  // worker retry safely. Globally unique.
+  // worker retry safely. Globally unique. S-FEE round 11 (B-681-2): a legacy
+  // per-purchase row carries its durable identity here
+  // (sfee-legacy-ledger:<purchase>:<kind>:<payee account>, ids only), so two
+  // concurrent legacy planners can never create a second row.
   idempotency_key           String?        @unique
   last_error                String?
   posted_at                 DateTime?
