@@ -1,0 +1,20 @@
+{
+  "id": "evt_dv2_dispute_created",
+  "object": "event",
+  "api_version": "2024-06-20",
+  "type": "charge.dispute.created",
+  "livemode": false,
+  "data": {
+    "object": {
+      "id": "dp_dv2_1",
+      "object": "dispute",
+      "amount": 15000,
+      "currency": "usd",
+      "charge": "ch_dv2_retry_paid",
+      "payment_intent": "pi_dv2_renewal_1",
+      "reason": "fraudulent",
+      "status": "needs_response",
+      "created": 0
+    }
+  }
+}
