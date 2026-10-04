@@ -824,6 +824,9 @@ export class StripeConnectApiService {
     description?: string;
     metadata?: Record<string, string>;
     idempotencyKey: string;
+    // S-FEE round 11 (B-682-1): same contract as createTransfer's beforeSend
+    // (the reversal send-start budget); when it throws, nothing is sent.
+    beforeSend?: () => void;
   }): Promise<{
     id: string;
     transfer: string;
@@ -842,6 +845,7 @@ export class StripeConnectApiService {
       `/transfers/${encodeURIComponent(args.transfer_id)}/reversals`,
       form,
       args.idempotencyKey,
+      args.beforeSend,
     );
   }
 
@@ -1056,6 +1060,17 @@ export class StripeConnectApiService {
     if (args.type) params.set('type', args.type);
     if (args.payout) params.set('payout', args.payout);
     return this.getOnAccount(`/balance_transactions?${params.toString()}`, args.connectedAccountId);
+  }
+
+  // Round 11 (B-683-1): one page of a charge's refunds, newest first, each with its
+  // balance transaction (the debit in the SETTLEMENT currency).
+  async listChargeRefunds(charge: string, startingAfter: string | null): Promise<{
+    data: Array<{ id: string; status?: string; balance_transaction?: unknown }>;
+    has_more?: boolean;
+  }> {
+    const q = new URLSearchParams({ charge, limit: '100', 'expand[]': 'data.balance_transaction' });
+    if (startingAfter) q.set('starting_after', startingAfter);
+    return this.get(`/refunds?${q.toString()}`);
   }
 
   // Retrieve a single Refund (used for webhook handlers + admin lookup).

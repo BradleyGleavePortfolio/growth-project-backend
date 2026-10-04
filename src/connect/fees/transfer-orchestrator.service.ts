@@ -8,6 +8,7 @@ import {
   StripeConnectApiService,
 } from '../stripe-connect-api.service';
 import { ReversalUncertainError } from './money-errors';
+import { dbErrorKind, moneyErrorDiagnostic, type DbErrorKind } from './money-diagnostics';
 import { SplitLedgerService } from './split-ledger.service';
 
 // TransferOrchestratorService — mints Stripe Transfers from the platform
@@ -165,23 +166,22 @@ export class TransferSendExpiredError extends Error {
 
 // Round 10 (B-627-10, Sol): a log line names a park failure only by this
 // closed vocabulary, never by the error's name, message or code (all of them
-// are free text a library or caller can set).
-export type ParkFailureKind = 'db_request' | 'db_unavailable' | 'db_validation' | 'unknown';
-export function parkFailureKind(err: unknown): ParkFailureKind {
-  if (
-    err instanceof Prisma.PrismaClientKnownRequestError ||
-    err instanceof Prisma.PrismaClientUnknownRequestError
-  ) {
-    return 'db_request';
+// are free text a library or caller can set). Round 11: the shared money
+// diagnostics vocabulary (money-diagnostics.ts) is the one mapping.
+export type ParkFailureKind = DbErrorKind;
+export const parkFailureKind: (err: unknown) => ParkFailureKind = dbErrorKind;
+
+// Round 11 (B-682-1): a reversal send that was claimed and not started inside
+// the start budget (TRANSFER_SEND_START_BUDGET_MS). Nothing was sent; the op
+// stays pending with attempts > 0, so the next driver lists Stripe first.
+export const REVERSAL_SEND_ABANDONED_CODE = 'SFEE_REVERSAL_SEND_ABANDONED';
+// Round 11 (B-682-1): Stripe holds a second reversal for an operation whose
+// receipt names another one. Ids and cents only; a person recovers the extra.
+export const REVERSAL_DUPLICATE_CODE = 'SFEE_REVERSAL_DUPLICATE';
+class ReversalSendExpiredError extends Error {
+  constructor(readonly ageMs: number) {
+    super(REVERSAL_SEND_ABANDONED_CODE);
   }
-  if (
-    err instanceof Prisma.PrismaClientInitializationError ||
-    err instanceof Prisma.PrismaClientRustPanicError
-  ) {
-    return 'db_unavailable';
-  }
-  if (err instanceof Prisma.PrismaClientValidationError) return 'db_validation';
-  return 'unknown';
 }
 
 function sameInstant(a: Date | null | undefined, b: Date | null | undefined): boolean {
@@ -559,7 +559,10 @@ export class TransferOrchestratorService {
       stripeTransferId = transfer.id;
     } catch (err) {
       if (err instanceof TransferSendExpiredError) return this.abandonSend(sent, err.message);
-      const message = (err as Error)?.message ?? 'unknown transfer error';
+      // B-682-2 (round 11): logs and last_error name the failure by the
+      // closed diagnostic only; the error text only feeds the classification.
+      const message = (err as Error)?.message ?? '';
+      const diag = moneyErrorDiagnostic(err);
       const code = transferFailureCode(err);
       if (isDefinitiveStripeRefusal(err)) {
         // Proven not executed: the marker is cleared and the row is retried
@@ -574,10 +577,10 @@ export class TransferOrchestratorService {
         const line =
           `${code}${final ? '_FINAL' : ''} transfer=${row.id} kind=${row.kind} ` +
           `purchase=${row.purchase_id} settlement=${row.settlement_id ?? 'none'} ` +
-          `attempt=${attemptCount}/${row.max_attempts} alert=${needsPerson}: ${message}`;
+          `attempt=${attemptCount}/${row.max_attempts} alert=${needsPerson}: ${diag}`;
         if (needsPerson) this.logger.error(line);
         else this.logger.warn(line);
-        return this.markFailed(sent, `${code}: ${message}`, final, { resolved: true });
+        return this.markFailed(sent, `${code}: ${diag}`, final, { resolved: true });
       }
       // The outcome is unknown: Stripe may have moved the money. Look first.
       const lookup = await this.findStripeTransfer(sent);
@@ -585,7 +588,7 @@ export class TransferOrchestratorService {
       if (lookup.kind === 'unknown') {
         return this.holdUncertain(
           sent,
-          `${message}; transfer lookup unavailable: ${lookup.reason}`,
+          `${diag}; transfer lookup unavailable: ${lookup.reason}`,
           true,
         );
       }
@@ -598,7 +601,7 @@ export class TransferOrchestratorService {
       const line =
         `${code} transfer=${row.id} kind=${row.kind} ` +
         `purchase=${row.purchase_id} settlement=${row.settlement_id ?? 'none'} ` +
-        `attempt=${attemptCount}/${row.max_attempts} alert=${needsPerson}: ${message}; ` +
+        `attempt=${attemptCount}/${row.max_attempts} alert=${needsPerson}: ${diag}; ` +
         'not visible at Stripe yet, re-checked before any re-send' +
         (budgetSpent
           ? `; attempt budget spent: the payout of ${row.amount_cents} ${row.currency} stays pending and is ` +
@@ -606,7 +609,7 @@ export class TransferOrchestratorService {
           : '');
       if (needsPerson) this.logger.error(line);
       else this.logger.warn(line);
-      return this.markFailed(sent, `${code}: ${message}`, false, { resolved: false });
+      return this.markFailed(sent, `${code}: ${diag}`, false, { resolved: false });
     }
     return this.recordPosted(sent, stripeTransferId, 'created');
   }
@@ -800,11 +803,11 @@ export class TransferOrchestratorService {
         return won;
       });
     } catch (err) {
-      const message = (err as Error)?.message ?? 'unknown receipt error';
+      const diag = moneyErrorDiagnostic(err);
       this.logger.error(
-        `SFEE_TRANSFER_RECEIPT_PENDING alert=true transfer=${row.id} kind=${row.kind} stripe_transfer=${stripeTransferId} amount=${row.amount_cents}: Stripe holds this transfer but the receipt was not written (${message}); the next attempt records it from Stripe and sends nothing`,
+        `SFEE_TRANSFER_RECEIPT_PENDING alert=true transfer=${row.id} kind=${row.kind} stripe_transfer=${stripeTransferId} amount=${row.amount_cents}: Stripe holds this transfer but the receipt was not written (${diag}); the next attempt records it from Stripe and sends nothing`,
       );
-      return this.scheduleRecheck(row, { message: `SFEE_TRANSFER_RECEIPT_PENDING: ${message}` });
+      return this.scheduleRecheck(row, { message: `SFEE_TRANSFER_RECEIPT_PENDING: ${diag}` });
     }
     if (!recorded) return this.reconcileLostOutcome(row, 'posted', stripeTransferId);
     if (recorded === 'from_failed') {
@@ -892,8 +895,10 @@ export class TransferOrchestratorService {
       won = res.count === 1;
     } catch (err) {
       // The row is still pending with its marker; the sweeper picks it up.
+      // Round 11 (C-685-2 / B-682-2): the closed DB error kind only.
       this.logger.warn(
-        `could not schedule the transfer re-check transfer=${row.id}: ${(err as Error)?.message}`,
+        `SFEE_TRANSFER_RECHECK_UNSCHEDULED transfer=${row.id} error_kind=${dbErrorKind(err)}: ` +
+          'the re-check was not written; the row stays pending and the sweeper picks it up',
       );
       return { ...row, ...data };
     }
@@ -948,7 +953,7 @@ export class TransferOrchestratorService {
         reason: `more than ${TransferOrchestratorService.TRANSFER_LIST_MAX_PAGES * 100} transfers listed without a match`,
       };
     } catch (err) {
-      const reason = (err as Error)?.message ?? 'unknown listing error';
+      const reason = moneyErrorDiagnostic(err);
       this.logger.warn(
         `listing transfers for transfer=${row.id} op=${row.idempotency_key} failed: ${reason}`,
       );
@@ -1133,13 +1138,47 @@ export class TransferOrchestratorService {
         throw new ReversalUncertainError(row.id, op.idempotency_key, message);
       }
     }
+    // Round 11 (B-682-1): the transfer-send protocol, for reversals. Claim the
+    // send with a CAS on the attempt this worker read (attempts only grows,
+    // by one per claim), re-prove the lease and the claim after that await,
+    // and start the request only inside the start budget (checked again
+    // synchronously at the HTTP boundary). A claim that is not started stays
+    // pending with attempts > 0, so the next driver lists Stripe first.
     if (fence) await fence();
-    await this.prisma.transferReversalOp.update({
-      where: { id: op.id },
-      data: { attempts: { increment: 1 }, last_attempt_at: new Date() },
+    const claimedAt = this.clock();
+    const claimedMono = performance.now();
+    const claimedAttempts = op.attempts + 1;
+    const claim = await this.prisma.transferReversalOp.updateMany({
+      where: {
+        id: op.id,
+        status: 'pending',
+        attempts: op.attempts,
+        last_attempt_at: op.last_attempt_at,
+      },
+      data: { attempts: claimedAttempts, last_attempt_at: claimedAt },
     });
+    if (claim.count !== 1) return this.reversalMoved(op, 'claim_lost');
+    if (fence) await fence();
+    const live = await this.prisma.transferReversalOp.findUnique({
+      where: { idempotency_key: op.idempotency_key },
+    });
+    if (
+      live?.status !== 'pending' ||
+      live.attempts !== claimedAttempts ||
+      !sameInstant(live.last_attempt_at, claimedAt)
+    ) {
+      return this.reversalMoved(op, 'claim_moved');
+    }
+    const startable = () => {
+      const age = Math.max(
+        this.clock().getTime() - claimedAt.getTime(),
+        Math.round(performance.now() - claimedMono),
+      );
+      if (age > this.sendStartBudgetMs) throw new ReversalSendExpiredError(age);
+    };
     let stripeReversalId: string;
     try {
+      startable();
       const rev = await this.stripe.reverseTransfer({
         transfer_id: row.stripe_transfer_id,
         amount: op.amount_cents,
@@ -1150,13 +1189,27 @@ export class TransferOrchestratorService {
           tgp_purpose: op.purpose,
         },
         idempotencyKey: op.idempotency_key,
+        beforeSend: startable,
       });
       stripeReversalId = rev.id;
     } catch (err) {
-      const message = (err as Error)?.message ?? 'unknown reversal error';
-      if (isDefinitiveStripeRefusal(err)) return this.refuseReversal(op, message);
+      if (err instanceof ReversalSendExpiredError) {
+        this.logger.warn(
+          `${REVERSAL_SEND_ABANDONED_CODE} transfer=${row.id} op=${op.idempotency_key} attempt=${claimedAttempts} ` +
+            `age_ms=${err.ageMs} budget_ms=${this.sendStartBudgetMs}: nothing sent; the op stays pending and ` +
+            'the next driver lists Stripe before any re-send',
+        );
+        return this.reversalMoved(op, 'send_abandoned');
+      }
+      // B-682-2 (round 11): closed diagnostics only (logs, last_error, errors).
+      const diag = moneyErrorDiagnostic(err);
+      if (isDefinitiveStripeRefusal(err)) {
+        return this.refuseReversal(op, diag);
+      }
       const lookup = await this.findStripeReversal(row.stripe_transfer_id, op.idempotency_key);
       if (lookup.kind === 'found') return this.completeReversal(op, lookup.id);
+      const message =
+        lookup.kind === 'unknown' ? `${diag}; reversal lookup unavailable: ${lookup.reason}` : diag;
       await this.prisma.transferReversalOp.updateMany({
         where: { id: op.id, status: 'pending' },
         data: { last_error: message.slice(0, 500) },
@@ -1201,12 +1254,27 @@ export class TransferOrchestratorService {
         reason: `more than ${TransferOrchestratorService.REVERSAL_LIST_MAX_PAGES * 100} reversals listed without a match`,
       };
     } catch (err) {
-      const reason = (err as Error)?.message ?? 'unknown listing error';
+      const reason = moneyErrorDiagnostic(err);
       this.logger.warn(
         `listing reversals of ${stripeTransferId} failed while reconciling op=${key}: ${reason}`,
       );
       return { kind: 'unknown', reason: `listing failed: ${reason}` };
     }
+  }
+
+  // Round 11 (B-682-1): this worker's claim lost (or it did not start its
+  // send). The recorded state stands: a resolved op returns its outcome, a
+  // pending one is retried by the next driver (SFEE_REVERSAL_UNCERTAIN).
+  private async reversalMoved(op: TransferReversalOp, why: string): Promise<ReverseOutcome> {
+    const live = await this.prisma.transferReversalOp.findUnique({
+      where: { idempotency_key: op.idempotency_key },
+    });
+    if (live && live.status !== 'pending') return this.outcomeOf(live);
+    throw new ReversalUncertainError(
+      op.transfer_id,
+      op.idempotency_key,
+      `${why}: the operation is still pending under another attempt; nothing sent by this worker`,
+    );
   }
 
   private async completeReversal(
@@ -1224,7 +1292,22 @@ export class TransferOrchestratorService {
         },
       });
       const t = await tx.connectTransfer.findUniqueOrThrow({ where: { id: op.transfer_id } });
-      if (done.count !== 1) return t; // another completer recorded it
+      if (done.count !== 1) {
+        // Another completer recorded it. Round 11 (B-682-1): when its receipt
+        // names another Stripe reversal, Stripe holds two for one operation.
+        const recorded = await tx.transferReversalOp.findUnique({
+          where: { idempotency_key: op.idempotency_key },
+        });
+        if (recorded && recorded.stripe_reversal_id !== stripeReversalId) {
+          this.logger.error(
+            `${REVERSAL_DUPLICATE_CODE} alert=true transfer=${op.transfer_id} op=${op.idempotency_key} ` +
+              `amount=${op.amount_cents} status=${recorded.status} ` +
+              `recorded_stripe_reversal=${recorded.stripe_reversal_id ?? 'none'} also_at_stripe=${stripeReversalId}: ` +
+              'Stripe holds a reversal the books do not record; recover those cents by hand',
+          );
+        }
+        return t;
+      }
       const reversed = Math.min(
         t.amount_cents,
         Math.max(t.reversed_amount_cents, op.base_reversed_cents + op.amount_cents),

@@ -5,6 +5,7 @@ import {
   heldBreakdownLines,
   type PayoutNoticeAmounts,
 } from '../connect/fees/payout-notice-copy';
+import { settlementFailureCode } from '../connect/fees/charge-settlement.service';
 import { EmailService } from '../email/email.service';
 import { EmailTemplateKey } from '../email/email.types';
 import { NotificationKind } from '../notifications/notification-kind';
@@ -295,7 +296,7 @@ export class PayoutNoticeService {
         return { status: fresh?.inapp_status ?? 'failed', receipt_saved: true };
       }
       this.logger.warn(
-        `SFEE_NOTICE_INAPP_FAILED notice=${n.id} payee=${n.payee_user_id}: ${(err as Error).message}`,
+        `SFEE_NOTICE_INAPP_FAILED notice=${n.id} payee=${n.payee_user_id}: ${settlementFailureCode(err)}`,
       );
       return { status: 'failed' };
     }
@@ -356,7 +357,7 @@ export class PayoutNoticeService {
       return { status: 'failed', notification_id: rowId };
     } catch (err) {
       this.logger.warn(
-        `SFEE_NOTICE_PUSH_FAILED notice=${n.id} payee=${n.payee_user_id}: ${(err as Error).message}`,
+        `SFEE_NOTICE_PUSH_FAILED notice=${n.id} payee=${n.payee_user_id}: ${settlementFailureCode(err)}`,
       );
       return { status: 'failed', notification_id: n.push_notification_id ?? undefined };
     }
@@ -411,7 +412,7 @@ export class PayoutNoticeService {
       return { status: status === 'skipped' ? 'pending' : status };
     } catch (err) {
       this.logger.warn(
-        `SFEE_NOTICE_EMAIL_FAILED notice=${n.id} payee=${n.payee_user_id}: ${(err as Error).message}`,
+        `SFEE_NOTICE_EMAIL_FAILED notice=${n.id} payee=${n.payee_user_id}: ${settlementFailureCode(err)}`,
       );
       return { status: 'failed' };
     }
@@ -448,7 +449,7 @@ export class PayoutNoticeService {
     });
     if (res.status === 'failed') {
       this.logger.warn(
-        `SFEE_NOTICE_EMAIL_FAILED notice=${n.id} payee=${n.payee_user_id}: ${res.error ?? 'provider error'}`,
+        `SFEE_NOTICE_EMAIL_FAILED notice=${n.id} payee=${n.payee_user_id}: provider_failed`,
       );
     }
     return res.status;
@@ -487,11 +488,22 @@ export class PayoutNoticeService {
       openBySettlement.set(r.settlement_id, (openBySettlement.get(r.settlement_id) ?? 0) + left);
     }
     const rows = page.slice(0, limit);
-    // Only the newest notice of a charge carries its live open amount.
-    const seen = new Set<string>();
+    // Only the newest notice of a charge carries its live open amount, on any page (C-684-2).
+    const openIds = [...new Set(rows.map((n) => n.settlement_id))].filter((id) =>
+      openBySettlement.has(id),
+    );
+    const newest = new Map<string, string>();
+    const latest = openIds.length
+      ? await this.prisma.payoutAdjustmentNotice.findMany({
+          where: { payee_user_id: payeeUserId, settlement_id: { in: openIds } },
+          orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+          select: { id: true, settlement_id: true },
+        })
+      : [];
+    for (const n of latest) if (!newest.has(n.settlement_id)) newest.set(n.settlement_id, n.id);
     const notices = rows.map((n): PayoutNoticeView => {
-      const live = seen.has(n.settlement_id) ? 0 : (openBySettlement.get(n.settlement_id) ?? 0);
-      seen.add(n.settlement_id);
+      const live =
+        newest.get(n.settlement_id) === n.id ? (openBySettlement.get(n.settlement_id) ?? 0) : 0;
       return {
         id: n.id,
         event: n.event,
@@ -540,7 +552,7 @@ export class PayoutNoticeService {
       throw new NotFoundException({
         code: 'PAYOUT_NOTICE_NOT_FOUND',
         message:
-          'We could not find that payout notice on your account. Refresh Money to see your current notices.',
+          'That payout notice is not on this account. Refresh Money to see the current notices.',
       });
     }
     return { acknowledged_at: now.toISOString() };

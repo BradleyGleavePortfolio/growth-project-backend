@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { hostname } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import type { PrismaService } from '../../prisma.service';
+import { dbErrorKind } from './money-diagnostics';
 
 // S-FEE round 3 (B-627-2) — per-charge mutex for every money movement on one
 // Stripe charge: settlement, refund / dispute adjustments, and the legacy
@@ -226,9 +227,12 @@ export class ChargeLock {
     try {
       await this.db.cronLease.deleteMany({ where: { name, holder } });
     } catch (err) {
-      // The lease expires on its own after ttlMs.
+      // The lease expires on its own after ttlMs. B-681-1 (round 11): the
+      // failure is named by its closed DB error kind only, never by the
+      // error's message, name or code.
       this.logger.warn(
-        `SFEE_CHARGE_LOCK_RELEASE_FAILED lock=${name}: ${(err as Error).message}; it expires in ${this.ttlMs / 1000} s`,
+        `SFEE_CHARGE_LOCK_RELEASE_FAILED lock=${name} error_kind=${dbErrorKind(err)}: ` +
+          `the lease was not deleted; it expires in ${this.ttlMs / 1000} s and the next holder takes it over`,
       );
     }
   }
