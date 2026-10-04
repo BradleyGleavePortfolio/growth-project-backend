@@ -233,7 +233,9 @@ describe('B-654-5 one attempt, one pinned Stripe request', () => {
     stripe.createSubscription.mockImplementationOnce(async () => {
       throw new Error('process killed');
     });
-    await expect(buy(svc, KEY1)).rejects.toThrow('process killed');
+    // R2 round 6 (sendFenced): a send that dies answers the retryable
+    // PAYMENT_RETRY, never the raw error.
+    expect((await codeOf(buy(svc, KEY1))).body.code).toBe('PAYMENT_RETRY');
     const row = prisma._purchases[0];
     row.stripe_checkout_session_id = `sub-reserved-${row.idempotency_key}`;
     // Fresh in-flight marker: the same key waits instead of a second create.
