@@ -102,10 +102,37 @@ module.exports = {
   testRegex: '\\.spec\\.ts$',
   moduleFileExtensions: ['ts', 'js', 'mjs', 'json'],
   transform: {
-    // ts-jest handles .ts test/source files.
+    // ts-jest handles .ts test/source files, TRANSPILE-ONLY (isolatedModules).
+    //
+    // Why (B-CI-116, root cause of the "Jest worker ran out of memory" crashes
+    // in build-and-test): without isolatedModules, ts-jest builds a full
+    // TypeScript LanguageService in EVERY jest worker and type-checks each file
+    // it transforms against the whole program, including the ~24 MB generated
+    // Prisma client typings. Measured on main (forced GC, --runInBand): the
+    // first spec alone leaves ~1.4 GB of heap, and the program keeps growing as
+    // the worker reaches more of the codebase, so each of CI's three
+    // long-lived workers converges on a full-repo type-check plus its test
+    // runtime and crosses the 4 GB heap after ~300-400 s, on whichever small
+    // suite it holds at that moment (community-message-shape.live.spec.ts,
+    // scout/induction/contract.spec.ts, diagnostic-quiz-off.spec.ts). The same
+    // specs transpile-only sit at ~0.1-0.45 GB.
+    //
+    // No type gate is lost: build-and-test's "Type-check" step (`npx tsc
+    // --noEmit`, tsconfig.json, strict) runs before "Test" in the same
+    // required job and type-checks every file jest can load (all of test/ and
+    // src/, spec files included) under STRICTER options than the relaxed
+    // overrides below. test/ci/jest-typecheck-gate.spec.ts pins that
+    // invariant, so jest never becomes the only type check for any file.
     '^.+\\.ts$': [
       'ts-jest',
-      { tsconfig: { strict: false, noImplicitAny: false, esModuleInterop: true } },
+      {
+        tsconfig: {
+          strict: false,
+          noImplicitAny: false,
+          esModuleInterop: true,
+          isolatedModules: true,
+        },
+      },
     ],
     // expo-server-sdk v6 ships pure-ESM .js in node_modules. ts-jest's
     // TypeScript transform refuses to rewrite .js, so we hand that one
@@ -114,6 +141,10 @@ module.exports = {
     '^.+\\.(js|mjs)$': 'babel-jest',
   },
   setupFiles: ['<rootDir>/test/jest.setup.ts'],
+  // Print each suite's worker heap next to its PASS/FAIL line, so a memory
+  // regression shows up in the CI log long before it becomes an OOM crash
+  // (B-CI-116). Costs one process.memoryUsage() call per suite.
+  logHeapUsage: true,
   // RLS specs connect to a real Postgres and hard-fail without one, so they are
   // excluded from this default suite (the build-and-test CI job has no DB) and
   // run only via jest.rls.config.js in the rls-live-tests job. Keep the two
@@ -139,4 +170,12 @@ module.exports = {
   collectCoverageFrom: ['src/**/*.ts'],
   coveragePathIgnorePatterns: ['/node_modules/', '/dist/'],
   testTimeout: 10000,
+  // S-DUNNING-R6: recycle a worker whose heap stays above 2 GB after a test
+  // file. The build-and-test lane runs every suite in a few long-lived
+  // workers under a 4 GB heap (ci.yml NODE_OPTIONS); retained module
+  // registries accumulate across files until one worker OOM-aborts ("Jest
+  // worker ran out of memory") on whichever suite it happens to hold. A fresh
+  // worker per threshold crossing keeps every suite under the heap limit
+  // without changing what runs or how.
+  workerIdleMemoryLimit: '2GB',
 };

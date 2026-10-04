@@ -932,8 +932,17 @@ export class StripeConnectApiService {
 
   // Round 11 (B-683-1): one page of a charge's refunds, newest first, each with its
   // balance transaction (the debit in the SETTLEMENT currency).
-  async listChargeRefunds(charge: string, startingAfter: string | null): Promise<{
-    data: Array<{ id: string; status?: string; balance_transaction?: unknown }>;
+  async listChargeRefunds(
+    charge: string,
+    startingAfter: string | null,
+  ): Promise<{
+    data: Array<{
+      id: string;
+      status?: string;
+      amount?: number;
+      currency?: string;
+      balance_transaction?: unknown;
+    }>;
     has_more?: boolean;
   }> {
     const q = new URLSearchParams({ charge, limit: '100', 'expand[]': 'data.balance_transaction' });

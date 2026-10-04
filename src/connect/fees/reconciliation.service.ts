@@ -11,7 +11,7 @@ import { PrismaService } from '../../prisma.service';
 import { StripeConnectApiError, StripeConnectApiService } from '../stripe-connect-api.service';
 import {
   SETTLEMENT_MECHANISM_SCT,
-  convertedRefundedCents,
+  chargeRefundsFromStripe,
   payeePositionCents,
   settlementFailureCode,
 } from './charge-settlement.service';
@@ -343,12 +343,14 @@ export class ReconciliationService {
         charge = await this.stripe.retrieveCharge(s.stripe_charge_id, {
           expandBalanceTransaction: true,
         });
-        // B-683-1 (round 11): compare refunds in the settlement currency.
+        // B-683-1 (round 11): compare refunds in the settlement currency. Round 13 (Opus
+        // B-684-3): succeeded refunds only, from the full list (a pending one is not drift).
         const btc = charge.balance_transaction;
         const cur = (typeof btc === 'object' && btc?.currency) || s.currency;
-        stripeRefunded = charge.amount_refunded ?? 0;
-        if ((charge.currency ?? cur).toLowerCase() !== cur && stripeRefunded > 0) {
-          stripeRefunded = await convertedRefundedCents(this.stripe, s.stripe_charge_id, cur);
+        stripeRefunded = 0;
+        if ((charge.amount_refunded ?? 0) > 0) {
+          const list = await chargeRefundsFromStripe(this.stripe, s.stripe_charge_id, cur);
+          stripeRefunded = list.succeeded_debit_cents;
         }
       } catch (err) {
         const msg = settlementFailureCode(err);

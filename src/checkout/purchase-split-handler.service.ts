@@ -62,8 +62,9 @@ export class PurchaseSplitHandlerService {
         null;
       return charge ?? null;
     } catch (err) {
+      // Round 13 (G12): a closed code only, never the error's free text.
       this.logger.warn(
-        `resolveChargeIdForPurchase failed pi=${purchase.stripe_payment_intent_id}: ${(err as Error).message}`,
+        `resolveChargeIdForPurchase failed pi=${purchase.stripe_payment_intent_id}: ${settlementFailureCode(err)}`,
       );
       return null;
     }
@@ -194,7 +195,7 @@ export class PurchaseSplitHandlerService {
             await this.settlements.attemptTransferUnderLock(transfer);
           } catch (err) {
             this.logger.warn(
-              `transfer.attempt failed inline purchase=${purchase.id}: ${(err as Error).message}`,
+              `transfer.attempt failed inline purchase=${purchase.id}: ${settlementFailureCode(err)}`,
             );
           }
         }
@@ -233,7 +234,8 @@ export class PurchaseSplitHandlerService {
     let noticesDelivered = 0;
     if (this.payoutNotices && !(opts.deadlineAt !== undefined && Date.now() >= opts.deadlineAt)) {
       try {
-        noticesDelivered = await this.payoutNotices.dispatchPending(now);
+        // Sol B-684-3 (round 13): notice delivery keeps the sweep's deadline too.
+        noticesDelivered = await this.payoutNotices.dispatchPending(now, 25, opts.deadlineAt);
       } catch (err) {
         this.logger.warn(
           `SFEE_NOTICE_DISPATCH_DEFERRED sweep: ${settlementFailureCode(err)}; the next run retries`,
@@ -244,7 +246,8 @@ export class PurchaseSplitHandlerService {
     let attempted = 0;
     let succeeded = 0;
     let failed = 0;
-    let deadlineReached = false;
+    // Notice delivery or settlements stopped on the deadline (Sol B-684-3).
+    let deadlineReached = opts.deadlineAt !== undefined && Date.now() >= opts.deadlineAt;
     for (const row of due) {
       if (opts.deadlineAt !== undefined && Date.now() >= opts.deadlineAt) {
         deadlineReached = true;
@@ -278,7 +281,9 @@ export class PurchaseSplitHandlerService {
       if (!purchase || !(purchase.amount_cents > 0)) return;
       await this.settlements.settlePurchase(purchase);
     } catch (err) {
-      this.logger.warn(`guest settlement failed pi=${paymentIntentId}: ${settlementFailureCode(err)}`);
+      this.logger.warn(
+        `guest settlement failed pi=${paymentIntentId}: ${settlementFailureCode(err)}`,
+      );
     }
   }
 }
