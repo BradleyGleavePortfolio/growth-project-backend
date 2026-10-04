@@ -105,7 +105,10 @@ describe('Sol B-678-4 send authority fences both parties', () => {
     expect(atCreate).toEqual([CLIENT, COACH].sort());
     const sql = f.db.$queryRaw.mock.calls.map((a: any[]) => a[0].join('?'));
     expect(sql.every((q: string) => /FOR KEY SHARE/.test(q))).toBe(true);
-    expect(out).toEqual({ sub: expect.objectContaining({ id: 'sub_1' }), bound: expect.anything() });
+    expect(out).toEqual({
+      sub: expect.objectContaining({ id: 'sub_1' }),
+      bound: expect.anything(),
+    });
     expect(f.row.stripe_subscription_id).toBe('sub_1');
   });
 
@@ -132,7 +135,9 @@ describe('Sol B-678-4 send authority fences both parties', () => {
     gone.db._users[0].deleted_at = new Date();
     expect(await sendFenced(gone.db, { ...gone.row } as any, null, gone.create)).toBe('gone');
     const closed = setup({ status: 'canceled' });
-    expect(await sendFenced(closed.db, { ...closed.row } as any, null, closed.create)).toBe('closed');
+    expect(await sendFenced(closed.db, { ...closed.row } as any, null, closed.create)).toBe(
+      'closed',
+    );
     expect(gone.create).not.toHaveBeenCalled();
     expect(closed.create).not.toHaveBeenCalled();
   });

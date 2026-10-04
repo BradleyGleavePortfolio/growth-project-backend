@@ -28,14 +28,16 @@ export class CreateFailed extends Error {
 }
 
 /**
- * Sol B-679-7 — send authority. One transaction first holds the client's
- * User row FOR KEY SHARE; account finalization takes it FOR UPDATE
- * (lockUser), so finalization either ran first (the account reads deleted,
- * or the attempt closed: nothing is sent) or waits for this bind and then
- * cancels the bound subscription. The claim re-proves an open, unbound
- * attempt of this client after every earlier await (pin write, Stripe
- * lookup) and renews its in-flight stamp; the row stays locked through the
- * create and the bind (lock order user, then purchase, as in finalization).
+ * Sol B-679-7 / B-678-4 — send authority. One transaction first holds the
+ * User rows of BOTH parties (client and coach, in id order) FOR KEY SHARE;
+ * account finalization of either takes its own row FOR UPDATE SKIP LOCKED
+ * (lockUser), so finalization either ran first (that account reads deleted,
+ * or the attempt closed: nothing is sent) or skips while this send runs and
+ * retries after the bind, then cancels the bound subscription. The claim
+ * re-proves an open, unbound attempt of this client and this coach after
+ * every earlier await (pin write, Stripe lookup) and renews its in-flight
+ * stamp; the rows stay locked through the create and the bind (lock order
+ * users, then purchase, as in finalization).
  * A create Stripe finished without a bind (lost reply, crash) is found by
  * the pinned retry and by the deletion billing stop
  * (AccountDeletionBillingService.collectUnboundAttemptSubscriptionIds).
@@ -48,17 +50,28 @@ export function sendFenced(
   create: () => Promise<StripeSubscriptionCheckoutObject>,
 ): Promise<Fenced> {
   const owner = row.client_user_id;
+  const coach = row.coach_user_id;
   return prisma.$transaction(
     async (tx: Prisma.TransactionClient): Promise<Fenced> => {
-      await tx.$queryRaw`SELECT 1 FROM "User" WHERE "id" = ${owner} FOR KEY SHARE`;
-      const user = await tx.user.findUnique({
-        where: { id: owner },
-        select: { deleted_at: true },
-      });
-      if (!user || user.deleted_at) return 'gone';
-      const open = { id: row.id, status: 'pending', entitlement_active: false };
+      // B-678-4 — both parties, deterministic order (no lock cycle between sends).
+      for (const id of [...new Set([owner, coach])].sort()) {
+        await tx.$queryRaw`SELECT 1 FROM "User" WHERE "id" = ${id} FOR KEY SHARE`;
+      }
+      const alive = async (id: string) => {
+        const u = await tx.user.findUnique({ where: { id }, select: { deleted_at: true } });
+        return !!u && !u.deleted_at;
+      };
+      if (!(await alive(owner))) return 'gone';
+      if (!(await alive(coach))) return 'closed';
+      const open = {
+        id: row.id,
+        client_user_id: owner,
+        coach_user_id: coach,
+        status: 'pending',
+        entitlement_active: false,
+      };
       const claim = await tx.clientPurchase.updateMany({
-        where: { ...open, client_user_id: owner, stripe_subscription_id: null },
+        where: { ...open, stripe_subscription_id: null },
         data: { stripe_checkout_session_id: reservedMarker(row.idempotency_key) },
       });
       // Read back under the row lock: the attempt as claimed, or nothing is sent.
@@ -66,6 +79,7 @@ export function sendFenced(
         claim.count === 1 ? await tx.clientPurchase.findUnique({ where: { id: row.id } }) : null;
       if (
         mine?.client_user_id !== owner ||
+        mine.coach_user_id !== coach ||
         mine.status !== 'pending' ||
         mine.stripe_subscription_id
       ) {
