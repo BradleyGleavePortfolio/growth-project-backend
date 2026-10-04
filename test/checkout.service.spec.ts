@@ -44,7 +44,6 @@ class StripeStub extends StripeConnectApiService {
     amount: args.amount,
     currency: args.currency,
     customer: args.customer,
-    application_fee_amount: args.applicationFeeAmount,
   }));
   createEphemeralKey = jest.fn(
     async (_customerId: string, _idempotencyKey: string) => ({
@@ -399,12 +398,18 @@ describe('CheckoutService', () => {
     expect(stripe.createPrice).toHaveBeenCalledWith(
       expect.objectContaining({ unit_amount: 99900, currency: 'usd' }),
     );
+    // S-FEE: platform charge on behalf of the coach; no destination and no
+    // application fee (the coach net is transferred after the charge).
     expect(stripe.createCheckoutSession).toHaveBeenCalledWith(
       expect.objectContaining({
         mode: 'payment',
-        destinationAccount: 'acct_coach',
+        onBehalfOf: 'acct_coach',
       }),
     );
+    const sessionArgs = (stripe.createCheckoutSession as jest.Mock).mock.calls[0][0];
+    expect(sessionArgs.destinationAccount).toBeUndefined();
+    expect(sessionArgs.applicationFeeAmount).toBeUndefined();
+    expect(sessionArgs.applicationFeePercent).toBeUndefined();
     expect(prisma._purchases).toHaveLength(1);
     expect(prisma._purchases[0]).toMatchObject({
       client_user_id: 'client-1',
@@ -735,7 +740,7 @@ function seedSoloCoachFixture(prisma: any) {
 }
 
 describe('CheckoutService.createPaymentIntentForClient — IDOR + idempotency', () => {
-  it('assigned client buying their own coach\'s package: Stripe called with correct destination + 2% application fee', async () => {
+  it("assigned client buying their own coach's package: platform charge on behalf of the coach, no application fee (S-FEE)", async () => {
     const { svc, prisma, stripe } = makeService();
     seedSoloCoachFixture(prisma);
     prisma._users.push({
@@ -755,12 +760,16 @@ describe('CheckoutService.createPaymentIntentForClient — IDOR + idempotency', 
     const call = (stripe.createPaymentIntent as jest.Mock).mock.calls[0][0];
     expect(call.amount).toBe(10000);
     expect(call.currency).toBe('usd');
-    expect(call.transferDestination).toBe('acct_coach_x');
-    // Audit #3 P1-10 — connected coach is the merchant of record so
-    // on_behalf_of matches transferDestination.
+    // S-FEE: separate charges and transfers. The connected coach stays the
+    // settlement merchant (on_behalf_of); the coach's net is transferred
+    // after Stripe reports the actual fee, so there is no destination and
+    // no application fee on the PaymentIntent.
+    expect(call.transferDestination).toBeUndefined();
     expect(call.onBehalfOf).toBe('acct_coach_x');
+    expect(call.applicationFeeAmount).toBeUndefined();
+    expect(call.metadata.tgp_fee_mechanism).toBe('separate_charge_transfer');
     // Solo coach (no head-coach assignment): platform 2% of $100 = 200 cents.
-    expect(call.applicationFeeAmount).toBe(200);
+    expect(call.metadata.tgp_platform_fee_cents).toBe('200');
     // Stripe idempotency key includes the client-supplied UUID.
     expect(call.idempotencyKey).toContain('11111111-1111-4111-8111-111111111111');
     // Persisted purchase row + cached secret for replay.
@@ -984,7 +993,7 @@ describe('CheckoutService.createPaymentIntentForClient — IDOR + idempotency', 
     ).rejects.toMatchObject({ status: 400 });
   });
 
-  it('fee math: $100 package with default fee policy yields 200 cents application fee (2%)', async () => {
+  it('fee math: $100 package with default fee policy records the 200 cent (2%) platform fee', async () => {
     const { svc, prisma, stripe } = makeService();
     seedSoloCoachFixture(prisma);
     prisma._users.push({
@@ -999,8 +1008,11 @@ describe('CheckoutService.createPaymentIntentForClient — IDOR + idempotency', 
       idempotency_key: '55555555-5555-4555-8555-555555555555',
     });
     const call = (stripe.createPaymentIntent as jest.Mock).mock.calls[0][0];
-    // Platform 2% = 200; no head coach assigned → split 0; total = 200.
-    expect(call.applicationFeeAmount).toBe(200);
+    // Platform 2% = 200; no head coach assigned → split 0. Settled after the
+    // charge from Stripe's actual fee (S-FEE), so no application fee here.
+    expect(call.applicationFeeAmount).toBeUndefined();
+    expect(call.metadata.tgp_platform_fee_cents).toBe('200');
+    expect(call.metadata.tgp_head_coach_split_cents).toBe('0');
   });
 });
 
@@ -1203,8 +1215,9 @@ describe('CheckoutService.createPaymentIntentForClient — sub-coach fee split',
 
     expect(stripe.createPaymentIntent).toHaveBeenCalledTimes(1);
     const call = (stripe.createPaymentIntent as jest.Mock).mock.calls[0][0];
-    // 2% platform = 200 cents + 5% head coach = 500 cents → 700 total.
-    expect(call.applicationFeeAmount).toBe(700);
+    // 2% platform = 200 cents + 5% head coach = 500 cents, both settled by
+    // transfer after the charge (S-FEE): no application fee on the PI.
+    expect(call.applicationFeeAmount).toBeUndefined();
     expect(call.metadata.tgp_platform_fee_cents).toBe('200');
     expect(call.metadata.tgp_head_coach_split_cents).toBe('500');
     expect(call.metadata.tgp_head_coach_user_id).toBe('head-coach-1');
