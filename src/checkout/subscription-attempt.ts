@@ -165,3 +165,38 @@ export async function ownTrialSheet(
   });
   return secret ? { mode: 'setup', client_secret: secret } : null;
 }
+
+/**
+ * B-654-5 — the subscription Stripe made for this attempt, found by
+ * metadata.tgp_purchase_id among the customer's subscriptions (moved from R2,
+ * size move). null = Stripe has none; 'unreadable' = Stripe could not be
+ * read now.
+ */
+export async function findAttemptSubscription(
+  stripe: Pick<
+    StripeConnectApiService,
+    'listSubscriptionsForCustomer' | 'retrieveSubscriptionForCheckout'
+  >,
+  logger: Logger,
+  row: ClientPurchase,
+): Promise<StripeSubscriptionCheckoutObject | null | 'unreadable'> {
+  if (!row.stripe_customer_id) return null;
+  try {
+    let list = await stripe.listSubscriptionsForCustomer(row.stripe_customer_id);
+    const own = (l: typeof list) =>
+      (l.data ?? []).find((s) => s.metadata?.tgp_purchase_id === row.id);
+    let hit = own(list);
+    if (!hit && list.has_more) {
+      // C-679-2 — a full page without it: read only what was created since
+      // this attempt began (5 min clock margin); its own subscription is newer.
+      const createdGte = Math.floor(row.created_at.getTime() / 1000) - 300;
+      list = await stripe.listSubscriptionsForCustomer(row.stripe_customer_id, { createdGte });
+      hit = own(list);
+    }
+    if (!hit) return list.has_more ? 'unreadable' : null;
+    return await stripe.retrieveSubscriptionForCheckout(hit.id);
+  } catch (err) {
+    logger.warn(`attempt subscription lookup failed purchase=${row.id} error=${errorLabel(err)}`);
+    return 'unreadable';
+  }
+}
