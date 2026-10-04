@@ -42,24 +42,17 @@ function setup(opts: { currency?: string; amount?: number } = {}) {
   const fee = new FeePolicyService(asPrisma(prisma));
   const transfers = new TransferOrchestratorService(asPrisma(prisma), stripe, ledger);
   const settlements = new ChargeSettlementService(asPrisma(prisma), stripe, fee, ledger, transfers);
+  // One typed stub for the notification and email boundaries.
+  type Sent = { status: string; error?: string };
   const fns = {
-    createNotification: jest.fn(async (..._a: unknown[]): Promise<{ id: string } | null> => ({
-      id: 'n_1',
-    })),
+    createNotification: jest.fn(async (..._a: unknown[]): Promise<{ id: string } | null> => ({ id: 'n_1' })),
     channelGate: jest.fn(async (..._a: unknown[]) => 'enabled'),
     pushToUser: jest.fn(async (..._a: unknown[]) => ({ delivered: true, code: 'delivered' })),
-    send: jest.fn(async (..._a: unknown[]): Promise<{ status: string; error?: string }> => ({
-      status: 'sent',
-    })),
+    send: jest.fn(async (..._a: unknown[]): Promise<Sent> => ({ status: 'sent' })),
   };
-  const notifyStub: object = {
-    createNotification: fns.createNotification,
-    channelGate: fns.channelGate,
-    pushToUser: fns.pushToUser,
-  };
-  const notifications = notifyStub as NotificationsService;
-  const emailStub: object = { send: fns.send };
-  const email = emailStub as EmailService;
+  const stub: object = fns;
+  const notifications = stub as NotificationsService;
+  const email = stub as EmailService;
   const notices = new PayoutNoticeService(asPrisma(prisma), notifications, email);
   const readiness = new PayoutReadinessService(asPrisma(prisma), stripe);
   const refunds = new RefundDisputeHandlerService(
@@ -268,10 +261,8 @@ describe('B-683-3 / B-684-2: logs carry closed codes and ids only', () => {
       release: jest.fn(async () => { throw new Error(CANARY); }),
     };
     const splitsStub: object = { runTransferSweeper: jest.fn(async () => { throw new Error(CANARY); }) };
-    const cron = new SettlementSweepCron(
-      leaseStub as CronLeaseService,
-      splitsStub as PurchaseSplitHandlerService,
-    );
+    const lease = leaseStub as CronLeaseService;
+    const cron = new SettlementSweepCron(lease, splitsStub as PurchaseSplitHandlerService);
     const errors = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     const warns = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     await expect(cron.runOnce()).resolves.toEqual({ ran: true, ok: false });
