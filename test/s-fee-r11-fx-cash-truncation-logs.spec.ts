@@ -136,10 +136,10 @@ describe('B-683-1: a converted charge is refunded in its settlement currency', (
     });
     const input = { purchase: ctx.purchase, charge_id: 'ch_1', refunded_cents: 2_500 };
     await expect(ctx.settlements.applyAdjustments(input))
-      .rejects.toThrow(/^SFEE_REFUND_STATE_UNAVAILABLE charge=ch_1 reason=stripe_http_503$/);
+      .rejects.toThrow(/^SFEE_REFUND_STATE_UNAVAILABLE charge=ch_1 kind=stripe http=503 /);
     expect(ctx.stripe.netTo('acct_1')).toBe(7_640);
     expect(ctx.db.settlements[0].reconcile_reason)
-      .toBe('SFEE_REFUND_STATE_UNAVAILABLE charge=ch_1 reason=stripe_http_503');
+      .toBe('SFEE_REFUND_STATE_UNAVAILABLE charge=ch_1 kind=stripe http=503 type=other code=other');
   });
 
   it('control: a same-currency refund never lists refunds and moves the USD amount', async () => {
@@ -238,7 +238,7 @@ describe('B-683-3 / B-684-2: logs carry closed codes and ids only', () => {
     await ctx.refunds.deliverPayoutNotices('ch_1');
     const text = logged(warns);
     for (const code of ['INAPP', 'PUSH', 'EMAIL']) expect(text).toContain(`SFEE_NOTICE_${code}_FAILED`);
-    expect(text).toContain('SFEE_NOTICE_DISPATCH_DEFERRED charge=ch_1: unknown_failure');
+    expect(text).toContain('SFEE_NOTICE_DISPATCH_DEFERRED charge=ch_1: kind=unknown');
     expect(text).not.toContain(CANARY);
   });
 
