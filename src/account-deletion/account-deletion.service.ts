@@ -721,6 +721,10 @@ export class AccountDeletionService {
         //    that hold them still exist. Nothing external happens yet.
         const objects = await this.storage.collect(tx, userId);
         const subscriptionIds = await this.billing.collectSubscriptionIds(tx, userId);
+        // Sol B-679-7 — plus native checkout subscriptions not bound to a row yet.
+        subscriptionIds.push(
+          ...(await this.billing.collectUnboundAttemptSubscriptionIds(tx, userId)),
+        );
 
         // 1b. Community voice recordings (B-610-5, OR-110-1, Apple 5.1.1(v)).
         //     The verified-erasure work (every exact key on the user's notes

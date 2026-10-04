@@ -4,7 +4,9 @@ import { PurchaseSplitHandlerService } from '../src/checkout/purchase-split-hand
 import { FeePolicyService } from '../src/connect/fees/fee-policy.service';
 import { SplitLedgerService } from '../src/connect/fees/split-ledger.service';
 import { TransferOrchestratorService } from '../src/connect/fees/transfer-orchestrator.service';
+import { ChargeSettlementService } from '../src/connect/fees/charge-settlement.service';
 import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
+import { asPrisma, makeCharge, settlementTables } from './utils/settlement-fakes';
 
 // Integration-style: wires the actual webhook handler against an
 // in-memory prisma stub + stub Stripe client to verify lifecycle events
@@ -27,6 +29,12 @@ class StripeStub extends StripeConnectApiService {
     destination: args.destination,
   }));
   cancelSubscription = jest.fn();
+  // S-FEE: the settlement reads the charge with its balance transaction
+  // ($100.00 US card, Stripe fee $3.20).
+  retrieveCharge = jest.fn(async (id: string) =>
+    makeCharge({ id, amount: 10_000, fee: 320, payment_intent: 'pi_abc' }),
+  );
+  listInvoices = jest.fn(async () => ({ data: [] }));
 }
 
 function makePrismaStub() {
@@ -244,16 +252,42 @@ function makePrismaStub() {
 
 function makeHandler() {
   const prisma = makePrismaStub();
+  // S-FEE settlement tables share the stub's arrays.
+  const tables = settlementTables({
+    purchases: prisma._data.purchases,
+    accounts: prisma._data.accounts,
+    feePolicies: prisma._data.feePolicies,
+    assignments: prisma._data.assignments,
+    settlements: [],
+    recoveries: [],
+    ledger: prisma._data.splits,
+    transfers: prisma._data.transfers,
+    refunds: [],
+  });
+  Object.assign(prisma, {
+    connectAccount: tables.connectAccount,
+    feePolicy: tables.feePolicy,
+    teamSubCoachAssignment: tables.teamSubCoachAssignment,
+    splitLedgerEntry: tables.splitLedgerEntry,
+    connectTransfer: tables.connectTransfer,
+    chargeSettlement: tables.chargeSettlement,
+    payeeRecovery: tables.payeeRecovery,
+    chargeRefund: tables.chargeRefund,
+    cronLease: tables.cronLease,
+    $transaction: async (fn: (tx: object) => Promise<unknown>) => fn(prisma),
+  });
   const stripe = new StripeStub();
   const fee = new FeePolicyService(prisma as any);
   const ledger = new SplitLedgerService(prisma as any);
   const transfers = new TransferOrchestratorService(prisma as any, stripe as any, ledger);
+  const settlements = new ChargeSettlementService(asPrisma(prisma), stripe, fee, ledger, transfers);
   const splits = new PurchaseSplitHandlerService(
     prisma as any,
     stripe as any,
     fee,
     ledger,
     transfers,
+    settlements,
   );
   const dunning = new DunningService(prisma as any, stripe as any);
   const handler = new CheckoutWebhookHandlerService(
@@ -266,7 +300,7 @@ function makeHandler() {
 }
 
 describe('CheckoutWebhookHandlerService Phase 4-5 integration', () => {
-  it('checkout.session.completed materializes the ledger and posts the head-coach transfer', async () => {
+  it('checkout.session.completed settles the charge: coach net and head-coach transfers', async () => {
     const { handler, prisma, stripe } = makeHandler();
     prisma._data.purchases.push({
       id: 'p1',
@@ -307,13 +341,26 @@ describe('CheckoutWebhookHandlerService Phase 4-5 integration', () => {
     expect(result.claimed).toBe(true);
     expect(prisma._data.purchases[0].status).toBe('paid');
     expect(prisma._data.purchases[0].entitlement_active).toBe(true);
-    // 3 ledger entries (sub-coach scenario).
-    expect(prisma._data.splits).toHaveLength(3);
-    // Head-coach transfer was posted.
+    // 4 ledger slices (sub-coach scenario): 2% fee, Stripe fee, coach net, head coach.
+    expect(prisma._data.splits).toHaveLength(4);
+    // Head-coach and coach-net transfers were posted from the charge.
     expect(stripe.createTransfer).toHaveBeenCalledWith(
-      expect.objectContaining({ amount: 500, destination: 'acct_head' }),
+      expect.objectContaining({
+        amount: 500,
+        destination: 'acct_head',
+        source_transaction: 'ch_test',
+      }),
     );
-    expect(prisma._data.transfers[0].status).toBe('succeeded');
+    expect(stripe.createTransfer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amount: 8_980,
+        destination: 'acct_sub',
+        source_transaction: 'ch_test',
+      }),
+    );
+    expect(prisma._data.transfers.every((t: { status: string }) => t.status === 'succeeded')).toBe(
+      true,
+    );
   });
 
   it('replaying checkout.session.completed is idempotent (no duplicate ledger or transfer rows)', async () => {
@@ -351,11 +398,11 @@ describe('CheckoutWebhookHandlerService Phase 4-5 integration', () => {
     await handler.handle(event);
     await handler.handle(event);
     await handler.handle(event);
-    expect(prisma._data.splits).toHaveLength(3);
-    expect(prisma._data.transfers).toHaveLength(1);
-    // All createTransfer calls share the same idempotency-key
+    expect(prisma._data.splits).toHaveLength(4);
+    expect(prisma._data.transfers).toHaveLength(2);
+    // One idempotency key per charge and leg.
     const keys = new Set(stripe.createTransfer.mock.calls.map((c: any) => c[0].idempotencyKey));
-    expect(keys.size).toBe(1);
+    expect([...keys].sort()).toEqual(['tgp-settle-ch_test-coach', 'tgp-settle-ch_test-head_coach']);
   });
 
   it('invoice.payment_failed opens a dunning window and queues a reminder', async () => {
