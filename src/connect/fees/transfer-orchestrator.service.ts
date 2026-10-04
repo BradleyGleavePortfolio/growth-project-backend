@@ -1053,16 +1053,15 @@ export class TransferOrchestratorService {
    * holds (found on the transfer's complete reversal list) as a completed
    * operation, with no Stripe call. One transaction takes the transfer's
    * reversal slot, writes the operation already succeeded (it is never
-   * pending, so no driver can send it) and sets the total absolutely: the
-   * base is Stripe's cumulative total less this reversal, so a total that
-   * already counts it never counts it twice. A reversal an operation already
-   * recorded (stripe_reversal_id is unique) is returned as recorded.
+   * pending, so no driver can send it) and adds it to the recorded total
+   * (base = the recorded total, as for every operation; a legacy
+   * transfer.reversed only observes, B-674-3). A reversal an operation
+   * already recorded (stripe_reversal_id is unique) is returned as recorded.
    */
   async recordFoundReversal(args: {
     transfer_row_id: string;
     stripe_reversal_id: string;
     amount_cents: number;
-    stripe_reversed_total_cents: number;
     idempotency_key: string;
   }): Promise<ReverseOutcome> {
     await this.resolvePendingReversals(args.transfer_row_id);
@@ -1094,7 +1093,7 @@ export class TransferOrchestratorService {
             seq: row.reversal_seq + 1,
             idempotency_key: args.idempotency_key,
             amount_cents: amount,
-            base_reversed_cents: Math.max(0, args.stripe_reversed_total_cents - amount),
+            base_reversed_cents: row.reversed_amount_cents,
             purpose: 'legacy',
             status: 'succeeded',
             stripe_reversal_id: args.stripe_reversal_id,

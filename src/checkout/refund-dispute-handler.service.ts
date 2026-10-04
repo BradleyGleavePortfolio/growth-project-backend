@@ -951,6 +951,7 @@ export class RefundDisputeHandlerService {
       ? await this.prisma.transferReversalOp.findUnique({ where: { idempotency_key: key } })
       : null;
     let send: { transfer_row_id: string; amount_cents: number };
+    let unproven: ConnectTransfer | null = null;
     if (prior) {
       send = { transfer_row_id: prior.transfer_id, amount_cents: prior.amount_cents };
     } else {
@@ -968,9 +969,12 @@ export class RefundDisputeHandlerService {
       if (admission.outcome !== 'admitted') return admission.outcome;
       // B-674-3 (d): every resend replays the first attempt's amount.
       send = { transfer_row_id: owed.transfer.id, amount_cents: admission.amount_cents };
+      if (current.transfer_reversal_first_attempt_at) unproven = owed.transfer;
     }
     try {
-      const res = await this.transfers.reverse({ ...send, idempotency_key: key, purpose: 'legacy' });
+      const res =
+        (unproven && (await this.reversalStripeHolds(unproven, { kind: 'refund', id: refundRowId }, key))) ||
+        (await this.transfers.reverse({ ...send, idempotency_key: key, purpose: 'legacy' }));
       return await this.recordHeadCoachReversed(
         res,
         (tx, stripeId) => this.markTransferReversalDone(tx, refundRowId, stripeId),
@@ -1433,16 +1437,13 @@ export class RefundDisputeHandlerService {
         where: { transfer_reversal_stripe_id: receipt.id, NOT: { id: row.id } },
       });
       if (bound) throw transferReversalAssignedElsewhere();
-      // Stripe is the truth for the transfer: the found reversal is recorded
-      // as a completed operation at Stripe's cumulative total (the sum of the
-      // complete list), so a webhook sync that already counted it is never
-      // counted again.
+      // The found reversal is recorded as a completed operation (no Stripe
+      // call), added once to the recorded total (stripe_reversal_id unique).
       const res = await this.reconcileStep(() =>
         this.transfers.recordFoundReversal({
           transfer_row_id: owed.transfer.id,
           stripe_reversal_id: receipt.id,
           amount_cents: receipt.amount,
-          stripe_reversed_total_cents: reversals.reduce((n, r) => n + r.amount, 0),
           idempotency_key: `${key}-found-${receipt.id}`,
         }),
       );
@@ -1531,6 +1532,31 @@ export class RefundDisputeHandlerService {
       stripe_transfer_reversal_id: stripeId ?? null,
       amount_cents: op?.amount_cents ?? 0,
     };
+  }
+
+  // B-674-14: an attempt was stamped but no reversal operation exists (a stop
+  // between the stamp and the operation, or a reversal sent before
+  // operations existed). A new send is admitted only after Stripe's COMPLETE
+  // list shows none for this event; one Stripe holds is recorded instead
+  // (no send). An incomplete list throws a closed 503 code: still owed.
+  private async reversalStripeHolds(
+    transfer: ConnectTransfer,
+    event: { kind: 'refund' | 'dispute'; id: string },
+    key: string,
+  ): Promise<ReverseOutcome | null> {
+    if (!transfer.stripe_transfer_id) return null;
+    const reversals = await this.listAllTransferReversals(transfer.stripe_transfer_id);
+    const held = reversals.find((r) => {
+      const e = reversalEvent(r);
+      return e?.kind === event.kind && e.id === event.id;
+    });
+    if (!held) return null;
+    return this.transfers.recordFoundReversal({
+      transfer_row_id: transfer.id,
+      stripe_reversal_id: held.id,
+      amount_cents: held.amount,
+      idempotency_key: key,
+    });
   }
 
   private async listAllTransferReversals(
@@ -1739,6 +1765,7 @@ export class RefundDisputeHandlerService {
       ? await this.prisma.transferReversalOp.findUnique({ where: { idempotency_key: key } })
       : null;
     let send: { transfer_row_id: string; amount_cents: number };
+    let unproven: ConnectTransfer | null = null;
     if (prior) {
       send = { transfer_row_id: prior.transfer_id, amount_cents: prior.amount_cents };
     } else {
@@ -1760,9 +1787,12 @@ export class RefundDisputeHandlerService {
         transfer_row_id: owed.transfer.id,
         amount_cents: stamped.transfer_reversal_amount_cents ?? owed.amount_cents,
       };
+      if (retry) unproven = owed.transfer;
     }
     try {
-      const res = await this.transfers.reverse({ ...send, idempotency_key: key, purpose: 'legacy' });
+      const res =
+        (unproven && (await this.reversalStripeHolds(unproven, { kind: 'dispute', id: row.id }, key))) ||
+        (await this.transfers.reverse({ ...send, idempotency_key: key, purpose: 'legacy' }));
       return await this.recordHeadCoachReversed(
         res,
         (tx, stripeId) => this.markDisputeTransferReversalDone(tx, row.id, stripeId),
