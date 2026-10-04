@@ -37,9 +37,8 @@ function matchesWhere(row: Row, where: Record<string, unknown>): boolean {
     if (v instanceof Date) return row[k] instanceof Date && row[k].getTime() === v.getTime();
     if (v && typeof v === 'object' && 'in' in v)
       return (v as { in: unknown[] }).in.includes(row[k]);
-    if (v && typeof v === 'object' && 'notIn' in v) {
+    if (v && typeof v === 'object' && 'notIn' in v)
       return !(v as { notIn: unknown[] }).notIn.includes(row[k]);
-    }
     return row[k] === v;
   });
 }
@@ -48,6 +47,7 @@ function makeHarness() {
   const purchases: Row[] = [];
   const drops: Row[] = [];
   const fanoutRows: Row[] = [];
+  const isActivated = (p: Row) => fanoutRows.some((r) => r.purchase_id === p.id);
   const markers: string[] = [];
   const uniqueViolations: string[] = [];
   const rawSql: string[] = [];
@@ -89,7 +89,9 @@ function makeHarness() {
       findFirst: jest.fn(async ({ where }: any) =>
         snapshot(purchases.find((p) => matchesWhere(p, where))),
       ),
-      findMany: jest.fn(async ({ where }: any) => purchases.filter((p) => matchesWhere(p, where))),
+      findMany: jest.fn(async ({ where: { fanout: hasFanout, ...where } }: any) =>
+        purchases.filter((p) => matchesWhere(p, where) && (!hasFanout || isActivated(p))),
+      ),
       update: jest.fn(async ({ where, data }: any) => {
         const row = purchases.find((p) => matchesWhere(p, where));
         if (!row) throw Object.assign(new Error('Record to update not found.'), { code: 'P2025' });
