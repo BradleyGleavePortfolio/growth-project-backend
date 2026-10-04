@@ -17,6 +17,7 @@ import { CoachPackagesController } from '../src/packages/packages.controller';
 import {
   PACKAGE_CREATE_ROUTE_KEY,
   PackagesService,
+  packageCreateFingerprint,
   packageCreateHash,
 } from '../src/packages/packages.service';
 
@@ -264,6 +265,44 @@ describe('OR-112-16 package create is idempotent per Idempotency-Key', () => {
     );
   });
 
+  it('C-675-3: a replay whose package the coach archived is 410 with a next action, never the archived row', async () => {
+    const db = makeDb();
+    const svc = service(db);
+    await svc.createIdempotent('coach-1', INPUT, 'key-archived-1');
+    // DELETE /v1/coach/packages/:id archives (is_active=false, archived_at set).
+    Object.assign(db.packages[0], { archived_at: new Date(), is_active: false });
+    for (const input of [INPUT, { ...INPUT, amount_cents: 5900 }]) {
+      const err = await svc
+        .createIdempotent('coach-1', input, 'key-archived-1')
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(GoneException);
+      const body = (err as GoneException).getResponse() as Record<string, unknown>;
+      expect(body).toMatchObject({ code: 'IDEMPOTENT_PACKAGE_REMOVED' });
+      expect(body).not.toHaveProperty('package_id');
+      expect(String(body.message)).toBe(
+        'The package this request created has since been archived. Send a new request to create it again.',
+      );
+    }
+    expect(db.packages).toHaveLength(1);
+  });
+
+  it("B-675-1: the 422 names a package only in the caller's current catalog; a moved sub-coach gets 410", async () => {
+    const db = makeDb();
+    const svc = service(db);
+    // sub-1 created on coach-1's catalog, then moved to coach-2.
+    const made = await svc.createIdempotent('coach-1', INPUT, 'key-moved-01', 'sub-1');
+    expect(made.pkg.coach_id).toBe('coach-1');
+    for (const input of [INPUT, { ...INPUT, amount_cents: 5900 }]) {
+      const err = await svc
+        .createIdempotent('coach-2', input, 'key-moved-01', 'sub-1')
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(GoneException);
+      const body = (err as GoneException).getResponse() as Record<string, unknown>;
+      expect(body).toMatchObject({ code: 'IDEMPOTENT_PACKAGE_REMOVED' });
+      expect(JSON.stringify(body)).not.toContain(made.pkg.id);
+    }
+  });
+
   it('a unique violation from the package insert itself is surfaced, never reported as "still being saved"', async () => {
     const db = makeDb();
     const svc = service(db);
@@ -286,6 +325,99 @@ describe('OR-112-16 package create is idempotent per Idempotency-Key', () => {
       packageCreateHash({ coach_id: 'c', currency: c.toLowerCase(), amount_cents: 1 });
     expect(h('USD')).toBe(h('usd'));
     expect(packageCreateHash({ a: 1, b: 2 })).toBe(packageCreateHash({ b: 2, a: 1 }));
+  });
+
+  it('a body that leaves out a defaulted field replays the key a body that set it to the default claimed', async () => {
+    const db = makeDb();
+    const svc = service(db);
+    const { description: _d, interval_count: _c, currency: _cur, ...bare } = INPUT;
+    const a = await svc.createIdempotent(
+      'coach-1',
+      { ...bare, description: null, currency: 'USD', interval_count: 1, duration_periods: null },
+      'key-defaults-1',
+    );
+    const b = await svc.createIdempotent('coach-1', bare, 'key-defaults-1');
+    expect(b.replayed).toBe(true);
+    expect(b.pkg.id).toBe(a.pkg.id);
+    expect(db.packages).toHaveLength(1);
+  });
+
+  it('C-675-2: a column the server adds later with a default leaves old hashes alone; a non-default value is different details', async () => {
+    const db = makeDb();
+    const svc = service(db);
+    const made = await svc.createIdempotent('coach-1', INPUT, 'key-trial-01');
+    // The trials piece adds `trial_days: input.trial_days ?? 0` to the row.
+    const original = Reflect.get(svc, 'createData') as (
+      coach: string,
+      input: Record<string, unknown>,
+    ) => Record<string, unknown>;
+    Reflect.set(
+      svc,
+      'createData',
+      function (this: PackagesService, coach: string, input: Record<string, unknown>) {
+        return { ...original.call(this, coach, input), trial_days: input.trial_days ?? 0 };
+      },
+    );
+    const same = await svc.createIdempotent('coach-1', INPUT, 'key-trial-01');
+    expect(same).toMatchObject({ replayed: true, pkg: { id: made.pkg.id } });
+    const explicitDefault = await svc.createIdempotent(
+      'coach-1',
+      { ...INPUT, trial_days: 0 } as typeof INPUT,
+      'key-trial-01',
+    );
+    expect(explicitDefault.pkg.id).toBe(made.pkg.id);
+    const err = await svc
+      .createIdempotent('coach-1', { ...INPUT, trial_days: 7 } as typeof INPUT, 'key-trial-01')
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(UnprocessableEntityException);
+    expect((err as UnprocessableEntityException).getResponse()).toMatchObject({
+      code: 'IDEMPOTENCY_KEY_REUSED',
+      package_id: made.pkg.id,
+    });
+    expect(db.packages).toHaveLength(1);
+  });
+
+  it('C-675-2: the fingerprint drops only optional columns at their default and keeps the identity', () => {
+    const defaults = {
+      coach_id: 'c',
+      name: 'N',
+      amount_cents: 4900,
+      currency: 'usd',
+      trial_days: 0,
+    };
+    const row = { ...defaults, interval: 'month' };
+    expect(packageCreateFingerprint(row, defaults)).toEqual({
+      coach_id: 'c',
+      name: 'N',
+      amount_cents: 4900,
+      interval: 'month',
+    });
+    const before = packageCreateFingerprint(
+      { coach_id: 'c', name: 'N', amount_cents: 4900, currency: 'usd' },
+      { coach_id: 'c', name: 'N', amount_cents: 4900, currency: 'usd' },
+    );
+    expect(packageCreateHash(packageCreateFingerprint(defaults, defaults))).toBe(
+      packageCreateHash(before),
+    );
+    expect(
+      packageCreateHash(packageCreateFingerprint({ ...defaults, trial_days: 7 }, defaults)),
+    ).not.toBe(packageCreateHash(before));
+    // null and absent are the same value, as in packageCreateHash.
+    expect(packageCreateFingerprint({ ...defaults, description: null }, defaults)).toEqual(
+      packageCreateFingerprint(defaults, defaults),
+    );
+    // Identity keys always count, even though they equal their own defaults row.
+    const named = (name: string, amount: number) => {
+      const d = { ...defaults, name, amount_cents: amount };
+      return packageCreateHash(packageCreateFingerprint(d, d));
+    };
+    expect(packageCreateFingerprint(defaults, defaults)).toEqual({
+      coach_id: 'c',
+      name: 'N',
+      amount_cents: 4900,
+    });
+    expect(named('M', 4900)).not.toBe(named('N', 4900));
+    expect(named('N', 5900)).not.toBe(named('N', 4900));
   });
 });
 

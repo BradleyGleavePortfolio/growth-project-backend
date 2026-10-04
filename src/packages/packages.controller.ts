@@ -27,6 +27,7 @@ import { PrismaService } from '../prisma.service';
 import { PackagesService } from './packages.service';
 import { CreatePackageDto, UpdatePackageDto } from './packages.dto';
 import { PackageValidationFilter } from './package-validation.filter';
+import { PackageIdempotencyFilter } from './package-idempotency.filter';
 
 // Coach-facing CRUD for offers / packages. Coach owns their catalog and
 // can list / create / update / archive their own rows. OWNER (platform
@@ -45,7 +46,8 @@ import { PackageValidationFilter } from './package-validation.filter';
 @UseGuards(JwtAuthGuard, CoachOrOwnerGuard, SubscriptionGuard)
 // S-FEE round 4 (C-629-2): a body the DTO rejects answers 400 PACKAGE_INVALID
 // with the field and the next action, never a code-less validation array.
-@UseFilters(PackageValidationFilter)
+// B-675-1: a 422 IDEMPOTENCY_KEY_REUSED carries the `package_id` the key made.
+@UseFilters(PackageValidationFilter, PackageIdempotencyFilter)
 export class CoachPackagesController {
   constructor(private packages: PackagesService) {}
 

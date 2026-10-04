@@ -99,6 +99,37 @@ export function packageCreateHash(data: Record<string, unknown>): string {
   return createHash('sha256').update(canonical).digest('hex');
 }
 
+/** Create columns the client always sets; they are always part of the hash. */
+const PACKAGE_CREATE_IDENTITY_KEYS: ReadonlySet<string> = new Set([
+  'coach_id',
+  'name',
+  'amount_cents',
+]);
+
+/**
+ * C-675-2 — what the request hash covers: the normalised create data minus
+ * every optional column still at the value the server stores when the client
+ * leaves it out (`defaults` = the same builder run on the required fields
+ * only). A column added later with a server default (the trials piece adds
+ * `trial_days ?? 0`) is then absent from the hash of a request that does not
+ * set it, so a key claimed before that deploy still replays its package
+ * instead of answering 422. This is a pure function of the normalised data:
+ * two bodies that normalise to the same row still hash the same, and two
+ * different rows never do.
+ */
+export function packageCreateFingerprint(
+  data: Record<string, unknown>,
+  defaults: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(data)) {
+    if (PACKAGE_CREATE_IDENTITY_KEYS.has(k) || !Object.is(v ?? null, defaults[k] ?? null)) {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
 function isUniqueViolation(err: unknown): boolean {
   return (
     err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002'
@@ -211,7 +242,10 @@ export class PackagesService {
    *     (if the first rolls back, the retry creates it);
    *   - a crash mid-request rolls everything back, so no key is ever stuck;
    *   - the same key with different details is 422 IDEMPOTENCY_KEY_REUSED
-   *     naming the package that key made, so the app can adopt it.
+   *     naming the package that key made (`package_id` on the wire), so the
+   *     app can adopt it; only a live package of the caller's current
+   *     catalog is named, anything else is 410 IDEMPOTENT_PACKAGE_REMOVED;
+   *   - a replay of a package that was archived or removed since is 410.
    * Validation runs before the claim: a definitive 4xx never burns a key.
    */
   async createIdempotent(
@@ -234,7 +268,12 @@ export class PackagesService {
     }
     this.assertValidPricing(input);
     const data = this.createData(coachUserId, input);
-    const requestHash = packageCreateHash(data);
+    const requestHash = packageCreateHash(
+      packageCreateFingerprint(
+        data,
+        this.createData(coachUserId, { name: input.name, amount_cents: input.amount_cents }),
+      ),
+    );
     try {
       const pkg = await this.prisma.$transaction(async (tx) => {
         const claim = await tx.workoutBuilderIdempotencyKey.create({
@@ -300,22 +339,30 @@ export class PackagesService {
           'This package is still being saved. Wait a few seconds, then send the same request again.',
       });
     }
-    if (claim.request_hash !== requestHash) {
-      throw new UnprocessableEntityException({
-        code: 'IDEMPOTENCY_KEY_REUSED',
-        message:
-          'This Idempotency-Key already created a package with different details. Update that package, or send a new key to create another.',
-        package_id: claim.package_id,
-      });
-    }
+    // B-675-1 / C-675-3: the package is looked up in the caller's CURRENT
+    // catalog before anything about it is answered. Removed, archived (DELETE
+    // :id archives) or in another catalog (a sub-coach who has since moved to
+    // another head coach) is 410, so the app starts a fresh create and never
+    // receives an id outside this catalog. Only a live package of this
+    // catalog is replayed, or named in the 422 for the app to adopt.
     const pkg = await this.prisma.coachPackage.findFirst({
       where: { id: claim.package_id, coach_id: coachUserId },
     });
-    if (!pkg) {
+    if (!pkg || pkg.archived_at) {
       throw new GoneException({
         code: 'IDEMPOTENT_PACKAGE_REMOVED',
+        message: pkg
+          ? 'The package this request created has since been archived. Send a new request to create it again.'
+          : 'The package this request created has since been removed. Send a new request to create it again.',
+      });
+    }
+    if (claim.request_hash !== requestHash) {
+      // PackageIdempotencyFilter puts `package_id` on the wire for this code.
+      throw new UnprocessableEntityException({
+        code: 'IDEMPOTENCY_KEY_REUSED',
         message:
-          'The package this request created has since been removed. Send a new request to create it again.',
+          'This Idempotency-Key already created a package with different details. Update that package (package_id), or send a new key to create another.',
+        package_id: pkg.id,
       });
     }
     return pkg;
