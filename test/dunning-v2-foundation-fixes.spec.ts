@@ -388,7 +388,9 @@ describe('B-687-4 (Sol) / B-687-5 (Opus) / C-687-6: copy claims nothing before i
     expect(text).toMatch(/dispute/);
     // R-DISPUTE-PAUSE: access has ended, billing is paused, the coach decides.
     expect(text).toMatch(/Access has ended and billing (for the plan )?is paused/);
-    expect(text).toMatch(/decides whether to restart it(.|\n)*Restarting is your decision/);
+    expect(text).toMatch(/decides whether to restart it/);
+    // Step 3 adds the coach channels: the coach is told the restart is theirs.
+    if (stepIndex === 3) expect(text).toMatch(/Restarting is your decision/);
     expect(text).not.toMatch(
       /stays on|restore|keep everything|will settle it|paid with it|End my plan|Update card|pauses on|locks/i,
     );
