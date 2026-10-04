@@ -221,7 +221,7 @@ export class ReconciliationService {
     const settlements = await this.prisma.chargeSettlement.findMany({
       where: { purchase_id: purchase.id, mechanism: SETTLEMENT_MECHANISM_SCT, status: 'settled' },
       orderBy: { created_at: 'desc' },
-      take: 12,
+      // Every settled charge, not only the newest twelve (Opus C-683-3, round 11).
     });
     if (settlements.length > 0) {
       return this.reconcileSettlements(purchase, settlements, ledger, transfers);
