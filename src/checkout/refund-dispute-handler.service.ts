@@ -41,6 +41,16 @@ type WebhookTx = Prisma.TransactionClient;
 // B-641-7: one Stripe reversal per refund, whoever sends it.
 export const refundTransferReversalKey = (refundRowId: string): string =>
   `tgp-tr-rev-refund-${refundRowId}`;
+// B-674-5 / B-674-10: one Stripe reversal per lost chargeback, every attempt.
+export const disputeTransferReversalKey = (disputeRowId: string): string =>
+  `tgp-tr-rev-dispute-${disputeRowId}`;
+export const DISPUTE_TRANSFER_REVERSAL_STUCK_CODE = 'DISPUTE_TRANSFER_REVERSAL_STUCK';
+export const TRANSFER_REVERSAL_UNATTRIBUTED_CODE = 'TRANSFER_REVERSAL_UNATTRIBUTED';
+// A chargeback's head-coach reversal attempted (amount stamped), not recorded.
+const DISPUTE_TRANSFER_OWED = {
+  transfer_reversed_at: null,
+  transfer_reversal_amount_cents: { not: null },
+};
 // Stripe keeps idempotency keys for 24 hours; retry well inside that.
 export const REFUND_TRANSFER_RETRY_WINDOW_MS = 23 * 60 * 60 * 1000;
 // B-641-8: pages per sweep run (x limit rows), so one run is bounded.
@@ -547,7 +557,15 @@ export class RefundDisputeHandlerService {
     // The head-coach transfer is Stripe HTTP, so it runs outside any
     // transaction. transfer_reversed = false after the ledger claim is the
     // durable "still owed" state; retryPendingTransferReversals picks it up.
-    await this.applyRefundTransferReversalOnce(row.id, args.purchase.id, args.amount_cents);
+    // B-676-3: reversed with the refund, the head-coach posting takes the
+    // refund's own time; a later recovery posts when it happens.
+    await this.applyRefundTransferReversalOnce(
+      row.id,
+      args.purchase.id,
+      args.amount_cents,
+      new Date(),
+      ledgerJustReversed ? (row.posted_at ?? undefined) : undefined,
+    );
 
     const updated = await this.prisma.chargeRefund.findUnique({ where: { id: row.id } });
     return { row: updated ?? row, ledger_just_reversed: ledgerJustReversed };
@@ -565,6 +583,7 @@ export class RefundDisputeHandlerService {
     purchaseId: string,
     refundAmountCents: number,
     now: Date = new Date(),
+    postedAt?: Date,
   ): Promise<RefundTransferReversalOutcome> {
     const current = await this.prisma.chargeRefund.findUnique({ where: { id: refundRowId } });
     if (!current || current.transfer_reversed) return 'already_done';
@@ -585,7 +604,7 @@ export class RefundDisputeHandlerService {
         idempotency_key: refundTransferReversalKey(refundRowId),
         metadata: { tgp_charge_refund_id: refundRowId },
         claim: (tx, receipt) => this.markTransferReversalDone(tx, refundRowId, receipt.id),
-        ledger_source: { kind: 'refund', id: refundRowId },
+        ledger_source: { kind: 'refund', id: refundRowId, at: postedAt },
       });
       return 'reversed';
     } catch (err) {
@@ -778,6 +797,37 @@ export class RefundDisputeHandlerService {
       if (rows.length < limit) break;
     }
 
+    // B-674-5: lost chargebacks whose head-coach reversal is still owed (an
+    // attempt was stamped, none recorded), paged by id so one run is bounded.
+    let after: string | undefined;
+    for (let page = 0; page < REFUND_TRANSFER_SWEEP_MAX_PAGES; page++) {
+      const disputes = await this.prisma.chargeDispute.findMany({
+        where: { status: 'lost', ...DISPUTE_TRANSFER_OWED, ...(after ? { id: { gt: after } } : {}) },
+        orderBy: { id: 'asc' },
+        take: limit,
+      });
+      for (const d of disputes) {
+        retried++;
+        const outcome = await this.applyDisputeTransferReversalOnce(d.id, null);
+        if (outcome === 'reversed') reversed++;
+        const age = now.getTime() - (d.transfer_reversal_first_attempt_at ?? now).getTime();
+        if (outcome === 'pending' && age > REFUND_TRANSFER_RETRY_WINDOW_MS) {
+          Sentry.captureMessage('head-coach transfer reversal for a lost chargeback still owed', {
+            level: 'error',
+            fingerprint: ['dispute-transfer-reversal-stuck', d.id],
+            tags: { code: DISPUTE_TRANSFER_REVERSAL_STUCK_CODE },
+            extra: {
+              charge_dispute_id: d.id,
+              purchase_id: d.purchase_id,
+              runbook: REFUND_TRANSFER_REVERSAL_RUNBOOK,
+            },
+          });
+        }
+      }
+      if (disputes.length < limit) break;
+      after = disputes[disputes.length - 1].id;
+    }
+
     const inReview = await this.prisma.chargeRefund.count({
       where: { transfer_reversed: false, transfer_reversal_review_at: { not: null } },
     });
@@ -884,19 +934,22 @@ export class RefundDisputeHandlerService {
         });
       }
       const owner = named.metadata?.tgp_charge_refund_id;
-      if (owner && owner !== row.id) {
+      if ((owner && owner !== row.id) || named.metadata?.tgp_charge_dispute_id) {
         throw new ConflictException({
           code: 'TRANSFER_REVERSAL_BELONGS_TO_OTHER_REFUND',
           error: 'TRANSFER_REVERSAL_BELONGS_TO_OTHER_REFUND',
           message:
-            'That reversal was made for a different refund. Pick the reversal for this refund, or reconcile without an id.',
+            'That reversal was made for a different refund or a chargeback. Pick the reversal for ' +
+            'this refund, or reconcile without an id.',
         });
       }
       match = named;
     } else {
       match = reversals.find((r) => r.metadata?.tgp_charge_refund_id === row.id);
       if (!match) {
-        const unattributed = reversals.filter((r) => !r.metadata?.tgp_charge_refund_id);
+        const unattributed = reversals.filter(
+          (r) => !r.metadata?.tgp_charge_refund_id && !r.metadata?.tgp_charge_dispute_id,
+        );
         if (unattributed.length > 0 && !args.confirm_none_in_stripe) {
           throw new ConflictException({
             code: 'TRANSFER_REVERSAL_UNATTRIBUTED',
@@ -910,8 +963,10 @@ export class RefundDisputeHandlerService {
     }
     // Only the caller whose claim wins reports the record as its own.
     let claimed = false;
+    let boundId: string | null = null;
     const claim = async (tx: Prisma.TransactionClient, receipt: { id?: string }) => {
       claimed = await this.markTransferReversalDone(tx, row.id, receipt.id);
+      if (claimed) boundId = receipt.id ?? null;
       return claimed;
     };
     if (match) {
@@ -979,7 +1034,7 @@ export class RefundDisputeHandlerService {
     return {
       charge_refund_id: row.id,
       outcome: claimed ? 'reversed' : 'already_recorded',
-      stripe_transfer_reversal_id: null,
+      stripe_transfer_reversal_id: boundId,
       amount_cents: owed.amount_cents,
     };
   }
@@ -1096,42 +1151,92 @@ export class RefundDisputeHandlerService {
     }
   }
 
-  // Reverse the matching head-coach transfer (if any) proportionally.
-  // The Stripe `reverse_transfer=true` flag we set on createRefund means
-  // Stripe will automatically reverse the destination's portion, but the
-  // head-coach split was a SEPARATE Transfer we minted, so Stripe doesn't
-  // know about it — we have to reverse that explicitly.
-  private async applyHeadCoachReversal(
-    purchaseId: string,
-    refundAmountCents: number,
-    disputeRowId?: string,
-  ): Promise<void> {
-    const transfer = await this.prisma.connectTransfer.findFirst({
-      where: { purchase_id: purchaseId, status: 'succeeded' },
+  // B-674-5 / B-674-10: the head-coach share of ONE lost chargeback is
+  // reversed once and recorded once. (Stripe's `reverse_transfer` covers the
+  // destination; the head-coach split is a separate Transfer.) The amount is
+  // stamped before the first Stripe call and every attempt replays it under
+  // the dispute-scoped key; the record claims transfer_reversed_at in the
+  // transaction that writes the transfer and its slice posting, so a later
+  // rollback elsewhere never sends or adds it again. A retry (redelivery or
+  // the sweep) first records the reversal Stripe already holds for this
+  // dispute (lost response; a key Stripe forgot after 24 hours), and sends
+  // only when Stripe holds none. `firstPassAt`: the close time when reversed
+  // with the chargeback; null on a retry (posted when it happens).
+  private async applyDisputeTransferReversalOnce(
+    disputeRowId: string,
+    firstPassAt: Date | null,
+  ): Promise<RefundTransferReversalOutcome> {
+    const row = await this.prisma.chargeDispute.findUnique({ where: { id: disputeRowId } });
+    if (!row || row.transfer_reversed_at) return 'already_done';
+    const retry = typeof row.transfer_reversal_amount_cents === 'number';
+    if (!retry && !firstPassAt) return 'already_done';
+    const owed = await this.owedHeadCoachReversal(row.purchase_id, row.amount_cents);
+    const stripeTransferId = owed?.transfer.stripe_transfer_id;
+    if (!owed || !stripeTransferId) {
+      await this.markDisputeTransferReversalDone(this.prisma, row.id);
+      return 'nothing_owed';
+    }
+    await this.prisma.chargeDispute.updateMany({
+      where: { id: row.id, transfer_reversal_amount_cents: null },
+      data: {
+        transfer_reversal_amount_cents: owed.amount_cents,
+        transfer_reversal_first_attempt_at: new Date(),
+      },
     });
-    if (!transfer) return;
-    const purchase = await this.prisma.clientPurchase.findUnique({
-      where: { id: purchaseId },
-    });
-    if (!purchase) return;
-    const ratio = refundAmountCents / Math.max(purchase.amount_cents, 1);
-    const amount = Math.min(
-      transfer.amount_cents - transfer.reversed_amount_cents,
-      Math.floor(transfer.amount_cents * ratio),
-    );
-    if (amount <= 0) return;
+    const stamped = await this.prisma.chargeDispute.findUnique({ where: { id: row.id } });
+    if (!stamped || stamped.transfer_reversed_at) return 'already_done';
+    const source = { kind: 'dispute' as const, id: row.id, at: firstPassAt ?? undefined };
+    const left = owed.transfer.amount_cents - owed.transfer.reversed_amount_cents;
+    const claim = (tx: Prisma.TransactionClient, receipt: { id?: string }) =>
+      this.markDisputeTransferReversalDone(tx, row.id, receipt.id);
     try {
+      const made = retry
+        ? (await this.listAllTransferReversals(stripeTransferId)).find(
+            (r) => r.metadata?.tgp_charge_dispute_id === row.id,
+          )
+        : undefined;
+      if (made) {
+        await this.transfers.recordReconciledReversal({
+          transfer_row_id: owed.transfer.id,
+          amount_cents: Math.min(made.amount, left),
+          claim: (tx) => claim(tx, { id: made.id }),
+          ledger_source: source,
+        });
+        return 'reversed';
+      }
       await this.transfers.reverse({
-        transfer_row_id: transfer.id,
-        amount_cents: amount,
-        ledger_source: disputeRowId ? { kind: 'dispute', id: disputeRowId } : undefined,
+        transfer_row_id: owed.transfer.id,
+        amount_cents: stamped.transfer_reversal_amount_cents ?? owed.amount_cents,
+        idempotency_key: disputeTransferReversalKey(row.id),
+        metadata: { tgp_charge_dispute_id: row.id },
+        claim,
+        ledger_source: source,
       });
+      return 'reversed';
     } catch (err) {
       // Ids and machine codes only (B-674-4): a Stripe message is free text.
       this.logger.warn(
-        `head-coach transfer reverse failed purchase=${purchaseId} code=${transferReversalErrorCode(err)}`,
+        `head-coach transfer reverse pending purchase=${row.purchase_id} dispute=${row.id} ` +
+          `code=${transferReversalErrorCode(err)}`,
       );
+      return 'pending';
     }
+  }
+
+  private markDisputeTransferReversalDone(
+    db: Prisma.TransactionClient,
+    disputeRowId: string,
+    stripeId?: string,
+  ): Promise<boolean> {
+    return db.chargeDispute
+      .updateMany({
+        where: { id: disputeRowId, transfer_reversed_at: null },
+        data: {
+          transfer_reversed_at: new Date(),
+          ...(stripeId ? { transfer_reversal_stripe_id: stripeId } : {}),
+        },
+      })
+      .then((r) => r.count === 1);
   }
 
   // --- Dispute pipeline ---
@@ -1173,17 +1278,19 @@ export class RefundDisputeHandlerService {
       where: { stripe_dispute_id: dispute.id },
       data: {
         status: dispute.status ?? existing.status,
-        closed_at: new Date(),
+        // B-676-3: the first close; a redelivery never moves the chargeback.
+        closed_at: existing.closed_at ?? new Date(),
         balance_transaction_id:
           dispute.balance_transactions?.[0]?.id ?? existing.balance_transaction_id,
       },
     });
     // On a `lost` outcome, reverse the destination + application_fee
     // ledger slices and reverse any head-coach transfer.
-    if (dispute.status === 'lost' && !updated.ledger_reversed) {
+    if (dispute.status === 'lost') {
       const purchase = await this.prisma.clientPurchase.findUnique({
         where: { id: updated.purchase_id },
       });
+      const firstPass = !updated.ledger_reversed;
       if (purchase) {
         // B-676-1: the chargeback posts its own cents per slice, once.
         const disputeSource: LedgerReversalSource = {
@@ -1191,16 +1298,21 @@ export class RefundDisputeHandlerService {
           id: updated.id,
           at: updated.closed_at ?? new Date(),
         };
-        await this.prisma.$transaction((tx) =>
-          this.applyLedgerReversal(purchase.id, updated.amount_cents, tx, disputeSource),
-        );
-        await this.applyHeadCoachReversal(purchase.id, updated.amount_cents, updated.id);
+        if (firstPass) {
+          await this.prisma.$transaction((tx) =>
+            this.applyLedgerReversal(purchase.id, updated.amount_cents, tx, disputeSource),
+          );
+        }
+        // B-674-5: once per dispute; a redelivery retries one still owed.
+        const at = firstPass ? disputeSource.at : null;
+        await this.applyDisputeTransferReversalOnce(updated.id, at);
+      }
+      if (purchase && firstPass) {
         // PR-16 — entitlement flip + drop-cancel commit atomically.
         // The Stripe-HTTP-ridden ledger / transfer reversals above
         // intentionally run outside this tx (P1-3 anti-pattern). The
-        // ChargeDispute.ledger_reversed flag is the idempotency gate
-        // for the WHOLE block, so a redelivery short-circuits before
-        // re-entering this branch.
+        // ChargeDispute.ledger_reversed flag gates the books and the
+        // entitlement; the transfer reversal has its own once-only claim.
         await this.prisma.$transaction(async (tx) => {
           await tx.chargeDispute.update({
             where: { id: updated.id },
@@ -1447,9 +1559,35 @@ export class RefundDisputeHandlerService {
       Number.isInteger(stripeCents) &&
       stripeCents > row.reversed_amount_cents
     ) {
+      // B-674-5: a refund or chargeback of this sale that still owes its
+      // reversal records it (sweep / redelivery / review). Nothing owed means
+      // Stripe moved money no event explains: alert (ids and cents only).
+      const owed =
+        (await this.prisma.chargeRefund.count({
+          where: { purchase_id: row.purchase_id, ledger_reversed: true, transfer_reversed: false },
+        })) +
+        (await this.prisma.chargeDispute.count({
+          where: { purchase_id: row.purchase_id, ...DISPUTE_TRANSFER_OWED },
+        }));
+      const code =
+        owed > 0 ? 'TRANSFER_REVERSAL_NOT_YET_RECORDED' : TRANSFER_REVERSAL_UNATTRIBUTED_CODE;
       this.logger.warn(
-        `transfer reversal not yet recorded transfer=${row.id} purchase=${row.purchase_id} stripe_cents=${stripeCents} recorded_cents=${row.reversed_amount_cents} code=TRANSFER_REVERSAL_NOT_YET_RECORDED`,
+        `transfer reversal not yet recorded transfer=${row.id} purchase=${row.purchase_id} stripe_cents=${stripeCents} recorded_cents=${row.reversed_amount_cents} code=${code}`,
       );
+      if (owed === 0) {
+        Sentry.captureMessage('head-coach transfer reversal not attributed', {
+          level: 'error',
+          fingerprint: ['transfer-reversal-unattributed', row.id],
+          tags: { code },
+          extra: {
+            connect_transfer_id: row.id,
+            purchase_id: row.purchase_id,
+            stripe_reversed_cents: stripeCents,
+            recorded_reversed_cents: row.reversed_amount_cents,
+            runbook: REFUND_TRANSFER_REVERSAL_RUNBOOK,
+          },
+        });
+      }
     }
     return { claimed: true, purchase_id: row.purchase_id };
   }

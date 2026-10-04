@@ -4497,6 +4497,14 @@ model ChargeDispute {
   // Stripe-side balance transaction id for the chargeback debit (when lost).
   // Used to reconcile the negative balance against our ledger.
   balance_transaction_id String?
+  // B-674-5 / B-674-10: the lost chargeback's head-coach transfer reversal.
+  // Amount and first attempt are stamped before the first Stripe call (every
+  // attempt replays them under one key); reversed_at is the once-only record
+  // claim; stripe_id is the reversal recorded (unique: settles one dispute).
+  transfer_reversal_amount_cents     Int?
+  transfer_reversal_first_attempt_at DateTime?
+  transfer_reversed_at               DateTime?
+  transfer_reversal_stripe_id        String?        @unique
   created_at             DateTime       @default(now())
   updated_at             DateTime       @updatedAt
 
