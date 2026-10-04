@@ -4,7 +4,7 @@
 
 import 'reflect-metadata';
 import * as Sentry from '@sentry/node';
-import { AdminPaymentOpsController } from '../src/checkout/payment-ops.controller';
+import { AdminRefundReversalController } from '../src/checkout/refund-reversal-admin.controller';
 import { REFUND_TRANSFER_RETRY_WINDOW_MS } from '../src/checkout/refund-dispute-handler.service';
 import {
   HOUR,
@@ -157,17 +157,8 @@ describe('B-641-7 — owner reconcile route', () => {
       reconcileTransferReversal,
       listTransferReversalsInReview: jest.fn(async () => []),
     };
-    const ctrl: AdminPaymentOpsController = Reflect.construct(AdminPaymentOpsController, [
-      {},
-      {},
-      {},
-      {},
-      {},
-      {},
-      {},
+    const ctrl: AdminRefundReversalController = Reflect.construct(AdminRefundReversalController, [
       refundDispute,
-      {},
-      {},
     ]);
     return { ctrl, reconcileTransferReversal };
   }
