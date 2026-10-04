@@ -9,6 +9,8 @@ import {
 } from '../src/checkout/dunning-v2/dunning-v2.dispatcher';
 import { DunningEscalationClassifier } from '../src/checkout/dunning-v2/dunning-escalation.classifier';
 import { DunningV2Renderer } from '../src/checkout/dunning-v2/dunning-v2.renderer';
+import { dunningErrorCode } from '../src/checkout/dunning-v2/dunning-v2.safe-error';
+import { StripeConnectApiError } from '../src/connect/stripe-connect-api.service';
 import { CoachAlertEmitter } from '../src/notifications/emitters/coach-alert.emitter';
 import { FakePrisma } from './support/dunning-v2-fake-prisma';
 
@@ -67,7 +69,12 @@ describe('B-687-1 (Sol): effective access is not decided from a truncated page',
   function fixture(blocked: number, grantOwner = 'client-a') {
     const fake = new FakePrisma();
     fake.seed('clientPurchase', { id: 'debt', client_user_id: 'client-a' });
-    fake.seed('dunningState', { id: 'ds-debt', purchase_id: 'debt', status: 'active', locked_out_at: NOW });
+    fake.seed('dunningState', {
+      id: 'ds-debt',
+      purchase_id: 'debt',
+      status: 'active',
+      locked_out_at: NOW,
+    });
     for (let i = 0; i < blocked; i++) {
       fake.seed('clientPurchase', {
         id: `blocked-${i}`,
@@ -94,13 +101,16 @@ describe('B-687-1 (Sol): effective access is not decided from a truncated page',
     return fake.client();
   }
 
-  it.each([19, 20, 21, 60])('a live $0 grant after %i locked alternatives waives the lock', async (n) => {
-    expect(await effectiveLock(fixture(n), 'client-a', NOW)).toMatchObject({
-      lockedPurchaseId: 'debt',
-      waived: true,
-      locked: false,
-    });
-  });
+  it.each([19, 20, 21, 60])(
+    'a live $0 grant after %i locked alternatives waives the lock',
+    async (n) => {
+      expect(await effectiveLock(fixture(n), 'client-a', NOW)).toMatchObject({
+        lockedPurchaseId: 'debt',
+        waived: true,
+        locked: false,
+      });
+    },
+  );
 
   it('control: only locked alternatives (or another client grant) never waive', async () => {
     expect(await effectiveLock(fixture(25, 'client-b'), 'client-a', NOW)).toMatchObject({
@@ -265,5 +275,29 @@ describe('B-688-4 (Sol): transport failures cross the log / outbox boundary as c
     expect(seen).not.toContain('SYNTHETIC_BODY');
     expect(seen).not.toContain('person@tgp.invalid');
     for (const r of Object.values(results)) expect(r?.error).toMatch(/^[a-z0-9_]+$/);
+  });
+});
+
+describe('dunningErrorCode: a closed vocabulary, whatever the error carries', () => {
+  class Custom extends Error {
+    constructor() {
+      super(SENTINEL);
+      this.name = SENTINEL;
+    }
+  }
+  it.each([
+    [
+      new StripeConnectApiError(SENTINEL, 402, 'card_declined', 'card_error'),
+      'stripe_402_card_declined',
+    ],
+    [new StripeConnectApiError(SENTINEL, 500, SENTINEL, null), 'stripe_500'],
+    [Object.assign(new Error(SENTINEL), { code: 'P2034' }), 'db_P2034'],
+    [Object.assign(new Error(SENTINEL), { code: SENTINEL }), 'error'],
+    [new TypeError(SENTINEL), 'error_typeerror'],
+    [new Custom(), 'error_unknown'],
+    [SENTINEL, 'error_unknown'],
+    [null, 'error_unknown'],
+  ])('%p -> %s', (err, code) => {
+    expect(dunningErrorCode(err)).toBe(code);
   });
 });
