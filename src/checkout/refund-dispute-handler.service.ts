@@ -36,6 +36,8 @@ const COACH_DISPUTE_DEEP_LINK = 'tgp://coach/billing/disputes';
 
 // Round 17 (Opus B-684-8): Stripe refund statuses that never change again.
 const FAILED_REFUND_STATUSES = new Set(['failed', 'canceled']);
+// Round 19 (B-684-12): status compare-and-set retries before the delivery fails closed.
+const REFUND_STATUS_CAS_ATTEMPTS = 5;
 
 /** A refund's status only moves forward; an older event never rewrites a newer outcome. */
 function nextRefundStatus(current: string, incoming: string): string {
@@ -435,12 +437,15 @@ export class RefundDisputeHandlerService {
       // No-op: we'll see the parent charge.refunded shortly.
       return { claimed: false, reason: 'no_known_refund' };
     }
-    await this.prisma.chargeRefund.update({
-      where: { stripe_refund_id: refund.id },
-      data: {
-        status: refund.status ?? existing.status,
-        failure_reason: refund.failure_reason ?? null,
-      },
+    // Round 19 (B-684-12): the same monotonic compare-and-set as every other refund writer.
+    await this.writeRefundStatus(existing, existing.stripe_charge_id, (current) => {
+      const status = nextRefundStatus(current.status, refund.status ?? current.status);
+      // A refused (older) event keeps the stored failure reason with the stored status.
+      const moved = status === (refund.status ?? current.status);
+      return {
+        status,
+        failure_reason: moved ? (refund.failure_reason ?? null) : current.failure_reason,
+      };
     });
     return { claimed: true, purchase_id: existing.purchase_id };
   }
@@ -547,20 +552,20 @@ export class RefundDisputeHandlerService {
     // Round 17 (Opus B-684-8): a refund's status only moves forward. failed and canceled are
     // terminal, and succeeded never goes back to pending / requires_action, so a stale or
     // redelivered older event (or snapshot) never rewrites a newer outcome.
-    const updateExisting = (existing: ChargeRefund) => {
-      const status = nextRefundStatus(existing.status, args.status);
-      return this.prisma.chargeRefund.update({
-        where: { stripe_refund_id: args.stripe_refund_id },
-        data: {
+    // Round 19 (B-684-12): the transition is a compare-and-set on the status this writer read,
+    // so a newer outcome written between the read and the write is never overwritten.
+    const updateExisting = (existing: ChargeRefund) =>
+      this.writeRefundStatus(existing, args.stripe_charge_id, (current) => {
+        const status = nextRefundStatus(current.status, args.status);
+        return {
           status,
           amount_cents: args.amount_cents,
-          reason: args.reason ?? existing.reason,
-          note: args.note ?? existing.note,
-          initiated_by_user_id: args.initiated_by_user_id ?? existing.initiated_by_user_id,
-          posted_at: status === 'succeeded' ? new Date() : existing.posted_at,
-        },
+          reason: args.reason ?? current.reason,
+          note: args.note ?? current.note,
+          initiated_by_user_id: args.initiated_by_user_id ?? current.initiated_by_user_id,
+          posted_at: status === 'succeeded' ? new Date() : current.posted_at,
+        };
       });
-    };
     const existing = await this.prisma.chargeRefund.findUnique({
       where: { stripe_refund_id: args.stripe_refund_id },
     });
@@ -653,6 +658,40 @@ export class RefundDisputeHandlerService {
       return { row: current ?? row, ledger_just_reversed: false };
     }
     return { row: updated, ledger_just_reversed: true };
+  }
+
+  /**
+   * Round 19 (B-684-12, both lenses): write a refund row's status as a compare-and-set on the
+   * status it was read with. The update matches only while the row still has that status; when
+   * it matches nothing (Prisma P2025) because another writer changed the status in between, the
+   * row is re-read and the next status is decided again from what is stored now.
+   * nextRefundStatus depends only on the stored status, so a match on it is enough. Bounded:
+   * after REFUND_STATUS_CAS_ATTEMPTS misses it fails closed (RefundStateUnavailableError, nothing
+   * moved; the delivery fails and Stripe redelivers).
+   */
+  private async writeRefundStatus(
+    read: ChargeRefund,
+    chargeId: string,
+    next: (current: ChargeRefund) => Prisma.ChargeRefundUpdateInput & { status: string },
+  ): Promise<ChargeRefund> {
+    let current = read;
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await this.prisma.chargeRefund.update({
+          where: { stripe_refund_id: current.stripe_refund_id, status: current.status },
+          data: next(current),
+        });
+      } catch (err) {
+        const now = await this.prisma.chargeRefund.findUnique({
+          where: { stripe_refund_id: current.stripe_refund_id },
+        });
+        if (!now || now.status === current.status) throw err;
+        if (attempt >= REFUND_STATUS_CAS_ATTEMPTS) {
+          throw new RefundStateUnavailableError(chargeId, 'kind=refund_status_contended');
+        }
+        current = now;
+      }
+    }
   }
 
   // C-684-4 / Opus B-684-8: the payout was already reduced for a refund Stripe now reports
