@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   NotFoundException,
@@ -11,6 +12,7 @@ import {
   Post,
   Query,
   Request,
+  Res,
   UseFilters,
   UseGuards,
 } from '@nestjs/common';
@@ -25,6 +27,7 @@ import { PrismaService } from '../prisma.service';
 import { PackagesService } from './packages.service';
 import { CreatePackageDto, UpdatePackageDto } from './packages.dto';
 import { PackageValidationFilter } from './package-validation.filter';
+import { PackageIdempotencyFilter } from './package-idempotency.filter';
 import { TrialUsageService } from './trials/trial-usage.service';
 
 // Coach-facing CRUD for offers / packages. Coach owns their catalog and
@@ -44,7 +47,8 @@ import { TrialUsageService } from './trials/trial-usage.service';
 @UseGuards(JwtAuthGuard, CoachOrOwnerGuard, SubscriptionGuard)
 // S-FEE round 4 (C-629-2): a body the DTO rejects answers 400 PACKAGE_INVALID
 // with the field and the next action, never a code-less validation array.
-@UseFilters(PackageValidationFilter)
+// B-675-1: a 422 IDEMPOTENCY_KEY_REUSED carries the `package_id` the key made.
+@UseFilters(PackageValidationFilter, PackageIdempotencyFilter)
 export class CoachPackagesController {
   constructor(private packages: PackagesService) {}
 
@@ -94,11 +98,20 @@ export class CoachPackagesController {
 
   // Coach mints a new offer on their own catalog; mutation scoped to req.user.id.
   // Students cannot create packages — this is a seller-side write.
+  // OR-112-16: an `Idempotency-Key` makes create idempotent per coach: a
+  // retry with the same key and body returns the SAME package (header
+  // `Idempotent-Replayed: true`), never a second one. The key is optional so
+  // older clients keep working; every current mobile create path sends one.
   @Roles('coach', 'owner')
   @Post()
-  async create(@Request() req: AuthedRequest, @Body() body: CreatePackageDto) {
+  async create(
+    @Request() req: AuthedRequest,
+    @Body() body: CreatePackageDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Res({ passthrough: true }) res: { setHeader(name: string, value: string): void },
+  ) {
     const coachId = await this.packages.resolveEffectiveCoachId(req.user.id);
-    return this.packages.create(coachId, {
+    const { pkg, replayed } = await this.packages.createIdempotent(coachId, {
       name: body.name,
       description: body.description,
       amount_cents: body.amount_cents,
@@ -111,7 +124,9 @@ export class CoachPackagesController {
       recurring_amount_cents: body.recurring_amount_cents,
       recurring_interval: body.recurring_interval as 'week' | 'month' | 'year' | null | undefined,
       recurring_interval_count: body.recurring_interval_count,
-    });
+    }, idempotencyKey, req.user.id);
+    if (replayed) res.setHeader('Idempotent-Replayed', 'true');
+    return pkg;
   }
 
   // Coach edits an offer on their own catalog; service re-checks ownership by
