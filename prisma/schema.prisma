@@ -4501,8 +4501,11 @@ model ChargeDispute {
   // Amount and first attempt are stamped before the first Stripe call (every
   // attempt replays them under one key); reversed_at is the once-only record
   // claim; stripe_id is the reversal recorded (unique: settles one dispute).
+  // B-674-11: last_attempt_at orders and claims the retry sweep (least
+  // recently attempted first).
   transfer_reversal_amount_cents     Int?
   transfer_reversal_first_attempt_at DateTime?
+  transfer_reversal_last_attempt_at  DateTime?
   transfer_reversed_at               DateTime?
   transfer_reversal_stripe_id        String?        @unique
   created_at             DateTime       @default(now())

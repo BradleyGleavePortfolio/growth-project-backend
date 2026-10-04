@@ -2,6 +2,7 @@
 // slice or one head-coach transfer at once both count. A third transaction
 // holds the row lock until BOTH writers wait on it (pg_stat_activity); at
 // 9a512028 the second absolute write overwrote the first. mwb-3-live-tests.
+// B-674-12 (B-CM3-117): one database-elected chargeback first close.
 import 'reflect-metadata';
 import { PrismaService } from '../src/prisma.service';
 import { RefundDisputeHandlerService } from '../src/checkout/refund-dispute-handler.service';
@@ -107,6 +108,18 @@ liveDescribe('B-674-1 live: concurrent reversals of different refunds both count
     return { purchase, refund };
   }
 
+  // Resolves once `count` statements on `table` wait on a lock.
+  async function lockWaiters(table: string, count: number) {
+    for (const deadline = Date.now() + 20_000; ;) {
+      const [{ n }] = await prisma.$queryRaw<Array<{ n: number }>>`
+        SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database()
+          AND wait_event_type = 'Lock' AND query LIKE ${`%"${table}"%`}`;
+      if (n >= count) return;
+      if (Date.now() > deadline) throw new Error(`writers never blocked on ${table}`);
+      await new Promise((r) => setTimeout(r, 25));
+    }
+  }
+
   // Runs `writers` while a third transaction holds FOR UPDATE on `ids`, and
   // releases it only once both writers wait on that lock.
   async function raceBehindLock(table: string, ids: string[], writers: () => Promise<unknown>[]) {
@@ -124,14 +137,7 @@ liveDescribe('B-674-1 live: concurrent reversals of different refunds both count
     );
     await isHeld;
     const running = writers();
-    for (const deadline = Date.now() + 20_000; ;) {
-      const [{ n }] = await prisma.$queryRaw<Array<{ n: number }>>`
-        SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database()
-          AND wait_event_type = 'Lock' AND query LIKE ${`%"${table}"%`}`;
-      if (n >= 2) break;
-      if (Date.now() > deadline) throw new Error(`writers never blocked on ${table}`);
-      await new Promise((r) => setTimeout(r, 25));
-    }
+    await lockWaiters(table, 2);
     release();
     await blocker;
     await Promise.all(running);
@@ -171,5 +177,51 @@ liveDescribe('B-674-1 live: concurrent reversals of different refunds both count
       150,
       150,
     ]);
+  }, 90_000);
+
+  // B-674-12: two charge.dispute.closed deliveries both read closed_at=null,
+  // then wait on the row lock (the second starts later, so its clock is
+  // later). A trigger logs every closed_at change: exactly one may happen.
+  it('chargeback first close: overlapping deliveries elect one closed_at, used by every posting', async () => {
+    await seedPurchase('pd');
+    await prisma.chargeDispute.create({
+      data: {
+        id: 'pd-cd',
+        purchase_id: 'pd',
+        stripe_dispute_id: 'dp_pd',
+        stripe_charge_id: 'ch_pd',
+        amount_cents: 10_000,
+        status: 'needs_response',
+      },
+    });
+    await prisma.$executeRawUnsafe(`CREATE TABLE closed_at_log (closed_at TIMESTAMP(3))`);
+    await prisma.$executeRawUnsafe(`CREATE FUNCTION log_closed_at() RETURNS trigger AS $$
+      BEGIN INSERT INTO closed_at_log VALUES (NEW.closed_at); RETURN NEW; END $$ LANGUAGE plpgsql`);
+    await prisma.$executeRawUnsafe(`CREATE TRIGGER log_closed_at AFTER UPDATE ON "ChargeDispute"
+      FOR EACH ROW WHEN (NEW.closed_at IS DISTINCT FROM OLD.closed_at) EXECUTE FUNCTION log_closed_at()`);
+    reverseTransfer.mockClear();
+    const closed = (id: string) =>
+      svc.handle({
+        id,
+        type: 'charge.dispute.closed',
+        data: { object: { id: 'dp_pd', status: 'lost' } },
+      });
+    await raceBehindLock('ChargeDispute', ['pd-cd'], () => [
+      closed('evt_a'),
+      lockWaiters('ChargeDispute', 1).then(() => closed('evt_b')),
+    ]);
+    const log = await prisma.$queryRawUnsafe<Array<{ closed_at: Date }>>(
+      `SELECT closed_at FROM closed_at_log`,
+    );
+    const row = await prisma.chargeDispute.findUniqueOrThrow({ where: { id: 'pd-cd' } });
+    const postings = await prisma.splitLedgerReversal.findMany({ where: { source_id: 'pd-cd' } });
+    const transfer = await prisma.connectTransfer.findUniqueOrThrow({ where: { id: 'pd-tr' } });
+    expect(log.map((r) => r.closed_at)).toEqual([row.closed_at]);
+    expect(row).toMatchObject({ status: 'lost', ledger_reversed: true });
+    expect(postings.map((p) => p.cents).sort((x, y) => x - y)).toEqual([500, 1_000, 9_000]);
+    expect(new Set(postings.map((p) => p.posted_at.getTime()))).toEqual(
+      new Set([row.closed_at?.getTime()]),
+    );
+    expect(transfer.reversed_amount_cents).toBe(500);
   }, 90_000);
 });

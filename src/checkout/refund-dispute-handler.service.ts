@@ -51,6 +51,9 @@ const DISPUTE_TRANSFER_OWED = {
   transfer_reversed_at: null,
   transfer_reversal_amount_cents: { not: null },
 };
+// B-674-11: a chargeback attempted by the sweep waits this long before the
+// next sweep (every 15 minutes) may claim it again.
+export const DISPUTE_TRANSFER_RETRY_COOLDOWN_MS = 10 * 60 * 1000;
 // Stripe keeps idempotency keys for 24 hours; retry well inside that.
 export const REFUND_TRANSFER_RETRY_WINDOW_MS = 23 * 60 * 60 * 1000;
 // B-641-8: pages per sweep run (x limit rows), so one run is bounded.
@@ -797,16 +800,39 @@ export class RefundDisputeHandlerService {
       if (rows.length < limit) break;
     }
 
-    // B-674-5: lost chargebacks whose head-coach reversal is still owed (an
-    // attempt was stamped, none recorded), paged by id so one run is bounded.
-    let after: string | undefined;
+    // B-674-5 / B-674-11: lost chargebacks whose head-coach reversal is still
+    // owed, least recently attempted first (never-attempted first). Each row
+    // is claimed by stamping its attempt, so later pages, restarted runs and
+    // other replicas move past it until the cooldown passes, and every owed
+    // chargeback is reached within a bounded number of runs. A stamp ahead of
+    // this clock (skewed replica) stays claimable.
+    const retryBefore = new Date(now.getTime() - DISPUTE_TRANSFER_RETRY_COOLDOWN_MS);
     for (let page = 0; page < REFUND_TRANSFER_SWEEP_MAX_PAGES; page++) {
       const disputes = await this.prisma.chargeDispute.findMany({
-        where: { status: 'lost', ...DISPUTE_TRANSFER_OWED, ...(after ? { id: { gt: after } } : {}) },
-        orderBy: { id: 'asc' },
+        where: {
+          status: 'lost',
+          ...DISPUTE_TRANSFER_OWED,
+          OR: [
+            { transfer_reversal_last_attempt_at: null },
+            { transfer_reversal_last_attempt_at: { lt: retryBefore } },
+            { transfer_reversal_last_attempt_at: { gt: now } },
+          ],
+        },
+        orderBy: [
+          { transfer_reversal_last_attempt_at: { sort: 'asc', nulls: 'first' } },
+          { id: 'asc' },
+        ],
         take: limit,
       });
       for (const d of disputes) {
+        const claim = await this.prisma.chargeDispute.updateMany({
+          where: {
+            id: d.id,
+            transfer_reversal_last_attempt_at: d.transfer_reversal_last_attempt_at ?? null,
+          },
+          data: { transfer_reversal_last_attempt_at: now },
+        });
+        if (claim.count !== 1) continue; // another sweep holds it
         retried++;
         const outcome = await this.applyDisputeTransferReversalOnce(d.id, null);
         if (outcome === 'reversed') reversed++;
@@ -825,7 +851,6 @@ export class RefundDisputeHandlerService {
         }
       }
       if (disputes.length < limit) break;
-      after = disputes[disputes.length - 1].id;
     }
 
     const inReview = await this.prisma.chargeRefund.count({
@@ -1274,16 +1299,26 @@ export class RefundDisputeHandlerService {
       where: { stripe_dispute_id: dispute.id },
     });
     if (!existing) return { claimed: false };
-    const updated = await this.prisma.chargeDispute.update({
-      where: { stripe_dispute_id: dispute.id },
-      data: {
-        status: dispute.status ?? existing.status,
-        // B-676-3: the first close; a redelivery never moves the chargeback.
-        closed_at: existing.closed_at ?? new Date(),
-        balance_transaction_id:
-          dispute.balance_transactions?.[0]?.id ?? existing.balance_transaction_id,
-      },
-    });
+    // B-674-12: the first close is elected by the database (closed_at IS NULL
+    // in the UPDATE itself), so overlapping deliveries keep one instant; any
+    // other delivery writes status only and reads the elected instant back.
+    // Absent fields stay as stored (no write-back from a stale snapshot).
+    const fields = {
+      status: dispute.status ?? undefined,
+      balance_transaction_id: dispute.balance_transactions?.[0]?.id ?? undefined,
+    };
+    const updated = await this.prisma.chargeDispute
+      .update({
+        where: { stripe_dispute_id: dispute.id, closed_at: null },
+        data: { ...fields, closed_at: new Date() },
+      })
+      .catch((err: unknown) => {
+        if ((err as { code?: unknown })?.code !== 'P2025') throw err;
+        return this.prisma.chargeDispute.update({
+          where: { stripe_dispute_id: dispute.id },
+          data: fields,
+        });
+      });
     // On a `lost` outcome, reverse the destination + application_fee
     // ledger slices and reverse any head-coach transfer.
     if (dispute.status === 'lost') {
