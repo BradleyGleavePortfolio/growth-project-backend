@@ -133,13 +133,12 @@ describe('C-611-17: EmailService logs the send-log row id and template, never th
     const res = await svc.send(input);
     expect(res.status).toBe('failed');
     expectNoPersonalData(logs.lines());
-    expect(logs.lines().join('\n')).toContain('Resend 422');
-    expect(res.error).toContain('Resend 422');
-    expect(res.error).not.toContain('@');
+    // B-700-1: the provider, the HTTP status and the provider's code only.
+    expect(logs.lines().join('\n')).toContain('provider=resend status=422 code=other');
+    expect(res.error).toBe('provider=resend status=422 code=other');
     const updates = db.emailSendLog.update.mock.calls;
     const stored = String(updates[updates.length - 1][0].data.error);
-    expect(stored).toContain('Resend 422');
-    expect(stored).not.toContain('@');
+    expect(stored).toBe('provider=resend status=422 code=other');
   });
 });
 
@@ -196,8 +195,7 @@ describe('C-611-17: DigestService logs the user id, never the address', () => {
     await svc.sendClientDailyDigests();
     expect(notifications.markDigestFailed).toHaveBeenCalledTimes(1);
     const stored = notifications.markDigestFailed.mock.calls[0][1] as string;
-    expect(stored).toContain('Resend API error 422');
-    expect(stored).not.toContain('@');
+    expect(stored).toBe('provider=resend status=422 code=unparsed');
     expectNoPersonalData(logs.lines());
     expect(logs.lines().join('\n')).toContain('user=user-1');
   });
@@ -271,7 +269,10 @@ describe('C-611-17: other log lines that carried a name, an address or a payload
       await ctrl.zoom(zoomBody, req);
       await ctrl.googleCalendar({ attendee: { displayName: PERSON, email: ADDRESS } }, req);
       expectNoPersonalData(logs.lines());
-      expect(logs.lines().join('\n')).toContain('event=meeting.participant_joined');
+      expect(logs.lines().join('\n')).toContain(
+        'event=meeting.participant_joined keys=event,payload other_keys=0',
+      );
+      expect(logs.lines().join('\n')).toContain('event=none keys=none other_keys=1');
     } finally {
       if (saved === undefined) delete process.env.SCHEDULING_WEBHOOK_SECRET;
       else process.env.SCHEDULING_WEBHOOK_SECRET = saved;
@@ -393,18 +394,41 @@ function readTemplate(src: string, i: number): { exprs: string[]; end: number } 
   return { exprs, end: i + 1 };
 }
 
+/**
+ * What a rule sees: the code of one log call, plus whether the file it is
+ * in builds a URL from an address (`encodeURIComponent(email)`), where any
+ * logged path or URL carries that address (B-700-2).
+ */
+interface CallContext {
+  encodesAddress: boolean;
+}
+
+const ENCODES_ADDRESS = /encodeURIComponent\(\s*[\w$.]*e[-_]?mail/i;
+
+// B-700-1: any identifier that holds a person-name token, also inside a
+// longer camelCase or snake_case name (`safeCoachName`, `client_display_name`).
+const PERSON_NAME_TOKEN =
+  /(?:first|last|full|display|guest|user|recipient|coach|client|sender|member|owner|author|person|buyer|contact|given|family|sur|nick)_?names?$/i;
+
+function identifiers(code: string): string[] {
+  return code.match(/[A-Za-z_$][\w$]*/g) ?? [];
+}
+
 /** Each rule names what it forbids; `hit` gets the code of one log call. */
-const RULES: ReadonlyArray<{ id: string; what: string; hit: (code: string) => boolean }> = [
+const RULES: ReadonlyArray<{
+  id: string;
+  what: string;
+  hit: (code: string, ctx: CallContext) => boolean;
+}> = [
   {
     id: 'email',
     what: 'an email address (an identifier named like email that is not an id, count, flag or template key)',
     hit: (code) =>
-      (code.match(/[A-Za-z_$][\w$]*/g) ?? []).some(
+      identifiers(code).some(
         (tok) =>
           /e[-_]?mail/i.test(tok) &&
           !/(?:ids?|count|hash|hashed|kind|status|template|templatekey|key|enabled|verified|sent|service|transport|digest)$/i.test(tok) &&
-          !/^(?:EmailService|EmailTemplateKey|EmailSendLog|emailSendLog)$/.test(tok) &&
-          !/^redact/i.test(tok),
+          !/^(?:EmailService|EmailTemplateKey|EmailSendLog|emailSendLog)$/.test(tok),
       ),
   },
   {
@@ -414,11 +438,9 @@ const RULES: ReadonlyArray<{ id: string; what: string; hit: (code: string) => bo
   },
   {
     id: 'name',
-    what: "a person's name",
+    what: "a person's name (an identifier holding a person-name token, or `<person>.name`)",
     hit: (code) =>
-      /\b(?:first_?name|last_?name|full_?name|display_?name|guest_?name|user_?name|recipient_?name|coach_?name|client_?name|sender_?name)\b/i.test(
-        code,
-      ) ||
+      identifiers(code).some((tok) => PERSON_NAME_TOKEN.test(tok)) ||
       /\b(?:user|client|coach|u|member|recipient|sender|owner|guest|profile|buyer|person|author|actor)\.name\b/.test(code),
   },
   {
@@ -433,10 +455,31 @@ const RULES: ReadonlyArray<{ id: string; what: string; hit: (code: string) => bo
         code,
       ),
   },
+  {
+    id: 'path',
+    what: 'a raw request URL, or a path or URL in a file that puts an address into a URL',
+    hit: (code, ctx) =>
+      /\b(?:req|request)\s*\.\s*(?:originalUrl|url)\b/.test(code) ||
+      (ctx.encodesAddress && /(?:^|[^\w$.])(?:path|url|uri|href|fullUrl)\b(?!\s*:)/.test(code)),
+  },
+  {
+    id: 'exception-text',
+    what: 'exception or provider text (`.message`, `.stack`, `String(err)`, a bare error argument, an error-message helper) instead of describeFailure(err)',
+    hit: (code) => {
+      const c = code.replace(/\bdescribeFailure\s*\([^()]*\)/g, ' SAFE ');
+      return (
+        /\.\s*(?:message|stack)\b/.test(c) ||
+        /\bString\s*\(\s*(?:err|error|e|ex|exception|cause|reason)\b/.test(c) ||
+        /(?:^|[^\w$.])(?:message|msg|errMsg|errorMessage|errMessage)\b(?!\s*:)/.test(c) ||
+        /(?:^|[,(]\s*)(?:err|error|e|ex|exception|cause)\s*(?:,|$)/.test(c.trim()) ||
+        /\b[\w$]*[mM]essage(?:Of|For|From)?\s*\(/.test(c)
+      );
+    },
+  },
 ];
 
-function violations(code: string): string[] {
-  return RULES.filter((r) => r.hit(code)).map((r) => r.id);
+function violations(code: string, ctx: CallContext = { encodesAddress: false }): string[] {
+  return RULES.filter((r) => r.hit(code, ctx)).map((r) => r.id);
 }
 
 function sourceFiles(dir: string): string[] {
@@ -453,9 +496,160 @@ function sourceFiles(dir: string): string[] {
   return out;
 }
 
-describe('C-611-17 guard: no log call under src/ interpolates an address, a name or free text', () => {
+/**
+ * C-700-2 legacy baseline: log calls that still print exception text, per
+ * file, exact counts at agent 118 (B-PRIVFU2-118). Every other rule has no
+ * baseline. A file not listed must have none; a listed count that grows or
+ * shrinks fails, so the list is lowered as sites move to describeFailure.
+ * Files this PR touches are fixed and are not listed.
+ */
+const LEGACY_EXCEPTION_TEXT: Readonly<Record<string, number>> = {
+  'src/account-deletion/account-deletion.service.ts': 5,
+  'src/account-deletion/apple-token-revocation.service.ts': 3,
+  'src/admin/admin.service.ts': 1,
+  'src/admin/ptm/admin-ptm.service.ts': 1,
+  'src/admin/soc2/soc2-evidence.service.ts': 3,
+  'src/ai-credits/coach-ai-budget.scheduler.ts': 1,
+  'src/ai-credits/coach-ai-credit-pack.service.ts': 1,
+  'src/ai/adapters/anthropic.adapter.ts': 2,
+  'src/ai/ai.service.ts': 2,
+  'src/ai/coach/coach-ai-state.service.ts': 1,
+  'src/ai/coach/weekly-insight.cron.ts': 1,
+  'src/ai/gateway/ai-approval.service.ts': 1,
+  'src/ai/gateway/ai-gateway.service.ts': 2,
+  'src/ai/gateway/materialisers/assign-meal-plan.materialiser.ts': 2,
+  'src/ai/gateway/materialisers/assign-workout.materialiser.ts': 2,
+  'src/ai/gateway/materialisers/coach-message.materialiser.ts': 2,
+  'src/ai/gateway/materialisers/coach-wearable-message.materialiser.ts': 2,
+  'src/ai/gateway/materialisers/create-workout-plan.materialiser.ts': 1,
+  'src/ai/gateway/materialisers/edit-workout-plan.materialiser.ts': 1,
+  'src/ai/gateway/materialisers/send-notification.materialiser.ts': 1,
+  'src/analytics/analytics.service.ts': 1,
+  'src/audit/audit.service.ts': 1,
+  'src/auth/jwks.service.ts': 1,
+  'src/auth/recent-auth.guard.ts': 1,
+  'src/billing/billing.service.ts': 10,
+  'src/bloodwork/bloodwork-stale.scheduler.ts': 1,
+  'src/checkout/checkout-webhook-handler.service.ts': 14,
+  'src/checkout/checkout.service.ts': 2,
+  'src/checkout/dunning-v2/dunning-lockout.guard.ts': 1,
+  'src/checkout/dunning-v2/dunning-lockout.scheduler.ts': 1,
+  'src/checkout/dunning-v2/dunning-v2.dispatcher.ts': 1,
+  'src/checkout/dunning-v2/dunning-v2.service.ts': 1,
+  'src/checkout/dunning.service.ts': 6,
+  'src/checkout/purchase-split-handler.service.ts': 2,
+  'src/checkout/refund-dispute-handler.service.ts': 5,
+  'src/coach-connect/coach-connect.service.ts': 2,
+  'src/coach-media/coach-media.service.ts': 1,
+  'src/coach-media/supabase-storage.provider.ts': 2,
+  'src/coach/brief/coach-brief.scheduler.ts': 6,
+  'src/coach/coach-effectiveness.scheduler.ts': 2,
+  'src/coach/command-center/churn-intervention.service.ts': 3,
+  'src/common/cors-origins.ts': 1,
+  'src/common/env-validation.ts': 6,
+  'src/common/feature-flag/pilot-coach-allowlist.guard.ts': 2,
+  'src/common/interceptors/rls-context.interceptor.ts': 1,
+  'src/common/middleware/rls-context.middleware.ts': 2,
+  'src/community/ai-triage/ai-triage.service.ts': 2,
+  'src/community/classroom/community-classroom.service.ts': 1,
+  'src/community/events/community-events.scheduler.ts': 1,
+  'src/community/moderation/community-moderation.service.ts': 1,
+  'src/community/notifications/community-notifications.service.ts': 1,
+  'src/community/realtime/community-realtime.service.ts': 2,
+  'src/community/voice/community-voice.service.ts': 1,
+  'src/community/voice/voice-upload.provider.ts': 7,
+  'src/connect/connect.module.ts': 2,
+  'src/connect/connect.service.ts': 1,
+  'src/connect/fees/payout-readiness.service.ts': 4,
+  'src/connect/fees/reconciliation.service.ts': 3,
+  'src/connect/fees/transfer-orchestrator.service.ts': 1,
+  'src/consent/consent.service.ts': 1,
+  'src/contracts/contract-envelope.service.ts': 2,
+  'src/contracts/webhooks/hellosign-webhook.controller.ts': 3,
+  'src/data-export/data-export-archive.store.ts': 1,
+  'src/data-export/data-export-cleanup.cron.ts': 1,
+  'src/data-export/data-export.controller.ts': 1,
+  'src/data-export/data-export.service.ts': 11,
+  'src/diagnostic/ai-roadmap.service.ts': 1,
+  'src/diagnostic/diagnostic.service.ts': 1,
+  'src/exercise-catalog/exercise-video-provider.service.ts': 11,
+  'src/exercise-library/exercise-library.service.ts': 1,
+  'src/filters/http-exception.filter.ts': 1,
+  'src/first-win/first-win.service.ts': 1,
+  'src/food/food.service.ts': 1,
+  'src/invite-codes/invite-codes.service.ts': 5,
+  'src/invite-grant/invite-grant.service.ts': 1,
+  'src/landing-pages/crm/lead-sync.processor.ts': 3,
+  'src/landing-pages/landing-pages.public.service.ts': 2,
+  'src/landing-pages/lead-rate-limiter.service.ts': 2,
+  'src/leaderboard/leaderboard.scheduler.ts': 1,
+  'src/leaderboard/leaderboard.service.ts': 1,
+  'src/messaging/messaging.service.ts': 1,
+  'src/notifications/emitters/booking.emitter.ts': 1,
+  'src/notifications/emitters/build-week-day-unlocked.emitter.ts': 1,
+  'src/notifications/emitters/checkin-submitted.emitter.ts': 1,
+  'src/notifications/emitters/coach-alert.emitter.ts': 1,
+  'src/notifications/emitters/message-received.emitter.ts': 1,
+  'src/notifications/emitters/milestone-reached.emitter.ts': 1,
+  'src/notifications/emitters/missed-checkin.emitter.ts': 1,
+  'src/notifications/emitters/weight-trend-alert.emitter.ts': 1,
+  'src/notifications/nudges/nudge-engine.service.ts': 7,
+  'src/notifications/nudges/nudge.scheduler.ts': 2,
+  'src/packages/asset-resolvers/auto-message.resolver.ts': 1,
+  'src/packages/drip-dispatcher.cron.ts': 5,
+  'src/packages/drip-trigger.service.ts': 2,
+  'src/packages/milestone.service.ts': 1,
+  'src/packages/package-contents.service.ts': 1,
+  'src/packages/package-push.service.ts': 4,
+  'src/packages/purchase-fanout.service.ts': 4,
+  'src/ptm/ptm-recompute.service.ts': 2,
+  'src/ptm/ptm.scheduler.ts': 1,
+  'src/ptm/ptm.service.ts': 1,
+  'src/roman/roman.service.ts': 1,
+  'src/scheduling/google-calendar/google-calendar.service.ts': 2,
+  'src/scheduling/jobs/reminder.job.ts': 1,
+  'src/scheduling/scheduling-session-lifecycle.service.ts': 1,
+  'src/storefront/checkout-cookie.service.ts': 1,
+  'src/storefront/checkout-idempotency.service.ts': 3,
+  'src/storefront/checkout-rate-limiter.service.ts': 2,
+  'src/storefront/checkout-receipt.scheduler.ts': 2,
+  'src/storefront/checkout-receipt.service.ts': 4,
+  'src/storefront/connect-preflight.service.ts': 4,
+  'src/storefront/guest-checkout-pii-scrub.service.ts': 2,
+  'src/storefront/guest-checkout-reconciliation.service.ts': 3,
+  'src/storefront/guest-checkout.service.ts': 2,
+  'src/storefront/lost-webhook-reconcile.service.ts': 5,
+  'src/sub-coach/sub-coach-idempotency.service.ts': 2,
+  'src/supabase/supabase.service.ts': 2,
+  'src/talent-marketplace/admin-moderation.service.ts': 1,
+  'src/talent-marketplace/anti-bot/in-house-anti-bot.provider.ts': 2,
+  'src/team/team.service.ts': 1,
+  'src/throttler/login-throttle-reset.service.ts': 3,
+  'src/throttler/throttler.config.ts': 2,
+  'src/wearables/connections/connections.service.ts': 1,
+  'src/wearables/connectors/fitbit/fitbit-webhook.controller.ts': 1,
+  'src/wearables/connectors/fitbit/fitbit.connector.ts': 2,
+  'src/wearables/connectors/oura/oura-webhook.controller.ts': 1,
+  'src/wearables/connectors/oura/oura.connector.ts': 1,
+  'src/wearables/connectors/polar/polar-webhook.controller.ts': 1,
+  'src/wearables/connectors/polar/polar.connector.ts': 2,
+  'src/wearables/connectors/wahoo/wahoo-webhook.controller.ts': 1,
+  'src/wearables/connectors/wahoo/wahoo.connector.ts': 2,
+  'src/wearables/connectors/withings/withings-webhook.controller.ts': 1,
+  'src/wearables/connectors/withings/withings.connector.ts': 2,
+  'src/wearables/http/provider-http-client.ts': 1,
+  'src/wearables/ingestion/ingestion.service.ts': 2,
+  'src/wearables/insights/wearable-insights.service.ts': 3,
+  'src/wearables/maintenance/wearable-processed-event-prune.scheduler.ts': 1,
+  'src/wearables/samples/wearable-samples.service.ts': 2,
+  'src/workout-builder/program-library.service.ts': 2,
+  'src/workout-builder/workout-builder-revision-prune.cron.ts': 2,
+  'src/workout-builder/workout-builder.service.ts': 2,
+};
+
+describe('C-611-17 / B-700-1 / B-700-2 guard: no log call under src/ interpolates personal data', () => {
   it('the rules catch each kind of leak and pass ids, codes and static text', () => {
-    const bad: Array<[string, string]> = [
+    const bad: Array<[string, string, CallContext?]> = [
       ['this.logger.log(`sent to=${input.to} id=${id}`)', 'recipient'],
       ['this.logger.warn(`no coach for ${u.email}`)', 'email'],
       ['this.logger.warn(`rebind refused (email=${supaEmail})`)', 'email'],
@@ -463,53 +657,98 @@ describe('C-611-17 guard: no log call under src/ interpolates an address, a name
       ["this.logger.log(`[email log] to=${to} subject=\"x\"`)", 'recipient'],
       ['this.logger.log(`hello ${client.name}`)', 'name'],
       ['this.logger.log({ first_name: firstName })', 'name'],
+      // B-700-1 (Opus probe shape): a camelCase identifier holding a name.
+      ['this.logger.warn(`Claude call failed for coach=${safeCoachName}`)', 'name'],
+      ['this.logger.log(`welcome ${clientDisplayName}`)', 'name'],
       ['this.logger.log(`push skipped: ${alert.message}`)', 'free-text'],
       ['this.logger.error(`ticket error: ${ticket.message}`)', 'free-text'],
       ["this.logger.error('Push receipt error:', receipt.message)", 'free-text'],
       ['this.logger.log({ note: truncateNote(result.note) })', 'free-text'],
       ['this.logger.debug(`payload: ${safeStringify(body)}`)', 'free-text'],
       ['this.logger.debug(JSON.stringify(dto))', 'free-text'],
+      // B-700-2 (Opus probe shapes): a path built from an address, and
+      // Supabase error text that echoes the address.
+      ['this.logger.warn(`Finance federation degraded path=${path} reason=${r}`)', 'path', { encodesAddress: true }],
+      ['this.logger.warn(`lookup failed url=${url}`)', 'path', { encodesAddress: true }],
+      ['this.logger.warn(`unmatched ${req.originalUrl}`)', 'path'],
+      ['this.logger.warn(`resetPasswordForEmail failed: ${error.message}`)', 'exception-text'],
+      ['this.logger.error(`pair redeem: generateLink failed: ${linkError?.message ?? STR}`)', 'exception-text'],
+      // B-700-1 (Sol probe shape): provider and exception text in any form.
+      ['this.logger.error(`send failed user=${user.id}: ${(err as Error).message}`)', 'exception-text'],
+      ['this.logger.error(`render failed: ${msg}`)', 'exception-text'],
+      ["this.logger.error('boot failed', (err as Error).stack)", 'exception-text'],
+      ["this.logger.error('claim failed', err)", 'exception-text'],
+      ['this.logger.warn(`failed: ${String(err)}`)', 'exception-text'],
+      ['this.logger.warn(`failed: ${errorMessageOf(err)}`)', 'exception-text'],
+      ["this.logger.warn({ msg: 'x', error_message: message })", 'exception-text'],
     ];
-    for (const [snippet, rule] of bad) {
+    for (const [snippet, rule, ctx] of bad) {
       const calls = logCalls(snippet);
       expect(calls).toHaveLength(1);
-      expect(violations(calls[0].code)).toContain(rule);
+      expect(violations(calls[0].code, ctx)).toContain(rule);
     }
-    const good = [
-      'this.logger.log(`email sent template=${input.template} row=${logRow.id} provider_id=${providerMessageId}`)',
-      "this.logger.warn('Invalid email address: the recipient is missing an @ sign')",
-      'this.logger.error(`send failed user=${user.id}: ${(err as Error).message}`)',
-      'this.logger.log(`digest sent user=${client.id} emailCount=${emailCount}`)',
-      "this.logger.log(`provider ${provider.name} threw (err=${err instanceof Error ? err.name : 'unknown'})`)",
-      'this.logger.log({ event: STR_EVENT, note_length: result.note?.length ?? 0 })',
+    const good: Array<[string, CallContext?]> = [
+      ['this.logger.log(`email sent template=${input.template} row=${logRow.id} provider_id=${providerMessageId}`)'],
+      ["this.logger.warn('Invalid email address: the recipient is missing an @ sign')"],
+      ['this.logger.error(`send failed user=${user.id}: ${describeFailure(err)}`)'],
+      ['this.logger.error(`brief failed: ${describeFailure(err, BRIEF_ERROR_CODES)}`)'],
+      ['this.logger.log(`digest sent user=${client.id} emailCount=${emailCount}`)'],
+      ["this.logger.log(`provider ${provider.name} threw (err=${err instanceof Error ? err.name : 'unknown'})`)"],
+      ['this.logger.log({ event: STR_EVENT, note_length: result.note?.length ?? 0 })'],
+      ['this.logger.warn(`Finance federation degraded route=${route} reason=${r}`)', { encodesAddress: true }],
+      ["this.logger.warn({ message: 'throttler.rejected', userId, path, method })"],
+      ['this.logger.warn(`secret ${secretName} rotated; exercise ${exerciseName}`)'],
       // Split so no single literal holds template syntax naming an import in
       // scope (CodeQL js/template-syntax-in-string-literal).
-      'this.logger.log(`EMAIL_TRANSPORT=${kind}; templates=$' + '{EmailTemplateKey.WEEKLY_DIGEST}`)',
-      'this.logger.error(`recovery failed checkout=${checkout.id}: ${redactEmailAddresses(err.message)}`)',
+      ['this.logger.log(`EMAIL_TRANSPORT=${kind}; templates=$' + '{EmailTemplateKey.WEEKLY_DIGEST}`)'],
     ];
-    for (const snippet of good) {
+    for (const [snippet, ctx] of good) {
       const calls = logCalls(snippet);
       expect(calls).toHaveLength(1);
-      expect(violations(calls[0].code)).toEqual([]);
+      expect(violations(calls[0].code, ctx)).toEqual([]);
     }
   });
 
-  it('every log call under src/ passes the rules', () => {
+  it('every log call under src/ passes the rules (exception text: only the listed legacy counts)', () => {
     const root = join(__dirname, '..', '..', 'src');
     const found: string[] = [];
+    const exceptionText: Record<string, number> = {};
     let scanned = 0;
     for (const file of sourceFiles(root)) {
       const src = readFileSync(file, 'utf8');
+      const rel = relative(join(root, '..'), file).split('\\').join('/');
+      const ctx: CallContext = { encodesAddress: ENCODES_ADDRESS.test(src) };
       for (const call of logCalls(src)) {
         scanned++;
-        const v = violations(call.code);
-        if (v.length > 0) {
-          found.push(`${relative(join(root, '..'), file)}:${call.line} [${v.join(', ')}] ${call.code.replace(/\s+/g, ' ').trim().slice(0, 160)}`);
+        const v = violations(call.code, ctx);
+        if (v.includes('exception-text')) exceptionText[rel] = (exceptionText[rel] ?? 0) + 1;
+        const strict = v.filter((id) => id !== 'exception-text');
+        if (strict.length > 0) {
+          found.push(`${rel}:${call.line} [${strict.join(', ')}] ${call.code.replace(/\s+/g, ' ').trim().slice(0, 160)}`);
         }
       }
     }
     // Hundreds of calls exist; a broken matcher that finds none must fail.
     expect(scanned).toBeGreaterThan(500);
     expect(found).toEqual([]);
+    expect(exceptionText).toEqual(LEGACY_EXCEPTION_TEXT);
+  });
+
+  it('the files B-PRIVFU2-118 fixed print no exception text at all', () => {
+    for (const rel of [
+      'src/auth/auth.service.ts',
+      'src/email/email.service.ts',
+      'src/notifications/digest.service.ts',
+      'src/notifications/notifications.service.ts',
+      'src/storefront/checkout-recovery.service.ts',
+      'src/coach/brief/coach-brief.service.ts',
+      'src/admin/federation/finance-admin.client.ts',
+      'src/scheduling/scheduling-webhook.controller.ts',
+      'src/users/gdpr-scrub.service.ts',
+      'src/users/gdpr-scrub.scheduler.ts',
+      'src/users/account.service.ts',
+    ]) {
+      expect(LEGACY_EXCEPTION_TEXT[rel]).toBeUndefined();
+    }
   });
 });
