@@ -306,7 +306,7 @@ describe('locked dependency compatibility', () => {
       // 'that major has no patched release'.
       const patchedByMajor = {
         'deepmerge-ts': { 8: '8.0.0' },
-        multer: { 2: '2.3.0' },
+        multer: { 2: '2.4.0' },
         qs: { 6: '6.16.0' },
         'js-yaml': { 3: '3.15.2', 4: '4.3.2' },
         minimatch: {
@@ -372,7 +372,7 @@ describe('locked dependency compatibility', () => {
         swaggerYaml: resolved['@nestjs/swagger/package.json -> js-yaml'],
         diff: resolved['ts-node -> diff']
       }, {
-        deepmerge: '8.0.0', multer: '2.3.0', expressQs: '6.16.0',
+        deepmerge: '8.0.0', multer: '2.4.0', expressQs: '6.16.0',
         bodyParserQs: '6.16.0', swaggerYaml: '4.3.2', diff: '9.0.0'
       });
     `);
