@@ -101,14 +101,20 @@ export class AccountDeletionBillingService {
     });
     const ids: string[] = [];
     for (const row of rows) {
-      if (!this.checkoutStripe || Date.now() - row.updated_at.getTime() < UNBOUND_ATTEMPT_SETTLE_MS) {
+      if (
+        !this.checkoutStripe ||
+        Date.now() - row.updated_at.getTime() < UNBOUND_ATTEMPT_SETTLE_MS
+      ) {
         throw new Error(
           `account deletion: subscription checkout purchase=${row.id} is still finishing; retry after two minutes`,
         );
       }
-      const list = await this.checkoutStripe.listSubscriptionsForCustomer(row.stripe_customer_id ?? '', {
-        createdGte: Math.floor(row.created_at.getTime() / 1000) - 300,
-      });
+      const list = await this.checkoutStripe.listSubscriptionsForCustomer(
+        row.stripe_customer_id ?? '',
+        {
+          createdGte: Math.floor(row.created_at.getTime() / 1000) - 300,
+        },
+      );
       if (list.has_more) {
         throw new Error(`account deletion: subscription list incomplete purchase=${row.id}`);
       }
