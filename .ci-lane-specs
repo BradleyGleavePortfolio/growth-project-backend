@@ -1,0 +1,4 @@
+--globalSetup=./test/zz-aud-solr6-pg.global.js
+test/aud-sol-661r6-selection.live.spec.ts
+test/checkout-settlement.live.spec.ts
+test/checkout-settlement-round5.spec.ts
