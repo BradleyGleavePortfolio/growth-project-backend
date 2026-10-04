@@ -343,15 +343,28 @@ export function makeFakeStripe() {
       cancel_at_period_end: false,
       current_period_end: Math.floor(Date.now() / 1000) + 20 * 86400,
     })),
+    // Opus B-678-2 — only the trial-card attach (liftTrialEnd) lifts the end.
     setSubscriptionDefaultPaymentMethod: jest.fn(async (args: any) => {
       const sub = subs.get(args.subscriptionId);
       if (sub) {
-        Object.assign(sub, {
-          default_payment_method: args.paymentMethodId,
-          cancel_at_period_end: false,
-        });
+        sub.default_payment_method = args.paymentMethodId;
+        if (args.liftTrialEnd) sub.cancel_at_period_end = false;
       }
       return sub;
+    }),
+    // B-679-10 — an attempt's own SetupIntent; the same key returns the same one.
+    createSetupIntent: jest.fn(async (args: any) => {
+      const id = `seti_own${args.metadata.tgp_purchase_id.slice(-4)}`;
+      if (!setups.has(id)) {
+        setups.set(id, {
+          id,
+          client_secret: `${id}_secret_x`,
+          status: 'requires_payment_method',
+          customer: args.customer,
+          metadata: { ...args.metadata },
+        });
+      }
+      return { ...setups.get(id) };
     }),
   };
   return stripe;

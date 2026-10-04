@@ -9,7 +9,7 @@ import {
   StripeConnectApiError,
   type StripeSubscriptionCheckoutObject,
 } from '../connect/stripe-connect-api.service';
-import { parseCheckoutTerms } from './subscription-terms';
+import { parseCheckoutTerms, planPriceFromTerms } from './subscription-terms';
 
 /** pg_advisory_xact_lock namespace: ASCII 'subc'. */
 export const ADVISORY_LOCK_NAMESPACE_SUBSCRIPTION_CHECKOUT = 0x73_75_62_63;
@@ -280,6 +280,14 @@ export function expandedId(v: { id?: string } | string | null | undefined): stri
   return typeof v === 'string' ? v : (v.id ?? null);
 }
 
+/**
+ * B-679-8 / B-679-10 — a trial carries the attempt's own card once the
+ * trial-card attach set the default and lifted the create-time end.
+ */
+export function ownTrialCardOn(sub: StripeSubscriptionCheckoutObject): boolean {
+  return !!sub.default_payment_method && !sub.cancel_at_period_end;
+}
+
 /** B-654-6 — a subscription with no sheet secret: paid/processing, ended, or stuck. */
 export function classifyWithoutSheet(
   sub: StripeSubscriptionCheckoutObject,
@@ -288,7 +296,10 @@ export function classifyWithoutSheet(
   if (sub.status === 'active' || sub.status === 'past_due' || sub.status === 'unpaid') {
     return 'complete';
   }
-  if (sub.status === 'trialing') return sub.default_payment_method ? 'complete' : 'unavailable';
+  // Sol/Opus B-679-10 — a trial is complete only on the attempt's own card
+  // (the attach lifted the create-time end); a default Stripe set itself
+  // (the customer's card) still needs the attempt's own setup sheet.
+  if (sub.status === 'trialing') return ownTrialCardOn(sub) ? 'complete' : 'unavailable';
   const inv =
     sub.latest_invoice && typeof sub.latest_invoice === 'object' ? sub.latest_invoice : null;
   if (inv?.status === 'paid') return 'complete';
@@ -301,7 +312,7 @@ export function classifyWithoutSheet(
 /** True while no payment of this subscription succeeded or is in flight. */
 export function subscriptionUnpaid(sub: StripeSubscriptionCheckoutObject): boolean {
   if (sub.status !== 'incomplete' && sub.status !== 'trialing') return false;
-  if (sub.status === 'trialing' && sub.default_payment_method) return false;
+  if (sub.status === 'trialing' && ownTrialCardOn(sub)) return false;
   const inv =
     sub.latest_invoice && typeof sub.latest_invoice === 'object' ? sub.latest_invoice : null;
   const pi = inv && typeof inv.payment_intent === 'object' ? inv.payment_intent : null;
@@ -398,5 +409,45 @@ export function planView(row: ClientPurchase, pkg: CoachPackage | null): ClientP
         ? 'Your last payment did not go through.'
         : null,
     checkout_state: null,
+  };
+}
+
+/**
+ * The answer for one attempt (moved from R2 by B-RECUR6A-118, size move).
+ * B-654-7: the plan terms are the attempt's pinned terms (what its
+ * subscription actually charges), never today's package terms; only an
+ * attempt without a pin (none exist after round 1's first write) falls back
+ * to the package.
+ */
+export function intentResult(
+  row: ClientPurchase,
+  pkg: CoachPackage,
+  reused: boolean,
+  stripeStatus?: string,
+  sheet: 'auto' | 'none' = 'auto',
+): SubscriptionIntentResult {
+  const pinned = parseCheckoutTerms(row.checkout_terms);
+  const price = pinned ? planPriceFromTerms(pinned) : planPriceFor(pkg, row.trial_days ?? 0);
+  const trialDays = price.trial_days;
+  const secret = sheet === 'none' ? '' : (row.stripe_client_secret ?? '');
+  // A SetupIntent client secret starts with `seti_`; a PaymentIntent's with `pi_`.
+  const mode: 'payment' | 'setup' | 'none' =
+    sheet === 'none' ? 'none' : secret.startsWith('seti_') ? 'setup' : 'payment';
+  return {
+    mode,
+    client_secret: secret,
+    ephemeral_key: sheet === 'none' ? '' : (row.stripe_ephemeral_key ?? ''),
+    customer_id: row.stripe_customer_id ?? '',
+    publishable_key: process.env.STRIPE_PUBLISHABLE_KEY ?? '',
+    purchase_id: row.id,
+    subscription_id: row.stripe_subscription_id ?? '',
+    status: stripeStatus ?? row.status,
+    reused,
+    plan: {
+      ...price,
+      package_id: pkg.id,
+      package_name: pkg.name,
+      trial_ends_at: trialDays > 0 ? iso(row.current_period_end) : null,
+    },
   };
 }
