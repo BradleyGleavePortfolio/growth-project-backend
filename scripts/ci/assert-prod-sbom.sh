@@ -55,11 +55,24 @@ LEAK=$(comm -12 <(printf '%s\n' "$COMPONENTS") <(printf '%s\n' "$DEV_ONLY") || t
 [[ -z "$LEAK" ]] || fail "dev-only packages present in production SBOM: $(printf '%s' "$LEAK" | tr '\n' ' ')"
 
 NAMES=$(jq -r '.components[].name' "$SBOM_FILE" | sort -u)
+# has_name <name>: 0 when <name> is one whole line of NAMES, 1 when it is not.
+# grep reads a here-string, never a pipe: with `printf | grep -q` under
+# pipefail, grep's early exit on a match could kill printf with SIGPIPE (141)
+# and turn a PRESENT name into "absent" (a banned tool passed the denylist;
+# a present runtime package read as missing). Any other grep status aborts.
+has_name() {
+  local rc=0
+  grep -qxF -- "$1" <<<"$NAMES" || rc=$?
+  case "$rc" in
+    0 | 1) return "$rc" ;;
+    *) fail "grep exited ${rc} while checking '${1}'; the SBOM name check could not run" ;;
+  esac
+}
 for d in $DENY_LIST; do
-  if printf '%s\n' "$NAMES" | grep -qxF "$d"; then fail "build/test tool '${d}' present in production SBOM"; fi
+  if has_name "$d"; then fail "build/test tool '${d}' present in production SBOM"; fi
 done
 for r in $REQUIRE_LIST; do
-  printf '%s\n' "$NAMES" | grep -qxF "$r" || fail "required runtime package '${r}' missing from production SBOM"
+  has_name "$r" || fail "required runtime package '${r}' missing from production SBOM"
 done
 
 SHA=$(sha256sum "$SBOM_FILE" | awk '{print $1}')
