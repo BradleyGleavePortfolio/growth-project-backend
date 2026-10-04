@@ -376,7 +376,8 @@ describe('R1-6 abandoned trial attempts older than 23 h', () => {
     const carded = prisma._purchases[0];
     carded.created_at = new Date(Date.now() - 30 * HOUR);
     // This one saved its card; only its webhook is late. Never cancel it.
-    stripe._subs.get(carded.stripe_subscription_id).default_payment_method = 'pm_card';
+    // B-RECUR5B-117: the attach also clears the trial's cancel at period end (#679 round 5).
+    Object.assign(stripe._subs.get(carded.stripe_subscription_id), { default_payment_method: 'pm_card', cancel_at_period_end: false });
     await svc.createSubscriptionIntent(CLIENT, { package_id: PKG2, idempotency_key: KEY3 });
     expect(stripe.cancelSubscription).not.toHaveBeenCalledWith(carded.stripe_subscription_id);
     expect(carded.status).toBe('pending');
