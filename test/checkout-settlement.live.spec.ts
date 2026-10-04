@@ -1,10 +1,12 @@
 // #661 settlement on real PostgreSQL (C-661-12: the AUD-OPUS-661R5-117 probe, plus
-// B-661-3, B-661-9 and C-661-11 in round 6). Real handler, PurchaseFanoutService,
-// PartialRefundDecisionService and Prisma on the full schema: xmin, row locks and
-// P2025 are the database's own. Gated on MWB3_TEST_DATABASE_URL (mwb-3-live-tests).
+// B-661-3, B-661-9 and C-661-11 in round 6, the B-661-3 list boundary in round 7). Real
+// handler, PurchaseFanoutService, PartialRefundDecisionService, CheckoutService and Prisma
+// on the full schema: xmin, row locks and P2025 are the database's own. Gated on
+// MWB3_TEST_DATABASE_URL (mwb-3-live-tests).
 import { ServiceUnavailableException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
+import { CheckoutService } from '../src/checkout/checkout.service';
 import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
 import { PurchaseFanoutService } from '../src/packages/purchase-fanout.service';
 import { PrismaService } from '../src/prisma.service';
@@ -32,6 +34,30 @@ function deferred() {
   return { open, opened };
 }
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// Partial doubles of CheckoutService's collaborators (packages, Connect state, fees, contracts).
+const wire = <T>(value: object): T => value as T;
+// Answers the purchase reads that name no order in an adversarial legal order: findMany
+// newest first, findFirst oldest first. Reads with an explicit order are unchanged.
+function legalOrder<T extends object>(client: T): T {
+  return new Proxy(client, {
+    get(target, key) {
+      const value: unknown = Reflect.get(target, key);
+      if (key !== 'clientPurchase' || !value || typeof value !== 'object') {
+        return typeof value === 'function' ? value.bind(target) : value;
+      }
+      return new Proxy(value, {
+        get(delegate, method) {
+          const fn: unknown = Reflect.get(delegate, method);
+          if (typeof fn !== 'function') return fn;
+          if (method !== 'findFirst' && method !== 'findMany') return fn.bind(delegate);
+          const created_at = method === 'findFirst' ? 'asc' : 'desc';
+          return (args: { orderBy?: unknown } = {}) =>
+            fn.call(delegate, { ...args, orderBy: args.orderBy ?? { created_at } });
+        },
+      });
+    },
+  });
+}
 
 liveDescribe('#661 settlement on real PostgreSQL', () => {
   let prisma: PrismaService;
@@ -81,7 +107,7 @@ liveDescribe('#661 settlement on real PostgreSQL', () => {
   }
 
   beforeAll(async () => {
-    const pool = `${DB_URL}${DB_URL.includes('?') ? '&' : '?'}connection_limit=8`;
+    const pool = `${DB_URL}${DB_URL.includes('?') ? '&' : '?'}connection_limit=16`;
     prisma = new PrismaService({ datasources: { db: { url: pool } } });
     await prisma.$connect();
     await resetPublicSchema(prisma);
@@ -236,4 +262,205 @@ liveDescribe('#661 settlement on real PostgreSQL', () => {
     expect(await drop(id)).toMatchObject({ failure_reason: 'canceled:partial_refund_decision' });
     expect(waited).toBe(true);
   }, 60_000);
+
+  // B-661-3 round 7 (Sol, AUD-SOL-661R6B-117): the activated owner of a PaymentIntent is
+  // selected by the query itself, so no number of never-activated purchases that declines
+  // adopted onto the same PaymentIntent can push it out of the read. The adopted purchases
+  // are real native reservations (CheckoutService, provider replies held) adopted by real
+  // decline deliveries in concurrent, held transactions; unordered reads use legalOrder.
+  describe('B-661-3 round 7: the owner query is complete at any number of adopted purchases', () => {
+    let ordered: CheckoutWebhookHandlerService;
+    let checkout: CheckoutService;
+    let replies = deferred();
+    let reached = deferred();
+    const splits = { onChargeSucceeded: jest.fn() };
+    const deliverOrdered = async (e: Ev) => {
+      const pre = await ordered.prefetchForOuterTx(e);
+      return inTx((tx) => ordered.handle(e, legalOrder(tx), pre));
+    };
+    beforeAll(async () => {
+      await prisma.coachPackage.update({ where: { id: PKG }, data: { published_at: new Date() } });
+      await prisma.user.update({ where: { id: CLIENT }, data: { coach_id: COACH } });
+      await prisma.connectAccount.create({
+        data: { coach_user_id: COACH, stripe_account_id: 'acct_l661', charges_enabled: true },
+      });
+      await prisma.connectCustomer.create({
+        data: { client_user_id: CLIENT, stripe_customer_id: 'cus_l661' },
+      });
+      jest.spyOn(stripe, 'createEphemeralKey').mockResolvedValue({ secret: 'ek_l661_secret' });
+      jest.spyOn(stripe, 'createPaymentIntent').mockImplementation(async ({ idempotencyKey }) => {
+        reached.open();
+        await replies.opened;
+        const own = `pi_own_${idempotencyKey.slice(-6)}`;
+        return { id: own, client_secret: `${own}_secret_l661` };
+      });
+      ordered = new CheckoutWebhookHandlerService(
+        legalOrder(prisma),
+        stripe,
+        wire(splits),
+        undefined,
+        undefined,
+        fanout,
+      );
+      type Deps = ConstructorParameters<typeof CheckoutService>;
+      checkout = new CheckoutService(
+        prisma,
+        stripe,
+        wire<Deps[2]>({
+          getById: (id: string) => prisma.coachPackage.findUnique({ where: { id } }),
+        }),
+        wire<Deps[3]>({ ready: true, reason: null }),
+        wire<Deps[4]>({
+          planFor: async () => ({ application_fee_cents: 100, head_coach_split_cents: 0 }),
+        }),
+        wire<Deps[5]>({ evaluate: async () => ({ ok: true }) }),
+      );
+    });
+    afterAll(() => jest.restoreAllMocks());
+
+    it.each([9, 10, 12])(
+      'the activated owner recovers behind %i never-activated purchases adopted onto its PaymentIntent; they gain nothing and nothing runs twice',
+      async (count) => {
+        const [pi, owner] = [`pi_list_${count}`, `owner-list-${count}`];
+        await prisma.clientPurchase.create({
+          data: {
+            id: owner,
+            client_user_id: CLIENT,
+            coach_user_id: COACH,
+            package_id: PKG,
+            amount_cents: 5000,
+            stripe_checkout_session_id: `cs_${owner}`,
+            idempotency_key: owner,
+            created_at: new Date(Date.now() - 60_000),
+          },
+        });
+        [replies, reached] = [deferred(), deferred()];
+        const release = deferred();
+        const [adoptions, creations, adopted]: [Promise<void>[], Promise<unknown>[], string[]] = [
+          [],
+          [],
+          [],
+        ];
+        try {
+          for (let i = 0; i < count; i += 1) {
+            await sleep(5); // distinct created_at: each decline adopts the newest reservation
+            reached = deferred();
+            const key = `00000000-0000-4000-8000-${String(count * 100 + i).padStart(12, '0')}`;
+            const creation = checkout.createPaymentIntentForClient(CLIENT, {
+              package_id: PKG,
+              idempotency_key: key,
+            });
+            creations.push(creation);
+            await Promise.race([reached.opened, creation]);
+            const reserved = await prisma.clientPurchase.findUniqueOrThrow({
+              where: { idempotency_key: `pi-${CLIENT}-${key}` },
+            });
+            expect(reserved).toMatchObject({ status: 'pending', stripe_payment_intent_id: null });
+            adopted.push(reserved.id);
+            const held = deferred();
+            const decline = ev('payment_intent.payment_failed', pi, {
+              metadata: { tgp_package_id: PKG, tgp_client_user_id: CLIENT },
+            });
+            const pre = await ordered.prefetchForOuterTx(decline);
+            const adoption = inTx(async (tx) => {
+              expect(await ordered.handle(decline, legalOrder(tx), pre)).toEqual({
+                claimed: true,
+                purchase_id: reserved.id,
+              });
+              held.open();
+              await release.opened;
+            });
+            adoptions.push(adoption);
+            await Promise.race([held.opened, adoption]);
+          }
+          release.open();
+          await Promise.all(adoptions);
+          const completed = ev('checkout.session.completed', `cs_${owner}`, {
+            payment_intent: pi,
+            mode: 'payment',
+          });
+          expect(await deliverOrdered(completed)).toMatchObject({
+            claimed: true,
+            purchase_id: owner,
+            deferredSplit: expect.anything(),
+          });
+          await prisma.scheduledDrop.create({
+            data: {
+              id: `d-${owner}`,
+              client_purchase_id: owner,
+              content_id: owner,
+              asset_type: 'workout',
+              asset_id: 'a1',
+              cadence_kind: 'offset_days',
+              cadence_payload: {},
+              fire_at: new Date(Date.now() + 86_400_000),
+            },
+          });
+          stripe.status = 'requires_payment_method';
+          expect(await deliverOrdered(ev('payment_intent.payment_failed', pi))).toEqual({
+            claimed: true,
+            purchase_id: owner,
+          });
+          expect(await drop(owner)).toMatchObject({
+            status: 'canceled',
+            failure_reason: 'canceled:payment_failed',
+          });
+          // The boundary: count + 1 failed purchases share the PaymentIntent and exactly one was
+          // activated; an unfiltered ten-row read newest first misses the owner from ten on.
+          const failed = { stripe_payment_intent_id: pi, status: 'payment_failed' };
+          expect(await prisma.clientPurchase.count({ where: failed })).toBe(count + 1);
+          expect(
+            await prisma.purchaseFanout.count({
+              where: { purchase: { stripe_payment_intent_id: pi } },
+            }),
+          ).toBe(1);
+          const unfiltered = await legalOrder(prisma).clientPurchase.findMany({
+            where: failed,
+            take: 10,
+          });
+          expect(unfiltered.some((p) => p.id === owner)).toBe(count < 10);
+
+          stripe.status = 'succeeded';
+          const success = ev('payment_intent.succeeded', pi);
+          expect(await deliverOrdered(success)).toEqual({
+            claimed: true,
+            purchase_id: owner,
+            reason: 'payment_recovered',
+          });
+          expect(await row(owner)).toMatchObject({
+            status: 'paid',
+            entitlement_active: true,
+            last_error: null,
+          });
+          expect(await drop(owner)).toMatchObject({ status: 'pending', failure_reason: null });
+          const others = await prisma.clientPurchase.findMany({ where: { id: { in: adopted } } });
+          expect(others.map((p) => [p.status, p.entitlement_active])).toEqual(
+            adopted.map(() => ['payment_failed', false]),
+          );
+          expect(
+            await prisma.purchaseFanout.count({
+              where: { purchase_id: { in: [owner, ...adopted] } },
+            }),
+          ).toBe(1);
+        } finally {
+          release.open();
+          replies.open();
+          await Promise.allSettled([...adoptions, ...creations]);
+        }
+        // The native replies land afterwards: each adopted purchase takes its own PaymentIntent,
+        // stays unentitled, and a redelivered success finds nothing left to do.
+        const settled = await prisma.clientPurchase.findMany({ where: { id: { in: adopted } } });
+        expect(
+          settled.every(
+            (p) => p.stripe_payment_intent_id?.startsWith('pi_own_') && !p.entitlement_active,
+          ),
+        ).toBe(true);
+        const again = await deliverOrdered(ev('payment_intent.succeeded', pi));
+        expect(again).toEqual({ claimed: false, reason: 'no_matching_purchase' });
+        expect(await row(owner)).toMatchObject({ status: 'paid', entitlement_active: true });
+        expect(await prisma.purchaseFanout.count({ where: { purchase_id: owner } })).toBe(1);
+      },
+      90_000,
+    );
+  });
 });
