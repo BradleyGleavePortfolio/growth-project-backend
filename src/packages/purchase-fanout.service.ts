@@ -612,6 +612,40 @@ export class PurchaseFanoutService {
     return result.count;
   }
 
+  // B-661-3 (round 5) — a payment that failed after its purchase was
+  // activated, then succeeded (the same PaymentIntent). The drops that
+  // failure canceled (`canceled:payment_failed`) are pending again; the drip
+  // dispatcher delivers the ones already due on its next tick. Drops
+  // canceled for any other reason (refund, dispute, cancel, coach decision,
+  // grant revoke) stay canceled. Idempotent: a replay finds none.
+  async restoreAfterPaymentRecovered(
+    clientPurchaseId: string,
+    tx?: TxOrPrisma | Prisma.TransactionClient,
+  ): Promise<number> {
+    const db: { scheduledDrop: Prisma.TransactionClient['scheduledDrop'] } | undefined =
+      (tx as TxOrPrisma | undefined)?.scheduledDrop
+        ? (tx as TxOrPrisma)
+        : this.prisma;
+    if (!db || !db.scheduledDrop) {
+      this.logger.warn(
+        `restoreAfterPaymentRecovered: no scheduledDrop client available (purchase=${clientPurchaseId}) — skipping`,
+      );
+      return 0;
+    }
+    const result = await db.scheduledDrop.updateMany({
+      where: {
+        client_purchase_id: clientPurchaseId,
+        status: 'canceled',
+        failure_reason: 'canceled:payment_failed',
+      },
+      data: { status: 'pending', failure_reason: null, next_retry_at: null, locked_at: null },
+    });
+    this.logger.log(
+      `restoreAfterPaymentRecovered: ${result.count} drop(s) pending again for purchase=${clientPurchaseId}`,
+    );
+    return result.count;
+  }
+
   /**
    * Discard alerts staged inside a rolled-back tx so a successful
    * retry doesn't double-alert. Callers invoke from their tx catch

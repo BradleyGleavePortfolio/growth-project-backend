@@ -75,39 +75,41 @@ function failureNeedsProviderStatus(purchaseStatus: string): boolean {
 // one-time purchase was activated already, or a later event ended it.
 const CHECKOUT_NEVER_REACTIVATES = ['paid', ...PI_FAILED_NEVER_REWRITES];
 
-// B-661-3 (Sol, round 4): the purchase version a prefetched PaymentIntent
-// status was read against. Every write moves updated_at, so a purchase with
-// the same id, status and updated_at has not changed since.
+// B-661-3 (Sol, round 5): the version of a purchase row that a prefetched
+// PaymentIntent status was read against. row_version is PostgreSQL's xmin,
+// the id of the transaction that last wrote the row: every committed write
+// of any writer (Prisma or raw SQL, any service) changes it, two writes in
+// the same millisecond included; a row lock alone does not. A changed value
+// can only cause a retry; an equal value after a write would need about
+// 2^32 transactions between the prefetch and the webhook transaction.
+// updated_at (an application-clock timestamp) is not a version: two writes
+// can share it.
 export interface PurchaseVersion {
   purchase_id: string;
   status: string;
-  updated_at: number | null;
+  row_version: string;
 }
-function versionOf(purchase: {
-  id: string;
-  status: string;
-  updated_at?: Date | null;
-}): PurchaseVersion {
-  return {
-    purchase_id: purchase.id,
-    status: purchase.status,
-    updated_at: purchase.updated_at ? purchase.updated_at.getTime() : null,
-  };
-}
-function sameVersion(
-  seen: PurchaseVersion | undefined,
-  purchase: { id: string; status: string; updated_at?: Date | null },
+type PurchaseVersionRow = { status: string; row_version: string };
+function samePurchaseVersion(
+  seen: PurchaseVersion | null | undefined,
+  now: PurchaseVersion | null,
 ): boolean {
-  const now = versionOf(purchase);
   return (
     !!seen &&
+    !!now &&
     seen.purchase_id === now.purchase_id &&
     seen.status === now.status &&
-    seen.updated_at === now.updated_at
+    seen.row_version === now.row_version
   );
 }
 
-// Thrown inside the webhook transaction when a decline cannot be judged
+// Prisma's "record to update not found" (P2025): the row no longer matches
+// the state a write was decided for.
+function isRecordNotFound(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === 'P2025';
+}
+
+// Thrown inside the webhook transaction when an event cannot be applied
 // safely now. BillingService rolls the transaction back (dedup row included)
 // and answers 503, so Stripe redelivers the event and the out-of-tx prefetch
 // runs again. Ids and codes only: no Stripe or client text.
@@ -117,6 +119,14 @@ function declineRetryLater(reason: string, paymentIntentId: string): ServiceUnav
     reason,
     payment_intent_id: paymentIntentId,
     message: 'This payment failure event cannot be applied yet. Stripe redelivers it.',
+  });
+}
+function successRetryLater(reason: string, paymentIntentId: string): ServiceUnavailableException {
+  return new ServiceUnavailableException({
+    error: 'PAYMENT_SUCCESS_RETRY',
+    reason,
+    payment_intent_id: paymentIntentId,
+    message: 'This payment success event cannot be applied yet. Stripe redelivers it.',
   });
 }
 
@@ -150,6 +160,9 @@ type WebhookTx = Prisma.TransactionClient;
 //   paid | active | ...      -- payment_intent.payment_failed --> payment_failed
 //                               only when Stripe says the PaymentIntent did not
 //                               complete (B-661-3); otherwise unchanged
+//   payment_failed (activated before) -- payment_intent.succeeded --> paid
+//                               recovery: access and the canceled drops come
+//                               back; no second activation (B-661-3 round 5)
 //   pending  -- checkout.session.expired      --> expired
 //
 // Entitlement (`entitlement_active`) is derived and persisted on every
@@ -225,7 +238,7 @@ export interface CheckoutWebhookPrefetch {
   // out-of-tx only when the matched purchase already settled (a decline of a
   // pending or failed purchase never needs it). null = the lookup failed.
   paymentIntentStatusById?: Record<string, string | null>;
-  // B-661-3 round 4 — the purchase version read BEFORE that Stripe lookup.
+  // B-661-3 round 4/5 — the purchase version read BEFORE that Stripe lookup.
   // The status applies only while the purchase is still that version.
   paymentIntentWitnessById?: Record<string, PurchaseVersion>;
 }
@@ -619,16 +632,18 @@ export class CheckoutWebhookHandlerService {
   ): Promise<CheckoutWebhookPrefetch> {
     const pi = event.data.object as { id?: string };
     if (!pi?.id) return {};
-    let seen: PurchaseVersion;
+    let seen: PurchaseVersion | null;
     try {
-      // Read BEFORE asking Stripe: the status Stripe returns is at least as
-      // new as this version of the purchase (round 4).
       const purchase = await this.prisma.clientPurchase.findFirst({
         where: { stripe_payment_intent_id: pi.id },
-        select: { id: true, status: true, updated_at: true },
+        select: { id: true, status: true },
       });
       if (!purchase || !failureNeedsProviderStatus(purchase.status)) return {};
-      seen = versionOf(purchase);
+      // Read BEFORE asking Stripe: the status Stripe returns is at least as
+      // new as this version of the purchase (round 4; xmin since round 5).
+      seen = await this.readPurchaseVersion(this.prisma, purchase.id, false);
+      // No version, no Stripe call: the decline is retried in its tx.
+      if (!seen) return {};
     } catch (err) {
       this.logger.warn(
         `prefetchForOuterTx: purchase lookup failed for payment_intent.payment_failed ${pi.id} (${errorTag(err)})`,
@@ -643,20 +658,91 @@ export class CheckoutWebhookHandlerService {
 
   // Stripe's current status of a PaymentIntent; null when it cannot be read
   // now, PI_STATUS_UNREADABLE when Stripe says it never can be (C-661-6).
+  // C-661-8: only 404 (no such PaymentIntent) and 400 (malformed request)
+  // are permanent. 401/403 (a revoked or rotated key), 429, 5xx and network
+  // errors are retried: Stripe redelivers the decline after the key is fixed.
   private async lookUpPaymentIntentStatus(paymentIntentId: string): Promise<string | null> {
     try {
       const current = await this.stripeConnect.retrievePaymentIntent(paymentIntentId);
       return typeof current.status === 'string' ? current.status : null;
     } catch (err) {
-      this.logger.warn(
-        `PaymentIntent status lookup failed for ${paymentIntentId} (${errorTag(err)})`,
-      );
       const permanent =
-        err instanceof StripeConnectApiError &&
-        err.httpStatus >= 400 &&
-        err.httpStatus < 500 &&
-        err.httpStatus !== 429;
-      return permanent ? PI_STATUS_UNREADABLE : null;
+        err instanceof StripeConnectApiError && (err.httpStatus === 404 || err.httpStatus === 400);
+      if (permanent) {
+        this.logger.error(
+          `PaymentIntent ${paymentIntentId} cannot be read (${errorTag(err)}): its payment_intent.payment_failed is not applied`,
+        );
+        return PI_STATUS_UNREADABLE;
+      }
+      this.logger.warn(
+        `PaymentIntent status lookup failed for ${paymentIntentId} (${errorTag(err)}): Stripe redelivers`,
+      );
+      return null;
+    }
+  }
+
+  // B-661-3 (round 5): the version of one purchase row (see PurchaseVersion).
+  // `lock` (inside a transaction) also holds the row until that transaction
+  // ends (SELECT ... FOR UPDATE, which returns the newest committed version),
+  // so no writer can change it between this check and the write after it.
+  // A client without raw SQL (minimal test doubles) cannot prove a version:
+  // null, and the caller retries instead of guessing.
+  private async readPurchaseVersion(
+    db: WebhookTx | PrismaService,
+    purchaseId: string,
+    lock: boolean,
+  ): Promise<PurchaseVersion | null> {
+    if (typeof (db as { $queryRaw?: unknown }).$queryRaw !== 'function') return null;
+    const rows = lock
+      ? await db.$queryRaw<
+          PurchaseVersionRow[]
+        >`SELECT status, xmin::text AS row_version FROM "ClientPurchase" WHERE id = ${purchaseId} FOR UPDATE`
+      : await db.$queryRaw<
+          PurchaseVersionRow[]
+        >`SELECT status, xmin::text AS row_version FROM "ClientPurchase" WHERE id = ${purchaseId}`;
+    const row = rows[0];
+    return row ? { purchase_id: purchaseId, status: row.status, row_version: row.row_version } : null;
+  }
+
+  // B-661-8 (round 5): hold every purchase of a PaymentIntent until the
+  // webhook transaction ends, BEFORE reading them. A refund, dispute,
+  // cancel, deletion or decline that committed first is seen by the read
+  // that follows; one that comes later waits and applies to what this
+  // transaction wrote. Skipped for clients without raw SQL (test doubles);
+  // the compare-and-set writes still fence those.
+  private async lockPurchasesOfPaymentIntent(tx: WebhookTx, paymentIntentId: string): Promise<void> {
+    if (typeof (tx as { $queryRaw?: unknown }).$queryRaw !== 'function') return;
+    await tx.$queryRaw<
+      Array<{ id: string }>
+    >`SELECT id FROM "ClientPurchase" WHERE stripe_payment_intent_id = ${paymentIntentId} FOR UPDATE`;
+  }
+
+  // B-661-3 (round 5): a purchase was activated once when its PurchaseFanout
+  // row exists (written in the activation's own transaction, never deleted
+  // while the purchase exists). A client without that model (minimal test
+  // doubles) has no activation record: false.
+  private async wasActivated(db: WebhookTx | PrismaService, purchaseId: string): Promise<boolean> {
+    if (!(db as { purchaseFanout?: unknown }).purchaseFanout) return false;
+    const fanout = await db.purchaseFanout.findUnique({
+      where: { purchase_id: purchaseId },
+      select: { id: true },
+    });
+    return !!fanout;
+  }
+
+  // B-661-8 (round 5): a success write names the state it was decided for.
+  // When the row changed first (a refund, dispute, cancel, deletion, ...),
+  // Prisma finds no row (P2025): the webhook transaction rolls back and
+  // Stripe redelivers; the redelivery reads the new state, which wins.
+  private async writeIfUnchanged<T>(paymentIntentId: string, write: () => Promise<T>): Promise<T> {
+    try {
+      return await write();
+    } catch (err) {
+      if (!isRecordNotFound(err)) throw err;
+      this.logger.warn(
+        `payment_intent.succeeded ${paymentIntentId}: purchase changed before the write; Stripe redelivers`,
+      );
+      throw successRetryLater('purchase_changed', paymentIntentId);
     }
   }
 
@@ -696,6 +782,17 @@ export class CheckoutWebhookHandlerService {
     if (CHECKOUT_NEVER_REACTIVATES.includes(purchase.status)) {
       this.logger.log(
         `checkout.session.completed: purchase=${purchase.id} not activated again (status=${purchase.status})`,
+      );
+      return { claimed: true, purchase_id: purchase.id, reason: 'already_progressed' };
+    }
+    // B-661-3 (round 5): a purchase that was activated and then ended by a
+    // real failure of its payment comes back only through the success of
+    // that PaymentIntent (recovery), never through a second activation. A
+    // purchase a decline marked failed before its checkout completed (never
+    // activated) is activated here as usual.
+    if (purchase.status === 'payment_failed' && (await this.wasActivated(db, purchase.id))) {
+      this.logger.log(
+        `checkout.session.completed: purchase=${purchase.id} not activated again (activated before, status=payment_failed)`,
       );
       return { claimed: true, purchase_id: purchase.id, reason: 'already_progressed' };
     }
@@ -1096,6 +1193,11 @@ export class CheckoutWebhookHandlerService {
 
     const db: WebhookTx | PrismaService = tx ?? this.prisma;
 
+    // B-661-8 (round 5): lock this PaymentIntent's purchases before reading
+    // them, so the state the decision below is made on stays the state the
+    // write lands on.
+    if (tx) await this.lockPurchasesOfPaymentIntent(tx, pi.id);
+
     // Only claim if a pending purchase row references this payment intent.
     // PaymentSheet flow creates a pending ClientPurchase with the PI id set
     // by checkout.service.ts createPaymentIntentForClient().
@@ -1107,12 +1209,26 @@ export class CheckoutWebhookHandlerService {
     const purchase = await db.clientPurchase.findFirst({
       where: { stripe_payment_intent_id: pi.id, status: { in: PI_SUCCEEDED_CLAIMABLE } },
     });
+    // B-661-3 (Sol, round 5): a one-time purchase that was activated and
+    // then ended by a real failure of this PaymentIntent (e.g. a hosted
+    // checkout that completed while an asynchronous payment was processing)
+    // is recovered by this success: access comes back, nothing runs twice.
+    if (
+      purchase &&
+      purchase.status === 'payment_failed' &&
+      purchase.billing_type !== 'recurring' &&
+      !purchase.stripe_subscription_id &&
+      (await this.wasActivated(db, purchase.id))
+    ) {
+      return this.recoverAfterPaymentSucceeded(db, purchase.id, pi.id, tx);
+    }
     if (!purchase || !activatesOnPaymentIntentSuccess(purchase, pi.id)) {
-      // B-661-3 (Sol, round 4): record the settlement on every entitled
+      // B-661-3 (Sol, round 4/5): record the settlement on every entitled
       // purchase this PaymentIntent paid (e.g. a hosted checkout that
-      // completed while the payment was processing). Moving its version
-      // makes a decline whose Stripe status was read before this success
-      // stale: that decline is redelivered and reads Stripe again.
+      // completed while the payment was processing). The write gives the
+      // row a new version (xmin; equal timestamps do not matter), so a
+      // decline whose Stripe status was read before this success is stale:
+      // it is redelivered and reads Stripe again.
       await db.clientPurchase.updateMany({
         where: { stripe_payment_intent_id: pi.id, entitlement_active: true },
         data: { updated_at: new Date() },
@@ -1125,20 +1241,22 @@ export class CheckoutWebhookHandlerService {
       };
     }
 
-    const updated = await db.clientPurchase.update({
-      where: { id: purchase.id },
-      data: {
-        status: 'paid',
-        entitlement_active: true,
-        last_error: null,
-        // B-SECRETS-3: the PaymentIntent is paid; its cached client
-        // credentials can never be needed again, so they are erased.
-        ...CLEARED_PAYMENT_SECRETS,
-        // B-661-3 round 4: the new version a prefetched decline is checked
-        // against (Prisma's @updatedAt sets it too; explicit here).
-        updated_at: new Date(),
-      },
-    });
+    // B-661-8 (Sol, round 5): compare-and-set on the state this was decided
+    // for (id, PaymentIntent, status). A terminal state committed after the
+    // read is never overwritten (writeIfUnchanged).
+    const updated = await this.writeIfUnchanged(pi.id, () =>
+      db.clientPurchase.update({
+        where: { id: purchase.id, stripe_payment_intent_id: pi.id, status: purchase.status },
+        data: {
+          status: 'paid',
+          entitlement_active: true,
+          last_error: null,
+          // B-SECRETS-3: the PaymentIntent is paid; its cached client
+          // credentials can never be needed again, so they are erased.
+          ...CLEARED_PAYMENT_SECRETS,
+        },
+      }),
+    );
 
     // Roman P4 (Option C) — first-payment notification on the PaymentSheet
     // (payment_intent.succeeded) path too. Same in-tx, server-trusted,
@@ -1183,6 +1301,34 @@ export class CheckoutWebhookHandlerService {
     }
 
     return { claimed: true, purchase_id: purchase.id, deferredSplit };
+  }
+
+  // B-661-3 (Sol, round 5): recovery of an activated purchase whose payment
+  // failed and then succeeded. Restores paid access and the drops that
+  // failure canceled. The activation itself already ran once (first-payment
+  // notice, fanout, head-coach split), so none of it runs again.
+  private async recoverAfterPaymentSucceeded(
+    db: WebhookTx | PrismaService,
+    purchaseId: string,
+    paymentIntentId: string,
+    tx: WebhookTx | undefined,
+  ): Promise<CheckoutWebhookResult> {
+    await this.writeIfUnchanged(paymentIntentId, () =>
+      db.clientPurchase.update({
+        where: { id: purchaseId, stripe_payment_intent_id: paymentIntentId, status: 'payment_failed' },
+        data: {
+          status: 'paid',
+          entitlement_active: true,
+          last_error: null,
+          ...CLEARED_PAYMENT_SECRETS,
+        },
+      }),
+    );
+    if (this.fanout) await this.fanout.restoreAfterPaymentRecovered(purchaseId, tx);
+    this.logger.log(
+      `payment_intent.succeeded: purchase=${purchaseId} recovered after a failed payment of ${paymentIntentId}`,
+    );
+    return { claimed: true, purchase_id: purchaseId, reason: 'payment_recovered' };
   }
 
   private async applyPaymentIntentFailed(
@@ -1274,10 +1420,14 @@ export class CheckoutWebhookHandlerService {
     // current PaymentIntent status tells them apart. Inside the webhook tx it
     // comes from the out-of-tx prefetch (never Stripe HTTP in a DB tx); the
     // no-tx path asks Stripe directly.
-    // Round 4: that status is valid only for the purchase version read before
-    // the Stripe call. A write since then (a success of this PaymentIntent
-    // among them) makes it stale: Stripe redelivers, the prefetch reads again.
-    if (tx && !sameVersion(prefetched?.paymentIntentWitnessById?.[pi.id], purchase)) {
+    // Round 4/5: that status is valid only for the purchase version read
+    // before the Stripe call (`seen`). A write since then (a success of this
+    // PaymentIntent among them) makes it stale: Stripe redelivers, the
+    // prefetch reads again. The no-tx path reads the version, then asks.
+    const seen = tx
+      ? prefetched?.paymentIntentWitnessById?.[pi.id]
+      : await this.readPurchaseVersion(this.prisma, purchase.id, false);
+    if (!seen || seen.purchase_id !== purchase.id) {
       throw declineRetryLater('purchase_changed', pi.id);
     }
     const providerStatus = tx
@@ -1292,15 +1442,43 @@ export class CheckoutWebhookHandlerService {
     if (!PI_STATUS_NOT_COMPLETED.has(providerStatus)) {
       return { claimed: true, purchase_id: purchase.id, reason: 'stale_failure' };
     }
+    // A real failure ends access only on the exact version the decision was
+    // made for, checked and written under the row lock (in the webhook tx,
+    // or a short tx of its own on the no-tx path).
+    const settled = purchase;
+    const paymentIntentId = pi.id;
+    const revoke = (client: WebhookTx) =>
+      this.revokeIfUnchanged(client, settled, seen, failure, paymentIntentId);
+    return tx ? revoke(tx) : this.inShortTransaction(revoke);
+  }
+
+  private async revokeIfUnchanged(
+    client: WebhookTx,
+    purchase: ClientPurchase,
+    seen: PurchaseVersion,
+    failure: { status: string; entitlement_active: boolean; last_error: string },
+    paymentIntentId: string,
+  ): Promise<CheckoutWebhookResult> {
+    const now = await this.readPurchaseVersion(client, purchase.id, true);
+    if (!samePurchaseVersion(seen, now)) throw declineRetryLater('purchase_changed', paymentIntentId);
     const wasEntitled = !!purchase.entitlement_active;
-    // Compare-and-set on the version the decision was made for.
-    const revoked = await db.clientPurchase.updateMany({
-      where: { id: purchase.id, status: purchase.status, updated_at: purchase.updated_at },
+    const revoked = await client.clientPurchase.updateMany({
+      where: { id: purchase.id, status: seen.status },
       data: failure,
     });
-    if (revoked.count === 0) throw declineRetryLater('purchase_changed', pi.id);
-    await this.cancelDropsAfterFailure(purchase.id, wasEntitled, tx);
+    if (revoked.count === 0) throw declineRetryLater('purchase_changed', paymentIntentId);
+    await this.cancelDropsAfterFailure(purchase.id, wasEntitled, client);
     return { claimed: true, purchase_id: purchase.id };
+  }
+
+  // A short transaction of its own for the no-tx (legacy) path, so a row
+  // lock is held across a check and its write. Test doubles without
+  // $transaction run on the client directly.
+  private async inShortTransaction<T>(run: (client: WebhookTx) => Promise<T>): Promise<T> {
+    if (typeof (this.prisma as { $transaction?: unknown }).$transaction === 'function') {
+      return this.prisma.$transaction((innerTx) => run(innerTx));
+    }
+    return run(this.prisma);
   }
 
   // Pre-flip entitlement (captured before the write): only entitled purchases have drops
