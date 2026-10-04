@@ -245,6 +245,11 @@ export interface SettleOutcome {
 export type AdjustOutcome =
   'adjusted' | 'unchanged' | 'no_settlement' | 'legacy' | 'deferred' | 'skipped_free';
 
+/** One applyAdjustments run: `flagged` is set when the run itself raised the retry flag. */
+interface AdjustRun {
+  flagged: boolean;
+}
+
 export interface AdjustmentInput {
   purchase: ClientPurchase;
   charge_id: string;
@@ -683,9 +688,13 @@ export class ChargeSettlementService {
     // A refund can land before we settle (webhook ordering). Round 13 (Opus B-684-3): the
     // charge's SUCCEEDED refunds from Stripe's full refund list, in the settlement currency;
     // amount_refunded also counts pending refunds, so it only says whether to look.
+    // Round 15 (Sol B-683-1): an awaiting row's refunded_cents is in the row's provisional
+    // currency, so it joins the max only when that already is the settlement currency; on a
+    // converted charge the list alone is the answer (unreadable: stay awaiting, nothing moves).
     const currency = bt.currency.toLowerCase();
-    let refunded = row.refunded_cents;
-    if ((charge.amount_refunded ?? 0) > 0) {
+    const sameCurrency = row.currency.toLowerCase() === currency;
+    let refunded = sameCurrency ? row.refunded_cents : 0;
+    if ((charge.amount_refunded ?? 0) > 0 || (!sameCurrency && row.refunded_cents > 0)) {
       try {
         const list = await chargeRefundsFromStripe(this.stripe, chargeId, currency);
         refunded = Math.max(refunded, list.succeeded_debit_cents);
@@ -1338,11 +1347,14 @@ export class ChargeSettlementService {
   async applyAdjustments(input: AdjustmentInput): Promise<AdjustOutcome> {
     if (!(input.purchase.amount_cents > 0)) return 'skipped_free';
     const startedAt = new Date();
+    // Round 15 (Sol B-683-5): a retry flag this run raised itself (a payee notice it could not
+    // record) is never cleared by this run, whatever the clock says.
+    const run: AdjustRun = { flagged: false };
     try {
       const outcome = await this.chargeLock.run(input.charge_id, () =>
-        this.applyAdjustmentsLocked(input),
+        this.applyAdjustmentsLocked(input, run),
       );
-      await this.clearReconcileFlag(input.charge_id, startedAt);
+      if (!run.flagged) await this.clearReconcileFlag(input.charge_id, startedAt);
       return outcome;
     } catch (err) {
       // Round 4 (B-627-4 / B-627-5): an adjustment that did not finish (no
@@ -1389,7 +1401,10 @@ export class ChargeSettlementService {
     });
   }
 
-  private async applyAdjustmentsLocked(input: AdjustmentInput): Promise<AdjustOutcome> {
+  private async applyAdjustmentsLocked(
+    input: AdjustmentInput,
+    run: AdjustRun,
+  ): Promise<AdjustOutcome> {
     let row = await this.prisma.chargeSettlement.findUnique({
       where: { stripe_charge_id: input.charge_id },
     });
@@ -1541,7 +1556,10 @@ export class ChargeSettlementService {
       if (after <= next.refunded_cents) {
         // OR-111-1: tell each payee exactly what changed, from the converged
         // state, still under the lock (idempotent per charge/leg/event/state).
-        await this.recordAdjustmentNotices(current, legs, next, input.notice_event ?? null, client);
+        const hint = input.notice_event ?? null;
+        if (!(await this.recordAdjustmentNotices(current, legs, next, hint, client))) {
+          run.flagged = true;
+        }
         return adjusted ? 'adjusted' : 'unchanged';
       }
     }
@@ -1559,7 +1577,7 @@ export class ChargeSettlementService {
    * and what is held from the payee's next sale(s), split into TGP's 2%, Stripe's processing fee,
    * the dispute fee and any share Stripe refused to reverse. Delivery (push / in-app / email) is
    * done by the dispatcher after the lock is released. A failure here never undoes the money: the
-   * settlement is flagged and the sweeper re-runs it.
+   * settlement is flagged and the sweeper re-runs it. Returns false when it flagged (B-683-5).
    */
   private async recordAdjustmentNotices(
     row: ChargeSettlement,
@@ -1567,10 +1585,10 @@ export class ChargeSettlementService {
     adj: ChargeAdjustments,
     hint: 'dispute_lost' | null,
     client: ClientRefund | null = null,
-  ): Promise<number> {
+  ): Promise<boolean> {
     try {
       const split = splitOf(row);
-      if (!split) return 0;
+      if (!split) return true;
       const [transfers, recoveries, priors] = await Promise.all([
         this.prisma.connectTransfer.findMany({ where: { settlement_id: row.id } }),
         this.prisma.payeeRecovery.findMany({ where: { settlement_id: row.id } }),
@@ -1580,7 +1598,6 @@ export class ChargeSettlementService {
         }),
       ]);
       const sk = stateKey(adj);
-      let written = 0;
       for (const leg of legs) {
         const latest = priors.find(
           (n) => n.payee_user_id === leg.payee_user_id && n.role === leg.leg,
@@ -1645,18 +1662,17 @@ export class ChargeSettlementService {
               body: copy.body,
             },
           });
-          written += 1;
         } catch (err) {
           if (!isUniqueViolation(err)) throw err;
         }
       }
-      return written;
+      return true;
     } catch (err) {
       this.logger.error(
         `${SETTLEMENT_LOG_CODES.noticeFailed} alert=true charge=${row.stripe_charge_id}: could not record the payee notice (${settlementFailureCode(err)}); the money is converged and the sweeper retries the notice`,
       );
       await this.flagForReconcile(row.stripe_charge_id, null, err);
-      return 0;
+      return false;
     }
   }
 
