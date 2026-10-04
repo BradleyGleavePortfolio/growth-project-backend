@@ -18,9 +18,30 @@ const liveDescribe = TEST_DB_URL ? describe : describe.skip;
 liveDescribe('B-674-1 live: concurrent reversals of different refunds both count', () => {
   let prisma: PrismaService;
   let svc: RefundDisputeHandlerService;
-  const reverseTransfer = jest.fn(async (a: { amount: number; idempotencyKey: string }) => ({
-    id: `trr_${a.idempotencyKey.replace(/[^A-Za-z0-9]/g, '')}`,
-    amount: a.amount,
+  // Stripe double: one reversal per key, listed per transfer (complete list).
+  type Made = { id: string; amount: number; transfer: string; metadata: Record<string, string> };
+  const made: Made[] = [];
+  const reverseTransfer = jest.fn(
+    async (a: {
+      transfer_id: string;
+      amount: number;
+      idempotencyKey: string;
+      metadata?: Record<string, string>;
+    }) => {
+      const id = `trr_${a.idempotencyKey.replace(/[^A-Za-z0-9]/g, '')}`;
+      const r = made.find((m) => m.id === id) ?? {
+        id,
+        amount: a.amount,
+        transfer: a.transfer_id,
+        metadata: a.metadata ?? {},
+      };
+      if (!made.includes(r)) made.push(r);
+      return r;
+    },
+  );
+  const listTransferReversals = jest.fn(async (transferId: string) => ({
+    data: made.filter((m) => m.transfer === transferId),
+    has_more: false,
   }));
 
   beforeAll(async () => {
@@ -40,7 +61,7 @@ liveDescribe('B-674-1 live: concurrent reversals of different refunds both count
       data: { id: 'pkg', coach_id: 'coach', name: 'Coaching', amount_cents: 10_000 },
     });
     const ledger = new SplitLedgerService(prisma);
-    const stripe = { reverseTransfer };
+    const stripe = { reverseTransfer, listTransferReversals };
     const transfers = Reflect.construct(TransferOrchestratorService, [prisma, stripe, ledger]);
     const notifications = { createNotification: jest.fn(async () => undefined) };
     const payouts = { recordPayoutEvent: jest.fn() };
