@@ -683,7 +683,14 @@ export class FakeStripe extends StripeConnectApiService {
   });
 
   reverseTransfer = jest.fn(
-    async (args: { transfer_id: string; amount?: number; idempotencyKey: string }) => {
+    async (args: {
+      transfer_id: string;
+      amount?: number;
+      idempotencyKey: string;
+      beforeSend?: () => void;
+    }) => {
+      // Round 11 (B-682-1): the caller's send-start check, as in createTransfer.
+      if (args.beforeSend) args.beforeSend();
       if (this.failReversals) {
         throw new StripeConnectApiError(
           'Insufficient funds in the connected account to reverse this transfer',
