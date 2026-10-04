@@ -195,6 +195,34 @@ export type TransferLookup =
   | { kind: 'absent' }
   | { kind: 'unknown'; reason: string };
 
+// Round 14 (B-682-4 / B-682-8): both lookups' list reader. Only complete pages
+// (array `data` of items with ids, boolean `has_more`) ending in has_more ===
+// false prove absence; anything else is 'unknown' (closed reasons), never sent.
+async function scanStripeList<T extends { id: string; amount: number }>(
+  noun: 'transfers' | 'reversals',
+  maxPages: number,
+  readPage: (startingAfter: string | null) => Promise<{ data?: T[]; has_more?: boolean } | null>,
+  matches: (item: T) => boolean,
+): Promise<TransferLookup> {
+  let startingAfter: string | null = null;
+  for (let page = 0; page < maxPages; page += 1) {
+    const res = await readPage(startingAfter);
+    const items = Array.isArray(res?.data) ? (res.data as Array<T | null>) : null;
+    const shaped = items?.every((t) => typeof t?.id === 'string' && t.id.length > 0);
+    if (!res || !items || !shaped || typeof res.has_more !== 'boolean') {
+      return { kind: 'unknown', reason: `list_page_malformed: incomplete ${noun} page` };
+    }
+    const hit = (items as T[]).find(matches);
+    if (hit) return { kind: 'found', id: hit.id, amount: hit.amount };
+    if (res.has_more === false) return { kind: 'absent' };
+    if (items.length === 0) {
+      return { kind: 'unknown', reason: `Stripe reported more ${noun} but sent an empty page` };
+    }
+    startingAfter = (items[items.length - 1] as T).id;
+  }
+  return { kind: 'unknown', reason: `more than ${maxPages * 100} ${noun} listed without a match` };
+}
+
 function transferGroupOf(row: Pick<ConnectTransfer, 'purchase_id'>): string {
   return `purchase_${row.purchase_id}`;
 }
@@ -262,10 +290,7 @@ export type MoneyFence = (db?: Prisma.TransactionClient) => Promise<void>;
 export type ReversalPurpose = 'adjust' | 'legacy';
 
 // B-627-5 (round 6): the reconciliation lookup of one reversal operation.
-export type ReversalLookup =
-  | { kind: 'found'; id: string; amount: number }
-  | { kind: 'absent' }
-  | { kind: 'unknown'; reason: string };
+export type ReversalLookup = TransferLookup;
 
 export type ReverseOutcome =
   | { status: 'succeeded'; transfer: ConnectTransfer; op_id: string | null }
@@ -919,39 +944,25 @@ export class TransferOrchestratorService {
     return new Date(Math.max(backoff, window));
   }
   // B-627-8 — Stripe's transfers to the row's destination in its transfer
-  // group, matched by the operation key. Three answers, like reversals:
-  // 'absent' only when the full list was read (has_more false); a list error
-  // or a list longer than the page budget is 'unknown'.
+  // group, matched by the operation key (answers: scanStripeList).
   private async findStripeTransfer(row: ConnectTransfer): Promise<TransferLookup> {
     try {
       // The Stripe object is created after the row; one hour of slack covers
       // clock skew between the database and Stripe.
       const createdGte = Math.floor(row.created_at.getTime() / 1000) - 3600;
-      let startingAfter: string | null = null;
-      for (let page = 0; page < TransferOrchestratorService.TRANSFER_LIST_MAX_PAGES; page += 1) {
-        const res = await this.stripe.listTransfers({
-          destination: row.destination_stripe_account_id,
-          transfer_group: transferGroupOf(row),
-          created_gte: createdGte,
-          limit: 100,
-          starting_after: startingAfter,
-        });
-        const data = res.data ?? [];
-        const hit = data.find((t) => isTransferOf(t, row));
-        if (hit) return { kind: 'found', id: hit.id, amount: hit.amount };
-        if (!res.has_more) return { kind: 'absent' };
-        if (data.length === 0) {
-          return {
-            kind: 'unknown',
-            reason: 'Stripe reported more transfers but sent an empty page',
-          };
-        }
-        startingAfter = data[data.length - 1].id;
-      }
-      return {
-        kind: 'unknown',
-        reason: `more than ${TransferOrchestratorService.TRANSFER_LIST_MAX_PAGES * 100} transfers listed without a match`,
-      };
+      return await scanStripeList(
+        'transfers',
+        TransferOrchestratorService.TRANSFER_LIST_MAX_PAGES,
+        (startingAfter) =>
+          this.stripe.listTransfers({
+            destination: row.destination_stripe_account_id,
+            transfer_group: transferGroupOf(row),
+            created_gte: createdGte,
+            limit: 100,
+            starting_after: startingAfter,
+          }),
+        (t) => isTransferOf(t, row),
+      );
     } catch (err) {
       const reason = moneyErrorDiagnostic(err);
       this.logger.warn(
@@ -1225,34 +1236,20 @@ export class TransferOrchestratorService {
     return this.completeReversal(op, stripeReversalId);
   }
 
-  // Stripe's reversals on the transfer, matched by our operation key.
-  // B-627-5 (round 6): three answers. 'absent' only when the full list was
-  // read (has_more false); a list error or a list longer than the page
-  // budget is 'unknown', never proof that the reversal does not exist.
+  // B-627-5 — Stripe's reversals on the transfer, matched by the operation
+  // key (answers: scanStripeList; a list error is 'unknown' too).
   private async findStripeReversal(stripeTransferId: string, key: string): Promise<ReversalLookup> {
     try {
-      let startingAfter: string | null = null;
-      for (let page = 0; page < TransferOrchestratorService.REVERSAL_LIST_MAX_PAGES; page += 1) {
-        const res = await this.stripe.listTransferReversals(stripeTransferId, {
-          limit: 100,
-          starting_after: startingAfter,
-        });
-        const data = res.data ?? [];
-        const hit = data.find((r) => r.metadata?.tgp_reversal_op === key);
-        if (hit) return { kind: 'found', id: hit.id, amount: hit.amount };
-        if (!res.has_more) return { kind: 'absent' };
-        if (data.length === 0) {
-          return {
-            kind: 'unknown',
-            reason: 'Stripe reported more reversals but sent an empty page',
-          };
-        }
-        startingAfter = data[data.length - 1].id;
-      }
-      return {
-        kind: 'unknown',
-        reason: `more than ${TransferOrchestratorService.REVERSAL_LIST_MAX_PAGES * 100} reversals listed without a match`,
-      };
+      return await scanStripeList(
+        'reversals',
+        TransferOrchestratorService.REVERSAL_LIST_MAX_PAGES,
+        (startingAfter) =>
+          this.stripe.listTransferReversals(stripeTransferId, {
+            limit: 100,
+            starting_after: startingAfter,
+          }),
+        (r) => r.metadata?.tgp_reversal_op === key,
+      );
     } catch (err) {
       const reason = moneyErrorDiagnostic(err);
       this.logger.warn(
