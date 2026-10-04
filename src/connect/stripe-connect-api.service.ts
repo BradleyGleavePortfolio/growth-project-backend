@@ -886,14 +886,44 @@ export class StripeConnectApiService {
   // subscription an uncertain create may have made (matched by
   // metadata.tgp_purchase_id) instead of creating a second one. List reads
   // are consistent (unlike Search), so a miss means Stripe has none.
+  // C-679-2 — `createdGte` (unix seconds) bounds the list to subscriptions
+  // created since then, so a customer with many ended subscriptions never
+  // fills the page with older ones.
   async listSubscriptionsForCustomer(
     customerId: string,
+    opts?: { createdGte?: number },
   ): Promise<{ data: StripeSubscriptionObject[]; has_more?: boolean }> {
     const params = new URLSearchParams();
     params.set('customer', customerId);
     params.set('status', 'all');
     params.set('limit', '100');
+    if (opts?.createdGte !== undefined) params.set('created[gte]', String(opts.createdGte));
     return this.get(`/subscriptions?${params.toString()}`);
+  }
+
+  // C-679-1 — void an open invoice (the first invoice of an incomplete
+  // subscription, before that subscription is canceled). Stripe voids only
+  // an open or uncollectible invoice, so a paid one is refused, and voiding
+  // the first invoice moves an incomplete subscription to incomplete_expired.
+  async voidInvoice(
+    invoiceId: string,
+    idempotencyKey: string,
+  ): Promise<{ id: string; status?: string }> {
+    return this.post(`/invoices/${encodeURIComponent(invoiceId)}/void`, {}, idempotencyKey);
+  }
+
+  // C-679-1 — cancel a trial's pending SetupIntent (before that trial is
+  // canceled). Stripe refuses once it succeeded (the card was saved) or while
+  // it is processing.
+  async cancelSetupIntent(
+    setupIntentId: string,
+    idempotencyKey: string,
+  ): Promise<StripeSetupIntentObject> {
+    return this.post<StripeSetupIntentObject>(
+      `/setup_intents/${encodeURIComponent(setupIntentId)}/cancel`,
+      {},
+      idempotencyKey,
+    );
   }
 
   // B-RECUR — the client keeps a plan they scheduled to cancel (undo
@@ -915,9 +945,7 @@ export class StripeConnectApiService {
   // `pending_setup_intent` is null once the SetupIntent succeeded, so the
   // trial-card path reads the SetupIntent itself (id from the stored secret).
   async retrieveSetupIntent(setupIntentId: string): Promise<StripeSetupIntentObject> {
-    return this.get<StripeSetupIntentObject>(
-      `/setup_intents/${encodeURIComponent(setupIntentId)}`,
-    );
+    return this.get<StripeSetupIntentObject>(`/setup_intents/${encodeURIComponent(setupIntentId)}`);
   }
 
   // B-RECUR — make the card a trial's SetupIntent saved the subscription's
