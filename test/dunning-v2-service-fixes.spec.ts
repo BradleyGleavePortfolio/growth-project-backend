@@ -9,6 +9,7 @@ import { DunningService } from '../src/checkout/dunning.service';
 import { DunningV2Dispatcher } from '../src/checkout/dunning-v2/dunning-v2.dispatcher';
 import { DunningEscalationClassifier } from '../src/checkout/dunning-v2/dunning-escalation.classifier';
 import { DunningV2Renderer } from '../src/checkout/dunning-v2/dunning-v2.renderer';
+import { StripeConnectApiError } from '../src/connect/stripe-connect-api.service';
 import { CoachAlertEmitter } from '../src/notifications/emitters/coach-alert.emitter';
 import { FakePrisma } from './support/dunning-v2-fake-prisma';
 
@@ -313,5 +314,79 @@ describe('dunning v2 service fix round (B-D12-116)', () => {
   it('C-688-5 (Opus): zero-decimal currencies are not divided by 100', () => {
     expect(formatMoney(1200, 'jpy')).toBe('1,200 JPY');
     expect(formatMoney(15000, 'usd')).toBe('$150.00');
+  });
+  describe('B-DUNA-118 (D2): every case failed before this round', () => {
+    const svcOf = (db: unknown, stripe?: unknown) =>
+      new DunningV2Service(stub(db), stub(telemetry()), undefined, stub(stripe));
+    const row = (fake: FakePrisma, model: string, id = 'p1') => fake.find(model, { id })!;
+    it('Opus B-688-6: a v1 reopen (step -1, same entered_at) during the Stripe check is not locked', async () => {
+      const fake = new FakePrisma();
+      seed(fake);
+      const reopen = async () => ((row(fake, 'dunningState', 'ds-p1').step_index = -1), {});
+      expect(
+        (await svcOf(fake.client(), { retrieveSubscription: reopen }).runSweep(at(11))).locked,
+      ).toBe(0);
+      expect(row(fake, 'clientPurchase').entitlement_active).toBe(true);
+    });
+    it("Sol B-688-6: replaying an earlier cycle's lost closure does not mark this cycle", async () => {
+      const fake = new FakePrisma();
+      seed(fake, 'p1', 3, { locked_out_at: at(10) });
+      const old = { stripe_dispute_id: 'dp-old', stripe_charge_id: 'ch-old', status: 'lost' };
+      fake.seed('dunningDisputeObligation', { ...old, purchase_id: 'p1', closed_at: at(-30) });
+      fake.seed('connectTransfer', {
+        id: 'tr',
+        source_stripe_charge_id: 'ch-old',
+        purchase_id: 'p1',
+      });
+      const svc = service(fake);
+      await svc.onDisputeClosed({
+        chargeId: 'ch-old',
+        disputeId: 'dp-old',
+        status: 'lost',
+        now: at(11),
+      });
+      expect(await svc.isDisputeCycleOpen('p1')).toBe(false);
+      expect((await svc.applyImmediateClear('p1', 'retry')).liftedLockout).toBe(true);
+    });
+    it('Sol B-688-7: a lock behind ten unlocked cycles is reported (DESC = nulls first)', async () => {
+      const fake = new FakePrisma();
+      for (let i = 0; i < 10; i++) seed(fake, `p${i}`);
+      seed(fake, 'pL', 3, { locked_out_at: at(10) });
+      row(fake, 'clientPurchase', 'pL').entitlement_active = false;
+      const status = await service(fake).getClientStatus('client-a');
+      expect([status.state, status.purchase_id]).toEqual(['locked', 'pL']);
+    });
+    it('W3 (Opus D34): a failed purchase read on a won closure throws; a Stripe 404 is a miss', async () => {
+      const fake = new FakePrisma();
+      seed(fake, 'p1', 3, { locked_out_at: at(10), last_failure_reason: 'charge_disputed' });
+      const db = fake.client();
+      db.connectTransfer.findFirst = jest.fn(async () => Promise.reject(new Error('db down')));
+      const won = { chargeId: 'ch-1', disputeId: 'dp-1', status: 'won', now: at(11) };
+      await expect(svcOf(db).onDisputeClosed(won)).rejects.toThrow('db down');
+      db.connectTransfer.findFirst = jest.fn(async () => null);
+      const e404 = new StripeConnectApiError('x', 404, 'resource_missing', null);
+      const stripe = { retrieveCharge: async () => Promise.reject(e404) };
+      expect((await svcOf(db, stripe).onDisputeClosed(won)).reason).toBe('purchase_unresolved');
+    });
+    it('W4 (Opus D34): a dispute processed after the cycle resolved still opens a cycle', async () => {
+      const fake = new FakePrisma();
+      seed(fake, 'p1', 3, { status: 'resolved', resolved_at: at(2) });
+      row(fake, 'clientPurchase').status = 'active';
+      const svc = service(fake);
+      const input = { purchaseId: 'p1', reversedChargeAt: at(1), disputeId: 'dp-1', now: at(2) };
+      expect((await svc.handleLateReversal(input)).opened).toBe(true);
+      expect(await svc.isDisputeCycleOpen('p1')).toBe(true);
+    });
+    it('Operator B (amount) / Opus B-688-7: no renewal amount on a dispute; real attempts', async () => {
+      const fake = new FakePrisma();
+      seed(fake, 'p1', 2, { last_failure_reason: 'charge_disputed', last_attempt_number: 2 });
+      const svc = service(fake);
+      expect((await svc.getClientStatus('client-a')).amount_cents).toBeNull();
+      const tokens = async (isLateReversalCycle: boolean) =>
+        (await stub(svc).buildDispatchContext({ dunningStateId: 'ds-p1', isLateReversalCycle }))
+          .tokens;
+      expect((await tokens(true)).amount).toBeUndefined();
+      expect(await tokens(false)).toMatchObject({ amount: '$150.00', attempts: '2' });
+    });
   });
 });
