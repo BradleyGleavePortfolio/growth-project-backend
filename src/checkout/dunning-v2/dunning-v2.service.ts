@@ -15,7 +15,10 @@ import {
 } from './dunning-v2.dispatcher';
 import { DunningEscalationClassifier } from './dunning-escalation.classifier';
 import { effectiveLock } from './dunning-effective-access';
+import { dunningErrorCode } from './dunning-v2.safe-error';
+import { formatMinor } from '../client-billing.money';
 import {
+  DUNNING_V2_CADENCE_DAYS,
   DUNNING_V2_DAY_MS,
   DUNNING_V2_LOCKOUT_DAY,
   DUNNING_V2_REVERSAL_COACH_GAP_DAYS,
@@ -528,14 +531,14 @@ export class DunningV2Service {
         for (const c of group) {
           const result: ChannelResult = results[c.channel] ?? {
             status: 'skipped',
-            error: 'not part of this step',
+            error: 'not_in_step',
           };
           await this.recordDelivery(c, result, now);
         }
       }
     } catch (err) {
       this.logger.warn(
-        `dunning v2 dispatch failed state=${claim.dunningStateId} step=${claim.stepIndex}: ${(err as Error).message}`,
+        `dunning v2 dispatch failed state=${claim.dunningStateId} step=${claim.stepIndex}: ${dunningErrorCode(err)}`,
       );
     }
   }
@@ -659,7 +662,7 @@ export class DunningV2Service {
         data: {
           status: dead ? 'dead' : 'failed',
           claim_token: null,
-          last_error: (result.error ?? 'delivery failed').slice(0, 500),
+          last_error: result.error ?? 'delivery_failed',
           next_attempt_at: dead ? null : new Date(now.getTime() + backoff),
         },
       });
@@ -755,7 +758,8 @@ export class DunningV2Service {
    * One sweep tick. For every active, unlocked, claimed cycle: lock it if it
    * reached Day 10 (with positive evidence it is still unpaid), otherwise
    * advance it to its due step and send that step's notices. Bounded to
-   * `limit` rows per tick (oldest first); idempotent and overlap-safe.
+   * `limit` DUE rows per tick, least recently skipped first (B-688-2);
+   * idempotent and overlap-safe.
    */
   async runSweep(
     now: Date = new Date(),
@@ -775,38 +779,63 @@ export class DunningV2Service {
         client_canceled_at: null,
         step_index: { gte: 0 },
         entered_at: { not: null },
+        // B-688-2 (Sol): only cycles due for the lock or for a step they
+        // have not claimed, so rows with nothing to do never fill the page.
+        OR: [
+          { entered_at: { lte: daysBefore(now, DUNNING_V2_LOCKOUT_DAY) } },
+          ...DUNNING_V2_CADENCE_DAYS.slice(1).map((day, i) => ({
+            step_index: { lt: i + 1 },
+            entered_at: { lte: daysBefore(now, day) },
+          })),
+        ],
       },
-      orderBy: { entered_at: 'asc' },
+      // A row the sweep looked at and could not act on goes behind the rest.
+      orderBy: [{ sweep_checked_at: { sort: 'asc', nulls: 'first' } }, { entered_at: 'asc' }],
       take: limit,
     });
     let locked = 0;
     let advanced = 0;
     let skipped = 0;
     for (const row of rows) {
+      let acted = false;
       try {
         const lockAt = dunningV2LockoutAt(row.entered_at as Date);
         if (now.getTime() >= lockAt.getTime()) {
-          const outcome = await this.tryLock(row, now);
-          if (outcome === 'locked') locked += 1;
+          acted = (await this.tryLock(row, now)) === 'locked';
+          if (acted) locked += 1;
           else skipped += 1;
-          continue;
-        }
-        const claim = await this.advance(row, now);
-        if (claim) {
-          advanced += 1;
-          await this.dispatchClaim(claim);
+        } else {
+          const claim = await this.advance(row, now);
+          if (claim) {
+            acted = true;
+            advanced += 1;
+            await this.dispatchClaim(claim);
+          }
         }
       } catch (err) {
         skipped += 1;
-        this.logger.warn(`dunning v2 sweep row failed state=${row.id}: ${(err as Error).message}`);
+        this.logger.warn(`dunning v2 sweep row failed state=${row.id}: ${dunningErrorCode(err)}`);
       }
+      if (!acted) await this.markSweepChecked(row, now);
     }
     try {
       await this.retryDueNotices(now);
     } catch (err) {
-      this.logger.warn(`dunning v2 notice retry failed: ${(err as Error).message}`);
+      this.logger.warn(`dunning v2 notice retry failed: ${dunningErrorCode(err)}`);
     }
     return { locked, advanced, skipped };
+  }
+
+  /** B-688-2: stamp a due row the sweep could not act on (same cycle only). */
+  private async markSweepChecked(row: DunningState, now: Date): Promise<void> {
+    try {
+      await this.prisma.dunningState.updateMany({
+        where: { id: row.id, entered_at: row.entered_at },
+        data: { sweep_checked_at: now },
+      });
+    } catch (err) {
+      this.logger.warn(`dunning v2 sweep stamp failed state=${row.id}: ${dunningErrorCode(err)}`);
+    }
   }
 
   /** @deprecated name kept for callers/tests: the sweep (lock + advance). */
@@ -861,15 +890,30 @@ export class DunningV2Service {
         if (String(sub.status) === 'canceled') return 'skipped';
       } catch (err) {
         this.logger.warn(
-          `dunning v2 lock deferred state=${row.id}: Stripe check failed: ${(err as Error).message}`,
+          `dunning v2 lock deferred state=${row.id}: Stripe check failed: ${dunningErrorCode(err)}`,
         );
         return 'skipped';
       }
     }
     let won = false;
     await this.prisma.$transaction(async (tx) => {
+      // B-688-1 (Sol): under the row lock, lock only the cycle whose Day 10
+      // was read (same entered_at: a cycle reopened during the Stripe await
+      // has its own window) and only while the purchase still shows it.
+      await this.lockDunningState(tx, row.purchase_id);
+      const fresh = await tx.clientPurchase.findUnique({ where: { id: row.purchase_id } });
+      if (!fresh || !DunningV2Service.isEligiblePurchase(fresh)) return;
+      if (dispute ? fresh.status === 'canceled' : !['past_due', 'unpaid'].includes(fresh.status)) {
+        return;
+      }
       const res = await tx.dunningState.updateMany({
-        where: { id: row.id, status: 'active', locked_out_at: null, client_canceled_at: null },
+        where: {
+          id: row.id,
+          status: 'active',
+          locked_out_at: null,
+          client_canceled_at: null,
+          entered_at: row.entered_at,
+        },
         data: { locked_out_at: now, step_index: Math.max(row.step_index, 3) },
       });
       if (res.count !== 1) return;
@@ -921,6 +965,7 @@ export class DunningV2Service {
         status: true,
         locked_out_at: true,
         last_failure_reason: true,
+        entered_at: true,
         purchase_id: true,
         purchase: { select: { client_user_id: true } },
       },
@@ -933,7 +978,7 @@ export class DunningV2Service {
       via !== 'manual' &&
       state.status === 'active' &&
       (state.last_failure_reason === DUNNING_V2_REVERSAL_REASON ||
-        (await this.hasOpenDisputeObligation(client, purchaseId)))
+        (await this.hasOpenDisputeObligation(client, purchaseId, state.entered_at)))
     ) {
       return { liftedLockout: false };
     }
@@ -1149,11 +1194,11 @@ export class DunningV2Service {
     const client: DunningV2Db = db ?? this.prisma;
     const state = await client.dunningState.findUnique({
       where: { purchase_id: purchaseId },
-      select: { status: true, last_failure_reason: true },
+      select: { status: true, last_failure_reason: true, entered_at: true },
     });
     if (state?.status !== 'active') return false;
     if (state.last_failure_reason === DUNNING_V2_REVERSAL_REASON) return true;
-    return this.hasOpenDisputeObligation(client, purchaseId);
+    return this.hasOpenDisputeObligation(client, purchaseId, state.entered_at);
   }
 
   /**
@@ -1180,31 +1225,41 @@ export class DunningV2Service {
 
   /**
    * B-628-13: an obligation recorded by the dunning dispute path whose
-   * merged status (ledger + record; a final status wins) is not final.
-   * Ledger-only disputes do not count, so a stale ledger row never blocks
-   * an unrelated payment cycle.
+   * merged status (ledger + record; a final status wins) is not settled in
+   * the client's favour. Ledger-only disputes do not count, so a stale
+   * ledger row never blocks an unrelated payment cycle. B-688-5 (Sol, Opus
+   * B-688-1): a dispute closed lost or refunded is outstanding too; one that
+   * closed before this cycle began belongs to an earlier cycle.
    */
-  private async hasOpenDisputeObligation(db: DunningV2Db, purchaseId: string): Promise<boolean> {
+  private async hasOpenDisputeObligation(
+    db: DunningV2Db,
+    purchaseId: string,
+    cycleStart: Date | null,
+  ): Promise<boolean> {
     const recorded = await db.dunningDisputeObligation.findMany({
       where: { purchase_id: purchaseId },
-      select: { stripe_dispute_id: true, stripe_charge_id: true, status: true },
+      select: { stripe_dispute_id: true, stripe_charge_id: true, status: true, closed_at: true },
     });
     if (recorded.length === 0) return false;
     const ledger = await db.chargeDispute.findMany({
       where: { purchase_id: purchaseId },
       select: { stripe_dispute_id: true, stripe_charge_id: true, status: true },
     });
-    const ids = new Set(recorded.map((r) => r.stripe_dispute_id));
-    return mergeDisputeObligations(ledger, recorded).some(
-      (d) => ids.has(d.stripe_dispute_id) && !DISPUTE_TERMINAL_STATUSES.has(d.status),
-    );
+    const byId = new Map(recorded.map((r) => [r.stripe_dispute_id, r]));
+    return mergeDisputeObligations(ledger, recorded).some((d) => {
+      const r = byId.get(d.stripe_dispute_id);
+      if (!r || DISPUTE_WON_STATUSES.has(d.status)) return false;
+      if (!DISPUTE_TERMINAL_STATUSES.has(d.status)) return true;
+      return !r.closed_at || !cycleStart || r.closed_at >= cycleStart;
+    });
   }
 
   /**
    * `charge.dispute.closed`: a dispute closed in the client's favour (won /
    * warning_closed) resolves its cycle, lifts a lock, restores access and
-   * dismisses the blockers. A lost dispute leaves the cycle as it is (the
-   * money stays reversed; support settles it in v1.0).
+   * dismisses the blockers. A lost dispute keeps the cycle open (the money
+   * stays reversed; support settles it in v1.0); during a payment cycle it
+   * makes that cycle the dispute cycle (B-688-5), so no payment settles it.
    */
   async onDisputeClosed(input: {
     chargeId: string | null;
@@ -1229,6 +1284,7 @@ export class DunningV2Service {
           chargeId: input.chargeId ?? null,
           status: input.status,
           now: input.now ?? new Date(),
+          keepAsDispute: DISPUTE_TERMINAL_STATUSES.has(input.status),
         });
       }
       return { resolved: false, reason: 'not_won' };
@@ -1280,10 +1336,13 @@ export class DunningV2Service {
     chargeId: string | null;
     status: string;
     now: Date;
+    keepAsDispute?: boolean;
   }): Promise<{ priorStatus: string | null }> {
     return this.prisma.$transaction(async (tx) => {
       await this.lockDunningState(tx, input.purchaseId);
-      return this.upsertDisputeObligation(tx, input);
+      const out = await this.upsertDisputeObligation(tx, input);
+      if (input.keepAsDispute) await this.keepAsDisputeCycle(input.purchaseId, tx);
+      return out;
     });
   }
 
@@ -1626,10 +1685,14 @@ export class DunningV2Service {
         }
       }
     } catch (err) {
-      this.logger.warn(`dunning v2 dispute purchase resolution failed: ${(err as Error).message}`);
+      this.logger.warn(`dunning v2 dispute purchase resolution failed: ${dunningErrorCode(err)}`);
     }
     return null;
   }
+}
+
+function daysBefore(now: Date, days: number): Date {
+  return new Date(now.getTime() - days * DUNNING_V2_DAY_MS);
 }
 
 /** Add (or subtract, with a negative n) whole days to a Date. */
@@ -1639,11 +1702,9 @@ export function addDays(d: Date, n: number): Date {
   return out;
 }
 
-/** Integer cents -> display string. USD gets a $ prefix. */
+/** Integer minor units -> display string ("$150.00", "1,200 JPY"; C-688-5). */
 export function formatMoney(cents: number, currency: string | null): string {
-  const cur = (currency ?? 'usd').toUpperCase();
-  const amount = (cents / 100).toFixed(2);
-  return cur === 'USD' ? `$${amount}` : `${amount} ${cur}`;
+  return formatMinor(cents, currency);
 }
 
 /**

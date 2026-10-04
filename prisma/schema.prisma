@@ -4125,6 +4125,11 @@ model DunningState {
   // cycle sends no notices, never Day-10 locks, and a live
   // customer.subscription.updated cannot hand access back.
   client_canceled_at       DateTime?
+  // B-688-2: when the v2 sweep last looked at this due cycle without
+  // advancing or locking it. The sweep serves never and least recently
+  // looked at cycles first, so rows that keep skipping cannot starve a due
+  // cycle behind them.
+  sweep_checked_at         DateTime?
 
   attempts         DunningAttempt[]
   // S-DUNNING-R3 (B-628-6): durable per-channel notice outbox.
