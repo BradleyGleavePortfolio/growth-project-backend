@@ -18,6 +18,7 @@ import { CheckoutService } from '../src/checkout/checkout.service';
 import {
   StripeConnectApiError,
   StripeConnectApiService,
+  type StripeSubscriptionObject,
 } from '../src/connect/stripe-connect-api.service';
 import {
   TRIAL_CONFLICT_ALERT_AFTER,
@@ -206,7 +207,12 @@ function world(
   );
   const stripe = stub<StripeConnectApiService>({
     cancelSubscription,
-    retrieveSubscription: jest.fn(),
+    // B-TR3-118 (B-673-1) — the worker reads Stripe's state first: still trialing.
+    retrieveSubscription: jest.fn(async (id: string) => ({
+      id,
+      status: 'trialing',
+      trial_end: epoch(new Date(Date.now() + 30 * 864e5)),
+    })),
   });
   const conflictSvc = new TrialConflictService(
     stub<ConstructorParameters<typeof TrialConflictService>[0]>(prisma),
@@ -242,6 +248,7 @@ function world(
     conflictSvc,
     handler,
     cancelSubscription,
+    stripe,
     tx,
   };
 }
@@ -1069,5 +1076,188 @@ describe('B-656-7 — trial workers log closed codes only', () => {
     const id = await recordNotice(w);
     await w.noticeSvc.deliver(id, NOW);
     expect(w.notices.rows[0].last_error).toBe('push:unclassified');
+  });
+});
+
+// B-TR3-118 (agent 118) — fix round 9. Every test below fails on T3 df76889f
+// (T2 c5e7ed8e) and passes after: Sol B-672-3 (the copy was built before the
+// claim), Sol B-673-1 (an owed retry cancelled without reading Stripe) and
+// Sol C-673-2 (the lease came from the sweep's start time).
+describe('B-672-3 (round 9) — a change committed during preparation is never sent on the old copy', () => {
+  const EXTENDED = new Date('2026-10-14T17:00:00Z');
+  const duringPrefs = (w: World, change: () => void) =>
+    w.notifications.getPreferences.mockImplementationOnce(async () => {
+      change();
+      return { muted: false };
+    });
+
+  it('an extension retires the old notice: nothing sent, the attempt given back', async () => {
+    const w = world();
+    const id = await recordNotice(w);
+    duringPrefs(w, () => (w.purchase().trial_ends_at = EXTENDED));
+    await w.noticeSvc.deliver(id, NOW);
+    expect(w.notifications.pushToUser).not.toHaveBeenCalled();
+    expect(w.email.send).not.toHaveBeenCalled();
+    expect(w.notices.rows[0]).toMatchObject({
+      push_status: 'skipped',
+      email_status: 'skipped',
+      push_attempts: 0,
+      push_lease_token: null,
+      last_error: 'skip:trial_superseded',
+    });
+  });
+
+  it.each([
+    ['converted early (paid)', (w: World) => (w.purchase().status = 'active'), 'skip:trial_ended'],
+    ['canceled', (w: World) => (w.purchase().status = 'canceled'), 'skip:purchase_canceled'],
+    [
+      'deleted (account deletion)',
+      (w: World) => w.purchases.rows.splice(0),
+      'skip:purchase_missing',
+    ],
+  ])('%s: nothing is sent', async (_name, change, code) => {
+    const w = world();
+    const id = await recordNotice(w);
+    duringPrefs(w, () => change(w));
+    await w.noticeSvc.deliver(id, NOW);
+    expect(w.notifications.pushToUser).not.toHaveBeenCalled();
+    expect(w.email.send).not.toHaveBeenCalled();
+    expect(w.notices.rows[0].last_error).toBe(code);
+  });
+
+  it('cancel at period end: the push and the email never say the card will be charged', async () => {
+    const w = world();
+    const id = await recordNotice(w);
+    duringPrefs(w, () => (w.purchase().cancel_at_period_end = true));
+    await w.noticeSvc.deliver(id, NOW);
+    expect(w.notifications.pushToUser.mock.calls[0][2]).toContain('will not be charged');
+    expect(w.email.send.mock.calls[0][0]).toMatchObject({ data: { will_charge: false } });
+  });
+
+  it('the card removed: the push sends the no-card copy', async () => {
+    const w = world();
+    const id = await recordNotice(w);
+    duringPrefs(w, () => (w.purchase().card_on_file = false));
+    await w.noticeSvc.deliver(id, NOW);
+    expect(w.notifications.pushToUser.mock.calls[0][2]).toBe(NO_CARD);
+  });
+
+  it('email: an extension committed during the email claim is not mailed on the old date', async () => {
+    const w = world({ muted: true });
+    const id = await recordNotice(w);
+    const claim = w.notices.updateMany;
+    w.notices.updateMany = async (args: Parameters<typeof claim>[0]) => {
+      if (typeof args.data.email_lease_token === 'string') w.purchase().trial_ends_at = EXTENDED;
+      return claim(args);
+    };
+    await w.noticeSvc.deliver(id, NOW);
+    expect(w.email.send).not.toHaveBeenCalled();
+    expect(w.notices.rows[0]).toMatchObject({ email_status: 'skipped', email_attempts: 0 });
+  });
+});
+
+describe('B-673-1 (round 9) — an owed retry reads Stripe before it cancels', () => {
+  const codes = () =>
+    jest
+      .mocked(Sentry.captureMessage)
+      .mock.calls.map((c) => (c[1] as { tags?: { code?: string } } | undefined)?.tags?.code);
+  async function owed(remote?: Record<string, unknown>) {
+    const w = world({ purchase: { entitlement_active: false } });
+    trialAlreadyStartedElsewhere(w);
+    await w.handler.handle(event('customer.subscription.updated', trialSub()), w.tx);
+    const sub = stub<StripeSubscriptionObject>(trialSub(remote));
+    if (remote) jest.mocked(w.stripe.retrieveSubscription).mockResolvedValue(sub);
+    return w;
+  }
+  const active = trialSub({ status: 'active', trial_end: epoch(NOW) });
+
+  it('billed with its active webhook missing: no cancel, superseded, one billed alert; the late event grants access', async () => {
+    const w = await owed({ status: 'active', trial_end: epoch(NOW) });
+    expect(await w.conflictSvc.settle('pur-1')).toBe('superseded');
+    expect(w.cancelSubscription).not.toHaveBeenCalled();
+    expect(w.conflicts.rows[0]).toMatchObject({
+      status: 'superseded',
+      last_error: 'billing_started',
+      lease_token: null,
+    });
+    await w.conflictSvc.sweep();
+    await w.handler.handle(event('customer.subscription.updated', active, 'evt_9'), w.tx);
+    await w.conflictSvc.sweep();
+    expect(w.purchase().entitlement_active).toBe(true);
+    expect(codes()).toEqual(['TRIAL_CONFLICT_SUPERSEDED']);
+  });
+
+  it('an unknown Stripe state (read failed, or unrecognised) cancels nothing and stays owed', async () => {
+    const w = await owed({ status: 'mystery' });
+    jest
+      .mocked(w.stripe.retrieveSubscription)
+      .mockRejectedValueOnce(new StripeConnectApiError('down', 503, null, 'api_error'));
+    expect(await w.conflictSvc.settle('pur-1')).toBe('retry');
+    expect(w.conflicts.rows[0].last_error).toBe('http_503');
+    expect(await w.conflictSvc.settle('pur-1')).toBe('retry');
+    expect(w.cancelSubscription).not.toHaveBeenCalled();
+    expect(w.conflicts.rows[0]).toMatchObject({ status: 'owed', last_error: 'state_unknown' });
+  });
+
+  it.each([
+    ['canceled', 'cancelled', 'already_cancelled', 0],
+    ['past_due', 'cancelled', null, 1],
+  ])('Stripe says %s: %s', async (status, outcome, code, deletes) => {
+    const w = await owed({ status });
+    expect(await w.conflictSvc.settle('pur-1')).toBe(outcome);
+    expect(w.cancelSubscription).toHaveBeenCalledTimes(deletes);
+    expect(w.conflicts.rows[0]).toMatchObject({ status: outcome, last_error: code });
+  });
+
+  it('the trial ends before a cancel can land, and the webhook supersedes meanwhile: no cancel, stale', async () => {
+    const w = await owed();
+    jest.mocked(w.stripe.retrieveSubscription).mockImplementationOnce(async () => {
+      await w.handler.handle(event('customer.subscription.updated', active, 'evt_9'), w.tx);
+      return stub<StripeSubscriptionObject>(trialSub());
+    });
+    expect(await w.conflictSvc.settle('pur-1', new Date(TRIAL_END.getTime() - 10_000))).toBe(
+      'stale',
+    );
+    expect(w.cancelSubscription).not.toHaveBeenCalled();
+    expect(w.conflicts.rows[0].status).toBe('superseded');
+    expect(w.purchase().entitlement_active).toBe(true);
+  });
+
+  it('C-673-2: a row reached late in a slow sweep holds a fresh lease; a replica stays out', async () => {
+    jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
+    try {
+      jest.setSystemTime(NOW);
+      const table = makeTrialConflictTable();
+      for (let i = 0; i < 8; i += 1) {
+        await table.createMany({
+          data: [
+            { purchase_id: `p-${i}`, stripe_subscription_id: `sub-${i}`, next_attempt_at: NOW },
+          ],
+        });
+      }
+      const held = deferred<{ id: string; status: string }>();
+      let late = 0;
+      const stripe = stub<StripeConnectApiService>({
+        retrieveSubscription: jest.fn(async (id: string) => trialSub({ id })),
+        // Seven nine-second cancels, each under both transport bounds.
+        cancelSubscription: jest.fn(async (id: string) => {
+          if (id !== 'sub-7') jest.setSystemTime(Date.now() + 9000);
+          else if (++late === 1) return held.promise;
+          return { id, status: 'canceled' };
+        }),
+      });
+      const db = stub<ConstructorParameters<typeof TrialConflictService>[0]>({
+        packageTrialConflict: table,
+      });
+      const sweep = new TrialConflictService(db, stripe).sweep(NOW);
+      for (let i = 0; i < 200 && late === 0; i += 1) await new Promise((r) => setImmediate(r));
+      jest.setSystemTime(Date.now() + 5000);
+      expect(await new TrialConflictService(db, stripe).settle('p-7')).toBe('busy');
+      held.resolve({ id: 'sub-7', status: 'canceled' });
+      await sweep;
+      expect(late).toBe(1);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

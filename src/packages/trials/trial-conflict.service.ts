@@ -39,6 +39,14 @@ import { PrismaService } from '../../prisma.service';
 // After TRIAL_CONFLICT_ALERT_AFTER failed attempts Sentry gets one alert
 // (ids and codes only) so a person can cancel by hand well before the trial
 // ends; the sweep keeps retrying regardless.
+//
+// B-TR3-118 (agent 118) — Sol B-673-1: an owed row is not proof that the
+// subscription is still a free trial (its active webhook can be late or
+// missing). settle() reads Stripe's current subscription first and cancels
+// only one that has not billed (trialConflictAction); billing started
+// supersedes it as the active webhook does (paid plan kept, billed alert),
+// and a failed or unknown read cancels nothing. Sol C-673-2: every lease,
+// admission and backoff reads a fresh clock, never the sweep's start time.
 
 export const TRIAL_CONFLICT_LEASE_MS = 60 * 1000;
 export const TRIAL_CONFLICT_CANCEL_TIMEOUT_MS = 20 * 1000;
@@ -49,7 +57,39 @@ const SWEEP_BATCH = 50;
 
 type Db = Prisma.TransactionClient | PrismaService;
 
-export type TrialConflictSettleOutcome = 'cancelled' | 'retry' | 'busy' | 'not_owed' | 'stale';
+export type TrialConflictSettleOutcome =
+  'cancelled' | 'superseded' | 'retry' | 'busy' | 'not_owed' | 'stale';
+
+/** Stripe states with nothing billed for the current period: a cancel takes no money back. */
+const UNBILLED_STATUSES = new Set(['trialing', 'past_due', 'unpaid', 'incomplete', 'paused']);
+
+export type TrialConflictAction =
+  'cancel' | 'gone' | 'billed' | 'trial_ending' | 'lease_exhausted' | 'state_unknown';
+
+/**
+ * B-673-1 — what an owed conflict may do, from Stripe's subscription as read
+ * now: cancel (nothing billed, and the cancel lands before the trial ends and
+ * inside the lease), gone (already ended), billed (billing started: supersede,
+ * never cancel), or a retry code (an unknown state, the trial ends before the
+ * cancel can land, or the lease has no room left).
+ */
+export function trialConflictAction(
+  sub: { status?: unknown; trial_end?: unknown } | null | undefined,
+  at: Date,
+  leaseUntil: Date,
+): TrialConflictAction {
+  const status = typeof sub?.status === 'string' ? sub.status : '';
+  if (status === 'canceled' || status === 'incomplete_expired') return 'gone';
+  if (status === 'active') return 'billed';
+  if (!UNBILLED_STATUSES.has(status)) return 'state_unknown';
+  if (at.getTime() + TRIAL_CONFLICT_CANCEL_TIMEOUT_MS >= leaseUntil.getTime()) {
+    return 'lease_exhausted';
+  }
+  if (status !== 'trialing') return 'cancel';
+  const end = typeof sub?.trial_end === 'number' ? sub.trial_end * 1000 : Number.NaN;
+  // A cancel racing Stripe's trial-end charge could cancel a just-paid plan.
+  return end > at.getTime() + TRIAL_CONFLICT_LEASE_MS ? 'cancel' : 'trial_ending';
+}
 
 export function trialConflictBackoffMs(attempts: number): number {
   const n = Math.max(1, attempts);
@@ -159,9 +199,11 @@ export class TrialConflictService {
   /**
    * Try to cancel one owed subscription now. Exclusive (lease), bounded
    * (timeout shorter than the lease) and fenced (only the lease holder writes
-   * the outcome). Never throws.
+   * the outcome). B-673-1: Stripe's current state decides first (see the
+   * header). Never throws.
    */
   async settle(purchaseId: string, now: Date = new Date()): Promise<TrialConflictSettleOutcome> {
+    const clock = elapsedClock(now);
     try {
       const row = await this.prisma.packageTrialConflict.findUnique({
         where: { purchase_id: purchaseId },
@@ -169,29 +211,41 @@ export class TrialConflictService {
       if (!row || row.status !== 'owed') return 'not_owed';
       if (!this.stripe) return 'retry';
       const token = randomUUID();
+      const at = clock();
+      const until = new Date(at.getTime() + TRIAL_CONFLICT_LEASE_MS);
       const claimed = await this.prisma.packageTrialConflict.updateMany({
         where: {
           id: row.id,
           status: 'owed',
-          OR: [{ lease_until: null }, { lease_until: { lt: now } }],
+          OR: [{ lease_until: null }, { lease_until: { lt: at } }],
         },
-        data: {
-          attempts: { increment: 1 },
-          lease_token: token,
-          lease_until: new Date(now.getTime() + TRIAL_CONFLICT_LEASE_MS),
-        },
+        data: { attempts: { increment: 1 }, lease_token: token, lease_until: until },
       });
       if (claimed.count !== 1) return 'busy';
       const attempts = row.attempts + 1;
 
-      let outcome: 'cancelled' | 'retry';
+      let outcome: 'cancelled' | 'superseded' | 'retry';
       let code: string | null = null;
       try {
-        await withDeadline(
-          this.stripe.cancelSubscription(row.stripe_subscription_id),
+        const sub = await withDeadline(
+          this.stripe.retrieveSubscription(row.stripe_subscription_id),
           TRIAL_CONFLICT_CANCEL_TIMEOUT_MS,
         );
-        outcome = 'cancelled';
+        // Decided and sent with no await in between (the admission point).
+        const action = trialConflictAction(sub, clock(), until);
+        if (action === 'cancel') {
+          await withDeadline(
+            this.stripe.cancelSubscription(row.stripe_subscription_id),
+            TRIAL_CONFLICT_CANCEL_TIMEOUT_MS,
+          );
+          outcome = 'cancelled';
+        } else if (action === 'gone') {
+          outcome = 'cancelled';
+          code = 'already_cancelled';
+        } else {
+          outcome = action === 'billed' ? 'superseded' : 'retry';
+          code = action === 'billed' ? 'billing_started' : action;
+        }
       } catch (err) {
         if (isAlreadyCancelledError(err)) {
           outcome = 'cancelled';
@@ -202,26 +256,34 @@ export class TrialConflictService {
         }
       }
 
+      // Fenced: a webhook that superseded or cancelled the row meanwhile wins.
       const fenced = await this.prisma.packageTrialConflict.updateMany({
         where: { id: row.id, lease_token: token, status: 'owed' },
         data:
-          outcome === 'cancelled'
+          outcome === 'retry'
             ? {
-                status: 'cancelled',
-                settled_at: new Date(),
                 lease_token: null,
                 lease_until: null,
                 last_error: code,
+                next_attempt_at: new Date(clock().getTime() + trialConflictBackoffMs(attempts)),
               }
             : {
+                status: outcome,
+                settled_at: clock(),
                 lease_token: null,
                 lease_until: null,
                 last_error: code,
-                next_attempt_at: new Date(now.getTime() + trialConflictBackoffMs(attempts)),
               },
       });
       if (fenced.count !== 1) return 'stale';
 
+      if (outcome === 'superseded') {
+        // The billed alert goes out from alertSuperseded() (its own receipt).
+        this.logger.warn(
+          `trial conflict: purchase ${purchaseId} billed before its cancel; kept as a paid plan (TRIAL_ALREADY_USED)`,
+        );
+        return 'superseded';
+      }
       if (outcome === 'cancelled') {
         this.logger.warn(
           `trial conflict: cancelled subscription for purchase ${purchaseId} (TRIAL_ALREADY_USED)`,
@@ -229,7 +291,7 @@ export class TrialConflictService {
         return 'cancelled';
       }
       this.logger.error(
-        `trial conflict: cancel failed for purchase ${purchaseId} attempt=${attempts} code=${code} (TRIAL_ALREADY_USED, retried by the sweep)`,
+        `trial conflict: cancel not done for purchase ${purchaseId} attempt=${attempts} code=${code} (TRIAL_ALREADY_USED, retried by the sweep)`,
       );
       if (attempts >= TRIAL_CONFLICT_ALERT_AFTER && !row.alerted_at) {
         const first = await this.prisma.packageTrialConflict.updateMany({
@@ -263,13 +325,15 @@ export class TrialConflictService {
   /** Retry every owed cancellation whose backoff has passed. */
   @Cron('*/5 * * * *', { name: 'trial-conflict-sweep', timeZone: 'UTC' })
   async sweep(now: Date = new Date()): Promise<number> {
+    const clock = elapsedClock(now);
     const due = await this.prisma.packageTrialConflict.findMany({
       where: { status: 'owed', next_attempt_at: { lte: now } },
       orderBy: { next_attempt_at: 'asc' },
       take: SWEEP_BATCH,
       select: { purchase_id: true },
     });
-    for (const row of due) await this.settle(row.purchase_id, now);
+    // C-673-2 — each row starts from the time it is reached, not the sweep's start.
+    for (const row of due) await this.settle(row.purchase_id, clock());
     await this.alertSuperseded();
     return due.length;
   }
@@ -314,6 +378,12 @@ export class TrialConflictService {
       return 0;
     }
   }
+}
+
+/** A clock that starts at `start` and advances with real elapsed time (C-673-2). */
+function elapsedClock(start: Date): () => Date {
+  const wallAtStart = Date.now();
+  return () => new Date(start.getTime() + (Date.now() - wallAtStart));
 }
 
 /** Resolve the promise or reject with TrialConflictTimeoutError after ms. */
