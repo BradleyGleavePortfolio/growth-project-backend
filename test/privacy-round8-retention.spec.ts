@@ -71,11 +71,12 @@ const KEPT_WHILE_OPEN =
 const MUX_DEVICE =
   'When a video is uploaded or played, the device connects to Mux directly, so Mux also receives its IP address and device type.';
 // Repinned in FIX ROUND 9 to Apple's current path (B-611-17 / B-611-12;
-// test/privacy-apple-unlink-path.spec.ts).
+// test/privacy-apple-unlink-path.spec.ts), and by agent 117 for the iOS 18
+// qualifier (C-611-18; test/privacy-apple-ios-version.spec.ts).
 const APPLE_TODAY =
   'If you used Sign in with Apple, deleting your account ends the app’s link to your Apple Account. ' +
-  'To remove the app from your Apple Account as well, on your iPhone open Settings, tap your name, then Sign in with Apple, choose the app, tap Delete and follow the steps on screen to confirm. ' +
-  'On the web, sign in at account.apple.com, go to Sign-In & Security, select Sign in with Apple, choose the app and stop using Sign in with Apple for it.';
+  'To remove the app from your Apple Account as well, on an iPhone with iOS 18 or later open Settings, tap your name, then Sign in with Apple, choose the app, tap Delete and follow the steps on screen to confirm. ' +
+  'On an earlier version of iOS, or on any other device, sign in at account.apple.com, go to Sign-In & Security, select Sign in with Apple, choose the app and stop using Sign in with Apple for it.';
 const HELP_PROVIDER_ID =
   'While removing your sign-in account at your sign-in provider is still being retried, that provider’s account ID is kept. Once it is removed, the account ID is replaced by ' +
   ONE_WAY_CODE +

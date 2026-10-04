@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { GdprScrubService } from './gdpr-scrub.service';
+import { describeFailure } from '../observability/log-pii';
 
 // Daily cron tick that drives the GDPR PII-scrub worker. The scrub
 // itself (selection, transactional tombstoning, audit emission) lives
@@ -44,8 +45,7 @@ export class GdprScrubScheduler {
         `GDPR scrub cron tick: completed; scrubbed=${report.scrubbed} considered=${report.considered} errors=${report.errors.length}`,
       );
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.error(`GDPR scrub cron tick: fatal error: ${message}`);
+      this.logger.error(`GDPR scrub cron tick: fatal error: ${describeFailure(err)}`);
     }
   }
 }
