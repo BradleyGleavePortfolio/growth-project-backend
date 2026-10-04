@@ -31,19 +31,31 @@ export async function hasOtherLiveAccess(
   excludePurchaseId: string,
   now: Date = new Date(),
 ): Promise<boolean> {
+  // B-687-1 (Sol): "not itself locked" is part of the query, so the one row
+  // fetched is a live grant however many locked alternatives the client
+  // holds (a page of the first N rows could be all locked and hide it). The
+  // same test on the row keeps the answer right for any caller-supplied db.
   const others = await db.clientPurchase.findMany({
     where: {
       client_user_id: clientUserId,
       id: { not: excludePurchaseId },
       entitlement_active: true,
       status: { in: ['paid', 'active', 'trialing'] },
-      OR: [{ access_expires_at: null }, { access_expires_at: { gt: now } }],
+      AND: [
+        { OR: [{ access_expires_at: null }, { access_expires_at: { gt: now } }] },
+        {
+          OR: [
+            { dunning: { is: null } },
+            { dunning: { isNot: { status: 'active', locked_out_at: { not: null } } } },
+          ],
+        },
+      ],
     },
     select: {
       id: true,
       dunning: { select: { status: true, locked_out_at: true } },
     },
-    take: 20,
+    take: 1,
   });
   return others.some((p) => !(p.dunning?.status === 'active' && p.dunning.locked_out_at != null));
 }
