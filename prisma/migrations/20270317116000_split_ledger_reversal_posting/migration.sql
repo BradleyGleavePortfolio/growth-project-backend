@@ -36,4 +36,6 @@ ALTER TABLE "ChargeDispute" ADD COLUMN IF NOT EXISTS "transfer_reversal_amount_c
 ALTER TABLE "ChargeDispute" ADD COLUMN IF NOT EXISTS "transfer_reversal_first_attempt_at" TIMESTAMP(3);
 ALTER TABLE "ChargeDispute" ADD COLUMN IF NOT EXISTS "transfer_reversed_at" TIMESTAMP(3);
 ALTER TABLE "ChargeDispute" ADD COLUMN IF NOT EXISTS "transfer_reversal_stripe_id" TEXT;
+-- B-674-11 (B-CM3-117): the retry sweep's least-recently-attempted order and claim.
+ALTER TABLE "ChargeDispute" ADD COLUMN IF NOT EXISTS "transfer_reversal_last_attempt_at" TIMESTAMP(3);
 CREATE UNIQUE INDEX IF NOT EXISTS "ChargeDispute_transfer_reversal_stripe_id_key" ON "ChargeDispute"("transfer_reversal_stripe_id");
