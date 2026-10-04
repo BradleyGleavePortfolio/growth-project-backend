@@ -24,7 +24,7 @@ function setup(fx = false) {
   db.accounts.push({ coach_user_id: 'coach_1', stripe_account_id: 'acct_1' });
   stripe.charges.set('ch_1', fx ? {
     ...makeCharge({ id: 'ch_1', amount: 10_000, fee: 200, currency: 'cad' }),
-    balance_transaction: { id: 'txn_ch_1', amount: 8_000, fee: 200, currency: 'usd' },
+    balance_transaction: { id: 'txn_ch_1', amount: 8_000, fee: 200, net: 7_800, currency: 'usd' },
   } : makeCharge({ id: 'ch_1', amount: 4_900, fee: 172 }));
   return { prisma, db, stripe, settlements, purchase };
 }
