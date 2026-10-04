@@ -102,14 +102,14 @@ describe('B-674-13: refund sweep admission reads the clock at each send', () => 
     expect(h.refund('rf-b').transfer_reversal_review_at).toBeInstanceOf(Date);
   });
 
-  it('control: elapsed time inside the window still resends under the first key, one reversal', async () => {
+  it('control: elapsed time inside the window still admits the attempt; Stripe\'s reversal is recorded, never a second', async () => {
     const { h, sendsB, T0 } = await longSweep(30 * MIN, 22 * HOUR);
     expect({
       stripe_b: h.stripeTotal('tr_p-b'),
       local_b: h.headCoach('p-b'),
       sends_b: sendsB,
       review_b: h.refund('rf-b').transfer_reversal_review_at,
-    }).toEqual({ stripe_b: 122, local_b: 122, sends_b: 1, review_b: null });
+    }).toEqual({ stripe_b: 122, local_b: 122, sends_b: 0, review_b: null });
     // The attempt stamp is the send time, so later pages of this run skip it.
     expect(h.refund('rf-b').transfer_reversal_last_attempt_at).toEqual(
       new Date(T0.getTime() + 30 * MIN),
@@ -204,7 +204,7 @@ describe('B-674-14: an incomplete Stripe reversal list never authorizes a send',
       .mockResolvedValueOnce({ data: [other], has_more: true })
       .mockResolvedValueOnce({ data: [made], has_more: false });
     await h.svc.retryPendingTransferReversals();
-    expect(list.mock.calls[1][0]).toMatchObject({ starting_after: 'trr_other' });
+    expect(list.mock.calls[1][1]).toMatchObject({ starting_after: 'trr_other' });
     expect({
       sends: h.reverseTransfer.mock.calls.length,
       stripe: h.stripeTotal('tr_p-d'),
