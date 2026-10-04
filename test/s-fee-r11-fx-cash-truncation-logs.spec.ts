@@ -187,6 +187,21 @@ describe('B-683-2: reconciliation attests only transfers Stripe executed', () =>
   });
 });
 
+describe('C-683-3: reconciliation covers every settled charge of a purchase', () => {
+  it('drift on the oldest of thirteen renewals is reported', async () => {
+    const ctx = setup();
+    for (let k = 0; k < 13; k += 1) {
+      ctx.stripe.charges.set(`ch_r${k}`, makeCharge({ id: `ch_r${k}`, amount: 4_900, fee: 172 }));
+      await ctx.settlements.settleCharge({ purchase: ctx.purchase, charge_id: `ch_r${k}` });
+      ctx.db.settlements[k].created_at = new Date(Date.UTC(2026, 0, k + 1));
+    }
+    expect((await ctx.reconciliation.reconcilePurchase('cp_1')).status).toBe('ok');
+    // A refund Stripe recorded on the oldest charge that never reached the settlement.
+    ctx.stripe.charges.set('ch_r0', makeCharge({ id: 'ch_r0', amount: 4_900, fee: 172, amount_refunded: 1_000 }));
+    expect((await ctx.reconciliation.reconcilePurchase('cp_1')).status).toBe('drift');
+  });
+});
+
 describe('B-683-3 / B-684-2: logs carry closed codes and ids only', () => {
   it('a failed notice write and failed Stripe read log no free text', async () => {
     const ctx = setup();
