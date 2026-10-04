@@ -1,0 +1,552 @@
+targeted	Set up job	﻿2026-10-04T19:49:33.7651002Z Current runner version: '2.337.0'
+targeted	Set up job	2026-10-04T19:49:33.7679783Z ##[group]Runner Image Provisioner
+targeted	Set up job	2026-10-04T19:49:33.7680758Z Hosted Compute Agent
+targeted	Set up job	2026-10-04T19:49:33.7681349Z Version: 20260901.588
+targeted	Set up job	2026-10-04T19:49:33.7682112Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	Set up job	2026-10-04T19:49:33.7682854Z Build Date: 2026-09-01T19:56:44Z
+targeted	Set up job	2026-10-04T19:49:33.7683609Z Worker ID: {8ae58c27-9016-4fb7-bebd-7f433197b82a}
+targeted	Set up job	2026-10-04T19:49:33.7684409Z Azure Region: westus
+targeted	Set up job	2026-10-04T19:49:33.7685071Z ##[endgroup]
+targeted	Set up job	2026-10-04T19:49:33.7687105Z ##[group]Operating System
+targeted	Set up job	2026-10-04T19:49:33.7687788Z Ubuntu
+targeted	Set up job	2026-10-04T19:49:33.7688333Z 24.04.5
+targeted	Set up job	2026-10-04T19:49:33.7688932Z LTS
+targeted	Set up job	2026-10-04T19:49:33.7689461Z ##[endgroup]
+targeted	Set up job	2026-10-04T19:49:33.7690156Z ##[group]Runner Image
+targeted	Set up job	2026-10-04T19:49:33.7690766Z Image: ubuntu-24.04
+targeted	Set up job	2026-10-04T19:49:33.7691349Z Version: 20260927.320.1
+targeted	Set up job	2026-10-04T19:49:33.7692543Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	Set up job	2026-10-04T19:49:33.7694471Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	Set up job	2026-10-04T19:49:33.7695820Z ##[endgroup]
+targeted	Set up job	2026-10-04T19:49:33.7697183Z ##[group]GITHUB_TOKEN Permissions
+targeted	Set up job	2026-10-04T19:49:33.7699558Z Contents: read
+targeted	Set up job	2026-10-04T19:49:33.7700534Z Metadata: read
+targeted	Set up job	2026-10-04T19:49:33.7701205Z Packages: read
+targeted	Set up job	2026-10-04T19:49:33.7701794Z ##[endgroup]
+targeted	Set up job	2026-10-04T19:49:33.7704142Z Secret source: Actions
+targeted	Set up job	2026-10-04T19:49:33.7705157Z Cache mode: write
+targeted	Set up job	2026-10-04T19:49:33.7706413Z Prepare workflow directory
+targeted	Set up job	2026-10-04T19:49:33.8065429Z Prepare all required actions
+targeted	Set up job	2026-10-04T19:49:33.8119675Z Getting action download info
+targeted	Set up job	2026-10-04T19:49:34.1769183Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	Set up job	2026-10-04T19:49:34.2999287Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	Set up job	2026-10-04T19:49:34.4937705Z Complete job name: targeted
+targeted	Run actions/checkout@v6	﻿2026-10-04T19:49:34.5761734Z ##[group]Run actions/checkout@v6
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.5762759Z with:
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.5763346Z   repository: BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.5767751Z   token: ***
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.5768208Z   ssh-strict: true
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.5768652Z   ssh-user: git
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.5769102Z   persist-credentials: true
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.5769598Z   clean: true
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.5770047Z   sparse-checkout-cone-mode: true
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.5770587Z   fetch-depth: 1
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.5771016Z   fetch-tags: false
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.5771521Z   show-progress: true
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.5771972Z   lfs: false
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.5772390Z   submodules: false
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.5772834Z   set-safe-directory: true
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.5773339Z   allow-unsafe-pr-checkout: false
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.5774227Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.6850519Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.6852706Z ##[group]Getting Git version info
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.6853747Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.6854958Z [command]/usr/bin/git version
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.6939674Z git version 2.55.0
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.6964900Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.6981054Z Temporarily overriding HOME='/home/runner/work/_temp/a0833445-0731-4b8e-ad41-ea115fc6fef1' before making global git config changes
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.6983084Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.6987813Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7042544Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7047738Z ##[group]Determining repository object format
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7050149Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7051051Z ##[group]Initializing the repository
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7054837Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7190988Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7193358Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7195825Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7197764Z hint: call:
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7198686Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7199771Z hint: 	git config --global init.defaultBranch <name>
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7201191Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7202385Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7203983Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7205222Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7206288Z hint: 	git branch -m <name>
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7207168Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7208319Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7210495Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7213908Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7261201Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7262536Z ##[group]Disabling automatic garbage collection
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7266421Z [command]/usr/bin/git config --local gc.auto 0
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7320618Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7323660Z ##[group]Setting up auth
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7324408Z Removing SSH command configuration
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7332883Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7373561Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7727890Z Removing HTTP extra header
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7735196Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.7772579Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.8003149Z Removing includeIf entries pointing to credentials config files
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.8009870Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.8043782Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.8289291Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-f45af261-f8b4-450c-872e-548c562ba3ac.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.8331397Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-f45af261-f8b4-450c-872e-548c562ba3ac.config
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.8368130Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-f45af261-f8b4-450c-872e-548c562ba3ac.config
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.8408423Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-f45af261-f8b4-450c-872e-548c562ba3ac.config
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.8444051Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-f45af261-f8b4-450c-872e-548c562ba3ac.config
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.8517406Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.8518908Z ##[group]Fetching the repository
+targeted	Run actions/checkout@v6	2026-10-04T19:49:34.8526581Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +31aee1d4a6abecde3393db9152ebb3d5405c8348:refs/remotes/origin/audit/AUD-OPUS-L12-119/353-dispute-pause
+targeted	Run actions/checkout@v6	2026-10-04T19:49:35.8829560Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T19:49:35.8831722Z  * [new ref]         31aee1d4a6abecde3393db9152ebb3d5405c8348 -> origin/audit/AUD-OPUS-L12-119/353-dispute-pause
+targeted	Run actions/checkout@v6	2026-10-04T19:49:35.8834782Z [command]/usr/bin/git branch --list --remote origin/audit/AUD-OPUS-L12-119/353-dispute-pause
+targeted	Run actions/checkout@v6	2026-10-04T19:49:35.8851141Z   origin/audit/AUD-OPUS-L12-119/353-dispute-pause
+targeted	Run actions/checkout@v6	2026-10-04T19:49:35.8863221Z [command]/usr/bin/git rev-parse refs/remotes/origin/audit/AUD-OPUS-L12-119/353-dispute-pause
+targeted	Run actions/checkout@v6	2026-10-04T19:49:35.8889522Z 31aee1d4a6abecde3393db9152ebb3d5405c8348
+targeted	Run actions/checkout@v6	2026-10-04T19:49:35.8894804Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:49:35.8896636Z ##[group]Determining the checkout info
+targeted	Run actions/checkout@v6	2026-10-04T19:49:35.8898976Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:49:35.8906072Z [command]/usr/bin/git sparse-checkout disable
+targeted	Run actions/checkout@v6	2026-10-04T19:49:35.8953393Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	Run actions/checkout@v6	2026-10-04T19:49:35.8986575Z ##[group]Checking out the ref
+targeted	Run actions/checkout@v6	2026-10-04T19:49:35.8989060Z [command]/usr/bin/git checkout --progress --force -B audit/AUD-OPUS-L12-119/353-dispute-pause refs/remotes/origin/audit/AUD-OPUS-L12-119/353-dispute-pause
+targeted	Run actions/checkout@v6	2026-10-04T19:49:36.0068616Z Switched to a new branch 'audit/AUD-OPUS-L12-119/353-dispute-pause'
+targeted	Run actions/checkout@v6	2026-10-04T19:49:36.0073675Z branch 'audit/AUD-OPUS-L12-119/353-dispute-pause' set up to track 'origin/audit/AUD-OPUS-L12-119/353-dispute-pause'.
+targeted	Run actions/checkout@v6	2026-10-04T19:49:36.0083429Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:49:36.0129956Z [command]/usr/bin/git log -1 --format=%H
+targeted	Run actions/checkout@v6	2026-10-04T19:49:36.0156396Z 31aee1d4a6abecde3393db9152ebb3d5405c8348
+targeted	Run actions/setup-node@v6	﻿2026-10-04T19:49:36.0555693Z ##[group]Run actions/setup-node@v6
+targeted	Run actions/setup-node@v6	2026-10-04T19:49:36.0557076Z with:
+targeted	Run actions/setup-node@v6	2026-10-04T19:49:36.0557972Z   node-version: 22.13
+targeted	Run actions/setup-node@v6	2026-10-04T19:49:36.0558965Z   cache: npm
+targeted	Run actions/setup-node@v6	2026-10-04T19:49:36.0559866Z   check-latest: false
+targeted	Run actions/setup-node@v6	2026-10-04T19:49:36.0570410Z   token: ***
+targeted	Run actions/setup-node@v6	2026-10-04T19:49:36.0571403Z   package-manager-cache: true
+targeted	Run actions/setup-node@v6	2026-10-04T19:49:36.0572543Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T19:49:36.2104713Z Attempting to download 22.13...
+targeted	Run actions/setup-node@v6	2026-10-04T19:49:36.9631016Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+targeted	Run actions/setup-node@v6	2026-10-04T19:49:37.5550420Z Extracting ...
+targeted	Run actions/setup-node@v6	2026-10-04T19:49:37.5694690Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/10d52ca0-8450-45e0-baaa-6ea288cea417 -f /home/runner/work/_temp/20c2a1ab-8f5b-466b-bba8-5f09edda43fe
+targeted	Run actions/setup-node@v6	2026-10-04T19:49:38.7219591Z Adding to the cache ...
+targeted	Run actions/setup-node@v6	2026-10-04T19:49:40.7122022Z ##[group]Environment details
+targeted	Run actions/setup-node@v6	2026-10-04T19:49:40.9439812Z node: v22.13.1
+targeted	Run actions/setup-node@v6	2026-10-04T19:49:40.9440907Z npm: 10.9.2
+targeted	Run actions/setup-node@v6	2026-10-04T19:49:40.9441267Z yarn: 1.22.22
+targeted	Run actions/setup-node@v6	2026-10-04T19:49:40.9442065Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T19:49:40.9464953Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+targeted	Run actions/setup-node@v6	2026-10-04T19:49:41.0418135Z /home/runner/.npm
+targeted	Run actions/setup-node@v6	2026-10-04T19:49:41.2987520Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+targeted	Run actions/setup-node@v6	2026-10-04T19:49:42.5801235Z Received 0 of 241027159 (0.0%), 0.0 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-04T19:49:43.5809272Z Received 121634816 of 241027159 (50.5%), 57.9 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-04T19:49:44.4534243Z Received 241027159 of 241027159 (100.0%), 80.0 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-04T19:49:44.4536164Z Cache Size: ~230 MB (241027159 B)
+targeted	Run actions/setup-node@v6	2026-10-04T19:49:44.4622230Z [command]/usr/bin/tar -xf /home/runner/work/_temp/fe85ee12-7ccc-460b-b6e2-8e7986df4fbe/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+targeted	Run actions/setup-node@v6	2026-10-04T19:49:45.1507567Z Cache restored successfully
+targeted	Run actions/setup-node@v6	2026-10-04T19:49:45.1626964Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+targeted	Run npm ci	﻿2026-10-04T19:49:45.1859361Z ##[group]Run npm ci
+targeted	Run npm ci	2026-10-04T19:49:45.1859734Z ^[[36;1mnpm ci^[[0m
+targeted	Run npm ci	2026-10-04T19:49:45.2172591Z shell: /usr/bin/bash -e {0}
+targeted	Run npm ci	2026-10-04T19:49:45.2173064Z ##[endgroup]
+targeted	Run npm ci	2026-10-04T19:49:50.4799924Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	Run npm ci	2026-10-04T19:49:50.7210781Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+targeted	Run npm ci	2026-10-04T19:49:50.7360974Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+targeted	Run npm ci	2026-10-04T19:49:50.7414612Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+targeted	Run npm ci	2026-10-04T19:49:50.7651481Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+targeted	Run npm ci	2026-10-04T19:49:50.9230817Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+targeted	Run npm ci	2026-10-04T19:49:50.9272938Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T19:49:50.9278606Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T19:49:50.9298113Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T19:49:50.9304913Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T19:49:50.9327346Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T19:49:50.9732643Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T19:49:51.0334383Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+targeted	Run npm ci	2026-10-04T19:49:51.5107705Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+targeted	Run npm ci	2026-10-04T19:49:52.3146100Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+targeted	Run npm ci	2026-10-04T19:49:55.8156647Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+targeted	Run npm ci	2026-10-04T19:50:47.6131331Z 
+targeted	Run npm ci	2026-10-04T19:50:47.6136804Z added 1108 packages, and audited 1109 packages in 1m
+targeted	Run npm ci	2026-10-04T19:50:47.6137937Z 
+targeted	Run npm ci	2026-10-04T19:50:47.6138806Z 187 packages are looking for funding
+targeted	Run npm ci	2026-10-04T19:50:47.6139602Z   run `npm fund` for details
+targeted	Run npm ci	2026-10-04T19:50:48.0036243Z 
+targeted	Run npm ci	2026-10-04T19:50:48.0037133Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+targeted	Run npm ci	2026-10-04T19:50:48.0037644Z 
+targeted	Run npm ci	2026-10-04T19:50:48.0038111Z To address issues that do not require attention, run:
+targeted	Run npm ci	2026-10-04T19:50:48.0038757Z   npm audit fix
+targeted	Run npm ci	2026-10-04T19:50:48.0039575Z 
+targeted	Run npm ci	2026-10-04T19:50:48.0040033Z To address all issues (including breaking changes), run:
+targeted	Run npm ci	2026-10-04T19:50:48.0040730Z   npm audit fix --force
+targeted	Run npm ci	2026-10-04T19:50:48.0041353Z 
+targeted	Run npm ci	2026-10-04T19:50:48.0041629Z Run `npm audit` for details.
+targeted	Targeted jest	﻿2026-10-04T19:50:48.2112802Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T19:50:48.2113168Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T19:50:48.2113586Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T19:50:48.2114129Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T19:50:48.2114542Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T19:50:48.2114849Z ^[[36;1mnpx jest --ci "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T19:50:48.2181255Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T19:50:48.2181688Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T19:50:48.2284410Z specs: src/entitlements/dunning/__tests__/aud119OpusL12_353.probe.test.tsx src/entitlements/dunning/__tests__/aud117OpusL12.probe.test.tsx src/entitlements/dunning/__tests__/dunningLockout.test.tsx src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx
+targeted	Targeted jest	2026-10-04T19:50:58.6179406Z PASS src/entitlements/dunning/__tests__/aud117OpusL12.probe.test.tsx (8.073 s)
+targeted	Targeted jest	2026-10-04T19:50:58.6597656Z   ● Console
+targeted	Targeted jest	2026-10-04T19:50:58.6605550Z 
+targeted	Targeted jest	2026-10-04T19:50:58.6646611Z     console.warn
+targeted	Targeted jest	2026-10-04T19:50:58.6708059Z       SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead. See https://github.com/AppAndFlow/react-native-safe-area-context
+targeted	Targeted jest	2026-10-04T19:50:58.6762493Z 
+targeted	Targeted jest	2026-10-04T19:50:58.6768763Z     ^[[0m ^[[90m 184 |^[[39m
+targeted	Targeted jest	2026-10-04T19:50:58.6769539Z      ^[[90m 185 |^[[39m   ^[[36mreturn^[[39m (
+targeted	Targeted jest	2026-10-04T19:50:58.6771377Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 186 |^[[39m     ^[[33m<^[[39m^[[33mSafeAreaView^[[39m style^[[33m=^[[39m{styles^[[33m.^[[39mroot} testID^[[33m=^[[39m^[[32m"dunning-lockout-screen"^[[39m^[[33m>^[[39m
+targeted	Targeted jest	2026-10-04T19:50:58.6773027Z      ^[[90m     |^[[39m      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:50:58.6773933Z      ^[[90m 187 |^[[39m       ^[[33m<^[[39m^[[33mScrollView^[[39m
+targeted	Targeted jest	2026-10-04T19:50:58.6775050Z      ^[[90m 188 |^[[39m         contentContainerStyle^[[33m=^[[39m{styles^[[33m.^[[39mcontent}
+targeted	Targeted jest	2026-10-04T19:50:58.6777326Z      ^[[90m 189 |^[[39m         refreshControl^[[33m=^[[39m{^[[33m<^[[39m^[[33mRefreshControl^[[39m refreshing^[[33m=^[[39m{refreshing} onRefresh^[[33m=^[[39m{onRefresh} ^[[33m/^[[39m^[[33m>^[[39m}^[[0m
+targeted	Targeted jest	2026-10-04T19:50:58.6798039Z 
+targeted	Targeted jest	2026-10-04T19:50:58.6799015Z       at warn (node_modules/react-native/Libraries/Utilities/warnOnce.js:27:11)
+targeted	Targeted jest	2026-10-04T19:50:58.6800580Z       at Object.warnOnce [as SafeAreaView] (node_modules/react-native/index.js:101:5)
+targeted	Targeted jest	2026-10-04T19:50:58.6801932Z       at SafeAreaView (src/entitlements/dunning/DunningLockoutScreen.tsx:186:6)
+targeted	Targeted jest	2026-10-04T19:50:58.6803612Z       at Object.react_stack_bottom_frame (node_modules/react-reconciler/cjs/react-reconciler.development.js:17596:20)
+targeted	Targeted jest	2026-10-04T19:50:58.6805544Z       at renderWithHooks (node_modules/react-reconciler/cjs/react-reconciler.development.js:5335:22)
+targeted	Targeted jest	2026-10-04T19:50:58.6807489Z       at updateFunctionComponent (node_modules/react-reconciler/cjs/react-reconciler.development.js:7720:19)
+targeted	Targeted jest	2026-10-04T19:50:58.6809329Z       at beginWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:9277:18)
+targeted	Targeted jest	2026-10-04T19:50:58.6816256Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T19:50:58.6818066Z       at performUnitOfWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:15273:22)
+targeted	Targeted jest	2026-10-04T19:50:58.6819754Z       at workLoopSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15099:41)
+targeted	Targeted jest	2026-10-04T19:50:58.6821439Z       at renderRootSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15080:11)
+targeted	Targeted jest	2026-10-04T19:50:58.6823190Z       at performWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:14165:11)
+targeted	Targeted jest	2026-10-04T19:50:58.6824969Z       at performWorkOnRootViaSchedulerTask (node_modules/react-reconciler/cjs/react-reconciler.development.js:3335:7)
+targeted	Targeted jest	2026-10-04T19:50:58.6826994Z       at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+targeted	Targeted jest	2026-10-04T19:50:58.6828980Z       at recursivelyFlushAsyncActWork (node_modules/react/cjs/react.development.js:566:13)
+targeted	Targeted jest	2026-10-04T19:50:58.6830808Z       at Immediate._onImmediate (node_modules/react/cjs/react.development.js:849:32)
+targeted	Targeted jest	2026-10-04T19:50:58.6831645Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0409302Z FAIL src/entitlements/dunning/__tests__/aud119OpusL12_353.probe.test.tsx
+targeted	Targeted jest	2026-10-04T19:50:59.0620784Z   ● Console
+targeted	Targeted jest	2026-10-04T19:50:59.0625985Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0626460Z     console.warn
+targeted	Targeted jest	2026-10-04T19:50:59.0628571Z       SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead. See https://github.com/AppAndFlow/react-native-safe-area-context
+targeted	Targeted jest	2026-10-04T19:50:59.0630167Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0630683Z     ^[[0m ^[[90m 184 |^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0631486Z      ^[[90m 185 |^[[39m   ^[[36mreturn^[[39m (
+targeted	Targeted jest	2026-10-04T19:50:59.0633291Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 186 |^[[39m     ^[[33m<^[[39m^[[33mSafeAreaView^[[39m style^[[33m=^[[39m{styles^[[33m.^[[39mroot} testID^[[33m=^[[39m^[[32m"dunning-lockout-screen"^[[39m^[[33m>^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0634673Z      ^[[90m     |^[[39m      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0635883Z      ^[[90m 187 |^[[39m       ^[[33m<^[[39m^[[33mScrollView^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0637201Z      ^[[90m 188 |^[[39m         contentContainerStyle^[[33m=^[[39m{styles^[[33m.^[[39mcontent}
+targeted	Targeted jest	2026-10-04T19:50:59.0639321Z      ^[[90m 189 |^[[39m         refreshControl^[[33m=^[[39m{^[[33m<^[[39m^[[33mRefreshControl^[[39m refreshing^[[33m=^[[39m{refreshing} onRefresh^[[33m=^[[39m{onRefresh} ^[[33m/^[[39m^[[33m>^[[39m}^[[0m
+targeted	Targeted jest	2026-10-04T19:50:59.0640611Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0641251Z       at warn (node_modules/react-native/Libraries/Utilities/warnOnce.js:27:11)
+targeted	Targeted jest	2026-10-04T19:50:59.0642524Z       at Object.warnOnce [as SafeAreaView] (node_modules/react-native/index.js:101:5)
+targeted	Targeted jest	2026-10-04T19:50:59.0643881Z       at SafeAreaView (src/entitlements/dunning/DunningLockoutScreen.tsx:186:6)
+targeted	Targeted jest	2026-10-04T19:50:59.0645629Z       at Object.react_stack_bottom_frame (node_modules/react-reconciler/cjs/react-reconciler.development.js:17596:20)
+targeted	Targeted jest	2026-10-04T19:50:59.0647299Z       at renderWithHooks (node_modules/react-reconciler/cjs/react-reconciler.development.js:5335:22)
+targeted	Targeted jest	2026-10-04T19:50:59.0648923Z       at updateFunctionComponent (node_modules/react-reconciler/cjs/react-reconciler.development.js:7720:19)
+targeted	Targeted jest	2026-10-04T19:50:59.0650544Z       at beginWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:9277:18)
+targeted	Targeted jest	2026-10-04T19:50:59.0652124Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T19:50:59.0653709Z       at performUnitOfWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:15273:22)
+targeted	Targeted jest	2026-10-04T19:50:59.0655496Z       at workLoopSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15099:41)
+targeted	Targeted jest	2026-10-04T19:50:59.0657063Z       at renderRootSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15080:11)
+targeted	Targeted jest	2026-10-04T19:50:59.0658655Z       at performWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:14165:11)
+targeted	Targeted jest	2026-10-04T19:50:59.0660390Z       at performWorkOnRootViaSchedulerTask (node_modules/react-reconciler/cjs/react-reconciler.development.js:3335:7)
+targeted	Targeted jest	2026-10-04T19:50:59.0661909Z       at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+targeted	Targeted jest	2026-10-04T19:50:59.0662964Z       at node_modules/react/cjs/react.development.js:847:21
+targeted	Targeted jest	2026-10-04T19:50:59.0663570Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0665021Z   ● B-353-6: a dispute never carries a lock date or a grace period (R-DISPUTE-PAUSE) › CONTROL: a failed payment banner names its upcoming lock date
+targeted	Targeted jest	2026-10-04T19:50:59.0666445Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0666889Z     expect(received).toMatch(expected)
+targeted	Targeted jest	2026-10-04T19:50:59.0667452Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0667886Z     Expected pattern: /by Oct/
+targeted	Targeted jest	2026-10-04T19:50:59.0669364Z     Received string:  "Your payment of $150.00 did not go through on Thursday, October 1. Update your card by Sunday, October 11 to keep access to your plan."
+targeted	Targeted jest	2026-10-04T19:50:59.0671040Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0672401Z     ^[[0m ^[[90m 73 |^[[39m describe(^[[32m'B-353-6: a dispute never carries a lock date or a grace period (R-DISPUTE-PAUSE)'^[[39m^[[33m,^[[39m () ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T19:50:59.0674740Z      ^[[90m 74 |^[[39m   it(^[[32m'CONTROL: a failed payment banner names its upcoming lock date'^[[39m^[[33m,^[[39m () ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T19:50:59.0677242Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 75 |^[[39m     expect(bannerCopy(^[[33mPAYMENT_PAST_DUE^[[39m^[[33m,^[[39m ^[[33mNOW^[[39m)^[[33m.^[[39mbody)^[[33m.^[[39mtoMatch(^[[35m/by Oct/^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0678988Z      ^[[90m    |^[[39m                                                    ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0679971Z      ^[[90m 76 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0680682Z      ^[[90m 77 |^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0682227Z      ^[[90m 78 |^[[39m   it(^[[32m'PROBE: the dispute banner names no lock date and no "unless it is sorted out" condition'^[[39m^[[33m,^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T19:50:59.0683357Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0684171Z       at Object.toMatch (src/entitlements/dunning/__tests__/aud119OpusL12_353.probe.test.tsx:75:52)
+targeted	Targeted jest	2026-10-04T19:50:59.0685081Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0686855Z   ● B-353-6: a dispute never carries a lock date or a grace period (R-DISPUTE-PAUSE) › PROBE: the dispute banner names no lock date and no "unless it is sorted out" condition
+targeted	Targeted jest	2026-10-04T19:50:59.0688186Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0688626Z     expect(received).not.toMatch(expected)
+targeted	Targeted jest	2026-10-04T19:50:59.0689165Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0689604Z     Expected pattern: not /Access pauses on/
+targeted	Targeted jest	2026-10-04T19:50:59.0691810Z     Received string:      "Your bank reversed an earlier payment of $150.00. Saving a new card does not settle it. Email Bradleyapple1031@gmail.com or message your coach to sort it out. Access pauses on Sunday, October 11 unless it is sorted out by then."
+targeted	Targeted jest	2026-10-04T19:50:59.0693609Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0694850Z     ^[[0m ^[[90m 78 |^[[39m   it(^[[32m'PROBE: the dispute banner names no lock date and no "unless it is sorted out" condition'^[[39m^[[33m,^[[39m () ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T19:50:59.0697007Z      ^[[90m 79 |^[[39m     ^[[36mconst^[[39m body ^[[33m=^[[39m bannerCopy(^[[33mDISPUTE_PAST_DUE^[[39m^[[33m,^[[39m ^[[33mNOW^[[39m)^[[33m.^[[39mbody^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0698660Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 80 |^[[39m     expect(body)^[[33m.^[[39mnot^[[33m.^[[39mtoMatch(^[[35m/Access pauses on/^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0699748Z      ^[[90m    |^[[39m                      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0700766Z      ^[[90m 81 |^[[39m     expect(body)^[[33m.^[[39mnot^[[33m.^[[39mtoMatch(^[[35m/unless/i^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0701931Z      ^[[90m 82 |^[[39m     expect(body)^[[33m.^[[39mnot^[[33m.^[[39mtoMatch(^[[35m/Oct/^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0702753Z      ^[[90m 83 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:50:59.0703052Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0703652Z       at Object.toMatch (src/entitlements/dunning/__tests__/aud119OpusL12_353.probe.test.tsx:80:22)
+targeted	Targeted jest	2026-10-04T19:50:59.0704319Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0705791Z   ● B-353-6: a dispute never carries a lock date or a grace period (R-DISPUTE-PAUSE) › PROBE: the dispute Update card intro (pre-lock) does not imply access continues
+targeted	Targeted jest	2026-10-04T19:50:59.0706880Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0707125Z     expect(received).toMatch(expected)
+targeted	Targeted jest	2026-10-04T19:50:59.0707458Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0707684Z     Expected pattern: /access[^.]*ended/i
+targeted	Targeted jest	2026-10-04T19:50:59.0709213Z     Received string:  "Your bank took back an earlier payment of $150.00 to Avery. A new card does not settle that; email support to sort it out. A card saved here is used for your future payments."
+targeted	Targeted jest	2026-10-04T19:50:59.0710373Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0710592Z     ^[[0m ^[[90m 84 |^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0711833Z      ^[[90m 85 |^[[39m   it(^[[32m'PROBE: the dispute Update card intro (pre-lock) does not imply access continues'^[[39m^[[33m,^[[39m () ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T19:50:59.0713686Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 86 |^[[39m     expect(updateCardIntro(^[[33mDISPUTE_PAST_DUE^[[39m))^[[33m.^[[39mtoMatch(^[[35m/access[^.]*ended/i^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0715603Z      ^[[90m    |^[[39m                                               ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0716537Z      ^[[90m 87 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0717118Z      ^[[90m 88 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0717601Z      ^[[90m 89 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:50:59.0717839Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0718441Z       at Object.toMatch (src/entitlements/dunning/__tests__/aud119OpusL12_353.probe.test.tsx:86:47)
+targeted	Targeted jest	2026-10-04T19:50:59.0719112Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0720359Z   ● B-353-7: dispute copy says access has ended, billing is paused, the coach decides on restarting › PROBE: lockout summary + next step for a dispute state the ruling
+targeted	Targeted jest	2026-10-04T19:50:59.0721392Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0721622Z     expect(received).toMatch(expected)
+targeted	Targeted jest	2026-10-04T19:50:59.0721949Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0722172Z     Expected pattern: /access[^.]*ended/i
+targeted	Targeted jest	2026-10-04T19:50:59.0724109Z     Received string:  "Your bank reversed an earlier payment of $150.00 to Avery, so your plan is paused. Your data is safe and nothing has been deleted. Saving a new card does not settle it. To sort it out, email Bradleyapple1031@gmail.com or message Avery."
+targeted	Targeted jest	2026-10-04T19:50:59.0725911Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0726836Z     ^[[0m ^[[90m  95 |^[[39m   it(^[[32m'PROBE: lockout summary + next step for a dispute state the ruling'^[[39m^[[33m,^[[39m () ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T19:50:59.0728624Z      ^[[90m  96 |^[[39m     ^[[36mconst^[[39m text ^[[33m=^[[39m ^[[32m`${lockoutSummary(DISPUTE_LOCKED)} ${lockoutNextStep(DISPUTE_LOCKED)}`^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0730228Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m  97 |^[[39m     expect(text)^[[33m.^[[39mtoMatch(^[[35m/access[^.]*ended/i^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0731235Z      ^[[90m     |^[[39m                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0732225Z      ^[[90m  98 |^[[39m     expect(text)^[[33m.^[[39mtoMatch(^[[35m/billing[^.]*paused/i^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0733365Z      ^[[90m  99 |^[[39m     expect(text)^[[33m.^[[39mtoMatch(^[[33mCOACH_RESTARTS^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0734636Z      ^[[90m 100 |^[[39m     expect(text)^[[33m.^[[39mnot^[[33m.^[[39mtoMatch(^[[33mSUPPORT_SORTS_IT^[[39m)^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:50:59.0735489Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0736088Z       at Object.toMatch (src/entitlements/dunning/__tests__/aud119OpusL12_353.probe.test.tsx:97:18)
+targeted	Targeted jest	2026-10-04T19:50:59.0736760Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0738233Z   ● B-353-7: dispute copy says access has ended, billing is paused, the coach decides on restarting › PROBE: the rendered dispute lockout invites no payment check ("Already paid? Pull down")
+targeted	Targeted jest	2026-10-04T19:50:59.0739413Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0739666Z     expect(received).not.toMatch(expected)
+targeted	Targeted jest	2026-10-04T19:50:59.0740014Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0740241Z     Expected pattern: not /Already paid/
+targeted	Targeted jest	2026-10-04T19:50:59.0743665Z     Received string:      " Payment Your plan is paused Your bank reversed an earlier payment of $150.00 to Avery, so your plan is paused. Your data is safe and nothing has been deleted. Saving a new card does not settle it. To sort it out, email Bradleyapple1031@gmail.com or message Avery. Email support Update card Message Avery End my plan Still available while your plan is paused Download my data Delete my account Email support Sign out Already paid? Pull down to check again."
+targeted	Targeted jest	2026-10-04T19:50:59.0746692Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0747916Z     ^[[0m ^[[90m 103 |^[[39m   it(^[[32m'PROBE: the rendered dispute lockout invites no payment check ("Already paid? Pull down")'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T19:50:59.0750391Z      ^[[90m 104 |^[[39m     ^[[36mconst^[[39m { toJSON } ^[[33m=^[[39m ^[[36mawait^[[39m render(^[[33m<^[[39m^[[33mDunningLockoutScreen^[[39m {^[[33m...^[[39mlockoutProps(^[[33mDISPUTE_LOCKED^[[39m)} ^[[33m/^[[39m^[[33m>^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0752792Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 105 |^[[39m     expect(textOf(toJSON()))^[[33m.^[[39mnot^[[33m.^[[39mtoMatch(^[[35m/Already paid/^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0754037Z      ^[[90m     |^[[39m                                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0754941Z      ^[[90m 106 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0755635Z      ^[[90m 107 |^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0756937Z      ^[[90m 108 |^[[39m   it(^[[32m'PROBE: the dispute Update card intro names the coach restart rule, not a support fix'^[[39m^[[33m,^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T19:50:59.0758038Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0758645Z       at Object.toMatch (src/entitlements/dunning/__tests__/aud119OpusL12_353.probe.test.tsx:105:34)
+targeted	Targeted jest	2026-10-04T19:50:59.0759727Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T19:50:59.0760604Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T19:50:59.0761026Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0762177Z   ● B-353-7: dispute copy says access has ended, billing is paused, the coach decides on restarting › PROBE: the dispute Update card intro names the coach restart rule, not a support fix
+targeted	Targeted jest	2026-10-04T19:50:59.0763119Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0763328Z     expect(received).not.toMatch(expected)
+targeted	Targeted jest	2026-10-04T19:50:59.0763664Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0763875Z     Expected pattern: not /sort it out/i
+targeted	Targeted jest	2026-10-04T19:50:59.0765809Z     Received string:      "Your bank took back an earlier payment of $150.00 to Avery, so your plan is paused. A new card does not settle that; email support to sort it out. A card saved here is used for your future payments."
+targeted	Targeted jest	2026-10-04T19:50:59.0767292Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0768489Z     ^[[0m ^[[90m 108 |^[[39m   it(^[[32m'PROBE: the dispute Update card intro names the coach restart rule, not a support fix'^[[39m^[[33m,^[[39m () ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T19:50:59.0770189Z      ^[[90m 109 |^[[39m     ^[[36mconst^[[39m intro ^[[33m=^[[39m updateCardIntro(^[[33mDISPUTE_LOCKED^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0771570Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 110 |^[[39m     expect(intro)^[[33m.^[[39mnot^[[33m.^[[39mtoMatch(^[[33mSUPPORT_SORTS_IT^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0772562Z      ^[[90m     |^[[39m                       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0773418Z      ^[[90m 111 |^[[39m     expect(intro)^[[33m.^[[39mtoMatch(^[[33mCOACH_RESTARTS^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0774156Z      ^[[90m 112 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0774604Z      ^[[90m 113 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:50:59.0774823Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0775607Z       at Object.toMatch (src/entitlements/dunning/__tests__/aud119OpusL12_353.probe.test.tsx:110:23)
+targeted	Targeted jest	2026-10-04T19:50:59.0776216Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0777496Z   ● B-353-7: dispute copy says access has ended, billing is paused, the coach decides on restarting › PROBE: the dispute End my plan dialog names the coach restart rule, not a support fix
+targeted	Targeted jest	2026-10-04T19:50:59.0778535Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0779413Z     expect(received).not.toMatch(expected)
+targeted	Targeted jest	2026-10-04T19:50:59.0779887Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0780221Z     Expected pattern: not /sort it out/i
+targeted	Targeted jest	2026-10-04T19:50:59.0781625Z     Received string:      "Your access ends now. Ending the plan does not settle the payment your bank reversed. Email Bradleyapple1031@gmail.com to sort it out. Your data stays in your account."
+targeted	Targeted jest	2026-10-04T19:50:59.0782708Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0783667Z     ^[[0m ^[[90m 114 |^[[39m   it(^[[32m'PROBE: the dispute End my plan dialog names the coach restart rule, not a support fix'^[[39m^[[33m,^[[39m () ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T19:50:59.0785169Z      ^[[90m 115 |^[[39m     ^[[36mconst^[[39m body ^[[33m=^[[39m endPlanAlertBody(^[[33mDISPUTE_LOCKED^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0786681Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 116 |^[[39m     expect(body)^[[33m.^[[39mnot^[[33m.^[[39mtoMatch(^[[33mSUPPORT_SORTS_IT^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0787646Z      ^[[90m     |^[[39m                      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0788507Z      ^[[90m 117 |^[[39m     expect(body)^[[33m.^[[39mtoMatch(^[[33mCOACH_RESTARTS^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0789223Z      ^[[90m 118 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0789674Z      ^[[90m 119 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:50:59.0789912Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0790452Z       at Object.toMatch (src/entitlements/dunning/__tests__/aud119OpusL12_353.probe.test.tsx:116:22)
+targeted	Targeted jest	2026-10-04T19:50:59.0791316Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0792779Z   ● B-353-7: dispute copy says access has ended, billing is paused, the coach decides on restarting › PROBE: the dispute banner (if the server ever reports one) names the coach restart rule
+targeted	Targeted jest	2026-10-04T19:50:59.0794174Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0794408Z     expect(received).not.toMatch(expected)
+targeted	Targeted jest	2026-10-04T19:50:59.0794763Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0794981Z     Expected pattern: not /sort it out/i
+targeted	Targeted jest	2026-10-04T19:50:59.0796997Z     Received string:      "Your bank reversed an earlier payment of $150.00. Saving a new card does not settle it. Email Bradleyapple1031@gmail.com or message your coach to sort it out. Access pauses on Sunday, October 11 unless it is sorted out by then."
+targeted	Targeted jest	2026-10-04T19:50:59.0798429Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0799439Z     ^[[0m ^[[90m 120 |^[[39m   it(^[[32m'PROBE: the dispute banner (if the server ever reports one) names the coach restart rule'^[[39m^[[33m,^[[39m () ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T19:50:59.0801172Z      ^[[90m 121 |^[[39m     ^[[36mconst^[[39m body ^[[33m=^[[39m bannerCopy(^[[33mDISPUTE_PAST_DUE^[[39m^[[33m,^[[39m ^[[33mNOW^[[39m)^[[33m.^[[39mbody^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0802673Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 122 |^[[39m     expect(body)^[[33m.^[[39mnot^[[33m.^[[39mtoMatch(^[[33mSUPPORT_SORTS_IT^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0803672Z      ^[[90m     |^[[39m                      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0804557Z      ^[[90m 123 |^[[39m     expect(body)^[[33m.^[[39mtoMatch(^[[33mCOACH_RESTARTS^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0805517Z      ^[[90m 124 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:50:59.0806056Z      ^[[90m 125 |^[[39m })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:50:59.0806337Z 
+targeted	Targeted jest	2026-10-04T19:50:59.0806886Z       at Object.toMatch (src/entitlements/dunning/__tests__/aud119OpusL12_353.probe.test.tsx:122:22)
+targeted	Targeted jest	2026-10-04T19:50:59.0807523Z 
+targeted	Targeted jest	2026-10-04T19:51:00.3163669Z PASS src/entitlements/dunning/__tests__/dunningLockout.test.tsx (10.11 s)
+targeted	Targeted jest	2026-10-04T19:51:00.3221926Z   ● Console
+targeted	Targeted jest	2026-10-04T19:51:00.3222427Z 
+targeted	Targeted jest	2026-10-04T19:51:00.3222857Z     console.warn
+targeted	Targeted jest	2026-10-04T19:51:00.3224778Z       SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead. See https://github.com/AppAndFlow/react-native-safe-area-context
+targeted	Targeted jest	2026-10-04T19:51:00.3226633Z 
+targeted	Targeted jest	2026-10-04T19:51:00.3227088Z     ^[[0m ^[[90m 184 |^[[39m
+targeted	Targeted jest	2026-10-04T19:51:00.3227881Z      ^[[90m 185 |^[[39m   ^[[36mreturn^[[39m (
+targeted	Targeted jest	2026-10-04T19:51:00.3229711Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 186 |^[[39m     ^[[33m<^[[39m^[[33mSafeAreaView^[[39m style^[[33m=^[[39m{styles^[[33m.^[[39mroot} testID^[[33m=^[[39m^[[32m"dunning-lockout-screen"^[[39m^[[33m>^[[39m
+targeted	Targeted jest	2026-10-04T19:51:00.3231349Z      ^[[90m     |^[[39m      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:51:00.3232088Z      ^[[90m 187 |^[[39m       ^[[33m<^[[39m^[[33mScrollView^[[39m
+targeted	Targeted jest	2026-10-04T19:51:00.3233052Z      ^[[90m 188 |^[[39m         contentContainerStyle^[[33m=^[[39m{styles^[[33m.^[[39mcontent}
+targeted	Targeted jest	2026-10-04T19:51:00.3234807Z      ^[[90m 189 |^[[39m         refreshControl^[[33m=^[[39m{^[[33m<^[[39m^[[33mRefreshControl^[[39m refreshing^[[33m=^[[39m{refreshing} onRefresh^[[33m=^[[39m{onRefresh} ^[[33m/^[[39m^[[33m>^[[39m}^[[0m
+targeted	Targeted jest	2026-10-04T19:51:00.3235732Z 
+targeted	Targeted jest	2026-10-04T19:51:00.3236017Z       at warn (node_modules/react-native/Libraries/Utilities/warnOnce.js:27:11)
+targeted	Targeted jest	2026-10-04T19:51:00.3236651Z       at Object.warnOnce [as SafeAreaView] (node_modules/react-native/index.js:101:5)
+targeted	Targeted jest	2026-10-04T19:51:00.3237244Z       at SafeAreaView (src/entitlements/dunning/DunningLockoutScreen.tsx:186:6)
+targeted	Targeted jest	2026-10-04T19:51:00.3237968Z       at Object.react_stack_bottom_frame (node_modules/react-reconciler/cjs/react-reconciler.development.js:17596:20)
+targeted	Targeted jest	2026-10-04T19:51:00.3238767Z       at renderWithHooks (node_modules/react-reconciler/cjs/react-reconciler.development.js:5335:22)
+targeted	Targeted jest	2026-10-04T19:51:00.3239526Z       at updateFunctionComponent (node_modules/react-reconciler/cjs/react-reconciler.development.js:7720:19)
+targeted	Targeted jest	2026-10-04T19:51:00.3240262Z       at beginWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:9277:18)
+targeted	Targeted jest	2026-10-04T19:51:00.3240965Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T19:51:00.3242032Z       at performUnitOfWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:15273:22)
+targeted	Targeted jest	2026-10-04T19:51:00.3242900Z       at workLoopSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15099:41)
+targeted	Targeted jest	2026-10-04T19:51:00.3243619Z       at renderRootSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15080:11)
+targeted	Targeted jest	2026-10-04T19:51:00.3244354Z       at performWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:14165:11)
+targeted	Targeted jest	2026-10-04T19:51:00.3245193Z       at performWorkOnRootViaSchedulerTask (node_modules/react-reconciler/cjs/react-reconciler.development.js:3335:7)
+targeted	Targeted jest	2026-10-04T19:51:00.3246226Z       at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+targeted	Targeted jest	2026-10-04T19:51:00.3246834Z       at recursivelyFlushAsyncActWork (node_modules/react/cjs/react.development.js:566:13)
+targeted	Targeted jest	2026-10-04T19:51:00.3247452Z       at Immediate._onImmediate (node_modules/react/cjs/react.development.js:849:32)
+targeted	Targeted jest	2026-10-04T19:51:00.3247782Z 
+targeted	Targeted jest	2026-10-04T19:51:00.5818907Z PASS src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx (10.38 s)
+targeted	Targeted jest	2026-10-04T19:51:00.6002057Z   ● Console
+targeted	Targeted jest	2026-10-04T19:51:00.6002346Z 
+targeted	Targeted jest	2026-10-04T19:51:00.6002510Z     console.warn
+targeted	Targeted jest	2026-10-04T19:51:00.6003854Z       SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead. See https://github.com/AppAndFlow/react-native-safe-area-context
+targeted	Targeted jest	2026-10-04T19:51:00.6005183Z 
+targeted	Targeted jest	2026-10-04T19:51:00.6005730Z     ^[[0m ^[[90m 184 |^[[39m
+targeted	Targeted jest	2026-10-04T19:51:00.6006365Z      ^[[90m 185 |^[[39m   ^[[36mreturn^[[39m (
+targeted	Targeted jest	2026-10-04T19:51:00.6007985Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 186 |^[[39m     ^[[33m<^[[39m^[[33mSafeAreaView^[[39m style^[[33m=^[[39m{styles^[[33m.^[[39mroot} testID^[[33m=^[[39m^[[32m"dunning-lockout-screen"^[[39m^[[33m>^[[39m
+targeted	Targeted jest	2026-10-04T19:51:00.6009207Z      ^[[90m     |^[[39m      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:51:00.6009832Z      ^[[90m 187 |^[[39m       ^[[33m<^[[39m^[[33mScrollView^[[39m
+targeted	Targeted jest	2026-10-04T19:51:00.6010743Z      ^[[90m 188 |^[[39m         contentContainerStyle^[[33m=^[[39m{styles^[[33m.^[[39mcontent}
+targeted	Targeted jest	2026-10-04T19:51:00.6012605Z      ^[[90m 189 |^[[39m         refreshControl^[[33m=^[[39m{^[[33m<^[[39m^[[33mRefreshControl^[[39m refreshing^[[33m=^[[39m{refreshing} onRefresh^[[33m=^[[39m{onRefresh} ^[[33m/^[[39m^[[33m>^[[39m}^[[0m
+targeted	Targeted jest	2026-10-04T19:51:00.6013579Z 
+targeted	Targeted jest	2026-10-04T19:51:00.6014001Z       at warn (node_modules/react-native/Libraries/Utilities/warnOnce.js:27:11)
+targeted	Targeted jest	2026-10-04T19:51:00.6015015Z       at Object.warnOnce [as SafeAreaView] (node_modules/react-native/index.js:101:5)
+targeted	Targeted jest	2026-10-04T19:51:00.6016368Z       at SafeAreaView (src/entitlements/dunning/DunningLockoutScreen.tsx:186:6)
+targeted	Targeted jest	2026-10-04T19:51:00.6017734Z       at Object.react_stack_bottom_frame (node_modules/react-reconciler/cjs/react-reconciler.development.js:17596:20)
+targeted	Targeted jest	2026-10-04T19:51:00.6019243Z       at renderWithHooks (node_modules/react-reconciler/cjs/react-reconciler.development.js:5335:22)
+targeted	Targeted jest	2026-10-04T19:51:00.6020608Z       at updateFunctionComponent (node_modules/react-reconciler/cjs/react-reconciler.development.js:7720:19)
+targeted	Targeted jest	2026-10-04T19:51:00.6021991Z       at beginWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:9277:18)
+targeted	Targeted jest	2026-10-04T19:51:00.6023259Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T19:51:00.6024619Z       at performUnitOfWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:15273:22)
+targeted	Targeted jest	2026-10-04T19:51:00.6026406Z       at workLoopSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15099:41)
+targeted	Targeted jest	2026-10-04T19:51:00.6027972Z       at renderRootSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15080:11)
+targeted	Targeted jest	2026-10-04T19:51:00.6029578Z       at performWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:14165:11)
+targeted	Targeted jest	2026-10-04T19:51:00.6031435Z       at performWorkOnRootViaSchedulerTask (node_modules/react-reconciler/cjs/react-reconciler.development.js:3335:7)
+targeted	Targeted jest	2026-10-04T19:51:00.6033799Z       at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+targeted	Targeted jest	2026-10-04T19:51:00.6035915Z       at recursivelyFlushAsyncActWork (node_modules/react/cjs/react.development.js:566:13)
+targeted	Targeted jest	2026-10-04T19:51:00.6037240Z       at Immediate._onImmediate (node_modules/react/cjs/react.development.js:849:32)
+targeted	Targeted jest	2026-10-04T19:51:00.6037925Z 
+targeted	Targeted jest	2026-10-04T19:51:00.6038133Z     console.error
+targeted	Targeted jest	2026-10-04T19:51:00.6038882Z       The current testing environment is not configured to support act(...)
+targeted	Targeted jest	2026-10-04T19:51:00.6039549Z 
+targeted	Targeted jest	2026-10-04T19:51:00.6039971Z     ^[[0m ^[[90m 229 |^[[39m         }
+targeted	Targeted jest	2026-10-04T19:51:00.6041119Z      ^[[90m 230 |^[[39m         ^[[36mif^[[39m (^[[33m!^[[39misCurrent()) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:51:00.6042334Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 231 |^[[39m         setQuote(fresh)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:51:00.6043244Z      ^[[90m     |^[[39m         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:51:00.6044468Z      ^[[90m 232 |^[[39m         approvedRef^[[33m.^[[39mcurrent ^[[33m=^[[39m approvalFor(fresh)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:51:00.6045909Z      ^[[90m 233 |^[[39m         ^[[36mawait^[[39m settle(
+targeted	Targeted jest	2026-10-04T19:51:00.6046895Z      ^[[90m 234 |^[[39m           ^[[36mawait^[[39m runNativeCardUpdate({^[[0m
+targeted	Targeted jest	2026-10-04T19:51:00.6047453Z 
+targeted	Targeted jest	2026-10-04T19:51:00.6048378Z       at isConcurrentActEnvironment (node_modules/react-reconciler/cjs/react-reconciler.development.js:13990:17)
+targeted	Targeted jest	2026-10-04T19:51:00.6050362Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16304:7)
+targeted	Targeted jest	2026-10-04T19:51:00.6052199Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T19:51:00.6054045Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-04T19:51:00.6059763Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-04T19:51:00.6061226Z       at setQuote (src/entitlements/dunning/UpdateCardScreen.tsx:231:9)
+targeted	Targeted jest	2026-10-04T19:51:00.6062505Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T19:51:00.6063804Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T19:51:00.6064501Z 
+targeted	Targeted jest	2026-10-04T19:51:00.6064694Z     console.error
+targeted	Targeted jest	2026-10-04T19:51:00.6065692Z       The current testing environment is not configured to support act(...)
+targeted	Targeted jest	2026-10-04T19:51:00.6066356Z 
+targeted	Targeted jest	2026-10-04T19:51:00.6066729Z     ^[[0m ^[[90m 229 |^[[39m         }
+targeted	Targeted jest	2026-10-04T19:51:00.6067798Z      ^[[90m 230 |^[[39m         ^[[36mif^[[39m (^[[33m!^[[39misCurrent()) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:51:00.6069037Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 231 |^[[39m         setQuote(fresh)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:51:00.6069916Z      ^[[90m     |^[[39m         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:51:00.6071141Z      ^[[90m 232 |^[[39m         approvedRef^[[33m.^[[39mcurrent ^[[33m=^[[39m approvalFor(fresh)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:51:00.6072336Z      ^[[90m 233 |^[[39m         ^[[36mawait^[[39m settle(
+targeted	Targeted jest	2026-10-04T19:51:00.6073374Z      ^[[90m 234 |^[[39m           ^[[36mawait^[[39m runNativeCardUpdate({^[[0m
+targeted	Targeted jest	2026-10-04T19:51:00.6073919Z 
+targeted	Targeted jest	2026-10-04T19:51:00.6074855Z       at isConcurrentActEnvironment (node_modules/react-reconciler/cjs/react-reconciler.development.js:13990:17)
+targeted	Targeted jest	2026-10-04T19:51:00.6076977Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16304:7)
+targeted	Targeted jest	2026-10-04T19:51:00.6078863Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T19:51:00.6080661Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-04T19:51:00.6082400Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-04T19:51:00.6083791Z       at setQuote (src/entitlements/dunning/UpdateCardScreen.tsx:231:9)
+targeted	Targeted jest	2026-10-04T19:51:00.6086041Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T19:51:00.6087369Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T19:51:00.6088257Z 
+targeted	Targeted jest	2026-10-04T19:51:00.6088450Z     console.error
+targeted	Targeted jest	2026-10-04T19:51:00.6089248Z       The current testing environment is not configured to support act(...)
+targeted	Targeted jest	2026-10-04T19:51:00.6089885Z 
+targeted	Targeted jest	2026-10-04T19:51:00.6090239Z     ^[[0m ^[[90m 229 |^[[39m         }
+targeted	Targeted jest	2026-10-04T19:51:00.6091361Z      ^[[90m 230 |^[[39m         ^[[36mif^[[39m (^[[33m!^[[39misCurrent()) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:51:00.6092554Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 231 |^[[39m         setQuote(fresh)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:51:00.6093533Z      ^[[90m     |^[[39m         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:51:00.6094745Z      ^[[90m 232 |^[[39m         approvedRef^[[33m.^[[39mcurrent ^[[33m=^[[39m approvalFor(fresh)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:51:00.6096121Z      ^[[90m 233 |^[[39m         ^[[36mawait^[[39m settle(
+targeted	Targeted jest	2026-10-04T19:51:00.6097174Z      ^[[90m 234 |^[[39m           ^[[36mawait^[[39m runNativeCardUpdate({^[[0m
+targeted	Targeted jest	2026-10-04T19:51:00.6097694Z 
+targeted	Targeted jest	2026-10-04T19:51:00.6098603Z       at isConcurrentActEnvironment (node_modules/react-reconciler/cjs/react-reconciler.development.js:13990:17)
+targeted	Targeted jest	2026-10-04T19:51:00.6100552Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16304:7)
+targeted	Targeted jest	2026-10-04T19:51:00.6102464Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T19:51:00.6104270Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-04T19:51:00.6106189Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-04T19:51:00.6107595Z       at setQuote (src/entitlements/dunning/UpdateCardScreen.tsx:231:9)
+targeted	Targeted jest	2026-10-04T19:51:00.6108934Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T19:51:00.6110254Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T19:51:00.6110889Z 
+targeted	Targeted jest	2026-10-04T19:51:00.6609431Z 
+targeted	Targeted jest	2026-10-04T19:51:00.6615501Z Test Suites: 1 failed, 3 passed, 4 total
+targeted	Targeted jest	2026-10-04T19:51:00.6616306Z Tests:       8 failed, 82 passed, 90 total
+targeted	Targeted jest	2026-10-04T19:51:00.6616898Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T19:51:00.6617353Z Time:        11.242 s
+targeted	Targeted jest	2026-10-04T19:51:00.6620023Z Ran all test suites matching /src\/entitlements\/dunning\/__tests__\/aud119OpusL12_353.probe.test.tsx|src\/entitlements\/dunning\/__tests__\/aud117OpusL12.probe.test.tsx|src\/entitlements\/dunning\/__tests__\/dunningLockout.test.tsx|src\/entitlements\/dunning\/__tests__\/dunningLockoutOwnership.test.tsx/i.
+targeted	Targeted jest	2026-10-04T19:51:00.6783257Z ##[error]Process completed with exit code 1.
+targeted	Post Run actions/checkout@v6	﻿2026-10-04T19:51:00.6949136Z Post job cleanup.
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.7829320Z [command]/usr/bin/git version
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.7866194Z git version 2.55.0
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.7905813Z Temporarily overriding HOME='/home/runner/work/_temp/18adfad2-b0ec-4ab4-b5dd-0037e11d4878' before making global git config changes
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.7907048Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.7911416Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.7941614Z Removing SSH command configuration
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.7948259Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.7983627Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.8210658Z Removing HTTP extra header
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.8216475Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.8252542Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.8488969Z Removing includeIf entries pointing to credentials config files
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.8498678Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.8530834Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.8532026Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.8532860Z includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.8533488Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.8542315Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.8576013Z /home/runner/work/_temp/git-credentials-f45af261-f8b4-450c-872e-548c562ba3ac.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.8580000Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-f45af261-f8b4-450c-872e-548c562ba3ac.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.8620356Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.8644133Z /home/runner/work/_temp/git-credentials-f45af261-f8b4-450c-872e-548c562ba3ac.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.8658645Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-f45af261-f8b4-450c-872e-548c562ba3ac.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.8691585Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.8713156Z /github/runner_temp/git-credentials-f45af261-f8b4-450c-872e-548c562ba3ac.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.8721014Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-f45af261-f8b4-450c-872e-548c562ba3ac.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.8752029Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.8772069Z /github/runner_temp/git-credentials-f45af261-f8b4-450c-872e-548c562ba3ac.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.8780845Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-f45af261-f8b4-450c-872e-548c562ba3ac.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.8813538Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Post Run actions/checkout@v6	2026-10-04T19:51:00.9032129Z Removing credentials config '/home/runner/work/_temp/git-credentials-f45af261-f8b4-450c-872e-548c562ba3ac.config'
+targeted	Complete job	﻿2026-10-04T19:51:00.9187230Z Cleaning up orphan processes

@@ -1,0 +1,2827 @@
+diff --git a/app.json b/app.json
+index 87308ca..274a7ed 100644
+--- a/app.json
++++ b/app.json
+@@ -84,6 +84,15 @@
+               "scheme": "https",
+               "host": "app.trygrowthproject.com",
+               "pathPrefix": "/p"
++            },
++            {
++              "scheme": "tgp",
++              "host": "billing"
++            },
++            {
++              "scheme": "https",
++              "host": "app.trygrowthproject.com",
++              "pathPrefix": "/billing/update-card"
+             }
+           ],
+           "category": [
+diff --git a/docs/well-known/apple-app-site-association b/docs/well-known/apple-app-site-association
+index 174f4d7..c344b79 100644
+--- a/docs/well-known/apple-app-site-association
++++ b/docs/well-known/apple-app-site-association
+@@ -22,6 +22,10 @@
+           {
+             "/": "/p/*",
+             "comment": "Universal link to a coach's package share/checkout"
++          },
++          {
++            "/": "/billing/update-card",
++            "comment": "Dunning emails: opens the native Update card screen"
+           }
+         ]
+       }
+diff --git a/src/__tests__/rootNavigatorConsultationColdBoot.test.tsx b/src/__tests__/rootNavigatorConsultationColdBoot.test.tsx
+index c69b3bf..c4dc453 100644
+--- a/src/__tests__/rootNavigatorConsultationColdBoot.test.tsx
++++ b/src/__tests__/rootNavigatorConsultationColdBoot.test.tsx
+@@ -59,6 +59,9 @@ jest.mock('@react-navigation/native', () => {
+       isReady: () => true,
+       navigate: jest.fn(),
+       resetRoot: jest.fn(),
++      // S-DUNNING: the payment-lockout provider reads the focused route.
++      getCurrentRoute: () => undefined,
++      addListener: () => () => undefined,
+       current: null,
+     }),
+   };
+diff --git a/src/__tests__/rootNavigatorConsultationComplete.test.tsx b/src/__tests__/rootNavigatorConsultationComplete.test.tsx
+index 9e04d22..71f6fb8 100644
+--- a/src/__tests__/rootNavigatorConsultationComplete.test.tsx
++++ b/src/__tests__/rootNavigatorConsultationComplete.test.tsx
+@@ -46,6 +46,9 @@ jest.mock('@react-navigation/native', () => {
+       isReady: () => true,
+       navigate: jest.fn(),
+       resetRoot: jest.fn(),
++      // S-DUNNING: the payment-lockout provider reads the focused route.
++      getCurrentRoute: () => undefined,
++      addListener: () => () => undefined,
+       current: null,
+     }),
+   };
+diff --git a/src/__tests__/rootNavigatorOnboardingField.test.tsx b/src/__tests__/rootNavigatorOnboardingField.test.tsx
+index 206d82d..13ff557 100644
+--- a/src/__tests__/rootNavigatorOnboardingField.test.tsx
++++ b/src/__tests__/rootNavigatorOnboardingField.test.tsx
+@@ -55,10 +55,23 @@ jest.mock("@react-navigation/native", () => {
+       isReady: () => true,
+       navigate: jest.fn(),
+       resetRoot: jest.fn(),
++      // S-DUNNING: the payment-lockout provider reads the focused route.
++      getCurrentRoute: () => undefined,
++      addListener: () => () => undefined,
+       current: null,
+     }),
+   };
+ });
++// S-DUNNING: the lockout provider's status read is not under test here.
++jest.mock("../entitlements/dunning/dunningApi", () => ({
++  ...jest.requireActual("../entitlements/dunning/dunningApi"),
++  dunningApi: {
++    getStatus: jest.fn(async () => ({ enabled: false, state: "none" })),
++    createCardSetup: jest.fn(),
++    confirmCardUpdate: jest.fn(),
++    cancelPlan: jest.fn(),
++  },
++}));
+ jest.mock("../navigation/AuthNavigator", () => {
+   const React = jest.requireActual("react");
+   const { Text } = jest.requireActual("react-native");
+diff --git a/src/__tests__/rootNavigatorPackagePromptGate.test.tsx b/src/__tests__/rootNavigatorPackagePromptGate.test.tsx
+index 27212eb..d3ffb1a 100644
+--- a/src/__tests__/rootNavigatorPackagePromptGate.test.tsx
++++ b/src/__tests__/rootNavigatorPackagePromptGate.test.tsx
+@@ -45,10 +45,23 @@ jest.mock('@react-navigation/native', () => {
+       isReady: () => true,
+       navigate: jest.fn(),
+       resetRoot: jest.fn(),
++      // S-DUNNING: the payment-lockout provider reads the focused route.
++      getCurrentRoute: () => undefined,
++      addListener: () => () => undefined,
+       current: null,
+     }),
+   };
+ });
++// S-DUNNING: the lockout provider's status read is not under test here.
++jest.mock('../entitlements/dunning/dunningApi', () => ({
++  ...jest.requireActual('../entitlements/dunning/dunningApi'),
++  dunningApi: {
++    getStatus: jest.fn(async () => ({ enabled: false, state: 'none' })),
++    createCardSetup: jest.fn(),
++    confirmCardUpdate: jest.fn(),
++    cancelPlan: jest.fn(),
++  },
++}));
+ jest.mock('../navigation/AuthNavigator', () => {
+   const React = jest.requireActual('react');
+   const { Text } = jest.requireActual('react-native');
+diff --git a/src/__tests__/rootNavigatorUpdateCardLink.test.tsx b/src/__tests__/rootNavigatorUpdateCardLink.test.tsx
+new file mode 100644
+index 0000000..9dce0af
+--- /dev/null
++++ b/src/__tests__/rootNavigatorUpdateCardLink.test.tsx
+@@ -0,0 +1,57 @@
++/**
++ * OR-110-2: the dunning email link and the in-app blocker deep link open the
++ * native Update card screen.
++ *
++ *   https://app.trygrowthproject.com/billing/update-card   (emails, universal link)
++ *   tgp://billing/update-card                              (landing page button)
++ *   tgp://billing/update                                   (backend blocker deep_link)
++ *
++ * React Navigation strips the prefix before getStateFromPath, so the
++ * post-prefix path is driven through the exported linking config.
++ */
++
++jest.mock('../screenshots', () => ({ isScreenshotMode: () => false }));
++jest.mock('expo-video', () => ({
++  useVideoPlayer: () => ({ play: jest.fn(), pause: jest.fn() }),
++  VideoView: () => null,
++}));
++jest.mock('../navigation/AuthNavigator', () => () => null);
++jest.mock('../navigation/ClientNavigator', () => () => null);
++jest.mock('../navigation/CoachNavigator', () => () => null);
++jest.mock('../navigation/OnboardingNavigator', () => () => null);
++jest.mock('../navigation/LeanOnboardingNavigator', () => () => null);
++
++import { linking } from '../navigation/RootNavigator';
++
++function findRoute(state: unknown, name: string): Record<string, unknown> | null {
++  const stack: unknown[] = [state];
++  while (stack.length) {
++    const node = stack.pop() as { routes?: Array<Record<string, unknown>> } | null;
++    if (!node?.routes) continue;
++    for (const route of node.routes) {
++      if (route.name === name) return route;
++      if (route.state) stack.push(route.state);
++    }
++  }
++  return null;
++}
++
++describe('RootNavigator linking — native Update card', () => {
++  const opts = () => ({ screens: linking.config!.screens });
++
++  it('keeps the universal-link host and the tgp scheme as prefixes', () => {
++    expect(linking.prefixes).toEqual(expect.arrayContaining(['tgp://', 'https://app.trygrowthproject.com']));
++  });
++
++  it.each(['billing/update-card', 'billing/update', '/billing/update-card'])('%s opens UpdateCard under MoreTab', (path) => {
++    const state = linking.getStateFromPath!(path, opts());
++    const more = findRoute(state, 'MoreTab');
++    expect(more).toBeTruthy();
++    expect(findRoute(state, 'UpdateCard')).toBeTruthy();
++  });
++
++  it('does not swallow neighbouring billing paths', () => {
++    const state = linking.getStateFromPath!('billing/history', opts());
++    expect(findRoute(state, 'UpdateCard')).toBeNull();
++  });
++});
+diff --git a/src/components/support/SupportEmailFallback.tsx b/src/components/support/SupportEmailFallback.tsx
+index bdda0ba..dc17f3c 100644
+--- a/src/components/support/SupportEmailFallback.tsx
++++ b/src/components/support/SupportEmailFallback.tsx
+@@ -48,7 +48,7 @@ export interface SupportEmailHandle {
+   copy: () => Promise<void>;
+ }
+ 
+-export function useSupportEmail(subject?: string): SupportEmailHandle {
++export function useSupportEmail(subject?: string, body?: string): SupportEmailHandle {
+   const [state, setState] = useState<SupportEmailState>('idle');
+   const mounted = useRef(true);
+   useEffect(() => {
+@@ -63,12 +63,12 @@ export function useSupportEmail(subject?: string): SupportEmailHandle {
+ 
+   const open = useCallback(async () => {
+     try {
+-      await Linking.openURL(supportMailto(subject));
++      await Linking.openURL(supportMailto(subject, body));
+       set('idle');
+     } catch {
+       set('failed');
+     }
+-  }, [subject, set]);
++  }, [subject, body, set]);
+ 
+   const copy = useCallback(async () => {
+     try {
+diff --git a/src/entitlements/EntitlementProvider.tsx b/src/entitlements/EntitlementProvider.tsx
+index a3eea57..e947f47 100644
+--- a/src/entitlements/EntitlementProvider.tsx
++++ b/src/entitlements/EntitlementProvider.tsx
+@@ -6,6 +6,7 @@ import { entitlementEvents, EntitlementRequiredPayload } from './entitlementEven
+ import { queryClient } from '../services/queryClient';
+ import { logger } from '../utils/logger';
+ import { PaywallSheet } from './PaywallSheet';
++import { dunningLockoutStore } from './dunning/dunningLockoutStore';
+ 
+ export type EntitlementStatus =
+   | 'unknown'
+@@ -64,6 +65,14 @@ export function EntitlementProvider({ children, onOpenPlans, onMessageCoach }: E
+   const hasSettledRef = useRef(false);
+ 
+   const isStudent = user?.role === 'student';
++  // B-353-1: synced after mount from the store, which every identity
++  // boundary retires (sign-out, sign-in, the client tree unmounting).
++  const [dunningLocked, setDunningLocked] = useState(false);
++  useEffect(() => {
++    const unsubscribe = dunningLockoutStore.subscribe((locked) => setDunningLocked(locked));
++    setDunningLocked(dunningLockoutStore.isLocked());
++    return unsubscribe;
++  }, []);
+ 
+   const refreshEntitlement = useCallback(async (): Promise<boolean> => {
+     if (!isStudent) return true;
+@@ -164,7 +173,9 @@ export function EntitlementProvider({ children, onOpenPlans, onMessageCoach }: E
+     >
+       {children}
+       <PaywallSheet
+-        visible={paywallVisible}
++        // A payment lockout has its own full-screen state; never stack the
++        // plan picker on top of it (S-DUNNING).
++        visible={paywallVisible && !dunningLocked}
+         message={paywallMessage}
+         onClose={dismissPaywall}
+         onSubscribe={handleSubscribe}
+diff --git a/src/entitlements/dunning/DunningBanner.tsx b/src/entitlements/dunning/DunningBanner.tsx
+new file mode 100644
+index 0000000..10bb6f4
+--- /dev/null
++++ b/src/entitlements/dunning/DunningBanner.tsx
+@@ -0,0 +1,116 @@
++import React, { useCallback, useMemo } from 'react';
++import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
++import { useTheme } from '../../theme/ThemeProvider';
++import type { SemanticTokens } from '../../theme/tokens';
++import { SUPPORT_EMAIL } from '../../constants/support';
++import { formatDunningAmount, formatDunningDate, type ClientDunningStatus } from './dunningApi';
++import { useDunning } from './DunningLockoutProvider';
++import { isDisputeCycle } from './DunningLockoutScreen';
++
++/**
++ * The lock date, only while it is still ahead and the lock is not waived
++ * (C-353-3: a waived lock keeps access past its date, so no past date).
++ */
++function upcomingLockDate(status: ClientDunningStatus, now: number): string | null {
++  if (status.lock_waived || !status.lockout_at) return null;
++  const at = Date.parse(status.lockout_at);
++  if (!Number.isFinite(at) || at <= now) return null;
++  return formatDunningDate(status.lockout_at);
++}
++
++/** Banner copy for Days 0-9. Never invents an amount or a date. */
++export function bannerCopy(status: ClientDunningStatus, now: number = Date.now()): { title: string; body: string } {
++  const amount = formatDunningAmount(status.amount_cents, status.currency);
++  const lockOn = upcomingLockDate(status, now);
++  if (isDisputeCycle(status)) {
++    // B-353-2: a reversed payment is not fixed by a new card (backend B-628-8).
++    const what = amount ? `Your bank reversed an earlier payment of ${amount}.` : 'Your bank reversed an earlier payment.';
++    const when = lockOn ? ` Access pauses on ${lockOn} unless it is sorted out by then.` : '';
++    return {
++      title: 'A payment was reversed',
++      body: `${what} Saving a new card does not settle it. Email ${SUPPORT_EMAIL} or message your coach to sort it out.${when}`,
++    };
++  }
++  const failedOn = formatDunningDate(status.failed_at);
++  const charge = amount ? `Your payment of ${amount} did not go through` : 'Your last payment did not go through';
++  const when = amount && failedOn ? ` on ${failedOn}` : '';
++  const keep = lockOn
++    ? `Update your card by ${lockOn} to keep access to your plan.`
++    : status.lock_waived
++      ? 'Update your card to settle it.'
++      : 'Update your card to keep access to your plan.';
++  return { title: 'Your payment did not go through', body: `${charge}${when}. ${keep}` };
++}
++
++/**
++ * Inline (in-screen, not floating) past-due notice for Days 0-9 of a failed
++ * payment (S-DUNNING). Renders nothing unless the backend reports an active,
++ * unlocked v2 cycle, so it is invisible while FEATURE_DUNNING_V2 is off.
++ */
++export function DunningBanner({ surface }: { surface: string }) {
++  const dunning = useDunning();
++  const { semanticColors } = useTheme();
++  const styles = useMemo(() => makeStyles(semanticColors), [semanticColors]);
++
++  // Opens the native Update card screen, which starts the card form.
++  const onUpdate = useCallback(() => {
++    dunning?.updateCard(surface);
++  }, [dunning, surface]);
++
++  const status = dunning?.status;
++  if (!dunning || !status || !status.enabled || status.state !== 'past_due') return null;
++  const copy = bannerCopy(status);
++  const dispute = isDisputeCycle(status);
++
++  return (
++    <View style={styles.wrap} testID="dunning-banner" accessibilityRole="alert">
++      <Text style={styles.title}>{copy.title}</Text>
++      <Text style={styles.body}>{copy.body}</Text>
++      <View style={styles.actions}>
++        {dispute ? null : (
++          <TouchableOpacity
++            style={styles.primary}
++            onPress={onUpdate}
++            accessibilityRole="button"
++            testID="dunning-banner-update-card"
++          >
++            <Text style={styles.primaryText}>Update card</Text>
++          </TouchableOpacity>
++        )}
++        <TouchableOpacity
++          style={styles.secondary}
++          onPress={dunning.messageCoach}
++          accessibilityRole="button"
++          testID="dunning-banner-message-coach"
++        >
++          <Text style={styles.secondaryText}>Message coach</Text>
++        </TouchableOpacity>
++      </View>
++    </View>
++  );
++}
++
++const makeStyles = (c: SemanticTokens) =>
++  StyleSheet.create({
++    wrap: {
++      borderWidth: 1,
++      borderColor: c.accent,
++      backgroundColor: c.bgSurface,
++      padding: 14,
++      borderRadius: 4,
++      marginBottom: 16,
++    },
++    title: { fontSize: 15, fontWeight: '600', color: c.textPrimary, marginBottom: 4 },
++    body: { fontSize: 13, lineHeight: 19, color: c.textPrimary },
++    actions: { flexDirection: 'row', gap: 10, marginTop: 12 },
++    primary: {
++      backgroundColor: c.accent,
++      paddingHorizontal: 14,
++      paddingVertical: 9,
++      minWidth: 110,
++      alignItems: 'center',
++    },
++    primaryText: { color: c.textOnAccent, fontSize: 13, fontWeight: '600' },
++    secondary: { borderWidth: 1, borderColor: c.border, paddingHorizontal: 14, paddingVertical: 9 },
++    secondaryText: { color: c.textPrimary, fontSize: 13, fontWeight: '500' },
++  });
+diff --git a/src/entitlements/dunning/DunningLockoutProvider.tsx b/src/entitlements/dunning/DunningLockoutProvider.tsx
+new file mode 100644
+index 0000000..2975553
+--- /dev/null
++++ b/src/entitlements/dunning/DunningLockoutProvider.tsx
+@@ -0,0 +1,272 @@
++import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
++import { AppState, BackHandler, StyleSheet, View, type AppStateStatus } from 'react-native';
++import { queryClient } from '../../services/queryClient';
++import { captureError } from '../../services/sentry';
++import { dunningApi, type CancelPlanResponse, type ClientDunningStatus } from './dunningApi';
++import { describeDunningError, localDunningError, type DunningErrorCopy } from './dunningErrorCopy';
++import { dunningLockoutStore } from './dunningLockoutStore';
++import { DunningLockoutScreen } from './DunningLockoutScreen';
++
++/**
++ * Screens a locked client can still use (the backend allow-list mirrors
++ * this: data export, account deletion, the coach thread, and the native
++ * card update with its three billing routes). The lockout state steps aside
++ * while one of these is focused and returns when the client navigates away.
++ */
++export const REACHABLE_WHILE_LOCKED: ReadonlySet<string> = new Set([
++  'DataExport',
++  'DeleteAccount',
++  'Messages',
++  'UpdateCard',
++]);
++
++export type EndPlanResult =
++  | { ok: true; response: CancelPlanResponse }
++  | { ok: false; error: DunningErrorCopy }
++  /**
++   * The provider (or the account) that started the request is gone; the
++   * answer belongs to nobody on screen, so nothing is shown or refreshed.
++   */
++  | { ok: false; retired: true; error: null };
++
++export interface DunningContextValue {
++  status: ClientDunningStatus | null;
++  locked: boolean;
++  refreshing: boolean;
++  refresh: () => Promise<void>;
++  /** Open the native Update card screen and start the card form. */
++  updateCard: (surface: string) => void;
++  /** End the plan in dunning (2A): void the unpaid invoice, access ends now. */
++  endPlan: (surface: string) => Promise<EndPlanResult>;
++  messageCoach: () => void;
++}
++
++const DunningContext = createContext<DunningContextValue | null>(null);
++
++/** Null outside the provider (coaches, signed-out screens): render nothing. */
++export function useDunning(): DunningContextValue | null {
++  return useContext(DunningContext);
++}
++
++export interface DunningLockoutProviderProps {
++  children: React.ReactNode;
++  /** Only clients are ever dunned; for anyone else the provider is inert. */
++  enabled: boolean;
++  onMessageCoach: () => void;
++  onOpenDataExport: () => void;
++  onOpenDeleteAccount: () => void;
++  onSignOut: () => void;
++  /** Navigate to the native Update card screen (`UpdateCard`). */
++  onOpenUpdateCard: (params: { autostart: boolean; surface: string }) => void;
++  /** Current focused route name, and a subscription to route changes. */
++  getCurrentRouteName: () => string | undefined;
++  subscribeToRouteChanges: (listener: () => void) => () => void;
++}
++
++export function DunningLockoutProvider({
++  children,
++  enabled,
++  onMessageCoach,
++  onOpenDataExport,
++  onOpenDeleteAccount,
++  onSignOut,
++  onOpenUpdateCard,
++  getCurrentRouteName,
++  subscribeToRouteChanges,
++}: DunningLockoutProviderProps) {
++  const [status, setStatus] = useState<ClientDunningStatus | null>(null);
++  // B-353-1: not seeded during render; the subscription effect syncs the
++  // store, which every identity boundary retires (sign-out, sign-in, this
++  // provider unmounting), so a previous account's lock never paints.
++  const [locked, setLocked] = useState(false);
++  const [loadError, setLoadError] = useState<DunningErrorCopy | null>(null);
++  const [refreshing, setRefreshing] = useState(false);
++  const [routeName, setRouteName] = useState<string | undefined>(getCurrentRouteName());
++  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
++  const wasLockedRef = useRef(locked);
++  // B-353-1 (Sol): every status read is owned by this provider's lifetime,
++  // the auth generation it started under, and its sequence number; only the
++  // newest read of a live provider in the same generation may write state.
++  const aliveRef = useRef(true);
++  const seqRef = useRef(0);
++  const enabledRef = useRef(enabled);
++  enabledRef.current = enabled;
++
++  const refresh = useCallback(async () => {
++    if (!enabled) return;
++    seqRef.current += 1;
++    const seq = seqRef.current;
++    const generation = dunningLockoutStore.currentGeneration();
++    const owns = () =>
++      aliveRef.current &&
++      enabledRef.current &&
++      seq === seqRef.current &&
++      generation === dunningLockoutStore.currentGeneration();
++    setRefreshing(true);
++    try {
++      // A malformed answer throws (strict normaliser), so the last known
++      // state stays: a bad body never clears a lockout or a banner (B-322-5).
++      const next = await dunningApi.getStatus();
++      if (!owns()) return;
++      setStatus(next);
++      setLoadError(null);
++      // Lock only on what the server decided: an enabled cycle in its locked
++      // state, not waived. Flag off ({ enabled: false }) is never a lock.
++      if (next.enabled && next.state === 'locked' && !next.lock_waived) {
++        dunningLockoutStore.reportLocked({ requestId: null, requestUrl: '/v1/checkout/dunning', generation });
++      } else {
++        dunningLockoutStore.clear(generation);
++      }
++    } catch (err) {
++      if (!owns()) return;
++      const copy = describeDunningError(err, 'load_status');
++      setLoadError(copy);
++      if (copy.report) {
++        captureError(err, { surface: 'dunning_status', dunning_error_code: copy.code, request_id: copy.reference });
++      }
++    } finally {
++      if (aliveRef.current && seq === seqRef.current) setRefreshing(false);
++    }
++  }, [enabled]);
++
++  // Unmount is an identity boundary: the client tree goes away on sign-out
++  // and on an account switch, so this provider's generation is retired and
++  // nothing it started can lock the next account.
++  useEffect(() => {
++    aliveRef.current = true;
++    return () => {
++      aliveRef.current = false;
++      dunningLockoutStore.retire();
++    };
++  }, []);
++
++  // Bootstrap + store subscription (403 LOCKED_DUNNING from any request).
++  useEffect(() => {
++    if (!enabled) {
++      // Any read in flight is now stale.
++      seqRef.current += 1;
++      dunningLockoutStore.clear();
++      setStatus(null);
++      setLocked(false);
++      setRefreshing(false);
++      return undefined;
++    }
++    const unsubscribe = dunningLockoutStore.subscribe((isLocked) => {
++      setLocked(isLocked);
++    });
++    // A 403 from this generation may already have landed before mount.
++    setLocked(dunningLockoutStore.isLocked());
++    void refresh();
++    return unsubscribe;
++  }, [enabled, refresh]);
++
++  // When a 403 flips us into the locked state, load the amount and dates.
++  // When the lock lifts (payment cleared), refetch every paid query.
++  useEffect(() => {
++    if (locked && !wasLockedRef.current && status?.state !== 'locked') void refresh();
++    if (!locked && wasLockedRef.current) void queryClient.invalidateQueries();
++    wasLockedRef.current = locked;
++  }, [locked, refresh, status?.state]);
++
++  // Re-check on app foreground (the client may have paid on another device).
++  useEffect(() => {
++    if (!enabled) return undefined;
++    const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
++      if (appStateRef.current.match(/inactive|background/) && next === 'active') void refresh();
++      appStateRef.current = next;
++    });
++    return () => sub.remove();
++  }, [enabled, refresh]);
++
++  useEffect(
++    () => subscribeToRouteChanges(() => setRouteName(getCurrentRouteName())),
++    [getCurrentRouteName, subscribeToRouteChanges],
++  );
++
++  const showLockout = enabled && locked && !(routeName && REACHABLE_WHILE_LOCKED.has(routeName));
++
++  // Android back must not reveal the locked screen underneath.
++  useEffect(() => {
++    if (!showLockout) return undefined;
++    const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
++    return () => sub.remove();
++  }, [showLockout]);
++
++  const updateCard = useCallback(
++    (surface: string) => {
++      onOpenUpdateCard({ autostart: true, surface });
++    },
++    [onOpenUpdateCard],
++  );
++
++  const endPlan = useCallback(
++    async (surface: string): Promise<EndPlanResult> => {
++      const purchaseId = status?.purchase_id;
++      if (!purchaseId) return { ok: false, error: localDunningError('PLAN_NOT_LOADED') };
++      const generation = dunningLockoutStore.currentGeneration();
++      const owns = () => aliveRef.current && generation === dunningLockoutStore.currentGeneration();
++      try {
++        const response = await dunningApi.cancelPlan(purchaseId);
++        // B-353-1: a late answer for a retired provider or account is not shown.
++        if (!owns()) return { ok: false, retired: true, error: null };
++        await refresh();
++        if (!owns()) return { ok: false, retired: true, error: null };
++        return { ok: true, response };
++      } catch (err) {
++        const error = describeDunningError(err, 'cancel_plan');
++        if (error.report) {
++          captureError(err, { surface, dunning_error_code: error.code, request_id: error.reference });
++        }
++        if (!owns()) return { ok: false, retired: true, error: null };
++        // A lost answer may still have ended the plan: show the truth.
++        await refresh();
++        if (!owns()) return { ok: false, retired: true, error: null };
++        return { ok: false, error };
++      }
++    },
++    [status?.purchase_id, refresh],
++  );
++
++  const value = useMemo<DunningContextValue>(
++    () => ({ status, locked, refreshing, refresh, updateCard, endPlan, messageCoach: onMessageCoach }),
++    [status, locked, refreshing, refresh, updateCard, endPlan, onMessageCoach],
++  );
++
++  // B-353-4: while the lockout shows, the app underneath is hidden from
++  // screen readers (iOS: accessibilityViewIsModal on the overlay and
++  // accessibilityElementsHidden on the app; Android: no-hide-descendants).
++  // The app is always wrapped in the same View so it never remounts.
++  return (
++    <DunningContext.Provider value={value}>
++      <View
++        style={styles.app}
++        testID="dunning-app-content"
++        accessibilityElementsHidden={showLockout}
++        importantForAccessibility={showLockout ? 'no-hide-descendants' : 'auto'}
++      >
++        {children}
++      </View>
++      {showLockout ? (
++        <View style={StyleSheet.absoluteFill} testID="dunning-lockout-overlay" accessibilityViewIsModal>
++          <DunningLockoutScreen
++            status={status}
++            loadError={loadError}
++            refreshing={refreshing}
++            onRefresh={refresh}
++            onUpdateCard={updateCard}
++            onEndPlan={endPlan}
++            onMessageCoach={onMessageCoach}
++            onOpenDataExport={onOpenDataExport}
++            onOpenDeleteAccount={onOpenDeleteAccount}
++            onSignOut={onSignOut}
++            supportReference={dunningLockoutStore.lastSignal()?.requestId ?? null}
++          />
++        </View>
++      ) : null}
++    </DunningContext.Provider>
++  );
++}
++
++const styles = StyleSheet.create({
++  app: { flex: 1 },
++});
+diff --git a/src/entitlements/dunning/DunningLockoutScreen.tsx b/src/entitlements/dunning/DunningLockoutScreen.tsx
+new file mode 100644
+index 0000000..06c76d6
+--- /dev/null
++++ b/src/entitlements/dunning/DunningLockoutScreen.tsx
+@@ -0,0 +1,326 @@
++import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
++import {
++  ActivityIndicator,
++  Alert,
++  RefreshControl,
++  SafeAreaView,
++  ScrollView,
++  StyleSheet,
++  Text,
++  TouchableOpacity,
++} from 'react-native';
++import { useTheme } from '../../theme/ThemeProvider';
++import type { SemanticTokens } from '../../theme/tokens';
++import { formatDunningAmount, formatDunningDate, type ClientDunningStatus } from './dunningApi';
++import { SupportEmailFallback, useSupportEmail } from '../../components/support/SupportEmailFallback';
++import { SUPPORT_EMAIL } from '../../constants/support';
++import { cancelOutcomeCopy, type DunningErrorCopy } from './dunningErrorCopy';
++import type { EndPlanResult } from './DunningLockoutProvider';
++
++export interface DunningLockoutScreenProps {
++  status: ClientDunningStatus | null;
++  loadError: DunningErrorCopy | null;
++  refreshing: boolean;
++  onRefresh: () => Promise<void> | void;
++  /** Opens the native Update card screen (reachable while locked). */
++  onUpdateCard: (surface: string) => void;
++  /** 2A: void the unpaid invoice and end the plan now. */
++  onEndPlan: (surface: string) => Promise<EndPlanResult>;
++  onMessageCoach: () => void;
++  onOpenDataExport: () => void;
++  onOpenDeleteAccount: () => void;
++  onSignOut: () => void;
++  /** Request id of the 403 that locked the app, for the support email. */
++  supportReference: string | null;
++}
++
++/** True when the cycle is a payment the bank reversed (a new card does not settle it). */
++export function isDisputeCycle(status: ClientDunningStatus | null | undefined): boolean {
++  return status?.kind === 'dispute';
++}
++
++/** True while a payment is overdue or reversed and the plan is not ended. */
++function inDunning(status: ClientDunningStatus | null | undefined): boolean {
++  return Boolean(status?.enabled && (status.state === 'past_due' || status.state === 'locked'));
++}
++
++/**
++ * What happened, in one calm paragraph. Never invents an amount, a date or
++ * a cause: before the status loads it says only that a payment problem
++ * paused the plan (the 403 does not say which kind).
++ */
++export function lockoutSummary(status: ClientDunningStatus | null): string {
++  const safe = 'Your data is safe and nothing has been deleted.';
++  if (!status) return `Your plan is paused because of a payment problem. ${safe}`;
++  const amount = formatDunningAmount(status.amount_cents ?? null, status.currency ?? null);
++  const coach = status.coach_name ?? 'your coach';
++  if (isDisputeCycle(status)) {
++    // B-353-2: the bank took back a payment already made (backend B-628-8).
++    return `Your bank reversed an earlier payment${amount ? ` of ${amount}` : ''} to ${coach}, so your plan is paused. ${safe}`;
++  }
++  const since = formatDunningDate(status.failed_at ?? null);
++  const what = amount ? `Your payment of ${amount} to ${coach}` : `Your payment to ${coach}`;
++  const when = since ? ` has not gone through since ${since}` : ' has not gone through for 10 days';
++  return `${what}${when}, so your plan is paused. ${safe}`;
++}
++
++/**
++ * The next step, true for the lock kind. A failed payment: a working card is
++ * charged right away and the plan comes back once it clears (ruling D12). A
++ * reversed payment: a new card does not settle it, so the step is support.
++ */
++export function lockoutNextStep(status: ClientDunningStatus | null): string {
++  if (!status) return 'Pull down to load the details, or email support.';
++  if (isDisputeCycle(status)) {
++    const coach = status.coach_name ? `message ${status.coach_name}` : 'message your coach';
++    return `Saving a new card does not settle it. To sort it out, email ${SUPPORT_EMAIL} or ${coach}.`;
++  }
++  return 'To restore access, tap Update card and add a card that works. The card is charged right away, and your plan comes back as soon as the payment clears.';
++}
++
++/**
++ * The End my plan confirmation, shared by the lockout and the Update card
++ * screen. In dunning (2A) access ends now; a payment that landed in the
++ * meantime keeps the paid period (backend cancel rule). A reversed payment
++ * also ends now, and ending the plan does not settle it (backend B-628-8).
++ * Outside dunning (option A) access runs to the end of the paid period.
++ */
++export function endPlanAlertBody(status: ClientDunningStatus | null | undefined): string {
++  const amount = formatDunningAmount(status?.amount_cents ?? null, status?.currency ?? null);
++  if (inDunning(status) && isDisputeCycle(status)) {
++    return `Your access ends now. Ending the plan does not settle the payment your bank reversed. Email ${SUPPORT_EMAIL} to sort it out. Your data stays in your account.`;
++  }
++  if (inDunning(status)) {
++    return `${amount ? `The unpaid ${amount} is canceled, so you are not charged for it.` : 'The unpaid balance is canceled, so you are not charged for it.'} Your access ends now. If a payment went through in the meantime, you keep the period you paid for instead. Your data stays in your account.`;
++  }
++  return 'Your plan ends at the end of the period you already paid for, and you will not be charged again. There is no refund for the current period. Your data stays in your account.';
++}
++
++/** Subject of every support email from the payment screens. */
++export const DUNNING_SUPPORT_SUBJECT = 'Paused plan: payment help';
++
++/** Prefilled support email body: the request reference when there is one. */
++export function dunningSupportBody(reference: string | null): string {
++  return reference
++    ? `Request reference: ${reference}\n\n`
++    : 'My plan is paused after a failed payment.\n\n';
++}
++
++/** Shown with the copy-address fallback so the reference is never lost. */
++export function dunningSupportReferenceNote(reference: string | null): string | null {
++  return reference ? `Include reference ${reference} in your email.` : null;
++}
++
++export function DunningLockoutScreen({
++  status,
++  loadError,
++  refreshing,
++  onRefresh,
++  onUpdateCard,
++  onEndPlan,
++  onMessageCoach,
++  onOpenDataExport,
++  onOpenDeleteAccount,
++  onSignOut,
++  supportReference,
++}: DunningLockoutScreenProps) {
++  const { semanticColors } = useTheme();
++  const styles = useMemo(() => makeStyles(semanticColors), [semanticColors]);
++  const [ending, setEnding] = useState(false);
++  const [endError, setEndError] = useState<DunningErrorCopy | null>(null);
++  // B-353-1: a lockout that went away (account switch, unlock) never shows a
++  // late End my plan answer or writes state.
++  const aliveRef = useRef(true);
++  useEffect(
++    () => () => {
++      aliveRef.current = false;
++    },
++    [],
++  );
++  const dispute = isDisputeCycle(status);
++
++  const handleUpdateCard = useCallback(() => {
++    onUpdateCard('DunningLockoutScreen');
++  }, [onUpdateCard]);
++
++  const handleEndPlan = useCallback(() => {
++    if (ending) return;
++    Alert.alert('End your plan now?', endPlanAlertBody(status), [
++      { text: 'Keep my plan', style: 'cancel' },
++      {
++        text: 'End my plan',
++        style: 'destructive',
++        onPress: () => {
++          setEnding(true);
++          setEndError(null);
++          void onEndPlan('DunningLockoutScreen')
++            .then((out) => {
++              if (!aliveRef.current || ('retired' in out && out.retired)) return;
++              if (out.ok) {
++                const c = cancelOutcomeCopy(out.response, { dispute });
++                Alert.alert(c.title, c.body);
++              } else if (out.error) {
++                setEndError(out.error);
++              }
++            })
++            .finally(() => {
++              if (aliveRef.current) setEnding(false);
++            });
++        },
++      },
++    ]);
++  }, [ending, onEndPlan, status, dispute]);
++
++  const reference = endError?.reference ?? loadError?.reference ?? supportReference;
++  const supportEmail = useSupportEmail(DUNNING_SUPPORT_SUBJECT, dunningSupportBody(reference));
++  const referenceNote = dunningSupportReferenceNote(reference);
++  const handleContactSupport = useCallback(() => {
++    void supportEmail.open();
++  }, [supportEmail]);
++
++  // C-353-2: "declined" only for a failed payment, never for a reversal.
++  const card = status?.card_last4 && status && !dispute ? ` The card ending ${status.card_last4} was declined.` : '';
++  const coachLabel = status?.coach_name ? `Message ${status.coach_name}` : 'Message your coach';
++
++  return (
++    <SafeAreaView style={styles.root} testID="dunning-lockout-screen">
++      <ScrollView
++        contentContainerStyle={styles.content}
++        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
++      >
++        <Text style={styles.eyebrow}>Payment</Text>
++        <Text style={styles.title} accessibilityRole="header">
++          Your plan is paused
++        </Text>
++        <Text style={styles.body} testID="dunning-lockout-summary">
++          {lockoutSummary(status)}
++          {card}
++        </Text>
++        <Text style={styles.body} testID="dunning-lockout-next-step">
++          {lockoutNextStep(status)}
++        </Text>
++        {loadError ? (
++          <Text style={styles.notice} testID="dunning-lockout-load-error">
++            {loadError.message}
++          </Text>
++        ) : null}
++
++        {dispute ? (
++          <TouchableOpacity
++            style={styles.primary}
++            onPress={handleContactSupport}
++            accessibilityRole="button"
++            testID="dunning-lockout-support-primary"
++          >
++            <Text style={styles.primaryText}>Email support</Text>
++          </TouchableOpacity>
++        ) : null}
++        <TouchableOpacity
++          style={dispute ? styles.secondary : styles.primary}
++          onPress={handleUpdateCard}
++          accessibilityRole="button"
++          testID="dunning-lockout-update-card"
++        >
++          <Text style={dispute ? styles.secondaryText : styles.primaryText}>Update card</Text>
++        </TouchableOpacity>
++
++        <TouchableOpacity
++          style={styles.secondary}
++          onPress={onMessageCoach}
++          accessibilityRole="button"
++          testID="dunning-lockout-message-coach"
++        >
++          <Text style={styles.secondaryText}>{coachLabel}</Text>
++        </TouchableOpacity>
++
++        <TouchableOpacity
++          style={[styles.secondary, ending && styles.disabled]}
++          onPress={handleEndPlan}
++          disabled={ending}
++          accessibilityRole="button"
++          testID="dunning-lockout-end-plan"
++        >
++          {ending ? (
++            <ActivityIndicator color={semanticColors.textPrimary} />
++          ) : (
++            <Text style={styles.secondaryText}>End my plan</Text>
++          )}
++        </TouchableOpacity>
++        {endError ? (
++          <Text style={styles.notice} testID="dunning-lockout-end-error">
++            {endError.message}
++          </Text>
++        ) : null}
++
++        <Text style={styles.sectionLabel}>Still available while your plan is paused</Text>
++        <Row label="Download my data" onPress={onOpenDataExport} styles={styles} testID="dunning-lockout-data-export" />
++        <Row label="Delete my account" onPress={onOpenDeleteAccount} styles={styles} testID="dunning-lockout-delete-account" />
++        <Row label="Email support" onPress={handleContactSupport} styles={styles} testID="dunning-lockout-support" />
++        <SupportEmailFallback
++          handle={supportEmail}
++          textStyle={styles.notice}
++          linkColor={semanticColors.textPrimary}
++          testID="dunning-lockout-support-fallback"
++        />
++        {supportEmail.state !== 'idle' && referenceNote ? (
++          <Text style={styles.notice} selectable testID="dunning-lockout-support-reference">
++            {referenceNote}
++          </Text>
++        ) : null}
++        <Row label="Sign out" onPress={onSignOut} styles={styles} testID="dunning-lockout-sign-out" />
++
++        <Text style={styles.footnote}>
++          Already paid? Pull down to check again.
++        </Text>
++      </ScrollView>
++    </SafeAreaView>
++  );
++}
++
++function Row({
++  label,
++  onPress,
++  styles,
++  testID,
++}: {
++  label: string;
++  onPress: () => void;
++  styles: ReturnType<typeof makeStyles>;
++  testID: string;
++}) {
++  return (
++    <TouchableOpacity style={styles.row} onPress={onPress} accessibilityRole="button" testID={testID}>
++      <Text style={styles.rowText}>{label}</Text>
++    </TouchableOpacity>
++  );
++}
++
++const makeStyles = (c: SemanticTokens) =>
++  StyleSheet.create({
++    root: { flex: 1, backgroundColor: c.bgPrimary },
++    content: { paddingHorizontal: 24, paddingTop: 48, paddingBottom: 40 },
++    eyebrow: { fontSize: 12, letterSpacing: 1, textTransform: 'uppercase', color: c.textMuted, marginBottom: 8 },
++    title: { fontSize: 26, fontWeight: '600', color: c.textPrimary, marginBottom: 16 },
++    body: { fontSize: 15, lineHeight: 22, color: c.textPrimary, marginBottom: 12 },
++    notice: { fontSize: 13, lineHeight: 19, color: c.accentText, marginTop: 8, marginBottom: 4 },
++    primary: {
++      backgroundColor: c.accent,
++      paddingVertical: 14,
++      alignItems: 'center',
++      marginTop: 12,
++    },
++    disabled: { opacity: 0.6 },
++    primaryText: { color: c.textOnAccent, fontSize: 15, fontWeight: '600' },
++    secondary: {
++      borderWidth: 1,
++      borderColor: c.border,
++      paddingVertical: 14,
++      alignItems: 'center',
++      marginTop: 12,
++    },
++    secondaryText: { color: c.textPrimary, fontSize: 15, fontWeight: '500' },
++    sectionLabel: { fontSize: 13, color: c.textMuted, marginTop: 32, marginBottom: 4 },
++    row: { paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.border },
++    rowText: { fontSize: 15, color: c.textPrimary },
++    footnote: { fontSize: 12, color: c.textMuted, marginTop: 24 },
++  });
+diff --git a/src/entitlements/dunning/UpdateCardScreen.tsx b/src/entitlements/dunning/UpdateCardScreen.tsx
+new file mode 100644
+index 0000000..d996624
+--- /dev/null
++++ b/src/entitlements/dunning/UpdateCardScreen.tsx
+@@ -0,0 +1,591 @@
++import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
++import {
++  ActivityIndicator,
++  Alert,
++  Linking,
++  RefreshControl,
++  SafeAreaView,
++  ScrollView,
++  StyleSheet,
++  Text,
++  TouchableOpacity,
++  View,
++} from 'react-native';
++import { useTheme } from '../../theme/ThemeProvider';
++import type { SemanticTokens } from '../../theme/tokens';
++import {
++  approvalFor,
++  dunningApi,
++  formatDunningAmount,
++  formatDunningTotals,
++  type ApprovedInvoice,
++  type CardUpdateResponse,
++  type ClientDunningStatus,
++  type PaymentQuote,
++} from './dunningApi';
++import {
++  cancelOutcomeCopy,
++  cardUpdateOutcomeCopy,
++  describeDunningError,
++  type DunningErrorCopy,
++} from './dunningErrorCopy';
++import { useDunning } from './DunningLockoutProvider';
++import { dunningLockoutStore } from './dunningLockoutStore';
++import { SupportEmailFallback, useSupportEmail } from '../../components/support/SupportEmailFallback';
++import {
++  DUNNING_SUPPORT_SUBJECT,
++  dunningSupportBody,
++  dunningSupportReferenceNote,
++  endPlanAlertBody,
++  isDisputeCycle,
++} from './DunningLockoutScreen';
++import { confirmWithBank, handleStripeReturnUrl, runNativeCardUpdate } from './updateCard';
++
++// One End my plan confirmation for both payment screens (moved next to the lockout).
++export { endPlanAlertBody };
++
++/**
++ * Native "Update card" screen (OR-110-2). Target of the in-app banner, the
++ * lockout screen, ClientPackages, `tgp://billing/update-card` and the
++ * universal link https://app.trygrowthproject.com/billing/update-card that
++ * the dunning emails carry. Reachable while locked (REACHABLE_WHILE_LOCKED;
++ * the backend allow-list keeps its three routes open).
++ */
++
++export const UPDATE_CARD_ROUTE = 'UpdateCard';
++
++export interface UpdateCardScreenProps {
++  route?: { params?: { autostart?: boolean } };
++  navigation?: {
++    canGoBack?: () => boolean;
++    goBack?: () => void;
++    navigate?: (name: string, params?: object) => void;
++  };
++}
++
++type Busy = null | 'card' | 'bank' | 'cancel' | 'confirming';
++
++/** What the screen can still do after a run that did not settle. */
++type Pending =
++  | null
++  | { kind: 'bank'; setupIntentId: string; clientSecret: string }
++  | { kind: 'unconfirmed'; setupIntentId: string }
++  /** B-322-7: another plan's change was busy; the same confirm finishes it. */
++  | { kind: 'in_progress'; setupIntentId: string }
++  | { kind: 'approval'; setupIntentId: string; quote: PaymentQuote };
++
++function inDunning(status: ClientDunningStatus | null | undefined): boolean {
++  return Boolean(status?.enabled && (status.state === 'past_due' || status.state === 'locked'));
++}
++
++/** What this screen will do with the money, said before the client acts. */
++export function updateCardIntro(status: ClientDunningStatus | null | undefined): string {
++  const amount = formatDunningAmount(status?.amount_cents ?? null, status?.currency ?? null);
++  const coach = status?.coach_name ?? 'your coach';
++  if (inDunning(status) && isDisputeCycle(status)) {
++    // B-353-2: a new card does not settle a payment the bank took back, so
++    // no charge and no comeback are promised (backend B-628-8).
++    return `Your bank took back an earlier payment${amount ? ` of ${amount}` : ''} to ${coach}${status?.state === 'locked' ? ', so your plan is paused' : ''}. A new card does not settle that; email support to sort it out. A card saved here is used for your future payments.`;
++  }
++  if (inDunning(status) && status?.state === 'locked') {
++    return amount
++      ? `Your payment of ${amount} to ${coach} did not go through, so your plan is paused. Add a card that works and ${amount} is charged to it right away. Your plan comes back as soon as it clears.`
++      : `Your last payment to ${coach} did not go through, so your plan is paused. Add a card that works and the open balance is charged to it right away. Your plan comes back as soon as it clears.`;
++  }
++  if (inDunning(status)) {
++    return amount
++      ? `Your payment of ${amount} to ${coach} did not go through. Add a card that works and ${amount} is charged to it right away. You keep full access while you sort it out.`
++      : `Your last payment to ${coach} did not go through. Add a card that works and the open balance is charged to it right away. You keep full access while you sort it out.`;
++  }
++  return 'Add a new card for your plan. If a payment is overdue, it is charged to this card right away. Otherwise your next payment will use it.';
++}
++
++/**
++ * B-322-6: the label names exactly what the confirm will charge, from the
++ * quote read just before the sheet opens (per currency, never summed).
++ */
++export function sheetButtonLabel(quote: PaymentQuote | null | undefined): string {
++  const total = formatDunningTotals(quote?.totals ?? []);
++  return total ? `Save card and pay ${total}` : 'Save card';
++}
++
++export function UpdateCardScreen({ route, navigation }: UpdateCardScreenProps) {
++  const dunning = useDunning();
++  const { semanticColors, colorScheme } = useTheme();
++  const styles = useMemo(() => makeStyles(semanticColors), [semanticColors]);
++  const status = dunning?.status ?? null;
++  const [busy, setBusy] = useState<Busy>(null);
++  const [error, setError] = useState<DunningErrorCopy | null>(null);
++  const [result, setResult] = useState<{
++    response: CardUpdateResponse;
++    setupIntentId: string;
++  } | null>(null);
++  const [quote, setQuote] = useState<PaymentQuote | null>(null);
++  const [pending, setPending] = useState<Pending>(null);
++  const approvedRef = useRef<ApprovedInvoice[]>([]);
++  const autostarted = useRef(false);
++  // B-353-2: every action is owned by this mounted screen and the auth
++  // generation it started under. After any await, a retired owner writes no
++  // state, shows nothing, and starts no further request or native step.
++  const aliveRef = useRef(true);
++  useEffect(
++    () => () => {
++      aliveRef.current = false;
++    },
++    [],
++  );
++  const claimOwner = useCallback(() => {
++    const generation = dunningLockoutStore.currentGeneration();
++    return () => aliveRef.current && generation === dunningLockoutStore.currentGeneration();
++  }, []);
++
++  // Bank redirects during 3DS come back on tgp://stripe-redirect.
++  useEffect(() => {
++    const sub = Linking.addEventListener('url', ({ url }) => {
++      void handleStripeReturnUrl(url);
++    });
++    return () => sub.remove();
++  }, []);
++
++  const settle = useCallback(
++    async (next: Awaited<ReturnType<typeof runNativeCardUpdate>>, isCurrent: () => boolean) => {
++      if (next.kind === 'retired' || !isCurrent()) return;
++      setPending(null);
++      if (next.kind === 'error') {
++        setError(next.error);
++      } else if (next.kind === 'done') {
++        setResult({
++          response: next.response,
++          setupIntentId: next.setupIntentId,
++        });
++        if (next.response.outcome === 'approval_required' && next.response.quote) {
++          setPending({
++            kind: 'approval',
++            setupIntentId: next.setupIntentId,
++            quote: next.response.quote,
++          });
++        } else if (next.response.outcome === 'in_progress') {
++          setPending({ kind: 'in_progress', setupIntentId: next.setupIntentId });
++        } else if (next.response.outcome === 'requires_action' && next.response.payment_intent_client_secret) {
++          setPending({
++            kind: 'bank',
++            setupIntentId: next.setupIntentId,
++            clientSecret: next.response.payment_intent_client_secret,
++          });
++        }
++      } else if (next.kind === 'bank_pending') {
++        if (next.response)
++          setResult({
++            response: next.response,
++            setupIntentId: next.setupIntentId,
++          });
++        setError(next.error);
++        setPending({
++          kind: 'bank',
++          setupIntentId: next.setupIntentId,
++          clientSecret: next.clientSecret,
++        });
++      } else if (next.kind === 'unconfirmed') {
++        setError(next.error);
++        setPending({ kind: 'unconfirmed', setupIntentId: next.setupIntentId });
++      }
++      // Re-read either way: a payment may have cleared the lock, and a
++      // failure may have been a lost answer on a payment that went through.
++      if (next.kind !== 'canceled') await dunning?.refresh();
++    },
++    [dunning],
++  );
++
++  /** Every screen action runs through here so no rejection goes uncaught (autostart included). */
++  const run = useCallback(
++    async (kind: Exclude<Busy, null>, work: (isCurrent: () => boolean) => Promise<void>) => {
++      if (busy) return;
++      const isCurrent = claimOwner();
++      setBusy(kind);
++      setError(null);
++      try {
++        await work(isCurrent);
++      } catch (err) {
++        if (isCurrent()) setError(describeDunningError(err, kind === 'card' ? 'update_card' : 'confirm_card'));
++      } finally {
++        if (isCurrent()) setBusy(null);
++      }
++    },
++    [busy, claimOwner],
++  );
++
++  const startCard = useCallback(
++    () =>
++      run('card', async (isCurrent) => {
++        setResult(null);
++        setPending(null);
++        // B-322-6: read what is owed right now, before the sheet opens.
++        let fresh: PaymentQuote;
++        try {
++          fresh = await dunningApi.getPaymentQuote();
++        } catch (err) {
++          if (isCurrent()) setError(describeDunningError(err, 'update_card'));
++          return;
++        }
++        if (!isCurrent()) return;
++        setQuote(fresh);
++        approvedRef.current = approvalFor(fresh);
++        await settle(
++          await runNativeCardUpdate({
++            surface: 'UpdateCardScreen',
++            colorScheme,
++            primaryButtonLabel: sheetButtonLabel(fresh),
++            approved: approvedRef.current,
++            onConfirming: () => {
++              if (isCurrent()) setBusy('confirming');
++            },
++            isCurrent,
++          }),
++          isCurrent,
++        );
++      }),
++    [colorScheme, run, settle],
++  );
++
++  const resume = useCallback(
++    () =>
++      run(pending?.kind === 'bank' ? 'bank' : 'confirming', async (isCurrent) => {
++        if (!pending) return;
++        if (pending.kind === 'approval') {
++          // Re-approve the fresh amounts the server just quoted, same card.
++          setQuote(pending.quote);
++          approvedRef.current = approvalFor(pending.quote);
++        }
++        await settle(
++          await confirmWithBank({
++            surface: 'UpdateCardScreen',
++            setupIntentId: pending.setupIntentId,
++            clientSecret: pending.kind === 'bank' ? pending.clientSecret : null,
++            approved: approvedRef.current,
++            onConfirming: () => {
++              if (isCurrent()) setBusy('confirming');
++            },
++            // B-322-1: what already went through stays named on a retry.
++            lastKnown: result?.setupIntentId === pending.setupIntentId ? result.response : null,
++            isCurrent,
++          }),
++          isCurrent,
++        );
++      }),
++    [pending, result, run, settle],
++  );
++
++  useEffect(() => {
++    if (route?.params?.autostart && !autostarted.current) {
++      autostarted.current = true;
++      void startCard();
++    }
++  }, [route?.params?.autostart, startCard]);
++
++  const leave = useCallback(() => {
++    if (navigation?.canGoBack?.()) navigation.goBack?.();
++    else navigation?.navigate?.('Home');
++  }, [navigation]);
++
++  const endPlan = useCallback(() => {
++    if (!dunning || busy) return;
++    Alert.alert(inDunning(status) ? 'End your plan now?' : 'End your plan?', endPlanAlertBody(status), [
++      { text: 'Keep my plan', style: 'cancel' },
++      {
++        text: 'End my plan',
++        style: 'destructive',
++        onPress: () => {
++          const isCurrent = claimOwner();
++          setBusy('cancel');
++          setError(null);
++          void dunning
++            .endPlan('UpdateCardScreen')
++            .then((out) => {
++              // B-353-2: a retired screen shows no late answer and does not navigate.
++              if (!isCurrent() || ('retired' in out && out.retired)) return;
++              if (out.ok) {
++                const c = cancelOutcomeCopy(out.response, { dispute: isDisputeCycle(status) });
++                Alert.alert(c.title, c.body);
++                leave();
++              } else if (out.error) {
++                setError(out.error);
++              }
++            })
++            .finally(() => {
++              if (isCurrent()) setBusy(null);
++            });
++        },
++      },
++    ]);
++  }, [dunning, busy, status, leave, claimOwner]);
++
++  const supportReference = error?.reference ?? null;
++  const supportEmail = useSupportEmail(
++    DUNNING_SUPPORT_SUBJECT,
++    dunningSupportBody(supportReference),
++  );
++  const supportReferenceNote = dunningSupportReferenceNote(supportReference);
++  const contactSupport = useCallback(() => {
++    void supportEmail.open();
++  }, [supportEmail]);
++
++  // B-353-2: disputes the confirm reports (or the quote read before the card
++  // form named) stay in the outcome: saving a card does not settle them.
++  const outcome = result ? cardUpdateOutcomeCopy(result.response, quote?.disputes ?? []) : null;
++  const dispute = isDisputeCycle(status);
++  const quoteDisputeNote =
++    !outcome && !dispute && quote && quote.disputes.length > 0
++      ? 'Another plan has a payment your bank reversed. Saving a card does not settle that; email support to sort it out.'
++      : null;
++  const settled = !pending && result && ['paid', 'saved', 'processing'].includes(result.response.outcome);
++  const needsBank = pending?.kind === 'bank';
++  const quoteTotal = formatDunningTotals(quote?.totals ?? []);
++  const resumeLabel =
++    pending?.kind === 'approval'
++      ? `Pay ${formatDunningTotals(pending.quote.totals) ?? 'the new amount'}`
++      : pending?.kind === 'unconfirmed'
++        ? 'Check my payment again'
++        : pending?.kind === 'in_progress'
++          ? 'Check again'
++          : null;
++  // C-353-2: "declined" only for a failed payment and before this visit saved a card.
++  const cardOnFile = status?.card_last4
++    ? `The card on file ends in ${status.card_last4}${inDunning(status) && !dispute && !result ? ' and was declined' : ''}.`
++    : null;
++
++  return (
++    <SafeAreaView style={styles.root} testID="update-card-screen">
++      <ScrollView
++        contentContainerStyle={styles.content}
++        refreshControl={
++          <RefreshControl refreshing={Boolean(dunning?.refreshing)} onRefresh={() => void dunning?.refresh()} />
++        }
++      >
++        <TouchableOpacity onPress={leave} accessibilityRole="button" testID="update-card-back" style={styles.back}>
++          <Text style={styles.backText}>Back</Text>
++        </TouchableOpacity>
++        <Text style={styles.eyebrow}>Payment</Text>
++        <Text style={styles.title} accessibilityRole="header">
++          Update your card
++        </Text>
++        <Text style={styles.body} testID="update-card-intro">
++          {updateCardIntro(status)}
++        </Text>
++        {cardOnFile ? <Text style={styles.meta}>{cardOnFile}</Text> : null}
++        {quoteTotal && !settled ? (
++          <Text style={styles.meta} testID="update-card-quote">
++            {`Saving this card pays ${quoteTotal} now.`}
++          </Text>
++        ) : null}
++        {quoteDisputeNote ? (
++          <Text style={styles.meta} testID="update-card-quote-dispute">
++            {quoteDisputeNote}
++          </Text>
++        ) : null}
++        {busy === 'confirming' ? (
++          <Text style={styles.meta} testID="update-card-confirming" accessibilityRole="alert">
++            Confirming your payment with the server. This can take a few seconds.
++          </Text>
++        ) : null}
++
++        {outcome ? (
++          <View
++            style={[styles.result, outcome.tone === 'done' ? styles.resultDone : styles.resultAction]}
++            testID={`update-card-result-${result?.response.outcome}`}
++            accessibilityRole="alert"
++          >
++            <Text style={styles.resultTitle}>{outcome.title}</Text>
++            <Text style={styles.resultBody}>{outcome.body}</Text>
++          </View>
++        ) : null}
++        {error ? (
++          <Text style={styles.notice} testID="update-card-error" accessibilityRole="alert">
++            {error.message}
++          </Text>
++        ) : null}
++
++        {settled ? (
++          <TouchableOpacity style={styles.primary} onPress={leave} accessibilityRole="button" testID="update-card-done">
++            <Text style={styles.primaryText}>Done</Text>
++          </TouchableOpacity>
++        ) : resumeLabel ? (
++          <TouchableOpacity
++            style={[styles.primary, busy ? styles.disabled : null]}
++            onPress={resume}
++            disabled={busy !== null}
++            accessibilityRole="button"
++            testID="update-card-resume"
++          >
++            {busy ? (
++              <ActivityIndicator color={semanticColors.textOnDisabled} />
++            ) : (
++              <Text style={styles.primaryText}>{resumeLabel}</Text>
++            )}
++          </TouchableOpacity>
++        ) : needsBank ? (
++          <TouchableOpacity
++            style={[styles.primary, busy ? styles.disabled : null]}
++            onPress={resume}
++            disabled={busy !== null}
++            accessibilityRole="button"
++            testID="update-card-confirm-bank"
++          >
++            {busy === 'bank' ? (
++              <ActivityIndicator color={semanticColors.textOnDisabled} />
++            ) : (
++              <Text style={styles.primaryText}>Confirm with my bank</Text>
++            )}
++          </TouchableOpacity>
++        ) : null}
++        {needsBank ? (
++          <TouchableOpacity
++            style={styles.secondary}
++            onPress={startCard}
++            disabled={busy !== null}
++            accessibilityRole="button"
++            testID="update-card-different"
++          >
++            <Text style={styles.secondaryText}>Use a different card</Text>
++          </TouchableOpacity>
++        ) : null}
++        {settled || needsBank ? null : (
++          <TouchableOpacity
++            style={[styles.primary, busy ? styles.disabled : null]}
++            onPress={startCard}
++            disabled={busy !== null}
++            accessibilityRole="button"
++            testID="update-card-add"
++          >
++            {busy === 'card' ? (
++              <ActivityIndicator color={semanticColors.textOnDisabled} />
++            ) : (
++              <Text style={styles.primaryText}>
++                {result?.response.outcome === 'declined' ? 'Try a different card' : 'Add a card'}
++              </Text>
++            )}
++          </TouchableOpacity>
++        )}
++
++        {inDunning(status) && status?.purchase_id && !settled ? (
++          <TouchableOpacity
++            style={styles.secondary}
++            onPress={endPlan}
++            disabled={busy !== null}
++            accessibilityRole="button"
++            testID="update-card-end-plan"
++          >
++            {busy === 'cancel' ? (
++              <ActivityIndicator color={semanticColors.textPrimary} />
++            ) : (
++              <Text style={styles.secondaryText}>End my plan instead</Text>
++            )}
++          </TouchableOpacity>
++        ) : null}
++
++        <TouchableOpacity
++          style={styles.row}
++          onPress={contactSupport}
++          accessibilityRole="button"
++          testID="update-card-support"
++        >
++          <Text style={styles.rowText}>Email support</Text>
++        </TouchableOpacity>
++        <SupportEmailFallback
++          handle={supportEmail}
++          textStyle={styles.notice}
++          linkColor={semanticColors.textPrimary}
++          testID="update-card-support-fallback"
++        />
++        {supportEmail.state !== 'idle' && supportReferenceNote ? (
++          <Text style={styles.notice} selectable testID="update-card-support-reference">
++            {supportReferenceNote}
++          </Text>
++        ) : null}
++
++        <Text style={styles.footnote}>
++          Card details go straight to Stripe, the payment provider. The Growth Project never sees your full card number.
++        </Text>
++      </ScrollView>
++    </SafeAreaView>
++  );
++}
++
++export default UpdateCardScreen;
++
++const makeStyles = (c: SemanticTokens) =>
++  StyleSheet.create({
++    root: { flex: 1, backgroundColor: c.bgPrimary },
++    content: { paddingHorizontal: 24, paddingTop: 24, paddingBottom: 40 },
++    back: { alignSelf: 'flex-start', paddingVertical: 8, marginBottom: 16 },
++    backText: { fontSize: 15, color: c.accentText },
++    eyebrow: {
++      fontSize: 12,
++      letterSpacing: 1,
++      textTransform: 'uppercase',
++      color: c.textMuted,
++      marginBottom: 8,
++    },
++    title: {
++      fontSize: 26,
++      fontWeight: '600',
++      color: c.textPrimary,
++      marginBottom: 16,
++    },
++    body: {
++      fontSize: 15,
++      lineHeight: 22,
++      color: c.textPrimary,
++      marginBottom: 8,
++    },
++    meta: { fontSize: 13, lineHeight: 19, color: c.textMuted, marginBottom: 8 },
++    result: {
++      borderWidth: 1,
++      padding: 14,
++      marginTop: 12,
++      backgroundColor: c.bgSurface,
++    },
++    resultDone: { borderColor: c.border },
++    resultAction: { borderColor: c.accent },
++    resultTitle: {
++      fontSize: 15,
++      fontWeight: '600',
++      color: c.textPrimary,
++      marginBottom: 4,
++    },
++    resultBody: { fontSize: 14, lineHeight: 20, color: c.textPrimary },
++    notice: {
++      fontSize: 13,
++      lineHeight: 19,
++      color: c.accentText,
++      marginTop: 12,
++    },
++    primary: {
++      backgroundColor: c.accent,
++      paddingVertical: 14,
++      alignItems: 'center',
++      marginTop: 20,
++    },
++    disabled: { backgroundColor: c.disabledBg },
++    primaryText: { color: c.textOnAccent, fontSize: 15, fontWeight: '600' },
++    secondary: {
++      borderWidth: 1,
++      borderColor: c.border,
++      paddingVertical: 14,
++      alignItems: 'center',
++      marginTop: 12,
++    },
++    secondaryText: { color: c.textPrimary, fontSize: 15, fontWeight: '500' },
++    row: {
++      paddingVertical: 14,
++      marginTop: 24,
++      borderBottomWidth: StyleSheet.hairlineWidth,
++      borderBottomColor: c.border,
++    },
++    rowText: { fontSize: 15, color: c.textPrimary },
++    footnote: {
++      fontSize: 12,
++      lineHeight: 17,
++      color: c.textMuted,
++      marginTop: 24,
++    },
++  });
+diff --git a/src/entitlements/dunning/__tests__/dunningLockout.test.tsx b/src/entitlements/dunning/__tests__/dunningLockout.test.tsx
+new file mode 100644
+index 0000000..28f7f6b
+--- /dev/null
++++ b/src/entitlements/dunning/__tests__/dunningLockout.test.tsx
+@@ -0,0 +1,376 @@
++/**
++ * S-DUNNING mobile: 403 LOCKED_DUNNING handling, the single lockout state,
++ * the Days 0-9 banner, and specific error copy.
++ */
++import React from 'react';
++import { Alert, Linking, Text } from 'react-native';
++import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
++import { dunningLockoutStore, isLockedDunningResponse } from '../dunningLockoutStore';
++import { describeDunningError, SUPPORT_EMAIL } from '../dunningErrorCopy';
++import { normalizeDunningStatus, formatDunningAmount, type ClientDunningStatus } from '../dunningApi';
++import { DunningLockoutProvider, REACHABLE_WHILE_LOCKED } from '../DunningLockoutProvider';
++import { DunningBanner, bannerCopy } from '../DunningBanner';
++import {
++  DUNNING_SUPPORT_SUBJECT,
++  DunningLockoutScreen,
++  dunningSupportBody,
++  lockoutSummary,
++} from '../DunningLockoutScreen';
++import { supportMailto } from '../../../constants/support';
++
++jest.mock('../../../theme/ThemeProvider', () => {
++  const realTokens = jest.requireActual('../../../theme/tokens').default;
++  return {
++    useTheme: () => ({ semanticColors: realTokens.lightTokens, tokens: realTokens, colorScheme: 'light' }),
++  };
++});
++
++const mockCaptureError = jest.fn();
++jest.mock('../../../services/sentry', () => ({
++  captureError: (...args: unknown[]) => mockCaptureError(...args),
++}));
++
++const mockGet = jest.fn();
++const mockPost = jest.fn();
++jest.mock('../../../services/api', () => ({
++  __esModule: true,
++  default: {
++    get: (...args: unknown[]) => mockGet(...args),
++    post: (...args: unknown[]) => mockPost(...args),
++  },
++}));
++
++jest.mock('../../../services/queryClient', () => ({
++  queryClient: { invalidateQueries: jest.fn() },
++}));
++
++
++const LOCKED: ClientDunningStatus = {
++  enabled: true,
++  state: 'locked',
++  purchase_id: 'p1',
++  amount_cents: 15000,
++  currency: 'usd',
++  failed_at: '2026-10-01T15:00:00.000Z',
++  lockout_at: '2026-10-11T15:00:00.000Z',
++  locked_at: '2026-10-11T15:07:00.000Z',
++  day: 10,
++  coach_name: 'Avery',
++  card_last4: '4242',
++  card_brand: 'visa',
++};
++const PAST_DUE: ClientDunningStatus = { ...LOCKED, state: 'past_due', locked_at: null, day: 3 };
++const CLEAR: ClientDunningStatus = { ...LOCKED, state: 'none', amount_cents: null, day: null, locked_at: null };
++
++function axiosError(status: number | null, data?: Record<string, unknown>, headers?: Record<string, string>) {
++  return status === null
++    ? Object.assign(new Error('Network Error'), { response: undefined })
++    : Object.assign(new Error(`Request failed with status code ${status}`), {
++        response: { status, data: data ?? {}, headers: headers ?? {} },
++      });
++}
++
++const nav = {
++  route: 'HomeMain' as string | undefined,
++  listeners: new Set<() => void>(),
++  go(name: string) {
++    this.route = name;
++    this.listeners.forEach((fn) => fn());
++  },
++};
++
++async function renderProvider(child: React.ReactNode = <Text>app</Text>) {
++  const handlers = {
++    onMessageCoach: jest.fn(),
++    onOpenDataExport: jest.fn(),
++    onOpenDeleteAccount: jest.fn(),
++    onSignOut: jest.fn(),
++    onOpenUpdateCard: jest.fn(),
++  };
++  const utils = await render(
++    <DunningLockoutProvider
++      enabled
++      {...handlers}
++      getCurrentRouteName={() => nav.route}
++      subscribeToRouteChanges={(fn) => {
++        nav.listeners.add(fn);
++        return () => nav.listeners.delete(fn);
++      }}
++    >
++      {child}
++    </DunningLockoutProvider>,
++  );
++  return { ...utils, handlers };
++}
++
++beforeEach(() => {
++  dunningLockoutStore.__resetForTests();
++  mockGet.mockReset();
++  mockPost.mockReset();
++  mockCaptureError.mockReset();
++  nav.route = 'HomeMain';
++  nav.listeners.clear();
++});
++
++describe('LOCKED_DUNNING detection', () => {
++  it('matches only a 403 whose body code is LOCKED_DUNNING', () => {
++    expect(isLockedDunningResponse(403, { code: 'LOCKED_DUNNING' })).toBe(true);
++    expect(isLockedDunningResponse(403, { code: 'COACH_ONLY' })).toBe(false);
++    expect(isLockedDunningResponse(402, { code: 'LOCKED_DUNNING' })).toBe(false);
++    expect(isLockedDunningResponse(403, undefined)).toBe(false);
++  });
++});
++
++describe('DunningLockoutProvider', () => {
++  it('shows one full-screen lockout when any request reports LOCKED_DUNNING', async () => {
++    mockGet.mockResolvedValue({ data: LOCKED });
++    const { findByTestId, getByTestId } = await renderProvider();
++    await act(async () => {
++      dunningLockoutStore.reportLocked({ requestId: 'req-123' });
++    });
++    await findByTestId('dunning-lockout-screen');
++    expect(getByTestId('dunning-lockout-summary').props.children.join('')).toContain('$150.00 to Avery');
++  });
++
++  it('steps aside on the screens a locked client can still use, and returns after', async () => {
++    mockGet.mockResolvedValue({ data: LOCKED });
++    const { findByTestId, queryByTestId } = await renderProvider();
++    await findByTestId('dunning-lockout-screen');
++    expect([...REACHABLE_WHILE_LOCKED].sort()).toEqual(['DataExport', 'DeleteAccount', 'Messages', 'UpdateCard']);
++    await act(async () => {
++      nav.go('DataExport');
++    });
++    expect(queryByTestId('dunning-lockout-screen')).toBeNull();
++    await act(async () => {
++      nav.go('MoreMain');
++    });
++    await findByTestId('dunning-lockout-screen');
++  });
++
++  it('routes to data export, account deletion, coach thread and sign out', async () => {
++    mockGet.mockResolvedValue({ data: LOCKED });
++    const { findByTestId, getByTestId, handlers } = await renderProvider();
++    await findByTestId('dunning-lockout-screen');
++    await fireEvent.press(getByTestId('dunning-lockout-data-export'));
++    await fireEvent.press(getByTestId('dunning-lockout-delete-account'));
++    await fireEvent.press(getByTestId('dunning-lockout-message-coach'));
++    await fireEvent.press(getByTestId('dunning-lockout-sign-out'));
++    expect(handlers.onOpenDataExport).toHaveBeenCalledTimes(1);
++    expect(handlers.onOpenDeleteAccount).toHaveBeenCalledTimes(1);
++    expect(handlers.onMessageCoach).toHaveBeenCalledTimes(1);
++    expect(handlers.onSignOut).toHaveBeenCalledTimes(1);
++  });
++
++  it('Update card opens the native card screen (no Stripe-hosted portal), and the lockout steps aside there', async () => {
++    mockGet.mockResolvedValue({ data: LOCKED });
++    const { findByTestId, getByTestId, queryByTestId, handlers } = await renderProvider();
++    await findByTestId('dunning-lockout-screen');
++    await fireEvent.press(getByTestId('dunning-lockout-update-card'));
++    expect(handlers.onOpenUpdateCard).toHaveBeenCalledWith({ autostart: true, surface: 'DunningLockoutScreen' });
++    expect(mockPost).not.toHaveBeenCalledWith('/v1/checkout/billing-portal', expect.anything());
++    await act(async () => {
++      nav.go('UpdateCard');
++    });
++    expect(queryByTestId('dunning-lockout-screen')).toBeNull();
++  });
++
++  it('lockout copy no longer sends the client to the portal invoice history', async () => {
++    mockGet.mockResolvedValue({ data: LOCKED });
++    const { findByTestId, queryByText, getByText } = await renderProvider();
++    await findByTestId('dunning-lockout-screen');
++    expect(queryByText(/Invoice history/)).toBeNull();
++    expect(getByText(/The card is charged right away/)).toBeTruthy();
++  });
++
++  it('End my plan (2A) asks first, then voids the unpaid invoice and ends the plan', async () => {
++    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
++    mockGet.mockResolvedValueOnce({ data: LOCKED }).mockResolvedValue({ data: CLEAR });
++    mockPost.mockResolvedValue({
++      data: {
++        outcome: 'ended',
++        purchase_id: 'p1',
++        access_ends_at: '2026-10-11T16:00:00.000Z',
++        voided_invoice_count: 1,
++        voided_amount_cents: 15000,
++        currency: 'usd',
++        message: 'server copy',
++      },
++    });
++    const { findByTestId, getByTestId, queryByTestId } = await renderProvider();
++    await findByTestId('dunning-lockout-screen');
++    await fireEvent.press(getByTestId('dunning-lockout-end-plan'));
++    expect(mockPost).not.toHaveBeenCalled();
++    const [title, body, buttons] = alert.mock.calls[0] as [string, string, Array<{ text: string; onPress?: () => void }>];
++    expect(title).toBe('End your plan now?');
++    expect(body).toContain('The unpaid $150.00 is canceled');
++    expect(buttons.map((b) => b.text)).toEqual(['Keep my plan', 'End my plan']);
++    await act(async () => {
++      buttons[1].onPress?.();
++    });
++    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/v1/checkout/subscriptions/p1/cancel', {}));
++    await waitFor(() => expect(alert).toHaveBeenCalledTimes(2));
++    expect(alert.mock.calls[1][0]).toBe('Your plan has ended');
++    expect(alert.mock.calls[1][1]).toContain('The unpaid $150.00 is canceled, so you will not be charged for it.');
++    await waitFor(() => expect(queryByTestId('dunning-lockout-screen')).toBeNull());
++    alert.mockRestore();
++  });
++
++  it('End my plan failure is specific and keeps the client on the lockout', async () => {
++    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
++    mockGet.mockResolvedValue({ data: LOCKED });
++    mockPost.mockRejectedValue(axiosError(503, { code: 'CANCEL_INCOMPLETE' }, { 'x-request-id': 'req-c1' }));
++    const { findByTestId, getByTestId } = await renderProvider();
++    await findByTestId('dunning-lockout-screen');
++    await fireEvent.press(getByTestId('dunning-lockout-end-plan'));
++    const buttons = alert.mock.calls[0][2] as Array<{ onPress?: () => void }>;
++    await act(async () => {
++      buttons[1].onPress?.();
++    });
++    const err = await findByTestId('dunning-lockout-end-error');
++    expect(err.props.children).toContain('tap End my plan again');
++    expect(err.props.children).toContain('req-c1');
++    expect(mockCaptureError).toHaveBeenCalled();
++    alert.mockRestore();
++  });
++
++  it('renders nothing extra and clears the store when the client is not dunned', async () => {
++    mockGet.mockResolvedValue({ data: CLEAR });
++    const { queryByTestId, findByText } = await renderProvider();
++    await findByText('app');
++    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/v1/checkout/dunning'));
++    expect(queryByTestId('dunning-lockout-screen')).toBeNull();
++  });
++});
++
++describe('DunningBanner (Days 0-9)', () => {
++  it('shows amount, date and both actions while past due', async () => {
++    mockGet.mockResolvedValue({ data: PAST_DUE });
++    const { findByTestId, getByTestId, queryByTestId, handlers } = await renderProvider(
++      <DunningBanner surface="HomeScreen" />,
++    );
++    await findByTestId('dunning-banner');
++    expect(queryByTestId('dunning-lockout-screen')).toBeNull();
++    await fireEvent.press(getByTestId('dunning-banner-message-coach'));
++    expect(handlers.onMessageCoach).toHaveBeenCalled();
++  });
++
++  it('is hidden when the backend flag is off', async () => {
++    mockGet.mockResolvedValue({ data: { ...PAST_DUE, enabled: false } });
++    const { queryByTestId, findByText } = await renderProvider(
++      <>
++        <Text>home</Text>
++        <DunningBanner surface="HomeScreen" />
++      </>,
++    );
++    await findByText('home');
++    await waitFor(() => expect(mockGet).toHaveBeenCalled());
++    expect(queryByTestId('dunning-banner')).toBeNull();
++  });
++
++  it('banner copy names the amount and the lock date and has no exclamation mark', () => {
++    const copy = bannerCopy(PAST_DUE, Date.parse('2026-10-04T12:00:00.000Z'));
++    expect(copy.body).toContain('$150.00');
++    expect(copy.body).toMatch(/Update your card by \w+day, October 1[01] to keep access/);
++    expect(`${copy.title}${copy.body}${lockoutSummary(LOCKED)}`).not.toContain('!');
++  });
++});
++
++describe('specific error copy', () => {
++  it.each([
++    [axiosError(null), 'OFFLINE', false],
++    [axiosError(429), 'RATE_LIMITED', false],
++    [axiosError(404, { error: 'CUSTOMER_NOT_FOUND' }), 'NO_BILLING_ACCOUNT', false],
++    [axiosError(502, { error: 'STRIPE_CHECKOUT_ERROR', request_id: 'req-9' }), 'STRIPE_UNAVAILABLE', true],
++    [axiosError(500, { request_id: 'req-7' }), 'UNKNOWN', true],
++    [new Error('STRIPE_URL_REJECTED'), 'LINK_REJECTED', true],
++    [axiosError(404, { code: 'SETUP_INTENT_NOT_FOUND' }), 'CARD_FORM_EXPIRED', true],
++    [axiosError(409, { code: 'SETUP_INTENT_NOT_CONFIRMED' }), 'CARD_NOT_SAVED', false],
++    [axiosError(409, { code: 'BILLING_ACTION_IN_PROGRESS' }), 'BILLING_ACTION_IN_PROGRESS', false],
++    [axiosError(404, { code: 'PURCHASE_NOT_FOUND' }), 'PLAN_NOT_FOUND', true],
++    [axiosError(409, { code: 'NOT_A_SUBSCRIPTION' }), 'NOT_A_SUBSCRIPTION', false],
++    [axiosError(503, { code: 'CANCEL_INCOMPLETE' }), 'CANCEL_INCOMPLETE', true],
++    [axiosError(503, { code: 'PAYMENTS_NOT_CONFIGURED' }), 'PAYMENTS_NOT_CONFIGURED', true],
++    [axiosError(502, { code: 'STRIPE_REQUEST_FAILED' }), 'STRIPE_REJECTED', true],
++    [axiosError(503, { code: 'STRIPE_UNAVAILABLE', step: 'invoice_pay' }), 'PAYMENT_UNCONFIRMED', true],
++    [axiosError(503, { code: 'STRIPE_UNAVAILABLE', step: 'invoice_void' }), 'PLAN_CHANGE_UNCONFIRMED', true],
++    [axiosError(503, { code: 'STRIPE_UNAVAILABLE', step: 'setup_intent' }), 'STRIPE_UNAVAILABLE', true],
++    [new Error('DUNNING_RESPONSE_SHAPE'), 'UNEXPECTED_RESPONSE', true],
++    [axiosError(404), 'BILLING_ROUTE_NOT_AVAILABLE', false],
++  ])('maps %#', (err, code, report) => {
++    const copy = describeDunningError(err, 'update_card');
++    expect(copy.code).toBe(code);
++    expect(copy.report).toBe(report);
++    expect(copy.message).not.toMatch(/something went wrong/i);
++    expect(copy.message).not.toMatch(/^please try again\.?$/i);
++    expect(copy.message).not.toContain('!');
++  });
++
++  it('a 404 status read (backend not deployed yet) is expected and not reported', () => {
++    const copy = describeDunningError(axiosError(404, {}), 'load_status');
++    expect(copy.code).toBe('STATUS_NOT_AVAILABLE');
++    expect(copy.report).toBe(false);
++  });
++
++  it('unknown failures carry the request reference and the support address', () => {
++    const copy = describeDunningError(axiosError(500, {}, { 'x-request-id': 'req-abc' }), 'update_card');
++    expect(copy.reference).toBe('req-abc');
++    expect(copy.message).toContain('req-abc');
++    expect(copy.message).toContain(SUPPORT_EMAIL);
++  });
++
++  it('support mailto carries the reference', () => {
++    const url = supportMailto(DUNNING_SUPPORT_SUBJECT, dunningSupportBody('req-1'));
++    expect(url.startsWith(`mailto:${SUPPORT_EMAIL}?subject=`)).toBe(true);
++    expect(decodeURIComponent(url)).toContain('Request reference: req-1');
++    expect(decodeURIComponent(url)).toContain('Paused plan: payment help');
++  });
++
++  it('the payment copy re-exports the one support address (S-ERRORS guard)', () => {
++    const { SUPPORT_EMAIL: shared } = jest.requireActual('../../../constants/support');
++    expect(SUPPORT_EMAIL).toBe(shared);
++  });
++
++  it('Email support on the lockout opens one draft with the reference; when no email app opens, the shared fallback shows the address, Copy, Try again and the reference', async () => {
++    const open = jest.spyOn(Linking, 'openURL').mockRejectedValueOnce(new Error('no mail app'));
++    const noop = jest.fn();
++    const screen = await render(
++      <DunningLockoutScreen
++        status={LOCKED}
++        loadError={null}
++        refreshing={false}
++        onRefresh={noop}
++        onUpdateCard={noop}
++        onEndPlan={jest.fn()}
++        onMessageCoach={noop}
++        onOpenDataExport={noop}
++        onOpenDeleteAccount={noop}
++        onSignOut={noop}
++        supportReference="req-lock-1"
++      />,
++    );
++    expect(screen.queryByTestId('dunning-lockout-support-fallback')).toBeNull();
++    await act(async () => {
++      fireEvent.press(screen.getByTestId('dunning-lockout-support'));
++    });
++    expect(open).toHaveBeenCalledTimes(1);
++    expect(decodeURIComponent(String(open.mock.calls[0][0]))).toContain('Request reference: req-lock-1');
++    await waitFor(() => expect(screen.getByTestId('dunning-lockout-support-fallback')).toBeTruthy());
++    expect(screen.getByTestId('dunning-lockout-support-fallback-address').props.children).toBe(SUPPORT_EMAIL);
++    expect(screen.getByTestId('dunning-lockout-support-fallback-copy')).toBeTruthy();
++    expect(screen.getByTestId('dunning-lockout-support-fallback-retry')).toBeTruthy();
++    expect(screen.getByTestId('dunning-lockout-support-reference').props.children).toBe(
++      'Include reference req-lock-1 in your email.',
++    );
++    open.mockRestore();
++  });
++});
++
++describe('status normaliser', () => {
++  it('fails closed on unexpected shapes (B-322-5: the provider keeps its last known state)', () => {
++    expect(() => normalizeDunningStatus(null)).toThrow('DUNNING_RESPONSE_SHAPE');
++    expect(() => normalizeDunningStatus({ state: 'weird', enabled: true })).toThrow('DUNNING_RESPONSE_SHAPE');
++    expect(normalizeDunningStatus({ state: 'none', enabled: false }).state).toBe('none');
++    expect(formatDunningAmount(null, 'usd')).toBeNull();
++    expect(formatDunningAmount(990, 'eur')).toBe('9.90 EUR');
++  });
++});
+diff --git a/src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx b/src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx
+new file mode 100644
+index 0000000..c45cb5c
+--- /dev/null
++++ b/src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx
+@@ -0,0 +1,574 @@
++/**
++ * B-LOCK-118 (#353): the lockout belongs to the signed-in account and the
++ * mounted screens (B-353-1, B-353-2), a reversed payment is described as one
++ * (B-353-2 / B-353-3 Sol), no first person in client copy (B-353-3), the
++ * overlay is modal for screen readers (B-353-4), and the screens stay
++ * truthful against today's production backend (no dunning routes, flag off).
++ */
++import React from 'react';
++import { Alert, Text } from 'react-native';
++import { act, fireEvent, isHiddenFromAccessibility, render, waitFor } from '@testing-library/react-native';
++import { authEvents } from '../../../utils/authEvents';
++import type { ClientDunningStatus } from '../dunningApi';
++import { dunningLockoutStore } from '../dunningLockoutStore';
++import { DunningLockoutProvider, useDunning } from '../DunningLockoutProvider';
++import { DunningBanner, bannerCopy } from '../DunningBanner';
++import { DunningLockoutScreen, lockoutNextStep, lockoutSummary } from '../DunningLockoutScreen';
++import { UpdateCardScreen, endPlanAlertBody, updateCardIntro } from '../UpdateCardScreen';
++import { __resetStripeSdkForTests } from '../updateCard';
++
++jest.mock('../../../theme/ThemeProvider', () => {
++  const realTokens = jest.requireActual('../../../theme/tokens').default;
++  return {
++    useTheme: () => ({ semanticColors: realTokens.lightTokens, tokens: realTokens, colorScheme: 'light' }),
++  };
++});
++
++const mockCaptureError = jest.fn();
++jest.mock('../../../services/sentry', () => ({
++  captureError: (...args: unknown[]) => mockCaptureError(...args),
++}));
++
++const mockGet = jest.fn();
++const mockPost = jest.fn();
++jest.mock('../../../services/api', () => ({
++  __esModule: true,
++  default: {
++    get: (...args: unknown[]) => mockGet(...args),
++    post: (...args: unknown[]) => mockPost(...args),
++  },
++}));
++
++jest.mock('../../../services/queryClient', () => ({
++  queryClient: { invalidateQueries: jest.fn() },
++}));
++
++const mockSdk = {
++  initStripe: jest.fn(async () => undefined),
++  initPaymentSheet: jest.fn(async () => ({})),
++  presentPaymentSheet: jest.fn(async (): Promise<Record<string, unknown>> => ({})),
++  handleNextAction: jest.fn(async () => ({ paymentIntent: { status: 'Succeeded' } })),
++  handleURLCallback: jest.fn(async () => true),
++};
++jest.mock('@stripe/stripe-react-native', () => mockSdk);
++
++/** Same rule as main's src/lib/ai/__tests__/aiClientCopy.guard.test.ts. */
++const FIRST_PERSON = /\b(we|we're|we've|we'll|us|our|ours)\b/i;
++
++const LOCKED: ClientDunningStatus = {
++  enabled: true,
++  state: 'locked',
++  kind: 'payment',
++  lock_waived: false,
++  purchase_id: 'p1',
++  amount_cents: 15000,
++  currency: 'usd',
++  failed_at: '2026-10-01T15:00:00.000Z',
++  lockout_at: '2026-10-11T15:00:00.000Z',
++  locked_at: '2026-10-11T15:07:00.000Z',
++  day: 10,
++  coach_name: 'Avery',
++  card_last4: '4242',
++  card_brand: 'visa',
++};
++const PAST_DUE: ClientDunningStatus = { ...LOCKED, state: 'past_due', locked_at: null, day: 3 };
++const DISPUTE_LOCKED: ClientDunningStatus = { ...LOCKED, kind: 'dispute' };
++const DISPUTE_PAST_DUE: ClientDunningStatus = { ...PAST_DUE, kind: 'dispute' };
++const CLEAR: ClientDunningStatus = { ...LOCKED, state: 'none', amount_cents: null, day: null, locked_at: null };
++const QUOTE = {
++  quote_id: 'q1',
++  complete: true,
++  lines: [{ invoice_id: 'in_1', purchase_id: 'p1', currency: 'usd', amount_cents: 15000 }],
++  totals: [{ currency: 'usd', amount_cents: 15000 }],
++  disputes: [],
++};
++const SETUP = {
++  setup_intent_id: 'seti_1',
++  setup_intent_client_secret: 'seti_1_secret',
++  ephemeral_key: 'ek_1',
++  customer_id: 'cus_1',
++  publishable_key: 'pk_test_backend',
++  merchant_display_name: 'The Growth Project',
++};
++const PAID = {
++  outcome: 'paid',
++  amount_paid_cents: 15000,
++  amount_due_cents: 0,
++  currency: 'usd',
++  paid_totals: [{ currency: 'usd', amount_cents: 15000 }],
++  due_totals: [],
++  access_restored: true,
++  access_state: 'restored',
++};
++const NOW = Date.parse('2026-10-04T12:00:00.000Z');
++
++function deferred<T>() {
++  let resolve!: (value: T) => void;
++  let reject!: (err: unknown) => void;
++  const promise = new Promise<T>((ok, fail) => {
++    resolve = ok;
++    reject = fail;
++  });
++  return { promise, resolve, reject };
++}
++
++function networkError() {
++  return Object.assign(new Error('Network Error'), { response: undefined });
++}
++
++/** Production's answer for a route it does not have (no `code`). */
++function productionNotFound(path: string) {
++  return Object.assign(new Error('Request failed with status code 404'), {
++    response: {
++      status: 404,
++      data: { statusCode: 404, message: `Cannot GET /api${path}`, error: 'Not Found', path: `/api${path}` },
++      headers: {},
++    },
++  });
++}
++
++function textOf(node: unknown): string {
++  if (node == null || typeof node === 'boolean') return '';
++  if (typeof node === 'string' || typeof node === 'number') return String(node);
++  if (Array.isArray(node)) return node.map(textOf).join(' ');
++  return textOf((node as { children?: unknown }).children ?? null);
++}
++
++let route: string | undefined = 'HomeMain';
++let ctx: ReturnType<typeof useDunning> = null;
++function Reader() {
++  ctx = useDunning();
++  return <Text testID="status">{ctx?.status?.state ?? 'unknown'}</Text>;
++}
++
++function Provider({ children, enabled = true }: { children: React.ReactNode; enabled?: boolean }) {
++  return (
++    <DunningLockoutProvider
++      enabled={enabled}
++      onMessageCoach={jest.fn()}
++      onOpenDataExport={jest.fn()}
++      onOpenDeleteAccount={jest.fn()}
++      onSignOut={jest.fn()}
++      onOpenUpdateCard={jest.fn()}
++      getCurrentRouteName={() => route}
++      subscribeToRouteChanges={() => () => undefined}
++    >
++      {children}
++    </DunningLockoutProvider>
++  );
++}
++
++function lockoutProps(status: ClientDunningStatus | null) {
++  return {
++    status,
++    loadError: null,
++    refreshing: false,
++    onRefresh: jest.fn(),
++    onUpdateCard: jest.fn(),
++    onEndPlan: jest.fn(),
++    onMessageCoach: jest.fn(),
++    onOpenDataExport: jest.fn(),
++    onOpenDeleteAccount: jest.fn(),
++    onSignOut: jest.fn(),
++    supportReference: null,
++  };
++}
++
++function cardRoutes(confirm: Record<string, unknown> = PAID, quote: Record<string, unknown> = QUOTE) {
++  mockPost.mockImplementation(async (url: string) => ({ data: url.endsWith('/setup-intent') ? SETUP : confirm }));
++  return (status: ClientDunningStatus) =>
++    mockGet.mockImplementation(async (url: string) => ({ data: url.endsWith('/quote') ? quote : status }));
++}
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  dunningLockoutStore.__resetForTests();
++  __resetStripeSdkForTests();
++  mockGet.mockReset();
++  mockPost.mockReset();
++  mockSdk.presentPaymentSheet.mockImplementation(async () => ({}));
++  route = 'HomeMain';
++  ctx = null;
++});
++
++describe('B-353-1: the lockout belongs to the signed-in account', () => {
++  it('sign-out (client tree unmounts) clears the lock: the next account does not see it while its read is pending', async () => {
++    mockGet.mockResolvedValue({ data: LOCKED });
++    const a = await render(<Provider><Text>app</Text></Provider>);
++    await act(async () => {
++      dunningLockoutStore.reportLocked({ requestId: 'req-a' });
++    });
++    await a.findByTestId('dunning-lockout-screen');
++    await a.unmount();
++    expect(dunningLockoutStore.isLocked()).toBe(false);
++    mockGet.mockReset();
++    mockGet.mockImplementation(() => new Promise(() => undefined));
++    const b = await render(<Provider><Text>app</Text></Provider>);
++    expect(b.queryByTestId('dunning-lockout-overlay')).toBeNull();
++  });
++
++  it('the next account offline: no lock and no previous request reference', async () => {
++    mockGet.mockResolvedValue({ data: LOCKED });
++    const a = await render(<Provider><Text>app</Text></Provider>);
++    await act(async () => {
++      dunningLockoutStore.reportLocked({ requestId: 'req-a' });
++    });
++    await a.findByTestId('dunning-lockout-screen');
++    await a.unmount();
++    mockGet.mockReset();
++    mockGet.mockRejectedValue(networkError());
++    const b = await render(<Provider><Text>app</Text></Provider>);
++    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/v1/checkout/dunning'));
++    await act(async () => undefined);
++    expect(b.queryByTestId('dunning-lockout-overlay')).toBeNull();
++    expect(dunningLockoutStore.lastSignal()).toBeNull();
++  });
++
++  it("a retired provider's late locked read cannot lock the next account", async () => {
++    const old = deferred<{ data: ClientDunningStatus }>();
++    // B's first read is clear; any later read fails, so nothing heals a wrong lock.
++    mockGet
++      .mockReturnValueOnce(old.promise)
++      .mockResolvedValueOnce({ data: CLEAR })
++      .mockRejectedValue(networkError());
++    const a = await render(<Provider><Reader /></Provider>);
++    await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
++    await a.unmount();
++    const b = await render(<Provider><Reader /></Provider>);
++    await waitFor(() => expect(b.getByTestId('status').props.children).toBe('none'));
++    await act(async () => old.resolve({ data: LOCKED }));
++    expect(b.queryByTestId('dunning-lockout-screen')).toBeNull();
++    expect(dunningLockoutStore.isLocked()).toBe(false);
++  });
++
++  it('a read started before sign-out (same provider still mounted) is dropped after the auth event', async () => {
++    const old = deferred<{ data: ClientDunningStatus }>();
++    mockGet.mockReturnValueOnce(old.promise);
++    const screen = await render(<Provider><Reader /></Provider>);
++    await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
++    await act(async () => {
++      authEvents.emit('logout');
++    });
++    await act(async () => old.resolve({ data: LOCKED }));
++    expect(screen.queryByTestId('dunning-lockout-screen')).toBeNull();
++    expect(screen.getByTestId('status').props.children).toBe('unknown');
++  });
++
++  it('an older clear answer cannot overwrite a newer locked read (latest read wins)', async () => {
++    const old = deferred<{ data: ClientDunningStatus }>();
++    mockGet.mockReturnValueOnce(old.promise).mockResolvedValue({ data: LOCKED });
++    const screen = await render(<Provider><Reader /></Provider>);
++    await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
++    await act(async () => {
++      await ctx?.refresh();
++    });
++    await screen.findByTestId('dunning-lockout-screen');
++    await act(async () => old.resolve({ data: CLEAR }));
++    expect(screen.queryByTestId('dunning-lockout-screen')).not.toBeNull();
++    expect(dunningLockoutStore.isLocked()).toBe(true);
++  });
++
++  it('an older failure cannot replace a newer answer with an error', async () => {
++    const old = deferred<{ data: ClientDunningStatus }>();
++    mockGet.mockReturnValueOnce(old.promise).mockResolvedValue({ data: LOCKED });
++    const screen = await render(<Provider><Reader /></Provider>);
++    await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
++    await act(async () => {
++      await ctx?.refresh();
++    });
++    await screen.findByTestId('dunning-lockout-screen');
++    await act(async () => old.reject(networkError()));
++    expect(screen.queryByTestId('dunning-lockout-load-error')).toBeNull();
++  });
++
++  it('End my plan answered after sign-out shows nothing and does not refresh', async () => {
++    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
++    const cancel = deferred<{ data: Record<string, unknown> }>();
++    mockGet.mockResolvedValue({ data: LOCKED });
++    mockPost.mockReturnValueOnce(cancel.promise);
++    const screen = await render(<Provider><Reader /></Provider>);
++    await screen.findByTestId('dunning-lockout-screen');
++    await fireEvent.press(screen.getByTestId('dunning-lockout-end-plan'));
++    const buttons = alert.mock.calls[0][2] as Array<{ onPress?: () => void }>;
++    await act(async () => {
++      buttons[1].onPress?.();
++    });
++    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
++    const reads = mockGet.mock.calls.length;
++    await act(async () => {
++      authEvents.emit('logout');
++    });
++    await act(async () =>
++      cancel.resolve({
++        data: {
++          outcome: 'ended',
++          purchase_id: 'p1',
++          access_ends_at: null,
++          voided_invoice_count: 1,
++          voided_amount_cents: 15000,
++          currency: 'usd',
++        },
++      }),
++    );
++    expect(alert).toHaveBeenCalledTimes(1);
++    expect(mockGet.mock.calls.length).toBe(reads);
++    alert.mockRestore();
++  });
++
++  it('CONTROL: the current account still sees its own lockout from a status read', async () => {
++    mockGet.mockResolvedValue({ data: LOCKED });
++    const screen = await render(<Provider><Reader /></Provider>);
++    await screen.findByTestId('dunning-lockout-screen');
++    expect(dunningLockoutStore.isLocked()).toBe(true);
++  });
++});
++
++describe('B-353-2: a retired Update card screen starts no further step', () => {
++  it('leaving while the quote is pending: no SetupIntent, no card form', async () => {
++    route = 'UpdateCard';
++    const quote = deferred<{ data: typeof QUOTE }>();
++    mockGet.mockImplementation((url: string) => (url.endsWith('/quote') ? quote.promise : Promise.resolve({ data: CLEAR })));
++    const screen = await render(<Provider><UpdateCardScreen /></Provider>);
++    const pressed = fireEvent.press(screen.getByTestId('update-card-add'));
++    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/v1/checkout/payment-method/quote'));
++    await screen.unmount();
++    await act(async () => {
++      quote.resolve({ data: QUOTE });
++      await pressed;
++    });
++    expect(mockPost).not.toHaveBeenCalled();
++    expect(mockSdk.presentPaymentSheet).not.toHaveBeenCalled();
++  });
++
++  it('a late card-form return after leaving sends no confirm', async () => {
++    route = 'UpdateCard';
++    const present = deferred<Record<string, unknown>>();
++    mockSdk.presentPaymentSheet.mockImplementation(() => present.promise);
++    cardRoutes()(CLEAR);
++    const screen = await render(<Provider><UpdateCardScreen /></Provider>);
++    const pressed = fireEvent.press(screen.getByTestId('update-card-add'));
++    await waitFor(() => expect(mockSdk.presentPaymentSheet).toHaveBeenCalledTimes(1));
++    await screen.unmount();
++    await act(async () => {
++      present.resolve({});
++      await pressed;
++    });
++    expect(mockPost.mock.calls.some(([url]) => String(url).endsWith('/confirm'))).toBe(false);
++  });
++
++  it('a sign-out while the card form is open (screen still mounted) sends no confirm', async () => {
++    route = 'UpdateCard';
++    const present = deferred<Record<string, unknown>>();
++    mockSdk.presentPaymentSheet.mockImplementation(() => present.promise);
++    cardRoutes()(CLEAR);
++    const screen = await render(<UpdateCardScreen />);
++    const pressed = fireEvent.press(screen.getByTestId('update-card-add'));
++    await waitFor(() => expect(mockSdk.presentPaymentSheet).toHaveBeenCalledTimes(1));
++    await act(async () => {
++      authEvents.emit('logout');
++    });
++    await act(async () => {
++      present.resolve({});
++      await pressed;
++    });
++    expect(mockPost.mock.calls.some(([url]) => String(url).endsWith('/confirm'))).toBe(false);
++  });
++
++  it('CONTROL: a current screen pays and shows the receipt', async () => {
++    route = 'UpdateCard';
++    cardRoutes()(CLEAR);
++    const screen = await render(<Provider><UpdateCardScreen /></Provider>);
++    await fireEvent.press(screen.getByTestId('update-card-add'));
++    await screen.findByTestId('update-card-result-paid');
++    expect(mockPost).toHaveBeenCalledWith('/v1/checkout/payment-method/confirm', {
++      setup_intent_id: 'seti_1',
++      approved_invoices: [{ invoice_id: 'in_1', amount_cents: 15000, currency: 'usd' }],
++    });
++  });
++});
++
++describe('B-353-2 / B-353-3 (Sol): a reversed payment is described as one', () => {
++  it('the dispute lockout names the reversal, does not promise a card fix, and leads with support', async () => {
++    mockGet.mockResolvedValue({ data: DISPUTE_LOCKED });
++    const screen = await render(<Provider><Reader /></Provider>);
++    await screen.findByTestId('dunning-lockout-screen');
++    const text = textOf(screen.toJSON());
++    expect(text).toContain('Your bank reversed an earlier payment of $150.00 to Avery');
++    expect(text).not.toMatch(/has not gone through|was declined|charged right away|add a card that works/i);
++    expect(screen.getByTestId('dunning-lockout-next-step').props.children).toContain('Saving a new card does not settle it');
++    expect(screen.getByTestId('dunning-lockout-support-primary')).toBeTruthy();
++  });
++
++  it('End my plan for a reversed payment: access ends now and the reversal is not settled', () => {
++    const body = endPlanAlertBody(DISPUTE_LOCKED);
++    expect(body).toContain('Your access ends now');
++    expect(body).toContain('does not settle the payment your bank reversed');
++    expect(body).not.toMatch(/end of the period you already paid for|unpaid \$150\.00 is canceled/);
++  });
++
++  it('the lockout End my plan dialog keeps the paid-in-the-meantime caveat (one shared body)', async () => {
++    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
++    const screen = await render(<DunningLockoutScreen {...lockoutProps(LOCKED)} />);
++    await fireEvent.press(screen.getByTestId('dunning-lockout-end-plan'));
++    expect(alert.mock.calls[0][1]).toBe(endPlanAlertBody(LOCKED));
++    expect(alert.mock.calls[0][1]).toContain('If a payment went through in the meantime, you keep the period you paid for');
++    alert.mockRestore();
++  });
++
++  it('Update card intro and banner for a reversed payment promise no charge, comeback, or card fix', () => {
++    for (const s of [DISPUTE_LOCKED, DISPUTE_PAST_DUE]) {
++      expect(updateCardIntro(s)).not.toMatch(/charged to it right away|comes back|did not go through/);
++      expect(updateCardIntro(s)).toContain('A new card does not settle that');
++    }
++    const banner = bannerCopy(DISPUTE_PAST_DUE, NOW);
++    expect(banner.body).toContain('Your bank reversed an earlier payment of $150.00.');
++    expect(banner.body).not.toMatch(/Update your card|did not go through/);
++  });
++
++  it('a dispute-only Save card shows what happened: nothing charged, the reversal still open', async () => {
++    route = 'UpdateCard';
++    cardRoutes(
++      {
++        outcome: 'saved',
++        amount_paid_cents: 0,
++        amount_due_cents: 0,
++        currency: 'usd',
++        paid_totals: [],
++        due_totals: [],
++        access_restored: false,
++        access_state: 'unchanged',
++        plans: [{ purchase_id: 'p1', dispute_open: true }],
++      },
++      {
++        quote_id: 'q_d',
++        complete: true,
++        lines: [],
++        totals: [],
++        disputes: [{ purchase_id: 'p1', coach_name: 'Avery', amount_cents: 15000, currency: 'usd' }],
++      },
++    )(DISPUTE_LOCKED);
++    const screen = await render(<Provider><UpdateCardScreen /></Provider>);
++    await fireEvent.press(screen.getByTestId('update-card-add'));
++    const result = await screen.findByTestId('update-card-result-saved');
++    const body = textOf(result);
++    expect(body).toContain('There was no open invoice to pay, so nothing was charged.');
++    expect(body).toContain('Saving a card does not settle that.');
++    expect(textOf(screen.toJSON())).not.toContain('was declined');
++  });
++
++  it('a payment plan whose quote also names a reversed payment says so before the card form', async () => {
++    route = 'UpdateCard';
++    const present = deferred<Record<string, unknown>>();
++    mockSdk.presentPaymentSheet.mockImplementation(() => present.promise);
++    cardRoutes(PAID, {
++      ...QUOTE,
++      disputes: [{ purchase_id: 'p2', coach_name: 'Blake', amount_cents: 9000, currency: 'usd' }],
++    })(LOCKED);
++    const screen = await render(<Provider><UpdateCardScreen /></Provider>);
++    void fireEvent.press(screen.getByTestId('update-card-add'));
++    await screen.findByTestId('update-card-quote-dispute');
++    await act(async () => present.resolve({ error: { code: 'Canceled' } }));
++  });
++});
++
++describe('B-353-3: no first person in rendered client copy', () => {
++  it.each([
++    ['payment lock', LOCKED],
++    ['dispute lock', DISPUTE_LOCKED],
++    ['status not loaded', null],
++  ])('lockout screen (%s)', async (_label, status) => {
++    const screen = await render(<DunningLockoutScreen {...lockoutProps(status)} />);
++    expect(textOf(screen.toJSON())).not.toMatch(FIRST_PERSON);
++  });
++
++  it.each([
++    ['locked', LOCKED],
++    ['past due', PAST_DUE],
++    ['dispute', DISPUTE_LOCKED],
++    ['clear', CLEAR],
++  ])('Update card screen (%s)', async (_label, status) => {
++    mockGet.mockResolvedValue({ data: status });
++    route = 'UpdateCard';
++    const screen = await render(<Provider><UpdateCardScreen /></Provider>);
++    await waitFor(() => expect(mockGet).toHaveBeenCalled());
++    expect(textOf(screen.toJSON())).not.toMatch(FIRST_PERSON);
++  });
++
++  it('banner, summaries, next steps and end-plan bodies', () => {
++    const all = [PAST_DUE, DISPUTE_PAST_DUE, { ...PAST_DUE, lock_waived: true }].flatMap((s) => {
++      const b = bannerCopy(s, NOW);
++      return [b.title, b.body, lockoutSummary(s), lockoutNextStep(s), endPlanAlertBody(s), updateCardIntro(s)];
++    });
++    for (const t of all) {
++      expect(t).not.toMatch(FIRST_PERSON);
++      expect(t).not.toContain('!');
++    }
++  });
++});
++
++describe('C-353-3: a waived or passed lock date is never shown as a deadline', () => {
++  it('lock waived: no date, no keep-access deadline', () => {
++    const body = bannerCopy({ ...PAST_DUE, lock_waived: true }, NOW).body;
++    expect(body).not.toMatch(/by \w+day/);
++    expect(body).toContain('Update your card to settle it.');
++  });
++
++  it('lock date already passed: no date', () => {
++    expect(bannerCopy(PAST_DUE, Date.parse('2026-10-12T00:00:00.000Z')).body).not.toMatch(/by \w+day/);
++  });
++});
++
++describe('B-353-4: the lockout is modal for screen readers', () => {
++  it('while the lockout shows, the app underneath is hidden; after it lifts, it is reachable again', async () => {
++    mockGet.mockResolvedValue({ data: LOCKED });
++    const screen = await render(<Provider><Text>app content</Text></Provider>);
++    await screen.findByTestId('dunning-lockout-screen');
++    expect(isHiddenFromAccessibility(screen.getByText('app content', { includeHiddenElements: true }))).toBe(true);
++    expect(screen.getByTestId('dunning-lockout-overlay').props.accessibilityViewIsModal).toBe(true);
++    await act(async () => {
++      dunningLockoutStore.clear();
++    });
++    expect(isHiddenFromAccessibility(screen.getByText('app content'))).toBe(false);
++  });
++});
++
++describe("truthful against today's production backend (no dunning routes, flag off)", () => {
++  it('status route missing (production 404 envelope): no lockout, no banner, nothing reported', async () => {
++    mockGet.mockRejectedValue(productionNotFound('/v1/checkout/dunning'));
++    const screen = await render(
++      <Provider>
++        <Text>home</Text>
++        <DunningBanner surface="HomeScreen" />
++      </Provider>,
++    );
++    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/v1/checkout/dunning'));
++    await act(async () => undefined);
++    expect(screen.queryByTestId('dunning-lockout-overlay')).toBeNull();
++    expect(screen.queryByTestId('dunning-banner')).toBeNull();
++    expect(mockCaptureError).not.toHaveBeenCalled();
++  });
++
++  it('flag off ({ enabled: false }) is never a lock, whatever state it carries', async () => {
++    mockGet.mockResolvedValue({ data: { ...LOCKED, enabled: false } });
++    const screen = await render(<Provider><Reader /></Provider>);
++    await waitFor(() => expect(mockGet).toHaveBeenCalled());
++    await act(async () => undefined);
++    expect(screen.queryByTestId('dunning-lockout-overlay')).toBeNull();
++    expect(dunningLockoutStore.isLocked()).toBe(false);
++  });
++
++  it('Update card on a server without the card routes says it is not available and nothing was charged', async () => {
++    route = 'UpdateCard';
++    mockGet.mockImplementation(async (url: string) => {
++      if (url.endsWith('/quote')) throw productionNotFound('/v1/checkout/payment-method/quote');
++      throw productionNotFound('/v1/checkout/dunning');
++    });
++    const screen = await render(<Provider><UpdateCardScreen /></Provider>);
++    await fireEvent.press(screen.getByTestId('update-card-add'));
++    const err = await screen.findByTestId('update-card-error');
++    expect(err.props.children).toContain('not available yet, so nothing was charged');
++    expect(mockPost).not.toHaveBeenCalled();
++    expect(mockSdk.presentPaymentSheet).not.toHaveBeenCalled();
++    expect(mockCaptureError).not.toHaveBeenCalled();
++  });
++});
+diff --git a/src/navigation/ClientNavigator.tsx b/src/navigation/ClientNavigator.tsx
+index 4dcab1a..dc83743 100644
+--- a/src/navigation/ClientNavigator.tsx
++++ b/src/navigation/ClientNavigator.tsx
+@@ -100,6 +100,7 @@ import NotificationPreferencesScreen from '../screens/notifications/Notification
+ import DataExportScreen from '../screens/settings/DataExportScreen';
+ // Payments — client-facing packages + checkout return (backend PR #215).
+ import ClientPackagesScreen from '../screens/client/ClientPackagesScreen';
++import UpdateCardScreen from '../entitlements/dunning/UpdateCardScreen';
+ import CheckoutReturnScreen from '../screens/client/CheckoutReturnScreen';
+ // PR-13 — buyer-facing Deliverables timeline (drip engine consumer surface,
+ // master plan §3 ScheduledDrop rows).
+@@ -277,6 +278,8 @@ export type MoreStackParamList = {
+   DataExport: undefined;
+   /** Payments — client-facing packages list (backend PR #215). */
+   ClientPackages: undefined;
++  /** OR-110-2 native card update; `autostart` opens the card form on arrival. */
++  UpdateCard: { autostart?: boolean } | undefined;
+   /**
+    * PR-13 — buyer-facing Deliverables timeline for one ClientPurchase.
+    * Renders the buyer's ScheduledDrops (delivered + upcoming) and routes
+@@ -491,6 +494,8 @@ function MoreStackNavigator() {
+           (backend PR #215). The return screen is the deep-link target for
+           tgp://checkout/{success,cancel}; see RootNavigator.linking. */}
+       <MoreStackNav.Screen name="ClientPackages"  component={ClientPackagesScreen} />
++      {/* OR-110-2 — native card update (dunning banner, lockout, emails). */}
++      <MoreStackNav.Screen name="UpdateCard"      component={UpdateCardScreen} />
+       <MoreStackNav.Screen name="CheckoutReturn"  component={CheckoutReturnScreen} />
+       {/* PR-13 — buyer-facing Deliverables timeline (drip engine surface). */}
+       <MoreStackNav.Screen name="Deliverables"    component={DeliverablesScreen} />
+diff --git a/src/navigation/README.md b/src/navigation/README.md
+index c696987..84061c9 100644
+--- a/src/navigation/README.md
++++ b/src/navigation/README.md
+@@ -218,3 +218,7 @@ Backend follow-ups: `profile.day_one_completed` (boolean) and
+ `GET /profile` and persisted by `PUT /profile`. Until the API returns them,
+ the client falls back to the local AsyncStorage flag (fail-open).
+   - After a successful attach, the server-confirmed `{role, coach_id}` is kept in screen state. If saving on the device then fails (user cache or `needs_role_selection`), the screen shows "Connected, finishing sign-up" and a "Finish sign-up" button. That button retries only the local save and role completion and never redeems the code again (re-audit R3).
++
++## Payment lockout (S-DUNNING)
++
++Both client branches of `RootNavigator` wrap `ClientNavigator` in `DunningLockoutProvider` (see `src/entitlements/dunning/README.md`). The provider uses the module-level `navigationRef` to read the focused route and to open `MoreTab > DataExport`, `MoreTab > DeleteAccount` and `Home > Messages` from the lockout screen.
+diff --git a/src/navigation/RootNavigator.tsx b/src/navigation/RootNavigator.tsx
+index 483a36f..37ed61f 100644
+--- a/src/navigation/RootNavigator.tsx
++++ b/src/navigation/RootNavigator.tsx
+@@ -39,6 +39,7 @@ import Day1WinScreen from '../screens/client/Day1WinScreen';
+ import PackageSelectionSheet from '../components/PackageSelectionSheet';
+ import { prefsStorage } from '../storage/mmkv';
+ import { signOut } from '../services/authActions';
++import { DunningLockoutProvider } from '../entitlements/dunning/DunningLockoutProvider';
+ // S6-P1: identity boundary for the persisted React Query cache. Mounted
+ // inside NavigationContainer around the per-auth-state navigator so the
+ // container, its ref and the deep-link replay behaviour are untouched.
+@@ -261,6 +262,15 @@ export const linking: LinkingOptions<Record<string, object | undefined>> = {
+                 Fast: 'fast',
+               }
+             : {}),
++          // OR-110-2: native card update. The dunning emails link to
++          // https://app.trygrowthproject.com/billing/update-card (a universal
++          // link: the backend AASA lists the path, app.json registers the
++          // Android filter); the backend's in-app blocker uses
++          // tgp://billing/update. Reachable while locked.
++          UpdateCard: {
++            path: 'billing/update-card',
++            alias: ['billing/update'],
++          },
+           CheckoutReturn: {
+             path: 'checkout/:outcome',
+             parse: {
+@@ -279,6 +289,38 @@ export const linking: LinkingOptions<Record<string, object | undefined>> = {
+ // hand-off; other navigation continues to flow through props/hooks.
+ const navigationRef = createNavigationContainerRef<Record<string, object | undefined>>();
+ 
++// S-DUNNING: the payment-lockout state needs the focused route (it steps
++// aside on the screens a locked client can still use) and the three
++// reachable destinations. Module-level so the provider's subscriptions stay
++// stable across renders.
++function currentRouteName(): string | undefined {
++  return navigationRef.isReady() ? navigationRef.getCurrentRoute()?.name : undefined;
++}
++
++function subscribeToRouteChanges(listener: () => void): () => void {
++  return navigationRef.addListener('state', listener);
++}
++
++function openDataExport(): void {
++  if (navigationRef.isReady()) navigationRef.navigate('MoreTab', { screen: 'DataExport' });
++}
++
++function openDeleteAccount(): void {
++  if (navigationRef.isReady()) navigationRef.navigate('MoreTab', { screen: 'DeleteAccount' });
++}
++
++function openUpdateCard(params: { autostart: boolean; surface: string }): void {
++  if (navigationRef.isReady()) {
++    navigationRef.navigate('MoreTab', { screen: 'UpdateCard', params: { autostart: params.autostart } });
++  }
++}
++
++function signOutFromLockout(): void {
++  signOut().catch((err: unknown) => {
++    logger.warn('RootNavigator', 'sign out from payment lockout failed', err);
++  });
++}
++
+ // Extract the accept-invite token from a deep link URL. Returns null when
+ // the URL is not an accept-invite link OR the token cannot be parsed.
+ // Kept as a pure helper so RootNavigator's URL handler and the replay
+@@ -904,7 +946,18 @@ export default function RootNavigator() {
+           }}
+           onMessageCoach={openCoachThread}
+         >
+-          <ClientNavigator />
++          <DunningLockoutProvider
++            enabled
++            onMessageCoach={openCoachThread}
++            onOpenDataExport={openDataExport}
++            onOpenDeleteAccount={openDeleteAccount}
++            onOpenUpdateCard={openUpdateCard}
++            onSignOut={signOutFromLockout}
++            getCurrentRouteName={currentRouteName}
++            subscribeToRouteChanges={subscribeToRouteChanges}
++          >
++            <ClientNavigator />
++          </DunningLockoutProvider>
+           <PackageSelectionSheet
+             visible
+             onDismiss={() => setAuthState('student')}
+@@ -923,7 +976,18 @@ export default function RootNavigator() {
+           }}
+           onMessageCoach={openCoachThread}
+         >
+-          <ClientNavigator />
++          <DunningLockoutProvider
++            enabled
++            onMessageCoach={openCoachThread}
++            onOpenDataExport={openDataExport}
++            onOpenDeleteAccount={openDeleteAccount}
++            onOpenUpdateCard={openUpdateCard}
++            onSignOut={signOutFromLockout}
++            getCurrentRouteName={currentRouteName}
++            subscribeToRouteChanges={subscribeToRouteChanges}
++          >
++            <ClientNavigator />
++          </DunningLockoutProvider>
+         </EntitlementProvider>
+       )}
+       </PersistedQueryCacheGate>
+diff --git a/src/screens/client/ClientPackagesScreen.tsx b/src/screens/client/ClientPackagesScreen.tsx
+index 4ddfd2b..4fed7a3 100644
+--- a/src/screens/client/ClientPackagesScreen.tsx
++++ b/src/screens/client/ClientPackagesScreen.tsx
+@@ -6,7 +6,8 @@
+  *   - POST /v1/checkout/sessions            (CheckoutController — buy)
+  *   - GET  /v1/checkout/purchases           (CheckoutController — purchase history)
+  *   - GET  /v1/checkout/entitlement         (CheckoutController — paid-access flag)
+- *   - POST /v1/checkout/billing-portal      (CheckoutController — Stripe Billing Portal URL)
++ *   Update card opens the native `UpdateCard` screen (OR-110-2: Stripe
++ *   PaymentSheet themed with TGP tokens; no Stripe-hosted portal).
+  *
+  * `getPaymentStatus()` is a DERIVED call: there is no backend `/status`
+  * route, so subscription state is composed from the REAL purchases list
+@@ -30,9 +31,9 @@
+  *    list / inactive entitlement, never from a 404 alone.
+  *  - The dunning banner is reachable only when the backend ships a real
+  *    past-due signal; until then `status.dunning` is always null and the
+- *    banner does not render. The standalone
+- *    `clientPaymentsApi.createBillingPortalSession()` is still available
+- *    for any future surface that needs to mint a portal URL on demand.
++ *    banner does not render. Its Update button opens the native
++ *    `UpdateCard` screen, which in dunning also pays the open invoice
++ *    (owner ruling 1A).
+  *  - Tapping a package opens Stripe Checkout in the branded in-app
+  *    webview (basis: Guideline 3.1.3(d), real-time 1:1). The success /
+  *    cancel deep links are intercepted by the webview screen and routed
+@@ -62,6 +63,7 @@ import {
+   type PaymentsResult,
+ } from '../../api/clientPaymentsApi';
+ import { useTheme } from '../../theme/ThemeProvider';
++import { DunningBanner as SmartDunningBanner } from '../../entitlements/dunning/DunningBanner';
+ import tokens, { type SemanticTokens, type Tokens } from '../../theme/tokens';
+ import { featureFlags } from '../../config/featureFlags';
+ 
+@@ -104,27 +106,15 @@ function DunningBanner({
+           </Text>
+         ) : null}
+       </View>
+-      {dunning.update_card_url ? (
+-        <TouchableOpacity
+-          onPress={onUpdateCard}
+-          accessibilityRole="button"
+-          accessibilityLabel="Update card"
+-          style={styles.dunningBtn}
+-        >
+-          <Text style={styles.dunningBtnText}>Update</Text>
+-        </TouchableOpacity>
+-      ) : dunning.portal_unavailable ? (
+-        // Round-3 fix: surface mint failure so the past-due banner is not
+-        // a dead-end. Mirrors the AI-gateway fail-closed posture — show a
+-        // clear notice rather than a missing CTA.
+-        <Text
+-          style={styles.dunningSub}
+-          accessibilityLabel="Update card unavailable, contact support"
+-          testID="dunning-portal-unavailable"
+-        >
+-          Update card unavailable — contact support
+-        </Text>
+-      ) : null}
++      {/* OR-110-2: always the native card screen; no portal link needed. */}
++      <TouchableOpacity
++        onPress={onUpdateCard}
++        accessibilityRole="button"
++        accessibilityLabel="Update card"
++        style={styles.dunningBtn}
++      >
++        <Text style={styles.dunningBtnText}>Update</Text>
++      </TouchableOpacity>
+     </View>
+   );
+ }
+@@ -247,19 +237,11 @@ export default function ClientPackagesScreen() {
+   );
+ 
+   const handleUpdateCard = useCallback(() => {
+-    if (!status?.ok || !status.data.dunning?.update_card_url) return;
+-    // Stripe Billing Portal for the client's 1:1 package (Guideline
+-    // 3.1.3(d); the webview is UX, not the basis): keep it in the branded webview so the user
+-    // never leaves the app. The portal redirects back to
+-    // `com.growthproject.app://` on save, which the webview's deep-link
+-    // gate intercepts and routes to CheckoutReturn — payment-status is
+-    // refreshed there and again when this screen regains focus.
+-    navigateToBrandedCheckout({
+-      checkoutUrl: status.data.dunning.update_card_url,
+-      packageName: 'Update payment method',
+-      returnScheme: 'com.growthproject.app',
+-    });
+-  }, [status, navigateToBrandedCheckout]);
++    // OR-110-2: the native card screen (Stripe PaymentSheet, TGP theme)
++    // replaces the Stripe-hosted portal webview. In dunning it also pays the
++    // open invoice right away (1A).
++    navigation.navigate('UpdateCard', { autostart: true });
++  }, [navigation]);
+ 
+   const handleMessageCoach = useCallback(() => {
+     const parent = navigation.getParent?.();
+@@ -314,6 +296,11 @@ export default function ClientPackagesScreen() {
+         />
+       ) : null}
+ 
++      {/* Smart Dunning v2 Days 0-9 notice (GET /v1/checkout/dunning). The
++          legacy banner above only renders from payment-status, whose dunning
++          field is always null today. */}
++      <SmartDunningBanner surface="ClientPackagesScreen" />
++
+       {/* Current plan summary */}
+       {status.ok && status.data.state !== 'none' && status.data.package_name ? (
+         <View style={styles.currentPlanCard}>
+diff --git a/src/screens/client/HomeScreen.tsx b/src/screens/client/HomeScreen.tsx
+index de095a5..ace422b 100644
+--- a/src/screens/client/HomeScreen.tsx
++++ b/src/screens/client/HomeScreen.tsx
+@@ -33,6 +33,7 @@ import { useTheme } from '../../theme/ThemeProvider';
+ // in PR #130; this PR places it on HomeScreen).
+ import HolisticInsightsTile from '../../components/home/HolisticInsightsTile';
+ import PendingInviteBanner from '../../components/PendingInviteBanner';
++import { DunningBanner } from '../../entitlements/dunning/DunningBanner';
+ import HomeHeaderActions from '../../components/home/HomeHeaderActions';
+ import PushPermissionCard from '../../components/home/PushPermissionCard';
+ import CoachIntroductionBanner from '../../components/home/CoachIntroductionBanner';
+@@ -327,6 +328,7 @@ export default function HomeScreen() {
+         }
+       >
+         <HomeHeaderActions />
++        <DunningBanner surface="HomeScreen" />
+         <PendingInviteBanner />
+         <PushPermissionCard />
+         {showProfileNudge ? (
+diff --git a/src/screens/client/README.md b/src/screens/client/README.md
+index b3862a2..c945e70 100644
+--- a/src/screens/client/README.md
++++ b/src/screens/client/README.md
+@@ -161,3 +161,5 @@ Client packages are 1:1 person-to-person coaching (App Review Guideline 3.1.3(d)
+ 
+ **Catalog evidence (audit #304 C1).** Client package schemas carry no service-type field, so the app treats every client-purchasable package as 1:1 coaching. Keeping these packages on iOS depends on the owner confirming, or the server enforcing, that every client-purchasable package is real-time 1:1 coaching. Standalone digital content (programs, PDFs or videos sold on their own) must not be sold as a client package. If mixed products are ever allowed, add a trusted per-product classification from the server and fail closed on iOS for unknown or non-P2P products at the list, paywall, share-link checkout and webview entry points.
+ 
++
++**Failed payments (S-DUNNING).** `HomeScreen` and `ClientPackagesScreen` render the inline `DunningBanner` (from `src/entitlements/dunning`) on Days 0-9 of a failed payment. It shows the amount, the failure date, the lock date, Update card (Stripe Billing Portal) and Message coach. It renders nothing unless `GET /v1/checkout/dunning` reports an active, unlocked v2 cycle. The legacy payment-status `dunning` banner on `ClientPackagesScreen` stays as it was, and is always null today.

@@ -1,0 +1,175 @@
+targeted	Targeted jest	﻿2026-10-04T19:40:09.2922459Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T19:40:09.2923110Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T19:40:09.2923529Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T19:40:09.2924032Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T19:40:09.2924394Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T19:40:09.2924686Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T19:40:09.2988768Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T19:40:09.2989122Z env:
+targeted	Targeted jest	2026-10-04T19:40:09.2989348Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T19:40:09.2989697Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T19:40:09.2990034Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T19:40:09.3095999Z specs: test/audit-sol-r12-119-prior.spec.ts test/audit-sol-r12-119-trial-authority.spec.ts test/audit-sol-r12r5-prior.spec.ts test/audit-sol-r12r5-builder4.spec.ts test/aud-sol-r12-116-authority.spec.ts test/b-recur6a-118-fix-round-6.spec.ts test/b-recur5a-117-fix-round-5.spec.ts test/b-recur-subscription-checkout.spec.ts
+targeted	Targeted jest	2026-10-04T19:40:11.9495630Z PASS test/b-recur-subscription-checkout.spec.ts (100 MB heap size)
+targeted	Targeted jest	2026-10-04T19:40:11.9499870Z ^[[32m[Nest] 3161  - ^[[39m10/04/2026, 7:40:11 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.client_plan_resumed purchase=00000000-0000-4000-8000-000000000001 superseded=false^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.2858562Z ^[[32m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.2861262Z ^[[32m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.2863665Z ^[[32m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.2865356Z ^[[32m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.2866998Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mattempt subscription lookup failed purchase=00000000-0000-4000-8000-000000000001 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.2868396Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.2869630Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.2871164Z ^[[32m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.2872903Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mstale trial attempt kept purchase=00000000-0000-4000-8000-000000000001 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.2874255Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.2875476Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.2876922Z ^[[32m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.client_plan_resumed purchase=00000000-0000-4000-8000-000000000001 superseded=true^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.2878471Z PASS test/audit-sol-r12r5-prior.spec.ts (124 MB heap size)
+targeted	Targeted jest	2026-10-04T19:40:12.6009713Z PASS test/aud-sol-r12-116-authority.spec.ts (145 MB heap size)
+targeted	Targeted jest	2026-10-04T19:40:12.8757769Z ^[[31m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31msubscription sub_1 has no payable PaymentIntent or SetupIntent and is not paid; canceling it^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.8910706Z ^[[32m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.8912561Z PASS test/audit-sol-r12r5-builder4.spec.ts (164 MB heap size)
+targeted	Targeted jest	2026-10-04T19:40:12.8914765Z ^[[32m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.8916539Z ^[[32m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.8918220Z ^[[32m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.8919859Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mattempt subscription lookup failed purchase=00000000-0000-4000-8000-000000000001 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.8921627Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.8923321Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.8925029Z ^[[32m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.8926670Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mstale trial attempt kept purchase=00000000-0000-4000-8000-000000000001 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.8928016Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.8929242Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.8930675Z ^[[32m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.client_plan_resumed purchase=00000000-0000-4000-8000-000000000001 superseded=true^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.8932205Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mstale trial attempt kept purchase=00000000-0000-4000-8000-000000000001 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.8933721Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.8934935Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.8936315Z ^[[32m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.trial_attempt_released purchase=00000000-0000-4000-8000-000000000001^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.8938142Z ^[[32m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.client_plan_resumed purchase=00000000-0000-4000-8000-000000000001 superseded=true^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.8939752Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.8941329Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard refused subscription=sub_1 error=stripe:invalid_request_error:400:other^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.8943256Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard refused subscription=sub_1 error=stripe:invalid_request_error:400:setup_intent_unexpected_state^[[39m
+targeted	Targeted jest	2026-10-04T19:40:12.8945025Z ^[[32m[Nest] 3161  - ^[[39m10/04/2026, 7:40:12 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T19:40:13.1726261Z ^[[31m[Nest] 3161  - ^[[39m10/04/2026, 7:40:13 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31mbilling.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete end=settled^[[39m
+targeted	Targeted jest	2026-10-04T19:40:13.1747278Z ^[[31m[Nest] 3161  - ^[[39m10/04/2026, 7:40:13 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31mbilling.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete end=unconfirmed^[[39m
+targeted	Targeted jest	2026-10-04T19:40:13.1841902Z PASS test/b-recur5a-117-fix-round-5.spec.ts (191 MB heap size)
+targeted	Targeted jest	2026-10-04T19:40:13.4219432Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:13 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T19:40:13.4223544Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:13 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T19:40:13.4226534Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:13 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T19:40:13.4229648Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:13 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T19:40:13.4232736Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:13 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T19:40:13.4235845Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:13 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T19:40:13.4238657Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:13 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T19:40:13.4241499Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:13 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T19:40:13.4265718Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:13 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T19:40:13.4268101Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:13 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T19:40:13.4271408Z ^[[32m[Nest] 3161  - ^[[39m10/04/2026, 7:40:13 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.trial_attempt_retired purchase=00000000-0000-4000-8000-000000000001 stripe_status=canceled^[[39m
+targeted	Targeted jest	2026-10-04T19:40:13.4274721Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:13 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mresume read-back failed purchase=00000000-0000-4000-8000-000000000001 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T19:40:13.4277692Z ^[[32m[Nest] 3161  - ^[[39m10/04/2026, 7:40:13 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.client_plan_resumed purchase=00000000-0000-4000-8000-000000000001 superseded=false^[[39m
+targeted	Targeted jest	2026-10-04T19:40:13.4280476Z ^[[32m[Nest] 3161  - ^[[39m10/04/2026, 7:40:13 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T19:40:13.4283442Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:13 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard refused subscription=sub_1 error=stripe:invalid_request_error:400:other^[[39m
+targeted	Targeted jest	2026-10-04T19:40:13.4286224Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:13 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard refused subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T19:40:13.4289158Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:13 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard unconfirmed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T19:40:18.4421757Z ^[[31m[Nest] 3161  - ^[[39m10/04/2026, 7:40:18 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31mbilling.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete end=unconfirmed^[[39m
+targeted	Targeted jest	2026-10-04T19:40:18.4444087Z ^[[31m[Nest] 3161  - ^[[39m10/04/2026, 7:40:18 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31mbilling.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=active end=settled^[[39m
+targeted	Targeted jest	2026-10-04T19:40:18.4461401Z ^[[31m[Nest] 3161  - ^[[39m10/04/2026, 7:40:18 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31mbilling.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete end=unconfirmed^[[39m
+targeted	Targeted jest	2026-10-04T19:40:18.4586842Z PASS test/b-recur6a-118-fix-round-6.spec.ts (5.27 s, 101 MB heap size)
+targeted	Targeted jest	2026-10-04T19:40:18.7701055Z ^[[31m[Nest] 3161  - ^[[39m10/04/2026, 7:40:18 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31mbilling.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete end=unconfirmed^[[39m
+targeted	Targeted jest	2026-10-04T19:40:18.8116021Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:18 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard refused subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T19:40:18.8118261Z FAIL test/audit-sol-r12-119-prior.spec.ts (122 MB heap size)
+targeted	Targeted jest	2026-10-04T19:40:18.8120632Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:18 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard unconfirmed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T19:40:18.8123608Z   ● C-679-3 follow-up: same-key trial replay after provider resource absence › acceptance: a missing trial and SetupIntent never return their stored dead sheet secret
+targeted	Targeted jest	2026-10-04T19:40:18.8127013Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:18 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard refused subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T19:40:18.8130908Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:18 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard unconfirmed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T19:40:18.8134521Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:18 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard refused subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T19:40:18.8138128Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:18 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard unconfirmed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T19:40:18.8139600Z 
+targeted	Targeted jest	2026-10-04T19:40:18.8140235Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T19:40:18.8140650Z 
+targeted	Targeted jest	2026-10-04T19:40:18.8140830Z     - Expected  - 2
+targeted	Targeted jest	2026-10-04T19:40:18.8143465Z ^[[33m[Nest] 3161  - ^[[39m10/04/2026, 7:40:18 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mreplay secret check skipped purchase=00000000-0000-4000-8000-000000000001 error=stripe:invalid_request_error:404:resource_missing^[[39m
+targeted	Targeted jest	2026-10-04T19:40:18.8145400Z     + Received  + 2
+targeted	Targeted jest	2026-10-04T19:40:18.8145716Z 
+targeted	Targeted jest	2026-10-04T19:40:18.8146062Z       Object {
+targeted	Targeted jest	2026-10-04T19:40:18.8146554Z     -   "error": "SUBSCRIPTION_ATTEMPT_EXPIRED",
+targeted	Targeted jest	2026-10-04T19:40:18.8147155Z     -   "returnedSecret": undefined,
+targeted	Targeted jest	2026-10-04T19:40:18.8147637Z     +   "error": undefined,
+targeted	Targeted jest	2026-10-04T19:40:18.8148135Z     +   "returnedSecret": "seti_1_secret_x",
+targeted	Targeted jest	2026-10-04T19:40:18.8148611Z       }
+targeted	Targeted jest	2026-10-04T19:40:18.8148786Z 
+targeted	Targeted jest	2026-10-04T19:40:18.8149517Z     ^[[0m ^[[90m 206 |^[[39m     ^[[36mconst^[[39m out ^[[33m=^[[39m ^[[36mawait^[[39m resultOf(intent(f))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:40:18.8151695Z      ^[[90m 207 |^[[39m     expect({ error^[[33m:^[[39m out^[[33m.^[[39mbody^[[33m?^[[39m^[[33m.^[[39mcode^[[33m,^[[39m returnedSecret^[[33m:^[[39m out^[[33m.^[[39mvalue^[[33m?^[[39m^[[33m.^[[39mclient_secret })
+targeted	Targeted jest	2026-10-04T19:40:18.8154415Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 208 |^[[39m       ^[[33m.^[[39mtoEqual({ error^[[33m:^[[39m ^[[32m'SUBSCRIPTION_ATTEMPT_EXPIRED'^[[39m^[[33m,^[[39m returnedSecret^[[33m:^[[39m undefined })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:40:18.8155823Z      ^[[90m     |^[[39m        ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:40:18.8156498Z      ^[[90m 209 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:40:18.8157144Z      ^[[90m 210 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:40:18.8157685Z      ^[[90m 211 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:40:18.8157964Z 
+targeted	Targeted jest	2026-10-04T19:40:18.8158411Z       at Object.<anonymous> (test/audit-sol-r12-119-prior.spec.ts:208:8)
+targeted	Targeted jest	2026-10-04T19:40:18.8158924Z 
+targeted	Targeted jest	2026-10-04T19:40:19.0576684Z FAIL test/audit-sol-r12-119-trial-authority.spec.ts (140 MB heap size)
+targeted	Targeted jest	2026-10-04T19:40:19.0680510Z   ● Console
+targeted	Targeted jest	2026-10-04T19:40:19.0680824Z 
+targeted	Targeted jest	2026-10-04T19:40:19.0680983Z     console.log
+targeted	Targeted jest	2026-10-04T19:40:19.0681463Z       SOL_TRIAL_DEFAULT_AFTER_SETUP_FAILURE {
+targeted	Targeted jest	2026-10-04T19:40:19.0681887Z         change: 'trial removed',
+targeted	Targeted jest	2026-10-04T19:40:19.0682215Z         code: 'SUBSCRIPTION_ALREADY_ACTIVE',
+targeted	Targeted jest	2026-10-04T19:40:19.0682556Z         status: 'trialing',
+targeted	Targeted jest	2026-10-04T19:40:19.0683186Z         safetyEnd: true,
+targeted	Targeted jest	2026-10-04T19:40:19.0683564Z         hasOwnSecret: false,
+targeted	Targeted jest	2026-10-04T19:40:19.0683815Z         entitled: false
+targeted	Targeted jest	2026-10-04T19:40:19.0684031Z       }
+targeted	Targeted jest	2026-10-04T19:40:19.0684141Z 
+targeted	Targeted jest	2026-10-04T19:40:19.0684353Z       at test/audit-sol-r12-119-trial-authority.spec.ts:78:13
+targeted	Targeted jest	2026-10-04T19:40:19.0684632Z 
+targeted	Targeted jest	2026-10-04T19:40:19.0684724Z     console.log
+targeted	Targeted jest	2026-10-04T19:40:19.0684986Z       SOL_TRIAL_DEFAULT_AFTER_SETUP_FAILURE {
+targeted	Targeted jest	2026-10-04T19:40:19.0685307Z         change: 'price changed',
+targeted	Targeted jest	2026-10-04T19:40:19.0685613Z         code: 'SUBSCRIPTION_ALREADY_ACTIVE',
+targeted	Targeted jest	2026-10-04T19:40:19.0685898Z         status: 'trialing',
+targeted	Targeted jest	2026-10-04T19:40:19.0686159Z         safetyEnd: true,
+targeted	Targeted jest	2026-10-04T19:40:19.0686393Z         hasOwnSecret: false,
+targeted	Targeted jest	2026-10-04T19:40:19.0686625Z         entitled: false
+targeted	Targeted jest	2026-10-04T19:40:19.0686834Z       }
+targeted	Targeted jest	2026-10-04T19:40:19.0686940Z 
+targeted	Targeted jest	2026-10-04T19:40:19.0687138Z       at test/audit-sol-r12-119-trial-authority.spec.ts:78:13
+targeted	Targeted jest	2026-10-04T19:40:19.0687728Z 
+targeted	Targeted jest	2026-10-04T19:40:19.0688338Z   ● B-679-10 retained: trial removed after failed own-setup creation must not call the customer default an active own trial
+targeted	Targeted jest	2026-10-04T19:40:19.0688806Z 
+targeted	Targeted jest	2026-10-04T19:40:19.0688991Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T19:40:19.0689238Z 
+targeted	Targeted jest	2026-10-04T19:40:19.0689391Z     Expected: "SUBSCRIPTION_ATTEMPT_EXPIRED"
+targeted	Targeted jest	2026-10-04T19:40:19.0689727Z     Received: "SUBSCRIPTION_ALREADY_ACTIVE"
+targeted	Targeted jest	2026-10-04T19:40:19.0689933Z 
+targeted	Targeted jest	2026-10-04T19:40:19.0690474Z     ^[[0m ^[[90m 82 |^[[39m       entitled^[[33m:^[[39m f^[[33m.^[[39mdb^[[33m.^[[39m_purchases[^[[35m0^[[39m]^[[33m.^[[39mentitlement_active^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:40:19.0691085Z      ^[[90m 83 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:40:19.0691872Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 84 |^[[39m     expect(out^[[33m.^[[39mbody^[[33m?^[[39m^[[33m.^[[39mcode)^[[33m.^[[39mtoBe(^[[32m'SUBSCRIPTION_ATTEMPT_EXPIRED'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:40:19.0692603Z      ^[[90m    |^[[39m                            ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:40:19.0693636Z      ^[[90m 85 |^[[39m     expect(f^[[33m.^[[39mstripe^[[33m.^[[39m_subs^[[33m.^[[39m^[[36mget^[[39m(^[[32m'sub_1'^[[39m)^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(^[[32m'canceled'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:40:19.0694311Z      ^[[90m 86 |^[[39m   }^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:40:19.0694623Z      ^[[90m 87 |^[[39m )^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:40:19.0694796Z 
+targeted	Targeted jest	2026-10-04T19:40:19.0694994Z       at test/audit-sol-r12-119-trial-authority.spec.ts:84:28
+targeted	Targeted jest	2026-10-04T19:40:19.0695253Z 
+targeted	Targeted jest	2026-10-04T19:40:19.0695781Z   ● B-679-10 retained: price changed after failed own-setup creation must not call the customer default an active own trial
+targeted	Targeted jest	2026-10-04T19:40:19.0696451Z 
+targeted	Targeted jest	2026-10-04T19:40:19.0696642Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T19:40:19.0696882Z 
+targeted	Targeted jest	2026-10-04T19:40:19.0697024Z     Expected: "SUBSCRIPTION_ATTEMPT_EXPIRED"
+targeted	Targeted jest	2026-10-04T19:40:19.0697361Z     Received: "SUBSCRIPTION_ALREADY_ACTIVE"
+targeted	Targeted jest	2026-10-04T19:40:19.0697560Z 
+targeted	Targeted jest	2026-10-04T19:40:19.0698078Z     ^[[0m ^[[90m 82 |^[[39m       entitled^[[33m:^[[39m f^[[33m.^[[39mdb^[[33m.^[[39m_purchases[^[[35m0^[[39m]^[[33m.^[[39mentitlement_active^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:40:19.0698659Z      ^[[90m 83 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:40:19.0699424Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 84 |^[[39m     expect(out^[[33m.^[[39mbody^[[33m?^[[39m^[[33m.^[[39mcode)^[[33m.^[[39mtoBe(^[[32m'SUBSCRIPTION_ATTEMPT_EXPIRED'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:40:19.0700147Z      ^[[90m    |^[[39m                            ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:40:19.0701017Z      ^[[90m 85 |^[[39m     expect(f^[[33m.^[[39mstripe^[[33m.^[[39m_subs^[[33m.^[[39m^[[36mget^[[39m(^[[32m'sub_1'^[[39m)^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(^[[32m'canceled'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:40:19.0701701Z      ^[[90m 86 |^[[39m   }^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:40:19.0702008Z      ^[[90m 87 |^[[39m )^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:40:19.0702178Z 
+targeted	Targeted jest	2026-10-04T19:40:19.0702380Z       at test/audit-sol-r12-119-trial-authority.spec.ts:84:28
+targeted	Targeted jest	2026-10-04T19:40:19.0702644Z 
+targeted	Targeted jest	2026-10-04T19:40:19.0707396Z Test Suites: 2 failed, 6 passed, 8 total
+targeted	Targeted jest	2026-10-04T19:40:19.0708026Z Tests:       3 failed, 130 passed, 133 total
+targeted	Targeted jest	2026-10-04T19:40:19.0708432Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T19:40:19.0708666Z Time:        8.922 s
+targeted	Targeted jest	2026-10-04T19:40:19.0710339Z Ran all test suites matching test/audit-sol-r12-119-prior.spec.ts|test/audit-sol-r12-119-trial-authority.spec.ts|test/audit-sol-r12r5-prior.spec.ts|test/audit-sol-r12r5-builder4.spec.ts|test/aud-sol-r12-116-authority.spec.ts|test/b-recur6a-118-fix-round-6.spec.ts|test/b-recur5a-117-fix-round-5.spec.ts|test/b-recur-subscription-checkout.spec.ts.
+targeted	Targeted jest	2026-10-04T19:40:19.2019964Z ##[error]Process completed with exit code 1.

@@ -1,0 +1,694 @@
+diff --git a/app.json b/app.json
+index 610e834..f10d43e 100644
+--- a/app.json
++++ b/app.json
+@@ -7,6 +7,15 @@
+       "com.growthproject.app"
+     ],
+     "version": "1.0.0",
++    "runtimeVersion": {
++      "policy": "fingerprint"
++    },
++    "updates": {
++      "enabled": true,
++      "url": "https://u.expo.dev/a12c3345-cc8c-4c2c-9c57-711c10a57c1c",
++      "checkAutomatically": "ON_LOAD",
++      "fallbackToCacheTimeout": 0
++    },
+     "orientation": "portrait",
+     "icon": "./assets/icon.png",
+     "userInterfaceStyle": "light",
+@@ -34,7 +43,7 @@
+         "backgroundColor": "#F5EFE4"
+       },
+       "package": "com.growthproject.app",
+-      "versionCode": 4,
++      "versionCode": 5,
+       "intentFilters": [
+         {
+           "action": "VIEW",
+diff --git a/eas.json b/eas.json
+index b677652..a87a56f 100644
+--- a/eas.json
++++ b/eas.json
+@@ -16,6 +16,7 @@
+     },
+     "preview": {
+       "distribution": "internal",
++      "channel": "preview",
+       "environment": "preview",
+       "prebuildCommand": "prebuild --no-install",
+       "android": {
+@@ -30,6 +31,7 @@
+     },
+     "production": {
+       "distribution": "store",
++      "channel": "production",
+       "environment": "production",
+       "prebuildCommand": "prebuild --no-install",
+       "env": {
+@@ -41,6 +43,8 @@
+     },
+     "clinic": {
+       "extends": "production",
++      "channel": "clinic",
++      "environment": "production",
+       "env": {
+         "TGP_ANDROID_HEALTH_CONNECT": "1",
+         "EXPO_PUBLIC_USE_MOCK_COMMAND_CENTER": "false",
+diff --git a/plugins/withHealthConnectPermissionDelegate.js b/plugins/withHealthConnectPermissionDelegate.js
+index 24ba190..12b3583 100644
+--- a/plugins/withHealthConnectPermissionDelegate.js
++++ b/plugins/withHealthConnectPermissionDelegate.js
+@@ -17,18 +17,50 @@
+  *    HEALTH_PERMISSIONS category. (Android 13 and below use the
+  *    ACTION_SHOW_PERMISSIONS_RATIONALE filter the library plugin adds.)
+  *
+- * Both edits are idempotent so repeated prebuilds do not duplicate them.
++ * 3. B-364-2: both of those land on MainActivity, which must show the privacy
++ *    policy (the Play Console one, PRIVACY_POLICY_URL in src/config/env.ts).
++ *    MainActivity opens it for either intent: on a cold start it then
++ *    finishes, while the app is running it handles them in onNewIntent.
++ *
++ * All edits are idempotent so repeated prebuilds do not duplicate them.
+  */
+ const { withAndroidManifest, withMainActivity } = require('expo/config-plugins');
+ 
+ const DELEGATE_IMPORT = 'dev.matinzd.healthconnect.permissions.HealthConnectPermissionDelegate';
+ const DELEGATE_CALL = 'HealthConnectPermissionDelegate.setPermissionDelegate(this)';
+ const ALIAS_NAME = 'ViewPermissionUsageActivity';
++const PRIVACY_POLICY_URL = 'https://app.trygrowthproject.com/privacy';
++const PRIVACY_CHECK = 'if (showHealthConnectPrivacyPolicy(intent)) finish()';
++const PRIVACY_MEMBERS = `
++  // B-364-2: Health Connect's privacy policy link (Android 13 rationale, Android 14+ usage).
++  override fun onNewIntent(intent: android.content.Intent) {
++    super.onNewIntent(intent)
++    showHealthConnectPrivacyPolicy(intent)
++  }
++
++  private fun showHealthConnectPrivacyPolicy(intent: android.content.Intent?): Boolean {
++    val action = intent?.action
++    if (action != "androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" &&
++      action != "android.intent.action.VIEW_PERMISSION_USAGE") return false
++    val policy = android.net.Uri.parse("${PRIVACY_POLICY_URL}")
++    return try {
++      startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, policy))
++      true
++    } catch (e: android.content.ActivityNotFoundException) {
++      false
++    }
++  }
++`;
+ 
+ function addDelegateToMainActivity(contents, language) {
+   if (contents.includes(DELEGATE_CALL)) return contents;
+-  const kotlin = language !== 'java';
+-  const importLine = kotlin ? `import ${DELEGATE_IMPORT}` : `import ${DELEGATE_IMPORT};`;
++  if (language === 'java') {
++    throw new Error('withHealthConnectPermissionDelegate: needs a Kotlin MainActivity.');
++  }
++  if (/fun onNewIntent\(/.test(contents)) {
++    throw new Error('withHealthConnectPermissionDelegate: MainActivity already has onNewIntent.');
++  }
++  const importLine = `import ${DELEGATE_IMPORT}`;
+   let out = contents;
+   if (!out.includes(importLine)) {
+     out = out.replace(/^(package [^\n]+\n)/m, `$1\n${importLine}\n`);
+@@ -39,8 +71,8 @@ function addDelegateToMainActivity(contents, language) {
+       'withHealthConnectPermissionDelegate: MainActivity has no super.onCreate(...) call to anchor on.',
+     );
+   }
+-  const call = kotlin ? DELEGATE_CALL : `${DELEGATE_CALL};`;
+-  return out.replace(superCall, `$1\n    ${call}`);
++  out = out.replace(superCall, `$1\n    ${DELEGATE_CALL}\n    ${PRIVACY_CHECK}`);
++  return out.replace(/\}\s*$/, `${PRIVACY_MEMBERS}}\n`);
+ }
+ 
+ function addPermissionUsageAlias(manifest) {
+diff --git a/scripts/__tests__/easUpdateGuard.test.js b/scripts/__tests__/easUpdateGuard.test.js
+new file mode 100644
+index 0000000..ea0a232
+--- /dev/null
++++ b/scripts/__tests__/easUpdateGuard.test.js
+@@ -0,0 +1,545 @@
++/**
++ * Audit #305 A1/B1 and S-RELEASE-3 (B-305-5 / B-305-6 / B-305-8 / B-305-9):
++ * guarded EAS Update publish. Every EAS / Sentry command goes through an
++ * injected runner; nothing here reaches a provider.
++ */
++const fs = require('fs');
++const os = require('os');
++const path = require('path');
++const guard = require('../eas-update-guard');
++
++const ROOT = path.resolve(__dirname, '..', '..');
++const F = guard.FLAG;
++
++// Synthetic release values, assembled at runtime so no key-shaped literal sits
++// in the source (same shapes as releaseEnvProfile.test.js).
++const b64url = (o) => Buffer.from(JSON.stringify(o)).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
++const SIG = Buffer.from('0123456789abcdef0123456789abcdef').toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
++const jwt = (role) => [b64url({ alg: 'HS256', typ: 'JWT' }), b64url({ iss: 'supabase', role }), SIG].join('.');
++const PK_LIVE = ['pk', 'live', '51AbCdEfGhIjKlMnOpQrStUvWx0123'].join('_');
++const PK_TEST = ['pk', 'test', '51AbCdEfGhIjKlMnOpQrStUvWx0123'].join('_');
++const DSN = 'https://0123456789abcdef0123456789abcdef@o123.ingest.us.sentry.io/4507';
++const TOKEN = ['sntrys', 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6'].join('_');
++
++// Exact eas-cli markers (packages/eas-cli/src/utils/variableUtils.ts formatVariableValue).
++const SECRET_MARKER = "***** (This is a secret env variable that can only be accessed on EAS builder and can't be read in any UI. Learn more.)";
++const SENSITIVE_MARKER = '***** (This is a sensitive env variable. To access it, run command with --include-sensitive flag. Learn more.)';
++const FILE_MARKER = '***** (This is a file env variable. To access it, run command with --include-file-content flag. Learn more.)';
++
++const GOOD = {
++  EXPO_PUBLIC_API_URL: 'https://api.trygrowthproject.com/api',
++  EXPO_PUBLIC_SUPABASE_URL: 'https://abcdefghijkl.supabase.co',
++  EXPO_PUBLIC_SUPABASE_ANON_KEY: jwt('anon'),
++  EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY: PK_LIVE,
++  EXPO_PUBLIC_SENTRY_DSN: DSN,
++  [F]: 'true',
++  SENTRY_AUTH_TOKEN: TOKEN,
++};
++const lines = (vars) => ['Environment: production', ...Object.entries(vars).map(([k, v]) => `${k}=${v}`)].join('\n');
++const REMOTE_OK = lines(GOOD);
++const EMPTY_SCOPE = 'No variables found for this environment.';
++
++const PROD = ['--channel', 'production', '--environment', 'production', '--message', 'fix'];
++const CLINIC = ['--channel', 'clinic', '--environment', 'production', '--message', 'fix'];
++const PREVIEW = ['--channel', 'preview', '--environment', 'preview', '--message', 'fix'];
++const UPLOAD_SCRIPT = '/fake/node_modules/@sentry/react-native/scripts/expo-upload-sourcemaps.js';
++
++function tmpDir(prefix) {
++  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
++}
++
++/** Write an eas update export: one bundle + source map per platform. */
++function writeDist(dir, { platforms = ['ios', 'android'], debugId = true, mtime, metadata = true } = {}) {
++  fs.mkdirSync(dir, { recursive: true });
++  for (const p of platforms) {
++    const d = path.join(dir, '_expo', 'static', 'js', p);
++    fs.mkdirSync(d, { recursive: true });
++    const bundle = path.join(d, `entry-${p}.hbc`);
++    const map = `${bundle}.map`;
++    fs.writeFileSync(bundle, 'bytecode');
++    fs.writeFileSync(map, JSON.stringify({ version: 3, sources: [], mappings: '', ...(debugId ? { debugId: `0000-${p}` } : {}) }));
++    if (mtime !== undefined) {
++      fs.utimesSync(bundle, mtime / 1000, mtime / 1000);
++      fs.utimesSync(map, mtime / 1000, mtime / 1000);
++    }
++  }
++  if (metadata) {
++    fs.writeFileSync(
++      path.join(dir, guard.METADATA_FILE),
++      JSON.stringify(platforms.map((p, i) => ({ id: `ABCDEF0${i}-1111-2222-3333-444455556666`, platform: p, group: 'group-1', branch: 'clinic' }))),
++    );
++  }
++}
++
++/**
++ * Injected runner. `lookup` answers env:get, `list(scope)` answers env:list,
++ * `publish` answers eas update (and may write dist/), `upload` answers the
++ * Sentry upload child.
++ */
++function harness({
++  lookup = () => ({ status: 0, stdout: `${F}=true\n` }),
++  list = (scope) => ({ status: 0, stdout: scope === 'project' ? REMOTE_OK : EMPTY_SCOPE }),
++  publish = () => ({ status: 0 }),
++  upload = () => ({ status: 0 }),
++} = {}) {
++  const calls = [];
++  const run = jest.fn((cmd, args, opts) => {
++    calls.push({ cmd, args, env: opts && opts.env, capture: !!(opts && opts.capture) });
++    if (cmd === process.execPath) return upload(args, opts);
++    if (args[1] === 'env:get') return lookup(opts);
++    if (args[1] === 'env:list') return list(args[args.indexOf('--scope') + 1], args[2]);
++    if (args[1] === 'update') return publish(args, opts);
++    throw new Error(`unexpected command ${args.join(' ')}`);
++  });
++  const kinds = () => calls.map((c) => (c.cmd === process.execPath ? 'upload' : c.args[1]));
++  return { run, calls, kinds, published: () => kinds().includes('update'), uploaded: () => kinds().includes('upload') };
++}
++
++/** main() with a fresh dist dir; the default publish writes a fresh export. */
++function runMain(argv, { env = { PATH: '/bin' }, h, dist, writeOnPublish = true, now } = {}) {
++  const distDir = dist || path.join(tmpDir('tgp-guard-dist-'), 'dist');
++  const logs = [];
++  const hh =
++    h ||
++    harness({
++      publish: () => {
++        if (writeOnPublish) writeDist(distDir);
++        return { status: 0 };
++      },
++    });
++  const code = guard.main(argv, { run: hh.run, env, log: (m) => logs.push(String(m)), distDir, now, resolveUploadScript: () => ({ script: UPLOAD_SCRIPT }) });
++  return { code, logs, h: hh, distDir };
++}
++
++describe('eas-update-guard', () => {
++  describe('arguments', () => {
++    it('requires a known eas.json channel, --environment equal to that profile\'s environment, and a message', () => {
++      expect(guard.checkArgs({ channel: 'production', environment: 'production', message: 'fix' })).toEqual([]);
++      expect(guard.checkArgs({ channel: 'preview', environment: 'preview', message: 'fix' })).toEqual([]);
++      expect(guard.checkArgs({ channel: 'clinic', environment: 'production', message: 'fix' })).toEqual([]);
++      expect(guard.checkArgs({ channel: 'production', message: 'fix' }).join()).toMatch(/--environment is required/);
++      expect(guard.checkArgs({ channel: 'production', environment: 'preview', message: 'fix' }).join()).toMatch(/must equal eas\.json build\.production\.environment/);
++      expect(guard.checkArgs({ channel: 'clinic', environment: 'clinic', message: 'fix' }).join()).toMatch(/must equal eas\.json build\.clinic\.environment \("production"\)/);
++      expect(guard.checkArgs({ channel: 'main', environment: 'main', message: 'fix' }).join()).toMatch(/--channel must be one of clinic, preview, production/);
++      expect(guard.checkArgs({ channel: 'production', environment: 'production', message: ' ' }).join()).toMatch(/--message/);
++    });
++
++    it('refuses a channel shared by two profiles', () => {
++      const channels = { production: { profiles: ['production', 'clinic'], profile: 'production', environment: 'production', env: {} } };
++      expect(guard.checkArgs({ channel: 'production', environment: 'production', message: 'fix' }, channels).join()).toMatch(/used by 2 eas\.json profiles/);
++    });
++
++    it('reads the clinic channel from eas.json with the production flags merged under the clinic flags', () => {
++      const c = guard.loadChannels();
++      expect(Object.keys(c).sort()).toEqual(['clinic', 'preview', 'production']);
++      expect(c.clinic.environment).toBe('production');
++      expect(c.clinic.env.EXPO_PUBLIC_FF_CLIENT_TUTORIAL).toBe('true');
++      expect(c.clinic.env.EXPO_PUBLIC_FF_IOS_HIDE_NON_P2P_PURCHASES).toBe('true');
++      expect(c.clinic.env.TGP_ANDROID_HEALTH_CONNECT).toBe('1');
++      expect(c.production.env.EXPO_PUBLIC_FF_CLIENT_TUTORIAL).toBeUndefined();
++    });
++
++    it('parses both --k v and --k=v forms', () => {
++      expect(guard.parseArgs(['--channel', 'production', '--environment=production', '--message', 'a b', '--rollout-percentage=10', '--dry-run'])).toEqual({
++        args: { channel: 'production', environment: 'production', message: 'a b', 'rollout-percentage': '10', dryRun: true, sourcemapsOnly: false },
++        errors: [],
++      });
++    });
++
++    it.each([
++      ['an eas update option the guard does not own', ['--branch', 'main']],
++      ['a boolean eas update option', ['--auto']],
++      ['--skip-bundler (would publish a stale dist/)', ['--skip-bundler']],
++      ['a positional argument', ['extra']],
++      ['a value option without a value', ['--rollout-percentage']],
++      ['a repeated option', ['--channel', 'clinic']],
++      ['a value on a boolean option', ['--dry-run=yes']],
++    ])('B-305-5: refuses %s before any EAS call', (_label, extra) => {
++      const { code, logs, h } = runMain([...CLINIC, ...extra]);
++      expect(code).toBe(1);
++      expect(h.calls).toEqual([]);
++      expect(logs.length).toBeGreaterThan(0);
++    });
++
++    it('B-305-5: --rollout-percentage is a whole number from 1 to 100', () => {
++      for (const ok of ['1', '10', '100']) expect(guard.checkArgs({ channel: 'clinic', environment: 'production', message: 'm', 'rollout-percentage': ok })).toEqual([]);
++      for (const bad of ['0', '101', '1.5', '-5', 'abc', '', '1e2', '0x10']) {
++        expect(guard.checkArgs({ channel: 'clinic', environment: 'production', message: 'm', 'rollout-percentage': bad }).join()).toMatch(/--rollout-percentage must be a whole number from 1 to 100/);
++      }
++    });
++  });
++
++  describe('purchase gate', () => {
++    it('the hide flag must be exactly "true" in the EAS environment', () => {
++      expect(guard.checkEnvValue('true')).toEqual([]);
++      for (const v of [undefined, '', 'false', '1', 'TRUE']) expect(guard.checkEnvValue(v).join()).toMatch(/must be exactly "true"/);
++    });
++
++    it('the committed purchase-policy lock matches src/config/purchaseSurfaces.ts (edits need a reviewed lock bump)', () => {
++      expect(guard.checkPolicyHash()).toEqual([]);
++    });
++
++    it('an edited gate (e.g. an OTA that removes it) is refused', () => {
++      const dir = tmpDir('tgp-guard-');
++      try {
++        fs.mkdirSync(path.join(dir, 'src', 'config'), { recursive: true });
++        fs.mkdirSync(path.join(dir, 'scripts'), { recursive: true });
++        const src = fs.readFileSync(path.join(ROOT, guard.POLICY_FILE), 'utf8');
++        fs.copyFileSync(path.join(ROOT, guard.LOCK_FILE), path.join(dir, guard.LOCK_FILE));
++        fs.writeFileSync(path.join(dir, guard.POLICY_FILE), src.replace('if (flag !== false) return true;', 'return false;'));
++        expect(guard.checkPolicyHash(dir).join()).toMatch(/changed .* pins/);
++      } finally {
++        fs.rmSync(dir, { recursive: true, force: true });
++      }
++    });
++
++    it('a modified gate (hash mismatch) refuses before any EAS call', () => {
++      const dir = tmpDir('tgp-guard-main-');
++      try {
++        fs.mkdirSync(path.join(dir, 'src', 'config'), { recursive: true });
++        fs.mkdirSync(path.join(dir, 'scripts'), { recursive: true });
++        const src = fs.readFileSync(path.join(ROOT, guard.POLICY_FILE), 'utf8');
++        fs.copyFileSync(path.join(ROOT, guard.LOCK_FILE), path.join(dir, guard.LOCK_FILE));
++        fs.writeFileSync(path.join(dir, guard.POLICY_FILE), src.replace('IOS_P2P_ONLY_MIN_NATIVE_BUILD = 6;', 'IOS_P2P_ONLY_MIN_NATIVE_BUILD = 600;'));
++        const h = harness();
++        expect(guard.main(PROD, { run: h.run, env: {}, root: dir, easRoot: ROOT, log: () => undefined })).toBe(1);
++        expect(h.calls).toEqual([]);
++      } finally {
++        fs.rmSync(dir, { recursive: true, force: true });
++      }
++    });
++  });
++
++  describe('main(): the remote EAS record is the only source of truth for the hide flag (re-audit B2)', () => {
++    const ok = (stdout, stderr = '') => () => ({ status: 0, stdout, stderr });
++    it.each([
++      ['remote missing (eas-cli logs "not found" and exits 0), local true', ok('', 'Variable with name "X" not found')],
++      ['remote missing with empty output, local true', ok('')],
++      ['remote empty value, local true', ok(`${F}=\n`)],
++      ['remote false, local true', ok(`${F}=false\n`)],
++      ['remote masked (sensitive), local true', ok(`${F}=${SENSITIVE_MARKER}\n`)],
++      ['duplicate/ambiguous records, local true', ok(`${F}=true\n${F}=false\n`)],
++      ['lookup failed (secret / network / auth)', () => ({ status: 1, stdout: '', stderr: 'boom' })],
++      ['lookup could not spawn', () => ({ status: null, error: new Error('ENOENT') })],
++    ])('refuses and never publishes: %s', (_label, lookup) => {
++      const h = harness({ lookup });
++      const { code } = runMain(PROD, { h, env: { [F]: 'true', PATH: '/bin' } });
++      expect(code).toBe(1);
++      expect(h.published()).toBe(false);
++    });
++
++    it('the lookup child never sees a locally exported flag, and the queries name the environment explicitly', () => {
++      let seenEnv;
++      const dist = path.join(tmpDir('tgp-guard-dist-'), 'dist');
++      const h = harness({
++        lookup: (opts) => {
++          seenEnv = opts.env;
++          return { status: 0, stdout: `${F}=true\n` };
++        },
++        publish: () => {
++          writeDist(dist);
++          return { status: 0 };
++        },
++      });
++      expect(runMain(PROD, { h, dist, env: { [F]: 'true', PATH: '/bin' } }).code).toBe(0);
++      expect(Object.prototype.hasOwnProperty.call(seenEnv, F)).toBe(false);
++      expect(h.calls.find((c) => c.args[1] === 'env:get').args).toEqual(['eas-cli', 'env:get', 'production', '--variable-name', F, '--format', 'short', '--scope', 'project', '--non-interactive']);
++      expect(h.calls.filter((c) => c.args[1] === 'env:list').map((c) => c.args)).toEqual([
++        ['eas-cli', 'env:list', 'production', '--format', 'short', '--scope', 'project', '--include-sensitive'],
++        ['eas-cli', 'env:list', 'production', '--format', 'short', '--scope', 'account', '--include-sensitive'],
++      ]);
++    });
++
++    it('mismatched environment and a local non-true flag refuse before any EAS call', () => {
++      for (const [argv, env] of [
++        [['--channel', 'production', '--environment', 'preview', '--message', 'x'], {}],
++        [['--channel', 'production', '--message', 'x'], {}],
++        [PROD, { [F]: 'false' }],
++      ]) {
++        const { code, h } = runMain(argv, { env });
++        expect(code).toBe(1);
++        expect(h.calls).toEqual([]);
++      }
++    });
++  });
++
++  describe('publish', () => {
++    it('publishes with --environment, source maps and metadata, without the local flag, then uploads the maps to Sentry', () => {
++      const { code, h, logs } = runMain(PROD, { env: { PATH: '/bin', [F]: 'true' } });
++      expect(code).toBe(0);
++      expect(h.kinds()).toEqual(['env:get', 'env:list', 'env:list', 'update', 'upload']);
++      const pub = h.calls.find((c) => c.args[1] === 'update');
++      expect(pub.args).toEqual(['eas-cli', 'update', '--channel', 'production', '--environment', 'production', '--message', 'fix', '--source-maps', 'true', '--emit-metadata']);
++      expect(Object.prototype.hasOwnProperty.call(pub.env, F)).toBe(false);
++      expect(logs.some((m) => /expo\.updates\.update_id:abcdef00-1111-2222-3333-444455556666 \(ios, update group group-1\)/.test(m))).toBe(true);
++    });
++
++    it('B-305-5: a staged rollout goes through the guard with the clinic profile env', () => {
++      const parent = { PATH: '/bin', EXPO_PUBLIC_FF_COMMUNITY_DM: 'true', EXPO_PUBLIC_API_URL: 'http://localhost:3000/api', [F]: 'true' };
++      const { code, h } = runMain([...CLINIC, '--rollout-percentage', '10'], { env: parent });
++      expect(code).toBe(0);
++      const pub = h.calls.find((c) => c.args[1] === 'update');
++      expect(pub.args).toEqual(['eas-cli', 'update', '--channel', 'clinic', '--environment', 'production', '--message', 'fix', '--source-maps', 'true', '--emit-metadata', '--rollout-percentage', '10']);
++      expect(pub.env.PATH).toBe('/bin');
++      expect(pub.env.EXPO_PUBLIC_FF_CLIENT_TUTORIAL).toBe('true');
++      expect(pub.env.EXPO_PUBLIC_FF_CONSULTATION_ONBOARDING).toBe('true');
++      expect(pub.env.EXPO_PUBLIC_FF_COMMUNITY_DM).toBe('false');
++      expect(pub.env.TGP_ANDROID_HEALTH_CONNECT).toBe('1');
++      expect(Object.prototype.hasOwnProperty.call(pub.env, 'EXPO_PUBLIC_API_URL')).toBe(false);
++      expect(Object.prototype.hasOwnProperty.call(pub.env, F)).toBe(false);
++    });
++
++    it('--dry-run runs every check but never publishes or uploads', () => {
++      const { code, h, logs } = runMain([...CLINIC, '--rollout-percentage', '25', '--dry-run']);
++      expect(code).toBe(0);
++      expect(h.kinds()).toEqual(['env:get', 'env:list', 'env:list']);
++      expect(logs.join('\n')).toMatch(/rollout 25%.*source maps would be uploaded to Sentry the-growth-project\/growth-project-mobile; dry run, nothing published/);
++    });
++  });
++
++  describe('B-305-6: every published update gets its source maps in Sentry', () => {
++    it('uploads only after a status-0 publish, with the token, org, project and url, and never logs the token', () => {
++      const { code, h, logs, distDir } = runMain(CLINIC, { env: { PATH: '/bin' } });
++      expect(code).toBe(0);
++      const up = h.calls.find((c) => c.cmd === process.execPath);
++      expect(up.args).toEqual([UPLOAD_SCRIPT, distDir]);
++      expect(up.env).toMatchObject({ SENTRY_AUTH_TOKEN: TOKEN, SENTRY_ORG: 'the-growth-project', SENTRY_PROJECT: 'growth-project-mobile', SENTRY_URL: 'https://sentry.io/' });
++      expect(h.kinds().indexOf('upload')).toBeGreaterThan(h.kinds().indexOf('update'));
++      expect(logs.join('\n')).not.toContain(TOKEN);
++      expect(logs.join('\n')).toMatch(/token from EAS project scope/);
++    });
++
++    it('a token exported in the shell wins over EAS and is passed only to the upload child', () => {
++      const shellToken = ['sntrys', 'ShellTokenZ9y8X7w6V5u4T3s2R1q0'].join('_');
++      const { code, h, logs } = runMain(PROD, { env: { PATH: '/bin', SENTRY_AUTH_TOKEN: shellToken } });
++      expect(code).toBe(0);
++      expect(h.calls.find((c) => c.cmd === process.execPath).env.SENTRY_AUTH_TOKEN).toBe(shellToken);
++      expect(logs.join('\n')).toMatch(/token from the local shell/);
++      expect(logs.join('\n')).not.toContain(shellToken);
++    });
++
++    it('Opus C-305-10: a local .env.sentry-build-plugin refuses before anything is published, with a named fix', () => {
++      const tmp = tmpDir('tgp-guard-root-');
++      expect(guard.sentryPluginEnvFileError(tmp)).toBeNull();
++      fs.writeFileSync(path.join(tmp, guard.SENTRY_PLUGIN_ENV_FILE), 'SENTRY_AUTH_TOKEN=stale-token-value\n');
++      const msg = guard.sentryPluginEnvFileError(tmp);
++      expect(msg).toMatch(/delete or rename \.env\.sentry-build-plugin/);
++      expect(msg).not.toContain('stale-token-value');
++
++      // Through main(): the real project root holds the file -> no publish, no upload.
++      const file = path.join(ROOT, guard.SENTRY_PLUGIN_ENV_FILE);
++      expect(fs.existsSync(file)).toBe(false);
++      fs.writeFileSync(file, 'SENTRY_AUTH_TOKEN=stale-token-value\n');
++      try {
++        const { code, h, logs } = runMain(CLINIC);
++        expect(code).toBe(1);
++        expect(h.published()).toBe(false);
++        expect(h.uploaded()).toBe(false);
++        expect(logs.join('\n')).toMatch(/delete or rename \.env\.sentry-build-plugin/);
++        expect(logs.join('\n')).not.toContain('stale-token-value');
++      } finally {
++        fs.unlinkSync(file);
++      }
++    });
++
++    it('a failed publish uploads nothing and propagates the status', () => {
++      const h = harness({ publish: () => ({ status: 3 }) });
++      const { code, logs } = runMain(PROD, { h });
++      expect(code).toBe(3);
++      expect(h.uploaded()).toBe(false);
++      expect(logs.join('\n')).toMatch(/eas update did not finish \(status 3\); no source maps were uploaded/);
++    });
++
++    it('a failed upload exits non-zero and names the re-upload command', () => {
++      const dist = path.join(tmpDir('tgp-guard-dist-'), 'dist');
++      const h = harness({
++        publish: () => {
++          writeDist(dist);
++          return { status: 0 };
++        },
++        upload: () => ({ status: 1 }),
++      });
++      const { code, logs } = runMain(CLINIC, { h, dist });
++      expect(code).toBe(1);
++      expect(logs.join('\n')).toMatch(/source maps did not reach Sentry .* npm run update:sourcemaps -- --channel clinic --environment production/);
++    });
++
++    it.each([
++      ['no token anywhere', (scope) => ({ status: 0, stdout: scope === 'project' ? REMOTE_OK.replace(/\nSENTRY_AUTH_TOKEN=.*/, '') : EMPTY_SCOPE }), /SENTRY_AUTH_TOKEN is set neither in this shell nor in EAS environment "production"/],
++      ['the token is an EAS secret (builders only)', (scope) => ({ status: 0, stdout: scope === 'project' ? REMOTE_OK.replace(/SENTRY_AUTH_TOKEN=.*/, `SENTRY_AUTH_TOKEN=${SECRET_MARKER}`) : EMPTY_SCOPE }), /SENTRY_AUTH_TOKEN is stored in EAS environment "production" \(project scope\) with secret visibility/],
++      ['the token is a placeholder', (scope) => ({ status: 0, stdout: scope === 'project' ? REMOTE_OK.replace(/SENTRY_AUTH_TOKEN=.*/, 'SENTRY_AUTH_TOKEN=REPLACE_WITH_TOKEN') : EMPTY_SCOPE }), /SENTRY_AUTH_TOKEN in EAS environment "production" \(project scope\) cannot be used/],
++    ])('refuses before publishing when %s', (_label, list, re) => {
++      const h = harness({ list });
++      const { code, logs } = runMain(PROD, { h });
++      expect(code).toBe(1);
++      expect(h.published()).toBe(false);
++      expect(logs.some((m) => re.test(m))).toBe(true);
++    });
++
++    it('refuses to upload source maps older than this publish', () => {
++      const dist = path.join(tmpDir('tgp-guard-dist-'), 'dist');
++      writeDist(dist, { mtime: Date.now() - 3600 * 1000 });
++      const h = harness({ publish: () => ({ status: 0 }) });
++      const { code, logs } = runMain(PROD, { h, dist });
++      expect(code).toBe(1);
++      expect(h.uploaded()).toBe(false);
++      expect(logs.join('\n')).toMatch(/only ios source maps from an earlier export/);
++    });
++
++    it('refuses to upload maps without a Sentry Debug ID or a missing platform', () => {
++      for (const opts of [{ debugId: false }, { platforms: ['ios'] }]) {
++        const dist = path.join(tmpDir('tgp-guard-dist-'), 'dist');
++        const h = harness({
++          publish: () => {
++            writeDist(dist, opts);
++            return { status: 0 };
++          },
++        });
++        const { code, logs } = runMain(PROD, { h, dist });
++        expect(code).toBe(1);
++        expect(h.uploaded()).toBe(false);
++        expect(logs.join('\n')).toMatch(/no Sentry Debug ID|no android source map/);
++      }
++    });
++
++    it('a preview bundle without a Sentry DSN publishes without an upload (it reports nothing)', () => {
++      const preview = { ...GOOD, EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY: PK_TEST };
++      delete preview.EXPO_PUBLIC_SENTRY_DSN;
++      delete preview.SENTRY_AUTH_TOKEN;
++      const h = harness({ list: (scope) => ({ status: 0, stdout: scope === 'project' ? lines(preview) : EMPTY_SCOPE }) });
++      const { code, logs } = runMain(PREVIEW, { h });
++      expect(code).toBe(0);
++      expect(h.published()).toBe(true);
++      expect(h.uploaded()).toBe(false);
++      expect(logs.join('\n')).toMatch(/no Sentry DSN, so no source maps were uploaded/);
++    });
++
++    it('--sourcemaps-only re-uploads the guarded export without publishing', () => {
++      const dist = path.join(tmpDir('tgp-guard-dist-'), 'dist');
++      writeDist(dist);
++      const h = harness();
++      const { code } = runMain(['--sourcemaps-only', '--channel', 'clinic', '--environment', 'production'], { h, dist });
++      expect(code).toBe(0);
++      expect(h.kinds()).toEqual(['env:list', 'env:list', 'upload']);
++    });
++
++    it('--sourcemaps-only refuses a dist/ that is not a guarded export, and publish-only options', () => {
++      const dist = path.join(tmpDir('tgp-guard-dist-'), 'dist');
++      writeDist(dist, { metadata: false });
++      const a = runMain(['--sourcemaps-only', '--channel', 'clinic', '--environment', 'production'], { dist });
++      expect(a.code).toBe(1);
++      expect(a.h.uploaded()).toBe(false);
++      expect(a.logs.join('\n')).toMatch(/eas-update-metadata\.json is missing/);
++      const b = runMain(['--sourcemaps-only', '--channel', 'clinic', '--environment', 'production', '--message', 'x'], { dist });
++      expect(b.code).toBe(1);
++      expect(b.h.calls).toEqual([]);
++    });
++
++    it('the real upload script is the one @sentry/react-native ships', () => {
++      const r = guard.sentryUploadScript(ROOT);
++      expect(r.error).toBeUndefined();
++      expect(fs.existsSync(r.script)).toBe(true);
++      expect(path.basename(r.script)).toBe('expo-upload-sourcemaps.js');
++    });
++
++    it('app.json names the Sentry organization and project the upload needs', () => {
++      expect(guard.sentryProjectConfig(ROOT)).toEqual({ org: 'the-growth-project', project: 'growth-project-mobile', url: 'https://sentry.io/' });
++    });
++  });
++
++  describe('B-305-9: the effective update bundle is checked, not just name presence', () => {
++    const withProject = (vars) => (scope) => ({ status: 0, stdout: scope === 'project' ? lines(vars) : EMPTY_SCOPE });
++    it.each([
++      ['a required key has secret visibility (EAS builders only)', withProject({ ...GOOD, EXPO_PUBLIC_SUPABASE_ANON_KEY: SECRET_MARKER }), /EXPO_PUBLIC_SUPABASE_ANON_KEY: the project-scope EAS variable in "production" has secret visibility/],
++      ['a required URL is a placeholder', withProject({ ...GOOD, EXPO_PUBLIC_API_URL: 'REPLACE_WITH_API_URL' }), /EXPO_PUBLIC_API_URL is a placeholder, not a real value in the bundle this update would ship to channel "clinic"/],
++      ['a required name is missing everywhere', withProject(Object.fromEntries(Object.entries(GOOD).filter(([k]) => k !== 'EXPO_PUBLIC_API_URL'))), /EXPO_PUBLIC_API_URL is unset or empty in the bundle/],
++      ['the Supabase key is a service-role key', withProject({ ...GOOD, EXPO_PUBLIC_SUPABASE_ANON_KEY: jwt('service_role') }), /EXPO_PUBLIC_SUPABASE_ANON_KEY is the Supabase SERVICE ROLE key/],
++      ['a test Stripe key on a store channel', withProject({ ...GOOD, EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY: PK_TEST }), /EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY is a Stripe TEST key on a store profile/],
++      ['the API URL points at a private host', withProject({ ...GOOD, EXPO_PUBLIC_API_URL: 'https://10.0.0.5/api' }), /EXPO_PUBLIC_API_URL points at a local, private or example host/],
++      ['a file variable', withProject({ ...GOOD, EXPO_PUBLIC_SUPABASE_URL: FILE_MARKER }), /EXPO_PUBLIC_SUPABASE_URL: the project-scope EAS variable .* is a file variable/],
++      ['a sensitive value eas-cli did not reveal', withProject({ ...GOOD, EXPO_PUBLIC_SENTRY_DSN: SENSITIVE_MARKER }), /EXPO_PUBLIC_SENTRY_DSN: .* is sensitive and was not revealed/],
++      ['an empty plaintext value (eas-cli prints *****)', withProject({ ...GOOD, EXPO_PUBLIC_API_URL: '*****' }), /EXPO_PUBLIC_API_URL: .* shows as \*\*\*\*\* \(empty or unreadable\)/],
++      ['project and account disagree (shadowing)', (scope) => ({ status: 0, stdout: scope === 'project' ? REMOTE_OK : 'EXPO_PUBLIC_API_URL=https://api2.trygrowthproject.com/api' }), /EXPO_PUBLIC_API_URL is set 2 times in EAS environment "production" \(project and account scope\) with different values/],
++      ['an account-scope hide flag disagrees with the project one', (scope) => ({ status: 0, stdout: scope === 'project' ? REMOTE_OK : `${F}=false` }), new RegExp(`${F} is set 2 times`)],
++      ['a duplicate in one scope', (scope) => ({ status: 0, stdout: scope === 'project' ? `${REMOTE_OK}\nTGP_ANDROID_HEALTH_CONNECT=0\nTGP_ANDROID_HEALTH_CONNECT=1` : EMPTY_SCOPE }), /TGP_ANDROID_HEALTH_CONNECT is set 2 times/],
++      ['a secret-shaped public name', withProject({ ...GOOD, EXPO_PUBLIC_STRIPE_SECRET: 'abc' }), /EXPO_PUBLIC_STRIPE_SECRET looks like a secret/],
++      ['a project variable turns a clinic flag off', withProject({ ...GOOD, EXPO_PUBLIC_FF_CLIENT_TUTORIAL: 'false' }), /EXPO_PUBLIC_FF_CLIENT_TUTORIAL is "true" in eas\.json build\.clinic\.env .* project-scope EAS variable in "production" holds a different value \(not printed\)/],
++      ['an account variable differs from a clinic flag', (scope) => ({ status: 0, stdout: scope === 'account' ? 'EXPO_PUBLIC_FF_COMMUNITY_DM=true' : REMOTE_OK }), /EXPO_PUBLIC_FF_COMMUNITY_DM .* account-scope EAS variable .* holds a different value/],
++      ['the project list fails', (scope) => (scope === 'project' ? { status: 1, stdout: '', stderr: 'auth' } : { status: 0, stdout: '' }), /env:list production --scope project --include-sensitive failed .* Fix: run npx eas-cli login/],
++      ['the account list cannot spawn', (scope) => (scope === 'account' ? { status: null, error: new Error('ENOENT') } : { status: 0, stdout: REMOTE_OK }), /env:list production --scope account --include-sensitive failed/],
++    ])('refuses and never publishes: %s', (_label, list, re) => {
++      const h = harness({ list });
++      const { code, logs } = runMain(CLINIC, { h });
++      expect(code).toBe(1);
++      expect(h.published()).toBe(false);
++      expect(logs.some((m) => re.test(m))).toBe(true);
++    });
++
++    it('an ambiguous or unreadable name is reported once, not again as unset', () => {
++      for (const list of [
++        (scope) => ({ status: 0, stdout: scope === 'project' ? REMOTE_OK : 'EXPO_PUBLIC_API_URL=https://api2.trygrowthproject.com/api' }),
++        (scope) => ({ status: 0, stdout: scope === 'project' ? lines({ ...GOOD, EXPO_PUBLIC_API_URL: SECRET_MARKER }) : EMPTY_SCOPE }),
++      ]) {
++        const { code, logs } = runMain(CLINIC, { h: harness({ list }) });
++        expect(code).toBe(1);
++        expect(logs.filter((m) => m.startsWith('EXPO_PUBLIC_API_URL'))).toHaveLength(1);
++      }
++    });
++
++    it('accepts update-readable sensitive values (revealed by --include-sensitive) and an identical copy of a profile value', () => {
++      // --include-sensitive reveals sensitive values, so they arrive as plain text.
++      const h = harness({
++        list: (scope) => ({ status: 0, stdout: scope === 'project' ? `${REMOTE_OK}\nEXPO_PUBLIC_FF_CLIENT_TUTORIAL=true` : `EXPO_PUBLIC_SUPABASE_URL=${GOOD.EXPO_PUBLIC_SUPABASE_URL}` }),
++      });
++      const res = runMain([...CLINIC, '--dry-run'], { h });
++      expect(res.code).toBe(0);
++      expect(res.logs.join('\n')).toMatch(/all checks passed/);
++    });
++
++    it('a secret record of a name that never reaches the bundle is ignored', () => {
++      const h = harness({ list: (scope) => ({ status: 0, stdout: scope === 'project' ? `${REMOTE_OK}\nSOME_BUILD_ONLY_SECRET=${SECRET_MARKER}` : EMPTY_SCOPE }) });
++      expect(runMain([...PROD, '--dry-run'], { h }).code).toBe(0);
++    });
++  });
++
++  describe('B-305-8: no diagnostic ever contains a configured value', () => {
++    const CANARY = 'CANARY-7f3a9c-private';
++    it.each([
++      ['remote hide flag', { lookup: () => ({ status: 0, stdout: `${F}=${CANARY}\n` }) }, {}],
++      ['local hide flag', {}, { [F]: CANARY }],
++      ['remote parity mismatch', { list: (scope) => ({ status: 0, stdout: scope === 'project' ? `${REMOTE_OK}\nEXPO_PUBLIC_FF_COACH_BRIEF=${CANARY}` : EMPTY_SCOPE }) }, {}],
++      ['shadowed values', { list: (scope) => ({ status: 0, stdout: scope === 'project' ? REMOTE_OK : `EXPO_PUBLIC_SUPABASE_URL=https://${CANARY}.supabase.co` }) }, {}],
++      ['malformed required URL', { list: (scope) => ({ status: 0, stdout: scope === 'project' ? lines({ ...GOOD, EXPO_PUBLIC_API_URL: `ftp://${CANARY}/x` }) : EMPTY_SCOPE }) }, {}],
++      ['malformed Supabase key', { list: (scope) => ({ status: 0, stdout: scope === 'project' ? lines({ ...GOOD, EXPO_PUBLIC_SUPABASE_ANON_KEY: `${CANARY}.${CANARY}.${CANARY}` }) : EMPTY_SCOPE }) }, {}],
++      ['placeholder token in the shell', {}, { SENTRY_AUTH_TOKEN: `REPLACE_WITH_${CANARY}` }],
++    ])('%s: refuses, and the canary is in no log line', (_label, hopts, extraEnv) => {
++      const h = harness(hopts);
++      const { code, logs } = runMain(CLINIC, { h, env: { PATH: '/bin', ...extraEnv } });
++      expect(code).toBe(1);
++      expect(h.published()).toBe(false);
++      expect(logs.length).toBeGreaterThan(0);
++      for (const m of logs) expect(m).not.toContain(CANARY);
++    });
++  });
++
++  describe('parsers', () => {
++    it('parseEnvList reads bold names, skips headers and keeps duplicates', () => {
++      const m = guard.parseEnvList(`Environment: production\n\u001b[1mA_B\u001b[22m=x=y\nA_B=z\nNo variables found`);
++      expect([...m.entries()]).toEqual([['A_B', ['x=y', 'z']]]);
++    });
++
++    it('classifyRecord tells the eas-cli markers apart', () => {
++      expect(guard.classifyRecord('https://x.app')).toBe('readable');
++      expect(guard.classifyRecord(SECRET_MARKER)).toBe('secret');
++      expect(guard.classifyRecord(SENSITIVE_MARKER)).toBe('sensitive');
++      expect(guard.classifyRecord(FILE_MARKER)).toBe('file');
++      expect(guard.classifyRecord('*****')).toBe('masked');
++    });
++
++    it('rolloutPercentage', () => {
++      expect(guard.rolloutPercentage(undefined)).toBeUndefined();
++      expect(guard.rolloutPercentage('10')).toBe(10);
++      expect(guard.rolloutPercentage('0')).toBeNaN();
++    });
++  });
++});
+diff --git a/src/config/__tests__/androidHealthConnectConfig.test.js b/src/config/__tests__/androidHealthConnectConfig.test.js
+index 7ff07e9..8b2fa3d 100644
+--- a/src/config/__tests__/androidHealthConnectConfig.test.js
++++ b/src/config/__tests__/androidHealthConnectConfig.test.js
+@@ -35,7 +35,10 @@ test.each([undefined, '', '0', 'false', 'true', 'unexpected'])(
+     expect(pluginNames(result)).not.toContain('react-native-health-connect');
+     expect(result.ios).toEqual(app.ios);
+     expect(pluginNames(result)).toContain('react-native-health');
+-    expect(result.android.versionCode).toBe(4);
++    // The switch never changes the build number; the value itself is pinned in
++    // scripts/__tests__/validateAppConfigUpdates.test.js (bumped to 5 by #305).
++    expect(result.android.versionCode).toBe(app.android.versionCode);
++    expect(result.android.versionCode).toBe(5);
+     expect(result.android.package).toBe('com.growthproject.app');
+     expect(result.extra.eas).toEqual(app.extra.eas);
+   },

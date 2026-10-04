@@ -1,0 +1,268 @@
+targeted	Targeted jest	﻿2026-10-04T19:47:37.7242086Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T19:47:37.7242667Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T19:47:37.7243075Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T19:47:37.7243588Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T19:47:37.7243960Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T19:47:37.7244250Z ^[[36;1mnpx jest --ci "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T19:47:37.7317184Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T19:47:37.7317549Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T19:47:37.7423854Z specs: src/entitlements/dunning/__tests__/auditSol117Lifecycle.test.tsx src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx src/entitlements/dunning/__tests__/dunningLockout.test.tsx src/__tests__/rootNavigatorUpdateCardLink.test.tsx
+targeted	Targeted jest	2026-10-04T19:47:50.0957796Z PASS src/entitlements/dunning/__tests__/dunningLockout.test.tsx (10.083 s)
+targeted	Targeted jest	2026-10-04T19:47:50.1193734Z   ● Console
+targeted	Targeted jest	2026-10-04T19:47:50.1194107Z 
+targeted	Targeted jest	2026-10-04T19:47:50.1194964Z     console.warn
+targeted	Targeted jest	2026-10-04T19:47:50.1197089Z       SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead. See https://github.com/AppAndFlow/react-native-safe-area-context
+targeted	Targeted jest	2026-10-04T19:47:50.1198707Z 
+targeted	Targeted jest	2026-10-04T19:47:50.1199581Z     ^[[0m ^[[90m 184 |^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1200174Z      ^[[90m 185 |^[[39m   ^[[36mreturn^[[39m (
+targeted	Targeted jest	2026-10-04T19:47:50.1201950Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 186 |^[[39m     ^[[33m<^[[39m^[[33mSafeAreaView^[[39m style^[[33m=^[[39m{styles^[[33m.^[[39mroot} testID^[[33m=^[[39m^[[32m"dunning-lockout-screen"^[[39m^[[33m>^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1203199Z      ^[[90m     |^[[39m      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1203892Z      ^[[90m 187 |^[[39m       ^[[33m<^[[39m^[[33mScrollView^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1204806Z      ^[[90m 188 |^[[39m         contentContainerStyle^[[33m=^[[39m{styles^[[33m.^[[39mcontent}
+targeted	Targeted jest	2026-10-04T19:47:50.1206503Z      ^[[90m 189 |^[[39m         refreshControl^[[33m=^[[39m{^[[33m<^[[39m^[[33mRefreshControl^[[39m refreshing^[[33m=^[[39m{refreshing} onRefresh^[[33m=^[[39m{onRefresh} ^[[33m/^[[39m^[[33m>^[[39m}^[[0m
+targeted	Targeted jest	2026-10-04T19:47:50.1207518Z 
+targeted	Targeted jest	2026-10-04T19:47:50.1207946Z       at warn (node_modules/react-native/Libraries/Utilities/warnOnce.js:27:11)
+targeted	Targeted jest	2026-10-04T19:47:50.1208945Z       at Object.warnOnce [as SafeAreaView] (node_modules/react-native/index.js:101:5)
+targeted	Targeted jest	2026-10-04T19:47:50.1209957Z       at SafeAreaView (src/entitlements/dunning/DunningLockoutScreen.tsx:186:6)
+targeted	Targeted jest	2026-10-04T19:47:50.1211207Z       at Object.react_stack_bottom_frame (node_modules/react-reconciler/cjs/react-reconciler.development.js:17596:20)
+targeted	Targeted jest	2026-10-04T19:47:50.1212568Z       at renderWithHooks (node_modules/react-reconciler/cjs/react-reconciler.development.js:5335:22)
+targeted	Targeted jest	2026-10-04T19:47:50.1213742Z       at updateFunctionComponent (node_modules/react-reconciler/cjs/react-reconciler.development.js:7720:19)
+targeted	Targeted jest	2026-10-04T19:47:50.1214918Z       at beginWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:9277:18)
+targeted	Targeted jest	2026-10-04T19:47:50.1216088Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T19:47:50.1217389Z       at performUnitOfWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:15273:22)
+targeted	Targeted jest	2026-10-04T19:47:50.1218622Z       at workLoopSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15099:41)
+targeted	Targeted jest	2026-10-04T19:47:50.1219800Z       at renderRootSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15080:11)
+targeted	Targeted jest	2026-10-04T19:47:50.1220986Z       at performWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:14165:11)
+targeted	Targeted jest	2026-10-04T19:47:50.1233638Z       at performWorkOnRootViaSchedulerTask (node_modules/react-reconciler/cjs/react-reconciler.development.js:3335:7)
+targeted	Targeted jest	2026-10-04T19:47:50.1234879Z       at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+targeted	Targeted jest	2026-10-04T19:47:50.1235886Z       at recursivelyFlushAsyncActWork (node_modules/react/cjs/react.development.js:566:13)
+targeted	Targeted jest	2026-10-04T19:47:50.1237497Z       at Immediate._onImmediate (node_modules/react/cjs/react.development.js:849:32)
+targeted	Targeted jest	2026-10-04T19:47:50.1238248Z 
+targeted	Targeted jest	2026-10-04T19:47:50.1238812Z FAIL src/entitlements/dunning/__tests__/auditSol117Lifecycle.test.tsx (10.292 s)
+targeted	Targeted jest	2026-10-04T19:47:50.1565960Z   ● Console
+targeted	Targeted jest	2026-10-04T19:47:50.1566266Z 
+targeted	Targeted jest	2026-10-04T19:47:50.1566415Z     console.warn
+targeted	Targeted jest	2026-10-04T19:47:50.1568150Z       SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead. See https://github.com/AppAndFlow/react-native-safe-area-context
+targeted	Targeted jest	2026-10-04T19:47:50.1569394Z 
+targeted	Targeted jest	2026-10-04T19:47:50.1569656Z     ^[[0m ^[[90m 184 |^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1570174Z      ^[[90m 185 |^[[39m   ^[[36mreturn^[[39m (
+targeted	Targeted jest	2026-10-04T19:47:50.1571879Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 186 |^[[39m     ^[[33m<^[[39m^[[33mSafeAreaView^[[39m style^[[33m=^[[39m{styles^[[33m.^[[39mroot} testID^[[33m=^[[39m^[[32m"dunning-lockout-screen"^[[39m^[[33m>^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1573137Z      ^[[90m     |^[[39m      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1573880Z      ^[[90m 187 |^[[39m       ^[[33m<^[[39m^[[33mScrollView^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1574773Z      ^[[90m 188 |^[[39m         contentContainerStyle^[[33m=^[[39m{styles^[[33m.^[[39mcontent}
+targeted	Targeted jest	2026-10-04T19:47:50.1576509Z      ^[[90m 189 |^[[39m         refreshControl^[[33m=^[[39m{^[[33m<^[[39m^[[33mRefreshControl^[[39m refreshing^[[33m=^[[39m{refreshing} onRefresh^[[33m=^[[39m{onRefresh} ^[[33m/^[[39m^[[33m>^[[39m}^[[0m
+targeted	Targeted jest	2026-10-04T19:47:50.1577499Z 
+targeted	Targeted jest	2026-10-04T19:47:50.1577955Z       at warn (node_modules/react-native/Libraries/Utilities/warnOnce.js:27:11)
+targeted	Targeted jest	2026-10-04T19:47:50.1578917Z       at Object.warnOnce [as SafeAreaView] (node_modules/react-native/index.js:101:5)
+targeted	Targeted jest	2026-10-04T19:47:50.1579930Z       at SafeAreaView (src/entitlements/dunning/DunningLockoutScreen.tsx:186:6)
+targeted	Targeted jest	2026-10-04T19:47:50.1581169Z       at Object.react_stack_bottom_frame (node_modules/react-reconciler/cjs/react-reconciler.development.js:17596:20)
+targeted	Targeted jest	2026-10-04T19:47:50.1582830Z       at renderWithHooks (node_modules/react-reconciler/cjs/react-reconciler.development.js:5335:22)
+targeted	Targeted jest	2026-10-04T19:47:50.1584212Z       at updateFunctionComponent (node_modules/react-reconciler/cjs/react-reconciler.development.js:7720:19)
+targeted	Targeted jest	2026-10-04T19:47:50.1585466Z       at beginWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:9277:18)
+targeted	Targeted jest	2026-10-04T19:47:50.1586736Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T19:47:50.1588063Z       at performUnitOfWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:15273:22)
+targeted	Targeted jest	2026-10-04T19:47:50.1589329Z       at workLoopSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15099:41)
+targeted	Targeted jest	2026-10-04T19:47:50.1590538Z       at renderRootSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15080:11)
+targeted	Targeted jest	2026-10-04T19:47:50.1602448Z       at performWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:14165:11)
+targeted	Targeted jest	2026-10-04T19:47:50.1603944Z       at performWorkOnRootViaSchedulerTask (node_modules/react-reconciler/cjs/react-reconciler.development.js:3335:7)
+targeted	Targeted jest	2026-10-04T19:47:50.1605117Z       at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+targeted	Targeted jest	2026-10-04T19:47:50.1606147Z       at recursivelyFlushAsyncActWork (node_modules/react/cjs/react.development.js:566:13)
+targeted	Targeted jest	2026-10-04T19:47:50.1607129Z       at Immediate._onImmediate (node_modules/react/cjs/react.development.js:849:32)
+targeted	Targeted jest	2026-10-04T19:47:50.1607638Z 
+targeted	Targeted jest	2026-10-04T19:47:50.1607797Z     console.error
+targeted	Targeted jest	2026-10-04T19:47:50.1608423Z       The current testing environment is not configured to support act(...)
+targeted	Targeted jest	2026-10-04T19:47:50.1608928Z 
+targeted	Targeted jest	2026-10-04T19:47:50.1609319Z     ^[[0m ^[[90m 229 |^[[39m         }
+targeted	Targeted jest	2026-10-04T19:47:50.1610182Z      ^[[90m 230 |^[[39m         ^[[36mif^[[39m (^[[33m!^[[39misCurrent()) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1611203Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 231 |^[[39m         setQuote(fresh)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1612140Z      ^[[90m     |^[[39m         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1613611Z      ^[[90m 232 |^[[39m         approvedRef^[[33m.^[[39mcurrent ^[[33m=^[[39m approvalFor(fresh)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1614738Z      ^[[90m 233 |^[[39m         ^[[36mawait^[[39m settle(
+targeted	Targeted jest	2026-10-04T19:47:50.1615493Z      ^[[90m 234 |^[[39m           ^[[36mawait^[[39m runNativeCardUpdate({^[[0m
+targeted	Targeted jest	2026-10-04T19:47:50.1615905Z 
+targeted	Targeted jest	2026-10-04T19:47:50.1616585Z       at isConcurrentActEnvironment (node_modules/react-reconciler/cjs/react-reconciler.development.js:13990:17)
+targeted	Targeted jest	2026-10-04T19:47:50.1618056Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16304:7)
+targeted	Targeted jest	2026-10-04T19:47:50.1619545Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T19:47:50.1620972Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-04T19:47:50.1622704Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-04T19:47:50.1623761Z       at setQuote (src/entitlements/dunning/UpdateCardScreen.tsx:231:9)
+targeted	Targeted jest	2026-10-04T19:47:50.1624719Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T19:47:50.1625696Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T19:47:50.1626185Z 
+targeted	Targeted jest	2026-10-04T19:47:50.1626934Z   ● R-DISPUTE-PAUSE: disputes have no future lock date, even with a legacy status envelope
+targeted	Targeted jest	2026-10-04T19:47:50.1627545Z 
+targeted	Targeted jest	2026-10-04T19:47:50.1627786Z     expect(received).not.toMatch(expected)
+targeted	Targeted jest	2026-10-04T19:47:50.1628134Z 
+targeted	Targeted jest	2026-10-04T19:47:50.1628559Z     Expected pattern: not /Access pauses on .*unless it is sorted out by then/
+targeted	Targeted jest	2026-10-04T19:47:50.1630628Z     Received string:      "Your bank reversed an earlier payment of $150.00. Saving a new card does not settle it. Email Bradleyapple1031@gmail.com or message your coach to sort it out. Access pauses on Friday, October 11 unless it is sorted out by then."
+targeted	Targeted jest	2026-10-04T19:47:50.1632658Z 
+targeted	Targeted jest	2026-10-04T19:47:50.1633034Z     ^[[0m ^[[90m 185 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1634535Z      ^[[90m 186 |^[[39m   ^[[36mconst^[[39m body ^[[33m=^[[39m bannerCopy(status^[[33m,^[[39m ^[[33mDate^[[39m^[[33m.^[[39mparse(^[[32m'2026-10-04T00:00:00Z'^[[39m))^[[33m.^[[39mbody^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1636599Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 187 |^[[39m   expect(body)^[[33m.^[[39mnot^[[33m.^[[39mtoMatch(^[[35m/Access pauses on .*unless it is sorted out by then/^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1637973Z      ^[[90m     |^[[39m                    ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1638960Z      ^[[90m 188 |^[[39m   expect(body)^[[33m.^[[39mtoMatch(^[[35m/billing is paused/i^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1640164Z      ^[[90m 189 |^[[39m   expect(body)^[[33m.^[[39mtoMatch(^[[35m/access has ended/i^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1641358Z      ^[[90m 190 |^[[39m   expect(body)^[[33m.^[[39mtoMatch(^[[35m/coach.*restart/i^[[39m)^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:47:50.1642195Z 
+targeted	Targeted jest	2026-10-04T19:47:50.1642774Z       at Object.toMatch (src/entitlements/dunning/__tests__/auditSol117Lifecycle.test.tsx:187:20)
+targeted	Targeted jest	2026-10-04T19:47:50.1643464Z 
+targeted	Targeted jest	2026-10-04T19:47:50.1644222Z   ● R-DISPUTE-PAUSE: lockout and update-card copy state the coach-controlled restart boundary
+targeted	Targeted jest	2026-10-04T19:47:50.1644878Z 
+targeted	Targeted jest	2026-10-04T19:47:50.1645119Z     expect(received).toMatch(expected)
+targeted	Targeted jest	2026-10-04T19:47:50.1645450Z 
+targeted	Targeted jest	2026-10-04T19:47:50.1645683Z     Expected pattern: /billing is paused/i
+targeted	Targeted jest	2026-10-04T19:47:50.1648896Z     Received string:  "Your bank reversed an earlier payment of $150.00 to Avery, so your plan is paused. Your data is safe and nothing has been deleted. Saving a new card does not settle it. To sort it out, email Bradleyapple1031@gmail.com or message Avery. Your bank took back an earlier payment of $150.00 to Avery, so your plan is paused. A new card does not settle that; email support to sort it out. A card saved here is used for your future payments."
+targeted	Targeted jest	2026-10-04T19:47:50.1651758Z 
+targeted	Targeted jest	2026-10-04T19:47:50.1653021Z     ^[[0m ^[[90m 193 |^[[39m   ^[[36mconst^[[39m status ^[[33m=^[[39m normalizeDunningStatus({ ^[[33m...^[[39m^[[33mLOCKED^[[39m^[[33m,^[[39m kind^[[33m:^[[39m ^[[32m'dispute'^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1655888Z      ^[[90m 194 |^[[39m   ^[[36mconst^[[39m text ^[[33m=^[[39m [lockoutSummary(status)^[[33m,^[[39m lockoutNextStep(status)^[[33m,^[[39m updateCardIntro(status)]^[[33m.^[[39mjoin(^[[32m' '^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1657784Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 195 |^[[39m   expect(text)^[[33m.^[[39mtoMatch(^[[35m/billing is paused/i^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1658837Z      ^[[90m     |^[[39m                ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1659795Z      ^[[90m 196 |^[[39m   expect(text)^[[33m.^[[39mtoMatch(^[[35m/access has ended/i^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1660989Z      ^[[90m 197 |^[[39m   expect(text)^[[33m.^[[39mtoMatch(^[[35m/coach.*restart/i^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1662072Z      ^[[90m 198 |^[[39m })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:47:50.1662387Z 
+targeted	Targeted jest	2026-10-04T19:47:50.1662961Z       at Object.toMatch (src/entitlements/dunning/__tests__/auditSol117Lifecycle.test.tsx:195:16)
+targeted	Targeted jest	2026-10-04T19:47:50.1664145Z 
+targeted	Targeted jest	2026-10-04T19:47:50.1664933Z   ● B-353-2: an End plan alert accepted after its screen unmounts must not launch a new cancellation
+targeted	Targeted jest	2026-10-04T19:47:50.1665603Z 
+targeted	Targeted jest	2026-10-04T19:47:50.1665855Z     expect(jest.fn()).not.toHaveBeenCalled()
+targeted	Targeted jest	2026-10-04T19:47:50.1666203Z 
+targeted	Targeted jest	2026-10-04T19:47:50.1666405Z     Expected number of calls: 0
+targeted	Targeted jest	2026-10-04T19:47:50.1666869Z     Received number of calls: 1
+targeted	Targeted jest	2026-10-04T19:47:50.1667141Z 
+targeted	Targeted jest	2026-10-04T19:47:50.1667439Z     1: "/v1/checkout/subscriptions/purchase-A/cancel", {}
+targeted	Targeted jest	2026-10-04T19:47:50.1667850Z 
+targeted	Targeted jest	2026-10-04T19:47:50.1668756Z     ^[[0m ^[[90m 213 |^[[39m   ^[[36mawait^[[39m act(^[[36masync^[[39m () ^[[33m=>^[[39m { confirm^[[33m?^[[39m^[[33m.^[[39m()^[[33m;^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1669904Z      ^[[90m 214 |^[[39m   alert^[[33m.^[[39mmockRestore()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1671016Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 215 |^[[39m   expect(mockPost)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1672416Z      ^[[90m     |^[[39m                        ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1673039Z      ^[[90m 216 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.1674250Z      ^[[90m 217 |^[[39m it(^[[32m'CONTROL: a live End plan alert still cancels the intended plan'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T19:47:50.1676446Z      ^[[90m 218 |^[[39m   ^[[36mconst^[[39m alert ^[[33m=^[[39m jest^[[33m.^[[39mspyOn(^[[33mAlert^[[39m^[[33m,^[[39m ^[[32m'alert'^[[39m)^[[33m.^[[39mmockImplementation(() ^[[33m=>^[[39m undefined)^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:47:50.1677489Z 
+targeted	Targeted jest	2026-10-04T19:47:50.1678133Z       at Object.toHaveBeenCalled (src/entitlements/dunning/__tests__/auditSol117Lifecycle.test.tsx:215:24)
+targeted	Targeted jest	2026-10-04T19:47:50.1679388Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T19:47:50.1680417Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T19:47:50.1680945Z 
+targeted	Targeted jest	2026-10-04T19:47:50.1992352Z PASS src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx (10.526 s)
+targeted	Targeted jest	2026-10-04T19:47:50.2236422Z   ● Console
+targeted	Targeted jest	2026-10-04T19:47:50.2243143Z 
+targeted	Targeted jest	2026-10-04T19:47:50.2243907Z     console.warn
+targeted	Targeted jest	2026-10-04T19:47:50.2245703Z       SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead. See https://github.com/AppAndFlow/react-native-safe-area-context
+targeted	Targeted jest	2026-10-04T19:47:50.2247205Z 
+targeted	Targeted jest	2026-10-04T19:47:50.2247507Z     ^[[0m ^[[90m 184 |^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.2247983Z      ^[[90m 185 |^[[39m   ^[[36mreturn^[[39m (
+targeted	Targeted jest	2026-10-04T19:47:50.2248869Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 186 |^[[39m     ^[[33m<^[[39m^[[33mSafeAreaView^[[39m style^[[33m=^[[39m{styles^[[33m.^[[39mroot} testID^[[33m=^[[39m^[[32m"dunning-lockout-screen"^[[39m^[[33m>^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.2249590Z      ^[[90m     |^[[39m      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.2250006Z      ^[[90m 187 |^[[39m       ^[[33m<^[[39m^[[33mScrollView^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.2250570Z      ^[[90m 188 |^[[39m         contentContainerStyle^[[33m=^[[39m{styles^[[33m.^[[39mcontent}
+targeted	Targeted jest	2026-10-04T19:47:50.2252413Z      ^[[90m 189 |^[[39m         refreshControl^[[33m=^[[39m{^[[33m<^[[39m^[[33mRefreshControl^[[39m refreshing^[[33m=^[[39m{refreshing} onRefresh^[[33m=^[[39m{onRefresh} ^[[33m/^[[39m^[[33m>^[[39m}^[[0m
+targeted	Targeted jest	2026-10-04T19:47:50.2252989Z 
+targeted	Targeted jest	2026-10-04T19:47:50.2253262Z       at warn (node_modules/react-native/Libraries/Utilities/warnOnce.js:27:11)
+targeted	Targeted jest	2026-10-04T19:47:50.2253847Z       at Object.warnOnce [as SafeAreaView] (node_modules/react-native/index.js:101:5)
+targeted	Targeted jest	2026-10-04T19:47:50.2254416Z       at SafeAreaView (src/entitlements/dunning/DunningLockoutScreen.tsx:186:6)
+targeted	Targeted jest	2026-10-04T19:47:50.2255103Z       at Object.react_stack_bottom_frame (node_modules/react-reconciler/cjs/react-reconciler.development.js:17596:20)
+targeted	Targeted jest	2026-10-04T19:47:50.2255883Z       at renderWithHooks (node_modules/react-reconciler/cjs/react-reconciler.development.js:5335:22)
+targeted	Targeted jest	2026-10-04T19:47:50.2256627Z       at updateFunctionComponent (node_modules/react-reconciler/cjs/react-reconciler.development.js:7720:19)
+targeted	Targeted jest	2026-10-04T19:47:50.2257370Z       at beginWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:9277:18)
+targeted	Targeted jest	2026-10-04T19:47:50.2258087Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T19:47:50.2258813Z       at performUnitOfWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:15273:22)
+targeted	Targeted jest	2026-10-04T19:47:50.2259521Z       at workLoopSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15099:41)
+targeted	Targeted jest	2026-10-04T19:47:50.2260206Z       at renderRootSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15080:11)
+targeted	Targeted jest	2026-10-04T19:47:50.2260896Z       at performWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:14165:11)
+targeted	Targeted jest	2026-10-04T19:47:50.2261897Z       at performWorkOnRootViaSchedulerTask (node_modules/react-reconciler/cjs/react-reconciler.development.js:3335:7)
+targeted	Targeted jest	2026-10-04T19:47:50.2262591Z       at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+targeted	Targeted jest	2026-10-04T19:47:50.2263202Z       at recursivelyFlushAsyncActWork (node_modules/react/cjs/react.development.js:566:13)
+targeted	Targeted jest	2026-10-04T19:47:50.2263816Z       at Immediate._onImmediate (node_modules/react/cjs/react.development.js:849:32)
+targeted	Targeted jest	2026-10-04T19:47:50.2264129Z 
+targeted	Targeted jest	2026-10-04T19:47:50.2264227Z     console.error
+targeted	Targeted jest	2026-10-04T19:47:50.2264614Z       The current testing environment is not configured to support act(...)
+targeted	Targeted jest	2026-10-04T19:47:50.2264906Z 
+targeted	Targeted jest	2026-10-04T19:47:50.2265090Z     ^[[0m ^[[90m 229 |^[[39m         }
+targeted	Targeted jest	2026-10-04T19:47:50.2265589Z      ^[[90m 230 |^[[39m         ^[[36mif^[[39m (^[[33m!^[[39misCurrent()) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.2266149Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 231 |^[[39m         setQuote(fresh)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.2266601Z      ^[[90m     |^[[39m         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.2267166Z      ^[[90m 232 |^[[39m         approvedRef^[[33m.^[[39mcurrent ^[[33m=^[[39m approvalFor(fresh)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.2267688Z      ^[[90m 233 |^[[39m         ^[[36mawait^[[39m settle(
+targeted	Targeted jest	2026-10-04T19:47:50.2268153Z      ^[[90m 234 |^[[39m           ^[[36mawait^[[39m runNativeCardUpdate({^[[0m
+targeted	Targeted jest	2026-10-04T19:47:50.2268406Z 
+targeted	Targeted jest	2026-10-04T19:47:50.2268819Z       at isConcurrentActEnvironment (node_modules/react-reconciler/cjs/react-reconciler.development.js:13990:17)
+targeted	Targeted jest	2026-10-04T19:47:50.2269666Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16304:7)
+targeted	Targeted jest	2026-10-04T19:47:50.2270467Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T19:47:50.2271270Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-04T19:47:50.2272246Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-04T19:47:50.2272854Z       at setQuote (src/entitlements/dunning/UpdateCardScreen.tsx:231:9)
+targeted	Targeted jest	2026-10-04T19:47:50.2273420Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T19:47:50.2274439Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T19:47:50.2274724Z 
+targeted	Targeted jest	2026-10-04T19:47:50.2274823Z     console.error
+targeted	Targeted jest	2026-10-04T19:47:50.2275181Z       The current testing environment is not configured to support act(...)
+targeted	Targeted jest	2026-10-04T19:47:50.2275461Z 
+targeted	Targeted jest	2026-10-04T19:47:50.2275622Z     ^[[0m ^[[90m 229 |^[[39m         }
+targeted	Targeted jest	2026-10-04T19:47:50.2276113Z      ^[[90m 230 |^[[39m         ^[[36mif^[[39m (^[[33m!^[[39misCurrent()) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.2276645Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 231 |^[[39m         setQuote(fresh)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.2277064Z      ^[[90m     |^[[39m         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.2277624Z      ^[[90m 232 |^[[39m         approvedRef^[[33m.^[[39mcurrent ^[[33m=^[[39m approvalFor(fresh)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.2278140Z      ^[[90m 233 |^[[39m         ^[[36mawait^[[39m settle(
+targeted	Targeted jest	2026-10-04T19:47:50.2278594Z      ^[[90m 234 |^[[39m           ^[[36mawait^[[39m runNativeCardUpdate({^[[0m
+targeted	Targeted jest	2026-10-04T19:47:50.2278850Z 
+targeted	Targeted jest	2026-10-04T19:47:50.2279251Z       at isConcurrentActEnvironment (node_modules/react-reconciler/cjs/react-reconciler.development.js:13990:17)
+targeted	Targeted jest	2026-10-04T19:47:50.2280086Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16304:7)
+targeted	Targeted jest	2026-10-04T19:47:50.2280885Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T19:47:50.2281770Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-04T19:47:50.2282513Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-04T19:47:50.2283109Z       at setQuote (src/entitlements/dunning/UpdateCardScreen.tsx:231:9)
+targeted	Targeted jest	2026-10-04T19:47:50.2283655Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T19:47:50.2284223Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T19:47:50.2284511Z 
+targeted	Targeted jest	2026-10-04T19:47:50.2284612Z     console.error
+targeted	Targeted jest	2026-10-04T19:47:50.2285001Z       The current testing environment is not configured to support act(...)
+targeted	Targeted jest	2026-10-04T19:47:50.2285286Z 
+targeted	Targeted jest	2026-10-04T19:47:50.2285455Z     ^[[0m ^[[90m 229 |^[[39m         }
+targeted	Targeted jest	2026-10-04T19:47:50.2285946Z      ^[[90m 230 |^[[39m         ^[[36mif^[[39m (^[[33m!^[[39misCurrent()) ^[[36mreturn^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.2286497Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 231 |^[[39m         setQuote(fresh)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.2286937Z      ^[[90m     |^[[39m         ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.2287486Z      ^[[90m 232 |^[[39m         approvedRef^[[33m.^[[39mcurrent ^[[33m=^[[39m approvalFor(fresh)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:47:50.2288005Z      ^[[90m 233 |^[[39m         ^[[36mawait^[[39m settle(
+targeted	Targeted jest	2026-10-04T19:47:50.2288460Z      ^[[90m 234 |^[[39m           ^[[36mawait^[[39m runNativeCardUpdate({^[[0m
+targeted	Targeted jest	2026-10-04T19:47:50.2288703Z 
+targeted	Targeted jest	2026-10-04T19:47:50.2289111Z       at isConcurrentActEnvironment (node_modules/react-reconciler/cjs/react-reconciler.development.js:13990:17)
+targeted	Targeted jest	2026-10-04T19:47:50.2289969Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16304:7)
+targeted	Targeted jest	2026-10-04T19:47:50.2290775Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T19:47:50.2291643Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+targeted	Targeted jest	2026-10-04T19:47:50.2292481Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+targeted	Targeted jest	2026-10-04T19:47:50.2293076Z       at setQuote (src/entitlements/dunning/UpdateCardScreen.tsx:231:9)
+targeted	Targeted jest	2026-10-04T19:47:50.2293643Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T19:47:50.2294222Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T19:47:50.2294673Z 
+targeted	Targeted jest	2026-10-04T19:48:00.5079399Z PASS src/__tests__/rootNavigatorUpdateCardLink.test.tsx (10.374 s)
+targeted	Targeted jest	2026-10-04T19:48:00.5139995Z   ● Console
+targeted	Targeted jest	2026-10-04T19:48:00.5140487Z 
+targeted	Targeted jest	2026-10-04T19:48:00.5141022Z     console.warn
+targeted	Targeted jest	2026-10-04T19:48:00.5142955Z       Deep imports from the 'react-native' package are deprecated ('react-native/Libraries/Components/TextInput/TextInputState'). Source: /Users/wooj/stripe/stripe-react-native/src/helpers.ts 6:0
+targeted	Targeted jest	2026-10-04T19:48:00.5144420Z 
+targeted	Targeted jest	2026-10-04T19:48:00.5144925Z     ^[[0m ^[[90m 63 |^[[39m ^[[36mtry^[[39m {
+targeted	Targeted jest	2026-10-04T19:48:00.5146074Z      ^[[90m 64 |^[[39m   ^[[90m// eslint-disable-next-line @typescript-eslint/no-var-requires^[[39m
+targeted	Targeted jest	2026-10-04T19:48:00.5147756Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 65 |^[[39m   ^[[36mconst^[[39m stripeModule ^[[33m=^[[39m require(^[[32m'@stripe/stripe-react-native'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:48:00.5149082Z      ^[[90m    |^[[39m                        ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:48:00.5150543Z      ^[[90m 66 |^[[39m   stripeHookFactory ^[[33m=^[[39m stripeModule^[[33m.^[[39museStripe ^[[33m?^[[39m^[[33m?^[[39m ^[[36mnull^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:48:00.5152039Z      ^[[90m 67 |^[[39m } ^[[36mcatch^[[39m {
+targeted	Targeted jest	2026-10-04T19:48:00.5153305Z      ^[[90m 68 |^[[39m   ^[[90m// Native module missing — handled at handleSelectPlan time with a user-safe^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:48:00.5154155Z 
+targeted	Targeted jest	2026-10-04T19:48:00.5154860Z       at Object.<anonymous> (node_modules/@stripe/stripe-react-native/src/helpers.ts:6:1)
+targeted	Targeted jest	2026-10-04T19:48:00.5156267Z       at Object._interopRequireDefault (node_modules/@stripe/stripe-react-native/src/functions.ts:3:1)
+targeted	Targeted jest	2026-10-04T19:48:00.5157728Z       at Object.<anonymous> (node_modules/@stripe/stripe-react-native/src/hooks/useStripe.tsx:72:43)
+targeted	Targeted jest	2026-10-04T19:48:00.5159212Z       at Object._useState2 (node_modules/@stripe/stripe-react-native/src/hooks/useConfirmPayment.tsx:9:48)
+targeted	Targeted jest	2026-10-04T19:48:00.5160637Z       at Object.<anonymous> (node_modules/@stripe/stripe-react-native/src/index.tsx:3:1)
+targeted	Targeted jest	2026-10-04T19:48:00.5161981Z       at Object.require (src/components/PackageSelectionSheet.tsx:65:24)
+targeted	Targeted jest	2026-10-04T19:48:00.5163150Z       at Object.require (src/screens/client/Day1WinScreen.tsx:30:1)
+targeted	Targeted jest	2026-10-04T19:48:00.5164162Z       at Object.require (src/navigation/RootNavigator.tsx:38:1)
+targeted	Targeted jest	2026-10-04T19:48:00.5165259Z       at Object.require (src/__tests__/rootNavigatorUpdateCardLink.test.tsx:24:1)
+targeted	Targeted jest	2026-10-04T19:48:00.5166024Z 
+targeted	Targeted jest	2026-10-04T19:48:00.6719530Z 
+targeted	Targeted jest	2026-10-04T19:48:00.6725802Z Test Suites: 1 failed, 3 passed, 4 total
+targeted	Targeted jest	2026-10-04T19:48:00.6726393Z Tests:       3 failed, 83 passed, 86 total
+targeted	Targeted jest	2026-10-04T19:48:00.6726734Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T19:48:00.6726990Z Time:        21.738 s
+targeted	Targeted jest	2026-10-04T19:48:00.6728343Z Ran all test suites matching /src\/entitlements\/dunning\/__tests__\/auditSol117Lifecycle.test.tsx|src\/entitlements\/dunning\/__tests__\/dunningLockoutOwnership.test.tsx|src\/entitlements\/dunning\/__tests__\/dunningLockout.test.tsx|src\/__tests__\/rootNavigatorUpdateCardLink.test.tsx/i.
+targeted	Targeted jest	2026-10-04T19:48:00.6915510Z ##[error]Process completed with exit code 1.

@@ -1,0 +1,2728 @@
+diff --git a/docs/stripe-setup.md b/docs/stripe-setup.md
+index b6c42577..32a6e102 100644
+--- a/docs/stripe-setup.md
++++ b/docs/stripe-setup.md
+@@ -77,6 +77,8 @@ Repeat sections 2.1–2.5 once per environment (staging and production are
+    - `invoice.paid`
+    - `invoice.payment_failed`
+    - `customer.updated`
++   - `setup_intent.succeeded` (native package trials: the card a client
++     saves for a trial is made the subscription's default from this event)
+ 5. Save the endpoint. Copy the **Signing secret** (`whsec_...`) — this
+    becomes `STRIPE_WEBHOOK_SECRET`.
+ 
+diff --git a/prisma/migrations/20270225000000_native_subscription_trials/down.sql b/prisma/migrations/20270225000000_native_subscription_trials/down.sql
+new file mode 100644
+index 00000000..ef67d1a8
+--- /dev/null
++++ b/prisma/migrations/20270225000000_native_subscription_trials/down.sql
+@@ -0,0 +1,20 @@
++-- Reverse of 20270225000000_native_subscription_trials.
++-- Drops trial bookkeeping only; purchases, subscriptions and entitlement are
++-- untouched. After a rollback the one-trial-per-coach rule cannot see past
++-- trials, so roll back only before trials are switched on for packages.
++-- ClientPurchase.trial_days is shared with B-TRIALS (#656): it is dropped only
++-- when #656's migration has not been applied (no "PackageTrialUsage" table),
++-- so rolling this back never removes a column #656 still reads.
++BEGIN;
++
++ALTER TABLE "ClientPurchase" DROP CONSTRAINT IF EXISTS "ClientPurchase_trial_days_range";
++ALTER TABLE "ClientPurchase" DROP COLUMN IF EXISTS "trial_started_at";
++DO $$
++BEGIN
++  IF to_regclass('public."PackageTrialUsage"') IS NULL THEN
++    ALTER TABLE "ClientPurchase" DROP COLUMN IF EXISTS "trial_days";
++  END IF;
++END
++$$;
++
++COMMIT;
+diff --git a/prisma/migrations/20270225000000_native_subscription_trials/migration.sql b/prisma/migrations/20270225000000_native_subscription_trials/migration.sql
+new file mode 100644
+index 00000000..69bd408d
+--- /dev/null
++++ b/prisma/migrations/20270225000000_native_subscription_trials/migration.sql
+@@ -0,0 +1,27 @@
++-- B-RECUR (agent 113, OR-113-1 / OR-113-2) — native subscription checkout.
++--
++-- Additive only: two nullable columns on ClientPurchase, no backfill, no
++-- index or RLS change (ClientPurchase policies are row-scoped and cover every
++-- column). Existing rows keep NULL = "no trial was granted on this purchase".
++--   trial_days       trial length the checkout offered (NULL = no trial)
++--   trial_started_at when the webhook granted the trial's entitlement
++--
++-- trial_days is SHARED with lane B-TRIALS (#656, 20270228000000), which adds
++-- the same nullable INTEGER column with ADD COLUMN IF NOT EXISTS and no CHECK.
++-- IF NOT EXISTS here too, so the two migrations apply in either order
++-- (fresh database: this file sorts first; production: whichever deploys
++-- first creates it). #656 only ever writes 1..30 into it, inside this CHECK.
++--
++-- Rollback: down.sql (drops the trial_started_at column and the CHECK; drops
++-- trial_days only while #656's PackageTrialUsage table does not exist).
++
++BEGIN;
++
++ALTER TABLE "ClientPurchase" ADD COLUMN IF NOT EXISTS "trial_days" INTEGER;
++ALTER TABLE "ClientPurchase" ADD COLUMN "trial_started_at" TIMESTAMP(3);
++
++ALTER TABLE "ClientPurchase"
++  ADD CONSTRAINT "ClientPurchase_trial_days_range"
++  CHECK ("trial_days" IS NULL OR ("trial_days" >= 1 AND "trial_days" <= 730));
++
++COMMIT;
+diff --git a/prisma/migrations/20270311000000_subscription_checkout_terms/down.sql b/prisma/migrations/20270311000000_subscription_checkout_terms/down.sql
+new file mode 100644
+index 00000000..45e9602a
+--- /dev/null
++++ b/prisma/migrations/20270311000000_subscription_checkout_terms/down.sql
+@@ -0,0 +1,8 @@
++-- Rollback of 20270311000000_subscription_checkout_terms (B-RECUR-3).
++-- Drops the attempt-terms snapshot. Safe: the checkout treats a missing
++-- snapshot as "not pinned" and reads today's package terms.
++BEGIN;
++
++ALTER TABLE "ClientPurchase" DROP COLUMN IF EXISTS "checkout_terms";
++
++COMMIT;
+diff --git a/prisma/migrations/20270311000000_subscription_checkout_terms/migration.sql b/prisma/migrations/20270311000000_subscription_checkout_terms/migration.sql
+new file mode 100644
+index 00000000..389d4c87
+--- /dev/null
++++ b/prisma/migrations/20270311000000_subscription_checkout_terms/migration.sql
+@@ -0,0 +1,20 @@
++-- B-RECUR-3 (agent 115, B-654-5 / B-654-7) — native subscription checkout:
++-- the terms one attempt is bound to.
++--
++-- Additive only: one nullable JSONB column on ClientPurchase, no backfill, no
++-- index, no RLS change (ClientPurchase policies are row-scoped and cover every
++-- column). Written by POST /v1/checkout/subscription-intent on its own
++-- reservation before the first Stripe Subscription create:
++--   { v, recurring_price_id, one_time_price_id, amount_cents, one_time_cents,
++--     currency, interval, interval_count, trial_days }
++-- Stripe price ids, amounts and cadence only: no user id, email, token or
++-- secret, so nothing is owed to the account-deletion manifest. Existing rows
++-- keep NULL (every reader treats NULL as "not pinned").
++--
++-- Rollback: down.sql drops the column.
++
++BEGIN;
++
++ALTER TABLE "ClientPurchase" ADD COLUMN "checkout_terms" JSONB;
++
++COMMIT;
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+index 5efd77fe..a4d571fa 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -3898,6 +3898,20 @@ model ClientPurchase {
+   source         String?
+   grant_metadata Json?
+ 
++  // B-RECUR (OR-113-2) — free trial granted by the native subscription
++  // checkout. trial_days is set when the trial is offered (null = no trial);
++  // trial_started_at is set by the webhook when the trial's entitlement is
++  // granted (card saved). One trial per client per coach is decided from
++  // these two columns under a per-(client, coach) advisory lock.
++  trial_days       Int?
++  trial_started_at DateTime?
++  // B-RECUR-3 (B-654-5 / B-654-7) — the exact Stripe request and money terms
++  // one native subscription attempt is bound to (price ids, amounts,
++  // currency, cadence, trial days). Written on the reservation before the
++  // first Subscription create; a retry resends the identical request and a
++  // replay answers these terms. No user id, email, token or secret.
++  checkout_terms   Json?
++
+   @@index([client_user_id, status])
+   @@index([coach_user_id, status])
+   @@index([package_id])
+diff --git a/src/account-deletion/account-deletion.billing.ts b/src/account-deletion/account-deletion.billing.ts
+index f6a67f73..11c7433f 100644
+--- a/src/account-deletion/account-deletion.billing.ts
++++ b/src/account-deletion/account-deletion.billing.ts
+@@ -1,6 +1,7 @@
+-import { Injectable, Logger } from '@nestjs/common';
++import { Injectable, Logger, Optional } from '@nestjs/common';
+ import { Prisma } from '@prisma/client';
+ import { StripeApiError, StripeApiService } from '../billing/stripe-api.service';
++import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
+ 
+ /**
+  * Account-deletion billing stop (B-608-5, operator policy 3).
+@@ -19,6 +20,9 @@ import { StripeApiError, StripeApiService } from '../billing/stripe-api.service'
+  * kept as a mirror of the Stripe record.
+  */
+ 
++/** Sol B-679-7 — a native checkout attempt touched this recently may still be finishing on Stripe. */
++export const UNBOUND_ATTEMPT_SETTLE_MS = 120_000;
++
+ export interface BillingStopResult {
+   canceled: number;
+   alreadyInactive: number;
+@@ -34,7 +38,11 @@ function isAlreadyGone(err: unknown): boolean {
+ export class AccountDeletionBillingService {
+   private readonly logger = new Logger(AccountDeletionBillingService.name);
+ 
+-  constructor(private readonly stripe: StripeApiService) {}
++  constructor(
++    private readonly stripe: StripeApiService,
++    // Sol B-679-7 — the client that creates native checkout subscriptions.
++    @Optional() private readonly checkoutStripe?: StripeConnectApiService,
++  ) {}
+ 
+   async collectSubscriptionIds(tx: Prisma.TransactionClient, userId: string): Promise<string[]> {
+     const ids = new Set<string>();
+@@ -64,6 +72,60 @@ export class AccountDeletionBillingService {
+     return [...ids];
+   }
+ 
++  /**
++   * Sol B-679-7 — subscriptions of native checkout attempts that Stripe may
++   * have created but that are not bound to their row (a create that timed
++   * out, or a request that died before its bind). The send itself is fenced:
++   * the checkout holds this user FOR KEY SHARE from its claim through its
++   * bind and finalization holds FOR UPDATE, so no send runs now. Stripe is
++   * asked for each attempt's own subscription (metadata.tgp_purchase_id,
++   * created after the attempt). Fails closed: an attempt touched in the last
++   * two minutes (Stripe may still be finishing its create), an unreadable or
++   * an incomplete list throws, and the deletion retries on the next run.
++   */
++  async collectUnboundAttemptSubscriptionIds(
++    tx: Prisma.TransactionClient,
++    userId: string,
++  ): Promise<string[]> {
++    const rows = await tx.clientPurchase.findMany({
++      where: {
++        client_user_id: userId,
++        billing_type: 'recurring',
++        status: 'pending',
++        stripe_subscription_id: null,
++        stripe_customer_id: { not: null },
++        idempotency_key: { startsWith: `sub-${userId}-` },
++        stripe_checkout_session_id: { startsWith: 'sub-' },
++      },
++      select: { id: true, stripe_customer_id: true, created_at: true, updated_at: true },
++    });
++    const ids: string[] = [];
++    for (const row of rows) {
++      if (
++        !this.checkoutStripe ||
++        Date.now() - row.updated_at.getTime() < UNBOUND_ATTEMPT_SETTLE_MS
++      ) {
++        throw new Error(
++          `account deletion: subscription checkout purchase=${row.id} is still finishing; retry after two minutes`,
++        );
++      }
++      const list = await this.checkoutStripe.listSubscriptionsForCustomer(
++        row.stripe_customer_id ?? '',
++        {
++          createdGte: Math.floor(row.created_at.getTime() / 1000) - 300,
++        },
++      );
++      if (list.has_more) {
++        throw new Error(`account deletion: subscription list incomplete purchase=${row.id}`);
++      }
++      for (const sub of list.data ?? []) {
++        const ended = sub.status === 'canceled' || sub.status === 'incomplete_expired';
++        if (sub.metadata?.tgp_purchase_id === row.id && !ended) ids.push(sub.id);
++      }
++    }
++    return ids;
++  }
++
+   async cancelAll(subscriptionIds: string[]): Promise<BillingStopResult> {
+     let canceled = 0;
+     let alreadyInactive = 0;
+diff --git a/src/account-deletion/account-deletion.module.ts b/src/account-deletion/account-deletion.module.ts
+index ea9744e6..3d94b161 100644
+--- a/src/account-deletion/account-deletion.module.ts
++++ b/src/account-deletion/account-deletion.module.ts
+@@ -8,6 +8,7 @@ import { AppleTokenRevocationService } from './apple-token-revocation.service';
+ import { AccountDeletionStorageService } from './account-deletion.storage';
+ import { AccountDeletionBillingService } from './account-deletion.billing';
+ import { StripeApiService } from '../billing/stripe-api.service';
++import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
+ 
+ // PrismaService is provided globally via PrismaModule — no need to import here.
+ // AuditService is provided globally via AuditModule (see app.module.ts).
+@@ -24,6 +25,8 @@ import { StripeApiService } from '../billing/stripe-api.service';
+     AccountDeletionStorageService,
+     AccountDeletionBillingService,
+     StripeApiService,
++    // Sol B-679-7 — stateless REST client; finds unbound checkout subscriptions.
++    StripeConnectApiService,
+   ],
+   exports: [AccountDeletionService],
+ })
+diff --git a/src/account-deletion/account-deletion.service.ts b/src/account-deletion/account-deletion.service.ts
+index bd24aedf..c6a90134 100644
+--- a/src/account-deletion/account-deletion.service.ts
++++ b/src/account-deletion/account-deletion.service.ts
+@@ -721,6 +721,10 @@ export class AccountDeletionService {
+         //    that hold them still exist. Nothing external happens yet.
+         const objects = await this.storage.collect(tx, userId);
+         const subscriptionIds = await this.billing.collectSubscriptionIds(tx, userId);
++        // Sol B-679-7 — plus native checkout subscriptions not bound to a row yet.
++        subscriptionIds.push(
++          ...(await this.billing.collectUnboundAttemptSubscriptionIds(tx, userId)),
++        );
+ 
+         // 1b. Community voice recordings (B-610-5, OR-110-1, Apple 5.1.1(v)).
+         //     The verified-erasure work (every exact key on the user's notes
+diff --git a/src/checkout/checkout.service.ts b/src/checkout/checkout.service.ts
+index 3da2dcf5..c9f2b9c8 100644
+--- a/src/checkout/checkout.service.ts
++++ b/src/checkout/checkout.service.ts
+@@ -84,6 +84,25 @@ export interface BuyerDropView {
+ // <50 in practice. 500 is well above any realistic package.
+ const DROP_LIST_HARD_CAP = 500;
+ 
++/**
++ * B-RECUR — true when buying this package starts a renewing charge: a
++ * recurring package, or a one-time package with a recurring second price
++ * (TWO_PACKAGE_DESIGN / PR-6 decision #1). Both are sold only as a Stripe
++ * Subscription (POST /v1/checkout/subscription-intent).
++ */
++export function isRecurringPackage(
++  pkg: Pick<CoachPackage, 'billing_type' | 'recurring_amount_cents' | 'recurring_interval'>,
++): boolean {
++  // A combo's recurring part of $0 renews nothing: it is a one-time sale
++  // (B-RECUR-BE R1-3), sold through payment-intent like any one-time package.
++  return (
++    pkg.billing_type === 'recurring' ||
++    (pkg.recurring_amount_cents != null &&
++      pkg.recurring_amount_cents > 0 &&
++      pkg.recurring_interval != null)
++  );
++}
++
+ @Injectable()
+ export class CheckoutService {
+   private readonly logger = new Logger(CheckoutService.name);
+@@ -107,7 +126,8 @@ export class CheckoutService {
+    * unsigned required contract (spec §4.1). Returns the SIGNED coach envelope
+    * id (if any) so the caller can bind it to the realized purchase post-pay.
+    */
+-  private async runContractGate(args: {
++  // B-RECUR — public so the native subscription checkout runs the SAME gate.
++  async runContractGate(args: {
+     clientId: string;
+     client: { email: string; name: string };
+     pkg: CoachPackage;
+@@ -988,7 +1008,9 @@ export class CheckoutService {
+ 
+   // --- Internal helpers ---
+ 
+-  private async ensureCustomer(
++  // B-RECUR — public so the native subscription checkout reuses the same
++  // Customer (one ConnectCustomer per client, idempotent Stripe create).
++  async ensureCustomer(
+     clientUserId: string,
+     email: string | null | undefined,
+     name: string | null | undefined,
+diff --git a/src/checkout/error-label.ts b/src/checkout/error-label.ts
+new file mode 100644
+index 00000000..b5187276
+--- /dev/null
++++ b/src/checkout/error-label.ts
+@@ -0,0 +1,55 @@
++import { HttpException } from '@nestjs/common';
++import { StripeConnectApiError } from '../connect/stripe-connect-api.service';
++
++// B-654-9 / C-654-10 (agent 116) — the only form in which a caught error
++// reaches a log line of the native checkout. Closed allow-lists: a value
++// outside them is never logged; it becomes a fixed word. A message, or a name
++// or code set from data (an address, a token, a message body), never reaches
++// logs, Sentry or analytics.
++const words = (list: string): ReadonlySet<string> => new Set(list.split(/\s+/).filter(Boolean));
++
++/** Stripe error types (docs.stripe.com/api/errors) plus the client's timeout type. */
++const STRIPE_TYPES = words(`api_connection_error api_error card_error idempotency_error
++  invalid_request_error rate_limit_error`);
++
++/** Stripe error codes the checkout meets (docs.stripe.com/error-codes) plus the client's own. */
++const STRIPE_CODES = words(`authentication_required card_declined configuration_invalid
++  configuration_missing expired_card idempotency_key_in_use lock_timeout parameter_invalid_empty
++  parameter_missing parameter_unknown payment_intent_unexpected_state processing_error rate_limit
++  request_timeout resource_already_exists resource_missing setup_intent_unexpected_state`);
++
++/** Node and undici network failure codes. */
++const NETWORK_CODES = words(`ECONNABORTED ECONNREFUSED ECONNRESET EAI_AGAIN ENOTFOUND EPIPE
++  ETIMEDOUT UND_ERR_CONNECT_TIMEOUT UND_ERR_HEADERS_TIMEOUT UND_ERR_SOCKET`);
++
++/** Built-in and client-library error class names. */
++const ERROR_NAMES = words(`AbortError Error RangeError ReferenceError SyntaxError TimeoutError
++  TypeError PrismaClientInitializationError PrismaClientKnownRequestError
++  PrismaClientRustPanicError PrismaClientUnknownRequestError PrismaClientValidationError`);
++
++function statusLabel(status: unknown): string {
++  return typeof status === 'number' && Number.isInteger(status) && status >= 100 && status <= 599
++    ? String(status)
++    : 'other';
++}
++
++/**
++ * A log-safe label for a caught error: `stripe:<type>:<status>:<code>`,
++ * `http:<status>`, a Prisma code (`P` and four digits), a network code, or
++ * an error class name, each from the closed lists above; else `error`.
++ */
++export function errorLabel(err: unknown): string {
++  if (err instanceof StripeConnectApiError) {
++    const type = err.stripeType && STRIPE_TYPES.has(err.stripeType) ? err.stripeType : 'other';
++    const code = err.stripeCode && STRIPE_CODES.has(err.stripeCode) ? err.stripeCode : 'other';
++    return `stripe:${type}:${statusLabel(err.httpStatus)}:${code}`;
++  }
++  if (err instanceof HttpException) return `http:${statusLabel(err.getStatus())}`;
++  if (!err || typeof err !== 'object') return 'unknown';
++  const code: unknown = Reflect.get(err, 'code');
++  if (typeof code === 'string' && (/^P[0-9]{4}$/.test(code) || NETWORK_CODES.has(code))) {
++    return code;
++  }
++  const name: unknown = Reflect.get(err, 'name');
++  return typeof name === 'string' && ERROR_NAMES.has(name) ? name : 'error';
++}
+diff --git a/src/checkout/subscription-attempt.ts b/src/checkout/subscription-attempt.ts
+new file mode 100644
+index 00000000..fe586c4d
+--- /dev/null
++++ b/src/checkout/subscription-attempt.ts
+@@ -0,0 +1,202 @@
++// B-RECUR6A-118 (split R1 of #654; inert until R2 wires it) — the send
++// fence, the unresolved-bind hold and the own trial sheet of the native
++// subscription checkout (R2 subscription-checkout.service.ts), as plain
++// functions (operator 116 size ruling). Nothing in R1 calls this file.
++import type { Logger } from '@nestjs/common';
++import type { ClientPurchase, Prisma } from '@prisma/client';
++import type {
++  StripeConnectApiService,
++  StripeSubscriptionCheckoutObject,
++} from '../connect/stripe-connect-api.service';
++import type { PrismaService } from '../prisma.service';
++import { errorLabel } from './error-label';
++import { expandedId, ownTrialCardOn, reservedMarker } from './subscription-plan';
++import { ownTrialSetupSecret, readTrialSetup, type TrialSetupState } from './trial-card';
++
++/** Sol B-679-7 — the send transaction outlives one Stripe create (10 s timeout per request). */
++export const SEND_FENCE_TX_TIMEOUT_MS = 30_000;
++
++/** Sol B-679-7 — sent (bound unless the row closed), account gone, or attempt closed. */
++export type Fenced =
++  { sub: StripeSubscriptionCheckoutObject; bound: ClientPurchase | null } | 'gone' | 'closed';
++
++/** A Stripe create error raised inside the send transaction (it rolls back the claim). */
++export class CreateFailed extends Error {
++  constructor(readonly cause: unknown) {
++    super('subscription create failed');
++  }
++}
++
++/**
++ * Sol B-679-7 — send authority. One transaction first holds the client's
++ * User row FOR KEY SHARE; account finalization takes it FOR UPDATE
++ * (lockUser), so finalization either ran first (the account reads deleted,
++ * or the attempt closed: nothing is sent) or waits for this bind and then
++ * cancels the bound subscription. The claim re-proves an open, unbound
++ * attempt of this client after every earlier await (pin write, Stripe
++ * lookup) and renews its in-flight stamp; the row stays locked through the
++ * create and the bind (lock order user, then purchase, as in finalization).
++ * A create Stripe finished without a bind (lost reply, crash) is found by
++ * the pinned retry and by the deletion billing stop
++ * (AccountDeletionBillingService.collectUnboundAttemptSubscriptionIds).
++ * `existing`: the attempt's subscription found on Stripe (no create).
++ */
++export function sendFenced(
++  prisma: PrismaService,
++  row: ClientPurchase,
++  existing: StripeSubscriptionCheckoutObject | null,
++  create: () => Promise<StripeSubscriptionCheckoutObject>,
++): Promise<Fenced> {
++  const owner = row.client_user_id;
++  return prisma.$transaction(
++    async (tx: Prisma.TransactionClient): Promise<Fenced> => {
++      await tx.$queryRaw`SELECT 1 FROM "User" WHERE "id" = ${owner} FOR KEY SHARE`;
++      const user = await tx.user.findUnique({
++        where: { id: owner },
++        select: { deleted_at: true },
++      });
++      if (!user || user.deleted_at) return 'gone';
++      const open = { id: row.id, status: 'pending', entitlement_active: false };
++      const claim = await tx.clientPurchase.updateMany({
++        where: { ...open, client_user_id: owner, stripe_subscription_id: null },
++        data: { stripe_checkout_session_id: reservedMarker(row.idempotency_key) },
++      });
++      // Read back under the row lock: the attempt as claimed, or nothing is sent.
++      const mine =
++        claim.count === 1 ? await tx.clientPurchase.findUnique({ where: { id: row.id } }) : null;
++      if (
++        mine?.client_user_id !== owner ||
++        mine.status !== 'pending' ||
++        mine.stripe_subscription_id
++      ) {
++        return 'closed';
++      }
++      let sub = existing;
++      if (!sub) {
++        try {
++          sub = await create();
++        } catch (err) {
++          throw new CreateFailed(err);
++        }
++      }
++      // Bind before anything else can fail. Only a row still pending binds.
++      const invoice =
++        sub.latest_invoice && typeof sub.latest_invoice === 'object' ? sub.latest_invoice : null;
++      const res = await tx.clientPurchase.updateMany({
++        where: open,
++        data: {
++          stripe_checkout_session_id: sub.id,
++          stripe_subscription_id: sub.id,
++          stripe_payment_intent_id: expandedId(invoice?.payment_intent ?? null),
++          current_period_end:
++            typeof sub.current_period_end === 'number'
++              ? new Date(sub.current_period_end * 1000)
++              : null,
++        },
++      });
++      const bound =
++        res.count === 1 ? await tx.clientPurchase.findUnique({ where: { id: row.id } }) : null;
++      return { sub, bound };
++    },
++    { timeout: SEND_FENCE_TX_TIMEOUT_MS, maxWait: 10_000 },
++  );
++}
++
++/**
++ * Sol B-679-8 — a subscription that may still charge (paid, in flight, or
++ * its cleanup unconfirmed) stays this attempt's: bound to the row, and a
++ * row the checkout closed meanwhile is open again, so admission reuses,
++ * reports or ends this subscription and never reserves a second one. A row
++ * closed by account deletion (another owner, or canceled) is never reopened;
++ * it only records the id for reconciliation.
++ */
++export async function holdUnresolved(
++  prisma: PrismaService,
++  logger: Logger,
++  row: ClientPurchase,
++  sub: StripeSubscriptionCheckoutObject,
++): Promise<void> {
++  const bind = { stripe_subscription_id: sub.id, stripe_checkout_session_id: sub.id };
++  try {
++    const reopened = await prisma.clientPurchase.updateMany({
++      where: {
++        id: row.id,
++        client_user_id: row.client_user_id,
++        status: { in: ['pending', 'expired'] },
++        entitlement_active: false,
++        stripe_subscription_id: null,
++      },
++      data: { ...bind, status: 'pending' },
++    });
++    if (reopened.count === 0) {
++      await prisma.clientPurchase.updateMany({
++        where: { id: row.id, stripe_subscription_id: null },
++        data: { stripe_subscription_id: sub.id },
++      });
++    }
++  } catch (err) {
++    logger.error(`could not record subscription purchase=${row.id} error=${errorLabel(err)}`);
++  }
++}
++
++/**
++ * Sol/Opus B-679-10 — a trial Stripe made no pending SetupIntent for (it
++ * set the trial up off-session, e.g. on the customer's default card) gets
++ * the attempt's own SetupIntent as its setup sheet (one per attempt). None
++ * once the own card is on, or while Stripe's SetupIntent exists (C-679-1:
++ * a canceled one is never replaced). `stored`: the stored secret's
++ * SetupIntent when the caller already read it. Throws on a Stripe error.
++ */
++export async function ownTrialSheet(
++  stripe: Pick<StripeConnectApiService, 'createSetupIntent' | 'retrieveSetupIntent'>,
++  row: ClientPurchase,
++  sub: StripeSubscriptionCheckoutObject,
++  stored: TrialSetupState | null,
++): Promise<{ mode: 'setup'; client_secret: string } | null> {
++  if (sub.status !== 'trialing' || sub.pending_setup_intent || ownTrialCardOn(sub)) return null;
++  const storedSecret = row.stripe_client_secret;
++  const secret = await ownTrialSetupSecret(stripe, {
++    purchaseId: row.id,
++    subscriptionId: sub.id,
++    customerId: row.stripe_customer_id ?? '',
++    onBehalfOf: row.stripe_destination_account ?? '',
++    storedSecret,
++    stored: stored ?? (storedSecret ? await readTrialSetup(stripe, storedSecret, sub) : null),
++  });
++  return secret ? { mode: 'setup', client_secret: secret } : null;
++}
++
++/**
++ * B-654-5 — the subscription Stripe made for this attempt, found by
++ * metadata.tgp_purchase_id among the customer's subscriptions (moved from R2,
++ * size move). null = Stripe has none; 'unreadable' = Stripe could not be
++ * read now.
++ */
++export async function findAttemptSubscription(
++  stripe: Pick<
++    StripeConnectApiService,
++    'listSubscriptionsForCustomer' | 'retrieveSubscriptionForCheckout'
++  >,
++  logger: Logger,
++  row: ClientPurchase,
++): Promise<StripeSubscriptionCheckoutObject | null | 'unreadable'> {
++  if (!row.stripe_customer_id) return null;
++  try {
++    let list = await stripe.listSubscriptionsForCustomer(row.stripe_customer_id);
++    const own = (l: typeof list) =>
++      (l.data ?? []).find((s) => s.metadata?.tgp_purchase_id === row.id);
++    let hit = own(list);
++    if (!hit && list.has_more) {
++      // C-679-2 — a full page without it: read only what was created since
++      // this attempt began (5 min clock margin); its own subscription is newer.
++      const createdGte = Math.floor(row.created_at.getTime() / 1000) - 300;
++      list = await stripe.listSubscriptionsForCustomer(row.stripe_customer_id, { createdGte });
++      hit = own(list);
++    }
++    if (!hit) return list.has_more ? 'unreadable' : null;
++    return await stripe.retrieveSubscriptionForCheckout(hit.id);
++  } catch (err) {
++    logger.warn(`attempt subscription lookup failed purchase=${row.id} error=${errorLabel(err)}`);
++    return 'unreadable';
++  }
++}
+diff --git a/src/checkout/subscription-errors.ts b/src/checkout/subscription-errors.ts
+new file mode 100644
+index 00000000..be7008b0
+--- /dev/null
++++ b/src/checkout/subscription-errors.ts
+@@ -0,0 +1,177 @@
++// B-RECUR (split R1 of #654; inert until R2 wires it) — the coded answers
++// of the native subscription checkout, moved verbatim out of
++// subscription-checkout.service.ts (R2) as plain functions (operator 116
++// size ruling). Nothing in R1 calls this file.
++import {
++  BadRequestException,
++  ConflictException,
++  HttpException,
++  NotFoundException,
++  ServiceUnavailableException,
++} from '@nestjs/common';
++import type { ClientPurchase } from '@prisma/client';
++import { StripeConnectApiError } from '../connect/stripe-connect-api.service';
++import { SUPPORT_EMAIL } from '../public-pages/trust-pages.html';
++import { iso } from './subscription-plan';
++
++/** B-679-6 — the next step of an outcome the payment service has not confirmed. */
++const CHECK_THEN_SUPPORT = `Open Your plan to check whether it started before you try again. If it keeps happening, contact support at ${SUPPORT_EMAIL} and include the reference shown with this message.`;
++
++export function alreadyIncluded(row: ClientPurchase): HttpException {
++  const source = row.source ?? '';
++  const includedBy: 'invite' | 'free_claim' | 'purchase' = source.startsWith('invite_grant')
++    ? 'invite'
++    : source === 'free_package_claim'
++      ? 'free_claim'
++      : 'purchase';
++  return new ConflictException({
++    code: 'PACKAGE_ALREADY_INCLUDED',
++    error: 'PACKAGE_ALREADY_INCLUDED',
++    message:
++      includedBy === 'purchase'
++        ? 'You already have this plan, so nothing was charged. Open Your plan to see it.'
++        : 'This plan is already included for you through your coach, so there is nothing to pay. Open Your plan to see it.',
++    purchase_id: row.id,
++    included_by: includedBy,
++    access_expires_at: iso(row.access_expires_at),
++  });
++}
++
++export function coachNotConnected(reason: 'no_coach' | 'other_coach'): HttpException {
++  return new ConflictException({
++    code: 'PACKAGE_COACH_NOT_CONNECTED',
++    error: 'PACKAGE_COACH_NOT_CONNECTED',
++    message:
++      reason === 'no_coach'
++        ? 'This plan is from a coach you are not connected with yet, so it cannot be started from this account. Nothing was charged. Ask that coach for their invite code, join with it, then open the link again.'
++        : 'This plan is from a different coach than yours, so it cannot be started from this account. Nothing was charged. Message the coach who shared the link.',
++    reason,
++  });
++}
++
++export function attemptExpired(reason: 'timed_out' | 'terms_changed'): HttpException {
++  return new ConflictException({
++    code: 'SUBSCRIPTION_ATTEMPT_EXPIRED',
++    error: 'SUBSCRIPTION_ATTEMPT_EXPIRED',
++    message:
++      reason === 'terms_changed'
++        ? 'The terms of this plan changed after this checkout started, so it was closed. Nothing was charged. Start again to see the current terms.'
++        : 'This checkout timed out before it was paid. Nothing was charged. Start again to see the current price.',
++    reason,
++  });
++}
++
++export function packageIsFree(): HttpException {
++  return new BadRequestException({
++    code: 'PACKAGE_IS_FREE',
++    error: 'PACKAGE_IS_FREE',
++    message: 'This plan is free. Claim it from the plan screen; no card is needed.',
++  });
++}
++
++export function alreadyActive(row: ClientPurchase): HttpException {
++  return new ConflictException({
++    code: 'SUBSCRIPTION_ALREADY_ACTIVE',
++    error: 'SUBSCRIPTION_ALREADY_ACTIVE',
++    message: row.cancel_at_period_end
++      ? 'You already have this plan, and it is set to end at the close of this period. Keep it from Your plan instead of starting it again.'
++      : 'You already have this plan, so nothing more was charged. Open Your plan to see your next charge date.',
++    purchase_id: row.id,
++    cancel_at_period_end: row.cancel_at_period_end,
++    current_period_end: iso(row.current_period_end),
++  });
++}
++
++export function packageUnavailable(): HttpException {
++  return new NotFoundException({
++    code: 'PACKAGE_NOT_FOUND',
++    error: 'PACKAGE_NOT_FOUND',
++    message:
++      'This plan is no longer available. Pull down to refresh your coach’s plans, or message your coach.',
++  });
++}
++
++export function planNotFound(): HttpException {
++  return new NotFoundException({
++    code: 'PURCHASE_NOT_FOUND',
++    error: 'PURCHASE_NOT_FOUND',
++    message: 'That plan was not found on your account. Pull down to refresh your plans.',
++  });
++}
++
++export function inProgress(retryable: boolean): HttpException {
++  return retryable
++    ? new ServiceUnavailableException({
++        code: 'PAYMENT_RETRY',
++        error: 'PAYMENT_RETRY',
++        // B-679-6 — the outcome is unknown here: never a no-charge claim.
++        message: `The last attempt to start this plan did not finish, and its result is not confirmed yet. ${CHECK_THEN_SUPPORT}`,
++      })
++    : new ServiceUnavailableException({
++        code: 'PAYMENT_IN_PROGRESS',
++        error: 'PAYMENT_IN_PROGRESS',
++        message: 'This plan is still being set up. Give it a few seconds, then try again.',
++      });
++}
++
++/**
++ * B-679-6 — `noCharge` only where it is proven (nothing reached Stripe, or
++ * Stripe refused the create); otherwise the answer says the result is unknown.
++ */
++export function stripeFailure(err: unknown, noCharge = false): HttpException {
++  if (err instanceof HttpException) return err;
++  if (err instanceof StripeConnectApiError) {
++    const status = err.httpStatus >= 400 && err.httpStatus < 600 ? err.httpStatus : 502;
++    return new HttpException(
++      {
++        code: 'STRIPE_CHECKOUT_ERROR',
++        error: 'STRIPE_CHECKOUT_ERROR',
++        message: noCharge
++          ? 'The payment service did not answer as expected. Nothing was charged. Try again in a minute.'
++          : `The payment service did not answer as expected, so this step did not finish. ${CHECK_THEN_SUPPORT}`,
++        stripeCode: err.stripeCode,
++      },
++      status === 400 || status === 402 ? 502 : status,
++    );
++  }
++  throw err;
++}
++
++/** B-679-2 — a client key already started another plan; it never relabels that attempt. */
++export function keyOtherPlan(): HttpException {
++  return new ConflictException({
++    code: 'CHECKOUT_KEY_OTHER_PLAN',
++    error: 'CHECKOUT_KEY_OTHER_PLAN',
++    message:
++      'This checkout was opened for a different plan. Close it, then start this plan again from your coach’s plans.',
++  });
++}
++
++/** B-679-6 — the sheet could not be prepared; no-charge only once the attempt is confirmed closed. */
++export function setupUnavailable(closed: boolean): HttpException {
++  return new ServiceUnavailableException({
++    code: 'SUBSCRIPTION_SETUP_UNAVAILABLE',
++    error: 'SUBSCRIPTION_SETUP_UNAVAILABLE',
++    message: closed
++      ? 'The card screen could not be prepared for this plan. Nothing was charged. Try again in a minute.'
++      : `The card screen could not be prepared for this plan, and closing it is not confirmed yet. ${CHECK_THEN_SUPPORT}`,
++  });
++}
++
++/** Sol B-679-4 — the change was sent, but Stripe's current state was not read back. */
++export function planChangeUnconfirmed(): HttpException {
++  return new ServiceUnavailableException({
++    code: 'PLAN_CHANGE_UNCONFIRMED',
++    error: 'PLAN_CHANGE_UNCONFIRMED',
++    message: `The change to this plan was sent, but the payment service has not confirmed it yet. Refresh Your plan in a minute, and choose Keep plan again if it still shows an end date. If it keeps happening, contact support at ${SUPPORT_EMAIL}.`,
++  });
++}
++
++/** The client's account is gone (never found, or deleted while this request ran). */
++export function clientNotFound(): HttpException {
++  return new NotFoundException({
++    code: 'CLIENT_NOT_FOUND',
++    error: 'CLIENT_NOT_FOUND',
++    message: 'Your account was not found. Sign out and sign back in, then try again.',
++  });
++}
+diff --git a/src/checkout/subscription-plan.ts b/src/checkout/subscription-plan.ts
+new file mode 100644
+index 00000000..3ae63ab7
+--- /dev/null
++++ b/src/checkout/subscription-plan.ts
+@@ -0,0 +1,453 @@
++// B-RECUR (split R1 of #654; inert until R2 wires it) — the pure contracts,
++// constants and Stripe-object readers of the native subscription checkout,
++// moved verbatim out of subscription-checkout.service.ts (R2) to keep each
++// piece under the size limit (operator 116 size ruling). Nothing in R1 calls
++// this file; R2 (subscription-checkout.service.ts) is its only caller.
++import { ConflictException, HttpException } from '@nestjs/common';
++import type { ClientPurchase, CoachPackage } from '@prisma/client';
++import {
++  StripeConnectApiError,
++  type StripeSubscriptionCheckoutObject,
++} from '../connect/stripe-connect-api.service';
++import { parseCheckoutTerms, planPriceFromTerms } from './subscription-terms';
++
++/** pg_advisory_xact_lock namespace: ASCII 'subc'. */
++export const ADVISORY_LOCK_NAMESPACE_SUBSCRIPTION_CHECKOUT = 0x73_75_62_63;
++
++/** Stripe expires an unpaid `incomplete` subscription after 23 hours. */
++export const OPEN_ATTEMPT_MAX_AGE_MS = 23 * 3600 * 1000;
++
++/**
++ * Statuses of a row that is an attempt nobody has paid for yet (with
++ * entitlement_active=false and trial_started_at=null). 'trialing' is one of
++ * them: a trial attempt mirrors Stripe 'trialing' as soon as its $0 trial
++ * invoice is paid, before the client saved a card (B-RECUR-BE R1-1).
++ */
++export const OPEN_ATTEMPT_STATUSES = [
++  'pending',
++  'incomplete',
++  'payment_failed',
++  'trialing',
++] as const;
++
++/**
++ * Statuses that mean the client already has this plan. 'trialing' counts
++ * only once the trial started (trial_started_at set, card saved).
++ */
++export const LIVE_SUBSCRIPTION_STATUSES = ['active', 'past_due', 'unpaid'] as const;
++
++/** Statuses of an attempt that is over; its key can never start a plan again. */
++export const ENDED_ATTEMPT_STATUSES = new Set(['expired', 'canceled', 'incomplete_expired']);
++
++/** Most stale trial attempts retired per checkout call (bounded Stripe work). */
++export const STALE_TRIAL_RETIRE_LIMIT = 3;
++
++/**
++ * B-654-5 — a reservation still marked in flight after this long belongs to
++ * a request that died (every Stripe call is bounded by a 10 s client
++ * timeout, and one mint makes at most four). A later request may take it
++ * over and finish it with the same pinned request.
++ */
++export const STALE_RESERVATION_MS = 120_000;
++
++/** Marker of a reservation whose request is running right now. */
++export function reservedMarker(purchaseKey: string): string {
++  return `sub-reserved-${purchaseKey}`;
++}
++
++/**
++ * Marker of a reservation whose Subscription create ended without a clear
++ * answer (timeout, 5xx, 429, connection drop): Stripe may or may not have
++ * created it. The next request for the attempt resends the pinned request.
++ */
++export function retryMarker(purchaseKey: string): string {
++  return `sub-retry-${purchaseKey}`;
++}
++
++/**
++ * True when Stripe answered a create definitively, so nothing was created and
++ * Stripe stored that answer under the Idempotency-Key (4xx other than a key
++ * conflict, an in-use key or a rate limit).
++ */
++export function isDefinitiveRefusal(err: unknown): boolean {
++  return (
++    err instanceof StripeConnectApiError &&
++    err.httpStatus >= 400 &&
++    err.httpStatus < 500 &&
++    err.httpStatus !== 409 &&
++    err.httpStatus !== 429 &&
++    err.stripeType !== 'idempotency_error'
++  );
++}
++
++/** The machine code of a thrown HttpException, else null. */
++export function codeOfHttp(err: unknown): string | null {
++  if (!(err instanceof HttpException)) return null;
++  const body: unknown = err.getResponse();
++  if (!body || typeof body !== 'object') return null;
++  const code: unknown = Reflect.get(body, 'code');
++  return typeof code === 'string' ? code : null;
++}
++
++/** Stripe kept this Idempotency-Key for a request with other parameters. */
++export function isIdempotencyMismatch(err: unknown): boolean {
++  return (
++    err instanceof StripeConnectApiError &&
++    err.httpStatus === 400 &&
++    err.stripeType === 'idempotency_error'
++  );
++}
++
++/**
++ * C-679-3 — Stripe has no such object under this key (404 resource_missing):
++ * proven absence, not an outage, so the attempt can end and free its plan.
++ */
++export function isResourceMissing(err: unknown): boolean {
++  return (
++    err instanceof StripeConnectApiError &&
++    err.httpStatus === 404 &&
++    err.stripeCode === 'resource_missing'
++  );
++}
++
++/** PaymentIntent statuses a PaymentSheet can still complete. */
++export const PAYABLE_PI_STATUSES = new Set([
++  'requires_payment_method',
++  'requires_confirmation',
++  'requires_action',
++]);
++
++/** Longest trial the checkout will start (B-TRIALS validates the package side). */
++export const MAX_TRIAL_DAYS = 730;
++
++export interface SubscriptionIntentInput {
++  package_id: string;
++  idempotency_key: string;
++  /** The renewal price the app showed. */
++  expected_amount_cents?: number;
++  /** A combo's one-time part the app showed (0 or absent for a pure recurring plan). */
++  expected_one_time_cents?: number;
++  /**
++   * The share-link token the client opened, when the purchase starts from a
++   * share link. Used only to say WHY a package of a coach the client is not
++   * connected with cannot be bought here (PACKAGE_COACH_NOT_CONNECTED); it
++   * never widens who can buy.
++   */
++  share_token?: string;
++}
++
++export interface PlanPrice {
++  /** What each renewal charges. */
++  amount_cents: number;
++  currency: string;
++  interval: 'week' | 'month' | 'year';
++  interval_count: number;
++  /** What is charged today (one-time price + first period for a combo; 0 in a trial). */
++  first_charge_cents: number;
++  /** One-time part of a combo package (0 for a pure recurring package). */
++  one_time_cents: number;
++  trial_days: number;
++}
++
++export interface SubscriptionIntentResult {
++  /**
++   * PaymentSheet mode: 'payment' charges now; 'setup' saves a card for a
++   * trial. 'none' (B-654-6): Stripe needs nothing from the client (the first
++   * invoice was paid without a sheet, or its payment is processing); the app
++   * opens no sheet, shows "Confirming your plan" and polls the plan, and the
++   * webhook grants access. client_secret and ephemeral_key are '' then.
++   */
++  mode: 'payment' | 'setup' | 'none';
++  client_secret: string;
++  ephemeral_key: string;
++  customer_id: string;
++  publishable_key: string;
++  purchase_id: string;
++  subscription_id: string;
++  status: string;
++  reused: boolean;
++  plan: PlanPrice & { package_id: string; package_name: string; trial_ends_at: string | null };
++}
++
++export type PlanState =
++  'confirming' | 'payment_failed' | 'trialing' | 'active' | 'past_due' | 'ended';
++
++/**
++ * B-334-3 — what Stripe says about a plan that is still confirming, read on
++ * GET /subscriptions/:id only. The app claims "nothing was charged" only on
++ * awaiting_payment / awaiting_card (Stripe shows no payment and no saved
++ * card), and keeps confirming on processing / paid / card_saved.
++ * 'unknown' = Stripe could not be read now. null = not applicable (the plan
++ * is already entitled or ended, or the list route).
++ */
++export type CheckoutState =
++  'awaiting_payment' | 'awaiting_card' | 'processing' | 'paid' | 'card_saved' | 'ended' | 'unknown';
++
++export interface ClientPlanView {
++  purchase_id: string;
++  package_id: string;
++  package_name: string;
++  coach_user_id: string;
++  state: PlanState;
++  status: string;
++  entitlement_active: boolean;
++  amount_cents: number;
++  currency: string;
++  interval: 'week' | 'month' | 'year' | null;
++  interval_count: number;
++  current_period_end: string | null;
++  /** Next charge date; null when no further charge is scheduled. */
++  next_charge_at: string | null;
++  cancel_at_period_end: boolean;
++  /** When access ends (scheduled cancel or ended plan); null while renewing. */
++  access_ends_at: string | null;
++  trial_days: number | null;
++  trial_ends_at: string | null;
++  can_cancel: boolean;
++  can_resume: boolean;
++  can_resubscribe: boolean;
++  /** Last payment problem in plain words, or null. Never a Stripe secret. */
++  last_payment_error: string | null;
++  /** B-334-3 — Stripe's view of a plan still confirming (single-plan read only). */
++  checkout_state: CheckoutState | null;
++}
++
++/**
++ * Trial length on the package. B-TRIALS adds `CoachPackage.trial_days`
++ * (Int @default(0)) in its own PR; read it defensively so this checkout is
++ * correct before and after that column exists. Trials apply to pure
++ * recurring packages only (a combo would charge its one-time price on the
++ * trial's first invoice).
++ */
++export function packageTrialDays(pkg: CoachPackage): number {
++  if (pkg.billing_type !== 'recurring') return 0;
++  const raw: unknown = Reflect.get(pkg, 'trial_days');
++  if (typeof raw !== 'number' || !Number.isInteger(raw) || raw <= 0) return 0;
++  return Math.min(raw, MAX_TRIAL_DAYS);
++}
++
++export function asInterval(v: string | null | undefined): 'week' | 'month' | 'year' | null {
++  return v === 'week' || v === 'month' || v === 'year' ? v : null;
++}
++
++/** Renewal + first-charge price of a recurring (or combo) package. */
++export function planPriceFor(pkg: CoachPackage, trialDays: number): PlanPrice {
++  const isCombo = pkg.billing_type !== 'recurring';
++  const interval = asInterval(isCombo ? pkg.recurring_interval : pkg.interval);
++  if (!interval) {
++    throw new ConflictException({
++      code: 'PACKAGE_INTERVAL_INVALID',
++      error: 'PACKAGE_INTERVAL_INVALID',
++      message:
++        'This plan has no valid billing period, so it cannot be started. Message your coach to fix the plan.',
++    });
++  }
++  const amount = isCombo ? (pkg.recurring_amount_cents ?? 0) : pkg.amount_cents;
++  const oneTime = isCombo ? pkg.amount_cents : 0;
++  const intervalCount = Math.max(
++    1,
++    (isCombo ? pkg.recurring_interval_count : pkg.interval_count) ?? 1,
++  );
++  return {
++    amount_cents: amount,
++    currency: pkg.currency,
++    interval,
++    interval_count: intervalCount,
++    first_charge_cents: trialDays > 0 ? 0 : amount + oneTime,
++    one_time_cents: oneTime,
++    trial_days: trialDays,
++  };
++}
++
++/**
++ * R1-10 — true when `token` is this package's live share-link token (same
++ * rules as the public join route: enabled, not revoked, not expired).
++ */
++export function shareLinkMatches(pkg: CoachPackage, token: string | undefined): boolean {
++  if (typeof token !== 'string' || token.length === 0) return false;
++  if (!pkg.share_token || pkg.share_token !== token) return false;
++  if (!pkg.share_link_enabled || pkg.share_link_revoked_at) return false;
++  if (pkg.share_link_expires_at && pkg.share_link_expires_at.getTime() <= Date.now()) return false;
++  return true;
++}
++
++export function iso(d: Date | null | undefined): string | null {
++  return d ? d.toISOString() : null;
++}
++
++export function expandedId(v: { id?: string } | string | null | undefined): string | null {
++  if (!v) return null;
++  return typeof v === 'string' ? v : (v.id ?? null);
++}
++
++/**
++ * B-679-8 / B-679-10 — a trial carries the attempt's own card once the
++ * trial-card attach set the default and lifted the create-time end.
++ */
++export function ownTrialCardOn(sub: StripeSubscriptionCheckoutObject): boolean {
++  return !!sub.default_payment_method && !sub.cancel_at_period_end;
++}
++
++/** B-654-6 — a subscription with no sheet secret: paid/processing, ended, or stuck. */
++export function classifyWithoutSheet(
++  sub: StripeSubscriptionCheckoutObject,
++): 'complete' | 'ended' | 'unavailable' {
++  if (sub.status === 'canceled' || sub.status === 'incomplete_expired') return 'ended';
++  if (sub.status === 'active' || sub.status === 'past_due' || sub.status === 'unpaid') {
++    return 'complete';
++  }
++  // Sol/Opus B-679-10 — a trial is complete only on the attempt's own card
++  // (the attach lifted the create-time end); a default Stripe set itself
++  // (the customer's card) still needs the attempt's own setup sheet.
++  if (sub.status === 'trialing') return ownTrialCardOn(sub) ? 'complete' : 'unavailable';
++  const inv =
++    sub.latest_invoice && typeof sub.latest_invoice === 'object' ? sub.latest_invoice : null;
++  if (inv?.status === 'paid') return 'complete';
++  const pi = inv && typeof inv.payment_intent === 'object' ? inv.payment_intent : null;
++  if (pi?.status === 'succeeded' || pi?.status === 'processing') return 'complete';
++  if (pi?.status === 'canceled') return 'ended';
++  return 'unavailable';
++}
++
++/** True while no payment of this subscription succeeded or is in flight. */
++export function subscriptionUnpaid(sub: StripeSubscriptionCheckoutObject): boolean {
++  if (sub.status !== 'incomplete' && sub.status !== 'trialing') return false;
++  if (sub.status === 'trialing' && ownTrialCardOn(sub)) return false;
++  const inv =
++    sub.latest_invoice && typeof sub.latest_invoice === 'object' ? sub.latest_invoice : null;
++  const pi = inv && typeof inv.payment_intent === 'object' ? inv.payment_intent : null;
++  return !(pi?.status === 'succeeded' || pi?.status === 'processing' || inv?.status === 'paid');
++}
++
++export function sheetSecret(
++  sub: StripeSubscriptionCheckoutObject,
++): { mode: 'payment' | 'setup'; client_secret: string } | null {
++  if (sub.status === 'canceled' || sub.status === 'incomplete_expired') return null;
++  const si = sub.pending_setup_intent;
++  if (sub.status === 'trialing') {
++    // C-679-1 — a SetupIntent canceled before a trial's cancel is never a sheet.
++    if (
++      si &&
++      typeof si === 'object' &&
++      typeof si.client_secret === 'string' &&
++      si.status !== 'canceled'
++    ) {
++      return { mode: 'setup', client_secret: si.client_secret };
++    }
++    return null;
++  }
++  const inv = sub.latest_invoice;
++  const pi = inv && typeof inv === 'object' ? inv.payment_intent : null;
++  if (
++    pi &&
++    typeof pi === 'object' &&
++    typeof pi.client_secret === 'string' &&
++    (!pi.status || PAYABLE_PI_STATUSES.has(pi.status))
++  ) {
++    return { mode: 'payment', client_secret: pi.client_secret };
++  }
++  return null;
++}
++
++export function planView(row: ClientPurchase, pkg: CoachPackage | null): ClientPlanView {
++  const status = row.status;
++  const ended = status === 'canceled' || status === 'incomplete_expired' || status === 'expired';
++  let state: PlanState;
++  if (ended) state = 'ended';
++  else if (row.entitlement_active && status === 'trialing') state = 'trialing';
++  else if (row.entitlement_active && (status === 'past_due' || status === 'unpaid'))
++    state = 'past_due';
++  else if (row.entitlement_active) state = 'active';
++  else if (status === 'payment_failed') state = 'payment_failed';
++  else state = 'confirming';
++  const live = state === 'active' || state === 'trialing' || state === 'past_due';
++  // B-679-5 — the cadence bought is the attempt's pinned terms; the package's
++  // current cadence is only the fallback for a row without a pin.
++  const pinned = parseCheckoutTerms(row.checkout_terms);
++  const interval = pinned
++    ? pinned.interval
++    : pkg
++      ? asInterval(pkg.billing_type === 'recurring' ? pkg.interval : pkg.recurring_interval)
++      : null;
++  const intervalCount = pinned
++    ? pinned.interval_count
++    : pkg
++      ? Math.max(
++          1,
++          (pkg.billing_type === 'recurring' ? pkg.interval_count : pkg.recurring_interval_count) ??
++            1,
++        )
++      : 1;
++  const periodEnd = row.current_period_end;
++  return {
++    purchase_id: row.id,
++    package_id: row.package_id,
++    package_name: pkg?.name ?? '',
++    coach_user_id: row.coach_user_id,
++    state,
++    status,
++    entitlement_active: row.entitlement_active,
++    amount_cents: row.amount_cents,
++    currency: row.currency,
++    interval,
++    interval_count: intervalCount,
++    current_period_end: iso(periodEnd),
++    next_charge_at: live && !row.cancel_at_period_end ? iso(periodEnd) : null,
++    cancel_at_period_end: row.cancel_at_period_end,
++    access_ends_at: ended
++      ? iso(row.canceled_at ?? row.access_expires_at)
++      : live && row.cancel_at_period_end
++        ? iso(periodEnd)
++        : null,
++    trial_days: row.trial_days ?? null,
++    trial_ends_at: state === 'trialing' ? iso(periodEnd) : null,
++    can_cancel: live && !row.cancel_at_period_end,
++    can_resume: live && row.cancel_at_period_end,
++    can_resubscribe: ended,
++    last_payment_error:
++      state === 'payment_failed' || state === 'past_due'
++        ? 'Your last payment did not go through.'
++        : null,
++    checkout_state: null,
++  };
++}
++
++/**
++ * The answer for one attempt (moved from R2 by B-RECUR6A-118, size move).
++ * B-654-7: the plan terms are the attempt's pinned terms (what its
++ * subscription actually charges), never today's package terms; only an
++ * attempt without a pin (none exist after round 1's first write) falls back
++ * to the package.
++ */
++export function intentResult(
++  row: ClientPurchase,
++  pkg: CoachPackage,
++  reused: boolean,
++  stripeStatus?: string,
++  sheet: 'auto' | 'none' = 'auto',
++): SubscriptionIntentResult {
++  const pinned = parseCheckoutTerms(row.checkout_terms);
++  const price = pinned ? planPriceFromTerms(pinned) : planPriceFor(pkg, row.trial_days ?? 0);
++  const trialDays = price.trial_days;
++  const secret = sheet === 'none' ? '' : (row.stripe_client_secret ?? '');
++  // A SetupIntent client secret starts with `seti_`; a PaymentIntent's with `pi_`.
++  const mode: 'payment' | 'setup' | 'none' =
++    sheet === 'none' ? 'none' : secret.startsWith('seti_') ? 'setup' : 'payment';
++  return {
++    mode,
++    client_secret: secret,
++    ephemeral_key: sheet === 'none' ? '' : (row.stripe_ephemeral_key ?? ''),
++    customer_id: row.stripe_customer_id ?? '',
++    publishable_key: process.env.STRIPE_PUBLISHABLE_KEY ?? '',
++    purchase_id: row.id,
++    subscription_id: row.stripe_subscription_id ?? '',
++    status: stripeStatus ?? row.status,
++    reused,
++    plan: {
++      ...price,
++      package_id: pkg.id,
++      package_name: pkg.name,
++      trial_ends_at: trialDays > 0 ? iso(row.current_period_end) : null,
++    },
++  };
++}
+diff --git a/src/checkout/subscription-terms.ts b/src/checkout/subscription-terms.ts
+new file mode 100644
+index 00000000..9a0bc8df
+--- /dev/null
++++ b/src/checkout/subscription-terms.ts
+@@ -0,0 +1,126 @@
++// B-RECUR-3 (agent 115) — the terms one native subscription attempt is bound to.
++//
++// B-654-5 / B-654-7: an attempt (one ClientPurchase row, one client
++// Idempotency-Key, one Stripe Idempotency-Key) is pinned to the exact Stripe
++// request it sends and to the money terms the client is shown. The snapshot
++// is written on the reservation BEFORE the first Subscription create, so:
++//   * a retry after an uncertain failure resends the IDENTICAL request under
++//     the same Stripe Idempotency-Key (Stripe rejects a retained key whose
++//     parameters differ), and
++//   * a same-key replay always answers the terms of the subscription it hands
++//     back, never today's package terms relabelled onto an old intent.
++// The snapshot holds Stripe price ids, amounts and cadence only: no user id,
++// email, token or secret (nothing for the account-deletion manifest).
++import type { PlanPrice } from './subscription-plan';
++
++export type CheckoutInterval = 'week' | 'month' | 'year';
++
++export type CheckoutTermsSnapshot = {
++  v: 1;
++  /** Stripe Price billed every period. */
++  recurring_price_id: string;
++  /** Stripe Price added to the first invoice (combo packages), else null. */
++  one_time_price_id: string | null;
++  /** What each renewal charges. */
++  amount_cents: number;
++  /** One-time part charged with the first period (0 for a pure recurring plan). */
++  one_time_cents: number;
++  currency: string;
++  interval: CheckoutInterval;
++  interval_count: number;
++  /** Trial granted to THIS attempt (0 = none). */
++  trial_days: number;
++};
++
++function isWholeCents(v: unknown): v is number {
++  return typeof v === 'number' && Number.isInteger(v) && v >= 0;
++}
++
++function isInterval(v: unknown): v is CheckoutInterval {
++  return v === 'week' || v === 'month' || v === 'year';
++}
++
++/** Build the snapshot from the offered price and the resolved Stripe prices. */
++export function checkoutTermsFor(
++  price: PlanPrice,
++  trialDays: number,
++  prices: { recurring: string; oneTime: string | null },
++): CheckoutTermsSnapshot {
++  return {
++    v: 1,
++    recurring_price_id: prices.recurring,
++    one_time_price_id: prices.oneTime,
++    amount_cents: price.amount_cents,
++    one_time_cents: price.one_time_cents,
++    currency: price.currency,
++    interval: price.interval,
++    interval_count: price.interval_count,
++    trial_days: trialDays > 0 ? trialDays : 0,
++  };
++}
++
++/** Parse a stored snapshot; null when absent or not the v1 shape. */
++export function parseCheckoutTerms(raw: unknown): CheckoutTermsSnapshot | null {
++  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
++  const r: Record<string, unknown> = { ...raw };
++  if (r.v !== 1) return null;
++  if (typeof r.recurring_price_id !== 'string' || r.recurring_price_id.length === 0) return null;
++  if (r.one_time_price_id !== null && typeof r.one_time_price_id !== 'string') return null;
++  if (!isWholeCents(r.amount_cents) || !isWholeCents(r.one_time_cents)) return null;
++  if (typeof r.currency !== 'string' || !/^[a-z]{3}$/i.test(r.currency)) return null;
++  if (!isInterval(r.interval)) return null;
++  if (
++    typeof r.interval_count !== 'number' ||
++    !Number.isInteger(r.interval_count) ||
++    r.interval_count < 1
++  ) {
++    return null;
++  }
++  if (typeof r.trial_days !== 'number' || !Number.isInteger(r.trial_days) || r.trial_days < 0)
++    return null;
++  return {
++    v: 1,
++    recurring_price_id: r.recurring_price_id,
++    one_time_price_id: typeof r.one_time_price_id === 'string' ? r.one_time_price_id : null,
++    amount_cents: r.amount_cents,
++    one_time_cents: r.one_time_cents,
++    currency: r.currency,
++    interval: r.interval,
++    interval_count: r.interval_count,
++    trial_days: r.trial_days,
++  };
++}
++
++/** The plan price the attempt actually charges (renewal, today, trial). */
++export function planPriceFromTerms(t: CheckoutTermsSnapshot): PlanPrice {
++  return {
++    amount_cents: t.amount_cents,
++    currency: t.currency,
++    interval: t.interval,
++    interval_count: t.interval_count,
++    first_charge_cents: t.trial_days > 0 ? 0 : t.amount_cents + t.one_time_cents,
++    one_time_cents: t.one_time_cents,
++    trial_days: t.trial_days,
++  };
++}
++
++/**
++ * True while the package still offers the terms this attempt was started
++ * with: same renewal price, one-time part, currency and cadence, and (for a
++ * trial attempt) the same trial. An attempt without a trial stays valid when
++ * the package offers one: the client was not eligible, which does not change.
++ */
++export function termsStillOffered(
++  t: CheckoutTermsSnapshot,
++  offered: PlanPrice,
++  packageTrialDays: number,
++): boolean {
++  return (
++    t.amount_cents === offered.amount_cents &&
++    t.one_time_cents === offered.one_time_cents &&
++    t.currency.toLowerCase() === offered.currency.toLowerCase() &&
++    t.interval === offered.interval &&
++    t.interval_count === offered.interval_count &&
++    (t.trial_days === 0 || t.trial_days === packageTrialDays)
++  );
++}
+diff --git a/src/checkout/trial-card.ts b/src/checkout/trial-card.ts
+new file mode 100644
+index 00000000..2b7a489c
+--- /dev/null
++++ b/src/checkout/trial-card.ts
+@@ -0,0 +1,142 @@
++// B-RECUR-BE fix round 1 (B-654-1) — the card a native trial saves.
++//
++// A trial subscription asks for a card through its SetupIntent
++// (PaymentSheet setup mode). Stripe documents saving the subscription's
++// default card "when a payment succeeds"; a trial's $0 invoice has no
++// payment, and once the SetupIntent succeeds the subscription's
++// `pending_setup_intent` is null. So the card is never assumed to become
++// the default: the server reads the SetupIntent itself (its id is the
++// prefix of the stored `seti_<id>_secret_...` client secret) and sets
++// `default_payment_method` on the subscription, idempotently. Three callers
++// share this: the `setup_intent.succeeded` webhook (primary), the plan read
++// while the app shows "Confirming your plan", and the checkout paths that
++// would otherwise reuse or retire the attempt.
++import type {
++  StripeConnectApiService,
++  StripeSubscriptionCheckoutObject,
++} from '../connect/stripe-connect-api.service';
++
++const SETUP_SECRET_RE = /^(seti_[A-Za-z0-9]+)_secret_/;
++
++/** The SetupIntent id behind a `seti_..._secret_...` client secret, else null. */
++export function setupIntentIdOf(secret: string | null | undefined): string | null {
++  if (typeof secret !== 'string') return null;
++  const m = SETUP_SECRET_RE.exec(secret);
++  return m ? m[1] : null;
++}
++
++export interface TrialSetupState {
++  /** Stripe SetupIntent status (requires_payment_method, succeeded, ...). */
++  status: string;
++  /** The saved card's PaymentMethod id once succeeded. */
++  payment_method: string | null;
++}
++
++/**
++ * The trial's SetupIntent state. Uses the expanded `pending_setup_intent`
++ * while Stripe still returns it, otherwise reads the SetupIntent by id (from
++ * the stored client secret). null when there is no SetupIntent to read.
++ * Throws on a Stripe error; callers decide whether that blocks.
++ */
++export async function readTrialSetup(
++  stripe: Pick<StripeConnectApiService, 'retrieveSetupIntent'>,
++  storedSecret: string | null | undefined,
++  sub?: Pick<StripeSubscriptionCheckoutObject, 'pending_setup_intent'> | null,
++): Promise<TrialSetupState | null> {
++  const pending = sub?.pending_setup_intent;
++  if (pending && typeof pending === 'object' && typeof pending.status === 'string') {
++    return {
++      status: pending.status,
++      payment_method: typeof pending.payment_method === 'string' ? pending.payment_method : null,
++    };
++  }
++  const id =
++    setupIntentIdOf(storedSecret) ??
++    (typeof pending === 'string'
++      ? pending
++      : pending && typeof pending.id === 'string'
++        ? pending.id
++        : null);
++  if (!id) return null;
++  const si = await stripe.retrieveSetupIntent(id);
++  return {
++    status: typeof si.status === 'string' ? si.status : 'unknown',
++    payment_method: typeof si.payment_method === 'string' ? si.payment_method : null,
++  };
++}
++
++/** True when the trial's card is saved (the SetupIntent succeeded). */
++export function trialCardSaved(state: TrialSetupState | null): state is TrialSetupState & {
++  payment_method: string;
++} {
++  return !!state && state.status === 'succeeded' && typeof state.payment_method === 'string';
++}
++
++/**
++ * Set the saved card as the subscription's default. Idempotent: the same
++ * (subscription, card) always sends the same Stripe Idempotency-Key, so the
++ * webhook, the plan read and the checkout paths collapse onto one write.
++ * Stripe answers with customer.subscription.updated carrying the default,
++ * which is the event that grants the trial.
++ * B-679-8 (Opus) — the same write lifts the trial's create-time end, so the
++ * trial converts at trial end only on this card. Call it only with the card
++ * the attempt's own SetupIntent saved, and only before the trial was granted.
++ */
++export async function attachTrialCard(
++  stripe: Pick<StripeConnectApiService, 'setSubscriptionDefaultPaymentMethod'>,
++  subscriptionId: string,
++  paymentMethodId: string,
++): Promise<void> {
++  await stripe.setSubscriptionDefaultPaymentMethod({
++    subscriptionId,
++    paymentMethodId,
++    idempotencyKey: `tgp-trial-card-${subscriptionId}-${paymentMethodId}`,
++    liftTrialEnd: true,
++  });
++}
++
++/** SetupIntent statuses the native sheet can still complete. */
++const OPEN_SETUP_STATUSES = new Set([
++  'requires_payment_method',
++  'requires_confirmation',
++  'requires_action',
++]);
++
++/**
++ * Sol/Opus B-679-10 — the setup-sheet secret of a trial attempt whose
++ * subscription has no pending SetupIntent (Stripe returns null when it could
++ * set the trial up off-session, e.g. on the customer's default card; that
++ * card is never this attempt's consent). The attempt's own stored SetupIntent
++ * is reused while the sheet can still complete it; otherwise one is created
++ * for the attempt (one per attempt: the key is the purchase id; same
++ * customer, the coach as on_behalf_of, metadata naming the attempt). Only
++ * its saved card lifts the trial end (attachTrialCard). null = no sheet
++ * (the stored one was canceled or is past the sheet). Throws on a Stripe error.
++ */
++export async function ownTrialSetupSecret(
++  stripe: Pick<StripeConnectApiService, 'createSetupIntent'>,
++  args: {
++    purchaseId: string;
++    subscriptionId: string;
++    customerId: string;
++    onBehalfOf: string;
++    storedSecret: string | null;
++    stored: TrialSetupState | null;
++  },
++): Promise<string | null> {
++  if (setupIntentIdOf(args.storedSecret)) {
++    return args.stored && OPEN_SETUP_STATUSES.has(args.stored.status) ? args.storedSecret : null;
++  }
++  const si = await stripe.createSetupIntent({
++    customer: args.customerId,
++    onBehalfOf: args.onBehalfOf,
++    metadata: {
++      tgp_purchase_id: args.purchaseId,
++      tgp_subscription_id: args.subscriptionId,
++      tgp_checkout: 'native_subscription_trial',
++    },
++    idempotencyKey: `tgp-trial-setup-${args.purchaseId}`,
++  });
++  const ok = typeof si.client_secret === 'string' && OPEN_SETUP_STATUSES.has(si.status ?? '');
++  return ok && setupIntentIdOf(si.client_secret) ? (si.client_secret as string) : null;
++}
+diff --git a/src/connect/stripe-connect-api.service.ts b/src/connect/stripe-connect-api.service.ts
+index 5e89bf1a..01a770c5 100644
+--- a/src/connect/stripe-connect-api.service.ts
++++ b/src/connect/stripe-connect-api.service.ts
+@@ -117,6 +117,47 @@ export interface StripeSubscriptionObject {
+   [k: string]: unknown;
+ }
+ 
++// B-RECUR — a subscription as the native checkout reads it (Stripe-Version
++// 2024-09-30.acacia: `latest_invoice.payment_intent` and the subscription's
++// own `current_period_end` exist on this version). `latest_invoice` and
++// `pending_setup_intent` are present only when expanded.
++export interface StripeSubscriptionCheckoutObject extends StripeSubscriptionObject {
++  trial_end?: number | null;
++  default_payment_method?: string | null;
++  latest_invoice?: {
++    id?: string;
++    amount_due?: number;
++    status?: string;
++    payment_intent?:
++      | {
++          id?: string;
++          client_secret?: string;
++          status?: string;
++        }
++      | string
++      | null;
++  } | string | null;
++  pending_setup_intent?:
++    | {
++        id?: string;
++        client_secret?: string;
++        status?: string;
++        payment_method?: string | null;
++      }
++    | string
++    | null;
++}
++
++// B-RECUR — a SetupIntent as the trial-card path reads it. `payment_method`
++// is the id when not expanded.
++export interface StripeSetupIntentObject {
++  id: string;
++  status?: string;
++  payment_method?: string | null;
++  customer?: string | null;
++  [k: string]: unknown;
++}
++
+ // Stripe BalanceTransaction (subset). `amount` / `fee` / `net` are in the
+ // settlement `currency`; `fee` is Stripe's ACTUAL processing fee for the charge.
+ export interface StripeBalanceTransactionObject {
+@@ -422,22 +463,18 @@ export class StripeConnectApiService {
+     oneTimePriceId?: string;
+     onBehalfOf: string;
+     metadata?: Record<string, string>;
++    // B-RECUR (OR-113-2) — free trial: Stripe starts the subscription in
++    // `trialing`, the first invoice is $0, and the card is collected up front
++    // through `pending_setup_intent` (PaymentSheet setup mode).
++    // C-678-1 / B-679-8 (Opus) — `missing_payment_method=cancel` alone does
++    // not stop a charge: at trial end Stripe also counts the CUSTOMER's
++    // default card (set by the billing portal). So a trial is created with a
++    // Stripe-enforced end (`cancel_at_period_end`; a trial's period ends at
++    // trial_end) that only setSubscriptionDefaultPaymentMethod lifts, in the
++    // same request that makes the attempt's own saved card the default.
++    trialPeriodDays?: number;
+     idempotencyKey: string;
+-  }): Promise<
+-    StripeSubscriptionObject & {
+-      latest_invoice?: {
+-        id?: string;
+-        payment_intent?:
+-          | {
+-              id?: string;
+-              client_secret?: string;
+-              status?: string;
+-            }
+-          | string
+-          | null;
+-      } | null;
+-    }
+-  > {
++  }): Promise<StripeSubscriptionCheckoutObject> {
+     const form: Record<string, string> = {
+       customer: args.customer,
+       'items[0][price]': args.recurringPriceId,
+@@ -453,6 +490,12 @@ export class StripeConnectApiService {
+     if (args.oneTimePriceId) {
+       form['add_invoice_items[0][price]'] = args.oneTimePriceId;
+     }
++    if (args.trialPeriodDays && args.trialPeriodDays > 0) {
++      form.trial_period_days = String(args.trialPeriodDays);
++      form['trial_settings[end_behavior][missing_payment_method]'] = 'cancel';
++      form.cancel_at_period_end = 'true';
++      form['expand[1]'] = 'pending_setup_intent';
++    }
+     if (args.metadata) {
+       for (const [k, v] of Object.entries(args.metadata)) {
+         form[`metadata[${k}]`] = v;
+@@ -834,6 +877,128 @@ export class StripeConnectApiService {
+     return this.get(`/transfers/${encodeURIComponent(transferId)}/reversals?${params.toString()}`);
+   }
+ 
++  // B-RECUR — read a subscription with its first invoice's PaymentIntent and
++  // its pending SetupIntent expanded, so an abandoned native checkout can be
++  // reused (same subscription, same PaymentIntent) instead of minting another.
++  async retrieveSubscriptionForCheckout(
++    subscriptionId: string,
++  ): Promise<StripeSubscriptionCheckoutObject> {
++    const params = new URLSearchParams();
++    params.append('expand[]', 'latest_invoice.payment_intent');
++    params.append('expand[]', 'pending_setup_intent');
++    return this.get<StripeSubscriptionCheckoutObject>(
++      `/subscriptions/${encodeURIComponent(subscriptionId)}?${params.toString()}`,
++    );
++  }
++
++  // B-RECUR-3 (B-654-5) — every subscription of one platform customer, any
++  // status, newest first. The native checkout uses it to find the
++  // subscription an uncertain create may have made (matched by
++  // metadata.tgp_purchase_id) instead of creating a second one. List reads
++  // are consistent (unlike Search), so a miss means Stripe has none.
++  // C-679-2 — `createdGte` (unix seconds) bounds the list to subscriptions
++  // created since then, so a customer with many ended subscriptions never
++  // fills the page with older ones.
++  async listSubscriptionsForCustomer(
++    customerId: string,
++    opts?: { createdGte?: number },
++  ): Promise<{ data: StripeSubscriptionObject[]; has_more?: boolean }> {
++    const params = new URLSearchParams();
++    params.set('customer', customerId);
++    params.set('status', 'all');
++    params.set('limit', '100');
++    if (opts?.createdGte !== undefined) params.set('created[gte]', String(opts.createdGte));
++    return this.get(`/subscriptions?${params.toString()}`);
++  }
++
++  // C-679-1 — void an open invoice (the first invoice of an incomplete
++  // subscription, before that subscription is canceled). Stripe voids only
++  // an open or uncollectible invoice, so a paid one is refused, and voiding
++  // the first invoice moves an incomplete subscription to incomplete_expired.
++  async voidInvoice(
++    invoiceId: string,
++    idempotencyKey: string,
++  ): Promise<{ id: string; status?: string }> {
++    return this.post(`/invoices/${encodeURIComponent(invoiceId)}/void`, {}, idempotencyKey);
++  }
++
++  // C-679-1 — cancel a trial's pending SetupIntent (before that trial is
++  // canceled). Stripe refuses once it succeeded (the card was saved) or while
++  // it is processing.
++  async cancelSetupIntent(
++    setupIntentId: string,
++    idempotencyKey: string,
++  ): Promise<StripeSetupIntentObject> {
++    return this.post<StripeSetupIntentObject>(
++      `/setup_intents/${encodeURIComponent(setupIntentId)}/cancel`,
++      {},
++      idempotencyKey,
++    );
++  }
++
++  // B-RECUR — the client keeps a plan they scheduled to cancel (undo
++  // cancel_at_period_end before the period ends). The idempotency key is per
++  // client request, so a later cancel -> keep -> cancel cycle is never
++  // collapsed onto an earlier response.
++  async resumeSubscription(args: {
++    subscriptionId: string;
++    idempotencyKey: string;
++  }): Promise<StripeSubscriptionObject> {
++    return this.post<StripeSubscriptionObject>(
++      `/subscriptions/${encodeURIComponent(args.subscriptionId)}`,
++      { cancel_at_period_end: 'false' },
++      args.idempotencyKey,
++    );
++  }
++
++  // B-RECUR — read a SetupIntent by id. A subscription's
++  // `pending_setup_intent` is null once the SetupIntent succeeded, so the
++  // trial-card path reads the SetupIntent itself (id from the stored secret).
++  async retrieveSetupIntent(setupIntentId: string): Promise<StripeSetupIntentObject> {
++    return this.get<StripeSetupIntentObject>(`/setup_intents/${encodeURIComponent(setupIntentId)}`);
++  }
++
++  // B-RECUR — make a card the subscription's default (a trial's saved card,
++  // or a card update), so the next invoice charges it.
++  // Opus B-678-2 — only `liftTrialEnd` (the trial-card attach, sent before
++  // the trial was granted) also lifts the trial's create-time end
++  // (B-679-8 Opus: a trial converts only on the attempt's own card). A plain
++  // card update never touches cancel_at_period_end, so it never undoes a
++  // cancel the client chose.
++  async setSubscriptionDefaultPaymentMethod(args: {
++    subscriptionId: string;
++    paymentMethodId: string;
++    idempotencyKey: string;
++    liftTrialEnd?: boolean;
++  }): Promise<StripeSubscriptionObject> {
++    const form: Record<string, string> = { default_payment_method: args.paymentMethodId };
++    if (args.liftTrialEnd) form.cancel_at_period_end = 'false';
++    return this.post<StripeSubscriptionObject>(
++      `/subscriptions/${encodeURIComponent(args.subscriptionId)}`,
++      form,
++      args.idempotencyKey,
++    );
++  }
++
++  // Sol/Opus B-679-10 — a trial attempt's own SetupIntent, for when Stripe
++  // made no pending one (it can set a trial up off-session, e.g. on the
++  // customer's default card). The client confirms it in the native sheet;
++  // only its saved card lifts the trial end (setSubscriptionDefaultPaymentMethod).
++  async createSetupIntent(args: {
++    customer: string;
++    onBehalfOf: string;
++    metadata: Record<string, string>;
++    idempotencyKey: string;
++  }): Promise<StripeSetupIntentObject & { client_secret?: string }> {
++    const form: Record<string, string> = {
++      customer: args.customer,
++      usage: 'off_session',
++      on_behalf_of: args.onBehalfOf,
++    };
++    for (const [k, v] of Object.entries(args.metadata)) form[`metadata[${k}]`] = v;
++    return this.post('/setup_intents', form, args.idempotencyKey);
++  }
++
+   // Phase 5: cancel a subscription (used by the dunning sweeper when
+   // grace period elapses).
+   async cancelSubscription(subId: string): Promise<{
+diff --git a/src/filters/error-details.ts b/src/filters/error-details.ts
+new file mode 100644
+index 00000000..3d6e273e
+--- /dev/null
++++ b/src/filters/error-details.ts
+@@ -0,0 +1,92 @@
++// B-RECUR-BE (agent 114) — allowlisted error details.
++//
++// HttpExceptionFilter normally sends only the fixed envelope (statusCode,
++// code, message, error, timestamp, path, request_id). A few coded 4xx answers
++// carry facts the app needs to show the next step without another round
++// trip (the current price after PACKAGE_PRICE_CHANGED, the plan that already
++// exists after SUBSCRIPTION_ALREADY_ACTIVE). Those facts pass through ONLY
++// when the exception's own `code` is listed here, ONLY for the listed field
++// names, and ONLY when each value has the listed shape. Anything else on the
++// exception body (Stripe codes, ids, internals) is dropped exactly as before.
++// Envelope keys can never be overridden by a detail.
++
++type DetailCheck = (value: unknown) => boolean;
++
++const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
++const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
++
++const cents: DetailCheck = (v) =>
++  typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 100_000_000;
++const count: DetailCheck = (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 52;
++const currency: DetailCheck = (v) => typeof v === 'string' && /^[a-z]{3}$/i.test(v);
++const bool: DetailCheck = (v) => typeof v === 'boolean';
++const uuid: DetailCheck = (v) => typeof v === 'string' && UUID_RE.test(v);
++const isoOrNull: DetailCheck = (v) => v === null || (typeof v === 'string' && ISO_RE.test(v));
++const oneOf =
++  (...allowed: string[]): DetailCheck =>
++  (v) =>
++    typeof v === 'string' && allowed.includes(v);
++
++/** code -> field name -> shape check. Extend only with client-safe facts. */
++export const ERROR_DETAIL_ALLOWLIST: Readonly<Record<string, Readonly<Record<string, DetailCheck>>>> =
++  {
++    PACKAGE_PRICE_CHANGED: {
++      amount_cents: cents,
++      one_time_cents: cents,
++      first_charge_cents: cents,
++      currency,
++      interval: oneOf('week', 'month', 'year'),
++      interval_count: count,
++    },
++    // B-RECUR-3 (B-654-7) — why the attempt behind this key ended.
++    SUBSCRIPTION_ATTEMPT_EXPIRED: {
++      reason: oneOf('timed_out', 'terms_changed'),
++    },
++    SUBSCRIPTION_ALREADY_ACTIVE: {
++      purchase_id: uuid,
++      cancel_at_period_end: bool,
++      current_period_end: isoOrNull,
++    },
++    PACKAGE_ALREADY_INCLUDED: {
++      purchase_id: uuid,
++      included_by: oneOf('invite', 'free_claim', 'purchase'),
++      access_expires_at: isoOrNull,
++    },
++    PACKAGE_COACH_NOT_CONNECTED: {
++      reason: oneOf('no_coach', 'other_coach'),
++    },
++  };
++
++const ENVELOPE_KEYS = new Set([
++  'statusCode',
++  'code',
++  'message',
++  'error',
++  'timestamp',
++  'path',
++  'request_id',
++]);
++
++/**
++ * The allowlisted details of a coded 4xx exception body, or an empty object.
++ * Never throws; a value of the wrong shape is dropped, not coerced.
++ */
++export function pickErrorDetails(
++  status: number,
++  code: string | undefined,
++  body: Record<string, unknown>,
++): Record<string, unknown> {
++  if (!code || status < 400 || status >= 500) return {};
++  const allowed = Object.prototype.hasOwnProperty.call(ERROR_DETAIL_ALLOWLIST, code)
++    ? ERROR_DETAIL_ALLOWLIST[code]
++    : undefined;
++  if (!allowed) return {};
++  const out: Record<string, unknown> = {};
++  for (const [field, check] of Object.entries(allowed)) {
++    if (ENVELOPE_KEYS.has(field)) continue;
++    if (!Object.prototype.hasOwnProperty.call(body, field)) continue;
++    const value = body[field];
++    if (check(value)) out[field] = value;
++  }
++  return out;
++}
+diff --git a/src/filters/http-exception.filter.ts b/src/filters/http-exception.filter.ts
+index a8c3705f..c053b128 100644
+--- a/src/filters/http-exception.filter.ts
++++ b/src/filters/http-exception.filter.ts
+@@ -10,6 +10,7 @@ import { Request, Response } from 'express';
+ import * as Sentry from '@sentry/node';
+ import { safeDiagnostic } from '../observability/orm-diagnostics';
+ import { buildErrorEnvelope } from './not-found-envelope';
++import { pickErrorDetails } from './error-details';
+ 
+ // Structured error shape: { statusCode, message, error, timestamp, path }.
+ // Mobile only reads `err.response?.data?.message` (verified in growth-project-mobile
+@@ -42,6 +43,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
+     // exception body (e.g. `invite_code_invalid_format`). Keep it strictly
+     // additive so existing clients that only read `message` are unaffected.
+     let code: string | undefined;
++    // B-RECUR-BE — allowlisted, shape-checked facts of a coded 4xx (see
++    // error-details.ts). Empty for every code not on the allowlist.
++    let details: Record<string, unknown> = {};
+ 
+     // An HttpException whose cause is an ORM failure normally carries a body
+     // derived from that failure, so its original response must not reach the
+@@ -58,6 +62,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
+         message = body.message ?? exception.message;
+         error = body.error ?? exception.name.replace(/Exception$/, '');
+         if (typeof body.code === 'string') code = body.code;
++        details = pickErrorDetails(status, code, res as Record<string, unknown>);
+       }
+     } else if (diagnostic instanceof Error) {
+       // Log unexpected errors; do NOT leak internal details to clients.
+@@ -90,14 +95,16 @@ export class HttpExceptionFilter implements ExceptionFilter {
+     // Envelope construction is shared with the R-DARK-1 feature-flag 404
+     // middleware (see src/filters/not-found-envelope.ts) so a dark-route 404
+     // is key-for-key identical to this filter's unmounted-route 404.
+-    response.status(status).json(
+-      buildErrorEnvelope(request, {
++    // Details never carry an envelope key (error-details.ts skips them).
++    response.status(status).json({
++      ...buildErrorEnvelope(request, {
+         statusCode: status,
+         code,
+         message,
+         error,
+         requestId: reqWithId.requestId,
+       }),
+-    );
++      ...details,
++    });
+   }
+ }
+diff --git a/src/throttler/throttler.config.ts b/src/throttler/throttler.config.ts
+index 276bb10b..b381a637 100644
+--- a/src/throttler/throttler.config.ts
++++ b/src/throttler/throttler.config.ts
+@@ -42,6 +42,7 @@ import {
+ // POST /diagnostic/submit                   | diagnostic-submit       | DIAGNOSTIC_RATE_LIMIT_PER_HOUR / hour (IP)
+ // POST /v1/checkout/sessions               | checkout-mint           | CHECKOUT_MINT_PER_HOUR / hour (user)
+ // POST /v1/checkout/payment-intent         | checkout-mint           | shared
++// POST /v1/checkout/subscription-intent    | checkout-mint           | shared
+ // POST /coach/ai/workout-program           | coach-ai-generation     | 5 / hour (user)
+ // POST /coach/ai/meal-plan                 | coach-ai-generation     | 5 / hour (user)
+ // POST /coach/ai/client-insight            | coach-ai-generation     | 10 / hour (user)
+diff --git a/test/account-deletion.voice-erasure.spec.ts b/test/account-deletion.voice-erasure.spec.ts
+index 34a9acb4..6d319ef4 100644
+--- a/test/account-deletion.voice-erasure.spec.ts
++++ b/test/account-deletion.voice-erasure.spec.ts
+@@ -185,6 +185,7 @@ function build(prisma: Record<string, unknown>, client: unknown) {
+     storage,
+     stub<AccountDeletionBillingService>({
+       collectSubscriptionIds: jest.fn(async () => []),
++      collectUnboundAttemptSubscriptionIds: jest.fn(async () => []),
+       cancelAll: jest.fn(async () => ({ canceled: 0, alreadyInactive: 0 })),
+     }),
+   );
+diff --git a/test/account-deletion/lifecycle-races.spec.ts b/test/account-deletion/lifecycle-races.spec.ts
+index 51c0269a..9c0fdb55 100644
+--- a/test/account-deletion/lifecycle-races.spec.ts
++++ b/test/account-deletion/lifecycle-races.spec.ts
+@@ -71,6 +71,7 @@ function build(opts: { confirmedDaysAgo?: number | null; role?: string } = {}) {
+   };
+   const billing = {
+     collectSubscriptionIds: jest.fn().mockResolvedValue(['sub_1']),
++    collectUnboundAttemptSubscriptionIds: jest.fn(async () => []),
+     cancelAll: jest.fn().mockResolvedValue({ canceled: 1, alreadyInactive: 0 }),
+   };
+   const service = new AccountDeletionService(
+diff --git a/test/account-deletion/receipt-r2.spec.ts b/test/account-deletion/receipt-r2.spec.ts
+index 91f9705f..a59dc9d4 100644
+--- a/test/account-deletion/receipt-r2.spec.ts
++++ b/test/account-deletion/receipt-r2.spec.ts
+@@ -161,6 +161,7 @@ describe('C-608-7 in the deletion service', () => {
+       }),
+       stub<AccountDeletionBillingService>({
+         collectSubscriptionIds: jest.fn().mockResolvedValue([]),
++        collectUnboundAttemptSubscriptionIds: jest.fn(async () => []),
+         cancelAll: jest.fn().mockResolvedValue({ canceled: 0, alreadyInactive: 0 }),
+       }),
+     );
+diff --git a/test/b-recur-3-subscription-terms.spec.ts b/test/b-recur-3-subscription-terms.spec.ts
+new file mode 100644
+index 00000000..54645d57
+--- /dev/null
++++ b/test/b-recur-3-subscription-terms.spec.ts
+@@ -0,0 +1,71 @@
++// B-RECUR-3 fix round 2 (agent 115) — units of the new pieces behind
++// B-654-5 / B-654-7: the pinned attempt-terms snapshot and the Stripe list
++// read the checkout uses to find the subscription of an uncertain create.
++// (New code; the behaviour proofs that failed before live in
++// test/b-recur-3-fix-round-2.spec.ts.)
++import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++import {
++  checkoutTermsFor,
++  parseCheckoutTerms,
++  planPriceFromTerms,
++  termsStillOffered,
++} from '../src/checkout/subscription-terms';
++
++describe('subscription terms snapshot', () => {
++  const terms = checkoutTermsFor(
++    {
++      amount_cents: 4900,
++      currency: 'usd',
++      interval: 'month',
++      interval_count: 1,
++      first_charge_cents: 4900,
++      one_time_cents: 0,
++      trial_days: 0,
++    },
++    0,
++    { recurring: 'price_rec_4900', oneTime: null },
++  );
++  it('round-trips and rejects foreign shapes', () => {
++    expect(parseCheckoutTerms(JSON.parse(JSON.stringify(terms)))).toEqual(terms);
++    expect(parseCheckoutTerms(null)).toBeNull();
++    expect(parseCheckoutTerms({ ...terms, v: 2 })).toBeNull();
++    expect(parseCheckoutTerms({ ...terms, amount_cents: -1 })).toBeNull();
++    expect(parseCheckoutTerms({ ...terms, interval: 'day' })).toBeNull();
++    expect(JSON.stringify(terms)).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
++  });
++  it('a trial attempt charges nothing today; terms compare money and cadence', () => {
++    const trial = { ...terms, trial_days: 7 };
++    expect(planPriceFromTerms(trial).first_charge_cents).toBe(0);
++    const offered = planPriceFromTerms(terms);
++    expect(termsStillOffered(terms, offered, 7)).toBe(true);
++    expect(termsStillOffered(trial, offered, 7)).toBe(true);
++    expect(termsStillOffered(trial, offered, 14)).toBe(false);
++    expect(termsStillOffered(terms, { ...offered, amount_cents: 5900 }, 0)).toBe(false);
++    expect(termsStillOffered(terms, { ...offered, interval_count: 3 }, 0)).toBe(false);
++  });
++});
++
++describe('StripeConnectApiService.listSubscriptionsForCustomer', () => {
++  it('listSubscriptionsForCustomer wire format: GET, any status, by customer', async () => {
++    class Recording extends StripeConnectApiService {
++      calls: Array<{ url: string; method: string }> = [];
++      protected fetchImpl: typeof fetch = async (input: any, init: any) => {
++        this.calls.push({ url: String(input), method: init.method });
++        return new Response(JSON.stringify({ data: [], has_more: false }), { status: 200 });
++      };
++    }
++    const prev = process.env.STRIPE_SECRET_KEY;
++    process.env.STRIPE_SECRET_KEY = 'sk_test_example';
++    try {
++      const api = new Recording();
++      const out = await api.listSubscriptionsForCustomer('cus_A');
++      expect(out.data).toEqual([]);
++      expect(api.calls[0].method).toBe('GET');
++      expect(api.calls[0].url).toContain('/subscriptions?');
++      expect(api.calls[0].url).toContain('customer=cus_A');
++      expect(api.calls[0].url).toContain('status=all');
++    } finally {
++      process.env.STRIPE_SECRET_KEY = prev;
++    }
++  });
++});
+diff --git a/test/b-recur-subscription-wire.spec.ts b/test/b-recur-subscription-wire.spec.ts
+new file mode 100644
+index 00000000..dd0c6a65
+--- /dev/null
++++ b/test/b-recur-subscription-wire.spec.ts
+@@ -0,0 +1,80 @@
++// B-RECUR — StripeConnectApiService wire format of the native subscription
++// checkout (R1 code). Moved verbatim from test/b-recur-subscription-checkout.spec.ts
++// (#679) to #678 by B-RECUR6A-118 (size move, no behavior change), except
++// the trial-card write, which now names the trial-end lift (Opus B-678-2).
++describe('StripeConnectApiService.createSubscription wire format (Stripe-Version 2024-09-30.acacia)', () => {
++  // eslint-disable-next-line @typescript-eslint/no-require-imports
++  const { StripeConnectApiService } = require('../src/connect/stripe-connect-api.service');
++  class Recording extends StripeConnectApiService {
++    calls: Array<{ url: string; headers: Record<string, string>; form: URLSearchParams }> = [];
++    protected fetchImpl: typeof fetch = async (input: any, init: any) => {
++      this.calls.push({
++        url: String(input),
++        headers: init.headers,
++        form: new URLSearchParams(init.body),
++      });
++      return new Response(JSON.stringify({ id: 'sub_x', status: 'incomplete' }), { status: 200 });
++    };
++  }
++  const prev = process.env.STRIPE_SECRET_KEY;
++  beforeAll(() => {
++    process.env.STRIPE_SECRET_KEY = 'sk_test_example';
++  });
++  afterAll(() => {
++    process.env.STRIPE_SECRET_KEY = prev;
++  });
++
++  it('default_incomplete, save card on_subscription, expand first invoice PI, on_behalf_of, no fee / transfer_data', async () => {
++    const api = new Recording();
++    await api.createSubscription({
++      customer: 'cus_1',
++      recurringPriceId: 'price_r',
++      oneTimePriceId: 'price_o',
++      onBehalfOf: 'acct_coach',
++      metadata: { tgp_package_id: 'p' },
++      idempotencyKey: 'tgp-sub-k',
++    });
++    const { url, headers, form } = api.calls[0];
++    expect(url).toMatch(/\/v1\/subscriptions$/);
++    expect(headers['Stripe-Version']).toBe('2024-09-30.acacia');
++    expect(headers['Idempotency-Key']).toBe('tgp-sub-k');
++    expect(form.get('payment_behavior')).toBe('default_incomplete');
++    expect(form.get('payment_settings[save_default_payment_method]')).toBe('on_subscription');
++    expect(form.get('expand[0]')).toBe('latest_invoice.payment_intent');
++    expect(form.get('on_behalf_of')).toBe('acct_coach');
++    expect(form.get('items[0][price]')).toBe('price_r');
++    expect(form.get('add_invoice_items[0][price]')).toBe('price_o');
++    expect([...form.keys()].filter((k) => /transfer_data|application_fee/.test(k))).toEqual([]);
++    expect(form.get('trial_period_days')).toBeNull();
++  });
++
++  it('trial: trial_period_days, cancel when the trial ends without a card, expand pending_setup_intent', async () => {
++    const api = new Recording();
++    await api.createSubscription({
++      customer: 'cus_1',
++      recurringPriceId: 'price_r',
++      onBehalfOf: 'acct_coach',
++      trialPeriodDays: 7,
++      idempotencyKey: 'tgp-sub-t',
++    });
++    const { form } = api.calls[0];
++    expect(form.get('trial_period_days')).toBe('7');
++    expect(form.get('trial_settings[end_behavior][missing_payment_method]')).toBe('cancel');
++    expect(form.get('expand[1]')).toBe('pending_setup_intent');
++  });
++
++  it('resume and trial-card writes carry their own idempotency keys', async () => {
++    const api = new Recording();
++    await api.resumeSubscription({ subscriptionId: 'sub_1', idempotencyKey: 'tgp-resume-1' });
++    await api.setSubscriptionDefaultPaymentMethod({
++      subscriptionId: 'sub_1',
++      paymentMethodId: 'pm_1',
++      idempotencyKey: 'tgp-trial-card-1',
++      liftTrialEnd: true,
++    });
++    expect(api.calls[0].form.get('cancel_at_period_end')).toBe('false');
++    expect(api.calls[0].headers['Idempotency-Key']).toBe('tgp-resume-1');
++    expect(api.calls[1].form.get('default_payment_method')).toBe('pm_1');
++    expect(api.calls[1].headers['Idempotency-Key']).toBe('tgp-trial-card-1');
++  });
++});
+diff --git a/test/b-recur5a-117-trial-end-form.spec.ts b/test/b-recur5a-117-trial-end-form.spec.ts
+new file mode 100644
+index 00000000..da194028
+--- /dev/null
++++ b/test/b-recur5a-117-trial-end-form.spec.ts
+@@ -0,0 +1,45 @@
++// B-RECUR5A-117 fix round 5 — Opus B-679-8 / C-678-1 in R1: a trial converts
++// only on the attempt's own saved card. Both cases failed at #679 f48fa8f0
++// (CI lane run 37183949652). The real Stripe client, HTTP recorded, no network.
++import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++
++class Recording extends StripeConnectApiService {
++  forms: string[] = [];
++  protected fetchImpl: typeof fetch = async (_input: any, init: any) => {
++    this.forms.push(decodeURIComponent(String(init?.body ?? '')));
++    return new Response(JSON.stringify({ id: 'sub_x', status: 'trialing' }), { status: 200 });
++  };
++}
++
++describe('Opus B-679-8 a trial converts only on the attempt’s own saved card', () => {
++  const prev = process.env.STRIPE_SECRET_KEY;
++  beforeEach(() => {
++    process.env.STRIPE_SECRET_KEY = 'sk_test_synthetic';
++  });
++  afterAll(() => {
++    process.env.STRIPE_SECRET_KEY = prev;
++  });
++
++  it('(failed before) a trial create carries a Stripe-enforced end; a plan without a trial does not', async () => {
++    const api = new Recording();
++    const base = { customer: 'cus_A', recurringPriceId: 'price_A', onBehalfOf: 'acct_coach' };
++    await api.createSubscription({ ...base, trialPeriodDays: 7, idempotencyKey: 'k1' });
++    await api.createSubscription({ ...base, idempotencyKey: 'k2' });
++    expect(api.forms[0]).toContain('trial_period_days=7');
++    expect(api.forms[0]).toContain('cancel_at_period_end=true');
++    expect(api.forms[1]).not.toContain('cancel_at_period_end');
++  });
++
++  it('(failed before) the saved-card attach lifts that end in the same request', async () => {
++    const api = new Recording();
++    await api.setSubscriptionDefaultPaymentMethod({
++      subscriptionId: 'sub_x',
++      paymentMethodId: 'pm_own',
++      idempotencyKey: 'k3',
++      liftTrialEnd: true,
++    });
++    expect(api.forms).toEqual([
++      expect.stringMatching(/^(?=.*default_payment_method=pm_own)(?=.*cancel_at_period_end=false)/),
++    ]);
++  });
++});
+diff --git a/test/b-recur6a-118-r1.spec.ts b/test/b-recur6a-118-r1.spec.ts
+new file mode 100644
+index 00000000..941c3eed
+--- /dev/null
++++ b/test/b-recur6a-118-r1.spec.ts
+@@ -0,0 +1,171 @@
++// B-RECUR6A-118 fix round 6, R1 (#678) half. Real Stripe client with HTTP
++// recorded (no network) and small doubles; "(failed before)" cases failed at
++// #678 b04ea692 in the CI lane before the fix.
++//   Opus B-678-2  a plain default-card update never touches cancel_at_period_end.
++//   B-679-10      a trial attempt's own SetupIntent (Stripe made no pending one).
++//   Sol B-679-7   account deletion finds an unbound checkout subscription, fail closed.
++import { AccountDeletionBillingService } from '../src/account-deletion/account-deletion.billing';
++import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++import * as plan from '../src/checkout/subscription-plan';
++import * as trialCard from '../src/checkout/trial-card';
++
++class Recording extends StripeConnectApiService {
++  calls: Array<{ url: string; key: string; form: string }> = [];
++  protected fetchImpl: typeof fetch = async (input: any, init: any) => {
++    this.calls.push({
++      url: String(input),
++      key: init?.headers?.['Idempotency-Key'],
++      form: decodeURIComponent(String(init?.body ?? '')),
++    });
++    const body = String(input).includes('/setup_intents')
++      ? { id: 'seti_A', client_secret: 'seti_A_secret_x', status: 'requires_payment_method' }
++      : { id: 'sub_x', status: 'active' };
++    return new Response(JSON.stringify(body), { status: 200 });
++  };
++}
++const any = (v: unknown): any => v;
++
++describe('Opus B-678-2 only the trial-card attach lifts the trial end', () => {
++  const prev = process.env.STRIPE_SECRET_KEY;
++  beforeEach(() => {
++    process.env.STRIPE_SECRET_KEY = 'sk_test_synthetic';
++  });
++  afterAll(() => {
++    process.env.STRIPE_SECRET_KEY = prev;
++  });
++
++  it('(failed before) a card update on a paid plan sends only default_payment_method', async () => {
++    const api = new Recording();
++    await api.setSubscriptionDefaultPaymentMethod({
++      subscriptionId: 'sub_paid',
++      paymentMethodId: 'pm_new',
++      idempotencyKey: 'tgp-card-default-sub-sub_paid-seti_x',
++    });
++    expect(api.calls.map((c) => c.form)).toEqual(['default_payment_method=pm_new']);
++  });
++
++  it('control: the trial-card attach sends the card and the lift in one keyed request', async () => {
++    const api = new Recording();
++    await trialCard.attachTrialCard(api, 'sub_t', 'pm_own');
++    expect(api.calls).toEqual([
++      expect.objectContaining({
++        form: 'default_payment_method=pm_own&cancel_at_period_end=false',
++        key: 'tgp-trial-card-sub_t-pm_own',
++      }),
++    ]);
++  });
++
++  it('(failed before) a trial default Stripe set itself (end still set) is not the attempt card', () => {
++    const own = { status: 'trialing', default_payment_method: 'pm_x', cancel_at_period_end: false };
++    const foreign = { ...own, cancel_at_period_end: true };
++    expect(plan.classifyWithoutSheet(any(foreign))).toBe('unavailable');
++    expect(plan.subscriptionUnpaid(any(foreign))).toBe(true);
++    expect(plan.classifyWithoutSheet(any(own))).toBe('complete');
++    expect(plan.subscriptionUnpaid(any(own))).toBe(false);
++  });
++});
++
++describe('B-679-10 a trial attempt gets its own SetupIntent when Stripe made none', () => {
++  const prev = process.env.STRIPE_SECRET_KEY;
++  beforeEach(() => {
++    process.env.STRIPE_SECRET_KEY = 'sk_test_synthetic';
++  });
++  afterAll(() => {
++    process.env.STRIPE_SECRET_KEY = prev;
++  });
++  const args = {
++    purchaseId: 'pur_1',
++    subscriptionId: 'sub_1',
++    customerId: 'cus_1',
++    onBehalfOf: 'acct_coach',
++    storedSecret: null,
++    stored: null,
++  };
++
++  it('(failed before) creates one off-session SetupIntent per attempt, named by metadata', async () => {
++    const api = new Recording();
++    const own = any(trialCard).ownTrialSetupSecret;
++    expect(await own(api, args)).toBe('seti_A_secret_x');
++    expect(api.calls).toHaveLength(1);
++    expect(api.calls[0].url).toMatch(/\/v1\/setup_intents$/);
++    expect(api.calls[0].key).toBe('tgp-trial-setup-pur_1');
++    for (const part of [
++      'customer=cus_1',
++      'usage=off_session',
++      'on_behalf_of=acct_coach',
++      'metadata[tgp_purchase_id]=pur_1',
++      'metadata[tgp_subscription_id]=sub_1',
++    ]) {
++      expect(api.calls[0].form.split('&')).toContain(part);
++    }
++  });
++
++  it('(failed before) reuses the stored own secret while the sheet can finish it, never a canceled one', async () => {
++    const api = new Recording();
++    const own = any(trialCard).ownTrialSetupSecret;
++    const stored = 'seti_A_secret_x';
++    const open = { status: 'requires_payment_method', payment_method: null };
++    const dead = { status: 'canceled', payment_method: null };
++    expect(await own(api, { ...args, storedSecret: stored, stored: open })).toBe(stored);
++    expect(await own(api, { ...args, storedSecret: stored, stored: dead })).toBeNull();
++    expect(api.calls).toHaveLength(0);
++  });
++});
++
++describe('Sol B-679-7 account deletion finds an unbound checkout subscription', () => {
++  const USER = '11111111-1111-4111-8111-111111111111';
++  const old = new Date(Date.now() - 10 * 60_000);
++  const row = (over: Record<string, unknown> = {}) => ({
++    id: 'pur_1',
++    stripe_customer_id: 'cus_1',
++    created_at: old,
++    updated_at: old,
++    ...over,
++  });
++  const tx = (rows: unknown[]) => any({ clientPurchase: { findMany: jest.fn(async () => rows) } });
++  const lister = (data: unknown[], hasMore = false) => ({
++    listSubscriptionsForCustomer: jest.fn(async () => ({ data, has_more: hasMore })),
++  });
++  const collect = (svc: AccountDeletionBillingService, t: unknown) =>
++    any(svc).collectUnboundAttemptSubscriptionIds(t, USER);
++  const billing = (stripe: unknown): AccountDeletionBillingService =>
++    new (AccountDeletionBillingService as any)({}, stripe);
++
++  it('(failed before) returns the attempt’s own live subscription found by metadata', async () => {
++    const stripe = lister([
++      { id: 'sub_own', status: 'incomplete', metadata: { tgp_purchase_id: 'pur_1' } },
++      { id: 'sub_gone', status: 'canceled', metadata: { tgp_purchase_id: 'pur_1' } },
++      { id: 'sub_other', status: 'active', metadata: { tgp_purchase_id: 'pur_9' } },
++    ]);
++    const svc = billing(stripe);
++    const t = tx([row()]);
++    expect(await collect(svc, t)).toEqual(['sub_own']);
++    expect(t.clientPurchase.findMany.mock.calls[0][0].where).toEqual(
++      expect.objectContaining({
++        client_user_id: USER,
++        status: 'pending',
++        stripe_subscription_id: null,
++        idempotency_key: { startsWith: `sub-${USER}-` },
++      }),
++    );
++    expect(stripe.listSubscriptionsForCustomer).toHaveBeenCalledWith('cus_1', {
++      createdGte: Math.floor(old.getTime() / 1000) - 300,
++    });
++  });
++
++  it('(failed before) fails closed: a just-touched attempt or an incomplete list stops the deletion', async () => {
++    const fresh = billing(lister([]));
++    await expect(collect(fresh, tx([row({ updated_at: new Date() })]))).rejects.toThrow(
++      /still finishing/,
++    );
++    const partial = billing(lister([], true));
++    await expect(collect(partial, tx([row()]))).rejects.toThrow(/incomplete/);
++  });
++
++  it('(failed before) no unbound attempt -> no Stripe read', async () => {
++    const stripe = lister([]);
++    const svc = billing(stripe);
++    expect(await collect(svc, tx([]))).toEqual([]);
++    expect(stripe.listSubscriptionsForCustomer).not.toHaveBeenCalled();
++  });
++});
+diff --git a/test/support/b-recur-fakes.ts b/test/support/b-recur-fakes.ts
+new file mode 100644
+index 00000000..24fed1e8
+--- /dev/null
++++ b/test/support/b-recur-fakes.ts
+@@ -0,0 +1,395 @@
++// B-RECUR — in-memory doubles for the native subscription checkout specs.
++// A small Prisma double with the where-operators the checkout uses
++// ({ not }, { in }, { startsWith }, { gt }, OR), a serializing
++// $transaction (models the per-(client, coach) advisory lock), and a
++// Stripe double that records every write so specs can prove "no duplicate
++// Stripe objects".
++//
++// B-RECUR-3 (B-654-5): the Stripe double now models Stripe's idempotency
++// contract fully: the same key with the SAME parameters returns the first
++// object; the same key with DIFFERENT parameters is rejected with a 400
++// `idempotency_error` (https://docs.stripe.com/api/idempotent_requests).
++import { StripeConnectApiError } from '../../src/connect/stripe-connect-api.service';
++
++type Row = Record<string, any>;
++
++function matchValue(actual: any, cond: any): boolean {
++  if (cond === null) return actual === null || actual === undefined;
++  if (cond instanceof Date) return actual instanceof Date && actual.getTime() === cond.getTime();
++  if (typeof cond === 'object' && !Array.isArray(cond)) {
++    if ('not' in cond) {
++      if (cond.not === null) return actual !== null && actual !== undefined;
++      return actual !== cond.not;
++    }
++    if ('in' in cond) return cond.in.includes(actual);
++    if ('startsWith' in cond)
++      return typeof actual === 'string' && actual.startsWith(cond.startsWith);
++    if ('gt' in cond) return actual != null && actual > cond.gt;
++    if ('lte' in cond) return actual != null && actual <= cond.lte;
++    if ('lt' in cond) return actual != null && actual < cond.lt;
++    return false;
++  }
++  return actual === cond;
++}
++
++export function matchWhere(row: Row, where: Row = {}): boolean {
++  return Object.entries(where).every(([k, v]) => {
++    if (k === 'OR') return (v as Row[]).some((c) => matchWhere(row, c));
++    if (k === 'AND') return (v as Row[]).every((c) => matchWhere(row, c));
++    return matchValue(row[k], v);
++  });
++}
++
++function uniqueViolation(): Error {
++  const err: any = new Error('Unique constraint failed');
++  err.code = 'P2002';
++  return err;
++}
++
++export function makeFakePrisma() {
++  const users: Row[] = [];
++  const packages: Row[] = [];
++  const purchases: Row[] = [];
++  const accounts: Row[] = [];
++  const customers: Row[] = [];
++  let seq = 0;
++  let chain: Promise<unknown> = Promise.resolve();
++  const order = (rows: Row[], orderBy?: Row) =>
++    orderBy?.created_at === 'desc'
++      ? [...rows].sort((a, b) => b.created_at.getTime() - a.created_at.getTime())
++      : rows;
++  const prisma: any = {
++    _users: users,
++    _packages: packages,
++    _purchases: purchases,
++    _accounts: accounts,
++    _customers: customers,
++    _locks: [] as string[],
++    $executeRaw: jest.fn(async (_s: TemplateStringsArray, ...vals: any[]) => {
++      prisma._locks.push(String(vals[1]));
++      return 1;
++    }),
++    $queryRaw: jest.fn(async () => []),
++    // Serialized like a Postgres advisory xact lock: one callback at a time.
++    $transaction: jest.fn(async (cb: (tx: any) => Promise<unknown>) => {
++      const run = chain.then(() => cb(prisma));
++      // The next callback waits for this one to settle, whatever its outcome.
++      chain = run.then(
++        () => 'settled',
++        () => 'settled',
++      );
++      return run;
++    }),
++    user: {
++      findUnique: jest.fn(async ({ where }: any) => users.find((u) => u.id === where.id) ?? null),
++    },
++    coachPackage: {
++      findUnique: jest.fn(
++        async ({ where }: any) => packages.find((p) => p.id === where.id) ?? null,
++      ),
++      findMany: jest.fn(async ({ where }: any) => packages.filter((p) => matchWhere(p, where))),
++    },
++    connectAccount: {
++      findUnique: jest.fn(
++        async ({ where }: any) =>
++          accounts.find((a) => a.coach_user_id === where.coach_user_id) ?? null,
++      ),
++    },
++    connectCustomer: {
++      findUnique: jest.fn(
++        async ({ where }: any) =>
++          customers.find((c) => c.client_user_id === where.client_user_id) ?? null,
++      ),
++    },
++    clientPurchase: {
++      findUnique: jest.fn(async ({ where }: any) => {
++        const row = purchases.find((p) => matchWhere(p, where));
++        return row ? { ...row } : null;
++      }),
++      findFirst: jest.fn(async ({ where, orderBy }: any) => {
++        const row = order(
++          purchases.filter((p) => matchWhere(p, where)),
++          orderBy,
++        )[0];
++        return row ? { ...row } : null;
++      }),
++      findMany: jest.fn(async ({ where, orderBy, take }: any) =>
++        order(
++          purchases.filter((p) => matchWhere(p, where)),
++          orderBy,
++        )
++          .slice(0, take ?? undefined)
++          .map((r) => ({ ...r })),
++      ),
++      create: jest.fn(async ({ data }: any) => {
++        if (purchases.some((p) => p.idempotency_key === data.idempotency_key))
++          throw uniqueViolation();
++        if (
++          purchases.some((p) => p.stripe_checkout_session_id === data.stripe_checkout_session_id)
++        ) {
++          throw uniqueViolation();
++        }
++        seq += 1;
++        const row = {
++          id: `00000000-0000-4000-8000-${String(seq).padStart(12, '0')}`,
++          stripe_subscription_id: null,
++          stripe_payment_intent_id: null,
++          stripe_client_secret: null,
++          stripe_ephemeral_key: null,
++          current_period_end: null,
++          cancel_at_period_end: false,
++          canceled_at: null,
++          access_expires_at: null,
++          trial_days: null,
++          trial_started_at: null,
++          checkout_terms: null,
++          last_error: null,
++          created_at: new Date(Date.now() + seq),
++          updated_at: new Date(),
++          ...data,
++        };
++        purchases.push(row);
++        return { ...row };
++      }),
++      update: jest.fn(async ({ where, data }: any) => {
++        const row = purchases.find((p) => p.id === where.id);
++        if (!row) throw new Error('not found');
++        Object.assign(row, data, { updated_at: new Date() });
++        return { ...row };
++      }),
++      updateMany: jest.fn(async ({ where, data }: any) => {
++        const rows = purchases.filter((p) => matchWhere(p, where));
++        rows.forEach((r) => Object.assign(r, data, { updated_at: new Date() }));
++        return { count: rows.length };
++      }),
++      deleteMany: jest.fn(async ({ where }: any) => {
++        let count = 0;
++        for (let i = purchases.length - 1; i >= 0; i -= 1) {
++          if (matchWhere(purchases[i], where)) {
++            purchases.splice(i, 1);
++            count += 1;
++          }
++        }
++        return { count };
++      }),
++    },
++  };
++  return prisma;
++}
++
++export interface FakeSub {
++  id: string;
++  status: string;
++  customer?: string;
++  metadata?: Record<string, string>;
++  created?: number;
++  current_period_end: number;
++  cancel_at_period_end?: boolean;
++  default_payment_method: string | null;
++  items: { data: Array<{ price: { id: string } }> };
++  latest_invoice: any;
++  pending_setup_intent: any;
++}
++
++/** Stripe double: Idempotency-Key collapses like Stripe (same key -> same object). */
++export function makeFakeStripe() {
++  const subsByKey = new Map<string, FakeSub>();
++  // Parameters of the first request per Idempotency-Key (Stripe compares).
++  const paramsByKey = new Map<string, string>();
++  const fingerprint = (args: Record<string, unknown>) =>
++    JSON.stringify(
++      Object.keys(args)
++        .filter((k) => k !== 'idempotencyKey' && args[k] !== undefined)
++        .sort()
++        .map((k) => [k, args[k]]),
++    );
++  const subs = new Map<string, FakeSub>();
++  // SetupIntents by id. A trial subscription's pending_setup_intent is the
++  // SAME object while pending; `_saveTrialCard` models Stripe after the
++  // client saves a card: SetupIntent succeeded, the subscription's
++  // pending_setup_intent null, and NO default_payment_method (Stripe does
++  // not promise one for a $0 trial).
++  const setups = new Map<string, any>();
++  let n = 0;
++  const stripe: any = {
++    _subs: subs,
++    _setups: setups,
++    _saveTrialCard: (subId: string, pm = 'pm_card') => {
++      const sub = subs.get(subId);
++      if (!sub) throw new Error('no such subscription');
++      const si = setups.get(`seti_${subId.slice(4)}`);
++      if (si) Object.assign(si, { status: 'succeeded', payment_method: pm });
++      sub.pending_setup_intent = null;
++    },
++    createSubscription: jest.fn(async (args: any) => {
++      const seen = paramsByKey.get(args.idempotencyKey);
++      if (seen !== undefined && seen !== fingerprint(args)) {
++        throw new StripeConnectApiError(
++          'Keys for idempotent requests can only be used with the same parameters they were first used with.',
++          400,
++          null,
++          'idempotency_error',
++        );
++      }
++      const hit = subsByKey.get(args.idempotencyKey);
++      if (hit) return hit;
++      paramsByKey.set(args.idempotencyKey, fingerprint(args));
++      n += 1;
++      const trial = (args.trialPeriodDays ?? 0) > 0;
++      const sub: FakeSub = {
++        id: `sub_${n}`,
++        status: trial ? 'trialing' : 'incomplete',
++        customer: args.customer,
++        metadata: { ...(args.metadata ?? {}) },
++        created: Math.floor(Date.now() / 1000),
++        current_period_end:
++          Math.floor(Date.now() / 1000) + (trial ? args.trialPeriodDays : 30) * 86400,
++        // B-679-8 (Opus) — like createSubscription: a trial ends at trial_end
++        // unless the saved-card attach lifts it.
++        cancel_at_period_end: trial,
++        default_payment_method: null,
++        items: { data: [{ price: { id: args.recurringPriceId } }] },
++        latest_invoice: {
++          id: `in_${n}`,
++          // Unknown unless a spec sets it (the reuse check skips a missing amount).
++          amount_due: undefined,
++          payment_intent: trial
++            ? null
++            : {
++                id: `pi_${n}`,
++                client_secret: `pi_${n}_secret_x`,
++                status: 'requires_payment_method',
++              },
++        },
++        pending_setup_intent: trial
++          ? {
++              id: `seti_${n}`,
++              client_secret: `seti_${n}_secret_x`,
++              status: 'requires_payment_method',
++            }
++          : null,
++      };
++      subsByKey.set(args.idempotencyKey, sub);
++      subs.set(sub.id, sub);
++      const pending = sub.pending_setup_intent;
++      if (pending && typeof pending === 'object') setups.set(pending.id, pending);
++      return sub;
++    }),
++    retrieveSubscriptionForCheckout: jest.fn(async (id: string) => {
++      const sub = subs.get(id);
++      if (!sub) throw new Error('no such subscription');
++      return sub;
++    }),
++    // Newest first, 100 per page like Stripe; `createdGte` bounds by `created`.
++    listSubscriptionsForCustomer: jest.fn(
++      async (customer: string, opts?: { createdGte?: number }) => {
++        const all = [...subs.values()]
++          .filter((s) => s.customer === customer)
++          .filter((s) => opts?.createdGte === undefined || (s.created ?? 0) >= opts.createdGte)
++          .reverse();
++        return { data: all.slice(0, 100), has_more: all.length > 100 };
++      },
++    ),
++    // C-679-1 — Stripe voids only an open invoice (never a paid one); voiding
++    // the first invoice ends an incomplete subscription (incomplete_expired).
++    voidInvoice: jest.fn(async (invoiceId: string) => {
++      const sub = [...subs.values()].find(
++        (s) => s.latest_invoice && s.latest_invoice.id === invoiceId,
++      );
++      const inv = sub?.latest_invoice;
++      const pi = inv && typeof inv.payment_intent === 'object' ? inv.payment_intent : null;
++      if (!sub || !inv || inv.status === 'paid' || pi?.status === 'succeeded') {
++        throw new StripeConnectApiError(
++          'This invoice can no longer be voided.',
++          400,
++          null,
++          'invalid_request_error',
++        );
++      }
++      inv.status = 'void';
++      if (sub.status === 'incomplete') sub.status = 'incomplete_expired';
++      return { id: invoiceId, status: 'void' };
++    }),
++    // C-679-1 — Stripe cancels a SetupIntent only before it succeeded.
++    cancelSetupIntent: jest.fn(async (id: string) => {
++      const si = setups.get(id);
++      if (!si || si.status === 'succeeded' || si.status === 'processing') {
++        throw new StripeConnectApiError(
++          'This SetupIntent can no longer be canceled.',
++          400,
++          'setup_intent_unexpected_state',
++          'invalid_request_error',
++        );
++      }
++      si.status = 'canceled';
++      return si;
++    }),
++    retrieveSetupIntent: jest.fn(async (id: string) => {
++      const si = setups.get(id);
++      if (!si) throw new Error('no such setup intent');
++      return si;
++    }),
++    createEphemeralKey: jest.fn(async (_c: string, key: string) => ({
++      secret: `ek_${key.length}`,
++    })),
++    cancelSubscription: jest.fn(async (id: string) => {
++      const sub = subs.get(id);
++      if (sub) sub.status = 'canceled';
++      return { id, status: 'canceled' };
++    }),
++    resumeSubscription: jest.fn(async (args: any) => ({
++      id: args.subscriptionId,
++      status: 'active',
++      cancel_at_period_end: false,
++      current_period_end: Math.floor(Date.now() / 1000) + 20 * 86400,
++    })),
++    // Opus B-678-2 — only the trial-card attach (liftTrialEnd) lifts the end.
++    setSubscriptionDefaultPaymentMethod: jest.fn(async (args: any) => {
++      const sub = subs.get(args.subscriptionId);
++      if (sub) {
++        sub.default_payment_method = args.paymentMethodId;
++        if (args.liftTrialEnd) sub.cancel_at_period_end = false;
++      }
++      return sub;
++    }),
++    // B-679-10 — an attempt's own SetupIntent; the same key returns the same one.
++    createSetupIntent: jest.fn(async (args: any) => {
++      const id = `seti_own${args.metadata.tgp_purchase_id.slice(-4)}`;
++      if (!setups.has(id)) {
++        setups.set(id, {
++          id,
++          client_secret: `${id}_secret_x`,
++          status: 'requires_payment_method',
++          customer: args.customer,
++          metadata: { ...args.metadata },
++        });
++      }
++      return { ...setups.get(id) };
++    }),
++  };
++  return stripe;
++}
++
++/** CheckoutService double: only the helpers the subscription service reuses. */
++export function makeCheckoutHelpers(prisma: any) {
++  return {
++    runContractGate: jest.fn(async () => ({})),
++    ensureCustomer: jest.fn(async (clientId: string) => {
++      const row = prisma._customers.find((c: any) => c.client_user_id === clientId);
++      if (row) return row;
++      const created = {
++        client_user_id: clientId,
++        stripe_customer_id: `cus_${clientId.slice(0, 4)}`,
++      };
++      prisma._customers.push(created);
++      return created;
++    }),
++    ensurePriceForPackage: jest.fn(
++      async (pkg: any) => pkg.stripe_price_id ?? `price_one_${pkg.amount_cents}`,
++    ),
++    ensureRecurringPriceForPackage: jest.fn(
++      async (pkg: any) =>
++        pkg.recurring_stripe_price_id ?? `price_rec_${pkg.recurring_amount_cents}`,
++    ),
++  };
++}

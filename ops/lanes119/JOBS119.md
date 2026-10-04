@@ -171,6 +171,161 @@ _COMMON_119 6 (owner-only authz, reversal idempotency under redelivery and concu
 MRR rule). FIX ROUND + READY on #674 and #676, READY (restack) on #677 (and M5 if opened) at green heads; write notify/coach.txt; release
 the lock. Report: ops/reports/B-CM5-119.md.
 
+## AUD-OPUS-H46-119 (Claude Opus 5.5) / AUD-SOL-H46-119 (GPT-6.1 Sol) — mobile Health Connect H4 #362 + H6 #364 (T4: health data)
+Heads: mobile #362 b3bc0ce4d7e62763671881e6babd60aa518203cc (base H3 #361 574b32a8, dual APPROVE; 2,835 lines), #364
+529ba34524844403eb034dc1519ced21d208346c (base H5 #363 branch; 2,937 lines; top of the HC stack: its tree is what lands). B-HC4-118 FIX
+ROUND 2 + READY (#362 mobile 5983281769, #364 5983281999); report ops/reports/B-HC4-118.md (verify every claim). Prior at
+439937c9 (#362): Sol RC 0/4/1 (5982471782: raw retirement-error logging; stale account-A disconnect deletes account B's authorization;
+health reads continue after disconnect; empty-import guidance dismissed by the real parent), Opus RC 0/2/4 (5982561308: B-362-1 an
+empty first import closes the sheet as if it worked; B-362-2 "Then tap Try again" with no Try again button); IDs collide between
+lenses, mapping in ops/reports/AUD-OPUS-H45-118.md. Prior at a3206441 (#364): Sol RC 0/1/1 (5982566404), Opus RC 0/2/4 (5982643511:
+B-364-1 Samsung Health row never truthful after a Samsung connect; B-364-2 Health Connect privacy-policy link opens the normal screen).
+Decide your lens's prior findings first (closing commit + failing-before test), then audit both heads deeply and judge the H1-H6
+integrated top at #364. Stack rules: flag off, land H1-H6 as one, permission and copy truth (what is read, when, and what the copy
+says), identity/session fences across account switch, no raw provider error or health value in logs, no first person. Operator
+defaults to judge: Play privacy URL https://app.trygrowthproject.com/privacy; the Samsung row mirrors Health Connect; no-session
+Disconnect retires the source for every account on the phone. Late-data / resumable import (C-360-1/2) are a ruled follow-up, not a
+blocker. H5 #363 (2858bac5, restack) gets a short delta after you. Never name the clinic partner. Reports:
+ops/reports/AUD-OPUS-H46-119.md, AUD-SOL-H46-119.md.
+
+## AUD-OPUS-L12-119 (Claude Opus 5.5) / AUD-SOL-L12-119 (GPT-6.1 Sol) — mobile lockout L1 #352 + L2 #353 (T4: billing lockout, entitlement UI)
+Heads: mobile #352 ac244d22e107e93209a5e1d206d2951d3392fe38 (base main; 2,341 lines; inert dunning API, update-card flow, error copy),
+#353 05d84f27261f1f764214be5a379785ba8f690d3e (base #352 branch; 2,520 lines; lockout screen, banner, Update card screen). B-LOCK-118
+FIX ROUND 1 + READY (#352 mobile 5982675004, #353 5982675120); report ops/reports/B-LOCK-118.md (verify every claim). Prior at
+58b80914 / e22acc84: #352 Opus APPROVE 0/0/6 (5977022730), Sol RC 0/1/0 (5976926738); #353 Opus RC 0/4/5 (5977022872), Sol RC 0/3/3
+(5976938374). Decide your lens's prior findings first, then audit both heads deeply. Lands after the dunning backend deploys, flag
+off, as one unit #352 -> #354; must behave truthfully against TODAY's production backend (capability check or truthful fallback,
+never a lockout the server did not decide). Copy rules (binding): retries Days 1/3/7, Day-10 lockout, card update during dunning
+auto-charges the open invoice and unlocks on success, cancel during dunning ends access now, voluntary cancel keeps access to period
+end, free/code grants never enter dunning, no first person, no promise before it is true. NEW binding ruling R-DISPUTE-PAUSE
+(_COMMON_119 item 12): a dispute on a recurring plan pauses billing and ends access at once, nothing restores automatically, the coach
+restarts access; any dispute copy or state in these PRs that promises a restore, a lock date or a retry for disputes is a B (the
+backend piece is being built now by B-DUNSPLIT-119; judge against the ruling, not the old compressed cycle). L3 #354 (f084cc0f,
+restack) gets a short delta later. Reports: ops/reports/AUD-OPUS-L12-119.md, AUD-SOL-L12-119.md.
+
+## AUD-OPUS-W12-119 (Claude Opus 5.5) / AUD-SOL-W12-119 (GPT-6.1 Sol) — mobile coach setup W1 #345 + W2 #346 (T4: Stripe Connect onboarding, money setup)
+Heads: mobile #345 97c9005e644ebc13731d1477bfecc270a10552fd (base main; 2,580 lines; setup API, create intent, Connect copy, QR; inert),
+#346 2baea5b82a2d0e0a22bac21e8fdb5e074bec9d60 (base #345 branch; 2,609 lines; checklist, first package, get-paid, invite, setup
+screen). B-WIZ-118 FIX ROUND 1 + READY (#345 mobile 5982572052, #346 5982579141); report ops/reports/B-WIZ-118.md (verify every
+claim). Prior at a4e49588 / 4522eb8e: #345 Sol RC 0/3/0 (5976946494), Opus RC 0/2/3 (5977036236: B-345-1 cadence change dropped;
+B-329-5 create after unmount/account change); #346 Sol RC 0/2/1 (5976966221), Opus RC 0/2/3 (5977036337). Decide your lens's prior
+findings first, then audit both heads deeply. Must work truthfully against TODAY's production backend (coach backend #674-#677 is not
+deployed: capability check or truthful fallback, never a state the server did not confirm). Binding: recurring packages are first
+class (never one-time-only), real free trials (coach sets 0-30 days), Connect onboarding copy matches what Stripe and the server
+confirm, no first person, no promise of payout/charge before it is true. Lands #345-#351 as one after the coach backend
+deploys. W3 #347 (3beab160, restack) needs its own fix round later (B-WIZ-118 HANDOFF lists its follow-ups). Reports:
+ops/reports/AUD-OPUS-W12-119.md, AUD-SOL-W12-119.md.
+
+## B-FEES18-119 (builder, Claude Opus 5.5, T4: payouts, refunds, access) — fees F4 #684 (+ tests in #697; merge-only restack #697 -> #685 -> #686)
+Heads: #684 6b13af56bf2d8a36ae5559a537ee565555a6c4c7 (base #683 branch agent115/fee-split-3-charge-settlement; 2,435 lines; grandfathered,
+ceiling 3,000), #697 88c722003c23634df69338e4ee6ceb2dd71068e6 (tests only; 1,831), #685 c5e282fb (2,958), #686 8cb7b2d4 (1,355; fees
+top; recurring #678 sits on its branch: do NOT touch recurring). Take lock `fees`. #681-#683 are dual APPROVE at their heads: do not
+touch them. JOB ONE: recurring is stacked on fees.
+Findings to close (AUD-SOL-F4-119, #684 RC 0/3/1, 5983705658; report ops/reports/AUD-SOL-F4-119.md, probes ops/aud-119/AUD-SOL-F4-119/,
+run 37229108434 = 7 acceptance failures):
+- B-684-3 (partially closed): payout-notice.service.ts:169-171,182-196,219-242,338-370,398-430: claim/read vs deadline races remain.
+- B-684-4: checkout-webhook-handler.service.ts:219-228, refund-dispute-handler.service.ts:145-148,175-180: the outer production router does
+  not forward refund.updated, so its handling is unreachable. Also state in your report whether the production Stripe endpoint must
+  subscribe to refund.updated (operator checks the endpoint's enabled events).
+- B-684-5: refund-dispute-handler.service.ts:479-540 (522-528): a pending charge.refunded at cumulative zero followed by a succeeded full
+  refund (refund.updated) leaves access active.
+AUD-OPUS-F4-119 is still auditing #684/#697 at these heads: the operator will message you its verdict; fold any A/B from it into the
+same round before you push (check the #684/#697 threads before pushing too). Sol APPROVE on #697 0/0/1 (5983685798) covers tests only.
+Do: fix in #684 with failing-before tests (Sol's probe bundle must go green unchanged); put new regression tests in #697 (headroom
+1,169 to its ceiling); merge-only restack #697 -> #685 -> #686 (no other changes; prove own-diff patch-ids unchanged for #685/#686).
+Money self-check (_COMMON_119 6), R75 range check from b644198b. FIX ROUND + READY on #684 and #697, READY (restack) on #685 and #686 at
+green heads (#682/#683 stay red by design until #684's fix lands on main; #684 itself must be green). Write notify/fees.txt
+"fees top: #686 @ <sha> (B-FEES18-119, <time>)"; release the lock. Report: ops/reports/B-FEES18-119.md.
+
+## B-RECUR7A-119 (builder, Claude Opus 5.5, T4: subscriptions, account deletion, money) — recurring R1 #678 + R2 #679 (+ tests in R5 #701)
+Heads: #678 77bce4505b12586a0fe1080246d97217f0834f1c (base fees #686 branch; 2,411), #679 8bbf4a41cdd5fdbd0e30ea3baa4b35034aefc7ca (base
+#678 branch; 2,932: only 68 lines of headroom to its 3,000 ceiling), #701 72eb096b (tests only, base #696 branch; 416). Take lock
+`recurring-r12`. MOST CRITICAL OF ALL. Do NOT merge any fees change into #678 (the operator restacks recurring onto the final fees top
+after fees lands). B-RECUR7B-119 owns #680/#696 and pushes only after your notify line.
+Findings to close (AUD-SOL-R12-119: #678 RC 0/2/2 5983682649, #679 RC 0/2/1 5983707659; report ops/reports/AUD-SOL-R12-119.md, probes
+ops/aud-119/AUD-SOL-R12-119/ incl. probes678.patch and the real-PostgreSQL lock proof, runs 37228923406, 37229223645, 37229082643):
+- B-678-3: src/account-deletion/account-deletion.billing.ts:90-99 selects only client-owned unbound attempts and client-prefixed keys:
+  coach deletion misses uncertain unbound subscriptions.
+- B-678-4: src/checkout/subscription-attempt.ts:50-73 locks only the client, not the coach: send authority does not fence coach
+  finalization (two real PostgreSQL sessions).
+- B-679-10 (narrowed): src/checkout/subscription-checkout.service.ts:1025-1045 still treats a customer default card as a settled trial
+  (retained default-only retirement classification).
+- B-679-11: abandoned history can hide an older billable plan (plan-list completeness).
+AUD-OPUS-R12-119 is still auditing these heads: the operator will message you its verdict; fold any A/B into the same round. Sol's
+operator defaults accepted: same-subscription reuse; bounded Stripe reads inside finalization.
+Do: fixes in #678 and #679 with failing-before tests; #678 tests in #678; #679 tests in #701 (never push #679 over 3,000; if a fix
+itself does not fit #679, move a whole existing #679 test file byte-identical into #701 and say so). Merge-only propagate your new
+#679 into nothing else: write notify/recurring.txt "R2 top: #679 @ <sha>; #701 tests @ <sha> (B-RECUR7A-119, <time>)" as soon as
+#678/#679 are pushed green, so B-RECUR7B-119 can restack #680 -> #696 -> #701 on top. Replay both lenses' prior probes (threads,
+ops/aud-118/*R12*, audit/AUD-OPUS-R12R5-117/679-probes, ops/aud-119/AUD-*-R12-119/). FIX ROUND + READY on #678/#679 at green heads.
+Report: ops/reports/B-RECUR7A-119.md.
+
+## B-RECUR7B-119 (builder, Claude Opus 5.5, T4: subscriptions, access, money) — recurring R3 #680 (+ tests in R4 #696; restack #701)
+Heads: #680 216489ff5fa707147b50ef0e387aba5b3079e4b1 (base #679 branch; 2,766), #696 276610a3 (tests; 1,910), #701 72eb096b (tests;
+416). Take lock `recurring-r34`. Findings (AUD-SOL-R34-119 #680 RC 0/2/1 5983671709; report ops/reports/AUD-SOL-R34-119.md, probes
+ops/aud-119/AUD-SOL-R34-119/, runs 37228714856, 37228836878 = 7 assertion failures): B-680-1 residual terminal authority: terminal or
+revoked purchases can regain access (preserve revoked access unconditionally; R-DISPUTE-PAUSE depends on it); B-680-2 residual: a paid
+write can also enter past_due, bypassing the stale-decline fence (strict redelivery after superseding writes). Plus AUD-OPUS-R34-119's
+verdict (operator messages it). Do: develop the fixes at once in your worktree on the current #680; push NOTHING until
+notify/recurring.txt shows B-RECUR7A-119's R2 line; then merge the new #679 into #680 (merge-only commit first), apply your fixes,
+put tests in #696, merge-only #680 -> #696 -> #701 (keep B-RECUR7A's tests in #701). Never push a PR over 3,000. Replay both lenses'
+prior probes (incl. audit/AUD-SOL-R34R5-117/680-authority). FIX ROUND + READY on #680 and #696, READY (restack) on #701 at green
+heads; append "R5 top: #701 @ <sha> (B-RECUR7B-119, <time>)" to notify/recurring.txt. Report: ops/reports/B-RECUR7B-119.md.
+
+## B-TR4-119 (builder, Claude Opus 5.5, T4: free trials, subscription cancellation, money copy) — trials T2 #672 + T3 #673
+Heads: #672 2690c07c1f418f3ec2a79ba93a2ffa9748698a48 (base T1 #671 c75002c9, dual APPROVE, do not touch; 2,961 lines: 39 headroom to its
+ceiling), #673 5fdb5f5cf6fb09a23dd56382a47aafa4d0089c5d (base #672 branch; 2,887: 113 headroom). Take lock `trials`. Verdicts at these
+heads: Opus APPROVE #672 0/0/5 (5983711171), #673 0/0/5 (5983711331); Sol RC #672 0/1/1 (5983682719), #673 0/2/1 (5983683888).
+Findings to close (report ops/reports/AUD-SOL-T23-119.md, probes ops/aud-119/AUD-SOL-T23-119/, runs 37228826610, 37228997327 = 4
+behavioral failures):
+- B-672-3 (narrowed): customer-card admission during final push preparation still permits obsolete charge/date copy (customer-card
+  removal during final preparation).
+- B-673-1 (narrowed): already-billed subscriptions currently past_due/unpaid are treated as never-billed, so cancellation can delete a
+  plan that already paid (Opus C-673-5 is the same input).
+- B-673-2: a committed webhook supersession does not veto an obsolete DELETE, revoking paid access.
+Also fix Opus C-673-4 only if it is the same code path as B-673-2 (out-of-order active then trialing redelivery leaves a paying client
+without access); otherwise leave it for the #680 integration round and say so.
+SIZE: new tests go into a NEW tests-only PR T4 on #673's branch (at or under 1,500 lines; tier header; byte-identical moves allowed);
+code fixes in #672/#673 must keep each under 3,000. Replay both lenses' prior probes (threads; ops/aud-118/*T23*; ops/aud-119/AUD-*-T23-119/;
+Opus's red-by-design probes stay as ruled). FIX ROUND + READY on #672/#673 and OPENING + READY on T4 at green heads; write
+notify/trials.txt; release the lock. Report: ops/reports/B-TR4-119.md.
+
+## AUD-OPUS-S12-119 (Claude Opus 5.5) / AUD-SOL-S12-119 (GPT-6.1 Sol) — mobile payment sheet P1 #342 + P2 #343 (T4: money copy, payment flow)
+Heads: mobile #342 0b1985f46ae2d4baadfcc6a02f8257c2f504249d (base main, main merged in; 2,153 lines), #343
+19678ce780d497513764a7827447c106fb14205e (base #342 branch; 2,933 lines: 67 headroom; a 71-line contrast test moved byte-identical to
+#344). B-SHEET2-119 FIX ROUND 2 + READY (#342 mobile 5983790118, #343 5983790258); report ops/reports/B-SHEET2-119.md (verify every claim:
+19 failed-before / 81 of 82 after on #342; 16 / 101 of 102 on #343; the remaining reds are the held C-342-1 probe and an old "nothing was
+charged" assertion that B-342-1 removed on purpose). Prior at 56f281ad / fd739d58: #342 Opus APPROVE 0/0/5 (5982679049), Sol RC 0/2/1
+(5982676839: timeout claims no charge; zero-decimal amounts 100x too small); #343 Opus RC 0/1/5 (5982679186: B-343-6 free claim shows
+"Payment received"), Sol RC (thread: B-343-1, B-343-3, B-343-6). Decide your lens's prior findings first, then audit both heads deeply.
+Rules (AUD-*-SH-118 entry in ops/lanes118/JOBS118.md, binding): never claim charged/not charged/paid before proof; #661 reply codes
+(409 PAYMENT_ALREADY_COMPLETE, PAYMENT_REFUNDED_OR_IN_REVIEW, PAYMENT_CHECKOUT_CLOSED; 503 PAYMENT_IN_PROGRESS; PAYMENT_SUCCESS_RETRY /
+PAYMENT_FAILURE_RETRY) and recurring codes (PLAN_CHANGE_UNCONFIRMED, SETUP_UNAVAILABLE, trial setup) map to specific truthful copy with
+a working next action; trial starts never show payment-complete copy; must work against TODAY's production backend (capability check or
+truthful fallback); recurring never one-time-only; no first person. The currency fix uses each currency's minor-unit exponent (judge
+ISK/UGX special cases against Stripe's currency rules) and also changes coach screens (operator default: accept). Lands with recurring.
+P3 #344 is B-SHEET3-119's. Reports: ops/reports/AUD-OPUS-S12-119.md, AUD-SOL-S12-119.md.
+
+## B-SHEET3-119 (builder, Claude Opus 5.5, T4: payment sheet, plan management, money copy) — mobile payment sheet P3 #344
+Head: mobile #344 25af65691fbf60a3501a77624de8eafd0ccd81d3 (base #343 branch; 2,156 lines; restacked by B-SHEET2-119 with two test-only
+commits: the moved 71-line contrast test and B-SHEET-118's trial-fixture date commit). Take lock `sheet`. #342/#343 are under lens
+review now (AUD-*-S12-119): do not touch them; if their lenses force a change, the operator tells you to merge the new #343 (merge-only).
+Findings to close (report ops/reports/AUD-SOL-SH3-118.md and AUD-OPUS-SH3-118.md; Sol RC 5982674874, Opus RC 5982759668):
+- B-344-1 YourPlansPanel silently hides an initial list failure (404 absent production route or transient 503) while Membership promises
+  plan management there.
+- B-344-2 every cancellation dialog promises continued paid-period access, but the backend immediately ends an unpaid dunning plan
+  (binding: cancel during dunning ends access now; voluntary cancel keeps access to period end; R-DISPUTE-PAUSE: a disputed recurring
+  plan has access ended and billing paused; only the coach restarts).
+- B-344-3 a successful resume's returned active-plan view is discarded; if the reload fails the app keeps saying "Nothing more is
+  charged".
+- B-344-4 panel notices drop the shared mapper's support action; the error says "email support" with no way to do it.
+- B-344-5 YourPlansPanel.tsx:39-42,55-56,95,105-151 past-due plans: End my plan confirmation promises "stays active until" for a plan in
+  dunning (Opus); B-344-6 per AUD-OPUS-SH3-118.md (replay ops/aud-118/AUD-OPUS-SH3-118/audOpusSH3118.yourPlans.probe.test.tsx: all 9 must
+  pass).
+Must work against TODAY's production backend (the plan list route may be absent: truthful fallback, never a dead end). Replay both
+lenses' prior probes. Keep #344 under 3,000 (grandfathered). FIX ROUND + READY on #344 at a green head; write notify/sheet.txt; release
+the lock. Report: ops/reports/B-SHEET3-119.md.
+
 ## QUEUE (operator launches as slots free; cap 15 concurrent, owner 12:28 PDT 10-04)
 1. R5 pair #701 72eb096b. 2. HC pair m#362 b3bc0ce4 + m#364 529ba345 (then m#363 2858bac5 delta). 3. Lockout pair m#352 ac244d22 +
 m#353 05d84f27 (then m#354 f084cc0f). 4. Wizard pair m#345 97c9005e + m#346 2baea5b8 (then #347 W3 fix round). 5. B-SHEET3-119 (m#344:

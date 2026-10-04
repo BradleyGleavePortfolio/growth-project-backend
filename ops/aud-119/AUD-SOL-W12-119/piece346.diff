@@ -1,0 +1,2737 @@
+diff --git a/src/components/coach/setup/CoachSetupChecklist.tsx b/src/components/coach/setup/CoachSetupChecklist.tsx
+new file mode 100644
+index 0000000..a0b961f
+--- /dev/null
++++ b/src/components/coach/setup/CoachSetupChecklist.tsx
+@@ -0,0 +1,272 @@
++/**
++ * S-COACH — Home checklist: Get paid, first package, first client, first
++ * client payment. Every tick comes from a live route through
++ * loadSetupStatus (src/lib/coachSetup/setupStatus.ts):
++ *   Get paid        GET /coach/connect/status (state === 'active')
++ *   First package   GET /v1/coach/packages (a live, published package)
++ *   First client    GET /coach/clients (a client has joined)
++ *   First payment   GET /v1/coach/money/charges?status=paid&limit=1
++ *                   (older backend: the first-payment celebration gate)
++ * A read that fails shows specific copy with a retry, and its item reads
++ * "This could not be checked just now" instead of looking undone. The first payment
++ * itself is celebrated by FirstPaymentWowHost (flag
++ * EXPO_PUBLIC_FF_ROMAN_FIRST_PAYMENT_WOW). The card hides once all four are
++ * done.
++ */
++import React, { useCallback, useMemo, useState } from "react";
++import {
++  ActivityIndicator,
++  StyleSheet,
++  Text,
++  TouchableOpacity,
++  View,
++} from "react-native";
++import { useFocusEffect } from "@react-navigation/native";
++import { useTheme, ThemeColors } from "../../../theme/ThemeProvider";
++import { useCurrentUser } from "../../../hooks/useCurrentUser";
++import {
++  loadSetupStatus,
++  type SetupSnapshot,
++} from "../../../lib/coachSetup/setupStatus";
++import { describeError } from "../../../lib/coachSetup/errors";
++import SetupNotice from "./SetupNotice";
++
++export {
++  INVITE_SHARED_KEY_BASE,
++  inviteSharedKey,
++} from "../../../lib/coachSetup/setupStatus";
++
++export type ChecklistTarget = "get_paid" | "package" | "invite" | "money";
++
++export interface ChecklistItem {
++  key: ChecklistTarget;
++  label: string;
++  detail: string;
++  /** null = the read failed, so we do not know. */
++  done: boolean | null;
++}
++
++export interface ChecklistStatus {
++  connectActive: boolean | null;
++  connectNeedsAttention: boolean;
++  hasPackage: boolean | null;
++  hasClient: boolean | null;
++  sharedLink: boolean;
++  paid: boolean | null;
++}
++
++const UNKNOWN = "This could not be checked just now.";
++
++export function toChecklistStatus(s: SetupSnapshot): ChecklistStatus {
++  return {
++    connectActive: s.connect ? s.connect.state === "active" : null,
++    connectNeedsAttention: s.connect
++      ? s.connect.actionRequired && s.connect.state !== "not_started"
++      : false,
++    hasPackage: s.livePackageTitle === null ? null : s.livePackageTitle !== "",
++    hasClient: s.hasClient,
++    sharedLink: s.sharedLink,
++    paid: s.paid,
++  };
++}
++
++/** Pure builder so the copy and order are testable. */
++export function buildChecklist(s: ChecklistStatus): ChecklistItem[] {
++  return [
++    {
++      key: "get_paid",
++      label: "Get paid",
++      detail:
++        s.connectActive === null
++          ? UNKNOWN
++          : s.connectActive
++            ? "Stripe is ready to pay you."
++            : s.connectNeedsAttention
++              ? "Stripe needs a few more details from you."
++              : "Connect Stripe so clients can pay you.",
++      done: s.connectActive,
++    },
++    {
++      key: "package",
++      label: "Create your first package",
++      detail:
++        s.hasPackage === null
++          ? UNKNOWN
++          : s.hasPackage
++            ? "Your package is live."
++            : "Free, or $19.99 and up.",
++      done: s.hasPackage,
++    },
++    {
++      key: "invite",
++      label: "Invite your first client",
++      detail:
++        s.hasClient === null
++          ? UNKNOWN
++          : s.hasClient
++            ? "Your first client has joined."
++            : s.sharedLink
++              ? "You shared your link. This ticks when your first client joins."
++              : "Share your link or QR code.",
++      done: s.hasClient,
++    },
++    {
++      key: "money",
++      label: "Get your first client payment",
++      detail:
++        s.paid === null
++          ? UNKNOWN
++          : s.paid
++            ? "You have been paid."
++            : "This ticks when your first client payment arrives.",
++      done: s.paid,
++    },
++  ];
++}
++
++interface Props {
++  /** `done` lets the host send a finished item somewhere useful. */
++  onOpen: (target: ChecklistTarget, done: boolean | null) => void;
++}
++
++export default function CoachSetupChecklist({ onOpen }: Props) {
++  const { colors } = useTheme();
++  const styles = useMemo(() => makeStyles(colors), [colors]);
++  const user = useCurrentUser();
++  const coachId = user?.id ?? null;
++  const [snap, setSnap] = useState<SetupSnapshot | null>(null);
++  const [loading, setLoading] = useState(false);
++
++  const load = useCallback(async () => {
++    if (!coachId) return;
++    setLoading(true);
++    try {
++      setSnap(await loadSetupStatus(coachId));
++    } catch (err) {
++      // loadSetupStatus settles every read; this only catches a bug in it.
++      setSnap({
++        connect: null,
++        livePackageTitle: null,
++        hasClient: null,
++        paid: null,
++        sharedLink: false,
++        errors: [describeError(err, "check your setup")],
++      });
++    } finally {
++      setLoading(false);
++    }
++  }, [coachId]);
++
++  useFocusEffect(
++    useCallback(() => {
++      void load();
++    }, [load]),
++  );
++
++  if (!snap) {
++    return loading ? (
++      <View style={styles.card} testID="coach-setup-checklist-loading">
++        <ActivityIndicator
++          color={colors.primary}
++          accessibilityLabel="Checking your setup"
++        />
++      </View>
++    ) : null;
++  }
++  const items = buildChecklist(toChecklistStatus(snap));
++  const doneCount = items.filter((i) => i.done === true).length;
++  if (doneCount === items.length) return null;
++  return (
++    <View style={styles.card} testID="coach-setup-checklist">
++      <Text style={styles.title} accessibilityRole="header">
++        Finish setting up
++      </Text>
++      <Text style={styles.sub}>{`${doneCount} of ${items.length} done`}</Text>
++      {snap.errors.length > 0 ? (
++        <SetupNotice
++          error={snap.errors[0]}
++          onRetry={loading ? undefined : () => void load()}
++          testID="coach-setup-checklist-error"
++        />
++      ) : null}
++      {items.map((it) => (
++        <TouchableOpacity
++          key={it.key}
++          style={styles.row}
++          onPress={() => onOpen(it.key, it.done)}
++          accessibilityRole="button"
++          accessibilityLabel={`${it.label}. ${
++            it.done === null ? "Not checked" : it.done ? "Done" : "To do"
++          }. ${it.detail}`}
++          testID={`coach-setup-checklist-${it.key}`}
++        >
++          <View
++            style={[
++              styles.dot,
++              it.done === true && styles.dotDone,
++              it.done === null && styles.dotUnknown,
++            ]}
++          />
++          <View style={styles.rowText}>
++            <Text style={[styles.label, it.done === true && styles.labelDone]}>
++              {it.label}
++            </Text>
++            <Text style={styles.detail}>{it.detail}</Text>
++          </View>
++        </TouchableOpacity>
++      ))}
++    </View>
++  );
++}
++
++const makeStyles = (colors: ThemeColors) =>
++  StyleSheet.create({
++    card: {
++      borderWidth: 1,
++      borderColor: colors.border,
++      backgroundColor: colors.surface,
++      padding: 16,
++      marginBottom: 16,
++    },
++    title: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 17,
++      color: colors.textPrimary,
++    },
++    sub: {
++      fontFamily: "Inter_400Regular",
++      fontSize: 13,
++      color: colors.textSecondary,
++      marginTop: 2,
++      marginBottom: 8,
++    },
++    row: {
++      flexDirection: "row",
++      alignItems: "center",
++      minHeight: 56,
++      paddingVertical: 6,
++    },
++    dot: {
++      width: 14,
++      height: 14,
++      borderRadius: 7,
++      borderWidth: 2,
++      borderColor: colors.primary,
++      marginRight: 12,
++    },
++    dotDone: { backgroundColor: colors.primary },
++    dotUnknown: { borderColor: colors.textSecondary, borderStyle: "dashed" },
++    rowText: { flex: 1 },
++    label: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 15,
++      color: colors.textPrimary,
++    },
++    labelDone: { color: colors.textSecondary },
++    detail: {
++      fontFamily: "Inter_400Regular",
++      fontSize: 13,
++      lineHeight: 18,
++      color: colors.textSecondary,
++    },
++  });
+diff --git a/src/components/coach/setup/FirstPackageForm.tsx b/src/components/coach/setup/FirstPackageForm.tsx
+new file mode 100644
+index 0000000..70ec9ea
+--- /dev/null
++++ b/src/components/coach/setup/FirstPackageForm.tsx
+@@ -0,0 +1,499 @@
++/**
++ * S-COACH — first package, prefilled. Matches backend #629: a package is
++ * free (one-time, $0) or paid at $19.99 or more. Creates the package, makes
++ * it live, and for a free package attaches it to the coach's invite link so
++ * a client who joins with the link gets it straight away.
++ */
++import React, { useEffect, useMemo, useRef, useState } from "react";
++import {
++  ActivityIndicator,
++  StyleSheet,
++  Text,
++  TextInput,
++  TouchableOpacity,
++  View,
++} from "react-native";
++import { useTheme, ThemeColors } from "../../../theme/ThemeProvider";
++import {
++  coachPackagesApi,
++  type PackageBillingInterval,
++  type PackageCreateInput,
++} from "../../../api/packagesApi";
++import { coachSetupApi } from "../../../api/coachSetupApi";
++import {
++  describeError,
++  type FriendlyError,
++} from "../../../lib/coachSetup/errors";
++import {
++  clearIntent,
++  createErrorCode,
++  createPackageOnce,
++  intentStorageCopy,
++  IntentStorageError,
++  isDefinitiveRejection,
++  loadIntent,
++  PackageCreateStoppedError,
++  type PackageCreateIntent,
++} from "../../../lib/coachSetup/packageCreateIntent";
++import { useCurrentUser } from "../../../hooks/useCurrentUser";
++import SetupNotice from "./SetupNotice";
++
++export const PAID_PACKAGE_MIN_CENTS = 1999;
++
++export interface CreatedPackage {
++  id: string;
++  title: string;
++  priceCents: number;
++  billingInterval: PackageBillingInterval;
++  freeOnJoin: boolean;
++}
++
++/** Parse "49", "49.5", "$49.00" into cents; null when it is not a price. */
++export function parsePriceCents(text: string): number | null {
++  const t = text.replace(/[$,\s]/g, "");
++  if (!/^\d+(\.\d{0,2})?$/.test(t)) return null;
++  const [whole, frac = ""] = t.split(".");
++  return Number(whole) * 100 + Number((frac + "00").slice(0, 2));
++}
++
++/** Client-side check that mirrors the server rule. Exported for tests. */
++export function validatePackage(input: {
++  title: string;
++  free: boolean;
++  priceText: string;
++}): string | null {
++  if (!input.title.trim())
++    return "Give the package a name clients will recognise.";
++  if (input.free) return null;
++  const cents = parsePriceCents(input.priceText);
++  if (cents === null) return "Enter a price in dollars, for example 49.00.";
++  if (cents < PAID_PACKAGE_MIN_CENTS)
++    return "Paid packages start at $19.99, or make it free.";
++  return null;
++}
++
++// Shared with the package editor (B-329-1); re-exported for existing callers.
++export { isDefinitiveRejection };
++
++/** Specific copy when device storage could not hold the create's identity. */
++export function storageFailure(err: IntentStorageError): FriendlyError {
++  const copy = intentStorageCopy(err);
++  return {
++    ...copy,
++    requestId: null,
++    code: `PACKAGE_INTENT_${err.reason.toUpperCase()}`,
++    retryable: true,
++  };
++}
++
++/**
++ * C-346-2 (agent 118): the server says the remembered package was archived or
++ * removed since it was made. It can never go live, so the form forgets it and
++ * makes a fresh package in the same tap (machine codes only, never a bare 404).
++ */
++const GONE_PACKAGE_CODES = new Set(["PACKAGE_ARCHIVED", "PACKAGE_NOT_FOUND"]);
++
++const DEFAULT_PRICE_TEXT = "49.00";
++
++interface Props {
++  defaultTitle: string;
++  defaultDescription?: string | null;
++  chargesEnabled: boolean;
++  onCreated: (pkg: CreatedPackage) => void;
++  testID?: string;
++}
++
++export default function FirstPackageForm({
++  defaultTitle,
++  defaultDescription,
++  chargesEnabled,
++  onCreated,
++  testID = "first-package",
++}: Props) {
++  const { colors } = useTheme();
++  const styles = useMemo(() => makeStyles(colors), [colors]);
++  const [title, setTitle] = useState(defaultTitle);
++  const [free, setFree] = useState(false);
++  const [priceText, setPriceText] = useState(DEFAULT_PRICE_TEXT);
++  const [monthly, setMonthly] = useState(true);
++  const [busy, setBusy] = useState(false);
++  const [invalid, setInvalid] = useState<string | null>(null);
++  const [error, setError] = useState<FriendlyError | null>(null);
++  // B-329-1 / OR-112-16: one create attempt = one Idempotency-Key + one
++  // body, written to device storage before it is sent and re-sent unchanged
++  // on every retry (second tap, timeout, app restart). The backend replays
++  // the package that key created, and a retry that arrives while the first
++  // try is still running waits for it, so a retry can never make a second
++  // package. See lib/coachSetup/packageCreateIntent.ts.
++  const user = useCurrentUser();
++  const coachId = user?.id ?? null;
++  const intent = useRef<PackageCreateIntent | null>(null);
++  const hydrated = useRef<Promise<void> | null>(null);
++  const [resumed, setResumed] = useState(false);
++  // A second tap before React re-renders the disabled button must not
++  // start a second submit.
++  const inFlight = useRef(false);
++
++  // The account this form belongs to, for re-checks after every await: a
++  // sign-out or account switch mid-create must not write into the next
++  // account's form or storage.
++  const coachRef = useRef(coachId);
++  coachRef.current = coachId;
++  const mounted = useRef(true);
++  // B-329-5 (agent 118): bumped on every account change, so a create started
++  // for an earlier account (even one that signs back in) is retired.
++  const generation = useRef(0);
++  const shownFor = useRef(coachId);
++  const resetTitle = useRef(defaultTitle);
++  resetTitle.current = defaultTitle;
++  useEffect(() => {
++    mounted.current = true;
++    return () => {
++      mounted.current = false;
++    };
++  }, []);
++
++  useEffect(() => {
++    let live = true;
++    if (shownFor.current !== coachId) {
++      // A different account: nothing from the earlier one stays on screen
++      // or in memory, and its running create can no longer write here.
++      shownFor.current = coachId;
++      generation.current += 1;
++      intent.current = null;
++      inFlight.current = false;
++      setBusy(false);
++      setError(null);
++      setInvalid(null);
++      setResumed(false);
++      setTitle(resetTitle.current);
++      setFree(false);
++      setPriceText(DEFAULT_PRICE_TEXT);
++      setMonthly(true);
++    }
++    hydrated.current = loadIntent(coachId).then((read) => {
++      if (!live || read.kind !== "found" || intent.current) return;
++      const stored = read.intent;
++      intent.current = stored;
++      // Show the coach the package that was on its way, as it was sent.
++      setTitle(stored.input.title);
++      setFree(stored.input.priceCents === 0);
++      if (stored.input.priceCents > 0)
++        setPriceText((stored.input.priceCents / 100).toFixed(2));
++      setMonthly(stored.input.billingInterval !== "one_time");
++      setResumed(true);
++    });
++    return () => {
++      live = false;
++    };
++  }, [coachId]);
++
++  const submit = async () => {
++    const problem = validatePackage({ title, free, priceText });
++    setInvalid(problem);
++    setError(null);
++    if (problem || inFlight.current) return;
++    inFlight.current = true;
++    setBusy(true);
++    const owner = coachId;
++    const myGeneration = generation.current;
++    const stillOwner = () =>
++      mounted.current &&
++      coachRef.current === owner &&
++      generation.current === myGeneration;
++    const priceCents = free ? 0 : (parsePriceCents(priceText) ?? 0);
++    const billingInterval: PackageBillingInterval =
++      free || !monthly ? "one_time" : "monthly";
++    const input: PackageCreateInput = {
++      title: title.trim(),
++      description: defaultDescription ?? null,
++      priceCents,
++      currency: "usd",
++      billingInterval,
++      intervalCount: 1,
++      trialDays: 0,
++      features: [],
++    };
++    try {
++      if (hydrated.current) await hydrated.current;
++      let earlier = intent.current;
++      if (!earlier) {
++        // B-329-1: read storage again before any fresh create. A failed read
++        // is not "nothing was sent": stop with specific copy instead.
++        const read = await loadIntent(owner);
++        if (read.kind === "unreadable")
++          throw new IntentStorageError("unreadable");
++        if (read.kind === "no_account")
++          throw new IntentStorageError("no_account");
++        if (read.kind === "found") earlier = read.intent;
++      }
++      if (!stillOwner()) return;
++      const makeLive = async (
++        from: PackageCreateIntent | null,
++      ): Promise<string> => {
++        const made = await createPackageOnce({
++          coachId: owner,
++          scope: "wizard",
++          input,
++          earlier: from,
++          deps: {
++            create: (body, key) => coachPackagesApi.create(body, key),
++            update: (id, body) => coachPackagesApi.update(id, body),
++          },
++          onIntent: (next) => {
++            if (stillOwner()) intent.current = next;
++          },
++          isLive: stillOwner,
++        });
++        if (!stillOwner()) throw new PackageCreateStoppedError();
++        await coachSetupApi.publishPackage(made.packageId);
++        if (!stillOwner()) throw new PackageCreateStoppedError();
++        return made.packageId;
++      };
++      let packageId: string;
++      try {
++        packageId = await makeLive(earlier);
++      } catch (err) {
++        const code = createErrorCode(err);
++        if (!earlier || !code || !GONE_PACKAGE_CODES.has(code)) throw err;
++        if (!stillOwner()) return;
++        intent.current = null;
++        await clearIntent(owner);
++        if (!stillOwner()) return;
++        packageId = await makeLive(null);
++      }
++      let freeOnJoin = false;
++      if (priceCents === 0) {
++        const invite = await coachSetupApi.inviteLink();
++        if (!stillOwner()) return;
++        await coachSetupApi.bindFreePackage(invite.code, packageId);
++        if (!stillOwner()) return;
++        freeOnJoin = true;
++      }
++      intent.current = null;
++      await clearIntent(owner);
++      if (!stillOwner()) return;
++      setResumed(false);
++      onCreated({
++        id: packageId,
++        title: input.title,
++        priceCents,
++        billingInterval,
++        freeOnJoin,
++      });
++    } catch (err) {
++      if (err instanceof PackageCreateStoppedError || !stillOwner()) return;
++      setError(
++        err instanceof IntentStorageError
++          ? storageFailure(err)
++          : describeError(err, "create your package"),
++      );
++    } finally {
++      // An account change already reset the form for the new account.
++      if (generation.current === myGeneration) {
++        inFlight.current = false;
++        if (mounted.current) setBusy(false);
++      }
++    }
++  };
++
++  return (
++    <View testID={testID}>
++      {resumed ? (
++        <Text style={styles.help} testID={`${testID}-resumed`}>
++          Your package from earlier is saved on this device. Tap Create package
++          to finish that same package.
++        </Text>
++      ) : null}
++      <Text style={styles.label} nativeID={`${testID}-name-label`}>
++        Package name
++      </Text>
++      <TextInput
++        value={title}
++        onChangeText={setTitle}
++        style={styles.input}
++        accessibilityLabel="Package name"
++        accessibilityLabelledBy={`${testID}-name-label`}
++        maxLength={80}
++        testID={`${testID}-title`}
++      />
++      <View
++        style={styles.segment}
++        accessibilityRole="radiogroup"
++        accessibilityLabel="Price type"
++      >
++        {[
++          { key: "paid", label: "Paid", on: !free },
++          { key: "free", label: "Free", on: free },
++        ].map((o) => (
++          <TouchableOpacity
++            key={o.key}
++            onPress={() => setFree(o.key === "free")}
++            style={[styles.segmentItem, o.on && styles.segmentOn]}
++            accessibilityRole="radio"
++            accessibilityState={{ checked: o.on }}
++            accessibilityLabel={o.label}
++            testID={`${testID}-${o.key}`}
++          >
++            <Text style={[styles.segmentText, o.on && styles.segmentTextOn]}>
++              {o.label}
++            </Text>
++          </TouchableOpacity>
++        ))}
++      </View>
++      {free ? (
++        <Text style={styles.help}>
++          Free packages are one-time. A client who joins with your invite link
++          gets it straight away.
++        </Text>
++      ) : (
++        <>
++          <Text style={styles.label} nativeID={`${testID}-price-label`}>
++            Price in US dollars
++          </Text>
++          <TextInput
++            value={priceText}
++            onChangeText={setPriceText}
++            style={styles.input}
++            keyboardType="decimal-pad"
++            accessibilityLabel="Price in US dollars"
++            accessibilityHint="Paid packages start at 19 dollars 99"
++            testID={`${testID}-price`}
++          />
++          <View
++            style={styles.segment}
++            accessibilityRole="radiogroup"
++            accessibilityLabel="How often clients pay"
++          >
++            {[
++              { key: "monthly", label: "Every month", on: monthly },
++              { key: "once", label: "One time", on: !monthly },
++            ].map((o) => (
++              <TouchableOpacity
++                key={o.key}
++                onPress={() => setMonthly(o.key === "monthly")}
++                style={[styles.segmentItem, o.on && styles.segmentOn]}
++                accessibilityRole="radio"
++                accessibilityState={{ checked: o.on }}
++                accessibilityLabel={o.label}
++                testID={`${testID}-${o.key}`}
++              >
++                <Text
++                  style={[styles.segmentText, o.on && styles.segmentTextOn]}
++                >
++                  {o.label}
++                </Text>
++              </TouchableOpacity>
++            ))}
++          </View>
++          <Text style={styles.help}>
++            Paid packages start at $19.99. You keep the price minus Stripe
++            processing and the TGP 2% fee.
++            {chargesEnabled
++              ? ""
++              : " Clients can buy it once Stripe has approved your account."}
++          </Text>
++        </>
++      )}
++      {invalid ? (
++        <Text
++          style={styles.invalid}
++          accessibilityRole="alert"
++          testID={`${testID}-invalid`}
++        >
++          {invalid}
++        </Text>
++      ) : null}
++      {error ? (
++        <SetupNotice
++          error={error}
++          onRetry={submit}
++          testID={`${testID}-error`}
++        />
++      ) : null}
++      <TouchableOpacity
++        style={[styles.primary, busy && styles.disabled]}
++        onPress={() => {
++          void submit();
++        }}
++        disabled={busy}
++        accessibilityRole="button"
++        accessibilityLabel="Create package"
++        accessibilityState={{ busy, disabled: busy }}
++        testID={`${testID}-create`}
++      >
++        {busy ? (
++          <ActivityIndicator color={colors.textOnPrimary} />
++        ) : (
++          <Text style={styles.primaryText}>Create package</Text>
++        )}
++      </TouchableOpacity>
++    </View>
++  );
++}
++
++const makeStyles = (colors: ThemeColors) =>
++  StyleSheet.create({
++    label: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 13,
++      color: colors.textSecondary,
++      marginTop: 12,
++      marginBottom: 6,
++    },
++    input: {
++      borderWidth: 1,
++      borderColor: colors.border,
++      minHeight: 48,
++      paddingHorizontal: 12,
++      fontFamily: "Inter_400Regular",
++      fontSize: 16,
++      color: colors.textPrimary,
++      backgroundColor: colors.surface,
++    },
++    segment: {
++      flexDirection: "row",
++      marginTop: 12,
++      borderWidth: 1,
++      borderColor: colors.border,
++    },
++    segmentItem: {
++      flex: 1,
++      minHeight: 44,
++      alignItems: "center",
++      justifyContent: "center",
++    },
++    segmentOn: { backgroundColor: colors.primary },
++    segmentText: {
++      fontFamily: "Inter_500Medium",
++      fontSize: 14,
++      color: colors.textPrimary,
++    },
++    segmentTextOn: { color: colors.textOnPrimary },
++    help: {
++      fontFamily: "Inter_400Regular",
++      fontSize: 13,
++      lineHeight: 19,
++      color: colors.textSecondary,
++      marginTop: 10,
++    },
++    invalid: {
++      fontFamily: "Inter_500Medium",
++      fontSize: 14,
++      color: colors.error,
++      marginTop: 10,
++    },
++    primary: {
++      backgroundColor: colors.primary,
++      minHeight: 48,
++      alignItems: "center",
++      justifyContent: "center",
++      marginTop: 16,
++    },
++    disabled: { opacity: 0.6 },
++    primaryText: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 15,
++      color: colors.textOnPrimary,
++    },
++  });
+diff --git a/src/components/coach/setup/GetPaidPanel.tsx b/src/components/coach/setup/GetPaidPanel.tsx
+new file mode 100644
+index 0000000..c2a4689
+--- /dev/null
++++ b/src/components/coach/setup/GetPaidPanel.tsx
+@@ -0,0 +1,348 @@
++/**
++ * S-COACH — "Get paid" panel. Opens Stripe-hosted Express onboarding (Stripe
++ * collects bank account and ID) in an in-app browser sheet, closes it when
++ * Stripe sends the coach back (tgp://connect/onboarding/return|refresh via the
++ * backend HTTPS landing), then re-reads the account from Stripe and shows the
++ * truthful state, including anything Stripe still needs and its deadline.
++ * A server whose return page does not use that scheme leaves the sheet open
++ * until the coach closes it; the status is re-read the same way either way.
++ *
++ * B-346-2 (agent 118): every load, Stripe visit and re-check belongs to this
++ * mount and session. Unmount or any auth change (sign-out, account switch)
++ * retires it: an open Stripe sheet is dismissed, and no later answer opens a
++ * sheet, re-reads status, sets state or calls onChange. Retry repeats the
++ * action that failed.
++ *
++ * Used by the setup wizard and the Home checklist.
++ */
++import React, {
++  useCallback,
++  useEffect,
++  useMemo,
++  useRef,
++  useState,
++} from "react";
++import {
++  ActivityIndicator,
++  StyleSheet,
++  Text,
++  TouchableOpacity,
++  View,
++} from "react-native";
++import * as WebBrowser from "expo-web-browser";
++import { useTheme, ThemeColors } from "../../../theme/ThemeProvider";
++import { coachSetupApi, type ConnectView } from "../../../api/coachSetupApi";
++import { connectCopy } from "../../../lib/coachSetup/connectCopy";
++import {
++  describeError,
++  type FriendlyError,
++} from "../../../lib/coachSetup/errors";
++import { assertStripeUrl } from "../../../utils/stripeUrlValidator";
++import { authEvents } from "../../../utils/authEvents";
++import SetupNotice from "./SetupNotice";
++
++export const CONNECT_RETURN_PREFIX = "tgp://connect/onboarding";
++
++interface Props {
++  onChange?: (view: ConnectView) => void;
++  testID?: string;
++}
++
++export default function GetPaidPanel({ onChange, testID = "get-paid" }: Props) {
++  const { colors } = useTheme();
++  const styles = useMemo(() => makeStyles(colors), [colors]);
++  const [view, setView] = useState<ConnectView | null>(null);
++  const [loading, setLoading] = useState(true);
++  const [opening, setOpening] = useState(false);
++  const [checking, setChecking] = useState(false);
++  const [error, setError] = useState<FriendlyError | null>(null);
++  const [failed, setFailed] = useState<"load" | "open" | "check" | null>(null);
++  // "unanswered": the server asked Stripe and got no answer. "saved": this
++  // server cannot ask Stripe live, so the status is Stripe's last update.
++  const [stale, setStale] = useState<"unanswered" | "saved" | null>(null);
++  const onChangeRef = useRef(onChange);
++  onChangeRef.current = onChange;
++
++  const mounted = useRef(true);
++  const epoch = useRef(0);
++  const sheetOpen = useRef(false);
++  const retire = useCallback(() => {
++    epoch.current += 1;
++    if (sheetOpen.current) {
++      sheetOpen.current = false;
++      try {
++        WebBrowser.dismissAuthSession();
++      } catch {
++        // No sheet to close on this platform.
++      }
++    }
++  }, []);
++  /** A check bound to this mount and session, read after every await. */
++  const begin = useCallback(() => {
++    const mine = epoch.current;
++    return () => mounted.current && epoch.current === mine;
++  }, []);
++  useEffect(() => {
++    mounted.current = true;
++    const off = authEvents.onAuthChange(() => {
++      retire();
++      if (!mounted.current) return;
++      // Nothing from the earlier account stays on screen.
++      setView(null);
++      setStale(null);
++      setError(null);
++      setFailed(null);
++      setOpening(false);
++      setChecking(false);
++      setLoading(false);
++    });
++    return () => {
++      mounted.current = false;
++      off();
++      retire();
++    };
++  }, [retire]);
++
++  const apply = useCallback((v: ConnectView) => {
++    setView(v);
++    onChangeRef.current?.(v);
++  }, []);
++
++  const showFresh = useCallback(
++    (fresh: ConnectView) => {
++      setStale(
++        fresh.refreshed
++          ? null
++          : fresh.refreshUnavailable
++            ? "saved"
++            : "unanswered",
++      );
++      apply(fresh);
++    },
++    [apply],
++  );
++
++  const load = useCallback(async () => {
++    const live = begin();
++    setLoading(true);
++    setError(null);
++    setFailed(null);
++    try {
++      const v = await coachSetupApi.connectStatus();
++      if (!live()) return;
++      apply(v);
++    } catch (err) {
++      if (!live()) return;
++      setError(describeError(err, "load your payout setup"));
++      setFailed("load");
++    } finally {
++      if (live()) setLoading(false);
++    }
++  }, [apply, begin]);
++
++  useEffect(() => {
++    void load();
++  }, [load]);
++
++  const openStripe = useCallback(async () => {
++    const live = begin();
++    setOpening(true);
++    setError(null);
++    setFailed(null);
++    try {
++      // Stripe links are single use and expire. When Stripe sends the coach to
++      // the refresh URL, mint a new link and reopen once.
++      for (let attempt = 0; attempt < 2; attempt++) {
++        const link = await coachSetupApi.createOnboardingLink();
++        if (!live()) return;
++        assertStripeUrl(link.url, "GetPaidPanel.onboarding");
++        sheetOpen.current = true;
++        const result = await Promise.resolve(
++          WebBrowser.openAuthSessionAsync(link.url, CONNECT_RETURN_PREFIX),
++        ).finally(() => {
++          sheetOpen.current = false;
++        });
++        if (!live()) return;
++        const expired =
++          result.type === "success" &&
++          typeof result.url === "string" &&
++          result.url.includes("/refresh");
++        if (!expired) break;
++      }
++      const fresh = await coachSetupApi.refreshConnectStatus();
++      if (!live()) return;
++      showFresh(fresh);
++    } catch (err) {
++      if (!live()) return;
++      setError(describeError(err, "open Stripe"));
++      setFailed("open");
++    } finally {
++      if (live()) setOpening(false);
++    }
++  }, [begin, showFresh]);
++
++  const checkAgain = useCallback(async () => {
++    const live = begin();
++    setChecking(true);
++    setError(null);
++    setFailed(null);
++    try {
++      const fresh = await coachSetupApi.refreshConnectStatus();
++      if (!live()) return;
++      showFresh(fresh);
++    } catch (err) {
++      if (!live()) return;
++      setError(describeError(err, "check with Stripe"));
++      setFailed("check");
++    } finally {
++      if (live()) setChecking(false);
++    }
++  }, [begin, showFresh]);
++
++  const retry =
++    failed === "open" ? openStripe : failed === "check" ? checkAgain : load;
++
++  if (loading && !view) {
++    return (
++      <View style={styles.card} testID={`${testID}-loading`}>
++        <ActivityIndicator
++          color={colors.primary}
++          accessibilityLabel="Loading your payout setup"
++        />
++      </View>
++    );
++  }
++
++  const copy = view ? connectCopy(view) : null;
++  return (
++    <View style={styles.card} testID={testID}>
++      {copy ? (
++        <>
++          <Text
++            style={styles.title}
++            accessibilityRole="header"
++            testID={`${testID}-title`}
++          >
++            {copy.title}
++          </Text>
++          <Text style={styles.body}>{copy.body}</Text>
++          {copy.due.length > 0 ? (
++            <View
++              style={styles.dueList}
++              accessibilityLabel={`Stripe needs: ${copy.due.join(", ")}`}
++            >
++              {copy.due.map((label) => (
++                <Text key={label} style={styles.dueItem}>
++                  {`\u2022 ${label}`}
++                </Text>
++              ))}
++            </View>
++          ) : null}
++          {stale ? (
++            <Text style={styles.note} testID={`${testID}-stale`}>
++              {stale === "saved"
++                ? "This shows the last update Stripe sent to TGP. A change made just now can take a few minutes to show here."
++                : "Stripe did not answer just now, so this may be a few seconds behind. Check again in a moment."}
++            </Text>
++          ) : null}
++        </>
++      ) : null}
++      {error ? (
++        <SetupNotice error={error} onRetry={retry} testID={`${testID}-error`} />
++      ) : null}
++      {copy?.action ? (
++        <TouchableOpacity
++          style={[styles.primary, opening && styles.disabled]}
++          onPress={openStripe}
++          disabled={opening}
++          accessibilityRole="button"
++          accessibilityLabel={copy.action}
++          accessibilityHint="Opens a secure Stripe page inside the app"
++          accessibilityState={{ busy: opening, disabled: opening }}
++          testID={`${testID}-open`}
++        >
++          {opening ? (
++            <ActivityIndicator color={colors.textOnPrimary} />
++          ) : (
++            <Text style={styles.primaryText}>{copy.action}</Text>
++          )}
++        </TouchableOpacity>
++      ) : null}
++      {view && view.state === "pending_verification" ? (
++        <TouchableOpacity
++          style={styles.secondary}
++          onPress={checkAgain}
++          disabled={checking}
++          accessibilityRole="button"
++          accessibilityLabel="Check status again"
++          accessibilityState={{ busy: checking, disabled: checking }}
++          testID={`${testID}-check`}
++        >
++          <Text style={styles.secondaryText}>Check status again</Text>
++        </TouchableOpacity>
++      ) : null}
++    </View>
++  );
++}
++
++const makeStyles = (colors: ThemeColors) =>
++  StyleSheet.create({
++    card: {
++      borderWidth: 1,
++      borderColor: colors.border,
++      backgroundColor: colors.surface,
++      padding: 16,
++      marginVertical: 8,
++    },
++    title: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 17,
++      color: colors.textPrimary,
++      marginBottom: 6,
++    },
++    body: {
++      fontFamily: "Inter_400Regular",
++      fontSize: 14,
++      lineHeight: 21,
++      color: colors.textPrimary,
++    },
++    dueList: { marginTop: 10 },
++    dueItem: {
++      fontFamily: "Inter_400Regular",
++      fontSize: 14,
++      lineHeight: 22,
++      color: colors.textPrimary,
++    },
++    note: {
++      fontFamily: "Inter_400Regular",
++      fontSize: 13,
++      lineHeight: 19,
++      color: colors.textSecondary,
++      marginTop: 8,
++    },
++    primary: {
++      backgroundColor: colors.primary,
++      minHeight: 48,
++      alignItems: "center",
++      justifyContent: "center",
++      marginTop: 14,
++      paddingHorizontal: 16,
++    },
++    disabled: { opacity: 0.6 },
++    primaryText: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 15,
++      color: colors.textOnPrimary,
++    },
++    secondary: {
++      minHeight: 44,
++      justifyContent: "center",
++      marginTop: 8,
++      alignSelf: "flex-start",
++    },
++    secondaryText: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 14,
++      color: colors.primary,
++    },
++  });
+diff --git a/src/components/coach/setup/InviteShareCard.tsx b/src/components/coach/setup/InviteShareCard.tsx
+new file mode 100644
+index 0000000..71b1a3f
+--- /dev/null
++++ b/src/components/coach/setup/InviteShareCard.tsx
+@@ -0,0 +1,242 @@
++/**
++ * S-COACH — the coach's permanent invite link (GET /coaches/me/invite-link)
++ * with Share, Copy and a scannable QR code. A client who joins with the link
++ * is added to this coach's roster.
++ */
++import React, { useCallback, useEffect, useMemo, useState } from "react";
++import {
++  ActivityIndicator,
++  Share,
++  StyleSheet,
++  Text,
++  TouchableOpacity,
++  View,
++} from "react-native";
++import * as Clipboard from "expo-clipboard";
++import { useTheme, ThemeColors } from "../../../theme/ThemeProvider";
++import { coachSetupApi, type InviteLink } from "../../../api/coachSetupApi";
++import {
++  describeError,
++  type FriendlyError,
++} from "../../../lib/coachSetup/errors";
++import SetupNotice from "./SetupNotice";
++import QrCode from "./QrCode";
++import { useCurrentUser } from "../../../hooks/useCurrentUser";
++import { prefsStorage } from "../../../storage/mmkv";
++import { inviteSharedKey } from "../../../lib/coachSetup/setupStatus";
++
++interface Props {
++  /** Called once the coach has shared or copied the link. */
++  onShared?: (how: "share" | "copy") => void;
++  packageName?: string | null;
++  testID?: string;
++}
++
++export default function InviteShareCard({
++  onShared,
++  packageName,
++  testID = "invite-share",
++}: Props) {
++  const { colors } = useTheme();
++  const styles = useMemo(() => makeStyles(colors), [colors]);
++  const [link, setLink] = useState<InviteLink | null>(null);
++  const [error, setError] = useState<FriendlyError | null>(null);
++  const [copied, setCopied] = useState(false);
++  const [showQr, setShowQr] = useState(false);
++  const user = useCurrentUser();
++  const coachId = user?.id ?? null;
++
++  const markShared = useCallback(
++    (how: "share" | "copy") => {
++      // Ticks "Invite your first client" on the Home checklist (this device).
++      if (coachId)
++        void prefsStorage
++          .set(inviteSharedKey(coachId), "true")
++          .catch(() => undefined);
++      onShared?.(how);
++    },
++    [coachId, onShared],
++  );
++
++  const load = useCallback(async () => {
++    setError(null);
++    try {
++      setLink(await coachSetupApi.inviteLink());
++    } catch (err) {
++      setError(describeError(err, "load your invite link"));
++    }
++  }, []);
++
++  useEffect(() => {
++    void load();
++  }, [load]);
++
++  const share = useCallback(async () => {
++    if (!link) return;
++    try {
++      const result = await Share.share({
++        message: packageName
++          ? `Join my coaching on The Growth Project. ${packageName} is waiting for you: ${link.url}`
++          : `Join my coaching on The Growth Project: ${link.url}`,
++      });
++      if (result.action === Share.sharedAction) markShared("share");
++    } catch (err) {
++      setError(describeError(err, "open the share sheet"));
++    }
++  }, [link, markShared, packageName]);
++
++  const copy = useCallback(async () => {
++    if (!link) return;
++    try {
++      await Clipboard.setStringAsync(link.url);
++      setCopied(true);
++      markShared("copy");
++    } catch (err) {
++      setError(describeError(err, "copy the link"));
++    }
++  }, [link, markShared]);
++
++  if (error && !link)
++    return (
++      <SetupNotice error={error} onRetry={load} testID={`${testID}-error`} />
++    );
++  if (!link) {
++    return (
++      <View style={styles.card}>
++        <ActivityIndicator
++          color={colors.primary}
++          accessibilityLabel="Loading your invite link"
++        />
++      </View>
++    );
++  }
++  return (
++    <View style={styles.card} testID={testID}>
++      <Text style={styles.label}>Your invite link</Text>
++      <Text style={styles.link} selectable testID={`${testID}-url`}>
++        {link.url}
++      </Text>
++      <Text style={styles.code}>Invite code {link.code}</Text>
++      <View style={styles.row}>
++        <TouchableOpacity
++          style={styles.primary}
++          onPress={share}
++          accessibilityRole="button"
++          accessibilityLabel="Share invite link"
++          testID={`${testID}-share`}
++        >
++          <Text style={styles.primaryText}>Share link</Text>
++        </TouchableOpacity>
++        <TouchableOpacity
++          style={styles.secondary}
++          onPress={copy}
++          accessibilityRole="button"
++          accessibilityLabel={
++            copied ? "Invite link copied" : "Copy invite link"
++          }
++          testID={`${testID}-copy`}
++        >
++          <Text style={styles.secondaryText}>
++            {copied ? "Copied" : "Copy link"}
++          </Text>
++        </TouchableOpacity>
++      </View>
++      <TouchableOpacity
++        style={styles.toggle}
++        onPress={() => setShowQr((v) => !v)}
++        accessibilityRole="button"
++        accessibilityState={{ expanded: showQr }}
++        accessibilityLabel={showQr ? "Hide QR code" : "Show QR code"}
++        testID={`${testID}-qr-toggle`}
++      >
++        <Text style={styles.secondaryText}>
++          {showQr ? "Hide QR code" : "Show QR code"}
++        </Text>
++      </TouchableOpacity>
++      {showQr ? (
++        <View style={styles.qr}>
++          <QrCode
++            value={link.url}
++            size={208}
++            accessibilityLabel="QR code for your invite link. A client can scan it with their phone camera."
++            testID={`${testID}-qr`}
++          />
++          <Text style={styles.hint}>
++            A client can scan this with their phone camera.
++          </Text>
++        </View>
++      ) : null}
++      {error ? <SetupNotice error={error} testID={`${testID}-error`} /> : null}
++    </View>
++  );
++}
++
++const makeStyles = (colors: ThemeColors) =>
++  StyleSheet.create({
++    card: {
++      borderWidth: 1,
++      borderColor: colors.border,
++      backgroundColor: colors.surface,
++      padding: 16,
++      marginVertical: 8,
++    },
++    label: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 13,
++      color: colors.textSecondary,
++      marginBottom: 4,
++    },
++    link: {
++      fontFamily: "Inter_500Medium",
++      fontSize: 15,
++      color: colors.textPrimary,
++    },
++    code: {
++      fontFamily: "Inter_400Regular",
++      fontSize: 13,
++      color: colors.textSecondary,
++      marginTop: 4,
++    },
++    row: { flexDirection: "row", gap: 12, marginTop: 14, flexWrap: "wrap" },
++    primary: {
++      backgroundColor: colors.primary,
++      minHeight: 48,
++      paddingHorizontal: 18,
++      justifyContent: "center",
++    },
++    primaryText: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 15,
++      color: colors.textOnPrimary,
++    },
++    secondary: {
++      borderWidth: 1,
++      borderColor: colors.primary,
++      minHeight: 48,
++      paddingHorizontal: 18,
++      justifyContent: "center",
++    },
++    secondaryText: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 15,
++      color: colors.primary,
++    },
++    toggle: {
++      minHeight: 44,
++      justifyContent: "center",
++      marginTop: 8,
++      alignSelf: "flex-start",
++    },
++    qr: {
++      alignItems: "center",
++      marginTop: 8,
++      padding: 12,
++      backgroundColor: "#FFFFFF",
++    },
++    hint: {
++      fontFamily: "Inter_400Regular",
++      fontSize: 13,
++      color: "#1A1A18",
++      marginTop: 8,
++    },
++  });
+diff --git a/src/components/coach/setup/SetupNotice.tsx b/src/components/coach/setup/SetupNotice.tsx
+new file mode 100644
+index 0000000..5a703c4
+--- /dev/null
++++ b/src/components/coach/setup/SetupNotice.tsx
+@@ -0,0 +1,86 @@
++/**
++ * S-COACH — renders a FriendlyError (src/lib/coachSetup/errors.ts) with a
++ * specific title, next step, and the server reference when there is one.
++ */
++import React, { useMemo } from "react";
++import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
++import { useTheme, ThemeColors } from "../../../theme/ThemeProvider";
++import type { FriendlyError } from "../../../lib/coachSetup/errors";
++
++interface Props {
++  error: FriendlyError;
++  onRetry?: () => void;
++  testID?: string;
++}
++
++export default function SetupNotice({ error, onRetry, testID }: Props) {
++  const { colors } = useTheme();
++  const styles = useMemo(() => makeStyles(colors), [colors]);
++  return (
++    <View
++      style={styles.box}
++      accessibilityRole="alert"
++      accessibilityLiveRegion="polite"
++      testID={testID}
++    >
++      <Text style={styles.title}>{error.title}</Text>
++      <Text style={styles.body}>{error.body}</Text>
++      {error.requestId ? (
++        <Text style={styles.ref} selectable>
++          Reference {error.requestId}
++        </Text>
++      ) : null}
++      {onRetry && error.retryable ? (
++        <TouchableOpacity
++          onPress={onRetry}
++          style={styles.retry}
++          accessibilityRole="button"
++          accessibilityLabel="Try again"
++          testID={testID ? `${testID}-retry` : undefined}
++        >
++          <Text style={styles.retryText}>Try again</Text>
++        </TouchableOpacity>
++      ) : null}
++    </View>
++  );
++}
++
++const makeStyles = (colors: ThemeColors) =>
++  StyleSheet.create({
++    box: {
++      borderWidth: 1,
++      borderColor: colors.error,
++      padding: 14,
++      marginVertical: 8,
++      backgroundColor: colors.surface,
++    },
++    title: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 15,
++      color: colors.textPrimary,
++      marginBottom: 4,
++    },
++    body: {
++      fontFamily: "Inter_400Regular",
++      fontSize: 14,
++      lineHeight: 20,
++      color: colors.textPrimary,
++    },
++    ref: {
++      fontFamily: "Inter_400Regular",
++      fontSize: 12,
++      color: colors.textSecondary,
++      marginTop: 6,
++    },
++    retry: {
++      marginTop: 10,
++      minHeight: 44,
++      justifyContent: "center",
++      alignSelf: "flex-start",
++    },
++    retryText: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 14,
++      color: colors.primary,
++    },
++  });
+diff --git a/src/components/coach/setup/__tests__/packageCreateDurability.test.tsx b/src/components/coach/setup/__tests__/packageCreateDurability.test.tsx
+new file mode 100644
+index 0000000..e4dd5a5
+--- /dev/null
++++ b/src/components/coach/setup/__tests__/packageCreateDurability.test.tsx
+@@ -0,0 +1,282 @@
++/**
++ * B-329-1 (Sol, retained) + C-329-8 (Opus) — B-COACH-5, agent 115.
++ *
++ * The first-package create is durable only if its identity is on disk before
++ * the request leaves. These tests drive the real FirstPackageForm and the real
++ * intent helper over a storage double that can refuse reads and writes, and a
++ * key-deduplicating backend double that can commit and lose the answer.
++ * Each one failed at 3a90f28a: a refused write still sent the create (so a
++ * restart sent a second key and made a second package), a refused read was
++ * taken as "nothing was sent", a day-old intent was dropped, and a removed
++ * package needed a second tap.
++ */
++import React from "react";
++import { render, fireEvent, waitFor } from "@testing-library/react-native";
++
++jest.mock("../../../../services/api", () => ({
++  __esModule: true,
++  default: {
++    get: jest.fn(),
++    post: jest.fn(async () => ({ data: {} })),
++    put: jest.fn(),
++  },
++}));
++jest.mock("../../../../services/sentry", () => ({
++  captureError: jest.fn(),
++  setSentryUser: jest.fn(),
++}));
++
++// Backend double: one package per Idempotency-Key (#641 createIdempotent).
++const mockRows = new Map<string, { id: string }>();
++let mockLoseAnswer = false;
++const mockCreate = jest.fn(async (_body: unknown, key: string) => {
++  let row = mockRows.get(key);
++  if (!row) {
++    row = { id: `pkg_${mockRows.size + 1}` };
++    mockRows.set(key, row);
++  }
++  if (mockLoseAnswer) {
++    mockLoseAnswer = false;
++    throw Object.assign(new Error("timeout of 30000ms exceeded"), {
++      code: "ECONNABORTED",
++      request: {},
++    });
++  }
++  return { data: row };
++});
++const mockUpdate = jest.fn(async (id: string) => ({ data: { id } }));
++jest.mock("../../../../api/packagesApi", () => ({
++  coachPackagesApi: {
++    create: (body: unknown, key: string) => mockCreate(body, key),
++    list: jest.fn(),
++    update: (id: string) => mockUpdate(id),
++  },
++}));
++const mockPublish = jest.fn(async () => ({}));
++jest.mock("../../../../api/coachSetupApi", () => ({
++  coachSetupApi: {
++    publishPackage: () => mockPublish(),
++    inviteLink: jest.fn(async () => ({ code: "INV1" })),
++    bindFreePackage: jest.fn(async () => ({})),
++  },
++}));
++
++const mockStore = new Map<string, string>();
++const mockStorage = { failWrites: 0, failReads: 0 };
++jest.mock("../../../../storage/mmkv", () => ({
++  prefsStorage: {
++    getStringAsync: async (k: string) => {
++      if (mockStorage.failReads > 0) {
++        mockStorage.failReads--;
++        throw new Error("storage read failed");
++      }
++      return mockStore.get(k);
++    },
++    set: async (k: string, v: string) => {
++      if (mockStorage.failWrites > 0) {
++        mockStorage.failWrites--;
++        throw new Error("storage full");
++      }
++      mockStore.set(k, v);
++    },
++    delete: async (k: string) => {
++      mockStore.delete(k);
++    },
++  },
++}));
++
++let mockUser: { id: string } | null = { id: "coach_1" };
++jest.mock("../../../../hooks/useCurrentUser", () => ({
++  useCurrentUser: () => mockUser,
++}));
++
++import FirstPackageForm from "../FirstPackageForm";
++import {
++  intentStorageKey,
++  newIntent,
++} from "../../../../lib/coachSetup/packageCreateIntent";
++
++const KEY = intentStorageKey("coach_1");
++
++beforeEach(() => {
++  mockStore.clear();
++  mockRows.clear();
++  mockLoseAnswer = false;
++  mockStorage.failWrites = 0;
++  mockStorage.failReads = 0;
++  mockUser = { id: "coach_1" };
++  mockCreate.mockClear();
++  mockUpdate.mockClear();
++  mockPublish.mockClear();
++});
++
++const mount = (onCreated = jest.fn()) =>
++  render(
++    <FirstPackageForm
++      defaultTitle="North coaching"
++      chargesEnabled
++      onCreated={onCreated}
++    />,
++  );
++
++describe("B-329-1 — a fresh create is sent only after its identity is on disk", () => {
++  it("storage refuses the write-ahead: nothing is sent, specific copy shows, and a restart makes exactly one package", async () => {
++    mockStorage.failWrites = 1;
++    const first = await mount();
++    await fireEvent.press(first.getByTestId("first-package-create"));
++    await first.findByTestId("first-package-error");
++    expect(mockCreate).not.toHaveBeenCalled();
++    expect(first.queryByText(/Something went wrong/)).toBeNull();
++    expect(
++      first.getByText("This device could not save your package details"),
++    ).toBeTruthy();
++
++    // Storage recovers; the create commits but the answer is lost; the app
++    // is killed and reopened, and the coach taps again.
++    mockLoseAnswer = true;
++    await fireEvent.press(first.getByTestId("first-package-create"));
++    await first.findByTestId("first-package-error");
++    await first.unmount();
++    const onCreated = jest.fn();
++    const second = await mount(onCreated);
++    await second.findByTestId("first-package-resumed");
++    await fireEvent.press(second.getByTestId("first-package-create"));
++    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
++
++    expect(mockRows.size).toBe(1);
++    expect(new Set(mockCreate.mock.calls.map((c) => c[1])).size).toBe(1);
++    expect(mockStore.has(KEY)).toBe(false);
++  });
++
++  it("an unreadable stored intent is not taken as 'nothing was sent': no fresh create until it reads", async () => {
++    // A create from before the restart is on disk and already committed.
++    const earlier = newIntent({
++      title: "North coaching",
++      priceCents: 4900,
++      currency: "usd",
++      billingInterval: "monthly",
++      intervalCount: 1,
++      description: null,
++      trialDays: 0,
++      features: [],
++    });
++    mockStore.set(KEY, JSON.stringify(earlier));
++    mockRows.set(earlier.key, { id: "pkg_1" });
++    mockStorage.failReads = 2; // the mount read and the submit re-read fail
++    const onCreated = jest.fn();
++    const screen = await mount(onCreated);
++    await fireEvent.press(screen.getByTestId("first-package-create"));
++    await screen.findByTestId("first-package-error");
++    expect(mockCreate).not.toHaveBeenCalled();
++    expect(
++      screen.getByText("Your earlier package details could not be read"),
++    ).toBeTruthy();
++
++    // Storage reads again: the earlier key is re-sent, never a new one.
++    await fireEvent.press(screen.getByTestId("first-package-create"));
++    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
++    expect(mockCreate.mock.calls.map((c) => c[1])).toEqual([earlier.key]);
++    expect(mockRows.size).toBe(1);
++  });
++
++  it("an intent from days ago still re-sends its own key (the backend keeps keys forever)", async () => {
++    const old = newIntent(
++      {
++        title: "North coaching",
++        priceCents: 4900,
++        currency: "usd",
++        billingInterval: "monthly",
++        intervalCount: 1,
++        description: null,
++        trialDays: 0,
++        features: [],
++      },
++      Date.now() - 3 * 86_400_000,
++    );
++    mockStore.set(KEY, JSON.stringify(old));
++    mockRows.set(old.key, { id: "pkg_1" });
++    const onCreated = jest.fn();
++    const screen = await mount(onCreated);
++    await screen.findByTestId("first-package-resumed");
++    await fireEvent.press(screen.getByTestId("first-package-create"));
++    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
++    expect(mockCreate.mock.calls.map((c) => c[1])).toEqual([old.key]);
++    expect(onCreated.mock.calls[0][0].id).toBe("pkg_1");
++    expect(mockRows.size).toBe(1);
++  });
++
++  it("no signed-in account: nothing is sent and the copy says what to do", async () => {
++    mockUser = null;
++    const screen = await mount();
++    await fireEvent.press(screen.getByTestId("first-package-create"));
++    await screen.findByTestId("first-package-error");
++    expect(mockCreate).not.toHaveBeenCalled();
++    expect(screen.getByText("Your account is still loading")).toBeTruthy();
++  });
++
++  it("leaving the screen while the create is in flight writes nothing into the form afterwards", async () => {
++    let release!: () => void;
++    mockCreate.mockImplementationOnce(
++      (_b: unknown, key: string) =>
++        new Promise((resolve) => {
++          release = () => {
++            mockRows.set(key, { id: "pkg_1" });
++            resolve({ data: { id: "pkg_1" } });
++          };
++        }),
++    );
++    const onCreated = jest.fn();
++    const screen = await mount(onCreated);
++    await fireEvent.press(screen.getByTestId("first-package-create"));
++    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
++    await screen.unmount();
++    release();
++    await new Promise((r) => setTimeout(r, 20));
++    expect(onCreated).not.toHaveBeenCalled();
++    expect(mockPublish).not.toHaveBeenCalled();
++    // B-329-5 (agent 118): nothing is written after the form closed. The
++    // intent that was sent stays, so reopening re-sends the same key and the
++    // server answers with the same package: no second package.
++    const kept = JSON.parse(mockStore.get(KEY) as string);
++    expect(kept.packageId).toBeNull();
++    const again = await mount(onCreated);
++    await again.findByTestId("first-package-resumed");
++    await fireEvent.press(again.getByTestId("first-package-create"));
++    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
++    expect(onCreated.mock.calls[0][0].id).toBe("pkg_1");
++    expect(mockRows.size).toBe(1);
++    expect(mockCreate.mock.calls[1][1]).toBe(kept.key);
++  });
++});
++
++describe("C-329-8 — a removed draft is recreated in the same tap", () => {
++  it("410 IDEMPOTENT_PACKAGE_REMOVED with unchanged details starts a fresh create at once", async () => {
++    const gone = newIntent({
++      title: "North coaching",
++      priceCents: 4900,
++      currency: "usd",
++      billingInterval: "monthly",
++      intervalCount: 1,
++      description: null,
++      trialDays: 0,
++      features: [],
++    });
++    mockStore.set(KEY, JSON.stringify(gone));
++    mockCreate.mockImplementationOnce(async () => {
++      throw Object.assign(new Error("HTTP 410"), {
++        response: {
++          status: 410,
++          data: { code: "IDEMPOTENT_PACKAGE_REMOVED" },
++          headers: {},
++        },
++      });
++    });
++    const onCreated = jest.fn();
++    const screen = await mount(onCreated);
++    await screen.findByTestId("first-package-resumed");
++    await fireEvent.press(screen.getByTestId("first-package-create"));
++    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
++    expect(mockCreate).toHaveBeenCalledTimes(2);
++    expect(mockCreate.mock.calls[1][1]).not.toBe(gone.key);
++  });
++});
+diff --git a/src/components/coach/setup/__tests__/packageCreateIdempotency.test.tsx b/src/components/coach/setup/__tests__/packageCreateIdempotency.test.tsx
+new file mode 100644
+index 0000000..d25dc19
+--- /dev/null
++++ b/src/components/coach/setup/__tests__/packageCreateIdempotency.test.tsx
+@@ -0,0 +1,191 @@
++/**
++ * S-COACH-3 (agent 113) — OR-112-16 / B-329-1 (Sol) / C-329-6 (Opus): the
++ * first-package create is idempotent end to end. One create attempt has one
++ * Idempotency-Key and one body, stored on the device BEFORE the request
++ * leaves, and every retry re-sends exactly that pair, including after the
++ * app is killed and reopened. The backend (#641) replays the package that
++ * key made. Each test here failed at 83ee0e46 (no stored intent, a list
++ * lookup decided whether to create again).
++ */
++import React from "react";
++import { render, fireEvent, waitFor } from "@testing-library/react-native";
++
++jest.mock("../../../../services/api", () => ({
++  __esModule: true,
++  default: {
++    get: jest.fn(),
++    post: jest.fn(async () => ({ data: {} })),
++    put: jest.fn(),
++  },
++}));
++jest.mock("../../../../services/sentry", () => ({
++  captureError: jest.fn(),
++  setSentryUser: jest.fn(),
++}));
++
++const mockCreate = jest.fn();
++const mockList = jest.fn();
++const mockUpdate = jest.fn();
++jest.mock("../../../../api/packagesApi", () => ({
++  coachPackagesApi: {
++    create: (...a: unknown[]) => mockCreate(...a),
++    list: (...a: unknown[]) => mockList(...a),
++    update: (...a: unknown[]) => mockUpdate(...a),
++  },
++}));
++
++const mockStore = new Map<string, string>();
++jest.mock("../../../../storage/mmkv", () => ({
++  prefsStorage: {
++    getStringAsync: async (k: string) => mockStore.get(k),
++    set: async (k: string, v: string) => {
++      mockStore.set(k, v);
++    },
++    delete: async (k: string) => {
++      mockStore.delete(k);
++    },
++  },
++}));
++
++jest.mock("../../../../hooks/useCurrentUser", () => ({
++  useCurrentUser: () => ({ id: "coach_1", email: "c@example.com" }),
++}));
++
++import FirstPackageForm from "../FirstPackageForm";
++import {
++  intentStorageKey,
++  newIntent,
++  parseIntent,
++} from "../../../../lib/coachSetup/packageCreateIntent";
++
++const offline = () =>
++  Object.assign(new Error("timeout of 30000ms exceeded"), {
++    code: "ECONNABORTED",
++    request: {},
++  });
++const httpError = (status: number, data: Record<string, unknown> = {}) =>
++  Object.assign(new Error(`HTTP ${status}`), {
++    response: { status, data, headers: {} },
++  });
++const row = (id = "pkg_1") => ({
++  id,
++  title: "North coaching",
++  priceCents: 4900,
++  billingInterval: "monthly",
++});
++
++const KEY = intentStorageKey("coach_1");
++
++beforeEach(() => {
++  mockStore.clear();
++  mockCreate.mockReset();
++  mockList.mockReset();
++  mockUpdate.mockReset();
++});
++
++const mount = (onCreated = jest.fn()) =>
++  render(
++    <FirstPackageForm
++      defaultTitle="North coaching"
++      chargesEnabled
++      onCreated={onCreated}
++    />,
++  );
++
++describe("OR-112-16 durable package-create intent", () => {
++  it("the key and body are stored before the create is sent", async () => {
++    let seenAtSend: string | undefined;
++    mockCreate.mockImplementationOnce(async () => {
++      seenAtSend = mockStore.get(KEY);
++      throw offline();
++    });
++    const { getByTestId, findByTestId } = await mount();
++    await fireEvent.press(getByTestId("first-package-create"));
++    await findByTestId("first-package-error");
++    const stored = parseIntent(seenAtSend);
++    expect(stored).not.toBeNull();
++    expect(stored?.key).toBe(mockCreate.mock.calls[0][1]);
++    expect(stored?.input).toEqual(mockCreate.mock.calls[0][0]);
++    expect(stored?.packageId).toBeNull();
++  });
++
++  it("the app is killed after a timeout: on reopen the same key and body are re-sent, once", async () => {
++    mockCreate.mockRejectedValueOnce(offline());
++    const first = await mount();
++    await fireEvent.press(first.getByTestId("first-package-create"));
++    await first.findByTestId("first-package-error");
++    const sentKey = mockCreate.mock.calls[0][1];
++    const sentBody = mockCreate.mock.calls[0][0];
++    await first.unmount();
++
++    // Reopen: a fresh component with no memory, only device storage.
++    mockCreate.mockResolvedValueOnce({ data: row("pkg_1") });
++    const onCreated = jest.fn();
++    const second = await mount(onCreated);
++    await second.findByTestId("first-package-resumed");
++    await fireEvent.press(second.getByTestId("first-package-create"));
++    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
++    expect(mockCreate).toHaveBeenCalledTimes(2);
++    expect(mockCreate.mock.calls[1][1]).toBe(sentKey);
++    expect(mockCreate.mock.calls[1][0]).toEqual(sentBody);
++    expect(mockList).not.toHaveBeenCalled();
++    // Finished: the intent is gone, so the next package gets a new key.
++    expect(mockStore.has(KEY)).toBe(false);
++  });
++
++  it("publish failed after create: on reopen create is not called again", async () => {
++    const api = jest.requireMock("../../../../services/api").default;
++    mockCreate.mockResolvedValueOnce({ data: row("pkg_1") });
++    api.post.mockRejectedValueOnce(httpError(503));
++    const first = await mount();
++    await fireEvent.press(first.getByTestId("first-package-create"));
++    await first.findByTestId("first-package-error");
++    expect(parseIntent(mockStore.get(KEY))?.packageId).toBe("pkg_1");
++    await first.unmount();
++
++    const onCreated = jest.fn();
++    const second = await mount(onCreated);
++    await second.findByTestId("first-package-resumed");
++    await fireEvent.press(second.getByTestId("first-package-create"));
++    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
++    expect(mockCreate).toHaveBeenCalledTimes(1);
++    expect(onCreated.mock.calls[0][0].id).toBe("pkg_1");
++  });
++
++  it("a definitive refusal clears the intent; the next send uses a new key", async () => {
++    mockCreate
++      .mockRejectedValueOnce(
++        httpError(400, { code: "PACKAGE_INVALID", message: "Name too long." }),
++      )
++      .mockResolvedValueOnce({ data: row() });
++    const onCreated = jest.fn();
++    const { getByTestId, findByTestId } = await mount(onCreated);
++    await fireEvent.press(getByTestId("first-package-create"));
++    await findByTestId("first-package-error");
++    expect(mockStore.has(KEY)).toBe(false);
++    await fireEvent.press(getByTestId("first-package-create"));
++    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
++    expect(mockCreate.mock.calls[1][1]).not.toBe(mockCreate.mock.calls[0][1]);
++  });
++});
++
++describe("parseIntent", () => {
++  it("drops malformed and foreign-version intents, never an old one (B-329-1)", () => {
++    const now = 1_800_000_000_000;
++    const it0 = newIntent(
++      { title: "A", priceCents: 0, billingInterval: "one_time" },
++      now,
++    );
++    expect(parseIntent(JSON.stringify(it0))?.key).toBe(it0.key);
++    expect(parseIntent("not json")).toBeNull();
++    expect(parseIntent(JSON.stringify({ ...it0, v: 2 }))).toBeNull();
++    expect(
++      parseIntent(JSON.stringify({ ...it0, input: { title: 1 } })),
++    ).toBeNull();
++    // The backend keeps the key forever, so a week-old intent still replays.
++    expect(
++      parseIntent(JSON.stringify({ ...it0, createdAt: now - 7 * 86_400_000 }))
++        ?.key,
++    ).toBe(it0.key);
++  });
++});
+diff --git a/src/components/coach/setup/__tests__/w2FixRound118.test.tsx b/src/components/coach/setup/__tests__/w2FixRound118.test.tsx
+new file mode 100644
+index 0000000..2e5e2ca
+--- /dev/null
++++ b/src/components/coach/setup/__tests__/w2FixRound118.test.tsx
+@@ -0,0 +1,523 @@
++/**
++ * B-WIZ-118 (agent 118) — fix round for mobile #346 (coach setup W2). Each
++ * case below failed at 4522eb8e (+ #345 merge):
++ *   B-345-1 (form level)  the coach's late cadence choice is what goes live
++ *   B-329-5 (Opus) / B-346-1 (Sol)  the form sent, published, bound or called
++ *            back after the form closed or the account changed
++ *   C-346-2  a remembered package archived since trapped the form
++ *   B-346-2 (Sol)  Get paid opened Stripe, re-read status or called back after
++ *            unmount or sign-out; Retry repeated the wrong action
++ *   B-346-1 (Opus)  first-person app copy on the checklist and setup screen
++ *   production capability (job B-WIZ-118): a server with no live Stripe
++ *            re-read is not described as "Stripe did not answer"
++ */
++import React from "react";
++import { render, fireEvent, waitFor } from "@testing-library/react-native";
++
++jest.mock("../../../../services/sentry", () => ({
++  captureError: jest.fn(),
++  setSentryUser: jest.fn(),
++}));
++
++type Row = Record<string, unknown>;
++const mockServer = {
++  rows: new Map<string, Row>(),
++  keys: new Map<string, string>(),
++  creates: 0,
++  patches: [] as Row[],
++  publishFailOnce: false,
++  publishHold: null as null | Promise<void>,
++  binds: 0,
++  inviteReads: 0,
++};
++function mockHttp(status: number, data: Row) {
++  return Object.assign(new Error(`HTTP ${status}`), {
++    response: { status, data, headers: {} },
++  });
++}
++jest.mock("../../../../services/api", () => ({
++  __esModule: true,
++  default: {
++    get: jest.fn(async (url: string) => {
++      if (url === "/coaches/me/invite-link") {
++        mockServer.inviteReads++;
++        return { data: { code: "INV1", url: "https://example.test/j/INV1" } };
++      }
++      throw mockHttp(404, { code: "UNEXPECTED_ROUTE" });
++    }),
++    post: jest.fn(
++      async (
++        url: string,
++        body: Row,
++        cfg?: { headers?: Record<string, string> },
++      ) => {
++        if (url === "/v1/coach/packages") {
++          const key = String(cfg?.headers?.["Idempotency-Key"] ?? "");
++          let id = mockServer.keys.get(key);
++          if (!id) {
++            mockServer.creates++;
++            id = `pkg_${mockServer.creates}`;
++            mockServer.keys.set(key, id);
++            mockServer.rows.set(id, {
++              id,
++              name: body.name,
++              amount_cents: body.amount_cents,
++              currency: "usd",
++              billing_type: body.billing_type,
++              interval: body.billing_interval ?? null,
++              interval_count: body.billing_interval_count ?? 1,
++              published_at: null,
++              archived_at: null,
++            });
++          }
++          return { data: { ...(mockServer.rows.get(id) as Row) } };
++        }
++        const m = /^\/v1\/coach\/packages\/([^/]+)\/publish$/.exec(url);
++        if (m) {
++          if (mockServer.publishHold) await mockServer.publishHold;
++          if (mockServer.publishFailOnce) {
++            mockServer.publishFailOnce = false;
++            throw Object.assign(new Error("Network Error"), {
++              code: "ERR_NETWORK",
++              request: {},
++            });
++          }
++          const row = mockServer.rows.get(decodeURIComponent(m[1]));
++          if (!row) throw mockHttp(404, { code: "PACKAGE_NOT_FOUND" });
++          if (row.archived_at)
++            throw mockHttp(400, { code: "PACKAGE_ARCHIVED" });
++          row.published_at = "2026-10-04T00:00:00.000Z";
++          return { data: { ...row } };
++        }
++        throw mockHttp(404, { code: "UNEXPECTED_ROUTE" });
++      },
++    ),
++    put: jest.fn(async () => {
++      mockServer.binds++;
++      return { data: {} };
++    }),
++    patch: jest.fn(async (url: string, body: Row) => {
++      mockServer.patches.push({ ...body });
++      const id = decodeURIComponent(url.split("/").pop() as string);
++      const row = mockServer.rows.get(id);
++      if (!row) throw mockHttp(404, { code: "PACKAGE_NOT_FOUND" });
++      if (body.name !== undefined) row.name = body.name;
++      if (body.amount_cents !== undefined) row.amount_cents = body.amount_cents;
++      if (body.billing_type !== undefined) row.billing_type = body.billing_type;
++      if ("billing_interval" in body) row.interval = body.billing_interval;
++      if ("billing_interval_count" in body)
++        row.interval_count = body.billing_interval_count ?? 1;
++      return { data: { ...row } };
++    }),
++  },
++}));
++
++const mockStore = new Map<string, string>();
++const mockHold = {
++  writes: false,
++  deletes: false,
++  pending: [] as Array<() => void>,
++};
++jest.mock("../../../../storage/mmkv", () => ({
++  prefsStorage: {
++    getStringAsync: async (k: string) => mockStore.get(k),
++    set: (k: string, v: string) => {
++      if (!mockHold.writes) {
++        mockStore.set(k, v);
++        return Promise.resolve();
++      }
++      return new Promise<void>((resolve) =>
++        mockHold.pending.push(() => {
++          mockStore.set(k, v);
++          resolve();
++        }),
++      );
++    },
++    delete: (k: string) => {
++      if (!mockHold.deletes) {
++        mockStore.delete(k);
++        return Promise.resolve();
++      }
++      return new Promise<void>((resolve) =>
++        mockHold.pending.push(() => {
++          mockStore.delete(k);
++          resolve();
++        }),
++      );
++    },
++  },
++}));
++
++let mockUser: { id: string } | null = { id: "coach_1" };
++jest.mock("../../../../hooks/useCurrentUser", () => ({
++  useCurrentUser: () => mockUser,
++}));
++
++const mockOpenAuth = jest.fn();
++const mockDismiss = jest.fn();
++jest.mock("expo-web-browser", () => ({
++  __esModule: true,
++  openAuthSessionAsync: (...a: unknown[]) => mockOpenAuth(...a),
++  dismissAuthSession: () => mockDismiss(),
++}));
++
++import FirstPackageForm from "../FirstPackageForm";
++import GetPaidPanel from "../GetPaidPanel";
++import { buildChecklist } from "../CoachSetupChecklist";
++import CoachSetupScreen from "../../../../screens/coach/setup/CoachSetupScreen";
++import { coachSetupApi } from "../../../../api/coachSetupApi";
++import api from "../../../../services/api";
++import { authEvents } from "../../../../utils/authEvents";
++import {
++  intentStorageKey,
++  newIntent,
++} from "../../../../lib/coachSetup/packageCreateIntent";
++
++jest.mock("../InviteShareCard", () => () => null);
++
++const KEY = intentStorageKey("coach_1");
++const flush = () => new Promise((r) => setTimeout(r, 30));
++const deferred = <T,>() => {
++  let resolve: (v: T) => void = () => undefined;
++  const promise = new Promise<T>((r) => (resolve = r));
++  return { promise, resolve };
++};
++
++const spies: Array<{ mockRestore: () => void }> = [];
++function spyApi<K extends keyof typeof coachSetupApi>(name: K) {
++  const sp = jest.spyOn(coachSetupApi, name);
++  spies.push(sp);
++  return sp;
++}
++const realGet = jest.mocked(api.get).getMockImplementation();
++const realPost = jest.mocked(api.post).getMockImplementation();
++afterEach(() => {
++  spies.splice(0).forEach((sp) => sp.mockRestore());
++  if (realGet) jest.mocked(api.get).mockImplementation(realGet);
++  if (realPost) jest.mocked(api.post).mockImplementation(realPost);
++});
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  mockServer.rows.clear();
++  mockServer.keys.clear();
++  mockServer.creates = 0;
++  mockServer.patches = [];
++  mockServer.publishFailOnce = false;
++  mockServer.publishHold = null;
++  mockServer.binds = 0;
++  mockServer.inviteReads = 0;
++  mockStore.clear();
++  mockHold.writes = false;
++  mockHold.deletes = false;
++  mockHold.pending = [];
++  mockUser = { id: "coach_1" };
++});
++
++const form = (onCreated: jest.Mock = jest.fn()) => (
++  <FirstPackageForm
++    defaultTitle="North coaching"
++    chargesEnabled
++    onCreated={onCreated}
++  />
++);
++
++describe("B-345-1 at the form: the cadence the coach picks is the cadence that goes live", () => {
++  it("monthly made, publish lost, One time picked: the live row is one-time", async () => {
++    mockServer.publishFailOnce = true;
++    const onCreated = jest.fn();
++    const s = await render(form(onCreated));
++    await fireEvent.press(s.getByTestId("first-package-create"));
++    await s.findByTestId("first-package-error");
++    await fireEvent.press(s.getByTestId("first-package-once"));
++    await fireEvent.press(s.getByTestId("first-package-create"));
++    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
++    expect(onCreated.mock.calls[0][0].billingInterval).toBe("one_time");
++    expect(mockServer.patches[0]).toMatchObject({
++      billing_type: "one_time",
++      billing_interval: null,
++    });
++    expect(mockServer.rows.get("pkg_1")).toMatchObject({
++      billing_type: "one_time",
++      interval: null,
++    });
++    expect(mockServer.creates).toBe(1);
++  });
++});
++
++describe("B-329-5: nothing is sent or written after the form closed or the account changed", () => {
++  it("closed while the write-ahead saves: no create", async () => {
++    mockHold.writes = true;
++    const s = await render(form());
++    await fireEvent.press(s.getByTestId("first-package-create"));
++    await waitFor(() => expect(mockHold.pending.length).toBe(1));
++    await s.unmount();
++    mockHold.writes = false;
++    mockHold.pending.splice(0).forEach((go) => go());
++    await flush();
++    expect(mockServer.creates).toBe(0);
++    expect(mockStore.has(KEY)).toBe(false);
++  });
++
++  it("account changed while the write-ahead saves: no create, and the form starts clean", async () => {
++    mockHold.writes = true;
++    const s = await render(form());
++    await fireEvent.changeText(
++      s.getByTestId("first-package-title"),
++      "Coach one plan",
++    );
++    await fireEvent.press(s.getByTestId("first-package-create"));
++    await waitFor(() => expect(mockHold.pending.length).toBe(1));
++    mockUser = { id: "coach_2" };
++    await s.rerender(form());
++    mockHold.writes = false;
++    mockHold.pending.splice(0).forEach((go) => go());
++    await flush();
++    expect(mockServer.creates).toBe(0);
++    expect(s.getByTestId("first-package-title").props.value).toBe(
++      "North coaching",
++    );
++    expect(s.queryByTestId("first-package-error")).toBeNull();
++  });
++
++  it("account changed while publish runs: no invite read, no binding, no callback", async () => {
++    const gate = deferred<void>();
++    mockServer.publishHold = gate.promise;
++    const onCreated = jest.fn();
++    const s = await render(form(onCreated));
++    await fireEvent.press(s.getByTestId("first-package-free"));
++    await fireEvent.press(s.getByTestId("first-package-create"));
++    await waitFor(() => expect(mockServer.creates).toBe(1));
++    mockUser = { id: "coach_2" };
++    await s.rerender(form(onCreated));
++    gate.resolve();
++    await flush();
++    expect(mockServer.inviteReads).toBe(0);
++    expect(mockServer.binds).toBe(0);
++    expect(onCreated).not.toHaveBeenCalled();
++    // Coach one's made package stays remembered for coach one.
++    expect(JSON.parse(mockStore.get(KEY) as string).packageId).toBe("pkg_1");
++  });
++
++  it("closed while the finished intent is being removed: no callback", async () => {
++    const onCreated = jest.fn();
++    const s = await render(form(onCreated));
++    mockHold.deletes = true;
++    await fireEvent.press(s.getByTestId("first-package-create"));
++    await waitFor(() => expect(mockHold.pending.length).toBe(1));
++    await s.unmount();
++    mockHold.deletes = false;
++    mockHold.pending.splice(0).forEach((go) => go());
++    await flush();
++    expect(onCreated).not.toHaveBeenCalled();
++  });
++});
++
++describe("C-346-2: a remembered package archived since does not trap the form", () => {
++  it("publish says PACKAGE_ARCHIVED: one fresh package is made and goes live in the same tap", async () => {
++    const made = {
++      ...newIntent({
++        title: "North coaching",
++        description: null,
++        priceCents: 4900,
++        currency: "usd",
++        billingInterval: "monthly",
++        intervalCount: 1,
++        trialDays: 0,
++        features: [],
++      }),
++      packageId: "pkg_old",
++    };
++    mockStore.set(KEY, JSON.stringify(made));
++    mockServer.rows.set("pkg_old", {
++      id: "pkg_old",
++      billing_type: "recurring",
++      interval: "month",
++      amount_cents: 4900,
++      archived_at: "2026-10-03T00:00:00.000Z",
++    });
++    const onCreated = jest.fn();
++    const s = await render(form(onCreated));
++    await s.findByTestId("first-package-resumed");
++    await fireEvent.press(s.getByTestId("first-package-create"));
++    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
++    expect(mockServer.creates).toBe(1);
++    expect(onCreated.mock.calls[0][0].id).toBe("pkg_1");
++    expect(mockServer.rows.get("pkg_1")?.published_at).toBeTruthy();
++  });
++});
++
++// Today's production status payload (legacy shape, no state/requirements).
++const ACCOUNT = {
++  configured: true,
++  account_id: "acct_1",
++  charges_enabled: false,
++  payouts_enabled: false,
++  requirements_due: ["external_account"],
++};
++const LINK = { url: "https://connect.stripe.com/setup/e/acct_1/abc" };
++const view = (over: Row = {}) => ({
++  state: "not_started",
++  accountId: null,
++  chargesEnabled: false,
++  payoutsEnabled: false,
++  detailsSubmitted: false,
++  actionRequired: true,
++  currentlyDue: [],
++  pastDue: [],
++  eventuallyDue: [],
++  pendingVerification: [],
++  deadline: null,
++  disabledReason: null,
++  refreshed: false,
++  ...over,
++});
++
++describe("B-346-2: Get paid belongs to its mount and session", () => {
++  it("closed while the Stripe link is minted: Stripe never opens", async () => {
++    spyApi("connectStatus").mockResolvedValue(view() as never);
++    const mint = deferred<typeof LINK>();
++    spyApi("createOnboardingLink").mockReturnValue(mint.promise as never);
++    const s = await render(<GetPaidPanel />);
++    await s.findByTestId("get-paid-open");
++    const pressed = fireEvent.press(s.getByTestId("get-paid-open"));
++    await waitFor(() =>
++      expect(coachSetupApi.createOnboardingLink).toHaveBeenCalled(),
++    );
++    await s.unmount();
++    mint.resolve(LINK);
++    await pressed;
++    await flush();
++    expect(mockOpenAuth).not.toHaveBeenCalled();
++  });
++
++  it("closed while Stripe is open: the sheet is dismissed, no re-read, no onChange", async () => {
++    spyApi("connectStatus").mockResolvedValue(view() as never);
++    spyApi("createOnboardingLink").mockResolvedValue(LINK as never);
++    const refresh = spyApi("refreshConnectStatus");
++    const sheet = deferred<{ type: string }>();
++    mockOpenAuth.mockReturnValue(sheet.promise);
++    const onChange = jest.fn();
++    const s = await render(<GetPaidPanel onChange={onChange} />);
++    await s.findByTestId("get-paid-open");
++    onChange.mockClear();
++    const pressed = fireEvent.press(s.getByTestId("get-paid-open"));
++    await waitFor(() => expect(mockOpenAuth).toHaveBeenCalledTimes(1));
++    await s.unmount();
++    expect(mockDismiss).toHaveBeenCalledTimes(1);
++    sheet.resolve({ type: "dismiss" });
++    await pressed;
++    await flush();
++    expect(refresh).not.toHaveBeenCalled();
++    expect(onChange).not.toHaveBeenCalled();
++  });
++
++  it("sign-out while the status re-read runs: the answer is dropped", async () => {
++    spyApi("connectStatus").mockResolvedValue(view() as never);
++    spyApi("createOnboardingLink").mockResolvedValue(LINK as never);
++    mockOpenAuth.mockResolvedValue({ type: "cancel" });
++    const reread = deferred<unknown>();
++    spyApi("refreshConnectStatus").mockReturnValue(reread.promise as never);
++    const onChange = jest.fn();
++    const s = await render(<GetPaidPanel onChange={onChange} />);
++    await s.findByTestId("get-paid-open");
++    onChange.mockClear();
++    const pressed = fireEvent.press(s.getByTestId("get-paid-open"));
++    await waitFor(() =>
++      expect(coachSetupApi.refreshConnectStatus).toHaveBeenCalled(),
++    );
++    authEvents.emit("logout");
++    reread.resolve(
++      view({ state: "active", chargesEnabled: true, payoutsEnabled: true }),
++    );
++    await pressed;
++    await flush();
++    expect(onChange).not.toHaveBeenCalled();
++    expect(s.queryByText("You are ready to get paid")).toBeNull();
++  });
++
++  it("Retry repeats the action that failed (a failed re-check is re-checked, Stripe is not reopened)", async () => {
++    spyApi("connectStatus").mockResolvedValue(
++      view({
++        state: "pending_verification",
++        accountId: "acct_1",
++        actionRequired: false,
++      }) as never,
++    );
++    const mint = spyApi("createOnboardingLink");
++    const refresh = spyApi("refreshConnectStatus")
++      .mockRejectedValueOnce(mockHttp(503, {}) as never)
++      .mockResolvedValueOnce(
++        view({
++          state: "pending_verification",
++          accountId: "acct_1",
++          refreshed: true,
++        }) as never,
++      );
++    const s = await render(<GetPaidPanel />);
++    await fireEvent.press(await s.findByTestId("get-paid-check"));
++    await fireEvent.press(await s.findByTestId("get-paid-error-retry"));
++    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(2));
++    expect(mint).not.toHaveBeenCalled();
++  });
++
++  it("today's server has no live re-read: the note says it is Stripe's last update, not a failed call", async () => {
++    jest.mocked(api.get).mockImplementation((async (url: string) => {
++      if (url === "/coach/connect/status") return { data: ACCOUNT };
++      throw mockHttp(404, {});
++    }) as never);
++    jest.mocked(api.post).mockImplementation((async (url: string) => {
++      if (url === "/coach/connect/onboarding-link") return { data: LINK };
++      throw mockHttp(404, { code: "NOT_FOUND" });
++    }) as never);
++    mockOpenAuth.mockResolvedValue({ type: "cancel" });
++    const s = await render(<GetPaidPanel />);
++    await fireEvent.press(await s.findByTestId("get-paid-open"));
++    const note = await s.findByTestId("get-paid-stale");
++    expect(note.props.children).toMatch(
++      /^This shows the last update Stripe sent to TGP\./,
++    );
++    expect(note.props.children).not.toMatch(/did not answer/);
++  });
++});
++
++describe("B-346-1: app copy has no first person and no exclamation marks", () => {
++  const FIRST_PERSON = /\b(we|We|us|our|Our)\b|!/;
++
++  it("every checklist line in every state", () => {
++    const states = [null, true, false] as const;
++    for (const connectActive of states)
++      for (const hasPackage of states)
++        for (const hasClient of states)
++          for (const paid of states)
++            for (const flag of [true, false])
++              for (const item of buildChecklist({
++                connectActive,
++                connectNeedsAttention: flag,
++                hasPackage,
++                hasClient,
++                sharedLink: flag,
++                paid,
++              }))
++                expect(`${item.label} ${item.detail}`).not.toMatch(
++                  FIRST_PERSON,
++                );
++  });
++
++  it("the setup screen", async () => {
++    spyApi("connectStatus").mockResolvedValue(view() as never);
++    const nav = { goBack: jest.fn() };
++    for (const section of ["get_paid", "invite"] as const) {
++      const s = await render(
++        <CoachSetupScreen
++          route={{ key: "k", name: "CoachSetup", params: { section } } as never}
++          navigation={nav as never}
++        />,
++      );
++      await flush();
++      const text = JSON.stringify(s.toJSON());
++      expect(text).not.toMatch(FIRST_PERSON);
++      await s.unmount();
++    }
++  });
++});
+diff --git a/src/navigation/CoachNavigator.tsx b/src/navigation/CoachNavigator.tsx
+index e5d139b..dfee7ee 100644
+--- a/src/navigation/CoachNavigator.tsx
++++ b/src/navigation/CoachNavigator.tsx
+@@ -90,6 +90,7 @@ const GatedCreditPackCheckoutScreen = withNonP2PPurchaseGate(CreditPackCheckoutS
+ // shell so the §2.6 celebration can overlay any tab when the coach's first
+ // payment INSERT lands (flag-gated; MMKV once-only).
+ import FirstPaymentWowHost from '../screens/coach/ed/FirstPaymentWowHost';
++import CoachSetupScreen from '../screens/coach/setup/CoachSetupScreen';
+ // Stream 2 — Coach AI execution drafts inbox (draft.client_message,
+ // draft.assign_workout, draft.assign_meal_plan, draft.send_notification).
+ import PendingAiDraftsScreen from '../screens/coach/PendingAiDraftsScreen';
+@@ -223,6 +224,8 @@ export type SettingsStackParamList = {
+   CoachTeamProfile: undefined;
+   // Payments — Stripe Connect + coach package marketplace.
+   CoachConnect: undefined;
++  /** S-COACH — wizard "Get paid" / "Invite" steps, reachable after setup. */
++  CoachSetup: { section: 'get_paid' | 'invite' } | undefined;
+   CoachPackagesList: undefined;
+   CoachPackageEdit: { packageId: string | null };
+   CoachPackageSubscribers: { packageId: string; title: string };
+@@ -451,6 +454,7 @@ function SettingsStackNavigator() {
+           Package CRUD lives in the CoachPackagesList → CoachPackageEdit →
+           CoachPackageSubscribers family below. */}
+       <SettingsStack.Screen name="CoachConnect" component={CoachConnectScreen} />
++      <SettingsStack.Screen name="CoachSetup" component={CoachSetupScreen} />
+       <SettingsStack.Screen name="CoachPackagesList" component={CoachPackagesListScreen} />
+       <SettingsStack.Screen name="CoachPackageEdit" component={CoachPackageEditScreen} />
+       <SettingsStack.Screen
+diff --git a/src/screens/coach/command-center/CoachHomeCards.tsx b/src/screens/coach/command-center/CoachHomeCards.tsx
+new file mode 100644
+index 0000000..c31678f
+--- /dev/null
++++ b/src/screens/coach/command-center/CoachHomeCards.tsx
+@@ -0,0 +1,60 @@
++/**
++ * S-COACH — cards at the top of the coach Home (Command Center Overview):
++ * the setup checklist. Each item opens the matching wizard step, which stays
++ * reachable after setup.
++ */
++import React, { useCallback } from "react";
++import { View } from "react-native";
++import { useNavigation } from "@react-navigation/native";
++import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
++import CoachSetupChecklist, {
++  type ChecklistTarget,
++} from "../../../components/coach/setup/CoachSetupChecklist";
++import type { CoachTabParamList } from "../../../navigation/CoachNavigator";
++
++export default function CoachHomeCards() {
++  const navigation =
++    useNavigation<BottomTabNavigationProp<CoachTabParamList>>();
++  const open = useCallback(
++    (target: ChecklistTarget, done: boolean | null) => {
++      switch (target) {
++        case "get_paid":
++          navigation.navigate("SettingsStack", {
++            screen: "CoachSetup",
++            params: { section: "get_paid" },
++          });
++          return;
++        case "invite":
++          navigation.navigate("SettingsStack", {
++            screen: "CoachSetup",
++            params: { section: "invite" },
++          });
++          return;
++        case "package":
++          navigation.navigate("SettingsStack", { screen: "CoachPackagesList" });
++          return;
++        case "money":
++          // A first payment needs a client on a package: before it lands,
++          // open the invite step; after, the packages list shows who pays.
++          // (Never the retired Earnings screen.)
++          if (done === true) {
++            navigation.navigate("SettingsStack", {
++              screen: "CoachPackagesList",
++            });
++          } else {
++            navigation.navigate("SettingsStack", {
++              screen: "CoachSetup",
++              params: { section: "invite" },
++            });
++          }
++          return;
++      }
++    },
++    [navigation],
++  );
++  return (
++    <View testID="coach-home-cards">
++      <CoachSetupChecklist onOpen={open} />
++    </View>
++  );
++}
+diff --git a/src/screens/coach/command-center/CommandCenterScreen.tsx b/src/screens/coach/command-center/CommandCenterScreen.tsx
+index b1bab83..b713d56 100644
+--- a/src/screens/coach/command-center/CommandCenterScreen.tsx
++++ b/src/screens/coach/command-center/CommandCenterScreen.tsx
+@@ -23,6 +23,7 @@ import AtRiskScreen from './AtRiskScreen';
+ import WinStreaksScreen from './WinStreaksScreen';
+ import InboxScreen from './InboxScreen';
+ import ActionQueueScreen from './ActionQueueScreen';
++import CoachHomeCards from './CoachHomeCards';
+ 
+ export type CommandCenterTab =
+   | 'overview'
+@@ -64,6 +65,7 @@ export default function CommandCenterScreen({
+             onNavigateToWinStreaks={() => setActiveTab('win-streaks')}
+             onNavigateToInbox={() => setActiveTab('inbox')}
+             onNavigateToActionQueue={() => setActiveTab('action-queue')}
++            header={<CoachHomeCards />}
+           />
+         );
+       case 'at-risk':
+diff --git a/src/screens/coach/command-center/OverviewScreen.tsx b/src/screens/coach/command-center/OverviewScreen.tsx
+index 9bc89a0..fb34aec 100644
+--- a/src/screens/coach/command-center/OverviewScreen.tsx
++++ b/src/screens/coach/command-center/OverviewScreen.tsx
+@@ -37,6 +37,8 @@ interface Props {
+   onNavigateToWinStreaks?: () => void;
+   onNavigateToInbox?: () => void;
+   onNavigateToActionQueue?: () => void;
++  /** S-COACH — Home cards (setup checklist, Money) shown above the roster. */
++  header?: React.ReactNode;
+ }
+ 
+ export default function OverviewScreen({
+@@ -44,6 +46,7 @@ export default function OverviewScreen({
+   onNavigateToWinStreaks,
+   onNavigateToInbox,
+   onNavigateToActionQueue,
++  header,
+ }: Props) {
+   const [state, setState] = useState<LoadState>('idle');
+   const [data, setData] = useState<CommandCenterOverview | null>(null);
+@@ -107,6 +110,7 @@ export default function OverviewScreen({
+       }
+     >
+       <CommandCenterMockDataBanner />
++      {header}
+ 
+       <Text style={styles.heading}>Command Center</Text>
+       <Text style={styles.subheading}>Your roster at a glance</Text>
+diff --git a/src/screens/coach/setup/CoachSetupScreen.tsx b/src/screens/coach/setup/CoachSetupScreen.tsx
+new file mode 100644
+index 0000000..af2e864
+--- /dev/null
++++ b/src/screens/coach/setup/CoachSetupScreen.tsx
+@@ -0,0 +1,96 @@
++/**
++ * S-COACH — the wizard's "Get paid" and "Invite your first client" steps,
++ * reachable any time from the Home checklist and from Settings, so a coach
++ * who skipped them in setup is never stuck.
++ */
++import React, { useMemo } from "react";
++import {
++  SafeAreaView,
++  ScrollView,
++  StyleSheet,
++  Text,
++  TouchableOpacity,
++} from "react-native";
++import type { NativeStackScreenProps } from "@react-navigation/native-stack";
++import { useTheme, ThemeColors } from "../../../theme/ThemeProvider";
++import GetPaidPanel from "../../../components/coach/setup/GetPaidPanel";
++import InviteShareCard from "../../../components/coach/setup/InviteShareCard";
++import type { SettingsStackParamList } from "../../../navigation/CoachNavigator";
++
++type Props = NativeStackScreenProps<SettingsStackParamList, "CoachSetup">;
++
++export default function CoachSetupScreen({ route, navigation }: Props) {
++  const { colors } = useTheme();
++  const styles = useMemo(() => makeStyles(colors), [colors]);
++  const section = route.params?.section ?? "get_paid";
++  return (
++    <SafeAreaView style={styles.container}>
++      <ScrollView contentContainerStyle={styles.inner}>
++        <TouchableOpacity
++          onPress={() => navigation.goBack()}
++          style={styles.back}
++          accessibilityRole="button"
++          accessibilityLabel="Go back"
++          testID="coach-setup-back"
++        >
++          <Text style={styles.backText}>Back</Text>
++        </TouchableOpacity>
++        {section === "get_paid" ? (
++          <>
++            <Text style={styles.heading} accessibilityRole="header">
++              Get paid
++            </Text>
++            <Text style={styles.body}>
++              Stripe, the payments provider TGP uses, collects your bank account
++              and ID on a secure page and sends your earnings to your bank. TGP
++              never sees those details.
++            </Text>
++            <GetPaidPanel testID="setup-get-paid" />
++          </>
++        ) : (
++          <>
++            <Text style={styles.heading} accessibilityRole="header">
++              Invite a client
++            </Text>
++            <Text style={styles.body}>
++              Send your link, or let them scan the QR code. When they join, they
++              appear in your client list.
++            </Text>
++            <InviteShareCard testID="setup-invite" />
++          </>
++        )}
++      </ScrollView>
++    </SafeAreaView>
++  );
++}
++
++const makeStyles = (colors: ThemeColors) =>
++  StyleSheet.create({
++    container: { flex: 1, backgroundColor: colors.background },
++    inner: { padding: 20 },
++    back: {
++      minHeight: 44,
++      justifyContent: "center",
++      alignSelf: "flex-start",
++      marginBottom: 8,
++    },
++    backText: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 15,
++      color: colors.primary,
++    },
++    heading: {
++      fontFamily: "CormorantGaramond_400Regular",
++      fontSize: 30,
++      lineHeight: 34,
++      color: colors.textPrimary,
++      marginBottom: 8,
++    },
++    body: {
++      fontFamily: "Inter_400Regular",
++      fontSize: 15,
++      lineHeight: 22,
++      color: colors.textSecondary,
++      marginBottom: 8,
++    },
++  });

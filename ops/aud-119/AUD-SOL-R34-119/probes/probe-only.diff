@@ -1,0 +1,785 @@
+diff --git a/test/aud-sol-r34-119-legacy.spec.ts b/test/aud-sol-r34-119-legacy.spec.ts
+new file mode 100644
+index 00000000..2f834836
+--- /dev/null
++++ b/test/aud-sol-r34-119-legacy.spec.ts
+@@ -0,0 +1,348 @@
++import { Logger } from '@nestjs/common';
++import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
++import { SubscriptionCheckoutService } from '../src/checkout/subscription-checkout.service';
++import { CoachFirstPaymentService } from '../src/notifications/coach-first-payment.service';
++import { FirstPaymentEmitter } from '../src/notifications/emitters/first-payment.emitter';
++import { makeCheckoutHelpers, makeFakePrisma, makeFakeStripe } from './support/b-recur-fakes';
++
++// Audit-only probes. Candidate code remains byte-identical to #680 @2b10687c.
++// Delivery order is intentionally different from object creation order.
++const NOW = 1_800_000_000;
++const CANARY = 'audit.person@example.test';
++
++function setup(over: Record<string, unknown> = {}, firstPayment?: any) {
++  const prisma = makeFakePrisma();
++  prisma._packages.push({ id: 'pkg', billing_type: 'recurring', duration_periods: null });
++  prisma._purchases.push({
++    id: 'cp_native', client_user_id: 'client', coach_user_id: 'coach', package_id: 'pkg',
++    amount_cents: 4900, currency: 'usd', billing_type: 'recurring',
++    stripe_subscription_id: 'sub_native', stripe_checkout_session_id: 'sub_native',
++    stripe_payment_intent_id: 'pi_first', stripe_customer_id: 'cus_native',
++    stripe_client_secret: 'seti_native_secret_fake', stripe_ephemeral_key: 'ek_fake',
++    status: 'pending', entitlement_active: false, trial_days: null, trial_started_at: null,
++    current_period_end: null, canceled_at: null, cancel_at_period_end: false, last_error: null,
++    idempotency_key: 'sub-client-key', created_at: new Date(),
++    ...over,
++  });
++  let live: any = {
++    id: 'sub_native', status: 'active', default_payment_method: 'pm_card',
++    current_period_end: NOW + 30 * 86400,
++  };
++  const stripe: any = {
++    retrieveSubscription: jest.fn(async () => ({ ...live })),
++    retrieveSubscriptionForCheckout: jest.fn(async () => ({ ...live })),
++    setSubscriptionDefaultPaymentMethod: jest.fn(async () => ({ ...live })),
++    retrieveInvoice: jest.fn(async () => ({ id: 'in_first', status: 'paid', paid: true })),
++  };
++  const fanout: any = {
++    onPurchaseEntitled: jest.fn(async () => undefined),
++    cancelPendingForPurchase: jest.fn(async () => 0),
++  };
++  const dunning: any = {
++    recordFailure: jest.fn(async () => ({})),
++    recordResolution: jest.fn(async () => null),
++    terminate: jest.fn(async () => null),
++  };
++  const splits: any = { onChargeSucceeded: jest.fn(async () => undefined) };
++  const svc = new CheckoutWebhookHandlerService(
++    prisma, stripe, splits, dunning, undefined, fanout, undefined, undefined, firstPayment,
++  );
++  return {
++    svc, prisma, stripe, fanout, dunning, splits,
++    row: () => prisma._purchases[0],
++    canonical: (patch: Record<string, unknown>) => { live = { ...live, ...patch }; },
++  };
++}
++
++const subEvent = (id: string, status: string, patch: Record<string, unknown> = {}) => ({
++  id, type: 'customer.subscription.updated',
++  created: NOW - 100,
++  data: { object: {
++    id: 'sub_native', status, current_period_end: NOW + 30 * 86400,
++    default_payment_method: 'pm_card', ...patch,
++  } },
++});
++const deletion = () => ({
++  id: 'evt_deleted', type: 'customer.subscription.deleted', created: NOW,
++  data: { object: { id: 'sub_native', status: 'canceled', canceled_at: NOW } },
++});
++const invoicePaid = () => ({
++  id: 'evt_paid', type: 'invoice.paid', created: NOW,
++  data: { object: {
++    id: 'in_first', subscription: 'sub_native', amount_paid: 4900, charge: 'ch_first',
++    paid: true, status: 'paid', status_transitions: { paid_at: NOW },
++  } },
++});
++const invoiceFailed = () => ({
++  id: 'evt_old_failed', type: 'invoice.payment_failed', created: NOW - 100,
++  data: { object: {
++    id: 'in_first', subscription: 'sub_native', amount_due: 4900,
++    billing_reason: 'subscription_create',
++    attempt_count: 1, status: 'open', paid: false,
++    last_payment_error: { message: 'Your card was declined.' },
++  } },
++});
++const setupSucceeded = () => ({
++  id: 'evt_setup', type: 'setup_intent.succeeded',
++  data: { object: {
++    id: 'seti_native', status: 'succeeded', customer: 'cus_native', payment_method: 'pm_card',
++  } },
++});
++
++describe('independent native webhook authority and ordering', () => {
++  it('control: chronological paid activation then deletion revokes access and drops', async () => {
++    const h = setup();
++    await h.svc.handle(subEvent('evt_active', 'active'), h.prisma);
++    expect(h.row().entitlement_active).toBe(true);
++    await h.svc.handle(deletion(), h.prisma);
++    expect(h.row().status).toBe('canceled');
++    expect(h.row().entitlement_active).toBe(false);
++    expect(h.fanout.cancelPendingForPurchase).toHaveBeenCalledTimes(1);
++  });
++
++  it('acceptance: a deleted paid subscription cannot be resurrected by an older active snapshot', async () => {
++    const h = setup({ status: 'active', entitlement_active: true });
++    h.canonical({ status: 'canceled' });
++    await h.svc.handle(deletion(), h.prisma);
++    h.fanout.onPurchaseEntitled.mockClear();
++    await h.svc.handle(subEvent('evt_late_active', 'active'), h.prisma);
++    expect(h.row().entitlement_active).toBe(false);
++    expect(h.row().status).toBe('canceled');
++    expect(h.fanout.onPurchaseEntitled).not.toHaveBeenCalled();
++  });
++
++  it('acceptance: older incomplete creation cannot revoke the first invoice already paid', async () => {
++    const h = setup();
++    const paid = invoicePaid();
++    await h.svc.handle(paid, h.prisma, await h.svc.prefetchForOuterTx(paid));
++    const created = subEvent('evt_older_created', 'incomplete', { default_payment_method: null });
++    created.type = 'customer.subscription.created';
++    await h.svc.handle(created, h.prisma);
++    expect(h.row().entitlement_active).toBe(true);
++    expect(h.row().status).toBe('active');
++  });
++
++  it('acceptance: a decline delivered after payment of that same first invoice cannot open dunning', async () => {
++    const h = setup();
++    const paid = invoicePaid();
++    await h.svc.handle(paid, h.prisma, await h.svc.prefetchForOuterTx(paid));
++    await h.svc.handle(invoiceFailed(), h.prisma);
++    expect(h.row().status).toBe('active');
++    expect(h.dunning.recordFailure).not.toHaveBeenCalled();
++  });
++
++  it('acceptance: an expired never-entitled attempt cannot enter renewal dunning on a late decline', async () => {
++    const h = setup();
++    await h.svc.handle(deletion(), h.prisma);
++    expect(h.row().status).toBe('expired');
++    await h.svc.handle(invoiceFailed(), h.prisma);
++    expect(h.row().status).toBe('expired');
++    expect(h.dunning.recordFailure).not.toHaveBeenCalled();
++  });
++
++  it('control: a live renewal decline is still a failure, not a first checkout attempt', async () => {
++    const h = setup({ status: 'active', entitlement_active: true });
++    const failed = invoiceFailed();
++    failed.data.object.billing_reason = 'subscription_cycle';
++    await h.svc.handle(failed, h.prisma);
++    expect(h.row().status).toBe('past_due');
++    expect(h.row().entitlement_active).toBe(true);
++    expect(h.dunning.recordFailure).toHaveBeenCalledTimes(1);
++  });
++
++  it('control: a pending first-invoice decline stays an attempt without dunning', async () => {
++    const h = setup();
++    const result = await h.svc.handle(invoiceFailed(), h.prisma);
++    expect(result.reason).toBe('first_attempt_declined');
++    expect(h.row().status).toBe('pending');
++    expect(h.dunning.recordFailure).not.toHaveBeenCalled();
++  });
++
++  it('control: the subscription first PaymentIntent never settles through the one-time path', async () => {
++    const h = setup();
++    await h.svc.handle({
++      id: 'evt_pi', type: 'payment_intent.succeeded', data: { object: { id: 'pi_first' } },
++    }, h.prisma);
++    expect(h.row().entitlement_active).toBe(false);
++    expect(h.row().status).toBe('pending');
++    expect(h.splits.onChargeSucceeded).not.toHaveBeenCalled();
++  });
++
++  it('control: first invoice without provider prefetch rejects for redelivery', async () => {
++    const h = setup();
++    h.stripe.retrieveSubscription.mockRejectedValueOnce(new Error('provider unavailable'));
++    const event = invoicePaid();
++    await expect(h.svc.handle(event, h.prisma, await h.svc.prefetchForOuterTx(event)))
++      .rejects.toThrow(/retry/);
++    expect(h.row().entitlement_active).toBe(false);
++  });
++
++  it('control: first entitlement fanout failure propagates inside the supplied transaction', async () => {
++    const h = setup();
++    h.fanout.onPurchaseEntitled.mockRejectedValueOnce(new Error('resolver unavailable'));
++    await expect(h.svc.handle(subEvent('evt_fanout', 'active'), h.prisma))
++      .rejects.toThrow('resolver unavailable');
++  });
++});
++
++describe('independent first-payment financial truth', () => {
++  const originalFlag = process.env.FEATURE_ROMAN_FIRST_PAYMENT;
++  beforeEach(() => { process.env.FEATURE_ROMAN_FIRST_PAYMENT = 'true'; });
++  afterEach(() => {
++    if (originalFlag === undefined) delete process.env.FEATURE_ROMAN_FIRST_PAYMENT;
++    else process.env.FEATURE_ROMAN_FIRST_PAYMENT = originalFlag;
++  });
++  function moneySetup(over: Record<string, unknown> = {}) {
++    const notifications: any = { createNotification: jest.fn(async () => undefined) };
++    const service = new CoachFirstPaymentService(new FirstPaymentEmitter(notifications));
++    const h = setup(over, service);
++    h.prisma.coachFirstPaymentNotification = {
++      // B-RECUR6B-118 replay: fixture shim only (the handler reads the ledger since round 4).
++      findUnique: jest.fn(async () => null),
++      create: jest.fn(async ({ data }: any) => ({ id: 'first-payment-ledger', ...data })),
++    };
++    return { ...h, notifications };
++  }
++
++  it('acceptance: saving a free trial card is not a $49 first payment', async () => {
++    const h = moneySetup({ trial_days: 7 });
++    await h.svc.handle(subEvent('evt_trial_card', 'trialing'), h.prisma);
++    expect(h.row().entitlement_active).toBe(true);
++    expect(h.notifications.createNotification).not.toHaveBeenCalled();
++    expect(h.prisma.coachFirstPaymentNotification.create).not.toHaveBeenCalled();
++  });
++
++  it('acceptance: actual first paid conversion after a trial records and notifies the paid amount', async () => {
++    const h = moneySetup({
++      trial_days: 7, trial_started_at: new Date(), status: 'trialing', entitlement_active: true,
++    });
++    const event = invoicePaid();
++    await h.svc.handle(event, h.prisma, await h.svc.prefetchForOuterTx(event));
++    expect(h.prisma.coachFirstPaymentNotification.create).toHaveBeenCalledWith({
++      data: expect.objectContaining({ amount: 4900 }),
++    });
++  });
++
++  it('acceptance: combo first invoice reports the actual $148 paid, not the $49 renewal snapshot', async () => {
++    const h = moneySetup();
++    const event = invoicePaid();
++    event.data.object.amount_paid = 14800;
++    await h.svc.handle(event, h.prisma, await h.svc.prefetchForOuterTx(event));
++    expect(h.prisma.coachFirstPaymentNotification.create).toHaveBeenCalledWith({
++      data: expect.objectContaining({ amount: 14800 }),
++    });
++  });
++});
++
++describe('independent one-trial persistence across reordered lifecycle deliveries', () => {
++  it('acceptance: paid-conversion-first delivery must still consume the client/coach trial', async () => {
++    const CLIENT = '11111111-1111-4111-8111-111111111111';
++    const COACH = '22222222-2222-4222-8222-222222222222';
++    const PKG = '33333333-3333-4333-8333-333333333333';
++    const PKG2 = '44444444-4444-4444-8444-444444444444';
++    const prisma = makeFakePrisma();
++    const stripe = makeFakeStripe();
++    prisma._users.push(
++      { id: CLIENT, email: 'client@example.test', name: 'Client', coach_id: COACH },
++      { id: COACH, email: 'coach@example.test', name: 'Coach', coach_id: null },
++    );
++    const pkg = {
++      coach_id: COACH, name: 'Coaching', amount_cents: 4900, currency: 'usd',
++      billing_type: 'recurring', interval: 'month', interval_count: 1,
++      recurring_amount_cents: null, recurring_interval: null, recurring_interval_count: null,
++      recurring_stripe_price_id: null, stripe_price_id: 'price_trial', trial_days: 7,
++      is_active: true, archived_at: null, published_at: new Date(),
++    };
++    prisma._packages.push({ ...pkg, id: PKG }, { ...pkg, id: PKG2 });
++    prisma._accounts.push({
++      coach_user_id: COACH, stripe_account_id: 'acct_coach', charges_enabled: true,
++      deauthorized_at: null,
++    });
++    const packages: any = {
++      getById: jest.fn(async (id: string) => prisma._packages.find((p: any) => p.id === id)),
++    };
++    const fee: any = { planFor: jest.fn(async () => ({ application_fee_cents: 98, head_coach_id: null })) };
++    const checkout = new SubscriptionCheckoutService(
++      prisma, stripe, packages, { ready: true } as any, fee, makeCheckoutHelpers(prisma) as any,
++    );
++    const handler = new CheckoutWebhookHandlerService(prisma, stripe);
++    const oldKey = process.env.STRIPE_PUBLISHABLE_KEY;
++    process.env.STRIPE_PUBLISHABLE_KEY = 'pk_test_audit';
++    try {
++      const first = await checkout.createSubscriptionIntent(CLIENT, {
++        package_id: PKG, idempotency_key: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
++      });
++      stripe._saveTrialCard(first.subscription_id);
++      // Trial card update was generated but not yet delivered. Conversion
++      // delivery wins; Stripe's canonical subscription is now active.
++      const live = stripe._subs.get(first.subscription_id);
++      Object.assign(live, {
++        status: 'active', default_payment_method: 'pm_card',
++        trial_start: NOW - 7 * 86400, trial_end: NOW,
++      });
++      await handler.handle({
++        id: 'evt_conversion_first', type: 'customer.subscription.updated',
++        data: { object: { ...live } },
++      }, prisma);
++      expect(prisma._purchases[0].entitlement_active).toBe(true);
++      await handler.handle({
++        id: 'evt_conversion_deleted', type: 'customer.subscription.deleted',
++        data: { object: { id: first.subscription_id, canceled_at: NOW } },
++      }, prisma);
++      await checkout.createSubscriptionIntent(CLIENT, {
++        package_id: PKG2, idempotency_key: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
++      });
++      expect(stripe.createSubscription.mock.calls[1][0].trialPeriodDays).toBeUndefined();
++      expect(prisma._purchases[0].trial_started_at).toBeInstanceOf(Date);
++    } finally {
++      if (oldKey === undefined) delete process.env.STRIPE_PUBLISHABLE_KEY;
++      else process.env.STRIPE_PUBLISHABLE_KEY = oldKey;
++    }
++  });
++});
++
++describe('independent canaries at all three new handler diagnostic sinks', () => {
++  const spies: Array<jest.SpyInstance> = [];
++  beforeEach(() => {
++    for (const method of ['warn', 'log', 'error'] as const) {
++      spies.push(jest.spyOn(Logger.prototype, method).mockImplementation(() => undefined));
++    }
++  });
++  afterEach(() => { spies.splice(0).forEach((spy) => spy.mockRestore()); });
++  const logged = () => JSON.stringify(spies.map((spy) => spy.mock.calls));
++  const secretError = () => Object.assign(new Error(CANARY), {
++    name: CANARY, code: 'audit_person_example_test',
++  });
++
++  it('lookup failure logs only the fixed error label and asks for redelivery', async () => {
++    const h = setup();
++    h.prisma.clientPurchase.findFirst.mockRejectedValueOnce(secretError());
++    const event = setupSucceeded();
++    const pre = await h.svc.prefetchForOuterTx(event);
++    await expect(h.svc.handle(event, h.prisma, pre)).rejects.toThrow(/redeliver/);
++    expect(logged()).toContain('lookup failed');
++    expect(logged()).not.toContain(CANARY);
++    expect(logged()).not.toContain('audit_person_example_test');
++  });
++
++  it('card attach failure logs only the fixed error label and asks for redelivery', async () => {
++    const h = setup({ trial_days: 7, status: 'trialing' });
++    h.canonical({ status: 'trialing', default_payment_method: null });
++    h.stripe.setSubscriptionDefaultPaymentMethod.mockRejectedValueOnce(secretError());
++    const event = setupSucceeded();
++    const pre = await h.svc.prefetchForOuterTx(event);
++    await expect(h.svc.handle(event, h.prisma, pre)).rejects.toThrow(/redeliver/);
++    expect(logged()).toContain('trial card attach failed');
++    expect(logged()).not.toContain(CANARY);
++    expect(logged()).not.toContain('audit_person_example_test');
++  });
++
++  it('no-transaction fanout failure logs only the fixed error label', async () => {
++    const h = setup();
++    h.fanout.onPurchaseEntitled.mockRejectedValueOnce(secretError());
++    await h.svc.handle(subEvent('evt_fanout_no_tx', 'active'));
++    expect(logged()).toContain('no-tx subscription path');
++    expect(logged()).not.toContain(CANARY);
++    expect(logged()).not.toContain('audit_person_example_test');
++  });
++});
+diff --git a/test/aud-sol-r34-119-pg-lock.spec.ts b/test/aud-sol-r34-119-pg-lock.spec.ts
+new file mode 100644
+index 00000000..eb0906e1
+--- /dev/null
++++ b/test/aud-sol-r34-119-pg-lock.spec.ts
+@@ -0,0 +1,132 @@
++// Independent #680 round-5 storage boundary proof. Launches a dedicated
++// throwaway PostgreSQL cluster on the Actions runner, never an app database.
++// Actual candidate handler + DunningService; real SQL row locks / FK checks.
++// Purchase read/write contents are doubles; the exact added raw lock and
++// DunningState purchase foreign key are real. This is not full-schema e2e.
++import { PrismaClient } from '@prisma/client';
++import { Logger } from '@nestjs/common';
++import { execFileSync } from 'node:child_process';
++import { existsSync, mkdtempSync, readdirSync } from 'node:fs';
++import { tmpdir } from 'node:os';
++import { join } from 'node:path';
++import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
++import { DunningService } from '../src/checkout/dunning.service';
++import { makeFakePrisma } from './support/b-recur-fakes';
++
++const PORT = 55471;
++let root: string;
++let bin: string;
++let started = false;
++let first: PrismaClient;
++let second: PrismaClient;
++
++beforeAll(async () => {
++  if (process.env.CI !== 'true') throw new Error('CI runner only; no local/live database allowed');
++  const versions = readdirSync('/usr/lib/postgresql').sort().reverse();
++  bin = join('/usr/lib/postgresql', versions.find((v) => existsSync(join('/usr/lib/postgresql', v, 'bin/initdb')))!, 'bin');
++  root = mkdtempSync(join(tmpdir(), 'sol-r34r5-pg-'));
++  execFileSync(join(bin, 'initdb'), ['-D', join(root, 'data'), '-A', 'trust', '-U', 'postgres', '--no-sync'], { stdio: 'pipe' });
++  execFileSync(join(bin, 'pg_ctl'), [
++    '-D', join(root, 'data'), '-l', join(root, 'postgres.log'),
++    '-o', `-p ${PORT} -k ${root} -h 127.0.0.1 -F`, '-w', 'start',
++  ], { stdio: 'pipe' });
++  started = true;
++  const url = `postgresql://postgres@127.0.0.1:${PORT}/postgres?connection_limit=1`;
++  first = new PrismaClient({ datasources: { db: { url } } });
++  second = new PrismaClient({ datasources: { db: { url } } });
++  await first.$executeRawUnsafe('CREATE TABLE "CoachPackage" (id text PRIMARY KEY)');
++  await first.$executeRawUnsafe('CREATE TABLE "ClientPurchase" (id text PRIMARY KEY)');
++  await first.$executeRawUnsafe('CREATE TABLE "DunningState" (id text PRIMARY KEY, purchase_id text UNIQUE REFERENCES "ClientPurchase"(id) ON DELETE CASCADE)');
++  // B-RECUR6B-118 replay shim: the reminder rows DunningService inserts reference the purchase too.
++  await first.$executeRawUnsafe('CREATE TABLE "PaymentReminder" (id text PRIMARY KEY, purchase_id text REFERENCES "ClientPurchase"(id) ON DELETE CASCADE)');
++  await first.$executeRawUnsafe(`INSERT INTO "CoachPackage" VALUES ('pkg_lock')`);
++  await first.$executeRawUnsafe(`INSERT INTO "ClientPurchase" VALUES ('cp_lock')`);
++  // Bound the second connection's wait rather than leave a hanging proof.
++  await second.$executeRawUnsafe(`SET lock_timeout = '1200ms'`);
++}, 30_000);
++
++afterAll(async () => {
++  await first?.$disconnect();
++  await second?.$disconnect();
++  if (started) execFileSync(join(bin, 'pg_ctl'), ['-D', join(root, 'data'), '-m', 'fast', '-w', 'stop'], { stdio: 'pipe' });
++});
++
++it('control: NO KEY UPDATE still serializes lifecycle writers and allows the dunning FK insert', async () => {
++  await first.$transaction(async (tx) => {
++    await tx.$queryRaw`SELECT id FROM "ClientPurchase" WHERE id = 'cp_lock' FOR NO KEY UPDATE`;
++    await second.$executeRawUnsafe(`INSERT INTO "DunningState" VALUES ('d_control', 'cp_lock')`);
++  });
++  await second.$executeRawUnsafe(`DELETE FROM "DunningState" WHERE id = 'd_control'`);
++});
++
++it('B-680-6: the first renewal decline must commit a dunning window, not swallow a self-blocked FK insert', async () => {
++  const db = makeFakePrisma();
++  const time = new Date(Date.now() - 60_000);
++  db._packages.push({ id: 'pkg_lock', billing_type: 'recurring' });
++  db._purchases.push({
++    id: 'cp_lock', package_id: 'pkg_lock', client_user_id: 'client_lock', coach_user_id: 'coach_lock',
++    billing_type: 'recurring', stripe_subscription_id: 'sub_lock', stripe_checkout_session_id: 'sub_lock',
++    status: 'active', entitlement_active: true, trial_days: null, trial_started_at: null,
++    updated_at: time, created_at: time, amount_cents: 4900, currency: 'usd',
++  });
++  let insertError: unknown;
++  db.dunningState = {
++    findUnique: jest.fn(async () => null),
++    create: jest.fn(async ({ data }: any) => {
++      try {
++        await second.$executeRawUnsafe(`INSERT INTO "DunningState" VALUES ('d_first_failure', 'cp_lock')`);
++      } catch (error) {
++        insertError = error;
++        throw error;
++      }
++      return { id: 'd_first_failure', ...data };
++    }),
++    update: jest.fn(async ({ data }: any) => ({ id: 'd_first_failure', ...data })),
++  };
++  // B-RECUR6B-118 replay shim: DunningService calls dunningAttempt.create and
++  // paymentReminder.create (the probe stubbed createMany / upsert only).
++  db.dunningAttempt = { createMany: jest.fn(async () => ({ count: 4 })), create: jest.fn(async ({ data }: any) => ({ id: 'da', ...data })) };
++  let reminder = 0;
++  db.paymentReminder = {
++    upsert: jest.fn(async () => ({})),
++    create: jest.fn(async ({ data }: any) => {
++      reminder += 1;
++      await second.$executeRawUnsafe(`INSERT INTO "PaymentReminder" VALUES ('pr_${reminder}', 'cp_lock')`);
++      return { id: `pr_${reminder}`, ...data };
++    }),
++  };
++  const stripe: any = {
++    retrieveInvoice: jest.fn(async () => ({ id: 'in_lock', status: 'open' })),
++    retrieveSubscription: jest.fn(async () => ({ id: 'sub_lock', status: 'past_due', latest_invoice: 'in_lock' })),
++  };
++  const dunning = new DunningService(db, stripe);
++  const handler = new CheckoutWebhookHandlerService(db, stripe, undefined, dunning);
++  const event = {
++    id: 'evt_lock_r5', type: 'invoice.payment_failed',
++    data: { object: { id: 'in_lock', subscription: 'sub_lock', billing_reason: 'subscription_cycle', amount_due: 4900 } },
++  };
++  const pre = await handler.prefetchForOuterTx(event);
++  const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
++  try {
++    const result = await first.$transaction(async (tx) => {
++      const adapter = { ...db, $queryRaw: tx.$queryRaw.bind(tx) };
++      return handler.handle(event, adapter, pre);
++    }, { timeout: 10_000 });
++    const recorded = await second.$queryRaw<Array<{ id: string }>>`SELECT id FROM "DunningState" WHERE purchase_id = 'cp_lock'`;
++    // Emit diagnostic observations before the expected-red assertion.
++    console.log('SOL_LOCK_PROOF', {
++      claimed: result.claimed, purchaseStatus: db._purchases[0].status,
++      windows: recorded.length, failureWasCaught: !!insertError,
++      errorCode: (insertError as { code?: string } | undefined)?.code,
++      dbCode: (insertError as { meta?: { code?: string } } | undefined)?.meta?.code,
++      warningCount: warn.mock.calls.length,
++    });
++    expect(result.claimed).toBe(true);
++    expect(recorded).toHaveLength(1);
++    expect(dunning.metrics.get('dunning_entered_total')).toBe(1);
++    const reminders = await second.$queryRaw<Array<{ id: string }>>`SELECT id FROM "PaymentReminder" WHERE purchase_id = 'cp_lock'`;
++    expect(reminders).toHaveLength(2);
++  } finally {
++    warn.mockRestore();
++  }
++}, 20_000);
+diff --git a/test/aud-sol-r34-119-replay.spec.ts b/test/aud-sol-r34-119-replay.spec.ts
+new file mode 100644
+index 00000000..48c62a14
+--- /dev/null
++++ b/test/aud-sol-r34-119-replay.spec.ts
+@@ -0,0 +1,287 @@
++// Independent exact-head boundary probes, AUD-SOL-R34R5-117.
++// Only provider and storage boundaries are doubles; the handler and the
++// first-payment service/emitter are the real candidate implementations.
++import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
++import { CoachFirstPaymentService } from '../src/notifications/coach-first-payment.service';
++import { FirstPaymentEmitter } from '../src/notifications/emitters/first-payment.emitter';
++import { makeFakePrisma } from './support/b-recur-fakes';
++
++const NOW = Math.floor(Date.now() / 1000);
++const PERIOD = NOW + 30 * 86400;
++let sequence = 0;
++const event = (type: string, object: Record<string, unknown>) => ({
++  id: `evt_sol_r34_${++sequence}`, type, data: { object },
++});
++const subscription = (status: string, over: Record<string, unknown> = {}) => ({
++  id: 'sub_sol_r34', status, customer: 'cus_sol_r34',
++  current_period_end: PERIOD, default_payment_method: 'pm_sol_r34',
++  cancel_at_period_end: false, ...over,
++});
++const paid = () => event('invoice.paid', {
++  id: 'in_sol_r34', subscription: 'sub_sol_r34', amount_paid: 14800,
++  currency: 'usd', charge: 'ch_sol_r34', billing_reason: 'subscription_cycle',
++});
++const failed = (reason = 'subscription_cycle') => event('invoice.payment_failed', {
++  id: 'in_sol_r34', subscription: 'sub_sol_r34', amount_due: 14800,
++  billing_reason: reason, attempt_count: 1,
++  last_payment_error: { message: 'Your card was declined.' },
++});
++
++function fixture(over: Record<string, unknown> = {}, money = false) {
++  const db = makeFakePrisma();
++  db._packages.push({ id: 'pkg_sol_r34', billing_type: 'recurring', duration_periods: null });
++  db._purchases.push({
++    id: 'cp_sol_r34', package_id: 'pkg_sol_r34', client_user_id: 'client_sol_r34',
++    coach_user_id: 'coach_sol_r34', amount_cents: 4900, currency: 'usd',
++    billing_type: 'recurring', stripe_subscription_id: 'sub_sol_r34',
++    stripe_checkout_session_id: 'sub_sol_r34', stripe_payment_intent_id: 'pi_sol_r34',
++    stripe_customer_id: 'cus_sol_r34', stripe_client_secret: 'pi_sol_r34_secret_x',
++    stripe_ephemeral_key: 'ek_sol_r34', status: 'active', entitlement_active: true,
++    trial_days: null, trial_started_at: null, current_period_end: new Date(PERIOD * 1000),
++    access_expires_at: new Date((PERIOD + 86400) * 1000),
++    canceled_at: null, cancel_at_period_end: false, last_error: null,
++    idempotency_key: 'sub-sol-r34', created_at: new Date(), ...over,
++  });
++  let live = subscription('active');
++  let invoiceStatus = 'open';
++  const stripe: any = {
++    retrieveSubscription: jest.fn(async () => ({ ...live })),
++    retrieveSubscriptionForCheckout: jest.fn(async () => ({ ...live })),
++    retrieveInvoice: jest.fn(async () => ({ id: 'in_sol_r34', status: invoiceStatus })),
++  };
++  const fanout: any = {
++    onPurchaseEntitled: jest.fn(async () => undefined),
++    cancelPendingForPurchase: jest.fn(async () => 0),
++  };
++  const dunning: any = {
++    recordFailure: jest.fn(async () => ({})),
++    recordResolution: jest.fn(async () => null),
++    terminate: jest.fn(async () => null),
++  };
++  const splits: any = { onChargeSucceeded: jest.fn(async () => undefined) };
++  const notifications: any = { createNotification: jest.fn(async () => undefined) };
++  const firstPayment = new CoachFirstPaymentService(new FirstPaymentEmitter(notifications));
++  db.coachFirstPaymentNotification = {
++    findUnique: jest.fn(async () => null),
++    create: jest.fn(async ({ data }: any) => ({ id: 'fp_sol_r34', ...data })),
++  };
++  const handler = new CheckoutWebhookHandlerService(
++    db, stripe, splits, dunning, undefined, fanout, undefined, undefined,
++    money ? firstPayment : undefined,
++  );
++  const deliver = async (e: ReturnType<typeof event>) =>
++    handler.handle(e, db, await handler.prefetchForOuterTx(e));
++  return {
++    db, stripe, handler, deliver, fanout, dunning, splits, notifications,
++    row: () => db._purchases[0],
++    setLive: (s: ReturnType<typeof subscription>) => { live = s; },
++    setInvoice: (status: string) => { invoiceStatus = status; },
++  };
++}
++
++describe('Sol R34: authority must stay valid until the serialized write', () => {
++  it('B-680-2 narrowed: renewal payment wins after failed-invoice prefetch, then the delayed decline cannot reopen dunning', async () => {
++    const h = fixture({ status: 'past_due', last_error: 'Your card was declined.' });
++    const decline = failed();
++    const pre = await h.handler.prefetchForOuterTx(decline);
++    expect(pre.failedInvoiceStatus).toBe('open');
++    h.setInvoice('paid');
++    await h.deliver(paid());
++    expect(h.row()).toMatchObject({ status: 'active', entitlement_active: true, last_error: null });
++    try { await h.handler.handle(decline, h.db, pre); } catch (err) {
++      expect(String(err)).toMatch(/redeliver/);
++    }
++    await h.deliver(decline);
++    expect(h.row()).toMatchObject({ status: 'active', entitlement_active: true, last_error: null });
++    expect(h.dunning.recordFailure).not.toHaveBeenCalled();
++  });
++
++  it('B-680-1 narrowed: an old paid-invoice read cannot regrant after a newer unpaid subscription write', async () => {
++    const h = fixture();
++    const payment = paid();
++    const pre = await h.handler.prefetchForOuterTx(payment);
++    h.setLive(subscription('unpaid'));
++    await h.deliver(event('customer.subscription.updated', subscription('unpaid')));
++    expect(h.row()).toMatchObject({ status: 'unpaid', entitlement_active: false });
++    // Redelivery or settlement-without-regrant is acceptable; stale activation is not.
++    try { await h.handler.handle(payment, h.db, pre); } catch (err) {
++      expect(String(err)).toMatch(/retry|redeliver/);
++    }
++    expect(h.row()).toMatchObject({ status: 'unpaid', entitlement_active: false });
++    expect(h.fanout.onPurchaseEntitled).not.toHaveBeenCalled();
++  });
++
++  it('B-680-2 narrowed: first-invoice decline cannot append its stale error after invoice.paid grants access', async () => {
++    const h = fixture({ status: 'pending', entitlement_active: false });
++    const realRead = h.db.clientPurchase.findUnique.getMockImplementation();
++    h.db.clientPurchase.findUnique.mockImplementationOnce(async (args: any) => {
++      const old = await realRead(args);
++      await h.deliver(paid());
++      return old;
++    });
++    await h.handler.handle(failed('subscription_create'), h.db, { failedInvoiceStatus: 'open' });
++    expect(h.row()).toMatchObject({ status: 'active', entitlement_active: true, last_error: null });
++  });
++
++  it('B-680-2 narrowed: the PaymentIntent decline also rechecks the purchase after a concurrent grant', async () => {
++    const h = fixture({ status: 'pending', entitlement_active: false });
++    const realRead = h.db.clientPurchase.findFirst.getMockImplementation();
++    h.db.clientPurchase.findFirst.mockImplementationOnce(async (args: any) => {
++      const old = await realRead(args);
++      await h.deliver(paid());
++      return old;
++    });
++    await h.handler.handle(event('payment_intent.payment_failed', {
++      id: 'pi_sol_r34', last_payment_error: { message: 'Your card was declined.' },
++    }), h.db);
++    expect(h.row()).toMatchObject({ status: 'active', entitlement_active: true, last_error: null });
++  });
++
++  it('control: a decline whose invoice was already paid at prefetch is ignored', async () => {
++    const h = fixture();
++    h.setInvoice('paid');
++    await h.deliver(failed());
++    expect(h.row()).toMatchObject({ status: 'active', last_error: null });
++    expect(h.dunning.recordFailure).not.toHaveBeenCalled();
++  });
++
++  it('control: live subscription authority does not revive a canceled purchase', async () => {
++    const h = fixture({ status: 'canceled', entitlement_active: false, canceled_at: new Date() });
++    await h.deliver(event('customer.subscription.updated', subscription('active')));
++    expect(h.row()).toMatchObject({ status: 'canceled', entitlement_active: false });
++    expect(h.fanout.onPurchaseEntitled).not.toHaveBeenCalled();
++  });
++});
++
++describe('Sol R34 round 5: remaining authority counterexamples', () => {
++  it('B-680-2 residual R119: a paid write into past_due is not the decline-associated subscription update', async () => {
++    const h = fixture({ status: 'active', updated_at: new Date(Date.now() - 60_000) });
++    h.setLive(subscription('past_due', { latest_invoice: 'in_sol_r34' }));
++    const decline = failed();
++    const pre = await h.handler.prefetchForOuterTx(decline);
++    expect(pre.failedInvoiceAuthority?.purchaseStatus).toBe('active');
++    h.setInvoice('paid');
++    h.setLive(subscription('past_due', { latest_invoice: 'in_newer_still_open' }));
++    await h.deliver(paid());
++    expect(h.row()).toMatchObject({ status: 'past_due', last_error: null });
++    expect(h.dunning.recordResolution).toHaveBeenCalledTimes(1);
++    try { await h.handler.handle(decline, h.db, pre); } catch (err) {
++      expect(String(err)).toMatch(/redeliver/);
++    }
++    expect(h.dunning.recordFailure).not.toHaveBeenCalled();
++    expect(h.row().last_error).toBeNull();
++  });
++
++  it.each(['refunded', 'chargeback_lost'])('R119 terminal %s never regrants on live subscription update', async (status) => {
++    const h = fixture({ status, entitlement_active: false });
++    await h.deliver(event('customer.subscription.updated', subscription('active')));
++    expect(h.row()).toMatchObject({ status, entitlement_active: false });
++    expect(h.fanout.onPurchaseEntitled).not.toHaveBeenCalled();
++  });
++
++  it.each(['canceled', 'expired', 'refunded', 'chargeback_lost'])('R119 terminal %s never regrants on a paid invoice prefetched after revocation', async (status) => {
++    const h = fixture({ status, entitlement_active: false });
++    const result = await h.deliver(paid());
++    expect(result).toMatchObject({ deferredSplit: { charge_id: 'ch_sol_r34', invoice_amount_cents: 14800 } });
++    expect(h.row()).toMatchObject({ status, entitlement_active: false });
++    expect(h.fanout.onPurchaseEntitled).not.toHaveBeenCalled();
++  });
++
++  it('B-680-2 residual: a paid old invoice stays settled even if another invoice keeps the subscription past_due', async () => {
++    const h = fixture({ status: 'past_due', updated_at: new Date(Date.now() - 60_000) });
++    h.setLive(subscription('past_due', { latest_invoice: 'in_sol_r34' }));
++    const decline = failed();
++    const pre = await h.handler.prefetchForOuterTx(decline);
++    h.setInvoice('paid');
++    h.setLive(subscription('past_due', { latest_invoice: 'in_newer_still_open' }));
++    await h.deliver(paid());
++    expect(h.row()).toMatchObject({ status: 'past_due', last_error: null });
++    expect(h.dunning.recordResolution).toHaveBeenCalledTimes(1);
++    try { await h.handler.handle(decline, h.db, pre); } catch (err) {
++      expect(String(err)).toMatch(/redeliver/);
++    }
++    // The newer unpaid invoice is not permission to re-open the paid old one.
++    expect(h.dunning.recordFailure).not.toHaveBeenCalled();
++    expect(h.row().last_error).toBeNull();
++  });
++
++  it('B-680-5: a default card with the create-time end still on is not proof that this attempt saved a card', async () => {
++    const h = fixture({ status: 'pending', entitlement_active: false, trial_days: 7, cancel_at_period_end: true });
++    h.setLive(subscription('trialing', { trial_start: NOW, cancel_at_period_end: true }));
++    await h.deliver(event('customer.subscription.updated', subscription('trialing')));
++    expect(h.row()).toMatchObject({ entitlement_active: false, trial_started_at: null });
++    expect(h.fanout.onPurchaseEntitled).not.toHaveBeenCalled();
++  });
++
++  it('B-680-5: the own successful SetupIntent lifts the create-time end even if the subscription already has a default', async () => {
++    const h = fixture({
++      status: 'trialing', entitlement_active: false, trial_days: 7,
++      stripe_client_secret: 'seti_OwnR5_secret_x', cancel_at_period_end: true,
++    });
++    h.setLive(subscription('trialing', { trial_start: NOW, cancel_at_period_end: true }));
++    h.stripe.setSubscriptionDefaultPaymentMethod = jest.fn(async () => ({}));
++    await h.deliver(event('setup_intent.succeeded', {
++      id: 'seti_OwnR5', customer: 'cus_sol_r34', status: 'succeeded', payment_method: 'pm_own_r5',
++    }));
++    expect(h.stripe.setSubscriptionDefaultPaymentMethod).toHaveBeenCalledWith({
++      subscriptionId: 'sub_sol_r34', paymentMethodId: 'pm_own_r5',
++      idempotencyKey: 'tgp-trial-card-sub_sol_r34-pm_own_r5',
++      liftTrialEnd: true,
++    });
++  });
++
++  it('control: a client-canceled already-granted trial is never resumed by redelivered SetupIntent success', async () => {
++    const h = fixture({
++      status: 'trialing', entitlement_active: true, trial_days: 7, trial_started_at: new Date(),
++      stripe_client_secret: 'seti_OwnR5_secret_x', cancel_at_period_end: true,
++    });
++    h.setLive(subscription('trialing', { trial_start: NOW, cancel_at_period_end: true }));
++    h.stripe.setSubscriptionDefaultPaymentMethod = jest.fn(async () => ({}));
++    await h.deliver(event('setup_intent.succeeded', {
++      id: 'seti_OwnR5', customer: 'cus_sol_r34', status: 'succeeded', payment_method: 'pm_own_r5',
++    }));
++    expect(h.stripe.setSubscriptionDefaultPaymentMethod).not.toHaveBeenCalled();
++    expect(h.row().cancel_at_period_end).toBe(true);
++  });
++});
++
++describe('Sol R34: paid invoice is distinct from subscription resync', () => {
++  const oldFlag = process.env.FEATURE_ROMAN_FIRST_PAYMENT;
++  beforeEach(() => { process.env.FEATURE_ROMAN_FIRST_PAYMENT = 'true'; });
++  afterEach(() => {
++    if (oldFlag === undefined) delete process.env.FEATURE_ROMAN_FIRST_PAYMENT;
++    else process.env.FEATURE_ROMAN_FIRST_PAYMENT = oldFlag;
++  });
++
++  it('B-680-3 narrowed: trial conversion with an unreadable subscription is not acknowledged without money effects', async () => {
++    const h = fixture({ status: 'trialing', trial_days: 7, trial_started_at: new Date() }, true);
++    h.stripe.retrieveSubscription.mockRejectedValueOnce(new Error('Stripe unavailable'));
++    let retriable = false;
++    let result: any;
++    try { result = await h.deliver(paid()); } catch (err) {
++      expect(String(err)).toMatch(/retry|redeliver/);
++      retriable = true;
++    }
++    // Either preserve retryability, or perform both money effects on the known paid invoice.
++    if (!retriable) {
++      expect(h.db.coachFirstPaymentNotification.create).toHaveBeenCalledWith({
++        data: expect.objectContaining({ amount: 14800, currency: 'usd' }),
++      });
++      expect(result.deferredSplit).toMatchObject({
++        charge_id: 'ch_sol_r34', invoice_amount_cents: 14800,
++      });
++    }
++  });
++
++  it('control: readable trial conversion records the actual positive paid amount and exact charge', async () => {
++    const h = fixture({ status: 'trialing', trial_days: 7, trial_started_at: new Date() }, true);
++    const result = await h.deliver(paid());
++    expect(h.db.coachFirstPaymentNotification.create).toHaveBeenCalledWith({
++      data: expect.objectContaining({ amount: 14800, currency: 'usd' }),
++    });
++    expect(result.deferredSplit).toMatchObject({
++      charge_id: 'ch_sol_r34', invoice_amount_cents: 14800,
++    });
++    expect(h.notifications.createNotification).toHaveBeenCalledTimes(2);
++  });
++});

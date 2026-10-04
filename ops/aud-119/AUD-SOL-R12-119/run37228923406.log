@@ -1,0 +1,85 @@
+targeted	Targeted jest	﻿2026-10-04T19:37:21.3087436Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T19:37:21.3087789Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T19:37:21.3088185Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T19:37:21.3088695Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T19:37:21.3089063Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T19:37:21.3089360Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T19:37:21.3151930Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T19:37:21.3152297Z env:
+targeted	Targeted jest	2026-10-04T19:37:21.3152523Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T19:37:21.3152879Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T19:37:21.3153208Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T19:37:21.3248016Z specs: test/audit-sol-r12-119-coach-deletion.spec.ts test/audit-sol-r12-119-postgres-fence.spec.ts test/audit-sol-r12r5-r1.spec.ts test/b-recur6a-118-r1.spec.ts test/b-recur-subscription-wire.spec.ts test/account-deletion/lifecycle-races.spec.ts
+targeted	Targeted jest	2026-10-04T19:37:23.9652116Z PASS test/account-deletion/lifecycle-races.spec.ts (108 MB heap size)
+targeted	Targeted jest	2026-10-04T19:37:24.5371167Z PASS test/audit-sol-r12r5-r1.spec.ts (144 MB heap size)
+targeted	Targeted jest	2026-10-04T19:37:26.3021293Z FAIL test/audit-sol-r12-119-postgres-fence.spec.ts (159 MB heap size)
+targeted	Targeted jest	2026-10-04T19:37:26.3115129Z   ● Console
+targeted	Targeted jest	2026-10-04T19:37:26.3115403Z 
+targeted	Targeted jest	2026-10-04T19:37:26.3115568Z     console.log
+targeted	Targeted jest	2026-10-04T19:37:26.3116338Z       SOL_COACH_FENCE { skipped: false, collected: [], creates: 1, status: 'canceled' }
+targeted	Targeted jest	2026-10-04T19:37:26.3116934Z 
+targeted	Targeted jest	2026-10-04T19:37:26.3117510Z       at Object.<anonymous> (test/audit-sol-r12-119-postgres-fence.spec.ts:161:11)
+targeted	Targeted jest	2026-10-04T19:37:26.3118120Z 
+targeted	Targeted jest	2026-10-04T19:37:26.3118947Z   ● B-678-4: coach finalization must not collect zero then tombstone after an in-flight send binds
+targeted	Targeted jest	2026-10-04T19:37:26.3120081Z 
+targeted	Targeted jest	2026-10-04T19:37:26.3120459Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T19:37:26.3121190Z 
+targeted	Targeted jest	2026-10-04T19:37:26.3121368Z     Expected: true
+targeted	Targeted jest	2026-10-04T19:37:26.3121819Z     Received: false
+targeted	Targeted jest	2026-10-04T19:37:26.3122061Z 
+targeted	Targeted jest	2026-10-04T19:37:26.3122950Z     ^[[0m ^[[90m 162 |^[[39m   ^[[90m// Safe outcomes: finalization skipped under shared send authority, or its^[[39m
+targeted	Targeted jest	2026-10-04T19:37:26.3124401Z      ^[[90m 163 |^[[39m   ^[[90m// billing stop collected this subscription before finishing erasure.^[[39m
+targeted	Targeted jest	2026-10-04T19:37:26.3126118Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 164 |^[[39m   expect(skipped ^[[33m||^[[39m ids^[[33m.^[[39mincludes(^[[32m'sub_1'^[[39m))^[[33m.^[[39mtoBe(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:37:26.3127634Z      ^[[90m     |^[[39m                                            ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:37:26.3128506Z      ^[[90m 165 |^[[39m }^[[33m,^[[39m ^[[35m15^[[39m_000)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:37:26.3129166Z      ^[[90m 166 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:37:26.3129433Z 
+targeted	Targeted jest	2026-10-04T19:37:26.3129925Z       at Object.<anonymous> (test/audit-sol-r12-119-postgres-fence.spec.ts:164:44)
+targeted	Targeted jest	2026-10-04T19:37:26.3130547Z 
+targeted	Targeted jest	2026-10-04T19:37:26.4879273Z PASS test/b-recur6a-118-r1.spec.ts (173 MB heap size)
+targeted	Targeted jest	2026-10-04T19:37:26.6458915Z PASS test/b-recur-subscription-wire.spec.ts (174 MB heap size)
+targeted	Targeted jest	2026-10-04T19:37:26.8047520Z FAIL test/audit-sol-r12-119-coach-deletion.spec.ts (186 MB heap size)
+targeted	Targeted jest	2026-10-04T19:37:26.8049251Z   ● B-678-3: deleting the coach also discovers an old uncertain native create
+targeted	Targeted jest	2026-10-04T19:37:26.8050046Z 
+targeted	Targeted jest	2026-10-04T19:37:26.8050943Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T19:37:26.8051389Z 
+targeted	Targeted jest	2026-10-04T19:37:26.8051581Z     - Expected  - 3
+targeted	Targeted jest	2026-10-04T19:37:26.8052192Z     + Received  + 1
+targeted	Targeted jest	2026-10-04T19:37:26.8052455Z 
+targeted	Targeted jest	2026-10-04T19:37:26.8052628Z     - Array [
+targeted	Targeted jest	2026-10-04T19:37:26.8053006Z     -   "sub_1",
+targeted	Targeted jest	2026-10-04T19:37:26.8053381Z     - ]
+targeted	Targeted jest	2026-10-04T19:37:26.8053747Z     + Array []
+targeted	Targeted jest	2026-10-04T19:37:26.8054121Z 
+targeted	Targeted jest	2026-10-04T19:37:26.8055806Z     ^[[0m ^[[90m 42 |^[[39m     metadata^[[33m:^[[39m { tgp_purchase_id^[[33m:^[[39m f^[[33m.^[[39mrow^[[33m.^[[39mid }^[[33m,^[[39m idempotencyKey^[[33m:^[[39m ^[[32m'original'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:37:26.8058130Z      ^[[90m 43 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:37:26.8060459Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 44 |^[[39m   expect(^[[36mawait^[[39m f^[[33m.^[[39mbilling^[[33m.^[[39mcollectUnboundAttemptSubscriptionIds(f^[[33m.^[[39mdb^[[33m,^[[39m ^[[33mCOACH^[[39m))^[[33m.^[[39mtoEqual([^[[32m'sub_1'^[[39m])^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:37:26.8063738Z      ^[[90m    |^[[39m                                                                             ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:37:26.8064720Z      ^[[90m 45 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:37:26.8065426Z      ^[[90m 46 |^[[39m
+targeted	Targeted jest	2026-10-04T19:37:26.8067209Z      ^[[90m 47 |^[[39m it(^[[32m'B-678-4: a coach finalized before send authority is acquired cannot receive a new subscription'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T19:37:26.8068702Z 
+targeted	Targeted jest	2026-10-04T19:37:26.8069461Z       at Object.<anonymous> (test/audit-sol-r12-119-coach-deletion.spec.ts:44:77)
+targeted	Targeted jest	2026-10-04T19:37:26.8070369Z 
+targeted	Targeted jest	2026-10-04T19:37:26.8071568Z   ● B-678-4: send authority also holds the coach identity through create and bind
+targeted	Targeted jest	2026-10-04T19:37:26.8072485Z 
+targeted	Targeted jest	2026-10-04T19:37:26.8073012Z     expect(received).toContain(expected) // indexOf
+targeted	Targeted jest	2026-10-04T19:37:26.8073698Z 
+targeted	Targeted jest	2026-10-04T19:37:26.8074186Z     Expected value: "22222222-2222-4222-8222-222222222222"
+targeted	Targeted jest	2026-10-04T19:37:26.8075140Z     Received array: ["11111111-1111-4111-8111-111111111111"]
+targeted	Targeted jest	2026-10-04T19:37:26.8075799Z 
+targeted	Targeted jest	2026-10-04T19:37:26.8077745Z     ^[[0m ^[[90m 70 |^[[39m   ^[[36mconst^[[39m locked ^[[33m=^[[39m f^[[33m.^[[39mdb^[[33m.^[[39m$queryRaw^[[33m.^[[39mmock^[[33m.^[[39mcalls^[[33m.^[[39mflatMap((args^[[33m:^[[39m any[]) ^[[33m=>^[[39m args^[[33m.^[[39mslice(^[[35m1^[[39m))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:37:26.8080051Z      ^[[90m 71 |^[[39m   expect(locked)^[[33m.^[[39mtoContain(^[[33mCLIENT^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:37:26.8082261Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 72 |^[[39m   expect(locked)^[[33m.^[[39mtoContain(^[[33mCOACH^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:37:26.8083648Z      ^[[90m    |^[[39m                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:37:26.8084778Z      ^[[90m 73 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:37:26.8085613Z      ^[[90m 74 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:37:26.8086144Z 
+targeted	Targeted jest	2026-10-04T19:37:26.8086837Z       at Object.<anonymous> (test/audit-sol-r12-119-coach-deletion.spec.ts:72:18)
+targeted	Targeted jest	2026-10-04T19:37:26.8087738Z 
+targeted	Targeted jest	2026-10-04T19:37:26.8088304Z Test Suites: 2 failed, 4 passed, 6 total
+targeted	Targeted jest	2026-10-04T19:37:26.8089236Z Tests:       3 failed, 67 passed, 70 total
+targeted	Targeted jest	2026-10-04T19:37:26.8090040Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T19:37:26.8091013Z Time:        4.662 s
+targeted	Targeted jest	2026-10-04T19:37:26.8092985Z Ran all test suites matching test/audit-sol-r12-119-coach-deletion.spec.ts|test/audit-sol-r12-119-postgres-fence.spec.ts|test/audit-sol-r12r5-r1.spec.ts|test/b-recur6a-118-r1.spec.ts|test/b-recur-subscription-wire.spec.ts|test/account-deletion/lifecycle-races.spec.ts.
+targeted	Targeted jest	2026-10-04T19:37:26.9517073Z ##[error]Process completed with exit code 1.

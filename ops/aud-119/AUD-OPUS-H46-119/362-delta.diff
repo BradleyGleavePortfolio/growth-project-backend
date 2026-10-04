@@ -1,0 +1,895 @@
+diff --git a/src/api/wearablesConnectionsApi.ts b/src/api/wearablesConnectionsApi.ts
+index 8dfc427..cdb2827 100644
+--- a/src/api/wearablesConnectionsApi.ts
++++ b/src/api/wearablesConnectionsApi.ts
+@@ -158,7 +158,7 @@ export const PROVIDER_CONFIG: Readonly<Record<WearableProvider, ProviderConfig>>
+     displayName: 'Samsung Health',
+     icon: '',
+     dataDescription:
+-      "We'll read your steps, heart rate, body composition and sleep from Samsung Health on this device.",
++      'The Growth Project reads the Health Connect data on this phone, including what Samsung Health shares with Health Connect.',
+     buckets: ['HEALTH_FITNESS', 'SLEEP_RECOVERY'],
+   },
+   GARMIN: {
+diff --git a/src/hooks/useWearableConnections.disconnect.test.tsx b/src/hooks/useWearableConnections.disconnect.test.tsx
+new file mode 100644
+index 0000000..5db50bd
+--- /dev/null
++++ b/src/hooks/useWearableConnections.disconnect.test.tsx
+@@ -0,0 +1,177 @@
++/**
++ * B-HC4-118 (Sol B-362-1/2/3, Opus C-362-1/3, B-364-1): Disconnect with the real hook, local
++ * state, session fence and paged Health Connect sync. Adapted from the AUD-SOL-H45-118 probe
++ * (run 37219439582). Only the network and native edges are doubles.
++ */
++import React from 'react';
++import { Platform } from 'react-native';
++import AsyncStorage from '@react-native-async-storage/async-storage';
++import { act, renderHook, waitFor } from '@testing-library/react-native';
++import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
++
++jest.mock('expo-constants', () => ({
++  __esModule: true,
++  default: { expoConfig: { extra: { healthConnectEnabled: true } } },
++}));
++jest.mock('../utils/logger', () => ({ logger: { warn: jest.fn(), log: jest.fn(), error: jest.fn() } }));
++let mockSignedIn: string | null = 'user-a';
++jest.mock('../lib/userCache', () => ({
++  readUserCache: jest.fn(async () => (mockSignedIn == null ? null : { id: mockSignedIn })),
++}));
++const mockDisconnect = jest.fn();
++jest.mock('../api/wearablesConnectionsApi', () => ({
++  wearablesConnectionsApi: { disconnect: (...args: unknown[]) => mockDisconnect(...args) },
++}));
++const mockReadRecords = jest.fn();
++jest.mock('react-native-health-connect', () => ({
++  readRecords: (...args: unknown[]) => mockReadRecords(...args),
++}));
++
++import { useDisconnectProvider } from './useWearableConnections';
++import type { WearableProvider } from '../api/wearablesConnectionsApi';
++import { logger } from '../utils/logger';
++import { authEvents } from '../utils/authEvents';
++import { beginSessionFence } from '../services/health/sessionFence';
++import { getLocalAuthorization, recordLocalAuthorization } from '../services/health/onDeviceState';
++import { healthConnectClient } from '../services/health/healthConnect/healthConnectClient';
++import { syncHealthConnect } from '../services/health/healthConnect/healthConnectSyncService';
++
++const PRIVATE = 'PRIVATE_WEIGHT_81_6_KG';
++const scope = { userId: 'user-a', connectionId: 'conn-a', source: 'HEALTH_CONNECT' as const };
++const oldOS = Platform.OS;
++const clients: QueryClient[] = [];
++async function disconnectHook() {
++  const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
++  clients.push(qc);
++  const invalidate = jest.spyOn(qc, 'invalidateQueries');
++  const wrapper = ({ children }: { children: React.ReactNode }) => (
++    <QueryClientProvider client={qc}>{children}</QueryClientProvider>
++  );
++  const { result } = await renderHook(() => useDisconnectProvider(), { wrapper });
++  return { result, invalidate };
++}
++function deferred<T>() {
++  let resolve: (x: T) => void = () => undefined;
++  const promise = new Promise<T>((yes) => (resolve = yes));
++  return { resolve, promise };
++}
++/** Starts a Disconnect whose server response is held; returns its release. */
++async function heldDisconnect() {
++  const response = deferred<{ success: boolean }>();
++  mockDisconnect.mockReturnValueOnce(response.promise);
++  const hook = await disconnectHook();
++  let pending: Promise<unknown> = Promise.resolve();
++  await act(async () => {
++    pending = hook.result.current.mutateAsync('HEALTH_CONNECT');
++  });
++  await waitFor(() => expect(mockDisconnect).toHaveBeenCalledTimes(1));
++  const release = async () =>
++    act(async () => {
++      response.resolve({ success: true });
++      await pending;
++    });
++  return { ...hook, release };
++}
++
++beforeEach(async () => {
++  jest.clearAllMocks();
++  await AsyncStorage.clear();
++  mockSignedIn = 'user-a';
++  Object.defineProperty(Platform, 'OS', { configurable: true, value: 'android' });
++  mockDisconnect.mockReset().mockImplementation(async (provider: string) => ({ provider }));
++  mockReadRecords.mockReset();
++});
++afterEach(() => {
++  jest.restoreAllMocks();
++  clients.splice(0).forEach((qc) => qc.clear());
++  Object.defineProperty(Platform, 'OS', { configurable: true, value: oldOS });
++});
++
++describe('useDisconnectProvider: on-device cleanup', () => {
++  it.each([new Error(PRIVATE), { message: PRIVATE, key: 'wearables_on_device:auth:x' }])(
++    'a failed cleanup logs a fixed class only (%p)',
++    async (rejection) => {
++      jest.spyOn(AsyncStorage, 'getAllKeys').mockRejectedValueOnce(rejection);
++      const { result } = await disconnectHook();
++      await act(async () => {
++        await result.current.mutateAsync('HEALTH_CONNECT');
++      });
++      await waitFor(() => expect(logger.warn).toHaveBeenCalled());
++      const payload = JSON.stringify(jest.mocked(logger.warn).mock.calls);
++      expect(payload).not.toContain(PRIVATE);
++      expect(payload).not.toContain('wearables_on_device');
++      expect(logger.warn).toHaveBeenCalledWith('[wearables] retire on-device state failed', {
++        error: rejection instanceof Error ? 'error' : 'other',
++      });
++    },
++  );
++
++  it("a response that lands after an account switch retires A's records only", async () => {
++    await recordLocalAuthorization(scope);
++    const { invalidate, release } = await heldDisconnect();
++    mockSignedIn = 'user-b';
++    authEvents.emit('login');
++    await recordLocalAuthorization({ ...scope, userId: 'user-b', connectionId: 'conn-b' });
++    await release();
++    await waitFor(async () => expect(await getLocalAuthorization('user-a', scope.source)).toBeNull());
++    expect((await getLocalAuthorization('user-b', scope.source))?.connectionId).toBe('conn-b');
++    expect(invalidate).not.toHaveBeenCalled();
++    expect(logger.warn).not.toHaveBeenCalled();
++  });
++
++  it('with no readable session, a current Disconnect still retires the source (Sol H6 probe)', async () => {
++    await recordLocalAuthorization(scope);
++    mockSignedIn = null;
++    const { result } = await disconnectHook();
++    await act(async () => {
++      await result.current.mutateAsync('SAMSUNG_HEALTH');
++    });
++    expect(mockDisconnect).toHaveBeenCalledWith('HEALTH_CONNECT');
++    await waitFor(async () => expect(await getLocalAuthorization('user-a', scope.source)).toBeNull());
++  });
++
++  it('a newer Connect by the same person during the Disconnect is kept', async () => {
++    await recordLocalAuthorization(scope, new Date('2026-10-01T00:00:00.000Z'));
++    const { release } = await heldDisconnect();
++    const newer = { ...scope, connectionId: 'conn-a2' };
++    await recordLocalAuthorization(newer, new Date('2026-10-02T00:00:00.000Z'));
++    await release();
++    await new Promise((r) => setTimeout(r, 0));
++    expect((await getLocalAuthorization('user-a', scope.source))?.connectionId).toBe('conn-a2');
++  });
++
++  it.each<[WearableProvider | null, string | null, number]>([
++    ['HEALTH_CONNECT', 'HEALTH_CONNECT', 1],
++    ['SAMSUNG_HEALTH', 'HEALTH_CONNECT', 1],
++    ['APPLE_HEALTHKIT', 'APPLE_HEALTHKIT', 2],
++    ['OURA', 'OURA', 2],
++    [null, null, 2],
++  ])('a held native page: Disconnect %p (server %p) leaves %p read(s)', async (provider, server, reads) => {
++    await recordLocalAuthorization(scope);
++    const fence = await beginSessionFence();
++    if (fence == null) throw new Error('setup: no fence');
++    const first = deferred<{ records: unknown[]; pageToken: string }>();
++    mockReadRecords.mockReturnValueOnce(first.promise).mockResolvedValue({ records: [] });
++    const syncing = syncHealthConnect(scope, {
++      fence,
++      client: {
++        ...healthConnectClient,
++        initialize: async () => true,
++        getGrantedPermissions: async () => [{ accessType: 'read', recordType: 'Steps' }],
++      },
++      ingestApi: { ingest: jest.fn().mockResolvedValue({ inserted: 0, skipped: 0 }) },
++    }).catch(() => undefined);
++    await waitFor(() => expect(mockReadRecords).toHaveBeenCalledTimes(1));
++    if (provider != null) {
++      const { result } = await disconnectHook();
++      await act(async () => {
++        await result.current.mutateAsync(provider);
++      });
++      expect(mockDisconnect).toHaveBeenCalledWith(server);
++    }
++    first.resolve({ records: [], pageToken: 'next-page' });
++    await syncing;
++    expect(mockReadRecords).toHaveBeenCalledTimes(reads);
++    expect((await getLocalAuthorization('user-a', scope.source)) == null).toBe(reads === 1);
++  });
++});
+diff --git a/src/hooks/useWearableConnections.ts b/src/hooks/useWearableConnections.ts
+index 8cf7553..53d78f9 100644
+--- a/src/hooks/useWearableConnections.ts
++++ b/src/hooks/useWearableConnections.ts
+@@ -19,12 +19,18 @@
+  */
+ 
+ import { WEARABLE_SAMPLES_ROOT_KEY } from './useWearableSamples';
++import { Platform } from 'react-native';
+ import {
+   getLocalAuthorization,
++  retireOnDeviceSource,
+   retireOnDeviceState,
+   type OnDeviceSource,
+ } from '../services/health/onDeviceState';
+-import { readSignedInUserId } from '../services/health/sessionFence';
++import {
++  currentAuthGeneration,
++  readSignedInUserId,
++  stopOnDeviceHealthWork,
++} from '../services/health/sessionFence';
+ import { logger } from '../utils/logger';
+ import {
+   useMutation,
+@@ -102,28 +108,79 @@ export function useStartOauth() {
+   });
+ }
+ 
++/**
++ * B-364-1: Samsung Health shares its data through Health Connect and has no
++ * connection of its own, so its row disconnects Health Connect.
++ */
++function connectionProviderFor(provider: WearableProvider): WearableProvider {
++  return provider === 'SAMSUNG_HEALTH' ? 'HEALTH_CONNECT' : provider;
++}
++
++/** This phone's on-device source, or null (web). */
++function phoneSource(): OnDeviceSource | null {
++  if (Platform.OS === 'ios') return 'APPLE_HEALTHKIT';
++  if (Platform.OS === 'android') return 'HEALTH_CONNECT';
++  return null;
++}
++
+ /**
+  * Soft-disconnect a provider, then invalidate the connections cache so the row
+  * re-renders with `status='disconnected'`.
++ *
++ * On-device sources (A-317-1 / B-317-1) also retire this phone's local
++ * authorization and progress, so nothing is read again until Connect:
++ * - Sol B-362-2: the person and auth generation are captured before the
++ *   first await. Cleanup removes only that person's records, and only while
++ *   the authorization seen at the start is still the stored one. A response
++ *   that lands after a sign-out or account switch refetches and reports
++ *   nothing for the next person.
++ * - Sol B-362-3 / C-362-3: on a current success for this phone's source,
++ *   every running on-device read stops synchronously, before any cleanup
++ *   await: no further native page, ingest request or progress write.
++ * - Sol B-362-1 / C-362-1: a failed cleanup logs a fixed class only.
++ * - Sol H6 probe: when the person is unknown (no readable session cache), a
++ *   current Disconnect retires the source for every account on this phone,
++ *   so Disconnect still stops reading.
+  */
+ export function useDisconnectProvider() {
+   const qc = useQueryClient();
+   return useMutation<DisconnectResult, Error, WearableProvider>({
+-    mutationFn: (provider) => wearablesConnectionsApi.disconnect(provider),
+-    onSuccess: (_result, provider) => {
+-      // S14 (A-317-1 / B-317-1): disconnecting an on-device source retires
+-      // this phone's local authorization and progress for it, so nothing is
+-      // read again until the person taps Connect again.
+-      if (provider === 'APPLE_HEALTHKIT' || provider === 'HEALTH_CONNECT') {
+-        retireOnDeviceState(provider)
+-          .catch((err: unknown) => {
+-            logger.warn('[wearables] retire on-device state failed', err);
+-          })
+-          .finally(() => {
+-            void qc.invalidateQueries({ queryKey: ON_DEVICE_LOCAL_AUTH_QUERY_KEY });
+-          });
++    mutationFn: async (requested) => {
++      const provider = connectionProviderFor(requested);
++      const generation = currentAuthGeneration();
++      const source: OnDeviceSource | null =
++        provider === 'APPLE_HEALTHKIT' || provider === 'HEALTH_CONNECT' ? provider : null;
++      const userId = source != null ? await readSignedInUserId() : null;
++      const grant =
++        userId != null && source != null ? await getLocalAuthorization(userId, source) : null;
++      const result = await wearablesConnectionsApi.disconnect(provider);
++      const retireOwn = () =>
++        userId != null && source != null
++          ? retireOnDeviceSource(userId, source, grant?.grantedAt ?? null)
++          : Promise.resolve();
++      if (currentAuthGeneration() !== generation) {
++        // Stale: only the originating person's own records are retired.
++        void retireOwn().catch(() => undefined);
++        return result;
+       }
+-      qc.invalidateQueries({ queryKey: WEARABLE_CONNECTIONS_QUERY_KEY });
++      if (source != null && source === phoneSource()) stopOnDeviceHealthWork();
++      const live = currentAuthGeneration(); // the stop above moves it
++      const retire = () =>
++        source != null && userId == null ? retireOnDeviceState(source) : retireOwn();
++      void retire()
++        .catch((err: unknown) => {
++          if (currentAuthGeneration() !== live) return;
++          logger.warn('[wearables] retire on-device state failed', {
++            error: err instanceof Error ? 'error' : 'other',
++          });
++        })
++        .finally(() => {
++          if (source != null && currentAuthGeneration() === live) {
++            void qc.invalidateQueries({ queryKey: ON_DEVICE_LOCAL_AUTH_QUERY_KEY });
++          }
++        });
++      void qc.invalidateQueries({ queryKey: WEARABLE_CONNECTIONS_QUERY_KEY });
++      return result;
+     },
+   });
+ }
+diff --git a/src/screens/client/wearables/ConnectProviderSheet.tsx b/src/screens/client/wearables/ConnectProviderSheet.tsx
+index b5af437..566a9f9 100644
+--- a/src/screens/client/wearables/ConnectProviderSheet.tsx
++++ b/src/screens/client/wearables/ConnectProviderSheet.tsx
+@@ -140,6 +140,8 @@ export default function ConnectProviderSheet({
+   } | null>(null);
+   const [requestingOnDevice, setRequestingOnDevice] = useState(false);
+   const [importing, setImporting] = useState(false);
++  /** The source connected and the sheet stays open to explain (empty import). */
++  const [connectedNotice, setConnectedNotice] = useState(false);
+ 
+   /**
+    * S14 round 3 (Sol A-317-1): the session fence for the current on-device
+@@ -177,6 +179,7 @@ export default function ConnectProviderSheet({
+     setRetry('connect');
+     setCtaOverride(undefined);
+     setResumeTarget(null);
++    setConnectedNotice(false);
+     // B-317-11: busy state belongs to the attempt; a run that is still
+     // settling for the previous sheet never keeps this one disabled.
+     setImporting(false);
+@@ -294,8 +297,10 @@ export default function ConnectProviderSheet({
+       emitTutorialSignal('wearable_connected');
+       if (firstRun && outcome.postedCount === 0) {
+         // Connected, nothing to bring in (S-WEAR-3): say so and where to check,
+-        // instead of closing as if data had arrived.
+-        onConnected?.();
++        // instead of closing as if data had arrived. B-362-1 / Sol B-362-4:
++        // the host's onConnected closes the sheet, so it is not called; the
++        // list was re-read above and the person closes the sheet.
++        setConnectedNotice(true);
+         showMessage(emptyImportMessage(target, name));
+         return;
+       }
+@@ -361,7 +366,7 @@ export default function ConnectProviderSheet({
+ 
+   const handleOnDeviceConnect = useCallback(
+     async (target: WearableProvider, epoch: number) => {
+-      const name = configFor(target).displayName;
++      const name = messageNameFor(target);
+       // Sol B-317-6: the attempt is live only while the sheet is mounted,
+       // visible and showing this provider (the epoch moves on any of those).
+       const current = () => mountedRef.current && epochRef.current === epoch;
+@@ -454,7 +459,7 @@ export default function ConnectProviderSheet({
+ 
+   const handleResume = useCallback(async () => {
+     if (provider == null || resumeTarget == null) return;
+-    const name = configFor(provider).displayName;
++    const name = messageNameFor(provider);
+     const fence = attemptRef.current;
+     if (fence == null) {
+       showMessage({
+@@ -484,7 +489,7 @@ export default function ConnectProviderSheet({
+ 
+   const handleContinue = useCallback(async () => {
+     if (provider == null) return;
+-    const name = configFor(provider).displayName;
++    const name = messageNameFor(provider);
+     if (isHealthConnectProviderDisabled(provider)) {
+       setError(HEALTH_CONNECT_DISABLED_MESSAGE);
+       setRetry('none');
+@@ -511,6 +516,7 @@ export default function ConnectProviderSheet({
+     setRetry('connect');
+     setCtaOverride(undefined);
+     setResumeTarget(null);
++    setConnectedNotice(false);
+ 
+     setRequestingOnDevice(true);
+     try {
+@@ -546,6 +552,9 @@ export default function ConnectProviderSheet({
+   // attempts alike). The shared mint mutation's isPending is not used: a
+   // mint still pending for a closed sheet must not disable the next one.
+   const continuing = requestingOnDevice;
++  // A connected source is closed, not cancelled (Sol B-362-4).
++  const dismissLabel =
++    buildDisabled || !showCta || resumeTarget != null || connectedNotice ? 'Close' : 'Cancel';
+ 
+   return (
+     <Modal
+@@ -590,9 +599,11 @@ export default function ConnectProviderSheet({
+                 <View
+                   style={styles.note}
+                   accessibilityRole="text"
+-                  accessibilityLabel={onDeviceDisclosure(config.displayName)}
++                  accessibilityLabel={onDeviceDisclosure(config.displayName, config.provider)}
+                 >
+-                  <Text style={styles.noteText}>{onDeviceDisclosure(config.displayName)}</Text>
++                  <Text style={styles.noteText}>
++                    {onDeviceDisclosure(config.displayName, config.provider)}
++                  </Text>
+                 </View>
+               )}
+ 
+@@ -638,11 +649,9 @@ export default function ConnectProviderSheet({
+                 style={styles.cancel}
+                 onPress={onClose}
+                 accessibilityRole="button"
+-                accessibilityLabel={buildDisabled || !showCta || resumeTarget != null ? 'Close' : 'Cancel'}
++                accessibilityLabel={dismissLabel}
+               >
+-                <Text style={styles.cancelText}>
+-                  {buildDisabled || !showCta || resumeTarget != null ? 'Close' : 'Cancel'}
+-                </Text>
++                <Text style={styles.cancelText}>{dismissLabel}</Text>
+               </Pressable>
+             </>
+           )}
+@@ -652,18 +661,32 @@ export default function ConnectProviderSheet({
+   );
+ }
+ 
++/**
++ * B-364-1: the name on-device messages use. Samsung Health shares its data
++ * through Health Connect, so what connects, asks and reads is Health Connect.
++ */
++function messageNameFor(provider: WearableProvider): string {
++  return provider === 'SAMSUNG_HEALTH' ? 'Health Connect' : configFor(provider).displayName;
++}
++
+ /**
+  * S14 (C-317-2): what Continue does, shown BEFORE the permission prompt.
+  * Plain copy consistent with the approved Apple Health usage string in
+  * app.json (coach personalizes training, recovery and check-ins). This is the
+  * required data collection for the feature, not the optional AI processing
+- * choice (consent box 2), which this sheet does not change.
++ * choice (consent box 2), which this sheet does not change. B-364-1: for
++ * Samsung Health, Health Connect asks, and every app's Health Connect data
++ * is read, not only Samsung Health's.
+  */
+-export function onDeviceDisclosure(displayName: string): string {
++export function onDeviceDisclosure(displayName: string, provider?: WearableProvider): string {
++  const data =
++    provider === 'SAMSUNG_HEALTH'
++      ? 'Health Connect data, from Samsung Health and every other app that shares with Health Connect,'
++      : `${displayName} data,`;
+   return (
+-    `When you continue, ${displayName} asks for permission on this phone. ` +
+-    `The Growth Project then brings in your last 30 days of ${displayName} data, and new data ` +
+-    `each time you open Health, so your coach can personalize your training, ` +
++    `When you continue, ${provider === 'SAMSUNG_HEALTH' ? 'Health Connect' : displayName} asks ` +
++    `for permission on this phone. The Growth Project then brings in your last 30 days of ${data} ` +
++    `and new data each time you open Health, so your coach can personalize your training, ` +
+     `recovery, and check-ins. Nothing is read or shared until you allow it.`
+   );
+ }
+diff --git a/src/screens/client/wearables/ConnectionsScreen.tsx b/src/screens/client/wearables/ConnectionsScreen.tsx
+index 908d26b..e7d7ce4 100644
+--- a/src/screens/client/wearables/ConnectionsScreen.tsx
++++ b/src/screens/client/wearables/ConnectionsScreen.tsx
+@@ -161,7 +161,7 @@ export function buildRows(
+     }
+   }
+ 
+-  const rows: ProviderRow[] = WEARABLE_PROVIDERS.map((provider) => {
++  const rowFor = (provider: WearableProvider): ProviderRow => {
+     const conn = byProvider.get(provider);
+     let status: BadgeTone = conn ? badgeTone(conn.status) : 'disconnected';
+     if (
+@@ -178,7 +178,14 @@ export function buildRows(
+       status,
+       lastSyncedAt: conn?.last_synced_at ?? null,
+     };
+-  });
++  };
++  // B-364-1: Samsung Health has no connection of its own (it shares through
++  // Health Connect), so its row mirrors the Health Connect row: the same
++  // status, sync time and action. A stored SAMSUNG_HEALTH row is never shown
++  // as an active source.
++  const rows: ProviderRow[] = WEARABLE_PROVIDERS.map((provider) =>
++    provider === 'SAMSUNG_HEALTH' ? { ...rowFor('HEALTH_CONNECT'), provider } : rowFor(provider),
++  );
+ 
+   const tier = (s: BadgeTone): number =>
+     s === 'connected' ? 0 : s === 'error' || s === 'expired' || s === 'notSyncing' ? 1 : 2;
+@@ -243,6 +250,12 @@ function ConnectionRow({
+         {row.status === 'notSyncing' && (
+           <Text style={styles.synced}>{notSyncingHereCopy(config.displayName)}</Text>
+         )}
++        {row.provider === 'SAMSUNG_HEALTH' && (
++          <Text style={styles.synced}>
++            Samsung Health shares its data through Health Connect, so this row shows the Health
++            Connect connection.
++          </Text>
++        )}
+       </View>
+ 
+       <Pressable
+@@ -335,6 +348,7 @@ export default function ConnectionsScreen() {
+     const provider = confirmProvider;
+     const name = configFor(provider).displayName;
+     setDisconnectError(null);
++    // For the Samsung Health row the hook disconnects Health Connect (B-364-1).
+     disconnect.mutate(provider, {
+       onSuccess: () => {
+         setConfirmProvider(null);
+diff --git a/src/screens/client/wearables/WearablesShell.tsx b/src/screens/client/wearables/WearablesShell.tsx
+index 42704f3..bdb2ac7 100644
+--- a/src/screens/client/wearables/WearablesShell.tsx
++++ b/src/screens/client/wearables/WearablesShell.tsx
+@@ -85,6 +85,32 @@ export function refreshErrorClass(err: unknown): RefreshErrorClass {
+   return 'error';
+ }
+ 
++/**
++ * C-362-2: on this screen a Connect-again message's button reads Reconnect
++ * (it opens Connections), so the copy names that button.
++ */
++function healthScreenMessage(message: OnDeviceMessage): OnDeviceMessage {
++  if (message.action !== 'connect') return message;
++  return { ...message, text: message.text.replace(/\b([Tt])ap Continue\b/g, '$1ap Reconnect') };
++}
++
++/**
++ * Opus B-362-2: after Health Connect settings or the Play Store opened from
++ * the notice (or failed to open), the next step is Try again on this screen.
++ */
++function returnToHealthMessage(target: 'settings' | 'store', opened: boolean, name: string) {
++  if (opened) {
++    return target === 'settings'
++      ? `When ${name} access is allowed for The Growth Project, tap Try again to bring in new data.`
++      : 'When Health Connect is installed or updated, tap Try again to bring in new data.';
++  }
++  return target === 'settings'
++    ? `Health Connect didn't open. Open Settings on this phone, search for Health Connect, choose ` +
++        `App permissions, then The Growth Project, and allow access. Then come back and tap Try again.`
++    : `The Play Store didn't open. Open the Play Store, search for Health Connect and install or ` +
++        `update it, then come back and tap Try again.`;
++}
++
+ export default function WearablesShell() {
+   const navigation = useNavigation<NavigationProp<ParamListBase>>();
+   const route = useRoute<RouteProp<Record<string, HealthRouteParams>, string>>();
+@@ -168,8 +194,9 @@ export default function WearablesShell() {
+         // C-317-b: a closed class only, never the message, body or the
+         // (mutable) Error.name.
+         logger.warn('[wearables] on-device refresh failed', { error: refreshErrorClass(err) });
+-        const message = connectFailureMessage(err, deviceName);
+-        if (message != null) {
++        const failure = connectFailureMessage(err, deviceName);
++        if (failure != null) {
++          const message = healthScreenMessage(failure);
+           setNotice({ kind: 'retry', text: message.text, action: message.action, cta: message.cta });
+         }
+       });
+@@ -200,12 +227,20 @@ export default function WearablesShell() {
+         void signOut();
+         return;
+       }
+-      if (action === 'open_settings') {
+-        void openHealthConnectPermissions();
+-        return;
+-      }
+-      if (action === 'open_store') {
+-        void openHealthConnectStore();
++      if (action === 'open_settings' || action === 'open_store') {
++        // Opus B-362-2: the notice then names a step that exists here (Try
++        // again re-runs the refresh), or says the app did not open. Only for
++        // the run that showed it, on this screen, in this session.
++        const target = action === 'open_settings' ? 'settings' : 'store';
++        const run = latestRunRef.current;
++        const generation = currentAuthGeneration();
++        const open = target === 'settings' ? openHealthConnectPermissions : openHealthConnectStore;
++        void open().then((opened) => {
++          if (!mountedRef.current || latestRunRef.current !== run) return;
++          if (currentAuthGeneration() !== generation) return;
++          const text = returnToHealthMessage(target, opened, deviceName);
++          setNotice({ kind: 'retry', text, action: 'resume' });
++        });
+         return;
+       }
+       if (action === 'connect') {
+@@ -216,7 +251,7 @@ export default function WearablesShell() {
+       }
+       retryRefresh();
+     },
+-    [retryRefresh, goToConnections],
++    [retryRefresh, goToConnections, deviceName],
+   );
+ 
+ 
+diff --git a/src/screens/client/wearables/__tests__/ConnectionsScreen.emptyImport.test.tsx b/src/screens/client/wearables/__tests__/ConnectionsScreen.emptyImport.test.tsx
+new file mode 100644
+index 0000000..708b348
+--- /dev/null
++++ b/src/screens/client/wearables/__tests__/ConnectionsScreen.emptyImport.test.tsx
+@@ -0,0 +1,95 @@
++/**
++ * B-HC4-118 (Opus B-362-1, Sol B-362-4): the REAL ConnectionsScreen hosting the REAL
++ * ConnectProviderSheet, wired as in production (`onConnected={closeSheet}`). An empty first
++ * import keeps the sheet open with where-to-check copy and Close, on iPhone and Android; an
++ * import with data closes it. Adapted from the AUD-OPUS-H45-118 (run 37220060376) and
++ * AUD-SOL-H45-118 (run 37219439582) probes.
++ */
++import React from 'react';
++import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
++
++jest.mock('react-native-safe-area-context', () => {
++  const ReactLocal = require('react');
++  const { View } = require('react-native');
++  return {
++    SafeAreaView: ({ children }: { children: React.ReactNode }) =>
++      ReactLocal.createElement(View, null, children),
++    useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
++  };
++});
++const mockInvalidate = jest.fn();
++jest.mock('../../../../hooks/useWearableConnections', () => ({
++  useWearableConnections: () => ({ data: [], isLoading: false, isError: false, isRefetching: false }),
++  useLocalOnDeviceAuthorization: () => ({ data: undefined }),
++  useDisconnectProvider: () => ({ mutate: jest.fn(), isPending: false }),
++  useStartOauth: () => ({ mutateAsync: jest.fn(), isPending: false }),
++  useInvalidateWearableConnections: () => mockInvalidate,
++}));
++jest.mock('expo-web-browser', () => ({ openAuthSessionAsync: jest.fn() }));
++jest.mock('../../../../config/healthConnect', () => ({
++  HEALTH_CONNECT_DISABLED_MESSAGE: 'disabled',
++  isHealthConnectProviderDisabled: () => false,
++}));
++jest.mock('../../../../services/health/onDeviceConnect', () => ({
++  connectOnDeviceProvider: jest.fn(async () => 'granted'),
++  openHealthConnectPermissions: jest.fn(async () => true),
++  openHealthConnectStore: jest.fn(async () => true),
++}));
++jest.mock('../../../../services/authActions', () => ({ signOut: jest.fn() }));
++jest.mock('../../../../lib/consultation/report', () => ({ reportUnexpected: jest.fn() }));
++let mockSource = 'APPLE_HEALTHKIT';
++const mockConnectOnDevice = jest.fn();
++jest.mock('../../../../services/health/onDeviceSync', () => ({
++  ...jest.requireActual('../../../../services/health/onDeviceSync'),
++  deviceSourceForPlatform: () => mockSource,
++  deviceSourceFor: () => mockSource,
++  beginOnDeviceConnect: async () => ({
++    userId: 'user-a',
++    assertCurrent: async () => undefined,
++    throwIfStopped: () => undefined,
++    cancel: () => undefined,
++  }),
++  connectOnDevice: (...args: unknown[]) => mockConnectOnDevice(...args),
++}));
++
++import ConnectionsScreen from '../ConnectionsScreen';
++import { onDeviceDisclosure } from '../ConnectProviderSheet';
++
++const EMPTY = /no data from the last 30 days to bring in/;
++describe.each([
++  ['APPLE_HEALTHKIT', 'Apple Health', /open the Health app, tap your profile picture/, null],
++  ['HEALTH_CONNECT', 'Health Connect', /tap Open Health Connect, choose App/, 'Open Health Connect'],
++] as const)('%s: first import in the production host', (source, name, where, cta) => {
++  async function connect(postedCount: number) {
++    mockSource = source;
++    mockInvalidate.mockReset();
++    mockConnectOnDevice.mockReset().mockResolvedValue({
++      kind: 'imported', source, connectionId: 'conn-a', postedCount, complete: true,
++    });
++    await render(<ConnectionsScreen />);
++    await fireEvent.press(screen.getByLabelText(`Connect ${name}`));
++    await fireEvent.press(screen.getByLabelText(`Continue connecting ${name}`));
++    await waitFor(() => expect(mockInvalidate).toHaveBeenCalledTimes(1));
++  }
++
++  it('a complete import with data closes the sheet', async () => {
++    await connect(5);
++    await waitFor(() => expect(screen.queryByLabelText(`Continue connecting ${name}`)).toBeNull());
++  });
++
++  it('an empty first import stays open, says where to check, and offers Close', async () => {
++    await connect(0);
++    expect(await screen.findByText(EMPTY)).toBeTruthy();
++    expect(screen.getByText(where)).toBeTruthy();
++    if (cta != null) expect(screen.getByLabelText(cta)).toBeTruthy();
++    await fireEvent.press(screen.getByLabelText('Close'));
++    await waitFor(() => expect(screen.queryByText(EMPTY)).toBeNull());
++  });
++});
++
++it('B-364-1: the Samsung Health permission note names Health Connect and every app', () => {
++  const note = onDeviceDisclosure('Samsung Health', 'SAMSUNG_HEALTH');
++  expect(note).toContain('Health Connect asks for permission');
++  expect(note).toContain('every other app that shares with Health Connect');
++  expect(note).not.toContain('Samsung Health asks');
++});
+diff --git a/src/screens/client/wearables/__tests__/ConnectionsScreen.test.tsx b/src/screens/client/wearables/__tests__/ConnectionsScreen.test.tsx
+index e4683c9..0ee8756 100644
+--- a/src/screens/client/wearables/__tests__/ConnectionsScreen.test.tsx
++++ b/src/screens/client/wearables/__tests__/ConnectionsScreen.test.tsx
+@@ -62,8 +62,10 @@ jest.mock('../../../../lib/consultation/report', () => ({
+   reportUnexpected: (...args: unknown[]) => mockReportUnexpected(...args),
+ }));
+ 
+-import ConnectionsScreen from '../ConnectionsScreen';
+-import { WEARABLE_PROVIDERS } from '../../../../api/wearablesConnectionsApi';
++import ConnectionsScreen, { buildRows } from '../ConnectionsScreen';
++import { configFor, WEARABLE_PROVIDERS } from '../../../../api/wearablesConnectionsApi';
++import { disconnectConfirmCopy } from '../disconnectCopy';
++import { emptyImportMessage } from '../onDeviceCopy';
+ 
+ function connection(
+   provider: string,
+@@ -360,3 +362,52 @@ describe('ConnectionsScreen — not syncing on this phone (B-317-5)', () => {
+     expect(screen.queryByText('Not syncing here')).toBeNull();
+   });
+ });
++
++// B-364-1 (Sol and Opus H6 probes, runs 37220265977 and 37220573091): Samsung
++// Health has no connection of its own; it shares through Health Connect. Its
++// row mirrors Health Connect and a stored SAMSUNG_HEALTH row is never active.
++describe('ConnectionsScreen — Samsung Health row (B-364-1)', () => {
++  const hc = connection('HEALTH_CONNECT', 'connected', '2026-05-31T09:00:00.000Z');
++  const legacy = connection('SAMSUNG_HEALTH', 'connected', '2026-05-31T09:00:00.000Z');
++  const here = { provider: 'HEALTH_CONNECT' as const, connectionId: hc.id };
++  const none = { provider: 'HEALTH_CONNECT' as const, connectionId: null };
++  type Conns = Parameters<typeof buildRows>[0];
++
++  it.each([
++    ['nothing connected', [], none],
++    ['Health Connect syncing here', [hc], here],
++    ['Health Connect not syncing here', [hc], none],
++    ['a stored Samsung row only', [legacy], none],
++    ['a stored Samsung row and Health Connect', [legacy, hc], here],
++  ])('mirrors Health Connect: %s', (_case, conns, local) => {
++    const rows = buildRows(conns as Conns, local);
++    const samsung = rows.find((r) => r.provider === 'SAMSUNG_HEALTH');
++    expect({ ...samsung, provider: 'HEALTH_CONNECT' }).toEqual(
++      rows.find((r) => r.provider === 'HEALTH_CONNECT'),
++    );
++  });
++
++  it('after a Samsung Health connect: Connected and Disconnect, which disconnects Health Connect', async () => {
++    mockUseWearableConnections.mockReturnValue(queryResult({ data: [hc] }));
++    mockLocalAuth.mockReturnValue({ data: { userId: 'u1', source: 'HEALTH_CONNECT', connectionId: hc.id } });
++    await render(<ConnectionsScreen />);
++    expect(screen.getByLabelText(/^Samsung Health, Connected/)).toBeTruthy();
++    expect(screen.queryByLabelText('Connect Samsung Health')).toBeNull();
++    expect(screen.getByText(/so this row shows the Health Connect connection/)).toBeTruthy();
++    await fireEvent.press(screen.getByLabelText('Disconnect Samsung Health'));
++    expect(screen.getByText(/so this disconnects Health Connect/)).toBeTruthy();
++    await fireEvent.press(screen.getByLabelText('Disconnect Samsung Health now'));
++    // The hook disconnects HEALTH_CONNECT for it (useWearableConnections.disconnect.test).
++    expect(mockDisconnectMutate).toHaveBeenCalledWith('SAMSUNG_HEALTH', expect.anything());
++  });
++
++  it('copy names Health Connect and every app; empty import names the Samsung setting (C-364-2)', () => {
++    expect(disconnectConfirmCopy('SAMSUNG_HEALTH', 'Samsung Health').body).toContain('every other app');
++    expect(configFor('SAMSUNG_HEALTH').dataDescription).toBe(
++      'The Growth Project reads the Health Connect data on this phone, including what Samsung Health shares with Health Connect.',
++    );
++    const empty = emptyImportMessage('SAMSUNG_HEALTH', 'Health Connect').text;
++    expect(empty).toContain('Samsung Health is connected through Health Connect');
++    expect(empty).toContain('In Samsung Health, open Settings, then Health Connect');
++  });
++});
+diff --git a/src/screens/client/wearables/__tests__/WearablesShell.test.tsx b/src/screens/client/wearables/__tests__/WearablesShell.test.tsx
+index 024ced8..1bdae0d 100644
+--- a/src/screens/client/wearables/__tests__/WearablesShell.test.tsx
++++ b/src/screens/client/wearables/__tests__/WearablesShell.test.tsx
+@@ -317,9 +317,49 @@ describe('WearablesShell', () => {
+     mockNavigate.mockClear();
+     await render(<WearablesShell />);
+     await waitFor(() => expect(screen.getByText(/no longer linked to your account/)).toBeTruthy());
++    // C-362-2: the copy names the button this screen shows.
++    expect(screen.getByText(/Tap Reconnect to connect Apple Health again\./)).toBeTruthy();
++    expect(screen.queryByText(/Tap Continue/)).toBeNull();
+     await fireEvent.press(screen.getByLabelText('Reconnect Apple Health'));
+     expect(mockNavigate).toHaveBeenCalledWith('Connections');
+   });
++
++  // Opus B-362-2 (probe run 37220188407): after Open Health Connect the
++  // notice names a step that exists here, and Try again re-runs the refresh.
++  describe('B-362-2: every Health Connect permission off', () => {
++    beforeEach(async () => {
++      mockDeviceSource = 'HEALTH_CONNECT';
++      const [row] = mockUseWearableConnections().data;
++      mockUseWearableConnections.mockReturnValue({ data: [{ ...row, provider: 'HEALTH_CONNECT' }] });
++      const { HealthConnectPermissionDeniedError } = jest.requireActual(
++        '../../../../services/health/healthConnect/errors',
++      );
++      mockImportHistory.mockRejectedValue(new HealthConnectPermissionDeniedError(['Steps']));
++      mockOpenHcPermissions.mockReset();
++    });
++
++    it('after Open Health Connect, Try again exists and re-runs the refresh', async () => {
++      mockOpenHcPermissions.mockResolvedValue(true);
++      await render(<WearablesShell />);
++      await fireEvent.press(await screen.findByLabelText('Open Health Connect'));
++      expect(
++        await screen.findByText(
++          'When Health Connect access is allowed for The Growth Project, tap Try again to bring in new data.',
++        ),
++      ).toBeTruthy();
++      await fireEvent.press(screen.getByLabelText('Try again to sync Health Connect'));
++      await waitFor(() => expect(mockImportHistory).toHaveBeenCalledTimes(2));
++    });
++
++    it('when Health Connect does not open, the notice says so and offers Try again', async () => {
++      mockOpenHcPermissions.mockResolvedValue(false);
++      await render(<WearablesShell />);
++      await fireEvent.press(await screen.findByLabelText('Open Health Connect'));
++      expect(await screen.findByText(/^Health Connect didn't open\. Open Settings/)).toBeTruthy();
++      expect(screen.getByLabelText('Try again to sync Health Connect')).toBeTruthy();
++    });
++  });
++
+   describe('C-317-a: a refresh that settles late writes nothing', () => {
+     function heldRefresh() {
+       const held: { resolve: (v: unknown) => void; reject: (e: unknown) => void } = {
+diff --git a/src/screens/client/wearables/disconnectCopy.ts b/src/screens/client/wearables/disconnectCopy.ts
+index 658e7ec..022456a 100644
+--- a/src/screens/client/wearables/disconnectCopy.ts
++++ b/src/screens/client/wearables/disconnectCopy.ts
+@@ -31,6 +31,17 @@ export function disconnectConfirmCopy(
+   provider: WearableProvider,
+   name: string,
+ ): DisconnectConfirmCopy {
++  if (provider === 'SAMSUNG_HEALTH') {
++    // B-364-1: this row disconnects Health Connect, which Samsung Health shares through.
++    return {
++      title: `Disconnect ${name}?`,
++      body:
++        `${name} shares its data through Health Connect, so this disconnects Health Connect. The ` +
++        `Growth Project stops bringing in new Health Connect data from this phone, from ${name} and ` +
++        `every other app, and your coach stops seeing it. Data already shared stays with your coach. ` +
++        `You can connect again at any time.`,
++    };
++  }
+   const stops = isOnDevice(provider)
+     ? `The Growth Project stops bringing in new ${name} data from this phone, and your coach stops seeing new ${name} data.`
+     : `The Growth Project stops receiving new ${name} data, and your coach stops seeing new ${name} data.`;
+diff --git a/src/screens/client/wearables/onDeviceCopy.ts b/src/screens/client/wearables/onDeviceCopy.ts
+index a257091..7606108 100644
+--- a/src/screens/client/wearables/onDeviceCopy.ts
++++ b/src/screens/client/wearables/onDeviceCopy.ts
+@@ -333,6 +333,18 @@ export function returnFromSettingsMessage(name: string): OnDeviceMessage {
+  * an app what was declined), so the copy says where to check.
+  */
+ export function emptyImportMessage(provider: WearableProvider, name: string): OnDeviceMessage {
++  if (provider === 'SAMSUNG_HEALTH') {
++    // C-364-2: Samsung Health shares only what its own Health Connect setting allows.
++    return {
++      text:
++        `Samsung Health is connected through Health Connect, but there was no data from the last 30 ` +
++        `days to bring in. In Samsung Health, open Settings, then Health Connect, and let Samsung ` +
++        `Health share its data. If you turned some data types off for The Growth Project, tap Open ` +
++        `Health Connect, choose App permissions, then The Growth Project, and turn them on. New data ` +
++        `comes in each time you open Health.`,
++      action: 'open_settings',
++    };
++  }
+   if (readsThroughHealthConnect(provider)) {
+     return {
+       text:
+diff --git a/src/services/health/onDeviceState.ts b/src/services/health/onDeviceState.ts
+index 5093b88..b9d573e 100644
+--- a/src/services/health/onDeviceState.ts
++++ b/src/services/health/onDeviceState.ts
+@@ -148,6 +148,26 @@ export async function retireOnDeviceState(source?: OnDeviceSource): Promise<void
+   if (doomed.length > 0) await AsyncStorage.removeMany(doomed);
+ }
+ 
++/**
++ * Disconnect cleanup for ONE person and source (Sol B-362-2): removes that
++ * person's local authorization and progress for `source`, never another
++ * account's. `grantedAt` is the authorization seen when the disconnect
++ * started (null for none): when a different one is stored now (a newer
++ * Connect), nothing is removed.
++ */
++export async function retireOnDeviceSource(
++  userId: string,
++  source: OnDeviceSource,
++  grantedAt: string | null,
++): Promise<void> {
++  const current = await getLocalAuthorization(userId, source);
++  if ((current?.grantedAt ?? null) !== grantedAt) return;
++  const progressPrefix = `${ON_DEVICE_STATE_PREFIX}progress:${source}:${userId}:`;
++  const keys = await AsyncStorage.getAllKeys();
++  const doomed = keys.filter((k) => k === authKey(userId, source) || k.startsWith(progressPrefix));
++  if (doomed.length > 0) await AsyncStorage.removeMany(doomed);
++}
++
+ /** Read the progress for a scope (empty when none or unreadable). */
+ export async function getSyncProgress(scope: OnDeviceScope): Promise<SyncProgress> {
+   const parsed = await readJson(progressKey(scope));
