@@ -11,7 +11,7 @@ import { DunningEscalationClassifier } from '../src/checkout/dunning-v2/dunning-
 import { DunningV2Renderer } from '../src/checkout/dunning-v2/dunning-v2.renderer';
 import { StripeConnectApiError } from '../src/connect/stripe-connect-api.service';
 import { CoachAlertEmitter } from '../src/notifications/emitters/coach-alert.emitter';
-import { FakePrisma } from './support/dunning-v2-fake-prisma';
+import { FakeModelName, FakePrisma } from './support/dunning-v2-fake-prisma';
 
 // B-D12-116 fix round on #688 (D2); each case failed at 6627044c. Synthetic
 // ids and sentinels only (several cases are the auditors' probes).
@@ -318,7 +318,7 @@ describe('dunning v2 service fix round (B-D12-116)', () => {
   describe('B-DUNA-118 (D2): every case failed before this round', () => {
     const svcOf = (db: unknown, stripe?: unknown) =>
       new DunningV2Service(stub(db), stub(telemetry()), undefined, stub(stripe));
-    const row = (fake: FakePrisma, model: string, id = 'p1') => fake.find(model, { id })!;
+    const row = (fake: FakePrisma, model: FakeModelName, id = 'p1') => fake.find(model, { id })!;
     it('Opus B-688-6: a v1 reopen (step -1, same entered_at) during the Stripe check is not locked', async () => {
       const fake = new FakePrisma();
       seed(fake);
