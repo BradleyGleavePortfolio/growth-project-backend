@@ -51,6 +51,9 @@ export interface SendEmailInput {
   from?: string;
   // Optional reply-to header; falls back to provider default if unset.
   replyTo?: string;
+  // Optional cancellation: checked before the send-log row, again right before the transport,
+  // and passed to the provider request. An abort before the transport returns notStarted.
+  signal?: AbortSignal;
 }
 
 export interface SendEmailResult {
@@ -63,4 +66,6 @@ export interface SendEmailResult {
   // Human-readable error text on 'failed'. Never contains the provider
   // API key. Safe to surface up to the operator.
   error?: string;
+  // True when input.signal aborted before the provider was called: nothing was sent.
+  notStarted?: boolean;
 }
