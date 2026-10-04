@@ -9,7 +9,7 @@ import {
   StripeConnectApiError,
   type StripeSubscriptionCheckoutObject,
 } from '../connect/stripe-connect-api.service';
-import { parseCheckoutTerms } from './subscription-terms';
+import { parseCheckoutTerms, planPriceFromTerms } from './subscription-terms';
 
 /** pg_advisory_xact_lock namespace: ASCII 'subc'. */
 export const ADVISORY_LOCK_NAMESPACE_SUBSCRIPTION_CHECKOUT = 0x73_75_62_63;
@@ -409,5 +409,45 @@ export function planView(row: ClientPurchase, pkg: CoachPackage | null): ClientP
         ? 'Your last payment did not go through.'
         : null,
     checkout_state: null,
+  };
+}
+
+/**
+ * The answer for one attempt (moved from R2 by B-RECUR6A-118, size move).
+ * B-654-7: the plan terms are the attempt's pinned terms (what its
+ * subscription actually charges), never today's package terms; only an
+ * attempt without a pin (none exist after round 1's first write) falls back
+ * to the package.
+ */
+export function intentResult(
+  row: ClientPurchase,
+  pkg: CoachPackage,
+  reused: boolean,
+  stripeStatus?: string,
+  sheet: 'auto' | 'none' = 'auto',
+): SubscriptionIntentResult {
+  const pinned = parseCheckoutTerms(row.checkout_terms);
+  const price = pinned ? planPriceFromTerms(pinned) : planPriceFor(pkg, row.trial_days ?? 0);
+  const trialDays = price.trial_days;
+  const secret = sheet === 'none' ? '' : (row.stripe_client_secret ?? '');
+  // A SetupIntent client secret starts with `seti_`; a PaymentIntent's with `pi_`.
+  const mode: 'payment' | 'setup' | 'none' =
+    sheet === 'none' ? 'none' : secret.startsWith('seti_') ? 'setup' : 'payment';
+  return {
+    mode,
+    client_secret: secret,
+    ephemeral_key: sheet === 'none' ? '' : (row.stripe_ephemeral_key ?? ''),
+    customer_id: row.stripe_customer_id ?? '',
+    publishable_key: process.env.STRIPE_PUBLISHABLE_KEY ?? '',
+    purchase_id: row.id,
+    subscription_id: row.stripe_subscription_id ?? '',
+    status: stripeStatus ?? row.status,
+    reused,
+    plan: {
+      ...price,
+      package_id: pkg.id,
+      package_name: pkg.name,
+      trial_ends_at: trialDays > 0 ? iso(row.current_period_end) : null,
+    },
   };
 }
