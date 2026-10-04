@@ -300,7 +300,8 @@ describe('EmailService', () => {
         data: { coach_name: 'C', invite_code: 'GP-X', accept_url: 'u' },
       });
       expect(res.status).toBe('failed');
-      expect(res.error).toMatch(/Resend 422/);
+      // B-700-1: the provider, status and code, never the body text.
+      expect(res.error).toBe('provider=resend status=422 code=unparsed');
       expect(prisma.emailSendLog.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ status: 'failed' }),
