@@ -534,7 +534,6 @@ const LEGACY_EXCEPTION_TEXT: Readonly<Record<string, number>> = {
   'src/checkout/checkout.service.ts': 2,
   'src/checkout/dunning-v2/dunning-lockout.guard.ts': 1,
   'src/checkout/dunning-v2/dunning-lockout.scheduler.ts': 1,
-  'src/checkout/dunning-v2/dunning-v2.service.ts': 1,
   'src/checkout/dunning.service.ts': 6,
   'src/checkout/purchase-split-handler.service.ts': 2,
   'src/checkout/refund-dispute-handler.service.ts': 5,
