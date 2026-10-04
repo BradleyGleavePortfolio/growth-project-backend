@@ -37,5 +37,7 @@ DRAIN to 5 from 10:32 (owner). Running 14 at 10:32.
 AUD-OPUS-F23-118  (launched 10:56, opus, #682 #683) [DONE: #682 APPROVE 0/0/3 5982917037; #683 APPROVE 0/0/4 5982917163]
 AUD-SOL-F23-118   (launched 11:03, sol, #682 #683) [DONE: #682 APPROVE 0/0/0 5982935646; #683 RC 0/2/2 5982960241]
 B-RECUR6B-118     (launched 11:11, opus, #680 + restack #696 #701)
-AUD-SOL-PV3-118   (launched 11:13, sol, #700 m#368)
+AUD-SOL-PV3-118   (launched 11:13, sol, #700 m#368) [DONE: #700 APPROVE 0/0/1 5983022103; m#368 APPROVE 0/0/0 5982997318]
 AUD-OPUS-PV3-118  (launched 11:18, opus, #700 m#368)
+B-SHEET2-118      (launched 11:25, opus, m#342 m#343 + restack m#344)
+B-SHEET2-118 CANCELLED 11:27 (credits 38k/45k wind-down; nothing pushed). Relaunch from its JOBS entry.

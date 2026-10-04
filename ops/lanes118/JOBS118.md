@@ -358,6 +358,23 @@ Then merge-only restack #684 -> #697 -> #685 -> #686 with FIX ROUND (restack) + 
 (#678-#701): the operator restacks it after you. Write notify/fees.txt "fees top: #686 @ <sha> (B-FEES16-118, <time>)"; release the
 lock. Report: ops/reports/B-FEES16-118.md.
 
+## B-SHEET2-118 (builder, Claude Opus 5.5, T4: payment sheet money copy) — mobile P1 #342 + P2 #343 (P3 #344 is the next builder's)
+Heads: #342 56f281ad3aa977882c962a6591d3594899cdd5a1 (base main; 2,018 lines), #343 fd739d5819c232764e0389afd778860bf452b41c (2,813; 187
+lines headroom). Take lock `sheet`. Rules from the B-SHEET-118 and AUD-*-SH-118 entries (copy truth: never claim charged/not
+charged/paid before proof; #661 and recurring reply codes map to specific truthful copy with a working next action; today's production
+backend fallback; recurring never one-time-only; no first person). Findings:
+- #342: Opus APPROVE 0/0/5 (5982679049). Sol RC 0/2/1 (5982676839): a timeout incorrectly claims no charge; JPY (zero-decimal) amounts
+  display 100x too small (fix with the currency's minor-unit exponent, all zero-decimal currencies, not a JPY special case).
+- #343: Opus RC 0/1/5 (5982679186): B-343-6 usePackagePurchase.ts:746-748/790-791 a one-time plan that became free after the list
+  loaded shows "Payment received. Setting up your plan." during the free claim (fix rule: claimFree sets saleKind "free"; Opus CI-lane
+  probe run 37221093192). Sol RC 0/3/2 (5982700210): rejected-read account fence; misleading "Open your plan" destination (Opus C-343-3
+  is the same: make the action truthful now, e.g. label/route to what it does); ended subscription incorrectly treated as unpaid (Opus
+  C-343-4 "nothing was charged" on an ended plan is the same lines: fold in).
+Replay both lenses' probes (ops/aud-118/AUD-OPUS-SH-118/probes/, ops/aud-118/AUD-SOL-SH-118/). If #343 would pass 3,000, move whole test
+files up to #344 byte-identical (after the merge) and say so; #344 itself is NOT yours to fix (merge-only restack #344 at the end so
+it carries your heads, with a READY (restack) comment). Held Cs stay held (C-342-1 isCombo red by design, C-342-2, C-343-2). FIX ROUND +
+READY on #342 and #343 at green heads; write notify/sheet.txt; release the lock. Report: ops/reports/B-SHEET2-118.md.
+
 ## QUEUED (operator launches as slots free; STOP-AND-DRAIN: hold 5 concurrent since 10:32 PDT; strict order)
 1. AUD-OPUS-F23-118 + AUD-SOL-F23-118 (entry above).
 2. [LAUNCHED 11:1x] B-RECUR6B-118: #680 + #696/#701 (B-RECUR6A done 10:36; R2 top #679 8bbf4a41; its handoff notes: one #680 test needs
@@ -365,7 +382,7 @@ lock. Report: ops/reports/B-FEES16-118.md.
    audit/AUD-SOL-R34R5-117/680-authority, run 37187197172: B-680-2 residual, B-680-5 x2; #661 conflicts with the recurring top).
 3. AUD-OPUS-F4-118 + AUD-SOL-F4-118; 4. AUD-OPUS-F56-118 + AUD-SOL-F56-118.
 5. Recurring lens pairs R1+R2 (#678 77bce450, #679 8bbf4a41), then R3-R5, after B-RECUR6B READY.
-6. B-SHEET2-118 (m#342 Sol 2 Bs; m#343 Opus B-343-6 + Sol 3 Bs; m#344 Sol B-344-1..4 + Opus B-344-5/6; see FOLLOWUPS).
+6. [CANCELLED 11:28, relaunch] B-SHEET2-118 (#342/#343), then B-SHEET3-118 (m#344 e7fcc5d2: Sol B-344-1..4 5982674874 + Opus B-344-5/6 5982759668; land rule adds D4 #690).
 7. B-CM5-118 coach: #674 f9e21a87 B-674-13 (sweep checks 23-hour window against its start time; resend after Stripe forgot the key) + B-674-14 (has_more with empty page authorizes a second dispute reversal) [Sol 5982716289, Opus 5982843273, probe run 37222417496]; #676 ccd60bbc B-676-5 (MRR and paying clients count a never-billed trial after its first invoice fails; export BILLED_WHERE for C-673-3) [Sol 5982716659, Opus 5982843389, run 37221623024]; merge main into #674 first; restack #676 and #677; sizes 2,948/2,981/2,918: tests to #677.
 8. B-DUNB-118 (after B-DUNA-118 ends): D3 #689 bb992fed + D4 #690 06307883 (both 2,913 lines). Sol RC #689 0/4/0 (5982476834: post-lock
 dispute resolution, cancellation authority, out-of-band selection, lock order) and #690 0/5/1 (5982476848: invoice resurrection, dispute
