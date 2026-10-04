@@ -77,6 +77,9 @@ async function conflictWorld(replies: { sub: Reply; invoices?: Reply }) {
     const path = String(url).replace(/^https:\/\/api\.stripe\.com\/v1/, '');
     calls.push(`${method} ${path}`);
     if (method === 'DELETE') return reply({ body: { id: 'sub_1', status: 'canceled' } });
+    // B-TR5-119 — the open invoice a never-billed cancel voids first, and its void.
+    if (method === 'POST') return reply({ body: { id: 'in_renewal', status: 'void' } });
+    if (path.includes('status=open')) return reply(page([{ id: 'in_renewal' }]));
     if (path.startsWith('/invoices')) {
       return reply(replies.invoices ?? { status: 500, body: { error: { type: 'api_error' } } });
     }
@@ -149,7 +152,7 @@ describe('B-673-1 (round 10) — past_due/unpaid cancel only on proof that nothi
   it('reads one bounded page of paid invoices for this subscription', async () => {
     const w = await conflictWorld({ sub: sub('unpaid'), invoices: page([TRIAL_INVOICE]) });
     await w.service.settle('pur-1', NOW);
-    const list = w.calls.find((c) => c.startsWith('GET /invoices'));
+    const list = w.calls.find((c) => c.startsWith('GET /invoices') && c.includes('status=paid'));
     expect(list).toBeDefined();
     const q = new URLSearchParams(String(list).split('?')[1]);
     expect({
