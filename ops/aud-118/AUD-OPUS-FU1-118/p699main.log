@@ -1,0 +1,100 @@
+targeted	Targeted jest	﻿2026-10-04T16:52:04.5510699Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T16:52:04.5511058Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T16:52:04.5511456Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T16:52:04.5511955Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T16:52:04.5512330Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T16:52:04.5512622Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T16:52:04.5576985Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T16:52:04.5577404Z env:
+targeted	Targeted jest	2026-10-04T16:52:04.5577650Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T16:52:04.5578011Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T16:52:04.5578344Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T16:52:04.5682699Z specs: test/ci/aud-opus-fu1-699-probe.spec.ts
+targeted	Targeted jest	2026-10-04T16:52:06.6532803Z FAIL test/ci/aud-opus-fu1-699-probe.spec.ts (72 MB heap size)
+targeted	Targeted jest	2026-10-04T16:52:06.6534052Z   AUD-OPUS-FU1-118 #699 probe: tool failures fail closed
+targeted	Targeted jest	2026-10-04T16:52:06.6588580Z     ✓ controls: clean SBOM passes; leak and banned tool are red with their own reason (88 ms)
+targeted	Targeted jest	2026-10-04T16:52:06.6617981Z     ✕ jq dies part-way through the lockfile read (partial output, exit 5): red, never OK (43 ms)
+targeted	Targeted jest	2026-10-04T16:52:06.6647601Z     ✕ comm fails with no output: red, never OK (38 ms)
+targeted	Targeted jest	2026-10-04T16:52:06.6648650Z     ✓ sort fails after reading its input: red, never OK (13 ms)
+targeted	Targeted jest	2026-10-04T16:52:06.6649820Z     ✓ jq fails on the component-name list with a banned tool present: red, never OK (27 ms)
+targeted	Targeted jest	2026-10-04T16:52:06.6656644Z     ✓ a lockfile entry that is not an object (jq type error mid-stream): red, never OK (22 ms)
+targeted	Targeted jest	2026-10-04T16:52:06.6659174Z     ✓ an SBOM component that is not an object: red, never OK (13 ms)
+targeted	Targeted jest	2026-10-04T16:52:06.6660592Z     ✓ ulimit -n 4: a leak or a banned tool never reads as OK (10 ms)
+targeted	Targeted jest	2026-10-04T16:52:06.6661929Z     ✓ ulimit -n 5: a leak or a banned tool never reads as OK (9 ms)
+targeted	Targeted jest	2026-10-04T16:52:06.6663222Z     ✕ ulimit -n 6: a leak or a banned tool never reads as OK (38 ms)
+targeted	Targeted jest	2026-10-04T16:52:06.6664451Z     ✓ ulimit -n 7: a leak or a banned tool never reads as OK (48 ms)
+targeted	Targeted jest	2026-10-04T16:52:06.6665661Z     ✓ ulimit -n 8: a leak or a banned tool never reads as OK (48 ms)
+targeted	Targeted jest	2026-10-04T16:52:06.6667261Z     ✓ ulimit -n 9: a leak or a banned tool never reads as OK (48 ms)
+targeted	Targeted jest	2026-10-04T16:52:06.6668512Z     ✓ ulimit -n 10: a leak or a banned tool never reads as OK (48 ms)
+targeted	Targeted jest	2026-10-04T16:52:06.6669713Z     ✓ ulimit -n 12: a leak or a banned tool never reads as OK (48 ms)
+targeted	Targeted jest	2026-10-04T16:52:06.6670930Z     ✓ ulimit -n 16: a leak or a banned tool never reads as OK (48 ms)
+targeted	Targeted jest	2026-10-04T16:52:06.6672144Z     ✓ ulimit -n 32: a leak or a banned tool never reads as OK (48 ms)
+targeted	Targeted jest	2026-10-04T16:52:06.6672861Z 
+targeted	Targeted jest	2026-10-04T16:52:06.6674120Z   ● AUD-OPUS-FU1-118 #699 probe: tool failures fail closed › jq dies part-way through the lockfile read (partial output, exit 5): red, never OK
+targeted	Targeted jest	2026-10-04T16:52:06.6675314Z 
+targeted	Targeted jest	2026-10-04T16:52:06.6675739Z     expect(received).not.toMatch(expected)
+targeted	Targeted jest	2026-10-04T16:52:06.6676298Z 
+targeted	Targeted jest	2026-10-04T16:52:06.6677008Z     Expected pattern: not /assert-prod-sbom: OK \d+ components/
+targeted	Targeted jest	2026-10-04T16:52:06.6678328Z     Received string:      "assert-prod-sbom: OK 4 components, 0 dev-only leaks, required runtime packages present
+targeted	Targeted jest	2026-10-04T16:52:06.6679786Z     assert-prod-sbom: sha256 3dfe389225bb127ec486c2524a92d650d96d8785f0d6abcf36f3ac8e86290eed
+targeted	Targeted jest	2026-10-04T16:52:06.6680533Z 
+targeted	Targeted jest	2026-10-04T16:52:06.6680776Z     "
+targeted	Targeted jest	2026-10-04T16:52:06.6680964Z 
+targeted	Targeted jest	2026-10-04T16:52:06.6681346Z     ^[[0m ^[[90m 85 |^[[39m     )^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T16:52:06.6683002Z      ^[[90m 86 |^[[39m     ^[[36mconst^[[39m r ^[[33m=^[[39m run(files(sbom([^[[33m...^[[39m^[[33mRUNTIME^[[39m^[[33m,^[[39m ^[[32m'leftpad-devonly@1.0.0'^[[39m]))^[[33m,^[[39m dir)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T16:52:06.6685016Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 87 |^[[39m     expect(r^[[33m.^[[39mout)^[[33m.^[[39mnot^[[33m.^[[39mtoMatch(^[[33mOK^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T16:52:06.6686224Z      ^[[90m    |^[[39m                       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T16:52:06.6688087Z      ^[[90m 88 |^[[39m     expect(r^[[33m.^[[39mcode)^[[33m.^[[39mtoBe(^[[35m1^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T16:52:06.6689023Z      ^[[90m 89 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T16:52:06.6689606Z      ^[[90m 90 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T16:52:06.6689893Z 
+targeted	Targeted jest	2026-10-04T16:52:06.6690414Z       at Object.<anonymous> (test/ci/aud-opus-fu1-699-probe.spec.ts:87:23)
+targeted	Targeted jest	2026-10-04T16:52:06.6691018Z 
+targeted	Targeted jest	2026-10-04T16:52:06.6691908Z   ● AUD-OPUS-FU1-118 #699 probe: tool failures fail closed › comm fails with no output: red, never OK
+targeted	Targeted jest	2026-10-04T16:52:06.6692694Z 
+targeted	Targeted jest	2026-10-04T16:52:06.6692991Z     expect(received).not.toMatch(expected)
+targeted	Targeted jest	2026-10-04T16:52:06.6693380Z 
+targeted	Targeted jest	2026-10-04T16:52:06.6693795Z     Expected pattern: not /assert-prod-sbom: OK \d+ components/
+targeted	Targeted jest	2026-10-04T16:52:06.6695055Z     Received string:      "assert-prod-sbom: OK 4 components, 0 dev-only leaks, required runtime packages present
+targeted	Targeted jest	2026-10-04T16:52:06.6696520Z     assert-prod-sbom: sha256 3dfe389225bb127ec486c2524a92d650d96d8785f0d6abcf36f3ac8e86290eed
+targeted	Targeted jest	2026-10-04T16:52:06.6697539Z 
+targeted	Targeted jest	2026-10-04T16:52:06.6697703Z     "
+targeted	Targeted jest	2026-10-04T16:52:06.6697897Z 
+targeted	Targeted jest	2026-10-04T16:52:06.6698783Z     ^[[0m ^[[90m 92 |^[[39m     ^[[36mconst^[[39m dir ^[[33m=^[[39m shim(^[[32m'comm'^[[39m^[[33m,^[[39m ^[[32m'exit 1'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T16:52:06.6700775Z      ^[[90m 93 |^[[39m     ^[[36mconst^[[39m r ^[[33m=^[[39m run(files(sbom([^[[33m...^[[39m^[[33mRUNTIME^[[39m^[[33m,^[[39m ^[[32m'leftpad-devonly@1.0.0'^[[39m]))^[[33m,^[[39m dir)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T16:52:06.6702688Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 94 |^[[39m     expect(r^[[33m.^[[39mout)^[[33m.^[[39mnot^[[33m.^[[39mtoMatch(^[[33mOK^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T16:52:06.6704103Z      ^[[90m    |^[[39m                       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T16:52:06.6705245Z      ^[[90m 95 |^[[39m     expect(r^[[33m.^[[39mcode)^[[33m.^[[39mtoBe(^[[35m1^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T16:52:06.6706164Z      ^[[90m 96 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T16:52:06.6706990Z      ^[[90m 97 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T16:52:06.6707290Z 
+targeted	Targeted jest	2026-10-04T16:52:06.6707793Z       at Object.<anonymous> (test/ci/aud-opus-fu1-699-probe.spec.ts:94:23)
+targeted	Targeted jest	2026-10-04T16:52:06.6708346Z 
+targeted	Targeted jest	2026-10-04T16:52:06.6708922Z   ● AUD-OPUS-FU1-118 #699 probe: tool failures fail closed › ulimit -n 6: a leak or a banned tool never reads as OK
+targeted	Targeted jest	2026-10-04T16:52:06.6709384Z 
+targeted	Targeted jest	2026-10-04T16:52:06.6709534Z     expect(received).not.toMatch(expected)
+targeted	Targeted jest	2026-10-04T16:52:06.6709736Z 
+targeted	Targeted jest	2026-10-04T16:52:06.6709953Z     Expected pattern: not /assert-prod-sbom: OK \d+ components/
+targeted	Targeted jest	2026-10-04T16:52:06.6710614Z     Received string:      "assert-prod-sbom: OK 4 components, 0 dev-only leaks, required runtime packages present
+targeted	Targeted jest	2026-10-04T16:52:06.6711382Z     assert-prod-sbom: sha256 3dfe389225bb127ec486c2524a92d650d96d8785f0d6abcf36f3ac8e86290eed
+targeted	Targeted jest	2026-10-04T16:52:06.6711763Z 
+targeted	Targeted jest	2026-10-04T16:52:06.6711896Z     comm: /dev/fd/4: Too many open files
+targeted	Targeted jest	2026-10-04T16:52:06.6712216Z     comm: /dev/fd/4: Too many open files
+targeted	Targeted jest	2026-10-04T16:52:06.6712477Z     "
+targeted	Targeted jest	2026-10-04T16:52:06.6712586Z 
+targeted	Targeted jest	2026-10-04T16:52:06.6713160Z     ^[[0m ^[[90m 132 |^[[39m       ^[[36mfor^[[39m (^[[36mconst^[[39m c ^[[36mof^[[39m [^[[32m'leftpad-devonly@1.0.0'^[[39m^[[33m,^[[39m ^[[32m'eslint@9.0.0'^[[39m]) {
+targeted	Targeted jest	2026-10-04T16:52:06.6714283Z      ^[[90m 133 |^[[39m         ^[[36mconst^[[39m r ^[[33m=^[[39m run(files(sbom([^[[33m...^[[39m^[[33mRUNTIME^[[39m^[[33m,^[[39m c]))^[[33m,^[[39m undefined^[[33m,^[[39m n)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T16:52:06.6715246Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 134 |^[[39m         expect(r^[[33m.^[[39mout)^[[33m.^[[39mnot^[[33m.^[[39mtoMatch(^[[33mOK^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T16:52:06.6715869Z      ^[[90m     |^[[39m                           ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T16:52:06.6716482Z      ^[[90m 135 |^[[39m         expect(r^[[33m.^[[39mcode)^[[33m.^[[39mnot^[[33m.^[[39mtoBe(^[[35m0^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T16:52:06.6717276Z      ^[[90m 136 |^[[39m       }
+targeted	Targeted jest	2026-10-04T16:52:06.6717617Z      ^[[90m 137 |^[[39m     }^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T16:52:06.6717801Z 
+targeted	Targeted jest	2026-10-04T16:52:06.6717987Z       at test/ci/aud-opus-fu1-699-probe.spec.ts:134:27
+targeted	Targeted jest	2026-10-04T16:52:06.6718221Z 
+targeted	Targeted jest	2026-10-04T16:52:06.6718363Z Test Suites: 1 failed, 1 total
+targeted	Targeted jest	2026-10-04T16:52:06.6718939Z Tests:       3 failed, 14 passed, 17 total
+targeted	Targeted jest	2026-10-04T16:52:06.6719329Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T16:52:06.6719593Z Time:        1.251 s
+targeted	Targeted jest	2026-10-04T16:52:06.6719994Z Ran all test suites matching test/ci/aud-opus-fu1-699-probe.spec.ts.
+targeted	Targeted jest	2026-10-04T16:52:06.7003179Z ##[error]Process completed with exit code 1.

@@ -1,0 +1,11 @@
+commit b65fc4558da2bc6c8b66bc15e33d84ea398cb54d
+Author:     Bradley Gleave <bradley@bradleytgpcoaching.com>
+AuthorDate: Sun Oct 4 17:22:24 2026 +0000
+Commit:     Bradley Gleave <bradley@bradleytgpcoaching.com>
+CommitDate: Sun Oct 4 17:22:24 2026 +0000
+
+    ci-lane: targeted run (never merge)
+
+ .ci-lane-specs                |  2 ++
+ .github/workflows/ci-lane.yml | 31 +++++++++++++++++++++++++++++++
+ 2 files changed, 33 insertions(+)

@@ -1,0 +1,630 @@
+targeted	UNKNOWN STEP	﻿2026-10-04T03:29:34.0701093Z Current runner version: '2.337.0'
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0717233Z ##[group]Runner Image Provisioner
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0717809Z Hosted Compute Agent
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0718235Z Version: 20260901.588
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0718613Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0719061Z Build Date: 2026-09-01T19:56:44Z
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0719508Z Worker ID: {39eb78d8-0b54-4e55-ac36-9237fdee5c8d}
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0719927Z Azure Region: centralus
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0720295Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0721131Z ##[group]Operating System
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0721504Z Ubuntu
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0721868Z 24.04.5
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0722174Z LTS
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0722763Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0723296Z ##[group]Runner Image
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0723683Z Image: ubuntu-24.04
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0724060Z Version: 20260927.320.1
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0724802Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0725738Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0726288Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0727028Z ##[group]GITHUB_TOKEN Permissions
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0728144Z Contents: read
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0728526Z Metadata: read
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0728888Z Packages: read
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0729269Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0730505Z Secret source: Actions
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0731015Z Cache mode: write
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0731503Z Prepare workflow directory
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.0989011Z Prepare all required actions
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.1018619Z Getting action download info
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.3025868Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.3966023Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.6101560Z Complete job name: targeted
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.6403844Z ##[group]Checking docker version
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.6411487Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.7208729Z '1.48'
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.7221651Z Docker daemon API version: '1.48'
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.7222075Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.7327568Z '1.48'
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.7337573Z Docker client API version: '1.48'
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.7341276Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.7342553Z ##[group]Clean up resources from previous jobs
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.7345782Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=b8ab8d"
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.7441125Z ##[command]/usr/bin/docker network prune --force --filter "label=b8ab8d"
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.7526651Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.7526931Z ##[group]Create local container network
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.7532482Z ##[command]/usr/bin/docker network create --label b8ab8d github_network_f380874df4004331ad311735a9586382
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.7886158Z 38ef9e726c4289287136cdafa3a27b922ea633af3733575649c9da21c13d45b9
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.7901029Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.7917977Z ##[group]Starting redis service container
+targeted	UNKNOWN STEP	2026-10-04T03:29:34.7931195Z ##[command]/usr/bin/docker pull redis:7-alpine
+targeted	UNKNOWN STEP	2026-10-04T03:29:35.3504147Z 7-alpine: Pulling from library/redis
+targeted	UNKNOWN STEP	2026-10-04T03:29:35.4998864Z 16333ee0c00f: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-04T03:29:35.4999661Z 83234986c742: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-04T03:29:35.5000323Z 7eb50503c2b0: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-04T03:29:35.5000996Z 1522f9c6f453: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-04T03:29:35.5001689Z 9928009b15c8: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-04T03:29:35.5002360Z 4f4fb700ef54: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-04T03:29:35.5003307Z 4eb14bae0e1d: Pulling fs layer
+targeted	UNKNOWN STEP	2026-10-04T03:29:35.5004067Z 1522f9c6f453: Waiting
+targeted	UNKNOWN STEP	2026-10-04T03:29:35.5004617Z 9928009b15c8: Waiting
+targeted	UNKNOWN STEP	2026-10-04T03:29:35.5005174Z 4f4fb700ef54: Waiting
+targeted	UNKNOWN STEP	2026-10-04T03:29:35.5005718Z 4eb14bae0e1d: Waiting
+targeted	UNKNOWN STEP	2026-10-04T03:29:35.6583547Z 83234986c742: Verifying Checksum
+targeted	UNKNOWN STEP	2026-10-04T03:29:35.6585839Z 83234986c742: Download complete
+targeted	UNKNOWN STEP	2026-10-04T03:29:35.6891205Z 7eb50503c2b0: Verifying Checksum
+targeted	UNKNOWN STEP	2026-10-04T03:29:35.6892056Z 7eb50503c2b0: Download complete
+targeted	UNKNOWN STEP	2026-10-04T03:29:35.7506786Z 16333ee0c00f: Download complete
+targeted	UNKNOWN STEP	2026-10-04T03:29:35.8277385Z 16333ee0c00f: Pull complete
+targeted	UNKNOWN STEP	2026-10-04T03:29:35.8285866Z 9928009b15c8: Verifying Checksum
+targeted	UNKNOWN STEP	2026-10-04T03:29:35.8287220Z 9928009b15c8: Download complete
+targeted	UNKNOWN STEP	2026-10-04T03:29:35.8670805Z 4f4fb700ef54: Verifying Checksum
+targeted	UNKNOWN STEP	2026-10-04T03:29:35.8671584Z 4f4fb700ef54: Download complete
+targeted	UNKNOWN STEP	2026-10-04T03:29:35.9411416Z 1522f9c6f453: Verifying Checksum
+targeted	UNKNOWN STEP	2026-10-04T03:29:35.9412332Z 1522f9c6f453: Download complete
+targeted	UNKNOWN STEP	2026-10-04T03:29:35.9637392Z 83234986c742: Pull complete
+targeted	UNKNOWN STEP	2026-10-04T03:29:35.9859531Z 4eb14bae0e1d: Verifying Checksum
+targeted	UNKNOWN STEP	2026-10-04T03:29:35.9860854Z 4eb14bae0e1d: Download complete
+targeted	UNKNOWN STEP	2026-10-04T03:29:36.0936184Z 7eb50503c2b0: Pull complete
+targeted	UNKNOWN STEP	2026-10-04T03:29:36.3848775Z 1522f9c6f453: Pull complete
+targeted	UNKNOWN STEP	2026-10-04T03:29:36.3924744Z 9928009b15c8: Pull complete
+targeted	UNKNOWN STEP	2026-10-04T03:29:36.3975027Z 4f4fb700ef54: Pull complete
+targeted	UNKNOWN STEP	2026-10-04T03:29:36.4040982Z 4eb14bae0e1d: Pull complete
+targeted	UNKNOWN STEP	2026-10-04T03:29:36.4068148Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+targeted	UNKNOWN STEP	2026-10-04T03:29:36.4078208Z Status: Downloaded newer image for redis:7-alpine
+targeted	UNKNOWN STEP	2026-10-04T03:29:36.4084212Z docker.io/library/redis:7-alpine
+targeted	UNKNOWN STEP	2026-10-04T03:29:36.4107957Z ##[command]/usr/bin/docker create --name 8ac91a06b4944387b4ddf017fd595333_redis7alpine_a350bb --label b8ab8d --network github_network_f380874df4004331ad311735a9586382 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+targeted	UNKNOWN STEP	2026-10-04T03:29:36.4285859Z baff89e671845e7e30ba55a7f326cb056b74826b6bcf680843496f9d0ba607de
+targeted	UNKNOWN STEP	2026-10-04T03:29:36.4302184Z ##[command]/usr/bin/docker start baff89e671845e7e30ba55a7f326cb056b74826b6bcf680843496f9d0ba607de
+targeted	UNKNOWN STEP	2026-10-04T03:29:36.6938827Z baff89e671845e7e30ba55a7f326cb056b74826b6bcf680843496f9d0ba607de
+targeted	UNKNOWN STEP	2026-10-04T03:29:36.6956941Z ##[command]/usr/bin/docker ps --all --filter id=baff89e671845e7e30ba55a7f326cb056b74826b6bcf680843496f9d0ba607de --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+targeted	UNKNOWN STEP	2026-10-04T03:29:36.7043221Z baff89e671845e7e30ba55a7f326cb056b74826b6bcf680843496f9d0ba607de Up Less than a second (health: starting)
+targeted	UNKNOWN STEP	2026-10-04T03:29:36.7057446Z ##[command]/usr/bin/docker port baff89e671845e7e30ba55a7f326cb056b74826b6bcf680843496f9d0ba607de
+targeted	UNKNOWN STEP	2026-10-04T03:29:36.7136129Z 6379/tcp -> 0.0.0.0:6379
+targeted	UNKNOWN STEP	2026-10-04T03:29:36.7136415Z 6379/tcp -> [::]:6379
+targeted	UNKNOWN STEP	2026-10-04T03:29:36.7168260Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T03:29:36.7173930Z ##[group]Waiting for all services to be ready
+targeted	UNKNOWN STEP	2026-10-04T03:29:36.7182351Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" baff89e671845e7e30ba55a7f326cb056b74826b6bcf680843496f9d0ba607de
+targeted	UNKNOWN STEP	2026-10-04T03:29:36.7259461Z starting
+targeted	UNKNOWN STEP	2026-10-04T03:29:36.7274789Z redis service is starting, waiting 2 seconds before checking again.
+targeted	UNKNOWN STEP	2026-10-04T03:29:38.7270762Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" baff89e671845e7e30ba55a7f326cb056b74826b6bcf680843496f9d0ba607de
+targeted	UNKNOWN STEP	2026-10-04T03:29:38.7356351Z starting
+targeted	UNKNOWN STEP	2026-10-04T03:29:38.7367788Z redis service is starting, waiting 3 seconds before checking again.
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.5834601Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" baff89e671845e7e30ba55a7f326cb056b74826b6bcf680843496f9d0ba607de
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.5917095Z healthy
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.5934727Z redis service is healthy.
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.5935184Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6097570Z ##[group]Run actions/checkout@v6
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6097804Z with:
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6097968Z   repository: BradleyGleavePortfolio/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6099404Z   token: ***
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6099513Z   ssh-strict: true
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6099624Z   ssh-user: git
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6099942Z   persist-credentials: true
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6100074Z   clean: true
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6100188Z   sparse-checkout-cone-mode: true
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6100323Z   fetch-depth: 1
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6100428Z   fetch-tags: false
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6100552Z   show-progress: true
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6100690Z   lfs: false
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6100792Z   submodules: false
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6100907Z   set-safe-directory: true
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6101040Z   allow-unsafe-pr-checkout: false
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6101251Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6718017Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6718826Z ##[group]Getting Git version info
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6719071Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6771250Z [command]/usr/bin/git version
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6784190Z git version 2.55.0
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6797693Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6807127Z Temporarily overriding HOME='/home/runner/work/_temp/422ccad1-05f7-4793-86e0-8c69ce5a8824' before making global git config changes
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6807801Z Adding repository directory to the temporary git global config as a safe directory
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6810360Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6846829Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6849322Z ##[group]Determining repository object format
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6850794Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6851166Z ##[group]Initializing the repository
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6854014Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6936493Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6936962Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6937280Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6937546Z hint: call:
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6937709Z hint:
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6937980Z hint: 	git config --global init.defaultBranch <name>
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6938306Z hint:
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6938551Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6938943Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6939240Z hint:
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6939409Z hint: 	git branch -m <name>
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6939590Z hint:
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6939765Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6943201Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6947953Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6981094Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6981433Z ##[group]Disabling automatic garbage collection
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.6983517Z [command]/usr/bin/git config --local gc.auto 0
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.7004473Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.7004774Z ##[group]Setting up auth
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.7005195Z Removing SSH command configuration
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.7008717Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.7030475Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.7296419Z Removing HTTP extra header
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.7299272Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.7320353Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.7479056Z Removing includeIf entries pointing to credentials config files
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.7482538Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.7504330Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.7666443Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-b8cddf25-9282-4179-9c4e-1588854864c3.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.7692757Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-b8cddf25-9282-4179-9c4e-1588854864c3.config
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.7715416Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-b8cddf25-9282-4179-9c4e-1588854864c3.config
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.7741323Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-b8cddf25-9282-4179-9c4e-1588854864c3.config
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.7763874Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-b8cddf25-9282-4179-9c4e-1588854864c3.config
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.7817594Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.7817921Z ##[group]Fetching the repository
+targeted	UNKNOWN STEP	2026-10-04T03:29:42.7823046Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +e002b338872a531a1d3776ce7ce3af2fbdedf04e:refs/remotes/origin/ci/B-D34-116-689-before2
+targeted	UNKNOWN STEP	2026-10-04T03:29:44.3301200Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-04T03:29:44.3301846Z  * [new ref]         e002b338872a531a1d3776ce7ce3af2fbdedf04e -> origin/ci/B-D34-116-689-before2
+targeted	UNKNOWN STEP	2026-10-04T03:29:44.3310269Z [command]/usr/bin/git branch --list --remote origin/ci/B-D34-116-689-before2
+targeted	UNKNOWN STEP	2026-10-04T03:29:44.3329947Z   origin/ci/B-D34-116-689-before2
+targeted	UNKNOWN STEP	2026-10-04T03:29:44.3336297Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-D34-116-689-before2
+targeted	UNKNOWN STEP	2026-10-04T03:29:44.3369996Z e002b338872a531a1d3776ce7ce3af2fbdedf04e
+targeted	UNKNOWN STEP	2026-10-04T03:29:44.3372627Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T03:29:44.3372971Z ##[group]Determining the checkout info
+targeted	UNKNOWN STEP	2026-10-04T03:29:44.3373989Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T03:29:44.3376770Z [command]/usr/bin/git sparse-checkout disable
+targeted	UNKNOWN STEP	2026-10-04T03:29:44.3415095Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	UNKNOWN STEP	2026-10-04T03:29:44.3435946Z ##[group]Checking out the ref
+targeted	UNKNOWN STEP	2026-10-04T03:29:44.3438734Z [command]/usr/bin/git checkout --progress --force -B ci/B-D34-116-689-before2 refs/remotes/origin/ci/B-D34-116-689-before2
+targeted	UNKNOWN STEP	2026-10-04T03:29:44.4954122Z Switched to a new branch 'ci/B-D34-116-689-before2'
+targeted	UNKNOWN STEP	2026-10-04T03:29:44.4957966Z branch 'ci/B-D34-116-689-before2' set up to track 'origin/ci/B-D34-116-689-before2'.
+targeted	UNKNOWN STEP	2026-10-04T03:29:44.4974131Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T03:29:44.5006153Z [command]/usr/bin/git log -1 --format=%H
+targeted	UNKNOWN STEP	2026-10-04T03:29:44.5021802Z e002b338872a531a1d3776ce7ce3af2fbdedf04e
+targeted	UNKNOWN STEP	2026-10-04T03:29:44.5192597Z ##[group]Run actions/setup-node@v6
+targeted	UNKNOWN STEP	2026-10-04T03:29:44.5192747Z with:
+targeted	UNKNOWN STEP	2026-10-04T03:29:44.5193050Z   node-version: 20
+targeted	UNKNOWN STEP	2026-10-04T03:29:44.5193158Z   cache: npm
+targeted	UNKNOWN STEP	2026-10-04T03:29:44.5193265Z   check-latest: false
+targeted	UNKNOWN STEP	2026-10-04T03:29:44.5194621Z   token: ***
+targeted	UNKNOWN STEP	2026-10-04T03:29:44.5194740Z   package-manager-cache: true
+targeted	UNKNOWN STEP	2026-10-04T03:29:44.5194873Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T03:29:44.6041281Z Attempting to download 20...
+targeted	UNKNOWN STEP	2026-10-04T03:29:45.2721039Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+targeted	UNKNOWN STEP	2026-10-04T03:29:45.6796357Z Extracting ...
+targeted	UNKNOWN STEP	2026-10-04T03:29:45.6876896Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/152c1205-b694-4312-9159-fbff427d9563 -f /home/runner/work/_temp/d3801547-4bb7-49f6-8367-0e52bc043b6f
+targeted	UNKNOWN STEP	2026-10-04T03:29:46.4220174Z Adding to the cache ...
+targeted	UNKNOWN STEP	2026-10-04T03:29:47.9728218Z ##[group]Environment details
+targeted	UNKNOWN STEP	2026-10-04T03:29:48.1132614Z node: v20.20.2
+targeted	UNKNOWN STEP	2026-10-04T03:29:48.1133113Z npm: 10.8.2
+targeted	UNKNOWN STEP	2026-10-04T03:29:48.1133274Z yarn: 1.22.22
+targeted	UNKNOWN STEP	2026-10-04T03:29:48.1133660Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T03:29:48.1146247Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+targeted	UNKNOWN STEP	2026-10-04T03:29:48.1744787Z /home/runner/.npm
+targeted	UNKNOWN STEP	2026-10-04T03:29:48.3142987Z Cache hit for: node-cache-Linux-x64-npm-1c658f1a35f7b309848c416454e12a0f8c258736d5e30a9676088e8641c298ba
+targeted	UNKNOWN STEP	2026-10-04T03:29:49.3813233Z Received 86861520 of 86861520 (100.0%), 89.0 MBs/sec
+targeted	UNKNOWN STEP	2026-10-04T03:29:49.3813479Z Cache Size: ~83 MB (86861520 B)
+targeted	UNKNOWN STEP	2026-10-04T03:29:49.3831337Z [command]/usr/bin/tar -xf /home/runner/work/_temp/afc09117-45cf-4a1d-bc57-bdd2137b30ad/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+targeted	UNKNOWN STEP	2026-10-04T03:29:49.5038231Z Cache restored successfully
+targeted	UNKNOWN STEP	2026-10-04T03:29:49.5075626Z Cache restored from key: node-cache-Linux-x64-npm-1c658f1a35f7b309848c416454e12a0f8c258736d5e30a9676088e8641c298ba
+targeted	UNKNOWN STEP	2026-10-04T03:29:49.5224838Z ##[group]Run npm ci
+targeted	UNKNOWN STEP	2026-10-04T03:29:49.5225020Z ^[[36;1mnpm ci^[[0m
+targeted	UNKNOWN STEP	2026-10-04T03:29:49.5398955Z shell: /usr/bin/bash -e {0}
+targeted	UNKNOWN STEP	2026-10-04T03:29:49.5399109Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T03:29:52.8073582Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	UNKNOWN STEP	2026-10-04T03:29:52.9360081Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+targeted	UNKNOWN STEP	2026-10-04T03:29:54.1517303Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-04T03:29:54.7665456Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-04T03:29:54.7809122Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-04T03:29:54.8127680Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-04T03:30:02.5271389Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:02.5272153Z > growth-project-backend@1.0.0 postinstall
+targeted	UNKNOWN STEP	2026-10-04T03:30:02.5272393Z > prisma generate
+targeted	UNKNOWN STEP	2026-10-04T03:30:02.5272474Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:03.0580369Z Prisma schema loaded from prisma/schema.prisma
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.2103001Z ┌─────────────────────────────────────────────────────────┐
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.2103572Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.2104012Z │                                                         │
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.2104464Z │  This is a major update - please follow the guide at    │
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.2104951Z │  https://pris.ly/d/major-version-upgrade                │
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.2105403Z │                                                         │
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.2105799Z │  Run the following to update                            │
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.2106218Z │    npm i --save-dev prisma@latest                       │
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.2106950Z │    npm i @prisma/client@latest                          │
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.2107386Z └─────────────────────────────────────────────────────────┘
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.2107613Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.2108001Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.16s
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.2108286Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.2108617Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.2108915Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.2109390Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.2109794Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.2594170Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.2594660Z > growth-project-backend@1.0.0 prepare
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.2594983Z > lefthook install
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.2595105Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.2990978Z sync hooks: ✔️(pre-commit, commit-msg)
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.3107749Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.3108264Z added 1117 packages, and audited 1118 packages in 16s
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.3108473Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.3108566Z 202 packages are looking for funding
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.3108770Z   run `npm fund` for details
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.3130857Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.3131111Z 4 vulnerabilities (1 moderate, 3 high)
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.3131545Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.3131702Z To address issues that do not require attention, run:
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.3131880Z   npm audit fix
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.3131955Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.3132138Z To address all issues (including breaking changes), run:
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.3132326Z   npm audit fix --force
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.3132409Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.3132474Z Run `npm audit` for details.
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.3663802Z ##[group]Run npx prisma generate
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.3663987Z ^[[36;1mnpx prisma generate^[[0m
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.3719196Z shell: /usr/bin/bash -e {0}
+targeted	UNKNOWN STEP	2026-10-04T03:30:05.3719340Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T03:30:06.0559492Z Prisma schema loaded from prisma/schema.prisma
+targeted	UNKNOWN STEP	2026-10-04T03:30:08.1932150Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:08.1933316Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.15s
+targeted	UNKNOWN STEP	2026-10-04T03:30:08.1933567Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:08.1933760Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	UNKNOWN STEP	2026-10-04T03:30:08.1933940Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:08.1934214Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+targeted	UNKNOWN STEP	2026-10-04T03:30:08.1934432Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:08.2814998Z ##[group]Run set -euo pipefail
+targeted	UNKNOWN STEP	2026-10-04T03:30:08.2815186Z ^[[36;1mset -euo pipefail^[[0m
+targeted	UNKNOWN STEP	2026-10-04T03:30:08.2815393Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	UNKNOWN STEP	2026-10-04T03:30:08.2815647Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	UNKNOWN STEP	2026-10-04T03:30:08.2815833Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	UNKNOWN STEP	2026-10-04T03:30:08.2815988Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	UNKNOWN STEP	2026-10-04T03:30:08.2866257Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	UNKNOWN STEP	2026-10-04T03:30:08.2866438Z env:
+targeted	UNKNOWN STEP	2026-10-04T03:30:08.2866558Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	UNKNOWN STEP	2026-10-04T03:30:08.2866765Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	UNKNOWN STEP	2026-10-04T03:30:08.2866926Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T03:30:08.2936615Z specs: test/dunning-d3-fix-round.spec.ts
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3906236Z FAIL test/dunning-d3-fix-round.spec.ts (7.498 s)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3906604Z   B-D34-116 dunning D3 fix round (#689)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3907495Z     ✕ B-689-1: an open dispute in a payment cycle survives a paid card update and becomes the dispute cycle (11 ms)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3908081Z     ✕ B-689-1: a dispute recorded while the pay call is in flight is not cleared (21 ms)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3908639Z     ✕ B-689-1: the background reconcile keeps a dispute recorded before the payment settled (25 ms)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3909224Z     ✓ B-689-1 control: with no dispute the paid card update resolves the cycle and restores access (14 ms)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3909862Z     ✕ B-689-1: an authority read that fails never resolves the cycle (deferred to the webhook) (25 ms)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3911583Z     ✕ B-689-1: a dispute that closed lost during the cycle still blocks the card update (needs #688 B-688-5) (8 ms)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3912286Z     ✕ B-689-3: a paid invoice another collector paid during the await is never credited to the update (9 ms)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3913076Z     ✓ B-689-3 control: our own pay whose reply was lost is credited at once by the same-key replay (18 ms)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3913703Z     ✕ B-689-4: cancel of a disputed cycle ends access now even when the latest invoice reads paid (5 ms)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3914341Z     ✕ B-689-4: a disputed cycle canceled in the app before the lock ends access now and stays unresolved (4 ms)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3914954Z     ✕ B-689-4: a disputed cycle canceled in the app after the lock ends access now and stays unresolved (15 ms)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3915353Z     ✕ B-689-4: a disputed cycle canceled outside the app ends access now and stays unresolved (4 ms)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3915729Z     ✓ B-689-4 control: an ordinary cycle paid meanwhile keeps the paid period (option A) (2 ms)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3916104Z     ✕ B-689-2: provider, database and transport diagnostics never reach the logs (5 ms)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3916470Z     ✕ C-689-2 (Opus): failing operations back off so a healthy one is reconciled (5 ms)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3916641Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3917145Z   ● B-D34-116 dunning D3 fix round (#689) › B-689-1: an open dispute in a payment cycle survives a paid card update and becomes the dispute cycle
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3917543Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3917702Z     expect(received).toEqual(expected) // deep equality
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3917896Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3917982Z     - Expected  - 6
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3918174Z     + Received  + 1
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3918283Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3918364Z     - Array [
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3918551Z     -   ObjectContaining {
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3918781Z     -     "amount_cents": null,
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3919104Z     -     "purchase_id": "purchase",
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3919333Z     -   },
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3919494Z     - ]
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3919658Z     + Array []
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3919758Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3919941Z     ^[[0m ^[[90m 135 |^[[39m     dispute(w)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3920415Z      ^[[90m 136 |^[[39m     ^[[36mconst^[[39m si ^[[33m=^[[39m ^[[36mawait^[[39m approve(w)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3921344Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 137 |^[[39m     expect(si^[[33m.^[[39mquote^[[33m.^[[39mdisputes)^[[33m.^[[39mtoEqual([
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3921842Z      ^[[90m     |^[[39m                               ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3922580Z      ^[[90m 138 |^[[39m       expect^[[33m.^[[39mobjectContaining({ purchase_id^[[33m:^[[39m ^[[32m'purchase'^[[39m^[[33m,^[[39m amount_cents^[[33m:^[[39m ^[[36mnull^[[39m })^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3923263Z      ^[[90m 139 |^[[39m     ])^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3923768Z      ^[[90m 140 |^[[39m     ^[[36mconst^[[39m res ^[[33m=^[[39m ^[[36mawait^[[39m w^[[33m.^[[39mbilling^[[33m.^[[39mconfirmCardUpdate(^[[32m'client'^[[39m^[[33m,^[[39m si^[[33m.^[[39mid^[[33m,^[[39m si^[[33m.^[[39mapproved)^[[33m;^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3924097Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3924223Z       at Object.<anonymous> (test/dunning-d3-fix-round.spec.ts:137:31)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3924368Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3924627Z   ● B-D34-116 dunning D3 fix round (#689) › B-689-1: a dispute recorded while the pay call is in flight is not cleared
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3924843Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3924923Z     expect(received).toMatchObject(expected)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3925028Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3925086Z     - Expected  - 1
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3925204Z     + Received  + 1
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3925272Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3925322Z       Object {
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3925440Z     -   "dispute_open": true,
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3925589Z     +   "dispute_open": false,
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3925727Z         "outcome": "paid",
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3925850Z       }
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3925904Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3926130Z     ^[[0m ^[[90m 159 |^[[39m     w^[[33m.^[[39mstripe^[[33m.^[[39mbeforePay ^[[33m=^[[39m () ^[[33m=>^[[39m dispute(w)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3926847Z      ^[[90m 160 |^[[39m     ^[[36mconst^[[39m res ^[[33m=^[[39m ^[[36mawait^[[39m w^[[33m.^[[39mbilling^[[33m.^[[39mconfirmCardUpdate(^[[32m'client'^[[39m^[[33m,^[[39m si^[[33m.^[[39mid^[[33m,^[[39m si^[[33m.^[[39mapproved)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3927557Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 161 |^[[39m     expect(res^[[33m.^[[39mplans[^[[35m0^[[39m])^[[33m.^[[39mtoMatchObject({ outcome^[[33m:^[[39m ^[[32m'paid'^[[39m^[[33m,^[[39m dispute_open^[[33m:^[[39m ^[[36mtrue^[[39m })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3927987Z      ^[[90m     |^[[39m                          ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3928474Z      ^[[90m 162 |^[[39m     expect(w^[[33m.^[[39mstate())^[[33m.^[[39mtoMatchObject({ status^[[33m:^[[39m ^[[32m'active'^[[39m^[[33m,^[[39m last_failure_reason^[[33m:^[[39m ^[[32m'charge_disputed'^[[39m })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3928850Z      ^[[90m 163 |^[[39m   })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3929008Z      ^[[90m 164 |^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3929085Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3929204Z       at Object.<anonymous> (test/dunning-d3-fix-round.spec.ts:161:26)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3929346Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3929614Z   ● B-D34-116 dunning D3 fix round (#689) › B-689-1: the background reconcile keeps a dispute recorded before the payment settled
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3929839Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3929943Z     expect(received).toBe(expected) // Object.is equality
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3930066Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3930131Z     Expected: "payment_uncertain"
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3930277Z     Received: "paid"
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3930348Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3930437Z     ^[[0m ^[[90m 172 |^[[39m     }^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3930926Z      ^[[90m 173 |^[[39m     ^[[36mconst^[[39m first ^[[33m=^[[39m ^[[36mawait^[[39m w^[[33m.^[[39mbilling^[[33m.^[[39mconfirmCardUpdate(^[[32m'client'^[[39m^[[33m,^[[39m si^[[33m.^[[39mid^[[33m,^[[39m si^[[33m.^[[39mapproved)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3931485Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 174 |^[[39m     expect(first^[[33m.^[[39moutcome)^[[33m.^[[39mtoBe(^[[32m'payment_uncertain'^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3931812Z      ^[[90m     |^[[39m                           ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3932023Z      ^[[90m 175 |^[[39m     dispute(w)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3932569Z      ^[[90m 176 |^[[39m     jest^[[33m.^[[39msetSystemTime(^[[36mnew^[[39m ^[[33mDate^[[39m(^[[33mNOW^[[39m^[[33m.^[[39mgetTime() ^[[33m+^[[39m ^[[35m10^[[39m ^[[33m*^[[39m ^[[35m60000^[[39m))^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3933240Z      ^[[90m 177 |^[[39m     ^[[36mawait^[[39m w^[[33m.^[[39mbilling^[[33m.^[[39mreconcile()^[[33m;^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3933404Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3933521Z       at Object.<anonymous> (test/dunning-d3-fix-round.spec.ts:174:27)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3933720Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3933985Z   ● B-D34-116 dunning D3 fix round (#689) › B-689-1: an authority read that fails never resolves the cycle (deferred to the webhook)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3934208Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3934286Z     expect(received).toMatchObject(expected)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3934390Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3934443Z     - Expected  - 1
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3934559Z     + Received  + 1
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3934624Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3934671Z       Object {
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3934785Z     -   "access": "updating",
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3934920Z     +   "access": "restored",
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3935054Z         "outcome": "paid",
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3935174Z       }
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3935230Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3935474Z     ^[[0m ^[[90m 199 |^[[39m       ^[[33m.^[[39mmockRejectedValueOnce(^[[36mnew^[[39m ^[[33mError^[[39m(^[[33mSENTINEL^[[39m))^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3936068Z      ^[[90m 200 |^[[39m     ^[[36mconst^[[39m res ^[[33m=^[[39m ^[[36mawait^[[39m w^[[33m.^[[39mbilling^[[33m.^[[39mconfirmCardUpdate(^[[32m'client'^[[39m^[[33m,^[[39m si^[[33m.^[[39mid^[[33m,^[[39m si^[[33m.^[[39mapproved)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3936760Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 201 |^[[39m     expect(res^[[33m.^[[39mplans[^[[35m0^[[39m])^[[33m.^[[39mtoMatchObject({ outcome^[[33m:^[[39m ^[[32m'paid'^[[39m^[[33m,^[[39m access^[[33m:^[[39m ^[[32m'updating'^[[39m })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3937302Z      ^[[90m     |^[[39m                          ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3937748Z      ^[[90m 202 |^[[39m     expect(w^[[33m.^[[39mstate())^[[33m.^[[39mtoMatchObject({ status^[[33m:^[[39m ^[[32m'active'^[[39m^[[33m,^[[39m locked_out_at^[[33m:^[[39m ^[[33mOLD^[[39m })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3938221Z      ^[[90m 203 |^[[39m     expect(logged())^[[33m.^[[39mnot^[[33m.^[[39mtoContain(^[[32m'SYNTHETIC'^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3938484Z      ^[[90m 204 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3938580Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3938692Z       at Object.<anonymous> (test/dunning-d3-fix-round.spec.ts:201:26)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3938834Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3939132Z   ● B-D34-116 dunning D3 fix round (#689) › B-689-1: a dispute that closed lost during the cycle still blocks the card update (needs #688 B-688-5)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3939375Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3939449Z     expect(received).toMatchObject(expected)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3939553Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3939607Z     - Expected  - 1
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3939720Z     + Received  + 1
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3939787Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3939832Z       Object {
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3939948Z     -   "dispute_open": true,
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3940091Z     +   "dispute_open": false,
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3940226Z         "outcome": "paid",
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3940347Z       }
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3940400Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3940583Z     ^[[0m ^[[90m 216 |^[[39m     ^[[36mconst^[[39m si ^[[33m=^[[39m ^[[36mawait^[[39m approve(w)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3941126Z      ^[[90m 217 |^[[39m     ^[[36mconst^[[39m res ^[[33m=^[[39m ^[[36mawait^[[39m w^[[33m.^[[39mbilling^[[33m.^[[39mconfirmCardUpdate(^[[32m'client'^[[39m^[[33m,^[[39m si^[[33m.^[[39mid^[[33m,^[[39m si^[[33m.^[[39mapproved)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3942004Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 218 |^[[39m     expect(res^[[33m.^[[39mplans[^[[35m0^[[39m])^[[33m.^[[39mtoMatchObject({ outcome^[[33m:^[[39m ^[[32m'paid'^[[39m^[[33m,^[[39m dispute_open^[[33m:^[[39m ^[[36mtrue^[[39m })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3942424Z      ^[[90m     |^[[39m                          ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3942932Z      ^[[90m 219 |^[[39m     expect(w^[[33m.^[[39mstate())^[[33m.^[[39mtoMatchObject({ status^[[33m:^[[39m ^[[32m'active'^[[39m^[[33m,^[[39m locked_out_at^[[33m:^[[39m ^[[33mOLD^[[39m })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3943277Z      ^[[90m 220 |^[[39m   })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3943519Z      ^[[90m 221 |^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3943596Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3943711Z       at Object.<anonymous> (test/dunning-d3-fix-round.spec.ts:218:26)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3943850Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3944139Z   ● B-D34-116 dunning D3 fix round (#689) › B-689-3: a paid invoice another collector paid during the await is never credited to the update
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3944378Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3944455Z     expect(received).toMatchObject(expected)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3944557Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3944607Z     - Expected  - 2
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3944721Z     + Received  + 2
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3944788Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3944839Z       Object {
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3944961Z     -   "amount_paid_cents": 0,
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3945106Z     -   "outcome": "uncertain",
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3945251Z     +   "amount_paid_cents": 15000,
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3945394Z     +   "outcome": "paid",
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3945512Z       }
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3945568Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3945657Z     ^[[0m ^[[90m 229 |^[[39m     }^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3946138Z      ^[[90m 230 |^[[39m     ^[[36mconst^[[39m res ^[[33m=^[[39m ^[[36mawait^[[39m w^[[33m.^[[39mbilling^[[33m.^[[39mconfirmCardUpdate(^[[32m'client'^[[39m^[[33m,^[[39m si^[[33m.^[[39mid^[[33m,^[[39m si^[[33m.^[[39mapproved)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3946843Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 231 |^[[39m     expect(res^[[33m.^[[39mplans[^[[35m0^[[39m])^[[33m.^[[39mtoMatchObject({ outcome^[[33m:^[[39m ^[[32m'uncertain'^[[39m^[[33m,^[[39m amount_paid_cents^[[33m:^[[39m ^[[35m0^[[39m })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3947272Z      ^[[90m     |^[[39m                          ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3947687Z      ^[[90m 232 |^[[39m     expect(w^[[33m.^[[39mop(si^[[33m.^[[39mid)^[[33m?^[[39m^[[33m.^[[39mcompleted_at ^[[33m?^[[39m^[[33m?^[[39m ^[[36mnull^[[39m)^[[33m.^[[39mtoBeNull()^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3948381Z      ^[[90m 233 |^[[39m     jest^[[33m.^[[39msetSystemTime(^[[36mnew^[[39m ^[[33mDate^[[39m(^[[33mNOW^[[39m^[[33m.^[[39mgetTime() ^[[33m+^[[39m ^[[35m10^[[39m ^[[33m*^[[39m ^[[35m60000^[[39m))^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3948835Z      ^[[90m 234 |^[[39m     ^[[36mawait^[[39m w^[[33m.^[[39mbilling^[[33m.^[[39mreconcile()^[[33m;^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3948995Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3949106Z       at Object.<anonymous> (test/dunning-d3-fix-round.spec.ts:231:26)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3949246Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3949519Z   ● B-D34-116 dunning D3 fix round (#689) › B-689-4: cancel of a disputed cycle ends access now even when the latest invoice reads paid
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3949747Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3949821Z     expect(received).toMatchObject(expected)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3949923Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3949973Z     - Expected  - 2
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3950088Z     + Received  + 2
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3950154Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3950197Z       Object {
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3950310Z     -   "outcome": "ended",
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3950454Z     -   "paid_period_kept": false,
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3950601Z     +   "outcome": "scheduled",
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3950745Z     +   "paid_period_kept": true,
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3950876Z       }
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3950931Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3951264Z     ^[[0m ^[[90m 259 |^[[39m     w^[[33m.^[[39mstripe^[[33m.^[[39msubs^[[33m.^[[39m^[[36mget^[[39m(^[[32m'sub_client'^[[39m)^[[33m!^[[39m^[[33m.^[[39mstatus ^[[33m=^[[39m ^[[32m'active'^[[39m^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3951876Z      ^[[90m 260 |^[[39m     ^[[36mconst^[[39m res ^[[33m=^[[39m ^[[36mawait^[[39m w^[[33m.^[[39mbilling^[[33m.^[[39mcancelPlan(^[[32m'client'^[[39m^[[33m,^[[39m ^[[32m'purchase'^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3952517Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 261 |^[[39m     expect(res)^[[33m.^[[39mtoMatchObject({ outcome^[[33m:^[[39m ^[[32m'ended'^[[39m^[[33m,^[[39m paid_period_kept^[[33m:^[[39m ^[[36mfalse^[[39m })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3952989Z      ^[[90m     |^[[39m                 ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3953404Z      ^[[90m 262 |^[[39m     expect(res^[[33m.^[[39mmessage)^[[33m.^[[39mtoMatch(^[[35m/does not settle the payment your bank reversed/^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3954116Z      ^[[90m 263 |^[[39m     expect(w^[[33m.^[[39mstripe^[[33m.^[[39msubs^[[33m.^[[39m^[[36mget^[[39m(^[[32m'sub_client'^[[39m)^[[33m?^[[39m^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(^[[32m'canceled'^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3954761Z      ^[[90m 264 |^[[39m     expect(w^[[33m.^[[39mfake^[[33m.^[[39mfind(^[[32m'clientPurchase'^[[39m^[[33m,^[[39m { id^[[33m:^[[39m ^[[32m'purchase'^[[39m }))^[[33m.^[[39mtoMatchObject({^[[0m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3955035Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3955160Z       at Object.<anonymous> (test/dunning-d3-fix-round.spec.ts:261:17)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3955306Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3955625Z   ● B-D34-116 dunning D3 fix round (#689) › B-689-4: a disputed cycle canceled in the app before the lock ends access now and stays unresolved
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3955883Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3955978Z     expect(received).resolves.toMatchObject(expected)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3956115Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3956166Z     - Expected  - 1
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3956296Z     + Received  + 1
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3956362Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3956408Z       Object {
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3956538Z     -   "outcome": "ended",
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3956693Z     +   "outcome": "scheduled",
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3956819Z       }
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3956888Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3957235Z     ^[[0m ^[[90m 281 |^[[39m       w^[[33m.^[[39mstripe^[[33m.^[[39msubs^[[33m.^[[39m^[[36mget^[[39m(^[[32m'sub_client'^[[39m)^[[33m!^[[39m^[[33m.^[[39mstatus ^[[33m=^[[39m ^[[32m'active'^[[39m^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3957675Z      ^[[90m 282 |^[[39m       ^[[36mif^[[39m (via ^[[33m===^[[39m ^[[32m'app'^[[39m) {
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3958239Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 283 |^[[39m         ^[[36mawait^[[39m expect(w^[[33m.^[[39mbilling^[[33m.^[[39mcancelPlan(^[[32m'client'^[[39m^[[33m,^[[39m ^[[32m'purchase'^[[39m))^[[33m.^[[39mresolves^[[33m.^[[39mtoMatchObject({
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3958866Z      ^[[90m     |^[[39m                                                                           ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3959163Z      ^[[90m 284 |^[[39m           outcome^[[33m:^[[39m ^[[32m'ended'^[[39m^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3959412Z      ^[[90m 285 |^[[39m         })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3959624Z      ^[[90m 286 |^[[39m       } ^[[36melse^[[39m {^[[0m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3959727Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3959862Z       at Object.toMatchObject (node_modules/expect/build/index.js:2140:20)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3960109Z       at test/dunning-d3-fix-round.spec.ts:283:75
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3960220Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3960535Z   ● B-D34-116 dunning D3 fix round (#689) › B-689-4: a disputed cycle canceled in the app after the lock ends access now and stays unresolved
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3960789Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3960878Z     expect(received).resolves.toMatchObject(expected)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3961016Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3961067Z     - Expected  - 1
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3961196Z     + Received  + 1
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3961264Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3961308Z       Object {
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3961441Z     -   "outcome": "ended",
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3961591Z     +   "outcome": "scheduled",
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3961718Z       }
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3961790Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3962142Z     ^[[0m ^[[90m 281 |^[[39m       w^[[33m.^[[39mstripe^[[33m.^[[39msubs^[[33m.^[[39m^[[36mget^[[39m(^[[32m'sub_client'^[[39m)^[[33m!^[[39m^[[33m.^[[39mstatus ^[[33m=^[[39m ^[[32m'active'^[[39m^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3962571Z      ^[[90m 282 |^[[39m       ^[[36mif^[[39m (via ^[[33m===^[[39m ^[[32m'app'^[[39m) {
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3963297Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 283 |^[[39m         ^[[36mawait^[[39m expect(w^[[33m.^[[39mbilling^[[33m.^[[39mcancelPlan(^[[32m'client'^[[39m^[[33m,^[[39m ^[[32m'purchase'^[[39m))^[[33m.^[[39mresolves^[[33m.^[[39mtoMatchObject({
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3963799Z      ^[[90m     |^[[39m                                                                           ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3964112Z      ^[[90m 284 |^[[39m           outcome^[[33m:^[[39m ^[[32m'ended'^[[39m^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3964348Z      ^[[90m 285 |^[[39m         })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3964554Z      ^[[90m 286 |^[[39m       } ^[[36melse^[[39m {^[[0m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3964659Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3964895Z       at Object.toMatchObject (node_modules/expect/build/index.js:2140:20)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3965144Z       at test/dunning-d3-fix-round.spec.ts:283:75
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3965255Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3965555Z   ● B-D34-116 dunning D3 fix round (#689) › B-689-4: a disputed cycle canceled outside the app ends access now and stays unresolved
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3965798Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3965874Z     expect(received).toMatchObject(expected)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3965990Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3966042Z     - Expected  - 2
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3966169Z     + Received  + 2
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3966236Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3966283Z       Object {
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3966426Z     -   "entitlement_active": false,
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3966585Z     -   "status": "canceled",
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3966738Z     +   "entitlement_active": true,
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3966895Z     +   "status": "active",
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3967029Z       }
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3967087Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3967295Z     ^[[0m ^[[90m 288 |^[[39m         ^[[36mawait^[[39m w^[[33m.^[[39mbilling^[[33m.^[[39mreconcile()^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3967541Z      ^[[90m 289 |^[[39m       }
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3968005Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 290 |^[[39m       expect(w^[[33m.^[[39mfake^[[33m.^[[39mfind(^[[32m'clientPurchase'^[[39m^[[33m,^[[39m { id^[[33m:^[[39m ^[[32m'purchase'^[[39m }))^[[33m.^[[39mtoMatchObject({
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3968471Z      ^[[90m     |^[[39m                                                                 ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3968777Z      ^[[90m 291 |^[[39m         status^[[33m:^[[39m ^[[32m'canceled'^[[39m^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3969078Z      ^[[90m 292 |^[[39m         entitlement_active^[[33m:^[[39m ^[[36mfalse^[[39m^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3969428Z      ^[[90m 293 |^[[39m       })^[[33m;^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3969540Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3969626Z       at test/dunning-d3-fix-round.spec.ts:290:65
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3969752Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3970015Z   ● B-D34-116 dunning D3 fix round (#689) › B-689-2: provider, database and transport diagnostics never reach the logs
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3970238Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3970330Z     expect(received).not.toContain(expected) // indexOf
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3970464Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3970531Z     Expected substring: not "SYNTHETIC"
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3972027Z     Received string:        "[[[\"client billing card_setup: Stripe 503 request_timeout SYNTHETIC-person@tgp.invalid *** body=SYNTHETIC_MESSAGE\"],[\"client billing card_setup: Stripe unreachable: fetch failed SYNTHETIC-person@tgp.invalid *** body=SYNTHETIC_MESSAGE\"],[\"cancel: subscription re-read failed purchase=purchase: SYNTHETIC-person@tgp.invalid *** body=SYNTHETIC_MESSAGE\"]],[[\"client billing reconcile: fatal error: SYNTHETIC-person@tgp.invalid *** body=SYNTHETIC_MESSAGE\"]],[]]"
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3973060Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3973377Z     ^[[0m ^[[90m 331 |^[[39m         stub(^[[33mLogger^[[39m^[[33m.^[[39mprototype^[[33m.^[[39mwarn)^[[33m.^[[39mmock^[[33m.^[[39mcalls^[[33m.^[[39mlength^[[33m,^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3973780Z      ^[[90m 332 |^[[39m     )^[[33m.^[[39mtoBeGreaterThan(^[[35m2^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3974198Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 333 |^[[39m     expect(logged())^[[33m.^[[39mnot^[[33m.^[[39mtoContain(^[[32m'SYNTHETIC'^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3974535Z      ^[[90m     |^[[39m                          ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3974760Z      ^[[90m 334 |^[[39m   })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3974916Z      ^[[90m 335 |^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3975338Z      ^[[90m 336 |^[[39m   it(^[[32m'C-689-2 (Opus): failing operations back off so a healthy one is reconciled'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3975611Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3975744Z       at Object.<anonymous> (test/dunning-d3-fix-round.spec.ts:333:26)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3975898Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3976152Z   ● B-D34-116 dunning D3 fix round (#689) › C-689-2 (Opus): failing operations back off so a healthy one is reconciled
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3976370Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3976434Z     expect(received).toBeTruthy()
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3976631Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3976683Z     Received: null
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3976764Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3977129Z     ^[[0m ^[[90m 361 |^[[39m     jest^[[33m.^[[39msetSystemTime(^[[36mnew^[[39m ^[[33mDate^[[39m(^[[33mNOW^[[39m^[[33m.^[[39mgetTime() ^[[33m+^[[39m ^[[35m10^[[39m ^[[33m*^[[39m ^[[35m60000^[[39m))^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3977624Z      ^[[90m 362 |^[[39m     ^[[36mawait^[[39m w^[[33m.^[[39mbilling^[[33m.^[[39mreconcile()^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3978259Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 363 |^[[39m     expect(w^[[33m.^[[39mfake^[[33m.^[[39mfind(^[[32m'clientBillingOperation'^[[39m^[[33m,^[[39m { id^[[33m:^[[39m ^[[32m'op_ok'^[[39m })^[[33m?^[[39m^[[33m.^[[39mcompleted_at)^[[33m.^[[39mtoBeTruthy()^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3978812Z      ^[[90m     |^[[39m                                                                                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3979192Z      ^[[90m 364 |^[[39m     expect(logged())^[[33m.^[[39mnot^[[33m.^[[39mtoContain(^[[32m'SYNTHETIC'^[[39m)^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3979468Z      ^[[90m 365 |^[[39m   })^[[33m;^[[39m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3979657Z      ^[[90m 366 |^[[39m })^[[33m;^[[39m^[[0m
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3979762Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3979876Z       at Object.<anonymous> (test/dunning-d3-fix-round.spec.ts:363:82)
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3980032Z 
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3980132Z Test Suites: 1 failed, 1 total
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3980308Z Tests:       12 failed, 3 passed, 15 total
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3980479Z Snapshots:   0 total
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3980619Z Time:        7.639 s
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.3980833Z Ran all test suites matching test/dunning-d3-fix-round.spec.ts.
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.5494985Z ##[error]Process completed with exit code 1.
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.5567866Z Post job cleanup.
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6077309Z [command]/usr/bin/git version
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6103313Z git version 2.55.0
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6124685Z Temporarily overriding HOME='/home/runner/work/_temp/deae0492-8e17-47a6-8bcf-7d7db7b981a7' before making global git config changes
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6125228Z Adding repository directory to the temporary git global config as a safe directory
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6127909Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6149701Z Removing SSH command configuration
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6153518Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6177288Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6338719Z Removing HTTP extra header
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6341366Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6363082Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6519267Z Removing includeIf entries pointing to credentials config files
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6522684Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6542951Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6543597Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6543906Z includeif.gitdir:/github/workspace/.git.path
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6544130Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6548385Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6564344Z /home/runner/work/_temp/git-credentials-b8cddf25-9282-4179-9c4e-1588854864c3.config
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6570560Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-b8cddf25-9282-4179-9c4e-1588854864c3.config
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6594734Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6609809Z /home/runner/work/_temp/git-credentials-b8cddf25-9282-4179-9c4e-1588854864c3.config
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6615429Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-b8cddf25-9282-4179-9c4e-1588854864c3.config
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6638125Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6653561Z /github/runner_temp/git-credentials-b8cddf25-9282-4179-9c4e-1588854864c3.config
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6657493Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-b8cddf25-9282-4179-9c4e-1588854864c3.config
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6679437Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6694294Z /github/runner_temp/git-credentials-b8cddf25-9282-4179-9c4e-1588854864c3.config
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6699010Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-b8cddf25-9282-4179-9c4e-1588854864c3.config
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6722186Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6879150Z Removing credentials config '/home/runner/work/_temp/git-credentials-b8cddf25-9282-4179-9c4e-1588854864c3.config'
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6964896Z Print service container logs: 8ac91a06b4944387b4ddf017fd595333_redis7alpine_a350bb
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.6967820Z ##[command]/usr/bin/docker logs --details baff89e671845e7e30ba55a7f326cb056b74826b6bcf680843496f9d0ba607de
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.7053060Z  1:C 04 Oct 2026 03:29:36.697 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.7054353Z  1:C 04 Oct 2026 03:29:36.697 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.7054791Z  1:C 04 Oct 2026 03:29:36.697 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.7055440Z  1:C 04 Oct 2026 03:29:36.697 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.7055992Z  1:M 04 Oct 2026 03:29:36.698 * monotonic clock: POSIX clock_gettime
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.7056304Z  1:M 04 Oct 2026 03:29:36.698 * Running mode=standalone, port=6379.
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.7056588Z  1:M 04 Oct 2026 03:29:36.698 * Server initialized
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.7056859Z  1:M 04 Oct 2026 03:29:36.698 * Ready to accept connections tcp
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.7066231Z Stop and remove container: 8ac91a06b4944387b4ddf017fd595333_redis7alpine_a350bb
+targeted	UNKNOWN STEP	2026-10-04T03:30:16.7068900Z ##[command]/usr/bin/docker rm --force baff89e671845e7e30ba55a7f326cb056b74826b6bcf680843496f9d0ba607de
+targeted	UNKNOWN STEP	2026-10-04T03:30:22.8295605Z baff89e671845e7e30ba55a7f326cb056b74826b6bcf680843496f9d0ba607de
+targeted	UNKNOWN STEP	2026-10-04T03:30:22.8318070Z Remove container network: github_network_f380874df4004331ad311735a9586382
+targeted	UNKNOWN STEP	2026-10-04T03:30:22.8320393Z ##[command]/usr/bin/docker network rm github_network_f380874df4004331ad311735a9586382
+targeted	UNKNOWN STEP	2026-10-04T03:30:22.9087401Z github_network_f380874df4004331ad311735a9586382
+targeted	UNKNOWN STEP	2026-10-04T03:30:22.9149603Z Cleaning up orphan processes

@@ -1,0 +1,1893 @@
+diff --git a/config/expected-env.json b/config/expected-env.json
+index 71d0b01d..a0a96f60 100644
+--- a/config/expected-env.json
++++ b/config/expected-env.json
+@@ -221,6 +221,11 @@
+       "default": "on in dev, off in release",
+       "reason": "Feature flag read via featureFlags.ts with a literal key."
+     },
++    "EXPO_PUBLIC_FF_WEARABLE_AI_INSIGHTS": {
++      "kind": "flag",
++      "default": "off",
++      "reason": "Feature flag read via featureFlags.ts with a literal key (client wearable AI insight panel, #317). Keep off in every EAS profile until the panel honours the D2 AI consent (box 2)."
++    },
+     "EXPO_PUBLIC_HELP_BASE_URL": {
+       "kind": "optional",
+       "default": "https://app.trygrowthproject.com/help",
+diff --git a/docs/android-health-connect-build-switch.md b/docs/android-health-connect-build-switch.md
+index d070d690..3bb287e8 100644
+--- a/docs/android-health-connect-build-switch.md
++++ b/docs/android-health-connect-build-switch.md
+@@ -6,10 +6,16 @@ declarations or connect actions. Apple Health on iOS is unchanged.
+ `app.config.js` reads the base Expo config from `app.json`.
+ `TGP_ANDROID_HEALTH_CONNECT=1` is the only opt-in value; unset, `0` and all other
+ values keep Android Health Connect off. `preview` and `production` explicitly set
+-`0` in `eas.json`; `clinic` inherits `production`.
++`0` in `eas.json`. `clinic` (the launch profile) extends `production` and sets
++`1` (S14 round 3, #317): Health Connect returns in the clinic Android binary.
++Before that binary goes to a reviewed Play track, the owner completes the Play
++Console Health apps declaration for the read types listed in #317.
+ 
+-OFF removes every `android.permission.health.*` declaration and the Samsung
+-additional-health-data permission, adds manifest-merger removal rules through
++S-WEAR-3 (Opus C-317-5): the Samsung additional-health-data permission and
++`android.permission.ACTIVITY_RECOGNITION` are no longer declared and are
++blocked in every build, ON and OFF.
++
++OFF removes every `android.permission.health.*` declaration, adds manifest-merger removal rules through
+ `android.blockedPermissions`, removes the Health Connect plugin and sets
+ `extra.healthConnectEnabled=false`. The package and version code remain
+ `com.growthproject.app` and `4`. This switch does not uninstall the dependency or
+diff --git a/docs/mobile/HEALTH_NATIVE_MODULES.md b/docs/mobile/HEALTH_NATIVE_MODULES.md
+index fc6a804e..85187d0a 100644
+--- a/docs/mobile/HEALTH_NATIVE_MODULES.md
++++ b/docs/mobile/HEALTH_NATIVE_MODULES.md
+@@ -71,9 +71,9 @@ This document covers the on-device native module configuration serialized by **P
+ | --- | --- |
+ | `android.permission.health.READ_STEPS` | Step count |
+ | `android.permission.health.READ_HEART_RATE` | Heart rate |
++| `android.permission.health.READ_RESTING_HEART_RATE` | Resting heart rate |
+ | `android.permission.health.READ_SLEEP` | Sleep sessions |
+ | `android.permission.health.READ_ACTIVE_CALORIES_BURNED` | Active calories |
+-| `android.permission.health.READ_TOTAL_CALORIES_BURNED` | Total calories |
+ | `android.permission.health.READ_DISTANCE` | Distance |
+ | `android.permission.health.READ_EXERCISE` | Exercise / workout sessions |
+ | `android.permission.health.READ_OXYGEN_SATURATION` | SpO₂ |
+@@ -83,16 +83,13 @@ This document covers the on-device native module configuration serialized by **P
+ | `android.permission.health.READ_WEIGHT` | Weight |
+ | `android.permission.health.READ_BODY_FAT` | Body fat % |
+ | `android.permission.health.READ_VO2_MAX` | VO₂ max |
+-| `android.permission.health.READ_BASAL_BODY_TEMPERATURE` | Basal body temperature |
+ | `android.permission.health.READ_BLOOD_PRESSURE` | Blood pressure |
+-| `android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND` | Allows background reads (subject to user opt-in in Health Connect settings). |
+ 
+-**Activity / Samsung permissions:**
++Only the record types the sync reads are declared (least privilege, S14 round 4b): no total calories, no basal body temperature, and no background read permission (data refreshes when the client opens Health).
+ 
+-| Permission | Purpose |
+-| --- | --- |
+-| `android.permission.ACTIVITY_RECOGNITION` | Required for step/activity data on Android. |
+-| `com.samsung.android.hardware.sensormanager.permission.READ_ADDITIONAL_HEALTH_DATA` | Samsung Sensor SDK additional health-data reads (BIA/PPG/etc. paths used by the Samsung Health connector). |
++**Activity / Samsung permissions (removed, S-WEAR-3, Opus C-317-5):**
++
++`android.permission.ACTIVITY_RECOGNITION` and `com.samsung.android.hardware.sensormanager.permission.READ_ADDITIONAL_HEALTH_DATA` are no longer declared. Nothing in the app reads them: Samsung Health data arrives through Health Connect, and steps come from Health Connect or Apple Health. `app.config.js` blocks both in every build (`android.blockedPermissions`) so a library manifest cannot merge them back in, and the unused Samsung Sensor SDK client was removed.
+ 
+ > On Android, the user grants Health Connect permissions in the **Health Connect** system UI (or the in-app rationale flow), not the standard runtime-permission dialog. QA should verify the app appears under **Health Connect → App permissions** after the 2.b connector requests access. Permission strings declared here are valid against the Health Connect permission model documented by [Android Health Connect](https://developer.android.com/health-and-fitness/guides/health-services/permissions).
+ 
+diff --git a/src/config/featureFlags.ts b/src/config/featureFlags.ts
+index c1a07b9f..fa655e77 100644
+--- a/src/config/featureFlags.ts
++++ b/src/config/featureFlags.ts
+@@ -63,6 +63,7 @@ const PUBLIC_ENV = {
+   EXPO_PUBLIC_FF_ROMAN_STREAK_BACKEND_LIVE: process.env.EXPO_PUBLIC_FF_ROMAN_STREAK_BACKEND_LIVE,
+   EXPO_PUBLIC_FF_ROMAN_THREE_ARC_ROUTER: process.env.EXPO_PUBLIC_FF_ROMAN_THREE_ARC_ROUTER,
+   EXPO_PUBLIC_FF_VERIFIED_PROGRESS_SIGNOFF: process.env.EXPO_PUBLIC_FF_VERIFIED_PROGRESS_SIGNOFF,
++  EXPO_PUBLIC_FF_WEARABLE_AI_INSIGHTS: process.env.EXPO_PUBLIC_FF_WEARABLE_AI_INSIGHTS,
+   EXPO_PUBLIC_NOTIFICATIONS_MOCK: process.env.EXPO_PUBLIC_NOTIFICATIONS_MOCK,
+ } as const;
+ 
+@@ -479,6 +480,19 @@ export const featureFlags = {
+    * env: EXPO_PUBLIC_FF_IOS_HIDE_NON_P2P_PURCHASES
+    */
+   iosHideNonP2PPurchases: readFlag('EXPO_PUBLIC_FF_IOS_HIDE_NON_P2P_PURCHASES', !isDev),
++
++  // ─── S14 — client AI wearable insight panel ──────────────────────────────
++  /**
++   * The client Health and Sleep views can show an AI-written insight panel
++   * (backend WearableInsightsService, drafted through the AI gateway). The
++   * panel has no per-client AI-processing consent check yet, and owner
++   * decision D2 makes AI processing opt-in (consent box 2). Until that check
++   * exists the panel stays OFF UNCONDITIONALLY (not `isDev`), and no EAS
++   * profile sets this. Off, the views show only the client's own data.
++   *
++   * env: EXPO_PUBLIC_FF_WEARABLE_AI_INSIGHTS
++   */
++  wearableAiInsights: readFlag('EXPO_PUBLIC_FF_WEARABLE_AI_INSIGHTS', false),
+ } as const;
+ 
+ export type FeatureFlagKey = keyof typeof featureFlags;
+diff --git a/src/screens/client/wearables/DisconnectConfirmDialog.tsx b/src/screens/client/wearables/DisconnectConfirmDialog.tsx
+new file mode 100644
+index 00000000..a2c21265
+--- /dev/null
++++ b/src/screens/client/wearables/DisconnectConfirmDialog.tsx
+@@ -0,0 +1,159 @@
++/**
++ * S14 round 4b (Opus C-317-4) — confirm before disconnecting a source.
++ *
++ * Disconnect is destructive (new data stops reaching the coach), so it asks
++ * first. Cancel is the default: it is listed first, styled as the primary
++ * button, and closing the dialog any other way (back button, tapping
++ * outside) cancels. A failed disconnect keeps the dialog open with coded
++ * copy (see `disconnectCopy.ts`).
++ */
++
++import React from 'react';
++import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
++import type { WearableProvider } from '../../../api/wearablesConnectionsApi';
++import { colors, radius, semantic, spacing, typography, withAlpha } from '../../../theme/tokens';
++import { disconnectConfirmCopy } from './disconnectCopy';
++
++export interface DisconnectConfirmDialogProps {
++  provider: WearableProvider | null;
++  name: string;
++  visible: boolean;
++  pending: boolean;
++  /** Failure copy from the last attempt, shown inside the dialog. */
++  errorText: string | null;
++  /** Hide the Disconnect button when retrying here cannot help. */
++  canRetry: boolean;
++  onCancel: () => void;
++  onConfirm: () => void;
++}
++
++export default function DisconnectConfirmDialog({
++  provider,
++  name,
++  visible,
++  pending,
++  errorText,
++  canRetry,
++  onCancel,
++  onConfirm,
++}: DisconnectConfirmDialogProps) {
++  if (provider == null) return null;
++  const copy = disconnectConfirmCopy(provider, name);
++  return (
++    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
++      <Pressable
++        style={styles.backdrop}
++        onPress={pending ? undefined : onCancel}
++        accessibilityRole="button"
++        accessibilityLabel={`Cancel, keep ${name} connected`}
++      >
++        <Pressable style={styles.card} accessibilityViewIsModal onPress={() => undefined}>
++          <Text style={styles.title} accessibilityRole="header">
++            {copy.title}
++          </Text>
++          <Text style={styles.body}>{copy.body}</Text>
++          {errorText != null && (
++            <Text style={styles.error} accessibilityRole="alert">
++              {errorText}
++            </Text>
++          )}
++          <View style={styles.actions}>
++            <Pressable
++              style={[styles.button, styles.cancel]}
++              onPress={onCancel}
++              disabled={pending}
++              accessibilityRole="button"
++              accessibilityLabel={`Cancel, keep ${name} connected`}
++              testID="disconnect-cancel"
++            >
++              <Text style={styles.cancelText}>Cancel</Text>
++            </Pressable>
++            {canRetry && (
++              <Pressable
++                style={[styles.button, styles.destructive, pending && styles.disabled]}
++                onPress={onConfirm}
++                disabled={pending}
++                accessibilityRole="button"
++                accessibilityLabel={`Disconnect ${name} now`}
++                accessibilityState={{ disabled: pending }}
++                testID="disconnect-confirm"
++              >
++                {pending ? (
++                  <ActivityIndicator size="small" color={semantic.danger.fg} />
++                ) : (
++                  <Text style={styles.destructiveText}>Disconnect</Text>
++                )}
++              </Pressable>
++            )}
++          </View>
++        </Pressable>
++      </Pressable>
++    </Modal>
++  );
++}
++
++const styles = StyleSheet.create({
++  backdrop: {
++    flex: 1,
++    backgroundColor: withAlpha(colors.ink, 0.45),
++    justifyContent: 'center',
++    padding: spacing.xl,
++  },
++  card: {
++    backgroundColor: colors.bone,
++    borderRadius: radius.lg,
++    padding: spacing.xl,
++    gap: spacing.md,
++  },
++  title: {
++    ...typography.h4,
++    color: colors.ink,
++  },
++  body: {
++    ...typography.bodyMd,
++    color: colors.charcoal,
++  },
++  error: {
++    ...typography.bodySmall,
++    color: semantic.danger.fg,
++    backgroundColor: semantic.danger.bg,
++    borderRadius: radius.sm,
++    padding: spacing.md,
++  },
++  actions: {
++    flexDirection: 'row',
++    justifyContent: 'flex-end',
++    gap: spacing.md,
++    marginTop: spacing.sm,
++  },
++  button: {
++    borderRadius: radius.sm,
++    paddingHorizontal: spacing.lg,
++    paddingVertical: spacing.sm,
++    minWidth: 104,
++    minHeight: 44,
++    alignItems: 'center',
++    justifyContent: 'center',
++  },
++  cancel: {
++    backgroundColor: colors.forest,
++  },
++  cancelText: {
++    ...typography.bodySmall,
++    color: colors.bone,
++    fontWeight: '500',
++  },
++  destructive: {
++    backgroundColor: 'transparent',
++    borderWidth: 1,
++    borderColor: semantic.danger.border,
++  },
++  destructiveText: {
++    ...typography.bodySmall,
++    color: semantic.danger.fg,
++    fontWeight: '500',
++  },
++  disabled: {
++    opacity: 0.5,
++  },
++});
+diff --git a/src/screens/client/wearables/__tests__/onDeviceCopy.test.ts b/src/screens/client/wearables/__tests__/onDeviceCopy.test.ts
+new file mode 100644
+index 00000000..12d8c2f3
+--- /dev/null
++++ b/src/screens/client/wearables/__tests__/onDeviceCopy.test.ts
+@@ -0,0 +1,282 @@
++/**
++ * S14 round 3 — on-device connect/refresh copy (owner error-copy rule).
++ * Every failure says what happened and a working next action; known statuses
++ * and machine codes get their own copy; unexpected failures carry a short
++ * reference, a support path, and a Sentry report.
++ */
++
++import { AxiosError, AxiosHeaders } from 'axios';
++
++const mockReportUnexpected = jest.fn();
++jest.mock('../../../../lib/consultation/report', () => ({
++  reportUnexpected: (...args: unknown[]) => mockReportUnexpected(...args),
++}));
++
++import {
++  WEARABLES_SUPPORT_EMAIL,
++  cloudConnectFailureMessage,
++  cloudSessionLockedMessage,
++  connectFailureMessage,
++  ctaLabelFor,
++  emptyImportMessage,
++  notSyncingHereCopy,
++  partialImportMessage,
++  permissionOutcomeMessage,
++  returnFromSettingsMessage,
++  settingsDidNotOpenMessage,
++  INGEST_DISABLED_COPY,
++} from '../onDeviceCopy';
++import { disconnectFailureMessage } from '../disconnectCopy';
++import { SUPPORT_EMAIL } from '../../../../constants/support';
++import {
++  OnDeviceNotSignedInError,
++  OnDeviceStepError,
++} from '../../../../services/health/onDeviceSync';
++import { OnDeviceSessionChangedError } from '../../../../services/health/sessionFence';
++import {
++  HealthConnectPermissionDeniedError,
++  HealthConnectUnavailableError,
++} from '../../../../services/health/healthConnect/errors';
++
++function httpError(status: number, data: unknown, requestId?: string): AxiosError {
++  return new AxiosError('http', String(status), undefined, undefined, {
++    status,
++    statusText: '',
++    headers: new AxiosHeaders(requestId ? { 'x-request-id': requestId } : {}),
++    config: { headers: new AxiosHeaders() },
++    data,
++  });
++}
++
++const networkError = () =>
++  new AxiosError('Network Error', 'ERR_NETWORK', { headers: new AxiosHeaders() });
++
++beforeEach(() => mockReportUnexpected.mockReset());
++
++const BANNED = [/Something went wrong/i, /^Please try again\.?$/i, /!/];
++
++function expectPlain(text: string) {
++  for (const re of BANNED) expect(text).not.toMatch(re);
++}
++
++describe('connectFailureMessage', () => {
++  it('says nothing when the run was cancelled by closing the sheet', () => {
++    expect(
++      connectFailureMessage(new OnDeviceSessionChangedError('cancelled'), 'Apple Health'),
++    ).toBeNull();
++  });
++
++  it('explains an account change and offers Continue', () => {
++    const m = connectFailureMessage(new OnDeviceSessionChangedError(), 'Apple Health');
++    expect(m?.action).toBe('connect');
++    expect(m?.text).toMatch(/signed-in account changed/);
++  });
++
++  it('routes a signed-out person to Log in again', () => {
++    const m = connectFailureMessage(new OnDeviceNotSignedInError(), 'Apple Health');
++    expect(m?.action).toBe('login');
++    expect(m?.text).toMatch(/Log in again/);
++  });
++
++  it.each([
++    [
++      new OnDeviceStepError('register', networkError()),
++      'connect',
++      /The Growth Project couldn't be reached/,
++    ],
++    [new OnDeviceStepError('import', networkError()), 'resume', /connection dropped/],
++    [new OnDeviceStepError('import', httpError(401, {})), 'login', /session ended/],
++    [new OnDeviceStepError('register', httpError(401, {})), 'login', /session has ended/],
++    [
++      new OnDeviceStepError('import', httpError(403, { code: 'wearables_connection_forbidden' })),
++      'connect',
++      /no longer linked to your account/,
++    ],
++    [
++      new OnDeviceStepError('register', httpError(403, { code: 'forbidden' })),
++      'none',
++      /client account only/,
++    ],
++    [new OnDeviceStepError('import', httpError(429, {})), 'resume', /too many requests/],
++    [
++      new OnDeviceStepError('import', new HealthConnectPermissionDeniedError(['Steps'])),
++      'open_settings',
++      /access is turned off for The Growth Project/,
++    ],
++    [
++      new OnDeviceStepError('import', new HealthConnectUnavailableError()),
++      'resume',
++      /Health Connect isn't ready/,
++    ],
++  ])('maps %p to its own copy', (err, action, re) => {
++    const m = connectFailureMessage(err, 'Health Connect');
++    expect(m?.action).toBe(action);
++    expect(m?.text).toMatch(re);
++    expectPlain(m?.text ?? '');
++    expect(mockReportUnexpected).not.toHaveBeenCalled();
++  });
++
++  it('unexpected server failure: server reference, support path, Sentry report', () => {
++    const m = connectFailureMessage(
++      new OnDeviceStepError('import', httpError(500, {}, 'abcdef12-3456-7890')),
++      'Apple Health',
++    );
++    expect(m?.text).toContain('Reference abcdef12.');
++    expect(m?.text).toContain(WEARABLES_SUPPORT_EMAIL);
++    expectPlain(m?.text ?? '');
++    expect(mockReportUnexpected).toHaveBeenCalledWith(
++      'wearables.on_device_connect',
++      expect.objectContaining({ status: 500, requestId: 'abcdef12-3456-7890' }),
++    );
++  });
++
++  it('unexpected local failure still gets a reference that is sent to Sentry', () => {
++    const m = connectFailureMessage(new Error('boom'), 'Apple Health');
++    const ref = /Reference ([A-Za-z0-9-]{1,8})\./.exec(m?.text ?? '')?.[1];
++    expect(ref).toBeTruthy();
++    const reported = mockReportUnexpected.mock.calls[0][1] as { requestId: string };
++    expect(reported.requestId.startsWith(ref ?? 'x')).toBe(true);
++    // No error message or health value is ever put into the report.
++    expect(JSON.stringify(mockReportUnexpected.mock.calls)).not.toContain('boom');
++  });
++});
++
++describe('other copy', () => {
++  it('partial import offers Continue import, all-failed offers Try again', () => {
++    const partial = partialImportMessage('Apple Health', {
++      kind: 'imported',
++      source: 'APPLE_HEALTHKIT',
++      connectionId: 'c',
++      postedCount: 4,
++      complete: false,
++    });
++    expect(partial.action).toBe('resume');
++    expect(partial.text).toMatch(/Continue import/);
++    const none = partialImportMessage('Apple Health', {
++      kind: 'imported',
++      source: 'APPLE_HEALTHKIT',
++      connectionId: 'c',
++      postedCount: 0,
++      complete: false,
++    });
++    expect(none.text).toMatch(/Try again/);
++    expectPlain(partial.text);
++    expectPlain(none.text);
++  });
++
++  it('not syncing here and lane-off copy are plain', () => {
++    expect(notSyncingHereCopy('Apple Health')).toBe(
++      'Apple Health is not syncing on this phone. Tap Reconnect to continue.',
++    );
++    expectPlain(INGEST_DISABLED_COPY);
++  });
++});
++
++/** No first person in client-facing error copy (owner bar, agent 113). */
++const FIRST_PERSON = /\b(we|we've|we'll|we're|us|our)\b/i;
++
++describe('S-WEAR-3: support address and plain, third-person copy', () => {
++  it('uses the one app support address (S-ERRORS #324)', () => {
++    expect(WEARABLES_SUPPORT_EMAIL).toBe(SUPPORT_EMAIL);
++  });
++
++  it('no message says we / us / our', () => {
++    const texts: string[] = [];
++    const errs: unknown[] = [
++      new OnDeviceSessionChangedError(),
++      new OnDeviceNotSignedInError(),
++      new OnDeviceStepError('register', networkError()),
++      new OnDeviceStepError('import', networkError()),
++      new OnDeviceStepError('import', httpError(429, {})),
++      new OnDeviceStepError('register', httpError(429, {})),
++      new OnDeviceStepError('import', httpError(500, {})),
++      new OnDeviceStepError('register', httpError(500, {})),
++    ];
++    for (const e of errs) texts.push(connectFailureMessage(e, 'Apple Health')?.text ?? '');
++    for (const status of [401, 403, 429, 500]) {
++      texts.push(cloudConnectFailureMessage(httpError(status, {}), 'Oura').text);
++    }
++    texts.push(cloudConnectFailureMessage(networkError(), 'Oura').text);
++    texts.push(cloudConnectFailureMessage(new Error('x'), 'Oura').text);
++    for (const o of ['denied', 'unavailable', 'update_required', 'unsupported', 'error'] as const) {
++      for (const p of ['APPLE_HEALTHKIT', 'HEALTH_CONNECT', 'SAMSUNG_HEALTH'] as const) {
++        texts.push(permissionOutcomeMessage(o, p, 'X').text);
++      }
++    }
++    texts.push(emptyImportMessage('APPLE_HEALTHKIT', 'Apple Health').text);
++    texts.push(emptyImportMessage('HEALTH_CONNECT', 'Health Connect').text);
++    texts.push(settingsDidNotOpenMessage('settings', 'Health Connect').text);
++    texts.push(settingsDidNotOpenMessage('store', 'Health Connect').text);
++    texts.push(returnFromSettingsMessage('Health Connect').text);
++    texts.push(cloudSessionLockedMessage('Oura').text);
++    for (const status of [null, 401, 403, 404, 429, 500]) {
++      const err = status === null ? networkError() : httpError(status, {});
++      texts.push(disconnectFailureMessage(err, 'Oura').text);
++    }
++    for (const t of texts) {
++      expect(t).not.toMatch(FIRST_PERSON);
++      expectPlain(t);
++      expect(t).not.toContain('hello@thegrowthproject.app');
++    }
++  });
++});
++
++describe('Sol B-317-8: cloudConnectFailureMessage', () => {
++  it.each([
++    [null, {}, 'connect', /couldn't be reached.*internet/],
++    [401, {}, 'login', /session has ended/],
++    [403, {}, 'none', /client account only/],
++    [429, {}, 'connect', /Too many tries/],
++    [503, { code: 'wearables_cloud_disabled' }, 'none', /isn't switched on yet/],
++  ])('status %p maps to its own copy, never to Sentry', (status, data, action, re) => {
++    const err = status === null ? networkError() : httpError(status as number, data);
++    const m = cloudConnectFailureMessage(err, 'Oura');
++    expect(m.action).toBe(action);
++    expect(m.text).toMatch(re);
++    expect(mockReportUnexpected).not.toHaveBeenCalled();
++  });
++
++  it.each([500, 502, 503, 400])('status %p: reference, support address, Sentry; no internet advice', (status) => {
++    const m = cloudConnectFailureMessage(httpError(status, {}, '99887766-aaaa'), 'Oura');
++    expect(m.text).toContain('Reference 99887766.');
++    expect(m.text).toContain(WEARABLES_SUPPORT_EMAIL);
++    expect(m.text).not.toMatch(/internet/);
++    expect(mockReportUnexpected).toHaveBeenCalledWith(
++      'wearables.cloud_connect',
++      expect.objectContaining({ status, requestId: '99887766-aaaa' }),
++    );
++  });
++});
++
++describe('S-WEAR-3: permission states', () => {
++  it('Health Connect refusal opens its permissions; Apple Health refusal re-runs Continue', () => {
++    expect(permissionOutcomeMessage('denied', 'HEALTH_CONNECT', 'Health Connect').action).toBe('open_settings');
++    expect(permissionOutcomeMessage('denied', 'SAMSUNG_HEALTH', 'Samsung Health').action).toBe('open_settings');
++    expect(permissionOutcomeMessage('denied', 'APPLE_HEALTHKIT', 'Apple Health').action).toBe('connect');
++  });
++
++  it('missing vs outdated Health Connect get their own button', () => {
++    const missing = permissionOutcomeMessage('unavailable', 'HEALTH_CONNECT', 'Health Connect');
++    const outdated = permissionOutcomeMessage('update_required', 'HEALTH_CONNECT', 'Health Connect');
++    expect(missing.action).toBe('open_store');
++    expect(ctaLabelFor(missing)).toBe('Get Health Connect');
++    expect(ctaLabelFor(outdated)).toBe('Update Health Connect');
++    expect(missing.text).not.toBe(outdated.text);
++  });
++
++  it('a native error is reported with a reference and no health data', () => {
++    const m = permissionOutcomeMessage('error', 'APPLE_HEALTHKIT', 'Apple Health');
++    expect(m.text).toMatch(/mention reference [A-Za-z0-9-]{8}\./);
++    expect(mockReportUnexpected).toHaveBeenCalledWith(
++      'wearables.on_device_permission',
++      expect.objectContaining({ status: null, code: 'native_permission_error' }),
++    );
++  });
++
++  it('default button labels', () => {
++    expect(ctaLabelFor({ action: 'connect' })).toBe('Continue');
++    expect(ctaLabelFor({ action: 'resume' })).toBe('Try again');
++    expect(ctaLabelFor({ action: 'login' })).toBe('Log in again');
++    expect(ctaLabelFor({ action: 'open_settings' })).toBe('Open Health Connect');
++  });
++});
+diff --git a/src/screens/client/wearables/disconnectCopy.ts b/src/screens/client/wearables/disconnectCopy.ts
+new file mode 100644
+index 00000000..658e7ec6
+--- /dev/null
++++ b/src/screens/client/wearables/disconnectCopy.ts
+@@ -0,0 +1,110 @@
++/**
++ * S14 round 4b (Opus C-317-4, owner ruling 2026-10-02): what the Disconnect
++ * confirm says, and what a failed disconnect says.
++ *
++ * The confirm names the source and what stops. It says plainly that data
++ * already shared stays with the coach (the backend soft-disconnect only
++ * changes the connection status; samples are kept). Failures map status and
++ * machine code to what happened and a working next action; anything
++ * unexpected shows a short reference and the support address and is
++ * reported to Sentry (status, code and reference only).
++ *
++ * Plain warm words: no emojis, no exclamation marks.
++ */
++
++import axios from 'axios';
++import type { WearableProvider } from '../../../api/wearablesConnectionsApi';
++import { reportUnexpected } from '../../../lib/consultation/report';
++import { newRequestId, shortReference, supportReferenceOf } from '../../../utils/correlation';
++import { WEARABLES_SUPPORT_EMAIL } from './onDeviceCopy';
++
++function isOnDevice(provider: WearableProvider): boolean {
++  return provider === 'APPLE_HEALTHKIT' || provider === 'HEALTH_CONNECT';
++}
++
++export interface DisconnectConfirmCopy {
++  title: string;
++  body: string;
++}
++
++export function disconnectConfirmCopy(
++  provider: WearableProvider,
++  name: string,
++): DisconnectConfirmCopy {
++  const stops = isOnDevice(provider)
++    ? `The Growth Project stops bringing in new ${name} data from this phone, and your coach stops seeing new ${name} data.`
++    : `The Growth Project stops receiving new ${name} data, and your coach stops seeing new ${name} data.`;
++  return {
++    title: `Disconnect ${name}?`,
++    body: `${stops} Data already shared stays with your coach. You can connect ${name} again at any time.`,
++  };
++}
++
++export interface DisconnectFailure {
++  text: string;
++  /**
++   * `retry`: tapping Disconnect again can work. `already`: there was nothing
++   * to disconnect (refresh the list and close). `none`: retrying here will
++   * not help (for example, the session ended).
++   */
++  kind: 'retry' | 'already' | 'none';
++}
++
++function statusOf(err: unknown): number | null {
++  if (!axios.isAxiosError(err)) return null;
++  const s = err.response?.status;
++  return typeof s === 'number' ? s : null;
++}
++
++function codeOf(err: unknown): string | null {
++  if (!axios.isAxiosError(err)) return null;
++  const data: unknown = err.response?.data;
++  if (typeof data !== 'object' || data === null) return null;
++  const code = (data as { code?: unknown }).code;
++  return typeof code === 'string' && /^[A-Za-z0-9_.:-]{1,64}$/.test(code) ? code : null;
++}
++
++export function disconnectFailureMessage(err: unknown, name: string): DisconnectFailure {
++  if (axios.isAxiosError(err)) {
++    const status = statusOf(err);
++    if (status === null) {
++      return {
++        text: `The Growth Project couldn't be reached, so ${name} is still connected. Check your internet connection, then tap Disconnect again.`,
++        kind: 'retry',
++      };
++    }
++    if (status === 401) {
++      return {
++        text: `Your session has ended, so ${name} is still connected. Log in again, then disconnect ${name} from Connections.`,
++        kind: 'none',
++      };
++    }
++    if (status === 404) {
++      return { text: `${name} is already disconnected.`, kind: 'already' };
++    }
++    if (status === 403) {
++      return {
++        text: `${name} can be disconnected from a client account only, so nothing changed. If you are a client and see this, contact your coach.`,
++        kind: 'none',
++      };
++    }
++    if (status === 429) {
++      return {
++        text: `Too many tries in a short time, so ${name} is still connected. Wait a minute, then tap Disconnect again.`,
++        kind: 'retry',
++      };
++    }
++  }
++
++  const requestId = supportReferenceOf(err) ?? newRequestId();
++  reportUnexpected('wearables.disconnect', {
++    status: statusOf(err),
++    code: codeOf(err),
++    requestId,
++  });
++  const ref = shortReference(requestId) ?? 'unavailable';
++  return {
++    text: `${name} couldn't be disconnected because of an unexpected problem with The Growth Project, so it is still connected. Reference ${ref}. Tap Disconnect again in a few minutes, or write to ${WEARABLES_SUPPORT_EMAIL} and mention the reference.`,
++    kind: 'retry',
++  };
++}
+diff --git a/src/screens/client/wearables/onDeviceCopy.ts b/src/screens/client/wearables/onDeviceCopy.ts
+new file mode 100644
+index 00000000..a257091f
+--- /dev/null
++++ b/src/screens/client/wearables/onDeviceCopy.ts
+@@ -0,0 +1,420 @@
++/**
++ * S14 round 3 — what the Apple Health / Health Connect connect and refresh
++ * surfaces say for every outcome (owner rule 2026-10-01 13:34: every failure
++ * says what happened and what to do next; known statuses and machine codes
++ * get their own copy; anything unexpected shows a short reference, a support
++ * path, and is reported to Sentry).
++ *
++ * Plain warm words: no emojis, no exclamation marks. No health values are
++ * ever put into copy or reports.
++ */
++
++import axios from 'axios';
++import { Platform } from 'react-native';
++import { SUPPORT_EMAIL } from '../../../constants/support';
++import { reportUnexpected } from '../../../lib/consultation/report';
++import { newRequestId, shortReference, supportReferenceOf } from '../../../utils/correlation';
++import {
++  OnDeviceNotSignedInError,
++  OnDeviceStepError,
++  type OnDeviceImportOutcome,
++} from '../../../services/health/onDeviceSync';
++import { OnDeviceSessionChangedError } from '../../../services/health/sessionFence';
++import type { OnDeviceConnectOutcome } from '../../../services/health/onDeviceConnect';
++import type { WearableProvider } from '../../../api/wearablesConnectionsApi';
++import {
++  HealthConnectPermissionDeniedError,
++  HealthConnectUnavailableError,
++} from '../../../services/health/healthConnect/errors';
++
++/**
++ * Where people write when something unexpected happens: the app's one
++ * support address (S-ERRORS #324, src/constants/support.ts).
++ */
++export const WEARABLES_SUPPORT_EMAIL = SUPPORT_EMAIL;
++
++/** What the sheet shows, and which action its primary button runs. */
++export interface OnDeviceMessage {
++  text: string;
++  /**
++   * `connect` re-runs Connect from the start, `resume` continues the import
++   * for the same connection, `login` ends the expired session so the person
++   * can log in again, `open_settings` opens Health Connect's permissions,
++   * `open_store` opens Health Connect in the Play Store, `none` means there
++   * is nothing to retry here (the button is hidden; Close remains).
++   */
++  action: 'connect' | 'resume' | 'login' | 'open_settings' | 'open_store' | 'none';
++  /** Primary button label when it is not the action's default. */
++  cta?: string;
++}
++
++/** Default primary button label per action. */
++export function ctaLabelFor(message: Pick<OnDeviceMessage, 'action' | 'cta'>): string {
++  if (message.cta) return message.cta;
++  switch (message.action) {
++    case 'resume':
++      return 'Try again';
++    case 'login':
++      return 'Log in again';
++    case 'open_settings':
++      return 'Open Health Connect';
++    case 'open_store':
++      return 'Get Health Connect';
++    default:
++      return 'Continue';
++  }
++}
++
++function statusOf(err: unknown): number | null {
++  if (!axios.isAxiosError(err)) return null;
++  const s = err.response?.status;
++  return typeof s === 'number' ? s : null;
++}
++
++function codeOf(err: unknown): string | null {
++  if (!axios.isAxiosError(err)) return null;
++  const data: unknown = err.response?.data;
++  if (typeof data !== 'object' || data === null) return null;
++  const code = (data as { code?: unknown }).code;
++  return typeof code === 'string' && /^[A-Za-z0-9_.:-]{1,64}$/.test(code) ? code : null;
++}
++
++/**
++ * Copy for an import that finished but did not cover the whole history
++ * (Sol B-317-2): the source is connected, and the person gets a working
++ * action to continue.
++ */
++export function partialImportMessage(
++  name: string,
++  outcome: Extract<OnDeviceImportOutcome, { kind: 'imported' }>,
++): OnDeviceMessage {
++  if (outcome.postedCount > 0) {
++    return {
++      text:
++        `${name} is connected and part of your last 30 days is in. ` +
++        `Tap Continue import to bring in the rest. It also continues each time you open Health.`,
++      action: 'resume',
++      cta: 'Continue import',
++    };
++  }
++  return {
++    text:
++      `${name} is connected, but your history couldn't be read yet. ` +
++      `Check that ${name} access is turned on for The Growth Project, then tap Try again.`,
++    action: 'resume',
++  };
++}
++
++/**
++ * Copy for a failed Connect run. Returns null when nothing should be shown
++ * (the sheet was closed, so the run was cancelled on purpose).
++ */
++export function connectFailureMessage(err: unknown, name: string): OnDeviceMessage | null {
++  if (err instanceof OnDeviceSessionChangedError) {
++    if (err.reason === 'cancelled') return null;
++    return {
++      text:
++        `The signed-in account changed while ${name} was connecting, so nothing was brought in. ` +
++        `If this is your account, tap Continue to connect ${name}.`,
++      action: 'connect',
++    };
++  }
++  if (err instanceof OnDeviceNotSignedInError) {
++    return {
++      text: `You're signed out, so nothing was read. Log in again, then connect ${name} from Connections.`,
++      action: 'login',
++    };
++  }
++
++  const step = err instanceof OnDeviceStepError ? err.step : 'import';
++  const cause = err instanceof OnDeviceStepError ? err.cause : err;
++  const connected = step === 'import';
++  const action: OnDeviceMessage['action'] = connected ? 'resume' : 'connect';
++  const retryWord = connected ? 'Try again' : 'Continue';
++
++  if (cause instanceof HealthConnectPermissionDeniedError) {
++    // Every Health Connect type is off for the app (refused or revoked).
++    return {
++      text:
++        `${name} access is turned off for The Growth Project, so nothing new came in. Tap Open Health ` +
++        `Connect, choose App permissions, then The Growth Project, and allow access. Then tap ${retryWord}.`,
++      action: 'open_settings',
++    };
++  }
++  if (cause instanceof HealthConnectUnavailableError) {
++    return {
++      text: `Health Connect isn't ready on this phone. Open the Health Connect app to finish setting it up, then tap ${retryWord}.`,
++      action,
++    };
++  }
++  if (cause instanceof OnDeviceSessionChangedError) {
++    return connectFailureMessage(cause, name);
++  }
++
++  if (axios.isAxiosError(cause)) {
++    const status = statusOf(cause);
++    const code = codeOf(cause);
++    if (status === null) {
++      return {
++        text: connected
++          ? `${name} is connected, but your history stopped coming in because the connection dropped. Check your internet connection, then tap Try again.`
++          : `The Growth Project couldn't be reached, so ${name} isn't connected yet. Check your internet connection, then tap Continue.`,
++        action,
++      };
++    }
++    if (status === 401) {
++      return {
++        text: connected
++          ? `${name} is connected, but your session ended before your history came in. Log in again, then open Health to bring it in.`
++          : `Your session has ended, so ${name} isn't connected. Log in again, then connect ${name} from Connections.`,
++        action: 'login',
++      };
++    }
++    if (status === 403 && code === 'wearables_connection_forbidden') {
++      return {
++        text: `This ${name} connection is no longer linked to your account. Tap Continue to connect ${name} again.`,
++        action: 'connect',
++      };
++    }
++    if (status === 403) {
++      return {
++        text: `${name} can be connected from a client account only. If you are a client and see this, contact your coach.`,
++        action: 'none',
++      };
++    }
++    if (status === 429) {
++      return {
++        text: connected
++          ? `${name} is connected. Your history paused after too many requests in a short time. Wait a minute, then tap Try again.`
++          : `Too many tries in a short time. Wait a minute, then tap Continue.`,
++        action,
++      };
++    }
++  }
++
++  // Unexpected: short reference, a support path, and a Sentry report with
++  // status, machine code and reference only. A failure with no server
++  // request id (a local error) gets a fresh reference so support can still
++  // find the Sentry event by it.
++  const status = statusOf(cause);
++  const requestId = supportReferenceOf(cause) ?? newRequestId();
++  reportUnexpected('wearables.on_device_connect', {
++    status,
++    code: codeOf(cause),
++    requestId,
++  });
++  const ref = shortReference(requestId) ?? 'unavailable';
++  return {
++    text: connected
++      ? `${name} is connected, but your history didn't finish coming in because of an unexpected problem with The Growth Project. Reference ${ref}. Tap Try again in a few minutes, or write to ${WEARABLES_SUPPORT_EMAIL} and mention the reference.`
++      : `${name} couldn't be connected because of an unexpected problem with The Growth Project. Reference ${ref}. Tap Continue in a few minutes, or write to ${WEARABLES_SUPPORT_EMAIL} and mention the reference.`,
++    action,
++  };
++}
++
++/** Lane off (FEATURE_WEARABLES_INGEST_POST): nothing to retry yet. */
++export const INGEST_DISABLED_COPY =
++  "Health data import isn't switched on yet. Your coach will let you know when it is ready.";
++
++/** Server row connected, no local authorization on this phone (Opus B-317-5). */
++export function notSyncingHereCopy(name: string): string {
++  return `${name} is not syncing on this phone. Tap Reconnect to continue.`;
++}
++
++/** A short reference for a failure, reported to Sentry (no health data). */
++function referenceFor(where: string, err: unknown, code: string | null): string {
++  const requestId = supportReferenceOf(err) ?? newRequestId();
++  reportUnexpected(where, { status: statusOf(err), code, requestId });
++  return shortReference(requestId) ?? 'unavailable';
++}
++
++/** Health Connect providers (Samsung Health reads through Health Connect). */
++function readsThroughHealthConnect(provider: WearableProvider): boolean {
++  return provider === 'HEALTH_CONNECT' || provider === 'SAMSUNG_HEALTH';
++}
++
++/**
++ * S-WEAR-3: copy for every native permission outcome other than `granted`
++ * (one cause, one message, one working action). `disabled` is handled by the
++ * build switch copy in the sheet; `stopped` shows nothing (the attempt ended).
++ */
++export function permissionOutcomeMessage(
++  outcome: Exclude<OnDeviceConnectOutcome, 'granted' | 'disabled' | 'stopped'>,
++  provider: WearableProvider,
++  name: string,
++): OnDeviceMessage {
++  const viaHealthConnect = readsThroughHealthConnect(provider);
++  const samsungNote =
++    provider === 'SAMSUNG_HEALTH' ? 'Samsung Health shares its data through Health Connect. ' : '';
++  switch (outcome) {
++    case 'denied':
++      return viaHealthConnect
++        ? {
++            text:
++              `${name} access wasn't allowed, so nothing was read. Tap Open Health Connect, ` +
++              `choose App permissions, then The Growth Project, and allow access. Then come back and tap Continue.`,
++            action: 'open_settings',
++          }
++        : {
++            text: `${name} access wasn't allowed, so nothing was read. Tap Continue to choose what to share.`,
++            action: 'connect',
++          };
++    case 'unavailable':
++      return {
++        text:
++          `${samsungNote}Health Connect isn't installed on this phone. Tap Get Health Connect to ` +
++          `install it from the Play Store, then come back and tap Continue.`,
++        action: 'open_store',
++        cta: 'Get Health Connect',
++      };
++    case 'update_required':
++      return {
++        text:
++          `${samsungNote}Health Connect needs an update before it can share data. Tap Update Health ` +
++          `Connect, then come back and tap Continue.`,
++        action: 'open_store',
++        cta: 'Update Health Connect',
++      };
++    case 'unsupported':
++      return {
++        text: viaHealthConnect
++          ? `${name} works on Android phones only. On this iPhone, connect Apple Health instead.`
++          : provider === 'APPLE_HEALTHKIT'
++            ? Platform.OS === 'ios'
++              ? "Apple Health isn't available on this device. Open The Growth Project on your iPhone to connect it."
++              : 'Apple Health is only on iPhone. Open The Growth Project on your iPhone to connect it, or connect Health Connect on this phone.'
++            : `${name} can't be connected on this device.`,
++        action: 'none',
++      };
++    case 'error': {
++      const ref = referenceFor('wearables.on_device_permission', null, 'native_permission_error');
++      return {
++        text:
++          `The ${name} permission screen didn't open, so nothing was read. Tap Continue to try again. ` +
++          `If it keeps happening, write to ${WEARABLES_SUPPORT_EMAIL} and mention reference ${ref}.`,
++        action: 'connect',
++      };
++    }
++  }
++}
++
++/**
++ * S-WEAR-3: what to do after an on-device store setting was opened and the
++ * person comes back. Shown when Health Connect settings or its Play Store
++ * page could not open.
++ */
++export function settingsDidNotOpenMessage(target: 'settings' | 'store', name: string): OnDeviceMessage {
++  return target === 'settings'
++    ? {
++        text:
++          `Health Connect didn't open. Open Settings on this phone, search for Health Connect, choose ` +
++          `App permissions, then The Growth Project, and allow access. Then come back and tap Continue.`,
++        action: 'connect',
++      }
++    : {
++        text:
++          `The Play Store didn't open. Open the Play Store, search for Health Connect and install or ` +
++          `update it, then come back and tap Continue to connect ${name}.`,
++        action: 'connect',
++      };
++}
++
++/** After the person was sent to Health Connect settings or the Play Store. */
++export function returnFromSettingsMessage(name: string): OnDeviceMessage {
++  return {
++    text: `When ${name} access is set up, tap Continue to connect.`,
++    action: 'connect',
++  };
++}
++
++/**
++ * S-WEAR-3: an import that finished with nothing to bring in. On iPhone this
++ * is also what turning every category off looks like (HealthKit never tells
++ * an app what was declined), so the copy says where to check.
++ */
++export function emptyImportMessage(provider: WearableProvider, name: string): OnDeviceMessage {
++  if (readsThroughHealthConnect(provider)) {
++    return {
++      text:
++        `${name} is connected, but there was no data from the last 30 days to bring in. If you turned ` +
++        `some data types off, tap Open Health Connect, choose App permissions, then The Growth Project, ` +
++        `and turn them on. New data comes in each time you open Health.`,
++      action: 'open_settings',
++    };
++  }
++  return {
++    text:
++      `${name} is connected, but there was no data from the last 30 days to bring in. If you turned ` +
++      `some categories off, open the Health app, tap your profile picture, then Apps, The Growth ` +
++      `Project, and turn them on. New data comes in each time you open Health.`,
++    action: 'none',
++  };
++}
++
++/**
++ * Sol B-317-8: copy for a failed cloud connect (Oura, WHOOP, Garmin, ...).
++ * Reads the HTTP status and machine code, never the message text. Network
++ * advice only for a real network failure; 401 offers Log in again; known
++ * statuses get their own next step; anything else shows a short reference
++ * and the support address and is reported to Sentry (status, code and
++ * reference only).
++ */
++export function cloudConnectFailureMessage(err: unknown, name: string): OnDeviceMessage {
++  if (axios.isAxiosError(err)) {
++    const status = statusOf(err);
++    const code = codeOf(err);
++    if (status === null) {
++      return {
++        text: `The Growth Project couldn't be reached, so ${name} isn't connected yet. Check your internet connection, then tap Continue.`,
++        action: 'connect',
++      };
++    }
++    if (status === 401) {
++      return {
++        text: `Your session has ended, so ${name} isn't connected. Log in again, then connect ${name} from Connections.`,
++        action: 'login',
++      };
++    }
++    if (status === 403) {
++      return {
++        text: `${name} can be connected from a client account only. If you are a client and see this, contact your coach.`,
++        action: 'none',
++      };
++    }
++    if (status === 429) {
++      return {
++        text: `Too many tries in a short time, so ${name} isn't connected yet. Wait a minute, then tap Continue.`,
++        action: 'connect',
++      };
++    }
++    if (status === 503 && code === 'wearables_cloud_disabled') {
++      return {
++        text: `Connecting ${name} isn't switched on yet. Your coach will let you know when it is ready.`,
++        action: 'none',
++      };
++    }
++    const ref = referenceFor('wearables.cloud_connect', err, code);
++    return {
++      text:
++        `${name} couldn't be connected because of an unexpected problem with The Growth Project. ` +
++        `Reference ${ref}. Tap Continue in a few minutes, or write to ${WEARABLES_SUPPORT_EMAIL} and mention the reference.`,
++      action: 'connect',
++    };
++  }
++  // Not an HTTP failure: the in-app sign-in window failed to open.
++  const ref = referenceFor('wearables.cloud_connect_browser', err, 'auth_session_error');
++  return {
++    text:
++      `The ${name} sign-in window didn't open, so ${name} isn't connected. Tap Continue to try again. ` +
++      `If it keeps happening, write to ${WEARABLES_SUPPORT_EMAIL} and mention reference ${ref}.`,
++    action: 'connect',
++  };
++}
++
++/** Another in-app sign-in window is already open (auth session `locked`). */
++export function cloudSessionLockedMessage(name: string): OnDeviceMessage {
++  return {
++    text: `Another sign-in window is already open. Finish or close it, then tap Continue to connect ${name}.`,
++    action: 'connect',
++  };
++}
+diff --git a/src/services/health/__tests__/onDeviceSync.test.ts b/src/services/health/__tests__/onDeviceSync.test.ts
+new file mode 100644
+index 00000000..a42c57a2
+--- /dev/null
++++ b/src/services/health/__tests__/onDeviceSync.test.ts
+@@ -0,0 +1,455 @@
++/**
++ * S14 — on-device registration + history import orchestration.
++ */
++
++import { Platform } from 'react-native';
++import AsyncStorage from '@react-native-async-storage/async-storage';
++import { AxiosError, AxiosHeaders } from 'axios';
++
++import {
++  MAX_IMPORT_PASSES,
++  beginOnDeviceConnect,
++  connectOnDevice,
++  deviceSourceFor,
++  isConnectedButNotSyncingHere,
++  isIngestDisabledError,
++  refreshOnDevice,
++  resumeOnDeviceImport,
++  OnDeviceNotSignedInError,
++  OnDeviceStepError,
++  type OnDeviceImportDeps,
++} from '../onDeviceSync';
++import { authEvents } from '../../../utils/authEvents';
++import {
++  getLocalAuthorization,
++  recordLocalAuthorization,
++  retireOnDeviceState,
++} from '../onDeviceState';
++import { OnDeviceSessionChangedError } from '../sessionFence';
++import type { WearableConnection } from '../../../api/wearablesConnectionsApi';
++
++function setPlatform(os: string): void {
++  Object.defineProperty(Platform, 'OS', { get: () => os, configurable: true });
++}
++
++function connection(
++  provider: WearableConnection['provider'],
++  id = 'conn-1',
++  status: WearableConnection['status'] = 'connected',
++): WearableConnection {
++  return {
++    id,
++    user_id: 'u1',
++    provider,
++    external_account_id: 'on-device',
++    access_token_expires_at: null,
++    scopes: [],
++    webhook_subscription_id: null,
++    channel_expires_at: null,
++    status,
++    last_error: null,
++    last_synced_at: null,
++    backfilled_until: null,
++    disconnected_at: null,
++    created_at: '2026-09-30T00:00:00.000Z',
++    updated_at: '2026-09-30T00:00:00.000Z',
++  };
++}
++
++function httpError(status: number, data: unknown): AxiosError {
++  return new AxiosError('http', String(status), undefined, undefined, {
++    status,
++    statusText: '',
++    headers: new AxiosHeaders(),
++    config: { headers: new AxiosHeaders() },
++    data,
++  });
++}
++
++const DISABLED = httpError(503, {
++  statusCode: 503,
++  code: 'wearables_ingest_disabled',
++  message: 'Wearable sample ingest is not enabled',
++});
++
++describe('deviceSourceFor', () => {
++  it('maps Apple Health on iOS only', () => {
++    setPlatform('ios');
++    expect(deviceSourceFor('APPLE_HEALTHKIT')).toBe('APPLE_HEALTHKIT');
++    expect(deviceSourceFor('HEALTH_CONNECT')).toBeNull();
++  });
++
++  it('maps Health Connect and Samsung Health to Health Connect on Android', () => {
++    setPlatform('android');
++    expect(deviceSourceFor('HEALTH_CONNECT')).toBe('HEALTH_CONNECT');
++    expect(deviceSourceFor('SAMSUNG_HEALTH')).toBe('HEALTH_CONNECT');
++    expect(deviceSourceFor('APPLE_HEALTHKIT')).toBeNull();
++    expect(deviceSourceFor('OURA')).toBeNull();
++  });
++});
++
++describe('isIngestDisabledError', () => {
++  it('matches only the typed 503', () => {
++    expect(isIngestDisabledError(DISABLED)).toBe(true);
++    expect(isIngestDisabledError(httpError(503, { code: 'other' }))).toBe(false);
++    expect(isIngestDisabledError(httpError(500, { code: 'wearables_ingest_disabled' }))).toBe(
++      false,
++    );
++    expect(isIngestDisabledError(new Error('x'))).toBe(false);
++  });
++});
++
++beforeEach(async () => {
++  await AsyncStorage.clear();
++});
++
++const user = (id: string | null) => jest.fn().mockResolvedValue(id);
++const done = (n = 3) => jest.fn().mockResolvedValue({ postedCount: n, complete: true });
++const doneHc = (n = 3) => jest.fn().mockResolvedValue({ normalizedCount: n, complete: true });
++
++async function connect(
++  source: 'APPLE_HEALTHKIT' | 'HEALTH_CONNECT',
++  deps: OnDeviceImportDeps,
++) {
++  const fence = await beginOnDeviceConnect({ readUserId: deps.readUserId });
++  return connectOnDevice(source, fence, deps);
++}
++
++describe('connectOnDevice (explicit Connect tap)', () => {
++  it('registers, records local authorization for the signed-in user, then imports', async () => {
++    const register = jest.fn().mockResolvedValue(connection('APPLE_HEALTHKIT'));
++    const syncHealthKit = done(12);
++    const out = await connect('APPLE_HEALTHKIT', {
++      register,
++      syncHealthKit,
++      readUserId: user('user-a'),
++    });
++    expect(out).toEqual({
++      kind: 'imported',
++      source: 'APPLE_HEALTHKIT',
++      connectionId: 'conn-1',
++      postedCount: 12,
++      complete: true,
++    });
++    expect(register).toHaveBeenCalledWith('APPLE_HEALTHKIT');
++    const scope = syncHealthKit.mock.calls[0][0];
++    expect(scope).toEqual({ userId: 'user-a', connectionId: 'conn-1', source: 'APPLE_HEALTHKIT' });
++    const auth = await getLocalAuthorization('user-a', 'APPLE_HEALTHKIT');
++    expect(auth?.connectionId).toBe('conn-1');
++  });
++
++  it('syncs Health Connect through the returned connection id', async () => {
++    const syncHealthConnect = doneHc(5);
++    const out = await connect('HEALTH_CONNECT', {
++      register: jest.fn().mockResolvedValue(connection('HEALTH_CONNECT', 'conn-hc')),
++      syncHealthConnect,
++      readUserId: user('user-a'),
++    });
++    expect(out).toEqual({
++      kind: 'imported',
++      source: 'HEALTH_CONNECT',
++      connectionId: 'conn-hc',
++      postedCount: 5,
++      complete: true,
++    });
++    expect(syncHealthConnect.mock.calls[0][0].connectionId).toBe('conn-hc');
++  });
++
++  it('refuses when nobody is signed in, before registering', async () => {
++    const register = jest.fn();
++    await expect(
++      connect('APPLE_HEALTHKIT', { register, readUserId: user(null) }),
++    ).rejects.toBeInstanceOf(OnDeviceNotSignedInError);
++    expect(register).not.toHaveBeenCalled();
++  });
++
++  it('records nothing and reads nothing if the account changed during registration', async () => {
++    const readUserId = jest.fn().mockResolvedValueOnce('user-a').mockResolvedValue('user-b');
++    const syncHealthKit = done();
++    await expect(
++      connect('APPLE_HEALTHKIT', {
++        register: jest.fn().mockResolvedValue(connection('APPLE_HEALTHKIT')),
++        syncHealthKit,
++        readUserId,
++      }),
++    ).rejects.toBeInstanceOf(OnDeviceSessionChangedError);
++    expect(syncHealthKit).not.toHaveBeenCalled();
++    expect(await getLocalAuthorization('user-a', 'APPLE_HEALTHKIT')).toBeNull();
++    expect(await getLocalAuthorization('user-b', 'APPLE_HEALTHKIT')).toBeNull();
++  });
++
++  it('returns disabled when registration hits the switched-off lane', async () => {
++    const out = await connect('HEALTH_CONNECT', {
++      register: jest.fn().mockRejectedValue(DISABLED),
++      readUserId: user('user-a'),
++    });
++    expect(out).toEqual({ kind: 'disabled', source: 'HEALTH_CONNECT' });
++  });
++
++  it('returns disabled when the ingest hits the switched-off lane', async () => {
++    const out = await connect('APPLE_HEALTHKIT', {
++      register: jest.fn().mockResolvedValue(connection('APPLE_HEALTHKIT')),
++      syncHealthKit: jest.fn().mockRejectedValue(DISABLED),
++      readUserId: user('user-a'),
++    });
++    expect(out).toEqual({ kind: 'disabled', source: 'APPLE_HEALTHKIT' });
++  });
++
++  it('wraps any other import failure with step=import and keeps the cause', async () => {
++    const cause = new Error('network');
++    const err = await connect('APPLE_HEALTHKIT', {
++      register: jest.fn().mockResolvedValue(connection('APPLE_HEALTHKIT')),
++      syncHealthKit: jest.fn().mockRejectedValue(cause),
++      readUserId: user('user-a'),
++    }).catch((e: unknown) => e);
++    expect(err).toBeInstanceOf(OnDeviceStepError);
++    expect((err as OnDeviceStepError).step).toBe('import');
++    expect((err as OnDeviceStepError).cause).toBe(cause);
++  });
++
++  it('wraps a registration failure with step=register (nothing connected)', async () => {
++    const err = await connect('APPLE_HEALTHKIT', {
++      register: jest.fn().mockRejectedValue(httpError(500, {})),
++      syncHealthKit: done(),
++      readUserId: user('user-a'),
++    }).catch((e: unknown) => e);
++    expect(err).toBeInstanceOf(OnDeviceStepError);
++    expect((err as OnDeviceStepError).step).toBe('register');
++    expect(await getLocalAuthorization('user-a', 'APPLE_HEALTHKIT')).toBeNull();
++  });
++
++  // Sol A-317-1 round 3: the fence is taken at the Continue tap, BEFORE the
++  // native permission prompt. Any auth event while the prompt is open (A -> B,
++  // sign-out, or even the same account signing in again) ends the run.
++  it.each([
++    ['account switch A -> B', 'user-b'],
++    ['sign-out', null],
++    ['same-account re-login', 'user-a'],
++  ])('A-317-1: %s while the permission prompt is open registers, records and reads nothing', async (_label, after) => {
++    let current: string | null = 'user-a';
++    const readUserId = jest.fn(async () => current);
++    const fence = await beginOnDeviceConnect({ readUserId });
++    // ... the native prompt is open; the session changes underneath it ...
++    current = after;
++    authEvents.emit(after == null ? 'logout' : 'login');
++    const register = jest.fn().mockResolvedValue(connection('APPLE_HEALTHKIT', 'conn-b'));
++    const syncHealthKit = done();
++    await expect(
++      connectOnDevice('APPLE_HEALTHKIT', fence, { register, syncHealthKit, readUserId }),
++    ).rejects.toBeInstanceOf(OnDeviceSessionChangedError);
++    expect(register).not.toHaveBeenCalled();
++    expect(syncHealthKit).not.toHaveBeenCalled();
++    expect(await getLocalAuthorization('user-a', 'APPLE_HEALTHKIT')).toBeNull();
++    expect(await getLocalAuthorization('user-b', 'APPLE_HEALTHKIT')).toBeNull();
++  });
++
++  it('A-317-1: an auth event during registration stops before the local grant', async () => {
++    const readUserId = user('user-a');
++    const fence = await beginOnDeviceConnect({ readUserId });
++    const register = jest.fn(async () => {
++      authEvents.emit('logout');
++      return connection('APPLE_HEALTHKIT');
++    });
++    const syncHealthKit = done();
++    await expect(
++      connectOnDevice('APPLE_HEALTHKIT', fence, { register, syncHealthKit, readUserId }),
++    ).rejects.toBeInstanceOf(OnDeviceSessionChangedError);
++    expect(syncHealthKit).not.toHaveBeenCalled();
++    expect(await getLocalAuthorization('user-a', 'APPLE_HEALTHKIT')).toBeNull();
++  });
++
++  it('a cancelled run (sheet closed) does nothing more', async () => {
++    const readUserId = user('user-a');
++    const fence = await beginOnDeviceConnect({ readUserId });
++    fence.cancel();
++    const register = jest.fn();
++    const err = await connectOnDevice('APPLE_HEALTHKIT', fence, { register, readUserId }).catch(
++      (e: unknown) => e,
++    );
++    expect(err).toBeInstanceOf(OnDeviceSessionChangedError);
++    expect((err as OnDeviceSessionChangedError).reason).toBe('cancelled');
++    expect(register).not.toHaveBeenCalled();
++  });
++
++  it('continues an incomplete import in further passes, bounded, and reports it incomplete', async () => {
++    const syncHealthConnect = jest
++      .fn()
++      .mockResolvedValue({ normalizedCount: 100, complete: false });
++    const out = await connect('HEALTH_CONNECT', {
++      register: jest.fn().mockResolvedValue(connection('HEALTH_CONNECT')),
++      syncHealthConnect,
++      readUserId: user('user-a'),
++    });
++    expect(syncHealthConnect).toHaveBeenCalledTimes(MAX_IMPORT_PASSES);
++    expect(out).toEqual({
++      kind: 'imported',
++      source: 'HEALTH_CONNECT',
++      connectionId: 'conn-1',
++      postedCount: 100 * MAX_IMPORT_PASSES,
++      complete: false,
++    });
++  });
++});
++
++describe('refreshOnDevice (Health screen open) — A-317-1', () => {
++  const remote = [connection('APPLE_HEALTHKIT', 'conn-1')];
++
++  it('never reads the phone for a remote connected row without a local Connect', async () => {
++    const syncHealthKit = done();
++    const out = await refreshOnDevice('APPLE_HEALTHKIT', remote, {
++      syncHealthKit,
++      readUserId: user('user-a'),
++    });
++    expect(out).toEqual({ kind: 'not_authorized', source: 'APPLE_HEALTHKIT' });
++    expect(syncHealthKit).not.toHaveBeenCalled();
++  });
++
++  it("does not use account A's local Connect for account B on the same phone", async () => {
++    await recordLocalAuthorization({ userId: 'user-a', connectionId: 'conn-1', source: 'APPLE_HEALTHKIT' });
++    const syncHealthKit = done();
++    // B is signed in; B's server row happens to be connected.
++    const out = await refreshOnDevice('APPLE_HEALTHKIT', [connection('APPLE_HEALTHKIT', 'conn-b')], {
++      syncHealthKit,
++      readUserId: user('user-b'),
++    });
++    expect(out.kind).toBe('not_authorized');
++    expect(syncHealthKit).not.toHaveBeenCalled();
++  });
++
++  it('requires the SAME connection id the person connected through', async () => {
++    await recordLocalAuthorization({ userId: 'user-a', connectionId: 'conn-old', source: 'APPLE_HEALTHKIT' });
++    const syncHealthKit = done();
++    const out = await refreshOnDevice('APPLE_HEALTHKIT', remote, {
++      syncHealthKit,
++      readUserId: user('user-a'),
++    });
++    expect(out.kind).toBe('not_authorized');
++    expect(syncHealthKit).not.toHaveBeenCalled();
++  });
++
++  it('requires the server row to still be connected', async () => {
++    await recordLocalAuthorization({ userId: 'user-a', connectionId: 'conn-1', source: 'APPLE_HEALTHKIT' });
++    const syncHealthKit = done();
++    const out = await refreshOnDevice(
++      'APPLE_HEALTHKIT',
++      [connection('APPLE_HEALTHKIT', 'conn-1', 'disconnected')],
++      { syncHealthKit, readUserId: user('user-a') },
++    );
++    expect(out.kind).toBe('not_authorized');
++    expect(syncHealthKit).not.toHaveBeenCalled();
++  });
++
++  it('refreshes for the user who connected, through their connection', async () => {
++    await recordLocalAuthorization({ userId: 'user-a', connectionId: 'conn-1', source: 'APPLE_HEALTHKIT' });
++    const syncHealthKit = done(4);
++    const out = await refreshOnDevice('APPLE_HEALTHKIT', remote, {
++      syncHealthKit,
++      readUserId: user('user-a'),
++    });
++    expect(out).toEqual({
++      kind: 'imported',
++      source: 'APPLE_HEALTHKIT',
++      connectionId: 'conn-1',
++      postedCount: 4,
++      complete: true,
++    });
++    expect(syncHealthKit.mock.calls[0][0]).toEqual({
++      userId: 'user-a',
++      connectionId: 'conn-1',
++      source: 'APPLE_HEALTHKIT',
++    });
++  });
++
++  it('reads nothing after sign-out retired the local state', async () => {
++    await recordLocalAuthorization({ userId: 'user-a', connectionId: 'conn-1', source: 'APPLE_HEALTHKIT' });
++    await retireOnDeviceState();
++    const syncHealthKit = done();
++    const out = await refreshOnDevice('APPLE_HEALTHKIT', remote, {
++      syncHealthKit,
++      readUserId: user('user-a'),
++    });
++    expect(out.kind).toBe('not_authorized');
++    expect(syncHealthKit).not.toHaveBeenCalled();
++  });
++
++  it('returns not_authorized when nobody is signed in', async () => {
++    const out = await refreshOnDevice('APPLE_HEALTHKIT', remote, { readUserId: user(null) });
++    expect(out.kind).toBe('not_authorized');
++  });
++});
++
++describe('refreshOnDevice — fence taken before the user read', () => {
++  it('reads nothing when an auth event lands while the signed-in user is read', async () => {
++    await recordLocalAuthorization({ userId: 'user-a', connectionId: 'conn-1', source: 'APPLE_HEALTHKIT' });
++    const readUserId = jest.fn(async () => {
++      authEvents.emit('logout');
++      return 'user-a';
++    });
++    const syncHealthKit = done();
++    const out = await refreshOnDevice('APPLE_HEALTHKIT', [connection('APPLE_HEALTHKIT', 'conn-1')], {
++      syncHealthKit,
++      readUserId,
++    });
++    expect(out.kind).toBe('not_authorized');
++    expect(syncHealthKit).not.toHaveBeenCalled();
++  });
++});
++
++describe('resumeOnDeviceImport (sheet Continue import) — B-317-2', () => {
++  it('continues for the same person and connection', async () => {
++    await recordLocalAuthorization({ userId: 'user-a', connectionId: 'conn-1', source: 'APPLE_HEALTHKIT' });
++    const readUserId = user('user-a');
++    const fence = await beginOnDeviceConnect({ readUserId });
++    const syncHealthKit = done(2);
++    const out = await resumeOnDeviceImport('APPLE_HEALTHKIT', 'conn-1', fence, { syncHealthKit, readUserId });
++    expect(out).toEqual({
++      kind: 'imported',
++      source: 'APPLE_HEALTHKIT',
++      connectionId: 'conn-1',
++      postedCount: 2,
++      complete: true,
++    });
++  });
++
++  it('refuses without the local authorization for that connection', async () => {
++    await recordLocalAuthorization({ userId: 'user-a', connectionId: 'conn-other', source: 'APPLE_HEALTHKIT' });
++    const readUserId = user('user-a');
++    const fence = await beginOnDeviceConnect({ readUserId });
++    const syncHealthKit = done();
++    const out = await resumeOnDeviceImport('APPLE_HEALTHKIT', 'conn-1', fence, { syncHealthKit, readUserId });
++    expect(out.kind).toBe('not_authorized');
++    expect(syncHealthKit).not.toHaveBeenCalled();
++  });
++
++  it('refuses after an account switch', async () => {
++    await recordLocalAuthorization({ userId: 'user-a', connectionId: 'conn-1', source: 'APPLE_HEALTHKIT' });
++    let current = 'user-a';
++    const readUserId = jest.fn(async () => current);
++    const fence = await beginOnDeviceConnect({ readUserId });
++    current = 'user-b';
++    authEvents.emit('login');
++    const syncHealthKit = done();
++    await expect(
++      resumeOnDeviceImport('APPLE_HEALTHKIT', 'conn-1', fence, { syncHealthKit, readUserId }),
++    ).rejects.toBeInstanceOf(OnDeviceSessionChangedError);
++    expect(syncHealthKit).not.toHaveBeenCalled();
++  });
++});
++
++describe('isConnectedButNotSyncingHere — B-317-5', () => {
++  const rows = [connection('APPLE_HEALTHKIT', 'conn-1')];
++  it('is true for a connected row with no local Connect on this phone', () => {
++    expect(isConnectedButNotSyncingHere('APPLE_HEALTHKIT', rows, null)).toBe(true);
++  });
++  it('is true when the local Connect is for another connection', () => {
++    expect(isConnectedButNotSyncingHere('APPLE_HEALTHKIT', rows, 'conn-old')).toBe(true);
++  });
++  it('is false when this phone syncs that connection', () => {
++    expect(isConnectedButNotSyncingHere('APPLE_HEALTHKIT', rows, 'conn-1')).toBe(false);
++  });
++  it('is false when the server row is not connected', () => {
++    expect(
++      isConnectedButNotSyncingHere('APPLE_HEALTHKIT', [connection('APPLE_HEALTHKIT', 'conn-1', 'disconnected')], null),
++    ).toBe(false);
++  });
++});
+diff --git a/src/services/health/onDeviceSync.ts b/src/services/health/onDeviceSync.ts
+new file mode 100644
+index 00000000..14d70e70
+--- /dev/null
++++ b/src/services/health/onDeviceSync.ts
+@@ -0,0 +1,323 @@
++/**
++ * S14 — on-device history import and refresh.
++ *
++ * The single seam that turns a granted Apple Health / Health Connect
++ * permission into data the Health and Sleep views can show:
++ *
++ *   register the device source  POST /v1/wearables/connections/on-device
++ *     -> record LOCAL authorization (this user, this phone, this connection)
++ *     -> read + normalize on device (connector sync service)
++ *     -> POST /v1/wearables/samples/ingest in request-sized batches
++ *
++ * Audit A-317-1: only {@link connectOnDevice}, run from the Connect tap after
++ * the platform permission step, may start reading this phone's store, and it
++ * records a local authorization keyed by user id + source and bound to the
++ * connection id. {@link refreshOnDevice} (Health screen open) runs ONLY when
++ * that record exists for the CURRENTLY signed-in user and the server still
++ * lists the same connection as connected. A remote "connected" row alone
++ * never uploads phone data. Every run carries a session fence, checked before
++ * each request and before saving progress, so one account's data can never
++ * be sent under another account's session. Sign-out removes the records.
++ *
++ * The first run per account + connection imports the last 30 days; later runs
++ * read from per-type progress. Ingest is idempotent on the backend dedup key.
++ * The subject user is never sent: the server takes it from the JWT.
++ */
++
++import axios from 'axios';
++import { Platform } from 'react-native';
++import {
++  wearablesConnectionsApi,
++  type WearableConnection,
++  type WearableProvider,
++} from '../../api/wearablesConnectionsApi';
++import { healthKitSyncService } from './healthkit';
++import { syncHealthConnect } from './healthConnect';
++import {
++  getLocalAuthorization,
++  recordLocalAuthorization,
++  type OnDeviceScope,
++  type OnDeviceSource,
++} from './onDeviceState';
++import {
++  beginSessionFence,
++  OnDeviceSessionChangedError,
++  readSignedInUserId,
++  type SessionFence,
++} from './sessionFence';
++
++export type { OnDeviceSource } from './onDeviceState';
++
++export function deviceSourceForPlatform(): OnDeviceSource | null {
++  if (Platform.OS === 'ios') return 'APPLE_HEALTHKIT';
++  if (Platform.OS === 'android') return 'HEALTH_CONNECT';
++  return null;
++}
++
++/**
++ * The device source a Connect tap maps to. Samsung Health writes into Health
++ * Connect on Android, so both rows import through the Health Connect source.
++ */
++export function deviceSourceFor(provider: WearableProvider): OnDeviceSource | null {
++  if (provider === 'APPLE_HEALTHKIT') return Platform.OS === 'ios' ? 'APPLE_HEALTHKIT' : null;
++  if (provider === 'HEALTH_CONNECT' || provider === 'SAMSUNG_HEALTH') {
++    return Platform.OS === 'android' ? 'HEALTH_CONNECT' : null;
++  }
++  return null;
++}
++
++export type OnDeviceImportOutcome =
++  /**
++   * Data was read and posted (count may be 0 if the window had none).
++   * `complete` is false while any type still has history left to read (a
++   * failed or page-bounded read); the next refresh continues it.
++   */
++  | {
++      kind: 'imported';
++      source: OnDeviceSource;
++      /** The connection the data was posted under (resume target). */
++      connectionId: string;
++      postedCount: number;
++      complete: boolean;
++    }
++  /** The server lane is switched off (FEATURE_WEARABLES_INGEST_POST). */
++  | { kind: 'disabled'; source: OnDeviceSource }
++  /** Refresh only: this user has not tapped Connect on this phone. */
++  | { kind: 'not_authorized'; source: OnDeviceSource };
++
++/** Thrown when no account is signed in. */
++export class OnDeviceNotSignedInError extends Error {
++  constructor() {
++    super('No signed-in account for on-device health import.');
++    this.name = 'OnDeviceNotSignedInError';
++  }
++}
++
++/**
++ * A Connect step failed. `step` tells the sheet what is true afterwards:
++ * `register` means no connection was made; `import` means the source is
++ * connected and the history import stopped (progress kept). `cause` keeps
++ * the original error so its HTTP status, machine code and request id can be
++ * mapped to specific copy.
++ */
++export class OnDeviceStepError extends Error {
++  readonly step: 'register' | 'import';
++  readonly cause: unknown;
++
++  constructor(step: 'register' | 'import', cause: unknown) {
++    super(`On-device ${step} failed.`);
++    this.name = 'OnDeviceStepError';
++    this.step = step;
++    this.cause = cause;
++  }
++}
++
++/** True for the typed 503 the backend returns while the lane is off. */
++export function isIngestDisabledError(err: unknown): boolean {
++  if (!axios.isAxiosError(err) || err.response?.status !== 503) return false;
++  const data: unknown = err.response?.data;
++  return (
++    typeof data === 'object' &&
++    data !== null &&
++    (data as { code?: unknown }).code === 'wearables_ingest_disabled'
++  );
++}
++
++/** Injectable seams (tests). */
++export interface OnDeviceImportDeps {
++  register?: (source: OnDeviceSource) => Promise<WearableConnection>;
++  readUserId?: () => Promise<string | null>;
++  syncHealthKit?: (
++    scope: OnDeviceScope,
++    fence: SessionFence,
++  ) => Promise<{ postedCount: number; complete: boolean }>;
++  syncHealthConnect?: (
++    scope: OnDeviceScope,
++    fence: SessionFence,
++  ) => Promise<{ normalizedCount: number; complete: boolean }>;
++}
++
++/**
++ * Passes per Connect or refresh. A pass that stopped at the Health Connect
++ * page bound resumes in the next pass, so a large history finishes in one
++ * visit; a pass that posted nothing stops the loop (a failing read would only
++ * fail again).
++ */
++export const MAX_IMPORT_PASSES = 3;
++
++async function runSyncPasses(
++  scope: OnDeviceScope,
++  fence: SessionFence,
++  deps: OnDeviceImportDeps,
++): Promise<OnDeviceImportOutcome> {
++  let total = 0;
++  let last: OnDeviceImportOutcome = {
++    kind: 'imported',
++    source: scope.source,
++    connectionId: scope.connectionId,
++    postedCount: 0,
++    complete: false,
++  };
++  for (let pass = 0; pass < MAX_IMPORT_PASSES; pass += 1) {
++    last = await runSync(scope, fence, deps);
++    if (last.kind !== 'imported') return last;
++    total += last.postedCount;
++    if (last.complete || last.postedCount === 0) break;
++    await fence.assertCurrent();
++  }
++  return last.kind === 'imported' ? { ...last, postedCount: total } : last;
++}
++
++async function runSync(
++  scope: OnDeviceScope,
++  fence: SessionFence,
++  deps: OnDeviceImportDeps,
++): Promise<OnDeviceImportOutcome> {
++  const { source } = scope;
++  try {
++    if (source === 'APPLE_HEALTHKIT') {
++      const run =
++        deps.syncHealthKit ??
++        ((sc: OnDeviceScope, f: SessionFence) =>
++          healthKitSyncService.sync({
++            scope: sc,
++            fence: f,
++            sourceTz: Intl.DateTimeFormat().resolvedOptions().timeZone ?? null,
++          }));
++      const { postedCount, complete } = await run(scope, fence);
++      return { kind: 'imported', source, connectionId: scope.connectionId, postedCount, complete };
++    }
++    const run =
++      deps.syncHealthConnect ??
++      ((sc: OnDeviceScope, f: SessionFence) => syncHealthConnect(sc, { fence: f }));
++    const { normalizedCount, complete } = await run(scope, fence);
++    return {
++      kind: 'imported',
++      source,
++      connectionId: scope.connectionId,
++      postedCount: normalizedCount,
++      complete,
++    };
++  } catch (err) {
++    if (isIngestDisabledError(err)) return { kind: 'disabled', source };
++    throw err;
++  }
++}
++
++/**
++ * Start a Connect run. Called on the Continue tap, BEFORE the native
++ * permission prompt (Sol A-317-1 round 3): the returned fence binds the whole
++ * run to the person who tapped. If the session changes while the prompt is
++ * open (sign-out, a different account), every later step refuses.
++ */
++export async function beginOnDeviceConnect(
++  deps: Pick<OnDeviceImportDeps, 'readUserId'> = {},
++): Promise<SessionFence> {
++  const fence = await beginSessionFence(deps.readUserId ?? readSignedInUserId);
++  if (!fence) throw new OnDeviceNotSignedInError();
++  return fence;
++}
++
++/**
++ * Explicit Connect (the person tapped Connect and finished the platform
++ * permission step on this phone): register the source, record the local
++ * authorization for the person who tapped, then run the first import.
++ *
++ * `fence` comes from {@link beginOnDeviceConnect} at the tap. It is checked
++ * before registration, after it, before the local authorization is written,
++ * before every ingest request and before progress is saved, so a session
++ * change at any point (including while the permission prompt was open)
++ * registers nothing new, records nothing and sends nothing. Rejects on any
++ * failure other than the lane being disabled; progress is kept so the next
++ * run re-reads what is missing.
++ */
++export async function connectOnDevice(
++  source: OnDeviceSource,
++  fence: SessionFence,
++  deps: OnDeviceImportDeps = {},
++): Promise<OnDeviceImportOutcome> {
++  await fence.assertCurrent();
++  const register =
++    deps.register ?? ((s: OnDeviceSource) => wearablesConnectionsApi.registerOnDevice(s));
++  let connection: WearableConnection;
++  try {
++    connection = await register(source);
++  } catch (err) {
++    if (isIngestDisabledError(err)) return { kind: 'disabled', source };
++    throw new OnDeviceStepError('register', err);
++  }
++
++  const scope: OnDeviceScope = { userId: fence.userId, connectionId: connection.id, source };
++  await fence.assertCurrent();
++  await recordLocalAuthorization(scope);
++  try {
++    return await runSyncPasses(scope, fence, deps);
++  } catch (err) {
++    if (err instanceof OnDeviceSessionChangedError) throw err;
++    throw new OnDeviceStepError('import', err);
++  }
++}
++
++/**
++ * Continue an import that came back incomplete (the sheet's resume action).
++ * Runs only when this phone still holds the same person's local
++ * authorization for the same connection; otherwise `not_authorized`.
++ */
++export async function resumeOnDeviceImport(
++  source: OnDeviceSource,
++  connectionId: string,
++  fence: SessionFence,
++  deps: OnDeviceImportDeps = {},
++): Promise<OnDeviceImportOutcome> {
++  await fence.assertCurrent();
++  const auth = await getLocalAuthorization(fence.userId, source);
++  if (!auth || auth.connectionId !== connectionId) return { kind: 'not_authorized', source };
++  await fence.assertCurrent();
++  return runSyncPasses({ userId: fence.userId, connectionId, source }, fence, deps);
++}
++
++/** Minimal view of a server connection row the refresh check needs. */
++export type RemoteConnectionView = Pick<WearableConnection, 'id' | 'provider' | 'status'>;
++
++/**
++ * True when the server lists this source as connected but this phone holds
++ * no local authorization for the signed-in person and that connection, so
++ * Health will not sync here until the person taps Reconnect (Opus B-317-5).
++ */
++export function isConnectedButNotSyncingHere(
++  source: OnDeviceSource,
++  remoteConnections: readonly RemoteConnectionView[],
++  localConnectionId: string | null,
++): boolean {
++  const connected = remoteConnections.filter(
++    (c) => c.provider === source && c.status === 'connected',
++  );
++  if (connected.length === 0) return false;
++  return !connected.some((c) => c.id === localConnectionId);
++}
++
++/**
++ * Refresh on Health screen open. Runs ONLY when the signed-in user has a
++ * local authorization for this source on this phone AND the server still
++ * lists that same connection as connected; otherwise returns
++ * `not_authorized` and reads nothing.
++ */
++export async function refreshOnDevice(
++  source: OnDeviceSource,
++  remoteConnections: readonly RemoteConnectionView[],
++  deps: OnDeviceImportDeps = {},
++): Promise<OnDeviceImportOutcome> {
++  const fence = await beginSessionFence(deps.readUserId ?? readSignedInUserId);
++  if (!fence) return { kind: 'not_authorized', source };
++  const { userId } = fence;
++
++  const auth = await getLocalAuthorization(userId, source);
++  if (!auth) return { kind: 'not_authorized', source };
++  const remote = remoteConnections.find(
++    (c) => c.id === auth.connectionId && c.provider === source && c.status === 'connected',
++  );
++  if (!remote) return { kind: 'not_authorized', source };
++
++  await fence.assertCurrent();
++  return runSyncPasses({ userId, connectionId: auth.connectionId, source }, fence, deps);
++}

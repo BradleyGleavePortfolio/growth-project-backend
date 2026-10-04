@@ -1,0 +1,27 @@
+AUDIT GPT-6.1 Sol — growth-project-mobile#360 @ fde1875edc1bd5d14ac8fda4f2e68ee8b7c5ebf5 — VERDICT: APPROVE
+
+A/B/C = 0/0/0
+
+Independent T4 delta and piece-boundary audit, AUD-SOL-H23-118, agent 118; B-360-1 is explicitly closed, with no new A/B/C finding in this head. ([Candidate](https://github.com/BradleyGleavePortfolio/growth-project-mobile/commit/fde1875edc1bd5d14ac8fda4f2e68ee8b7c5ebf5), [prior Sol finding](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/360#issuecomment-5976328100))
+
+### B-360-1 — CLOSED
+
+`src/services/health/healthConnect/healthConnectSyncService.ts:259-277` now performs the synchronous stop check first in the rejected-page catch, rethrows stop errors, and logs only the fixed six-value classification plus structural record type/resumed fields; message, mutable name, arbitrary code and non-Error rejection text are never copied, while ordinary failed types retain retry progress. ([Repaired service](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/fde1875edc1bd5d14ac8fda4f2e68ee8b7c5ebf5/src/services/health/healthConnect/healthConnectSyncService.ts))
+
+The grant-read continuation checks retirement before denial logging, and the Apple Health rejected-permission continuation returns `stopped` before error classification when its attempt ended. ([Service sibling](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/fde1875edc1bd5d14ac8fda4f2e68ee8b7c5ebf5/src/services/health/healthConnect/healthConnectSyncService.ts), [permission-helper sibling](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/fde1875edc1bd5d14ac8fda4f2e68ee8b7c5ebf5/src/services/health/onDeviceConnect.ts))
+
+Verified the builder's test-only before execution (**12 failed / 41 passed**) and after execution (**53 passed**); this lens independently replayed its original three-case real-service/real-paged-client/real-fence probe on exact `fde1875e` plus only that saved spec and lane files, together with both repair suites: **3 suites / 56 tests PASS**, audit execution commit `c3049c25a43c4b59ea60dc274631139f70f5b17f`. ([Failing before](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37175837840/job/111358139699), [builder after](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37175851194/job/111358179708), [independent replay](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37219225833/job/111485969669))
+
+### G09 applicability and piece safety
+
+The complete piece diff and every four-file repair line were read; 16 unchanged surviving blobs match this model's original APPROVE at `82137c312e957cb05eedeaebf86fcd95029f2bde`, and all four removed hook/test paths are absent there too, so scoped earlier normalization/session/pagination evidence is reused while logger closure rests on fresh execution, not the old inference. ([Original Sol approval](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317#issuecomment-5972055787), [current piece](https://github.com/BradleyGleavePortfolio/growth-project-mobile/commit/fde1875edc1bd5d14ac8fda4f2e68ee8b7c5ebf5), [fresh logger proof](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37219225833/job/111485969669))
+
+Original B-317-12 belongs to H6's config-test pins, not H2; deleted hooks have no application importers, the ingestion wire remains allow-listed and subject-free, Health Connect refresh reads only granted supported types without auto-prompting, and native loading remains build/platform guarded. ([Original finding scope](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/317#issuecomment-5972176395), [reviewed H2 implementation](https://github.com/BradleyGleavePortfolio/growth-project-mobile/commit/fde1875edc1bd5d14ac8fda4f2e68ee8b7c5ebf5))
+
+### CI, size and landing limits
+
+Exact-head Typecheck, lint, test is **SUCCESS**, with tsc/eslint and **449 suites / 6,355 tests**; both Analyze checks are main-base-only and have not executed for this stacked piece, so integrated main-based checks remain prerequisites, not claimed H2 passes. ([PR-head CI](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37179701360/job/111369586215), [stack applicability](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/360#issuecomment-5976937429))
+
+Size is **2,812** changed lines: source **1,288**, tests **1,524**, no exclusions; the existing KEEP assessment remains reasonable for this converged paired-platform seam, below the hard 3,000 limit. ([Exact piece](https://github.com/BradleyGleavePortfolio/growth-project-mobile/commit/fde1875edc1bd5d14ac8fda4f2e68ee8b7c5ebf5), [operator size assessment](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/360#issuecomment-5975773333))
+
+Existing **C-360-1 / C-360-2** retain their ruled post-landing, pre-clinic-Android-build follow-up status and are not new Sol findings; H1–H6 must land as one behind the off ingest flag, with no intermediate build/OTA, followed by release sequencing and device acceptance—not a claim of native or production-transport validation. ([Recorded follow-ups](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/360#issuecomment-5976279445), [whole-stack landing rule](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/360#issuecomment-5975773333))

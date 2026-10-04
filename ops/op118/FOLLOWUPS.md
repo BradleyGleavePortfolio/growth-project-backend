@@ -1,0 +1,28 @@
+# Follow-up C items to ticket (agent 118)
+- C-698-1 (Sol, #698 5982328262): unchanged worker-start write can revive a reaped export request after a delayed DB op; fix rule: conditional PENDING->RUNNING claim. Separate PR.
+- C-700-1 (Sol, #700 5982324455): encoded email addresses in finance-federation path logs (outside #700 diff). Separate PR.
+- Trials Cs (Sol, #672 5982319373 / #673 5982336690): integrated recurring/trials qualification; optional duplicate-cancellation clock fix (fold into B-673-1 lines); never-billed metrics outside diff; carried mobile/copy items.
+- C-661-13 (Sol, #661 5982350850): completed-payment replay copy must not promise current access during lockout. Separate PR (pairs with dunning).
+- C-699-1 (Opus, #699 5982370988): error text says regenerate SBOM with cdxgen; workflow uses npm sbom.
+- C-699-2 (Opus): script header/docs miss the new lockfile requirements.
+- C-698-1 (Opus, #698 5982371280): export sections without a set order come out in id order; sort by date column.
+- C-698-2 (Opus) = C-698-1 (Sol): worker-start write overwrites any status; only PENDING->RUNNING.
+- C-698-3 (Opus): dead try/catch around the audit-log read; delete.
+- C-661-14 (Opus, #661 5982407688): checkout.service.ts:89 would tell a free-trial client "This payment is already complete" with nothing charged; unreachable today; fix in the recurring/trials integration (#672, #678-#680).
+- C-661-13/C-702-1 (Opus): #661/#702 PR descriptions stale after round 8 (sizes, moved spec). Operator updates before merge.
+- C-661-10 (index on stripe_payment_intent_id) and C-661-2 (cached credential backfill): carried; ticket.
+- C-700-1 (Opus): owner free-text reason logged; fix needs a migration. Ticket.
+- C-700-4 (Opus): calorie values logged (health-adjacent). Separate decision/ticket.
+- C-673-3 (Opus, #673 5982465887; BINDING ruling): coach metrics count never-billed trials in MRR (49 vs 0) and churn (1 vs 0). Add to the #680 integration list using #676's billed predicate; fix before any trial is sold.
+- C-672-10 (hung push later delivers, sent again), C-673-1 (post-commit sends awaited inside webhook ~90 s worst case), carried C-672-3/5/6b. Trials follow-ups.
+- C-690-2 (Sol, #690 5982476848): unchanged raw-message logging. Ticket.
+- HC follow-up PR (after H1-H6 land, before clinic Android build): C-360-1/2 (late samples, resumable import), C-360-3 (re-check attempt ended after permission screen).
+- C-361-1 (Opus): VoiceOver cannot reach Disconnect in disconnect dialog (also main's Connect sheet, message menu): small a11y PR for all three + device-pass steps.
+- C-361-2 (Opus): support reference sent as Sentry extra, not searchable tag (report.ts:17-22). One-line ticket.
+- Sheet Cs (B-SHEET-118 report): Opus C-342-1 planTerms.ts:83-88, C-342-2/3, C-343-1/2 (iOS 3DS device check), YourPlansPanel fallback on today's production backend; C-334-2 P3 decision.
+- HC pre-flag-flip copy PR (before EXPO flag flip): C-362-4 connect sheet "We'll read..." (first person; list omits weight, body fat, BP, HRV, SpO2, respiratory rate, body temperature); H3 onDeviceCopy.ts:216-217 "Your coach will let you know when it is ready" promises an undelivered notice; with C-361-1 a11y if convenient.
+- C-363-1: wrong mock field name in ConnectProviderSheet.attemptFence.test.tsx.
+- OPS: backend .github/workflows/fly-secrets-set.yml overwrites live Fly config with April values (CORS_ORIGINS console-only, STRIPE_PRICE_ID_FITNESS, BILLING_ENFORCEMENT, STRIPE_SECRET_KEY/STRIPE_WEBHOOK_SECRET/SENTRY_DSN from GH secrets dated 04-27). Do not run; fix or retire.
+- C-364-2 (Sol): obsolete Samsung native-permission docs. Ticket.
+- STRIPE CONNECT DESTINATION (investigated 10:31): connected-account events (account.updated, capability.updated, account.application.deauthorized, payout.paid/failed/canceled) handled in billing.service.ts:514-540 and checkout-webhook-handler.service.ts:221-249 need a "Connected accounts" destination (own signing secret). Backend verifies only STRIPE_WEBHOOK_SECRET/_NEXT (stripe-webhook.controller, payouts-v2-webhook.controller). Onboarding status already refreshes on demand (connect.service.ts:152 retrieveAccount; payout-readiness.service.ts:164), so day 1 works without it; payout failure/paid notices need it. Proposed: small backend PR adding STRIPE_CONNECT_WEBHOOK_SECRET (accepted alongside), then create the Connect destination (acacia) via API. Bring to owner as a fast-follow decision when the fees/recurring stacks land.
+- Dunning Cs: C-689-3 (keep-paid-period cancel race), C-689-4 (two silent catches in reconciler), C-690-5 (card-page copy untrue in dispute cycle).

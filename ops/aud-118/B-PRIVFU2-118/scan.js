@@ -1,0 +1,10 @@
+const fs=require('fs'),path=require('path');
+const LOG_CALL=/(?:\b[\w$]*[lL]ogger\b|\b[A-Z_]*LOGGER\b|\bconsole\b|\bnew\s+Logger\([^()]*\))\s*\.\s*(?:log|warn|error|debug|verbose|info|fatal)\s*\(/g;
+function logCalls(src){const calls=[];LOG_CALL.lastIndex=0;let m;while((m=LOG_CALL.exec(src))!==null){const line=src.slice(0,m.index).split('\n').length;calls.push({line,code:argumentCode(src,m.index+m[0].length)});}return calls;}
+function argumentCode(src,start){let out='',depth=1,i=start;while(i<src.length){const c=src[i];if(c==="'"||c=='"'){i=skipQuoted(src,i,c);out+=' STR ';continue;}if(c==='`'){const r=readTemplate(src,i);out+=` ${r.exprs.join(' ')} `;i=r.end;continue;}if(c==='/'&&src[i+1]==='/'){while(i<src.length&&src[i]!=='\n')i++;continue;}if(c==='/'&&src[i+1]==='*'){const cl=src.indexOf('*/',i+2);i=cl<0?src.length:cl+2;continue;}if(c==='(')depth++;if(c===')'){depth--;if(depth===0)break;}out+=c;i++;}return out;}
+function skipQuoted(src,i,q){i++;while(i<src.length&&src[i]!==q){if(src[i]==='\\')i++;i++;}return i+1;}
+function readTemplate(src,i){const exprs=[];i++;while(i<src.length&&src[i]!=='`'){if(src[i]==='\\'){i+=2;continue;}if(src[i]==='$'&&src[i+1]==='{'){let d=1,j=i+2,expr='';while(j<src.length&&d>0){const c=src[j];if(c==="'"||c==='"'){j=skipQuoted(src,j,c);expr+=' STR ';continue;}if(c==='`'){const inn=readTemplate(src,j);expr+=` ${inn.exprs.join(' ')} `;j=inn.end;continue;}if(c==='{')d++;if(c==='}'){d--;if(d===0)break;}expr+=c;j++;}exprs.push(expr);i=j+1;continue;}i++;}return {exprs,end:i+1};}
+function files(d){let o=[];for(const n of fs.readdirSync(d)){const p=path.join(d,n);if(fs.statSync(p).isDirectory()){if(['__tests__','__mocks__','node_modules'].includes(n))continue;o.push(...files(p));}else if(n.endsWith('.ts')&&!/\.(spec|test)\.ts$/.test(n)&&!n.endsWith('.d.ts'))o.push(p);}return o;}
+const re=new RegExp(process.argv[2]);let n=0,tot=0;const out=[];
+for(const f of files('src')){const s=fs.readFileSync(f,'utf8');for(const c of logCalls(s)){tot++;if(re.test(c.code)){n++;out.push(`${f}:${c.line} ${c.code.replace(/\s+/g,' ').trim().slice(0,150)}`);}}}
+console.log(out.join('\n'));console.log('hits',n,'of',tot);

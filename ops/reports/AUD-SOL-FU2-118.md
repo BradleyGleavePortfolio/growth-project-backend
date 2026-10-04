@@ -2,6 +2,12 @@
 
 Operator: agent 118. Lens: GPT-6.1 Sol. Started Sun Oct 4 09:46:23 PDT 2026 (America/Los_Angeles date).
 
+## Completed summary
+
+- **Backend #700: REQUEST CHANGES, A/B/C = 0/2/1**, head `66569a616fed254e2d5022bbc277013e4652788b`; required CI 11/11 green; independent probes deliberately red on the two Bs. [Verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/700#issuecomment-5982324455), [probe run](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37218198321)
+- **Mobile #368: REQUEST CHANGES, A/B/C = 0/1/0**, head `2216ad1dc94d280e33a39a3ae2d8b7ac197c16dc`; required CI 3/3 green; corrected independent probes deliberately red on B-368-1. [Verdict](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/368#issuecomment-5982340884), [corrected probe run](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37218572318)
+- Recommended operator default: one bounded builder job for the three B fixes, replay both probe files against the fixes, then fresh dual exact-head verdicts; separately ticket C-700-1. No owner product/policy decision is needed.
+
 ## Scope and exact heads
 
 - Backend #700: `66569a616fed254e2d5022bbc277013e4652788b`; base main `b644198b90bb9ab1dc62a78794e12cf09f8ace7c`; 858 additions + 78 deletions = 936 lines; required checks 11/11 green. [PR #700](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/700)
@@ -9,18 +15,46 @@ Operator: agent 118. Lens: GPT-6.1 Sol. Started Sun Oct 4 09:46:23 PDT 2026 (Ame
 - Both exact-head Sol claims acquired under `ops/lanes118/claims`; isolated detached worktrees at `wt/AUD-SOL-FU2-118-700` and `wt/AUD-SOL-FU2-118-368`.
 - Reviewing privacy enforcement and public deletion guarantees as T4 under the max-tier rule despite T3 headers.
 
-## Evidence / work in progress
+## Evidence and execution trail
 
 - Fully read wave 118 and 116 common instructions and only assigned JOBS118 entry.
-- Initial full production-source diff read for #700. Mobile diff and original #611 comments retrieval still being narrowed after large combined output.
+- Full #700 and #368 diffs read, including all changed test lines, surrounding service/view logic, helper consumers, actual logger sink and Apple revocation's null-code outcome.
 - Backend builder provided failing-before [37180400375](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37180400375), passing lane [37180567781](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37180567781), and exact-head full CI [37181000501](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37181000501). [Builder comment](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/700#issuecomment-5977116363)
 - Mobile builder provided failing-before [37180664588](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37180664588), and exact-head full CI [37181021867](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37181021867). [Builder comment](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/368#issuecomment-5977096406)
 - Apple research started; current official support article found. [Apple Support 102571](https://support.apple.com/en-us/102571)
+- Fully read previous Sol #611 verdict and original Opus carry-over findings. Prior Sol B-611-17 closure stays intact: this PR refines iOS applicability, not the iPhone/web menu separation. The prior out-of-diff mobile fallback correction is implemented here; previous broader #611 approvals are not being used to bless new runtime changes. [Prior Sol verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/611#issuecomment-5976633102)
+- Official Apple current article plus iOS 18.0 and iOS 17.0 guide pages fetched: new paths/terminology match, and the web path remains distinct. [Apple Support 102571](https://support.apple.com/en-us/102571), [iOS 18 guide](https://support.apple.com/guide/iphone/sign-in-with-apple-iph238921d37/18.0/ios/18.0), [iOS 17 guide](https://support.apple.com/guide/iphone/sign-in-with-apple-iph238921d37/17.0/ios/17.0)
+- Independent exact-head synthetic probes committed as `adafb47e6` (probe-only over #700), saved to `ops/aud-118/AUD-SOL-FU2-118/audit-sol-fu2-118-boundary.spec.ts`, and dispatched in the approved CI lane with three original control suites. [Probe run 37218198321](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37218198321)
+- B-700-1 confirmed: email-only replacement leaves provider/exception display names and arbitrary free text in logs, persisted errors and returned diagnostics; B-700-2 confirmed: webhook regex accepts private names as event/key strings, not finite codes. Run 37218198321 executed 5 expected failing assertions (email provider, render exception, digest provider, Zoom, Google Calendar); 3 original control suites pass and totals are 5 failed / 26 passed. The initial address-crossing-cut suspicion was not demonstrated by its passing test and is not counted as a finding. [Executed probe](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37218198321)
+- `gh run view` jobs/log lookup hits an unauthenticated rate limit on fallback URLs; switching to explicit authenticated `gh api` paths. No evidence claim is made from the missing logs.
+- Explicit `gh api` paths successfully recovered and saved logs: backend builder before-run is 19 failed / 77 passed (log-pii module missing before implementation); mobile builder before-run is 9 failed / 38 passed; the parent commits are test-only plus lane files. [Backend before-run](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37180400375), [mobile before-run](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37180664588)
+- Exact-head required checks matched by name, SHA and GitHub Actions app ID 15368 (backend 11/11; mobile 3/3). Full backend CI: 729 passed suites, 23 skipped; 12,555 passed tests, 241 skipped, 5 todo. Full mobile CI: 452 passed suites / 6,319 passed tests. [Backend build](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37181000501/job/111373393514), [mobile build](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37181021867/job/111373456068)
+- Mobile new form-note guarantee challenged with unknown provider discovery plus successful Apple identity confirmation but no authorization code: server reports `not_requested`, and existing fallback guard suppresses all Apple guidance. Initial probe run 37218370876 is INVALID as behavioral evidence: the new spec omitted `await render()` for the current async testing API. Corrected spec is being rerun; no verdict rests on this failed harness. [Initial mobile run](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37218370876)
 
 ## Follow-ups (C)
 
-Not yet finalized.
+**C-700-1 (outside this diff):** `src/admin/federation/finance-admin.client.ts:89-95,165-167`: degraded `setCoachPracticeByEmail("pat@example.test", ...)` logs the request path `/by-email/pat%40example.test/practice`; percent encoding is not anonymization. Fix rule: operator tickets a separate server-owned route-label/opaque-ID logger change and an encoded-address regression, not an expansion of this frozen PR. [Existing federation client](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/66569a616fed254e2d5022bbc277013e4652788b/src/admin/federation/finance-admin.client.ts)
+
+## Posted / finalized outcomes
+
+- Backend #700: **REQUEST CHANGES, 0/2/1**, exact head `66569a616fed254e2d5022bbc277013e4652788b`, re-read immediately before posting at Sun Oct 4 09:57:46 PDT 2026. [Posted verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/700#issuecomment-5982324455)
+- B-700-1: `log-pii.ts:33-35`, `email.service.ts:182-188,231-240`, `digest.service.ts:166-168,227-229,451,478,503`, `checkout-recovery.service.ts:278-281`. Normalize error text into server-owned diagnostic codes/stage/provider/status/opaque IDs before all new consumers log, persist or return it; do not regex-preserve arbitrary names/free text. Three failing assertions demonstrate provider email, render exception and digest leakage. [Executed backend probe](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37218198321)
+- B-700-2: `scheduling-webhook.controller.ts:95-108`, called at `:60-61,84-85`. Both public no-op handlers emit attacker-controlled private names as regex-valid events and top-level key strings; fix to finite recognized event/key labels and fixed unknown/count labels, retaining no-op acknowledgments. Two failing assertions demonstrate both handlers. [Executed backend probe](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37218198321)
+- Mobile corrected probe run `37218572318` reaches scheduled deletion and fails only at missing `apple-fallback`: **2 failed / 47 passed**, original suite PASS. B-368-1 is confirmed on the new form note `DeleteAccountScreen.tsx:99-102,578-582`, read against `:433-434,461-477`: successful Apple identity re-auth with unknown provider discovery and null authorization code yields real backend `not_requested`, but neither outcome nor fallback renders. Fix rule: retain conditional manual guidance when Apple was used or provider is unknown and revocation unproven; do not infer success/failure from `not_requested`; add these probes plus revoked/non-Apple controls. [Corrected mobile probe](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37218572318), [backend no-code outcome](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/66569a616fed254e2d5022bbc277013e4652788b/src/account-deletion/apple-token-revocation.service.ts)
+- Mobile #368: **REQUEST CHANGES, 0/1/0**, exact head `2216ad1dc94d280e33a39a3ae2d8b7ac197c16dc`, re-read immediately before posting at Sun Oct 4 09:59:47 PDT 2026. [Posted verdict](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/368#issuecomment-5982340884)
+- Both returned comment bodies match the saved payloads after terminal-whitespace normalization. [Backend comment](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/700#issuecomment-5982324455), [mobile comment](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/368#issuecomment-5982340884)
+
+## Preserved evidence and cleanup
+
+- Report: `ops/reports/AUD-SOL-FU2-118.md`.
+- Evidence directory: `ops/aud-118/AUD-SOL-FU2-118/`; contains both verdict payloads/posted receipts; both probe copies; backend and mobile before/full-build logs; backend executed-probe log; invalid first mobile harness log and valid corrected mobile log; exact-head check/comparison snapshots; probe parent/lane ancestry snapshots.
+- All three own remote audit branches deleted at job completion (Sun Oct 4 10:00:35 PDT 2026): backend `audit/AUD-SOL-FU2-118/700-boundary`; mobile `audit/AUD-SOL-FU2-118/368-apple-outcome`, `audit/AUD-SOL-FU2-118/368-apple-outcome-r2`.
+- Local worktrees and probe commits intentionally retained under the subagent workspace-preservation instruction; no `node_modules` link was created. Claims stay as the exact-head review record.
 
 ## HANDOFF
 
-In progress. Neither verdict posted yet. Next: prior Sol findings disposition, full tests/call-site inspection, provider/webhook adversarial probes in CI if warranted, official Apple-page verification, then exact-head re-read and one verdict per PR.
+**Complete; job ends.** Backend #700 `66569a616fed254e2d5022bbc277013e4652788b`: REQUEST CHANGES 0/2/1, 11/11 required checks green; next builder closes B-700-1 and B-700-2 and replays `audit-sol-fu2-118-boundary.spec.ts`, preserving original control suites. [Posted backend verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/700#issuecomment-5982324455)
+
+Mobile #368 `2216ad1dc94d280e33a39a3ae2d8b7ac197c16dc`: REQUEST CHANGES 0/1/0, 3/3 required checks green; next builder closes B-368-1 and replays the corrected `audit-sol-fu2-118-apple-outcome.test.tsx` plus original 47 tests. [Posted mobile verdict](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/368#issuecomment-5982340884)
+
+No candidate implementation edits, heavy local commands, merges, deployment, secrets or production calls performed. Operator default: route one bounded builder round to both PRs for the three Bs, then fresh dual exact-head audit; separately ticket C-700-1, with no owner product decision required.

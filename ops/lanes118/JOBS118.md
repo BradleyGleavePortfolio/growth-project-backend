@@ -132,8 +132,152 @@ checkout.session.completed; #661 also edits .github/workflows/ci.yml (CI gate, T
 re-check them and the head right before posting. Recurring and the mobile sheet depend on #661's reply codes: name them in your report.
 Reports: ops/reports/AUD-OPUS-661-118.md, AUD-SOL-661-118.md.
 
+## B-LOCK-118 (builder, Claude Opus 5.5, T4: billing lockout, entitlement UI) — mobile lockout L1 #352 + L2 #353 (+ L3 #354 restack)
+Heads: #352 58b80914 (base main, BEHIND), #353 e22acc84, #354 37ed3d56. Findings: #352 Opus APPROVE 0/0/6 (mobile 5977022730), Sol RC
+0/1/0 (5976926738); #353 Opus RC 0/4/5 (5977022872), Sol RC 0/3/3 (5976938374). Lands after the dunning backend (#687-#691) deploys,
+with the lockout flag off; must behave truthfully against today's production backend (capability check or truthful fallback, never a
+lockout the server did not decide). Dunning rulings (JOBS118 D12 entry) bind the copy: retries Days 1/3/7, Day-10 lockout, card update
+during dunning auto-charges and unlocks on success, cancel during dunning ends access now, voluntary cancel keeps access to period end,
+free/code grants never enter dunning. Bring #352 up to main (merge-only) first; restack #354 merge-only. FIX ROUND + READY at green heads.
+Report: ops/reports/B-LOCK-118.md.
+
+## AUD-OPUS-D34-118 / AUD-SOL-D34-118 — dunning D3 #689 and D4 #690
+#689 @ bb992fedf0095446f916f3261742bd262c3d94da (base D2 #688's branch; FIX ROUND 2 READY; 2,913 lines; inert client billing service
+and reconciler), #690 @ 06307883100ec142aa2818fc30ee276cab26c1ec (base #689's branch; FIX ROUND 2 READY; 2,913 lines; billing
+endpoints, lockout guard, webhooks, wiring). Prior: #689 Sol RC at 9e77159a (5975999246), Opus RC (5976089521); #690 Sol RC at
+f72668c2 (5975999417), Opus RC (5976089623). Decide each prior finding of your lens first (closing commit + failing-before test), then
+audit both heads deeply. Old red check runs in the rollup are superseded; judge the latest run per check. Binding dunning rulings are in
+the D12 entry above (retries Days 1/3/7; Day-10 lockout; 1A card update auto-charges and unlocks on success; 2A cancel during dunning
+voids and ends access now; voluntary cancel keeps access to period end; free/code grants never enter dunning; cancel during a dispute
+cycle ends access now and never resolves the dispute). Webhook order/redelivery and lock order are the core risks. D1/D2 (#687/#688)
+are being audited by AUD-*-D12-118: findings in D1/D2 code go to your report, not to these PRs.
+Reports: ops/reports/AUD-OPUS-D34-118.md, AUD-SOL-D34-118.md.
+
+## AUD-OPUS-H23-118 / AUD-SOL-H23-118 — mobile Health Connect H2 #360 and H3 #361 (T4: health data)
+mobile #360 @ fde1875edc1bd5d14ac8fda4f2e68ee8b7c5ebf5 (base H1 #359's branch; #359 has dual APPROVE; 2,812 lines; HealthKit and
+Health Connect sync services; FIX ROUND 1 READY), #361 @ 574b32a8ab9f2c36986c160de257340fa71cfe52 (base #360's branch; 1,793 lines;
+on-device sync, copy, disconnect dialog; FIX ROUND 1 READY). Prior at 4a508d8b (#360): Opus APPROVE 0/0/2 (mobile 5976279445), Sol RC
+0/1/0 (5976328100): decide your lens's prior findings first. The stack H1-H6 (#359-#364) lands as one behind the flag (off), then the
+flag flips; late-data and resumable import (C-360-1/2) are a ruled follow-up before the clinic Android build, not a blocker here. Check
+health data minimization, permission truth (what is read, when, and what the copy says), identity/session fences (account switch
+mid-sync), and that no raw provider error or health value reaches logs (known spot: useWearableConnections.ts:120 raw error log).
+Never name the clinic partner. Reports: ops/reports/AUD-OPUS-H23-118.md, AUD-SOL-H23-118.md.
+
+## AUD-OPUS-H45-118 / AUD-SOL-H45-118 — mobile Health Connect H4 #362 and H5 #363 (T4: health data)
+mobile #362 @ 439937c93ca8460aed23daef116aa49e7127efa3 (base H3 #361's branch; 2,284 lines; connect sheet and wearables screens; FIX
+ROUND 1 READY), #363 @ 38ea0f81fd88ea343ac2279097e8d24f08ef3cc5 (base #362's branch; 982 lines; connect sheet race and identity suites;
+FIX ROUND 1 READY). No verdicts at these heads. Same stack rules and checks as the H23 entry above (flag off, land as one, permission
+and copy truth, identity fences across account switch, no raw provider errors or health values in logs). H2/H3 are audited by
+AUD-*-H23-118: findings in their code go to your report. Reports: ops/reports/AUD-OPUS-H45-118.md, AUD-SOL-H45-118.md.
+
+## B-PRIVFU2-118 (builder, Claude Opus 5.5, T4: PII in logs, public privacy copy) — backend #700 + mobile #368
+Heads: backend #700 66569a616fed254e2d5022bbc277013e4652788b (base main; main moved to 2af682ca: merge main first, merge-only), mobile
+#368 2216ad1dc94d280e33a39a3ae2d8b7ac197c16dc (base main). Both lenses REQUEST CHANGES:
+- #700: Sol RC 0/2/1 (B 5982324455): names/free text survive error redaction; webhook event/key tokens expose private names; C-700-1
+  (Sol) encoded emails in finance-federation path logs. Opus RC 0/2/5 (5982447222): B-700-1 coach-brief.service.ts:1482-1511 logs the
+  coach's full name and the static guard misses that variable shape; B-700-2 emails reach logs via auth.service.ts:879 and :1474
+  (Supabase error text repeats the address) and finance-admin.client.ts:166-167 (URL path with the encoded address). Opus Cs: C-700-1
+  owner free-text reason logged (needs a migration: NOT in this round), C-700-2 raw exception text logged, C-700-3 names in provider
+  error text not redacted, C-700-4 calorie values logged (separate decision: NOT in this round), C-700-5 webhook log has no allow-list of
+  event names/keys. Fix both lenses' Bs; C-700-2, C-700-3 and C-700-5 are the same lines as the Bs: fix them too. Make the static guard
+  catch the shapes both lenses' probes used (replay ops/aud-118/AUD-OPUS-FU2-118/probes/ and ops/aud-118/AUD-SOL-FU2-118/).
+- #368: Sol RC 0/1/0 (mobile 5982340884) and Opus RC 0/1/3 (5982447325): B-368-1 the new Apple note promises an outcome card after
+  deletion, but none appears when provider discovery is unavailable or revocation is unrequested/unknown. Fix with truthful copy for
+  every outcome (C-368-1: the fallback card states removal is unconfirmed). C-368-2 (first person at :80, :138) and C-368-3 ("Apple ID"
+  and first person in sign-in copy) break the owner's standing copy rule (no first person; "Apple Account"): fix them in this round.
+  The mobile copy and the live backend policy text (#611) must say the same thing.
+FIX ROUND + READY on both at green heads. Sizes small. Report: ops/reports/B-PRIVFU2-118.md.
+
+## B-TR3-118 (builder, Claude Opus 5.5, T4: free trials, money, notices) — trials T2 #672 + T3 #673
+Heads: #672 c5e7ed8e35f1e5b88653e5605dded2af8614182d (base T1 #671 c75002c9, dual APPROVE, do not touch), #673
+df76889fb862095170498dccb23f35db3d116690. Opus APPROVE on both (#672 0/0/5 B 5982465734; #673 0/0/3 5982465887). Sol REQUEST CHANGES:
+- #672 0/1/1 (5982319373): B-672-3 remains: an extension or cancellation during push preparation permits obsolete charge/date copy.
+- #673 0/1/2 (5982336690): B-673-1 (new): cancellation retries can delete an already-paid subscription when its conversion webhook is
+  delayed or missing. Sol's optional duplicate-cancellation clock fix sits on the same lines: fold it in.
+Same-line Opus Cs to fold in only if they are the same code as a B fix: C-672-11 (a stale trial_will_end writes a "will be charged"
+in-app row), C-673-2 (an older retried event rewrites an extended trial end). Everything else (C-672-10, C-673-1, carried C-672-3/5/6b)
+goes to your report. C-673-3 (coach metrics count never-billed trials in MRR/churn; binding ruling) is outside these diffs: it goes on
+the #680 integration list, not here.
+SIZE: #672 is at 2,977 lines (23 lines headroom). New tests go to #673; if the #672 source fix needs room, move an existing whole test
+file from #672 to #673 byte-identical (add it after the merge so restacks cannot delete it) and say so. Replay every prior probe from
+both lenses (#672 probes run 37218788517, #673 probes run 37219356220, Sol runs 37218265800/37218424769; Opus's red-by-design C-672-7 and
+C-671-4 probes stay as ruled). Money self-check per _COMMON_118 6. FIX ROUND + READY on both at green heads.
+Report: ops/reports/B-TR3-118.md.
+
+## B-DUNA-118 (builder, Claude Opus 5.5, T4: dunning, billing lockout, money copy) — dunning D1 #687 + D2 #688
+Heads: #687 f8e47bf40fe81064d679fc2831cedf3b1cd90b2c (base main, BEHIND: merge main first, merge-only), #688
+b17f514ccd8da195d18588ca4b7ca407a789f20e (base #687's branch). Take lock `dunning`. Both lenses REQUEST CHANGES:
+- Sol #687 0/2/0 (5982357490): rejected Expo push tickets are recorded as "sent"; the email promises payment/access before success.
+- Sol #688 0/2/0 (5982357473): a historical lost-dispute replay blocks later recovery; null-first capped selection hides a lock.
+- Opus #687 0/1/3 (5982478903): B-687-5 reversed-payment emails tell clients a card update pays the debt and keeps access; it does neither.
+  Fix the main dispute-cycle copy in the same round.
+- Opus #688 0/2/3 (5982479051): B-688-6 a stale sweep worker can lock a just-reopened cycle on Day 0 with no notices sent; B-688-7 the
+  Day-1 client email shows a raw `{cardLast4}` and the Day-7 coach email shows `{reason}` four times.
+- Same-line Cs to fold in: C-687-6, C-688-10. Other Cs (C-687-7, C-688-8, C-688-9) go to your report. C-687-4 stays a note (OR-113-4:
+  pending migration prefixes keep their numbers).
+SIZE: #688 is at 2,926 lines (74 headroom): put the B-688-7 template fallback in D1 (#687) as Opus recommends; new D2 tests may go to
+D5 (#691, tests-only) only if D2 would pass 3,000 (byte-identical moves, add after the merge). Copy truth is binding (dunning rulings in the
+D12 entry): never promise access, payment or a charge before it is true. Replay every prior probe from both lenses
+(ops/aud-118/AUD-SOL-D12-118/, ops/aud-118/AUD-OPUS-D12-118/, earlier verdict threads). Money self-check per _COMMON_118 6. Do NOT touch
+D3-D5 (#689-#691): AUD-*-D34-118 found 9+ Bs there and a second builder (B-DUNB-118) takes them after you; findings you see in D3/D4 code go
+to your report. FIX ROUND + READY on #687 and #688 at green heads; write notify/dunning.txt "dunning D2 top: #688 @ <sha> (B-DUNA-118,
+<time>)"; release the lock. Report: ops/reports/B-DUNA-118.md.
+
+## AUD-OPUS-H6-118 / AUD-SOL-H6-118 — mobile Health Connect H6 #364 (T4: health data; top of the HC stack)
+mobile #364 @ a3206441d57ea51130490e6e54cc8228bff40687 (base H5 #363's branch; 2,882 lines; retire Samsung Health, ingest contract
+test; FIX ROUND 1 READY). No verdicts at this head. Same stack rules as the H23 entry (flag off, land H1-H6 as one, permission and copy
+truth, identity fences, no raw provider errors or health values in logs). Check that retiring Samsung Health removes every code path,
+permission, copy line and stored connection state (existing users with a Samsung connection must see a truthful state, not a broken
+one), and that the ingest contract test pins the backend contract production serves today. Also judge the H1-H6 integrated top here
+(the landed tree is this head's tree). Reports: ops/reports/AUD-OPUS-H6-118.md, AUD-SOL-H6-118.md.
+
+## AUD-OPUS-SH-118 / AUD-SOL-SH-118 — mobile payment sheet P1 #342 + P2 #343 (T4: money copy, payment flow)
+mobile #342 @ 56f281ad3aa977882c962a6591d3594899cdd5a1 (base main; 2,018 lines) and #343 @ fd739d5819c232764e0389afd778860bf452b41c
+(base #342's branch; 2,813 lines). B-SHEET-118 FIX ROUND 1 + READY (5982491578, 5982491752); report ops/reports/B-SHEET-118.md.
+Prior verdicts to re-check closed: #342 Sol RC 0/2/1 (5976926407), Opus RC 0/1/3 (5977006434; B-342-1 "nothing was charged" on
+unconfirmed codes); #343 Sol RC 0/5/0 (5976959713), Opus RC 0/1/2 (5977006549; B-343-1 "Payment received" before proof). Opus's
+C-342-1 probe stays red by design (C held under the freeze). Lands with recurring (backend #678-#701) and must work against TODAY's
+production backend too (no subscription-intent route there: capability check or truthful fallback, never a dead end). Check the reply
+codes from backend #661 (409 PAYMENT_ALREADY_COMPLETE, PAYMENT_REFUNDED_OR_IN_REVIEW, PAYMENT_CHECKOUT_CLOSED; 503 PAYMENT_IN_PROGRESS;
+PAYMENT_SUCCESS_RETRY / PAYMENT_FAILURE_RETRY) and the recurring codes (PLAN_CHANGE_UNCONFIRMED, SETUP_UNAVAILABLE, trial setup) each
+map to specific, truthful copy with a working next action; trial starts never show payment-complete copy; never claim
+charged/not charged/paid before proof; recurring is never one-time-only; no first person in copy. P3 #344 (e7fcc5d2) gets its own pair
+later. Reports: ops/reports/AUD-OPUS-SH-118.md, AUD-SOL-SH-118.md.
+
+## B-HC4-118 (builder, Claude Opus 5.5, T4: health data, permissions, copy truth) — mobile Health Connect H4 #362 (+ merge-only restack H5 #363, H6 #364)
+Heads: #362 439937c93ca8460aed23daef116aa49e7127efa3 (base H3 #361 574b32a8, dual APPROVE: do not touch), #363 38ea0f81 (dual APPROVE
+0/0/1; restack merge-only), #364 a3206441 (lenses AUD-*-H6-118 auditing it now; the operator forwards their Bs to you). Take lock `hc`.
+Both lenses REQUEST CHANGES on #362; their IDs collide, so close the UNION (mapping in ops/reports/AUD-OPUS-H45-118.md):
+- Sol 0/4/1 (5982471782): raw retirement-error logging; a stale account-A disconnect deletes account B's authorization; health reads
+  continue after disconnect; empty-import guidance dismissed by the real parent.
+- Opus 0/2/4 (5982561308): B-362-1 a first import that brings in nothing closes the sheet as if it worked (no "where to check" message;
+  on iPhone this is what every category off looks like); B-362-2 Android "access is turned off" notice says "Then tap Try again" but
+  no Try again button exists.
+- Same-line Cs to fold in: C-362-1 (raw error to the dev logger at useWearableConnections.ts:120), C-362-2 (403 notice says "Tap
+  Continue" but the button reads "Reconnect"), C-362-3 (Disconnect does not stop a running import). C-362-4 (connect sheet "We'll
+  read..." first person + incomplete list, outside the diff) and the H3 copy at onDeviceCopy.ts:216-217 go to the pre-flag-flip copy PR,
+  not here. C-363-1 (wrong mock field name) only if #363 needs a commit anyway.
+Replay both lenses' probes (ops/aud-118/AUD-SOL-H45-118/, ops/aud-118/AUD-OPUS-H45-118/probes/; runs 37219439582, 37220060376,
+37220188407). Stack rules from the H23 entry (flag off, land H1-H6 as one, identity fences, no raw provider errors or health values in
+logs, permission and copy truth, no first person). Sizes: stay under 3,000 per PR. FIX ROUND + READY on #362; merge-only restack #363 and
+#364 with READY (restack) comments; write notify/hc.txt "hc top: #364 @ <sha> (B-HC4-118, <time>)"; release the lock.
+Report: ops/reports/B-HC4-118.md.
+
+## AUD-OPUS-SH3-118 / AUD-SOL-SH3-118 — mobile payment sheet P3 #344 (T4: money copy)
+mobile #344 @ e7fcc5d2504e8c3948494ee847e16ff4937b78c3 (base #343's branch; 2,086 lines). B-SHEET-118 restack + READY (5982498620): not
+merge-only; one test-only commit moves two trial fixtures from a fixed 2026-10-10 to today + 7 because the B-343-4 fix asks the client
+to review a trial date that differs from the one shown (operator accepted the commit; judge it). Same rules as the SH entry (copy truth,
+#661 and recurring reply codes, today's production backend fallback, recurring never one-time-only, no first person). Find #344's
+prior verdicts in its thread and check them closed. Reports: ops/reports/AUD-OPUS-SH3-118.md, AUD-SOL-SH3-118.md.
+
 ## QUEUED (operator launches as slots free, in this order)
+B-DUNB-118 (after B-DUNA-118 ends): D3 #689 bb992fed + D4 #690 06307883 (both 2,913 lines). Sol RC #689 0/4/0 (5982476834: post-lock
+dispute resolution, cancellation authority, out-of-band selection, lock order) and #690 0/5/1 (5982476848: invoice resurrection, dispute
+serialization, unpaid grace, failure/cancel race, acknowledged persistence failure); Opus RC #689 0/1/2 (5982575687: B-689-5
+client-billing.service.ts:323-330 reversed amount from the last failed renewal, not the disputed charge; minimal fix show no amount, probe
+P3 failing-before) and APPROVE #690 0/0/3 (5982575812). Same-line Cs: C-690-6 lock-order inversion checkout-webhook-handler:891-904 (same
+as Sol lock order B), C-690-7 payment-failed check/write not atomic (same as Sol failure/cancel race). Others to report: C-689-3, C-689-4,
+C-690-5, C-690-2 (Sol). Restack on B-DUNA's D2 top first. Then dunning lens pairs on D1-D4 + D5 (#691 + #642).
 B-RECUR6B-118 (#680 + #696/#701 after B-RECUR6A ends; dead Sol lens AUD-SOL-R34R5-117 probes on audit/AUD-SOL-R34R5-117/680-authority,
 run 37187197172: B-680-2 residual, B-680-5 x2); fees lens pairs (F2+F3, F4+F4b,
-F5+F6 deltas) after B-FEES15; recurring lens pairs after B-RECUR6B; coach pair after B-CM4; sheet pair after B-SHEET; AUD pairs D34
-(#689/#690) and D5 (#691 + #642); HC pairs H2+H3, H4+H5, H6 (mobile #360-#364); B-LOCK (mobile #352/#353); wizard pair; N1-N4.
+F5+F6 deltas) after B-FEES15; recurring lens pairs after B-RECUR6B; coach pair after B-CM4; AUD pair D5 (#691 + #642); HC pair H6 (mobile #360-#364); wizard pair; N1-N4.

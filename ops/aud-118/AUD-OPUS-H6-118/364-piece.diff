@@ -1,0 +1,3075 @@
+diff --git a/app.config.js b/app.config.js
+index ee83fdc5..4413638e 100644
+--- a/app.config.js
++++ b/app.config.js
+@@ -4,6 +4,14 @@ const app = require('./app.json').expo;
+ 
+ const SAMSUNG_PERMISSION =
+   'com.samsung.android.hardware.sensormanager.permission.READ_ADDITIONAL_HEALTH_DATA';
++// S-WEAR-3 (Opus C-317-5): nothing in the app reads these (Samsung Health data
++// arrives through Health Connect; steps come from Health Connect / Apple
++// Health). They are blocked in EVERY build so a library manifest cannot merge
++// them back in, and the Play health declaration lists only what is read.
++const NEVER_DECLARED_PERMISSIONS = [
++  SAMSUNG_PERMISSION,
++  'android.permission.ACTIVITY_RECOGNITION',
++];
+ const HEALTH_CONNECT_PLUGINS = new Set([
+   'react-native-health-connect',
+   // #317 registers this Android-only delegate. It must follow the same switch.
+@@ -23,19 +31,32 @@ module.exports = ({ config = app } = {}) => {
+   const permissions = config.android?.permissions ?? [];
+   const disabledPermissions = permissions.filter(isHealthPermission);
+ 
++  const neverDeclared = (name) => NEVER_DECLARED_PERMISSIONS.includes(name);
++
+   return {
+     ...config,
+     android: enabled
+-      ? config.android
++      ? {
++          ...config.android,
++          permissions: permissions.filter((name) => !neverDeclared(name)),
++          blockedPermissions: [
++            ...new Set([
++              ...(config.android?.blockedPermissions ?? []),
++              ...NEVER_DECLARED_PERMISSIONS,
++            ]),
++          ],
++        }
+       : {
+           ...config.android,
+-          permissions: permissions.filter((name) => !isHealthPermission(name)),
++          permissions: permissions.filter(
++            (name) => !isHealthPermission(name) && !neverDeclared(name),
++          ),
+           // Manifest merger can restore library permissions unless blocked.
+           blockedPermissions: [
+             ...new Set([
+               ...(config.android?.blockedPermissions ?? []),
+               ...disabledPermissions,
+-              SAMSUNG_PERMISSION,
++              ...NEVER_DECLARED_PERMISSIONS,
+             ]),
+           ],
+         },
+diff --git a/app.json b/app.json
+index 87308caf..f10d43ec 100644
+--- a/app.json
++++ b/app.json
+@@ -97,9 +97,9 @@
+         "android.permission.USE_FINGERPRINT",
+         "android.permission.health.READ_STEPS",
+         "android.permission.health.READ_HEART_RATE",
++        "android.permission.health.READ_RESTING_HEART_RATE",
+         "android.permission.health.READ_SLEEP",
+         "android.permission.health.READ_ACTIVE_CALORIES_BURNED",
+-        "android.permission.health.READ_TOTAL_CALORIES_BURNED",
+         "android.permission.health.READ_DISTANCE",
+         "android.permission.health.READ_EXERCISE",
+         "android.permission.health.READ_OXYGEN_SATURATION",
+@@ -109,11 +109,7 @@
+         "android.permission.health.READ_WEIGHT",
+         "android.permission.health.READ_BODY_FAT",
+         "android.permission.health.READ_VO2_MAX",
+-        "android.permission.health.READ_BASAL_BODY_TEMPERATURE",
+-        "android.permission.health.READ_BLOOD_PRESSURE",
+-        "android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND",
+-        "android.permission.ACTIVITY_RECOGNITION",
+-        "com.samsung.android.hardware.sensormanager.permission.READ_ADDITIONAL_HEALTH_DATA"
++        "android.permission.health.READ_BLOOD_PRESSURE"
+       ],
+       "googleServicesFile": "./google-services.json"
+     },
+@@ -174,6 +170,7 @@
+         }
+       ],
+       "react-native-health-connect",
++      "./plugins/withHealthConnectPermissionDelegate",
+       [
+         "./plugins/withAndroidMinSdk",
+         {
+diff --git a/eas.json b/eas.json
+index e126cc95..a87a56f8 100644
+--- a/eas.json
++++ b/eas.json
+@@ -46,6 +46,7 @@
+       "channel": "clinic",
+       "environment": "production",
+       "env": {
++        "TGP_ANDROID_HEALTH_CONNECT": "1",
+         "EXPO_PUBLIC_USE_MOCK_COMMAND_CENTER": "false",
+         "EXPO_PUBLIC_NOTIFICATIONS_MOCK": "false",
+         "EXPO_PUBLIC_FF_CLIENT_TUTORIAL": "true",
+diff --git a/plugins/withHealthConnectPermissionDelegate.js b/plugins/withHealthConnectPermissionDelegate.js
+new file mode 100644
+index 00000000..24ba1900
+--- /dev/null
++++ b/plugins/withHealthConnectPermissionDelegate.js
+@@ -0,0 +1,101 @@
++/* eslint-disable @typescript-eslint/no-var-requires -- Expo config plugins are CommonJS */
++/**
++ * S14 — Health Connect wiring that react-native-health-connect's own config
++ * plugin does not do.
++ *
++ * 1. Permission delegate. react-native-health-connect 3.x launches the Health
++ *    Connect permission screen through an ActivityResultLauncher that must be
++ *    registered in MainActivity.onCreate:
++ *      HealthConnectPermissionDelegate.setPermissionDelegate(this)
++ *    The library's plugin only adds the rationale intent filter, so without
++ *    this call `requestPermission()` throws (uninitialized launcher) and the
++ *    Connect sheet reports "access wasn't granted" on every Android device.
++ *
++ * 2. Android 14+ permission usage entry. On Android 14 Health Connect is part
++ *    of the OS and links to the app's privacy rationale through an
++ *    activity-alias that handles VIEW_PERMISSION_USAGE in the
++ *    HEALTH_PERMISSIONS category. (Android 13 and below use the
++ *    ACTION_SHOW_PERMISSIONS_RATIONALE filter the library plugin adds.)
++ *
++ * Both edits are idempotent so repeated prebuilds do not duplicate them.
++ */
++const { withAndroidManifest, withMainActivity } = require('expo/config-plugins');
++
++const DELEGATE_IMPORT = 'dev.matinzd.healthconnect.permissions.HealthConnectPermissionDelegate';
++const DELEGATE_CALL = 'HealthConnectPermissionDelegate.setPermissionDelegate(this)';
++const ALIAS_NAME = 'ViewPermissionUsageActivity';
++
++function addDelegateToMainActivity(contents, language) {
++  if (contents.includes(DELEGATE_CALL)) return contents;
++  const kotlin = language !== 'java';
++  const importLine = kotlin ? `import ${DELEGATE_IMPORT}` : `import ${DELEGATE_IMPORT};`;
++  let out = contents;
++  if (!out.includes(importLine)) {
++    out = out.replace(/^(package [^\n]+\n)/m, `$1\n${importLine}\n`);
++  }
++  const superCall = /(super\.onCreate\([^)]*\);?)/;
++  if (!superCall.test(out)) {
++    throw new Error(
++      'withHealthConnectPermissionDelegate: MainActivity has no super.onCreate(...) call to anchor on.',
++    );
++  }
++  const call = kotlin ? DELEGATE_CALL : `${DELEGATE_CALL};`;
++  return out.replace(superCall, `$1\n    ${call}`);
++}
++
++function addPermissionUsageAlias(manifest) {
++  const application = manifest.application && manifest.application[0];
++  if (!application) return manifest;
++  application['activity-alias'] = application['activity-alias'] || [];
++  const exists = application['activity-alias'].some(
++    (a) => a.$ && a.$['android:name'] === ALIAS_NAME,
++  );
++  if (!exists) {
++    application['activity-alias'].push({
++      $: {
++        'android:name': ALIAS_NAME,
++        'android:exported': 'true',
++        'android:targetActivity': '.MainActivity',
++        'android:permission': 'android.permission.START_VIEW_PERMISSION_USAGE',
++      },
++      'intent-filter': [
++        {
++          action: [
++            {
++              $: {
++                'android:name': 'android.intent.action.VIEW_PERMISSION_USAGE',
++              },
++            },
++          ],
++          category: [
++            {
++              $: {
++                'android:name': 'android.intent.category.HEALTH_PERMISSIONS',
++              },
++            },
++          ],
++        },
++      ],
++    });
++  }
++  return manifest;
++}
++
++function withHealthConnectPermissionDelegate(config) {
++  config = withMainActivity(config, (cfg) => {
++    cfg.modResults.contents = addDelegateToMainActivity(
++      cfg.modResults.contents,
++      cfg.modResults.language,
++    );
++    return cfg;
++  });
++  config = withAndroidManifest(config, (cfg) => {
++    cfg.modResults.manifest = addPermissionUsageAlias(cfg.modResults.manifest);
++    return cfg;
++  });
++  return config;
++}
++
++module.exports = withHealthConnectPermissionDelegate;
++module.exports.addDelegateToMainActivity = addDelegateToMainActivity;
++module.exports.addPermissionUsageAlias = addPermissionUsageAlias;
+diff --git a/scripts/__tests__/easUpdateGuard.test.js b/scripts/__tests__/easUpdateGuard.test.js
+index 767b7ea9..ea0a232f 100644
+--- a/scripts/__tests__/easUpdateGuard.test.js
++++ b/scripts/__tests__/easUpdateGuard.test.js
+@@ -135,7 +135,7 @@ describe('eas-update-guard', () => {
+       expect(c.clinic.environment).toBe('production');
+       expect(c.clinic.env.EXPO_PUBLIC_FF_CLIENT_TUTORIAL).toBe('true');
+       expect(c.clinic.env.EXPO_PUBLIC_FF_IOS_HIDE_NON_P2P_PURCHASES).toBe('true');
+-      expect(c.clinic.env.TGP_ANDROID_HEALTH_CONNECT).toBe('0');
++      expect(c.clinic.env.TGP_ANDROID_HEALTH_CONNECT).toBe('1');
+       expect(c.production.env.EXPO_PUBLIC_FF_CLIENT_TUTORIAL).toBeUndefined();
+     });
+ 
+@@ -284,7 +284,7 @@ describe('eas-update-guard', () => {
+       expect(pub.env.EXPO_PUBLIC_FF_CLIENT_TUTORIAL).toBe('true');
+       expect(pub.env.EXPO_PUBLIC_FF_CONSULTATION_ONBOARDING).toBe('true');
+       expect(pub.env.EXPO_PUBLIC_FF_COMMUNITY_DM).toBe('false');
+-      expect(pub.env.TGP_ANDROID_HEALTH_CONNECT).toBe('0');
++      expect(pub.env.TGP_ANDROID_HEALTH_CONNECT).toBe('1');
+       expect(Object.prototype.hasOwnProperty.call(pub.env, 'EXPO_PUBLIC_API_URL')).toBe(false);
+       expect(Object.prototype.hasOwnProperty.call(pub.env, F)).toBe(false);
+     });
+diff --git a/src/config/__tests__/androidHealthConnectConfig.test.js b/src/config/__tests__/androidHealthConnectConfig.test.js
+index 385d7fb2..8b2fa3d2 100644
+--- a/src/config/__tests__/androidHealthConnectConfig.test.js
++++ b/src/config/__tests__/androidHealthConnectConfig.test.js
+@@ -44,10 +44,36 @@ test.each([undefined, '', '0', 'false', 'true', 'unexpected'])(
+   },
+ );
+ 
++const NEVER_DECLARED = [SAMSUNG, 'android.permission.ACTIVITY_RECOGNITION'];
++
++test('S-WEAR-3 (Opus C-317-5): no Samsung sensor or activity-recognition permission is declared; both are blocked in every build', () => {
++  expect(app.android.permissions).not.toContain(SAMSUNG);
++  expect(app.android.permissions).not.toContain('android.permission.ACTIVITY_RECOGNITION');
++  for (const value of ['1', '0', undefined]) {
++    if (value === undefined) delete process.env.TGP_ANDROID_HEALTH_CONNECT;
++    else process.env.TGP_ANDROID_HEALTH_CONNECT = value;
++    const result = configure();
++    for (const name of NEVER_DECLARED) {
++      expect(result.android.permissions).not.toContain(name);
++      expect(result.android.blockedPermissions).toContain(name);
++    }
++  }
++  // A config that still lists them (an old app.json) is cleaned in both modes.
++  const legacy = {
++    ...app,
++    android: { ...app.android, permissions: [...app.android.permissions, ...NEVER_DECLARED] },
++  };
++  process.env.TGP_ANDROID_HEALTH_CONNECT = '1';
++  expect(configure({ config: legacy }).android.permissions).toEqual(app.android.permissions);
++});
++
+ test('ON preserves every Android declaration, all plugins and all iOS settings', () => {
+   process.env.TGP_ANDROID_HEALTH_CONNECT = '1';
+   const result = configure();
+-  expect(result.android).toEqual(app.android);
++  expect(result.android).toEqual({
++    ...app.android,
++    blockedPermissions: [...(app.android.blockedPermissions ?? []), ...NEVER_DECLARED],
++  });
+   expect(result.plugins).toEqual(app.plugins);
+   expect(result.ios).toEqual(app.ios);
+   expect(result.extra).toEqual({ ...app.extra, healthConnectEnabled: true });
+@@ -96,12 +122,18 @@ test('OFF handles future #317 permissions/plugins, tuples, existing blocks, and
+ 
+   process.env.TGP_ANDROID_HEALTH_CONNECT = '1';
+   const enabled = configure({ config: input });
+-  expect(enabled.android).toEqual(input.android);
++  expect(enabled.android.permissions).toEqual(input.android.permissions);
++  expect(enabled.android.blockedPermissions).toEqual(
++    expect.arrayContaining([...input.android.blockedPermissions, ...NEVER_DECLARED]),
++  );
+   expect(enabled.plugins).toEqual(input.plugins);
+ });
+ 
+-test('production and preview explicitly opt out; clinic inherits production', () => {
++test('production and preview explicitly opt out; the clinic launch profile opts in (S14 round 3)', () => {
+   expect(eas.build.production.env.TGP_ANDROID_HEALTH_CONNECT).toBe('0');
+   expect(eas.build.preview.env.TGP_ANDROID_HEALTH_CONNECT).toBe('0');
+   expect(eas.build.clinic.extends).toBe('production');
++  // Health Connect returns in the clinic binary after #317's isolation fixes.
++  // A new Android binary is required (native permissions); never an OTA.
++  expect(eas.build.clinic.env.TGP_ANDROID_HEALTH_CONNECT).toBe('1');
+ });
+diff --git a/src/hooks/useSamsungHealthSync.test.tsx b/src/hooks/useSamsungHealthSync.test.tsx
+deleted file mode 100644
+index f32286e4..00000000
+--- a/src/hooks/useSamsungHealthSync.test.tsx
++++ /dev/null
+@@ -1,143 +0,0 @@
+-/**
+- * PR-HK-2.c — `useSamsungHealthSync` / `useSamsungHealthLastSync` hook tests.
+- *
+- * The hooks own no connector logic; they wrap the connector's public surface
+- * (`sync`, `getLastSyncAt`) in React Query primitives. These tests mock that
+- * surface and assert:
+- *   • the lastSync query reads through `getLastSyncAt` and exposes its value;
+- *   • the sync mutation calls `sync()` and surfaces the result;
+- *   • a successful sync invalidates the lastSync query so a freshness chip
+- *     re-reads;
+- *   • a failed sync surfaces the error (it is not swallowed).
+- */
+-
+-import React from 'react';
+-import { renderHook, waitFor } from '@testing-library/react-native';
+-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+-
+-const mockSync = jest.fn();
+-const mockGetLastSyncAt = jest.fn();
+-jest.mock('../services/health/samsungHealth', () => ({
+-  __esModule: true,
+-  sync: (...a: unknown[]) => mockSync(...a),
+-  getLastSyncAt: (...a: unknown[]) => mockGetLastSyncAt(...a),
+-}));
+-
+-import {
+-  useSamsungHealthLastSync,
+-  useSamsungHealthSync,
+-  SAMSUNG_HEALTH_LAST_SYNC_QUERY_KEY,
+-  SAMSUNG_HEALTH_SYNC_MUTATION_KEY,
+-} from './useSamsungHealthSync';
+-
+-function makeWrapper() {
+-  const qc = new QueryClient({
+-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+-  });
+-  const wrapper = ({ children }: { children: React.ReactNode }) =>
+-    React.createElement(QueryClientProvider, { client: qc }, children);
+-  return { qc, wrapper };
+-}
+-
+-describe('useSamsungHealthSync hooks', () => {
+-  beforeEach(() => {
+-    mockSync.mockReset();
+-    mockGetLastSyncAt.mockReset();
+-  });
+-
+-  describe('query keys', () => {
+-    it('exposes the stable lastSync query key', () => {
+-      expect(SAMSUNG_HEALTH_LAST_SYNC_QUERY_KEY).toEqual([
+-        'wearable',
+-        'samsung-health',
+-        'lastSyncAt',
+-      ]);
+-    });
+-
+-    it('exposes the stable sync mutation key', () => {
+-      expect(SAMSUNG_HEALTH_SYNC_MUTATION_KEY).toEqual([
+-        'wearable',
+-        'samsung-health',
+-        'sync',
+-      ]);
+-    });
+-  });
+-
+-  describe('useSamsungHealthLastSync', () => {
+-    it('reads the persisted lastSyncAt via getLastSyncAt', async () => {
+-      mockGetLastSyncAt.mockResolvedValueOnce('2026-05-30T12:00:00.000Z');
+-      const { wrapper } = makeWrapper();
+-
+-      const { result } = await renderHook(() => useSamsungHealthLastSync(), { wrapper });
+-
+-      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+-      expect(result.current.data).toBe('2026-05-30T12:00:00.000Z');
+-      expect(mockGetLastSyncAt).toHaveBeenCalledTimes(1);
+-    });
+-
+-    it('exposes null when never synced', async () => {
+-      mockGetLastSyncAt.mockResolvedValueOnce(null);
+-      const { wrapper } = makeWrapper();
+-
+-      const { result } = await renderHook(() => useSamsungHealthLastSync(), { wrapper });
+-
+-      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+-      expect(result.current.data).toBeNull();
+-    });
+-  });
+-
+-  describe('useSamsungHealthSync', () => {
+-    it('calls sync() and surfaces the result on mutate', async () => {
+-      const syncResult = {
+-        ingested: true,
+-        sampleCount: 3,
+-        recordTypesRead: ['Steps'],
+-        windowStart: '2026-05-01T00:00:00.000Z',
+-        windowEnd: '2026-05-31T00:00:00.000Z',
+-        lastSyncAt: '2026-05-31T00:00:00.000Z',
+-      };
+-      mockSync.mockResolvedValueOnce(syncResult);
+-      const { wrapper } = makeWrapper();
+-
+-      const { result } = await renderHook(() => useSamsungHealthSync(), { wrapper });
+-
+-      result.current.mutate();
+-
+-      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+-      expect(mockSync).toHaveBeenCalledTimes(1);
+-      expect(result.current.data).toEqual(syncResult);
+-    });
+-
+-    it('invalidates the lastSync query on success', async () => {
+-      mockSync.mockResolvedValueOnce({
+-        ingested: false,
+-        sampleCount: 0,
+-        recordTypesRead: [],
+-        windowStart: 'a',
+-        windowEnd: 'b',
+-        lastSyncAt: 'b',
+-      });
+-      const { qc, wrapper } = makeWrapper();
+-      const invalidateSpy = jest.spyOn(qc, 'invalidateQueries');
+-
+-      const { result } = await renderHook(() => useSamsungHealthSync(), { wrapper });
+-      result.current.mutate();
+-
+-      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+-      expect(invalidateSpy).toHaveBeenCalledWith({
+-        queryKey: SAMSUNG_HEALTH_LAST_SYNC_QUERY_KEY,
+-      });
+-    });
+-
+-    it('surfaces a sync error (not swallowed)', async () => {
+-      mockSync.mockRejectedValueOnce(new Error('permission denied'));
+-      const { wrapper } = makeWrapper();
+-
+-      const { result } = await renderHook(() => useSamsungHealthSync(), { wrapper });
+-      result.current.mutate();
+-
+-      await waitFor(() => expect(result.current.isError).toBe(true));
+-      expect(result.current.error?.message).toBe('permission denied');
+-    });
+-  });
+-});
+diff --git a/src/hooks/useSamsungHealthSync.ts b/src/hooks/useSamsungHealthSync.ts
+deleted file mode 100644
+index 1e7a98d8..00000000
+--- a/src/hooks/useSamsungHealthSync.ts
++++ /dev/null
+@@ -1,63 +0,0 @@
+-/**
+- * useSamsungHealthSync — React Query mutation over the Samsung Health
+- * on-device sync (PR-HK-2.c).
+- *
+- * Wraps {@link samsungHealthSyncService.sync} as a mutation so a screen can
+- * trigger an on-demand sync (pull-to-refresh, "Sync now" affordance) and read
+- * `isPending` / `error` for UI state. Also exposes the persisted `lastSyncAt`
+- * via a lightweight query so the Connections UI can render a freshness chip.
+- *
+- * The hook is additive (ALLOWED additive in the write-set) and imports ONLY
+- * the connector's public surface — it owns no connector logic itself.
+- */
+-
+-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+-import {
+-  getLastSyncAt,
+-  sync,
+-  type SamsungSyncResult,
+-} from '../services/health/samsungHealth';
+-
+-/** Query key for the persisted lastSyncAt freshness read. */
+-export const SAMSUNG_HEALTH_LAST_SYNC_QUERY_KEY = [
+-  'wearable',
+-  'samsung-health',
+-  'lastSyncAt',
+-] as const;
+-
+-/** Mutation key for the sync trigger. */
+-export const SAMSUNG_HEALTH_SYNC_MUTATION_KEY = [
+-  'wearable',
+-  'samsung-health',
+-  'sync',
+-] as const;
+-
+-/**
+- * Read the last successful Samsung Health sync timestamp (ISO 8601) or null.
+- * Stale after 60s so a freshness chip stays reasonably current without
+- * hammering AsyncStorage.
+- */
+-export function useSamsungHealthLastSync() {
+-  return useQuery<string | null>({
+-    queryKey: SAMSUNG_HEALTH_LAST_SYNC_QUERY_KEY,
+-    queryFn: () => getLastSyncAt(),
+-    staleTime: 60_000,
+-  });
+-}
+-
+-/**
+- * Trigger a Samsung Health sync. On success, invalidates the lastSyncAt query
+- * so any freshness chip re-reads the new value.
+- */
+-export function useSamsungHealthSync() {
+-  const queryClient = useQueryClient();
+-  return useMutation<SamsungSyncResult, Error, void>({
+-    mutationKey: SAMSUNG_HEALTH_SYNC_MUTATION_KEY,
+-    mutationFn: () => sync(),
+-    onSuccess: () => {
+-      void queryClient.invalidateQueries({
+-        queryKey: SAMSUNG_HEALTH_LAST_SYNC_QUERY_KEY,
+-      });
+-    },
+-  });
+-}
+diff --git a/src/services/health/__tests__/healthPlatformConfig.test.ts b/src/services/health/__tests__/healthPlatformConfig.test.ts
+new file mode 100644
+index 00000000..68b1f9fc
+--- /dev/null
++++ b/src/services/health/__tests__/healthPlatformConfig.test.ts
+@@ -0,0 +1,234 @@
++/**
++ * S14 — native config the wearables path depends on (app.json + local plugin).
++ *
++ * Guards the breaks found in the S14 trace:
++ *  - every Health Connect record type the sync reads has its READ_* permission
++ *    declared (RestingHeartRate was missing, so its read always failed);
++ *  - the Health Connect permission delegate is registered in MainActivity
++ *    (without it `requestPermission()` throws on every Android device);
++ *  - the Android 14 permission usage alias exists;
++ *  - Apple Health has its plugin, usage strings, and (through the plugin) the
++ *    HealthKit entitlement.
++ */
++
++import * as fs from 'fs';
++import * as path from 'path';
++
++import { HEALTH_CONNECT_RECORD_TYPES } from '../healthConnect/healthConnectClient';
++
++const ROOT = path.join(__dirname, '..', '..', '..', '..');
++const appJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'app.json'), 'utf8')) as {
++  expo: {
++    android: { permissions: string[] };
++    plugins: (string | [string, Record<string, unknown>])[];
++  };
++};
++
++// eslint-disable-next-line @typescript-eslint/no-require-imports
++const plugin = require('../../../../plugins/withHealthConnectPermissionDelegate') as ((
++  config: Record<string, unknown>,
++) => ModConfig) & {
++  addDelegateToMainActivity: (contents: string, language: string) => string;
++  addPermissionUsageAlias: (manifest: Record<string, unknown>) => {
++    application: { 'activity-alias': { $: Record<string, string> }[] }[];
++  };
++};
++
++type ModFn = (config: Record<string, unknown>) => Promise<{
++  modResults: { contents?: string; manifest?: Record<string, unknown> };
++}>;
++type ModConfig = {
++  mods: { android: { mainActivity: ModFn; manifest: ModFn } };
++};
++
++/** Run one registered mod the way prebuild does (end of the mod chain). */
++async function runMod(
++  modName: 'mainActivity' | 'manifest',
++  modResults: Record<string, unknown>,
++): Promise<Record<string, unknown>> {
++  const config = plugin({ name: 'tgp', slug: 'tgp' });
++  const out = await config.mods.android[modName]({
++    ...config,
++    modResults,
++    modRequest: {
++      nextMod: async (c: unknown) => c,
++      platform: 'android',
++      modName,
++      introspect: false,
++      projectRoot: '/tmp',
++    },
++  });
++  return out.modResults;
++}
++
++/** MainActivity.onCreate exactly as decompiled from the 09-30 clinic APK. */
++const APK_MAIN_ACTIVITY = `package com.growthproject.app
++
++import android.os.Bundle
++import com.facebook.react.ReactActivity
++import expo.modules.splashscreen.SplashScreenManager
++
++class MainActivity : ReactActivity() {
++  override fun onCreate(savedInstanceState: Bundle?) {
++    SplashScreenManager.registerOnActivity(this)
++    super.onCreate(null)
++  }
++}
++`;
++
++const RECORD_TYPE_PERMISSION: Record<(typeof HEALTH_CONNECT_RECORD_TYPES)[number], string> = {
++  Steps: 'READ_STEPS',
++  ActiveCaloriesBurned: 'READ_ACTIVE_CALORIES_BURNED',
++  HeartRate: 'READ_HEART_RATE',
++  RestingHeartRate: 'READ_RESTING_HEART_RATE',
++  Vo2Max: 'READ_VO2_MAX',
++  ExerciseSession: 'READ_EXERCISE',
++  Distance: 'READ_DISTANCE',
++  Weight: 'READ_WEIGHT',
++  BodyFat: 'READ_BODY_FAT',
++  BloodPressure: 'READ_BLOOD_PRESSURE',
++  SleepSession: 'READ_SLEEP',
++  HeartRateVariabilityRmssd: 'READ_HEART_RATE_VARIABILITY',
++  OxygenSaturation: 'READ_OXYGEN_SATURATION',
++  RespiratoryRate: 'READ_RESPIRATORY_RATE',
++  BodyTemperature: 'READ_BODY_TEMPERATURE',
++};
++
++const pluginNames = appJson.expo.plugins.map((p) => (Array.isArray(p) ? p[0] : p));
++
++const EXPO_MAIN_ACTIVITY = `package com.growthproject.app
++
++import android.os.Bundle
++import com.facebook.react.ReactActivity
++
++class MainActivity : ReactActivity() {
++  override fun onCreate(savedInstanceState: Bundle?) {
++    setTheme(R.style.AppTheme);
++    super.onCreate(null)
++  }
++}
++`;
++
++describe('Health Connect manifest', () => {
++  it.each(HEALTH_CONNECT_RECORD_TYPES.map((t) => [t]))(
++    'declares the read permission for %s',
++    (recordType) => {
++      expect(appJson.expo.android.permissions).toContain(
++        `android.permission.health.${RECORD_TYPE_PERMISSION[recordType]}`,
++      );
++    },
++  );
++
++  // S14 round 4b (least privilege, Play health review): the manifest declares
++  // EXACTLY the Health Connect read permissions the sync reads. Unused ones
++  // (total calories, basal body temperature, background reads) are rejected.
++  it('declares exactly the Health Connect read permissions the sync reads', () => {
++    const declared = appJson.expo.android.permissions
++      .filter((p) => p.startsWith('android.permission.health.'))
++      .sort();
++    const read = HEALTH_CONNECT_RECORD_TYPES.map(
++      (rt) => `android.permission.health.${RECORD_TYPE_PERMISSION[rt]}`,
++    ).sort();
++    expect(declared).toEqual(read);
++    for (const unused of [
++      'READ_TOTAL_CALORIES_BURNED',
++      'READ_BASAL_BODY_TEMPERATURE',
++      'READ_HEALTH_DATA_IN_BACKGROUND',
++    ]) {
++      expect(declared).not.toContain(`android.permission.health.${unused}`);
++    }
++  });
++
++  it('registers the library plugin and the S14 delegate plugin after it', () => {
++    const lib = pluginNames.indexOf('react-native-health-connect');
++    const local = pluginNames.indexOf('./plugins/withHealthConnectPermissionDelegate');
++    expect(lib).toBeGreaterThanOrEqual(0);
++    expect(local).toBeGreaterThan(lib);
++  });
++});
++
++describe('withHealthConnectPermissionDelegate', () => {
++  it('prebuild mod adds the delegate to the APK MainActivity, after super.onCreate', async () => {
++    const out = await runMod('mainActivity', {
++      contents: APK_MAIN_ACTIVITY,
++      language: 'kt',
++      path: 'MainActivity.kt',
++    });
++    const contents = String(out.contents);
++    expect(contents).toContain(
++      'import dev.matinzd.healthconnect.permissions.HealthConnectPermissionDelegate',
++    );
++    const splash = contents.indexOf('SplashScreenManager.registerOnActivity(this)');
++    const superCall = contents.indexOf('super.onCreate(null)');
++    const delegate = contents.indexOf(
++      'HealthConnectPermissionDelegate.setPermissionDelegate(this)',
++    );
++    expect(splash).toBeGreaterThan(-1);
++    expect(superCall).toBeGreaterThan(splash);
++    expect(delegate).toBeGreaterThan(superCall);
++    // Exactly one call, still inside onCreate (before its closing brace).
++    expect(contents.split('setPermissionDelegate(this)')).toHaveLength(2);
++    expect(delegate).toBeLessThan(contents.indexOf('  }\n}'));
++  });
++
++  it('prebuild mod adds the Android 14 permission usage alias', async () => {
++    const out = await runMod('manifest', {
++      manifest: {
++        application: [{ activity: [{ $: { 'android:name': '.MainActivity' } }] }],
++      },
++    });
++    const manifest = out.manifest as {
++      application: { 'activity-alias': { $: Record<string, string> }[] }[];
++    };
++    expect(manifest.application[0]['activity-alias'][0].$['android:name']).toBe(
++      'ViewPermissionUsageActivity',
++    );
++  });
++
++  it('registers the delegate right after super.onCreate (Kotlin)', () => {
++    const out = plugin.addDelegateToMainActivity(EXPO_MAIN_ACTIVITY, 'kt');
++    expect(out).toContain(
++      'import dev.matinzd.healthconnect.permissions.HealthConnectPermissionDelegate',
++    );
++    expect(out).toMatch(
++      /super\.onCreate\(null\)\n\s+HealthConnectPermissionDelegate\.setPermissionDelegate\(this\)/,
++    );
++  });
++
++  it('is idempotent across repeated prebuilds', () => {
++    const once = plugin.addDelegateToMainActivity(EXPO_MAIN_ACTIVITY, 'kt');
++    expect(plugin.addDelegateToMainActivity(once, 'kt')).toBe(once);
++  });
++
++  it('fails loudly when MainActivity has no onCreate anchor', () => {
++    expect(() =>
++      plugin.addDelegateToMainActivity('package x\n\nclass MainActivity : ReactActivity()\n', 'kt'),
++    ).toThrow(/super\.onCreate/);
++  });
++
++  it('adds the Android 14 permission usage alias once', () => {
++    const manifest = {
++      application: [{ activity: [{ $: { 'android:name': '.MainActivity' } }] }],
++    };
++    const out = plugin.addPermissionUsageAlias(plugin.addPermissionUsageAlias(manifest));
++    const aliases = out.application[0]['activity-alias'];
++    expect(aliases).toHaveLength(1);
++    expect(aliases[0].$).toMatchObject({
++      'android:name': 'ViewPermissionUsageActivity',
++      'android:exported': 'true',
++      'android:targetActivity': '.MainActivity',
++      'android:permission': 'android.permission.START_VIEW_PERMISSION_USAGE',
++    });
++  });
++});
++
++describe('Apple Health config', () => {
++  it('registers react-native-health with read and write usage strings', () => {
++    const entry = appJson.expo.plugins.find(
++      (p) => Array.isArray(p) && p[0] === 'react-native-health',
++    ) as [string, Record<string, string>] | undefined;
++    expect(entry).toBeDefined();
++    expect(entry?.[1].healthSharePermission?.length ?? 0).toBeGreaterThan(20);
++    expect(entry?.[1].healthUpdatePermission?.length ?? 0).toBeGreaterThan(20);
++  });
++});
+diff --git a/src/services/health/__tests__/ingestContract.test.ts b/src/services/health/__tests__/ingestContract.test.ts
+new file mode 100644
+index 00000000..7d8d3b8a
+--- /dev/null
++++ b/src/services/health/__tests__/ingestContract.test.ts
+@@ -0,0 +1,299 @@
++/**
++ * S14 — shared ingest contract fixture (mobile side).
++ *
++ * Builds the request bodies the app really sends to
++ * `POST /v1/wearables/samples/ingest`: real Apple Health and Health Connect
++ * normalizers -> the shared wire serializer -> the shared batcher. The result
++ * must equal the committed `contracts/wearables-ingest-v1.fixture.json`, whose
++ * sha256 is pinned here AND in growth-project-backend
++ * (`test/wearables/ingest-contract.spec.ts`), where the same bytes are parsed
++ * with the backend's `.strict()` Zod schema. A change on either side that
++ * breaks the contract fails one of the two suites.
++ *
++ * Regenerate (only for a deliberate contract change, then copy the file to
++ * the backend's `test/_fixtures/wearables-ingest-v1.mobile.json` and update
++ * both pins):
++ *   UPDATE_INGEST_CONTRACT=1 npx jest src/services/health/__tests__/ingestContract.test.ts
++ */
++
++import { createHash } from 'crypto';
++import * as fs from 'fs';
++import * as path from 'path';
++
++import { normalizeHealthKitResult } from '../healthkit/healthKitNormalizer';
++import { normalizeAll } from '../healthConnect/healthConnectNormalizer';
++import { chunkForIngest, toIngestWire, type IngestWireSample } from '../ingestBatching';
++
++const FIXTURE_PATH = path.join(
++  __dirname,
++  '..',
++  '..',
++  '..',
++  '..',
++  'contracts',
++  'wearables-ingest-v1.fixture.json',
++);
++
++/** Pinned in both repos. Update both together, never one. */
++const FIXTURE_SHA256 = '3c8701f9f9f592a188115bb6eea63b0417d38eba306d238465ac02de51579cfb';
++
++const HK_CONNECTION = '11111111-1111-4111-8111-111111111111';
++const HC_CONNECTION = '22222222-2222-4222-8222-222222222222';
++
++/**
++ * Apple Health read pass, shaped like `react-native-health` output. Times use
++ * the library's real format (local offset without a colon, for example
++ * `-0700`), which the backend must accept.
++ */
++function healthKitSamples() {
++  return normalizeHealthKitResult(
++    {
++      steps: [
++        {
++          value: 812,
++          startDate: '2026-09-29T07:00:00.000-0700',
++          endDate: '2026-09-29T08:00:00.000-0700',
++        },
++        {
++          value: 2405,
++          startDate: '2026-09-29T08:00:00.000-0700',
++          endDate: '2026-09-29T09:00:00.000-0700',
++        },
++      ],
++      activeEnergy: [
++        {
++          value: 61.5,
++          startDate: '2026-09-29T07:00:00.000-0700',
++          endDate: '2026-09-29T08:00:00.000-0700',
++        },
++      ],
++      restingHeartRate: [
++        {
++          value: 54,
++          startDate: '2026-09-29T00:00:00.000-0700',
++          endDate: '2026-09-29T23:59:59.000-0700',
++        },
++      ],
++      heartRate: [
++        {
++          value: 72,
++          startDate: '2026-09-29T08:15:00.000-0700',
++          endDate: '2026-09-29T08:15:00.000-0700',
++        },
++      ],
++      hrv: [
++        {
++          value: 0.048,
++          startDate: '2026-09-29T06:10:00.000-0700',
++          endDate: '2026-09-29T06:10:00.000-0700',
++        },
++      ],
++      // B-317-4: the client asks HealthKit for kilograms; the wire value is kg.
++      weight: [
++        {
++          value: 81.6,
++          startDate: '2026-09-29T06:40:00.000-0700',
++          endDate: '2026-09-29T06:40:00.000-0700',
++        },
++      ],
++      sleep: [
++        {
++          value: 'INBED',
++          startDate: '2026-09-28T22:30:00.000-0700',
++          endDate: '2026-09-29T06:30:00.000-0700',
++        },
++        {
++          value: 'CORE',
++          startDate: '2026-09-28T22:45:00.000-0700',
++          endDate: '2026-09-29T01:15:00.000-0700',
++        },
++        {
++          value: 'DEEP',
++          startDate: '2026-09-29T01:15:00.000-0700',
++          endDate: '2026-09-29T02:45:00.000-0700',
++        },
++        {
++          value: 'REM',
++          startDate: '2026-09-29T02:45:00.000-0700',
++          endDate: '2026-09-29T04:15:00.000-0700',
++        },
++        {
++          value: 'AWAKE',
++          startDate: '2026-09-29T04:15:00.000-0700',
++          endDate: '2026-09-29T04:30:00.000-0700',
++        },
++        {
++          value: 'CORE',
++          startDate: '2026-09-29T04:30:00.000-0700',
++          endDate: '2026-09-29T06:15:00.000-0700',
++        },
++      ],
++    },
++    { connectionId: HK_CONNECTION, sourceTz: 'America/Los_Angeles' },
++  );
++}
++
++/** Health Connect read pass, shaped like `react-native-health-connect` records. */
++function healthConnectSamples() {
++  return normalizeAll(
++    { connectionId: HC_CONNECTION },
++    {
++      Steps: [
++        {
++          startTime: '2026-09-29T14:00:00.000Z',
++          endTime: '2026-09-29T15:00:00.000Z',
++          count: 1320,
++          metadata: { id: 'hc-steps-1' },
++        },
++      ],
++      HeartRate: [
++        {
++          startTime: '2026-09-29T15:00:00.000Z',
++          endTime: '2026-09-29T15:05:00.000Z',
++          samples: [
++            { time: '2026-09-29T15:00:00.000Z', beatsPerMinute: 88 },
++            { time: '2026-09-29T15:05:00.000Z', beatsPerMinute: 91 },
++          ],
++          metadata: { id: 'hc-hr-1' },
++        },
++      ],
++      RestingHeartRate: [
++        {
++          time: '2026-09-29T13:00:00.000Z',
++          beatsPerMinute: 56,
++          metadata: { id: 'hc-rhr-1' },
++        },
++      ],
++      SleepSession: [
++        {
++          startTime: '2026-09-29T05:30:00.000Z',
++          endTime: '2026-09-29T13:30:00.000Z',
++          stages: [
++            {
++              startTime: '2026-09-29T05:30:00.000Z',
++              endTime: '2026-09-29T08:00:00.000Z',
++              stage: 4,
++            },
++            {
++              startTime: '2026-09-29T08:00:00.000Z',
++              endTime: '2026-09-29T09:30:00.000Z',
++              stage: 5,
++            },
++            {
++              startTime: '2026-09-29T09:30:00.000Z',
++              endTime: '2026-09-29T11:00:00.000Z',
++              stage: 6,
++            },
++            {
++              startTime: '2026-09-29T11:00:00.000Z',
++              endTime: '2026-09-29T11:20:00.000Z',
++              stage: 1,
++            },
++          ],
++          metadata: { id: 'hc-sleep-1' },
++        },
++      ],
++      Weight: [
++        {
++          time: '2026-09-29T14:30:00.000Z',
++          weight: { inKilograms: 81.4 },
++          metadata: { id: 'hc-w-1' },
++        },
++      ],
++    },
++  );
++}
++
++function buildFixture(): { version: string; requests: IngestWireSample[][] } {
++  const hk = chunkForIngest(healthKitSamples().map(toIngestWire));
++  const hc = chunkForIngest(healthConnectSamples().map(toIngestWire));
++  return { version: 'wearables-ingest-v1', requests: [...hk, ...hc] };
++}
++
++function serialize(fixture: unknown): string {
++  return `${JSON.stringify(fixture, null, 2)}\n`;
++}
++
++const ALLOWED_KEYS = new Set([
++  'connectionId',
++  'provider',
++  'metric',
++  'bucket',
++  'value',
++  'unit',
++  'startAt',
++  'endAt',
++  'sourceTz',
++  'sourceRecordId',
++  'rawRef',
++]);
++
++describe('S14 ingest contract fixture', () => {
++  const built = serialize(buildFixture());
++
++  if (process.env.UPDATE_INGEST_CONTRACT === '1') {
++    fs.mkdirSync(path.dirname(FIXTURE_PATH), { recursive: true });
++    fs.writeFileSync(FIXTURE_PATH, built);
++  }
++
++  it('matches the committed fixture byte for byte', () => {
++    expect(fs.readFileSync(FIXTURE_PATH, 'utf8')).toBe(built);
++  });
++
++  it('matches the sha256 pinned in both repos', () => {
++    const digest = createHash('sha256').update(fs.readFileSync(FIXTURE_PATH)).digest('hex');
++    expect(digest).toBe(FIXTURE_SHA256);
++  });
++
++  it('never carries userId and only uses keys the backend schema allows', () => {
++    const fixture = JSON.parse(built) as {
++      requests: Record<string, unknown>[][];
++    };
++    expect(fixture.requests.length).toBeGreaterThanOrEqual(2);
++    for (const body of fixture.requests) {
++      expect(body.length).toBeGreaterThan(0);
++      for (const sample of body) {
++        expect(sample).not.toHaveProperty('userId');
++        for (const key of Object.keys(sample)) expect(ALLOWED_KEYS.has(key)).toBe(true);
++      }
++    }
++  });
++
++  it('covers both on-device providers and the metrics the Health and Sleep views read', () => {
++    const fixture = JSON.parse(built) as {
++      requests: { provider: string; metric: string }[][];
++    };
++    const all = fixture.requests.flat();
++    const providers = new Set(all.map((s) => s.provider));
++    expect(providers).toEqual(new Set(['APPLE_HEALTHKIT', 'HEALTH_CONNECT']));
++    const metrics = new Set(all.map((s) => s.metric));
++    for (const m of [
++      'STEPS',
++      'ACTIVE_ENERGY_KCAL',
++      'RESTING_HEART_RATE_BPM',
++      'HRV_MS',
++      'SLEEP_DEEP_MIN',
++      'SLEEP_REM_MIN',
++      'SLEEP_LIGHT_MIN',
++      'SLEEP_AWAKE_MIN',
++    ]) {
++      expect(metrics.has(m)).toBe(true);
++    }
++  });
++
++  it('B-317-4: both providers carry body weight in kilograms', () => {
++    const fixture = JSON.parse(built) as {
++      requests: { provider: string; metric: string; value: number; unit: string }[][];
++    };
++    const weights = fixture.requests.flat().filter((s) => s.metric === 'BODY_WEIGHT_KG');
++    expect(new Set(weights.map((w) => w.provider))).toEqual(
++      new Set(['APPLE_HEALTHKIT', 'HEALTH_CONNECT']),
++    );
++    for (const w of weights) {
++      expect(w.unit).toBe('kg');
++      // A pounds value (about 2.2x) would land outside this band.
++      expect(w.value).toBeGreaterThan(30);
++      expect(w.value).toBeLessThan(150);
++    }
++  });
++});
+diff --git a/src/services/health/samsungHealth/__tests__/samsungHealthClient.test.ts b/src/services/health/samsungHealth/__tests__/samsungHealthClient.test.ts
+deleted file mode 100644
+index 96e24fdb..00000000
+--- a/src/services/health/samsungHealth/__tests__/samsungHealthClient.test.ts
++++ /dev/null
+@@ -1,283 +0,0 @@
+-/**
+- * PR-HK-2.c — `samsungHealthClient` unit tests.
+- *
+- * Covers the connector's reason to exist:
+- *   • the Samsung-origin FILTER drops non-Samsung records and keeps Samsung
+- *     ones (both the `{ packageName }` object shape and the bare-string shape
+- *     the native wrapper sometimes surfaces);
+- *   • the PLATFORM GUARD throws `SamsungHealthUnsupportedError` off Android;
+- *   • the permission-denied path throws `SamsungHealthPermissionDeniedError`;
+- *   • a missing/failed Health Connect install surfaces as
+- *     `SamsungHealthUnavailableError` (graceful-degrade signal);
+- *   • `getGrantedRecordTypes` returns only granted, Samsung-eligible types.
+- *
+- * `react-native-health-connect` is not installed in this environment (it is an
+- * Android-native package), so the client resolves it lazily via `require`. We
+- * inject a fake through the `__setBridgeForTests` seam rather than mocking the
+- * unresolvable module.
+- */
+-
+-import { Platform } from 'react-native';
+-jest.mock('expo-constants', () => ({
+-  __esModule: true,
+-  default: { expoConfig: { extra: { healthConnectEnabled: true } } },
+-}));
+-import {
+-  __setBridgeForTests,
+-  getGrantedRecordTypes,
+-  initialize,
+-  readRecords,
+-  SAMSUNG_REQUIRED_RECORD_TYPES,
+-  type SamsungHealthBridge,
+-} from '../samsungHealthClient';
+-import {
+-  SamsungHealthPermissionDeniedError,
+-  SamsungHealthUnavailableError,
+-  SamsungHealthUnsupportedError,
+-} from '../errors';
+-import {
+-  SAMSUNG_HEALTH_PACKAGE_NAME,
+-  type SamsungHealthRecord,
+-} from '../types';
+-
+-const OTHER_PACKAGE = 'com.google.android.apps.fitness';
+-
+-/** Build a Steps record from a given data origin (object or bare string). */
+-function stepsRecord(
+-  origin: string | { packageName: string },
+-  count: number,
+-  id = 'rec-1',
+-): SamsungHealthRecord {
+-  return {
+-    recordType: 'Steps',
+-    metadata: { id, dataOrigin: origin },
+-    startTime: '2026-05-30T10:00:00.000Z',
+-    endTime: '2026-05-30T11:00:00.000Z',
+-    count,
+-  } as SamsungHealthRecord;
+-}
+-
+-/** A bridge whose readRecords returns a fixed set, with read perms granted. */
+-function makeBridge(
+-  records: SamsungHealthRecord[],
+-  grantedTypes: string[] = [...SAMSUNG_REQUIRED_RECORD_TYPES],
+-): SamsungHealthBridge {
+-  return {
+-    initialize: jest.fn(async () => true),
+-    getGrantedPermissions: jest.fn(async () =>
+-      grantedTypes.map((recordType) => ({ accessType: 'read', recordType })),
+-    ),
+-    readRecords: jest.fn(async () => ({ records })),
+-  };
+-}
+-
+-describe('samsungHealthClient', () => {
+-  const originalOS = Platform.OS;
+-
+-  beforeEach(() => {
+-    Platform.OS = 'android';
+-    __setBridgeForTests(null);
+-  });
+-
+-  afterEach(() => {
+-    Platform.OS = originalOS;
+-    __setBridgeForTests(null);
+-  });
+-
+-  describe('PLATFORM GUARD', () => {
+-    it('initialize throws SamsungHealthUnsupportedError off Android (ios)', async () => {
+-      Platform.OS = 'ios';
+-      await expect(initialize()).rejects.toBeInstanceOf(
+-        SamsungHealthUnsupportedError,
+-      );
+-    });
+-
+-    it('readRecords throws SamsungHealthUnsupportedError off Android (web)', async () => {
+-      Platform.OS = 'web';
+-      await expect(
+-        readRecords('Steps', {
+-          timeRangeFilter: { operator: 'between', startTime: 'a', endTime: 'b' },
+-        }),
+-      ).rejects.toBeInstanceOf(SamsungHealthUnsupportedError);
+-    });
+-
+-    it('the unsupported error names the offending platform', async () => {
+-      Platform.OS = 'ios';
+-      await expect(initialize()).rejects.toThrow(/'ios'/);
+-    });
+-  });
+-
+-  describe('readRecords — Samsung-origin FILTER', () => {
+-    it('keeps records whose dataOrigin.packageName is Samsung Health', async () => {
+-      const samsung = stepsRecord({ packageName: SAMSUNG_HEALTH_PACKAGE_NAME }, 1200, 'keep');
+-      __setBridgeForTests(makeBridge([samsung]));
+-
+-      const out = await readRecords('Steps', {
+-        timeRangeFilter: { operator: 'between', startTime: 'a', endTime: 'b' },
+-      });
+-
+-      expect(out).toHaveLength(1);
+-      expect(out[0].metadata.id).toBe('keep');
+-      expect(out[0].count).toBe(1200);
+-    });
+-
+-    it('drops records from a non-Samsung data origin', async () => {
+-      const google = stepsRecord({ packageName: OTHER_PACKAGE }, 999, 'drop');
+-      __setBridgeForTests(makeBridge([google]));
+-
+-      const out = await readRecords('Steps', {
+-        timeRangeFilter: { operator: 'between', startTime: 'a', endTime: 'b' },
+-      });
+-
+-      expect(out).toHaveLength(0);
+-    });
+-
+-    it('keeps only the Samsung subset from a mixed batch', async () => {
+-      const records = [
+-        stepsRecord({ packageName: SAMSUNG_HEALTH_PACKAGE_NAME }, 100, 's1'),
+-        stepsRecord({ packageName: OTHER_PACKAGE }, 200, 'g1'),
+-        stepsRecord({ packageName: SAMSUNG_HEALTH_PACKAGE_NAME }, 300, 's2'),
+-        stepsRecord({ packageName: 'com.fitbit.FitbitMobile' }, 400, 'f1'),
+-      ];
+-      __setBridgeForTests(makeBridge(records));
+-
+-      const out = await readRecords('Steps', {
+-        timeRangeFilter: { operator: 'between', startTime: 'a', endTime: 'b' },
+-      });
+-
+-      expect(out.map((r) => r.metadata.id)).toEqual(['s1', 's2']);
+-      expect(out.map((r) => r.count)).toEqual([100, 300]);
+-    });
+-
+-    it('tolerates dataOrigin surfaced as a bare package-name string', async () => {
+-      const records = [
+-        stepsRecord(SAMSUNG_HEALTH_PACKAGE_NAME, 500, 'bare-samsung'),
+-        stepsRecord(OTHER_PACKAGE, 600, 'bare-google'),
+-      ];
+-      __setBridgeForTests(makeBridge(records));
+-
+-      const out = await readRecords('Steps', {
+-        timeRangeFilter: { operator: 'between', startTime: 'a', endTime: 'b' },
+-      });
+-
+-      expect(out).toHaveLength(1);
+-      expect(out[0].metadata.id).toBe('bare-samsung');
+-    });
+-
+-    it('stamps the requested recordType on every returned record', async () => {
+-      const samsung = stepsRecord({ packageName: SAMSUNG_HEALTH_PACKAGE_NAME }, 10, 'x');
+-      __setBridgeForTests(makeBridge([samsung]));
+-
+-      const out = await readRecords('Steps', {
+-        timeRangeFilter: { operator: 'between', startTime: 'a', endTime: 'b' },
+-      });
+-
+-      expect(out[0].recordType).toBe('Steps');
+-    });
+-  });
+-
+-  describe('readRecords — permission-denied path', () => {
+-    it('throws SamsungHealthPermissionDeniedError when the type is not granted', async () => {
+-      // Granted set does NOT include 'HeartRate'.
+-      __setBridgeForTests(makeBridge([], ['Steps']));
+-
+-      await expect(
+-        readRecords('HeartRate', {
+-          timeRangeFilter: { operator: 'between', startTime: 'a', endTime: 'b' },
+-        }),
+-      ).rejects.toBeInstanceOf(SamsungHealthPermissionDeniedError);
+-    });
+-
+-    it('reports the denied record type on the error', async () => {
+-      __setBridgeForTests(makeBridge([], ['Steps']));
+-
+-      await expect(
+-        readRecords('HeartRate', {
+-          timeRangeFilter: { operator: 'between', startTime: 'a', endTime: 'b' },
+-        }),
+-      ).rejects.toMatchObject({ missingRecordTypes: ['HeartRate'] });
+-    });
+-  });
+-
+-  describe('readRecords — graceful degrade on bridge failure', () => {
+-    it('wraps a thrown bridge read as SamsungHealthUnavailableError', async () => {
+-      const bridge = makeBridge([]);
+-      (bridge.readRecords as jest.Mock).mockRejectedValueOnce(
+-        new Error('Health Connect crashed'),
+-      );
+-      __setBridgeForTests(bridge);
+-
+-      await expect(
+-        readRecords('Steps', {
+-          timeRangeFilter: { operator: 'between', startTime: 'a', endTime: 'b' },
+-        }),
+-      ).rejects.toBeInstanceOf(SamsungHealthUnavailableError);
+-    });
+-  });
+-
+-  describe('initialize', () => {
+-    it('returns the bridge when initialize resolves true', async () => {
+-      const bridge = makeBridge([]);
+-      __setBridgeForTests(bridge);
+-
+-      await expect(initialize()).resolves.toBe(bridge);
+-      expect(bridge.initialize).toHaveBeenCalledTimes(1);
+-    });
+-
+-    it('throws SamsungHealthUnavailableError when initialize resolves false', async () => {
+-      const bridge = makeBridge([]);
+-      (bridge.initialize as jest.Mock).mockResolvedValueOnce(false);
+-      __setBridgeForTests(bridge);
+-
+-      await expect(initialize()).rejects.toBeInstanceOf(
+-        SamsungHealthUnavailableError,
+-      );
+-    });
+-
+-    it('throws SamsungHealthUnavailableError when initialize throws', async () => {
+-      const bridge = makeBridge([]);
+-      (bridge.initialize as jest.Mock).mockRejectedValueOnce(
+-        new Error('no module'),
+-      );
+-      __setBridgeForTests(bridge);
+-
+-      await expect(initialize()).rejects.toBeInstanceOf(
+-        SamsungHealthUnavailableError,
+-      );
+-    });
+-  });
+-
+-  describe('getGrantedRecordTypes', () => {
+-    it('returns only granted, Samsung-eligible record types', async () => {
+-      __setBridgeForTests(
+-        makeBridge([], ['Steps', 'HeartRate', 'SomeUnsupportedType']),
+-      );
+-
+-      const granted = await getGrantedRecordTypes();
+-
+-      expect(granted).toEqual(['Steps', 'HeartRate']);
+-    });
+-
+-    it('ignores write-only permissions (accessType !== read)', async () => {
+-      const bridge: SamsungHealthBridge = {
+-        initialize: jest.fn(async () => true),
+-        getGrantedPermissions: jest.fn(async () => [
+-          { accessType: 'write', recordType: 'Steps' },
+-          { accessType: 'read', recordType: 'Weight' },
+-        ]),
+-        readRecords: jest.fn(async () => ({ records: [] })),
+-      };
+-      __setBridgeForTests(bridge);
+-
+-      const granted = await getGrantedRecordTypes();
+-
+-      expect(granted).toEqual(['Weight']);
+-    });
+-
+-    it('returns an empty array when nothing is granted', async () => {
+-      __setBridgeForTests(makeBridge([], []));
+-
+-      await expect(getGrantedRecordTypes()).resolves.toEqual([]);
+-    });
+-  });
+-});
+diff --git a/src/services/health/samsungHealth/__tests__/samsungHealthNormalizer.test.ts b/src/services/health/samsungHealth/__tests__/samsungHealthNormalizer.test.ts
+deleted file mode 100644
+index cef6044b..00000000
+--- a/src/services/health/samsungHealth/__tests__/samsungHealthNormalizer.test.ts
++++ /dev/null
+@@ -1,298 +0,0 @@
+-/**
+- * PR-HK-2.c — `samsungHealthNormalizer` unit tests.
+- *
+- * The record→metric mapping is identical to the Health Connect connector, but
+- * the provider-distinct differentiator is asserted directly: every emitted
+- * sample carries `provider: 'SAMSUNG_HEALTH'`, never `'HEALTH_CONNECT'`. Tests
+- * also verify the canonical bucket/unit/value/time mapping for each record
+- * type and that `normalizeRecords` re-asserts the Samsung-origin invariant
+- * (defence in depth).
+- */
+-
+-import {
+-  normalizeRecord,
+-  normalizeRecords,
+-  type NormalizedSample,
+-} from '../samsungHealthNormalizer';
+-import {
+-  SAMSUNG_HEALTH_PACKAGE_NAME,
+-  type SamsungHealthRecord,
+-} from '../types';
+-
+-const SAMSUNG_META = {
+-  id: 'm1',
+-  dataOrigin: { packageName: SAMSUNG_HEALTH_PACKAGE_NAME },
+-};
+-
+-function rec(partial: Partial<SamsungHealthRecord>): SamsungHealthRecord {
+-  return {
+-    metadata: SAMSUNG_META,
+-    startTime: '2026-05-30T10:00:00.000Z',
+-    endTime: '2026-05-30T11:00:00.000Z',
+-    ...partial,
+-  } as SamsungHealthRecord;
+-}
+-
+-describe('samsungHealthNormalizer', () => {
+-  describe('provider-distinct differentiator', () => {
+-    it('tags every sample with provider SAMSUNG_HEALTH (never HEALTH_CONNECT)', () => {
+-      const out = normalizeRecord(rec({ recordType: 'Steps', count: 4200 }));
+-      expect(out).toHaveLength(1);
+-      expect(out[0].provider).toBe('SAMSUNG_HEALTH');
+-      expect(out[0].provider).not.toBe('HEALTH_CONNECT');
+-    });
+-  });
+-
+-  describe('Steps', () => {
+-    it('maps count → STEPS in HEALTH_FITNESS bucket, unit count', () => {
+-      const [s] = normalizeRecord(rec({ recordType: 'Steps', count: 4200 }));
+-      expect(s).toMatchObject<Partial<NormalizedSample>>({
+-        metric: 'STEPS',
+-        bucket: 'HEALTH_FITNESS',
+-        unit: 'count',
+-        value: 4200,
+-        startAt: '2026-05-30T10:00:00.000Z',
+-        endAt: '2026-05-30T11:00:00.000Z',
+-        sourceRecordId: 'm1',
+-      });
+-    });
+-
+-    it('drops a Steps record with a non-numeric count', () => {
+-      expect(
+-        normalizeRecord(rec({ recordType: 'Steps', count: 'lots' as never })),
+-      ).toEqual([]);
+-    });
+-  });
+-
+-  describe('ActiveCaloriesBurned', () => {
+-    it('maps energy.inKilocalories → ACTIVE_ENERGY_KCAL (kcal)', () => {
+-      const [s] = normalizeRecord(
+-        rec({
+-          recordType: 'ActiveCaloriesBurned',
+-          energy: { inKilocalories: 312.5 },
+-        }),
+-      );
+-      expect(s).toMatchObject({
+-        metric: 'ACTIVE_ENERGY_KCAL',
+-        bucket: 'HEALTH_FITNESS',
+-        unit: 'kcal',
+-        value: 312.5,
+-      });
+-    });
+-  });
+-
+-  describe('HeartRate', () => {
+-    it('emits one HEART_RATE_BPM sample per bpm reading at its own time', () => {
+-      const out = normalizeRecord(
+-        rec({
+-          recordType: 'HeartRate',
+-          samples: [
+-            { time: '2026-05-30T10:00:00.000Z', beatsPerMinute: 60 },
+-            { time: '2026-05-30T10:01:00.000Z', beatsPerMinute: 72 },
+-          ],
+-        }),
+-      );
+-      expect(out).toHaveLength(2);
+-      expect(out.map((s) => s.value)).toEqual([60, 72]);
+-      expect(out[0]).toMatchObject({
+-        metric: 'HEART_RATE_BPM',
+-        unit: 'bpm',
+-        startAt: '2026-05-30T10:00:00.000Z',
+-        endAt: '2026-05-30T10:00:00.000Z',
+-      });
+-    });
+-  });
+-
+-  describe('RestingHeartRate', () => {
+-    it('maps beatsPerMinute → RESTING_HEART_RATE_BPM in SLEEP_RECOVERY', () => {
+-      const [s] = normalizeRecord(
+-        rec({ recordType: 'RestingHeartRate', beatsPerMinute: 48 }),
+-      );
+-      expect(s).toMatchObject({
+-        metric: 'RESTING_HEART_RATE_BPM',
+-        bucket: 'SLEEP_RECOVERY',
+-        unit: 'bpm',
+-        value: 48,
+-      });
+-    });
+-  });
+-
+-  describe('Vo2Max', () => {
+-    it('maps vo2MillilitersPerMinuteKilogram → VO2_MAX', () => {
+-      const [s] = normalizeRecord(
+-        rec({ recordType: 'Vo2Max', vo2MillilitersPerMinuteKilogram: 51.2 }),
+-      );
+-      expect(s).toMatchObject({ metric: 'VO2_MAX', unit: 'ml/kg/min', value: 51.2 });
+-    });
+-  });
+-
+-  describe('ExerciseSession', () => {
+-    it('maps session duration → WORKOUT_DURATION_MIN (min)', () => {
+-      const [s] = normalizeRecord(
+-        rec({
+-          recordType: 'ExerciseSession',
+-          startTime: '2026-05-30T10:00:00.000Z',
+-          endTime: '2026-05-30T10:45:00.000Z',
+-        }),
+-      );
+-      expect(s).toMatchObject({
+-        metric: 'WORKOUT_DURATION_MIN',
+-        unit: 'min',
+-        value: 45,
+-      });
+-    });
+-  });
+-
+-  describe('Distance', () => {
+-    it('maps distance.inMeters → WORKOUT_DISTANCE_M (m)', () => {
+-      const [s] = normalizeRecord(
+-        rec({ recordType: 'Distance', distance: { inMeters: 5025 } }),
+-      );
+-      expect(s).toMatchObject({ metric: 'WORKOUT_DISTANCE_M', unit: 'm', value: 5025 });
+-    });
+-  });
+-
+-  describe('Weight', () => {
+-    it('maps weight.inKilograms → BODY_WEIGHT_KG (kg)', () => {
+-      const [s] = normalizeRecord(
+-        rec({ recordType: 'Weight', weight: { inKilograms: 81.4 } }),
+-      );
+-      expect(s).toMatchObject({ metric: 'BODY_WEIGHT_KG', unit: 'kg', value: 81.4 });
+-    });
+-  });
+-
+-  describe('BodyFat', () => {
+-    it('maps percentage.value → BODY_FAT_PCT (%)', () => {
+-      const [s] = normalizeRecord(
+-        rec({ recordType: 'BodyFat', percentage: { value: 18.3 } }),
+-      );
+-      expect(s).toMatchObject({ metric: 'BODY_FAT_PCT', unit: '%', value: 18.3 });
+-    });
+-  });
+-
+-  describe('BloodPressure', () => {
+-    it('emits both systolic and diastolic samples', () => {
+-      const out = normalizeRecord(
+-        rec({
+-          recordType: 'BloodPressure',
+-          systolic: { inMillimetersOfMercury: 118 },
+-          diastolic: { inMillimetersOfMercury: 76 },
+-        }),
+-      );
+-      const byMetric = Object.fromEntries(out.map((s) => [s.metric, s]));
+-      expect(byMetric.BLOOD_PRESSURE_SYS).toMatchObject({ value: 118, unit: 'mmHg' });
+-      expect(byMetric.BLOOD_PRESSURE_DIA).toMatchObject({ value: 76, unit: 'mmHg' });
+-    });
+-  });
+-
+-  describe('SleepSession', () => {
+-    it('emits total duration plus per-stage minutes', () => {
+-      const out = normalizeRecord(
+-        rec({
+-          recordType: 'SleepSession',
+-          startTime: '2026-05-30T00:00:00.000Z',
+-          endTime: '2026-05-30T08:00:00.000Z',
+-          stages: [
+-            {
+-              stage: 'STAGE_TYPE_DEEP',
+-              startTime: '2026-05-30T00:00:00.000Z',
+-              endTime: '2026-05-30T01:30:00.000Z',
+-            },
+-            {
+-              stage: 'STAGE_TYPE_REM',
+-              startTime: '2026-05-30T01:30:00.000Z',
+-              endTime: '2026-05-30T03:00:00.000Z',
+-            },
+-          ],
+-        }),
+-      );
+-      const byMetric = Object.fromEntries(out.map((s) => [s.metric, s.value]));
+-      expect(byMetric.SLEEP_TOTAL_MIN).toBe(480);
+-      expect(byMetric.SLEEP_DEEP_MIN).toBe(90);
+-      expect(byMetric.SLEEP_REM_MIN).toBe(90);
+-      // Stages not present are not emitted.
+-      expect(byMetric.SLEEP_LIGHT_MIN).toBeUndefined();
+-    });
+-  });
+-
+-  describe('HeartRateVariabilityRmssd', () => {
+-    it('maps heartRateVariabilityMillis → HRV_MS (ms)', () => {
+-      const [s] = normalizeRecord(
+-        rec({
+-          recordType: 'HeartRateVariabilityRmssd',
+-          heartRateVariabilityMillis: 42,
+-        }),
+-      );
+-      expect(s).toMatchObject({ metric: 'HRV_MS', unit: 'ms', value: 42 });
+-    });
+-  });
+-
+-  describe('OxygenSaturation', () => {
+-    it('maps percentage.value → SPO2_PCT (%)', () => {
+-      const [s] = normalizeRecord(
+-        rec({ recordType: 'OxygenSaturation', percentage: { value: 97 } }),
+-      );
+-      expect(s).toMatchObject({ metric: 'SPO2_PCT', unit: '%', value: 97 });
+-    });
+-  });
+-
+-  describe('RespiratoryRate', () => {
+-    it('maps rate → RESPIRATORY_RATE_BRPM (brpm)', () => {
+-      const [s] = normalizeRecord(
+-        rec({ recordType: 'RespiratoryRate', rate: 14.5 }),
+-      );
+-      expect(s).toMatchObject({ metric: 'RESPIRATORY_RATE_BRPM', unit: 'brpm', value: 14.5 });
+-    });
+-  });
+-
+-  describe('BodyTemperature', () => {
+-    it('maps temperature.inCelsius → BODY_TEMP_DEVIATION_C (C)', () => {
+-      const [s] = normalizeRecord(
+-        rec({ recordType: 'BodyTemperature', temperature: { inCelsius: 36.6 } }),
+-      );
+-      expect(s).toMatchObject({ metric: 'BODY_TEMP_DEVIATION_C', unit: 'C', value: 36.6 });
+-    });
+-  });
+-
+-  describe('unrecognised / empty records', () => {
+-    it('drops an unrecognised record type', () => {
+-      expect(
+-        normalizeRecord(rec({ recordType: 'UnknownThing' as never })),
+-      ).toEqual([]);
+-    });
+-
+-    it('drops a record with no recordType', () => {
+-      expect(normalizeRecord({} as SamsungHealthRecord)).toEqual([]);
+-    });
+-  });
+-
+-  describe('normalizeRecords — Samsung-origin invariant (defence in depth)', () => {
+-    it('drops a non-Samsung record even if it reaches the normalizer', () => {
+-      const google = rec({
+-        recordType: 'Steps',
+-        count: 999,
+-        metadata: { id: 'g', dataOrigin: { packageName: 'com.google.android.apps.fitness' } },
+-      });
+-      expect(normalizeRecords([google])).toEqual([]);
+-    });
+-
+-    it('keeps Samsung-origin records and tags them SAMSUNG_HEALTH', () => {
+-      const samsung = rec({ recordType: 'Steps', count: 100 });
+-      const out = normalizeRecords([samsung]);
+-      expect(out).toHaveLength(1);
+-      expect(out[0].provider).toBe('SAMSUNG_HEALTH');
+-      expect(out[0].value).toBe(100);
+-    });
+-
+-    it('flattens samples across a mixed-origin batch, Samsung only', () => {
+-      const samsung = rec({ recordType: 'Steps', count: 100 });
+-      const google = rec({
+-        recordType: 'Steps',
+-        count: 200,
+-        metadata: { id: 'g', dataOrigin: { packageName: 'com.google.android.apps.fitness' } },
+-      });
+-      const out = normalizeRecords([samsung, google]);
+-      expect(out.map((s) => s.value)).toEqual([100]);
+-    });
+-  });
+-});
+diff --git a/src/services/health/samsungHealth/__tests__/samsungHealthSyncService.test.ts b/src/services/health/samsungHealth/__tests__/samsungHealthSyncService.test.ts
+deleted file mode 100644
+index a58266d6..00000000
+--- a/src/services/health/samsungHealth/__tests__/samsungHealthSyncService.test.ts
++++ /dev/null
+@@ -1,302 +0,0 @@
+-/**
+- * PR-HK-2.c — `samsungHealthSyncService` unit tests.
+- *
+- * Covers the orchestration contract:
+- *   • PLATFORM GUARD — `sync` throws `SamsungHealthUnsupportedError` off Android;
+- *   • graceful degrade — a `SamsungHealthUnavailableError` from init returns a
+- *     no-op result (does NOT throw, does NOT advance lastSyncAt);
+- *   • permission-denied path — zero granted types throws
+- *     `SamsungHealthPermissionDeniedError` and does NOT advance lastSyncAt;
+- *   • lastSyncAt persistence — persisted under
+- *     `wearable:samsung-health:lastSyncAt` ONLY after a successful ingest;
+- *   • a failed ingest does NOT advance lastSyncAt (re-reads same window);
+- *   • the ingest POSTs a single batch to `/v1/wearables/samples/ingest` with
+- *     `provider: SAMSUNG_HEALTH`;
+- *   • first-run backfill uses a 30-day window.
+- *
+- * `react-native-health-connect` is mocked at the client seam (we mock the
+- * whole client module), and the axios-backed `api` default export is mocked so
+- * no network is touched.
+- */
+-
+-import { Platform } from 'react-native';
+-jest.mock('expo-constants', () => ({
+-  __esModule: true,
+-  default: { expoConfig: { extra: { healthConnectEnabled: true } } },
+-}));
+-import AsyncStorage from '@react-native-async-storage/async-storage';
+-
+-const mockApiPost = jest.fn();
+-jest.mock('../../../api', () => ({
+-  __esModule: true,
+-  default: { post: (...args: unknown[]) => mockApiPost(...args) },
+-}));
+-
+-const mockInitialize = jest.fn();
+-const mockGetGrantedRecordTypes = jest.fn();
+-const mockReadRecords = jest.fn();
+-jest.mock('../samsungHealthClient', () => ({
+-  __esModule: true,
+-  samsungHealthClient: {
+-    initialize: (...a: unknown[]) => mockInitialize(...a),
+-    getGrantedRecordTypes: (...a: unknown[]) => mockGetGrantedRecordTypes(...a),
+-    readRecords: (...a: unknown[]) => mockReadRecords(...a),
+-  },
+-}));
+-
+-import {
+-  sync,
+-  getLastSyncAt,
+-  setLastSyncAt,
+-  clearLastSyncAt,
+-  SAMSUNG_LAST_SYNC_KEY,
+-  SAMSUNG_INGEST_PATH,
+-  DEFAULT_BACKFILL_DAYS,
+-} from '../samsungHealthSyncService';
+-import {
+-  SamsungHealthPermissionDeniedError,
+-  SamsungHealthUnavailableError,
+-  SamsungHealthUnsupportedError,
+-} from '../errors';
+-import {
+-  SAMSUNG_HEALTH_PACKAGE_NAME,
+-  type SamsungHealthRecord,
+-} from '../types';
+-
+-const SAMSUNG_META = {
+-  id: 'm1',
+-  dataOrigin: { packageName: SAMSUNG_HEALTH_PACKAGE_NAME },
+-};
+-
+-function stepsRecord(count: number): SamsungHealthRecord {
+-  return {
+-    recordType: 'Steps',
+-    metadata: SAMSUNG_META,
+-    startTime: '2026-05-30T10:00:00.000Z',
+-    endTime: '2026-05-30T11:00:00.000Z',
+-    count,
+-  } as SamsungHealthRecord;
+-}
+-
+-const FIXED_NOW = new Date('2026-05-31T00:00:00.000Z');
+-const now = () => FIXED_NOW;
+-
+-describe('samsungHealthSyncService', () => {
+-  const originalOS = Platform.OS;
+-
+-  beforeEach(async () => {
+-    Platform.OS = 'android';
+-    await AsyncStorage.clear();
+-    mockApiPost.mockReset().mockResolvedValue({ data: { accepted: 0 } });
+-    mockInitialize.mockReset().mockResolvedValue(undefined);
+-    mockGetGrantedRecordTypes.mockReset().mockResolvedValue(['Steps']);
+-    mockReadRecords.mockReset().mockResolvedValue([]);
+-  });
+-
+-  afterEach(() => {
+-    Platform.OS = originalOS;
+-  });
+-
+-  describe('lastSyncAt persistence helpers', () => {
+-    it('round-trips a valid ISO timestamp through AsyncStorage', async () => {
+-      await setLastSyncAt('2026-05-30T12:00:00.000Z');
+-      await expect(getLastSyncAt()).resolves.toBe('2026-05-30T12:00:00.000Z');
+-      await expect(
+-        AsyncStorage.getItem(SAMSUNG_LAST_SYNC_KEY),
+-      ).resolves.toBe('2026-05-30T12:00:00.000Z');
+-    });
+-
+-    it('returns null when nothing is persisted', async () => {
+-      await expect(getLastSyncAt()).resolves.toBeNull();
+-    });
+-
+-    it('returns null for an unparseable stored value', async () => {
+-      await AsyncStorage.setItem(SAMSUNG_LAST_SYNC_KEY, 'not-a-date');
+-      await expect(getLastSyncAt()).resolves.toBeNull();
+-    });
+-
+-    it('clearLastSyncAt removes the key', async () => {
+-      await setLastSyncAt('2026-05-30T12:00:00.000Z');
+-      await clearLastSyncAt();
+-      await expect(
+-        AsyncStorage.getItem(SAMSUNG_LAST_SYNC_KEY),
+-      ).resolves.toBeNull();
+-    });
+-
+-    it('uses the contract storage key', () => {
+-      expect(SAMSUNG_LAST_SYNC_KEY).toBe('wearable:samsung-health:lastSyncAt');
+-    });
+-  });
+-
+-  describe('PLATFORM GUARD', () => {
+-    it('throws SamsungHealthUnsupportedError off Android', async () => {
+-      Platform.OS = 'ios';
+-      await expect(sync(now)).rejects.toBeInstanceOf(
+-        SamsungHealthUnsupportedError,
+-      );
+-    });
+-
+-    it('does not persist lastSyncAt when off Android', async () => {
+-      Platform.OS = 'ios';
+-      await expect(sync(now)).rejects.toBeInstanceOf(SamsungHealthUnsupportedError);
+-      await expect(
+-        AsyncStorage.getItem(SAMSUNG_LAST_SYNC_KEY),
+-      ).resolves.toBeNull();
+-    });
+-  });
+-
+-  describe('graceful degrade — Health Connect unavailable', () => {
+-    it('returns a no-op result instead of throwing', async () => {
+-      mockInitialize.mockRejectedValueOnce(
+-        new SamsungHealthUnavailableError('not installed'),
+-      );
+-
+-      const result = await sync(now);
+-
+-      expect(result.ingested).toBe(false);
+-      expect(result.sampleCount).toBe(0);
+-      expect(result.recordTypesRead).toEqual([]);
+-      expect(result.lastSyncAt).toBeNull();
+-      expect(mockApiPost).not.toHaveBeenCalled();
+-    });
+-
+-    it('does not advance lastSyncAt when unavailable', async () => {
+-      mockInitialize.mockRejectedValueOnce(new SamsungHealthUnavailableError());
+-      await sync(now);
+-      await expect(
+-        AsyncStorage.getItem(SAMSUNG_LAST_SYNC_KEY),
+-      ).resolves.toBeNull();
+-    });
+-
+-    it('rethrows non-unavailable init errors', async () => {
+-      mockInitialize.mockRejectedValueOnce(new Error('unexpected'));
+-      await expect(sync(now)).rejects.toThrow('unexpected');
+-    });
+-  });
+-
+-  describe('permission-denied path', () => {
+-    it('throws SamsungHealthPermissionDeniedError when no types are granted', async () => {
+-      mockGetGrantedRecordTypes.mockResolvedValueOnce([]);
+-      await expect(sync(now)).rejects.toBeInstanceOf(
+-        SamsungHealthPermissionDeniedError,
+-      );
+-    });
+-
+-    it('does not advance lastSyncAt on permission denial', async () => {
+-      mockGetGrantedRecordTypes.mockResolvedValueOnce([]);
+-      await expect(sync(now)).rejects.toBeInstanceOf(
+-        SamsungHealthPermissionDeniedError,
+-      );
+-      await expect(
+-        AsyncStorage.getItem(SAMSUNG_LAST_SYNC_KEY),
+-      ).resolves.toBeNull();
+-    });
+-  });
+-
+-  describe('successful sync', () => {
+-    it('reads, normalizes, POSTs a single batch, and persists lastSyncAt', async () => {
+-      mockReadRecords.mockResolvedValueOnce([stepsRecord(1000), stepsRecord(2000)]);
+-
+-      const result = await sync(now);
+-
+-      // One batched POST, never one-per-sample.
+-      expect(mockApiPost).toHaveBeenCalledTimes(1);
+-      const [path, body] = mockApiPost.mock.calls[0];
+-      expect(path).toBe(SAMSUNG_INGEST_PATH);
+-      expect(path).toBe('/v1/wearables/samples/ingest');
+-      expect(body.provider).toBe('SAMSUNG_HEALTH');
+-      expect(body.samples).toHaveLength(2);
+-      expect(body.samples[0]).toMatchObject({
+-        provider: 'SAMSUNG_HEALTH',
+-        metric: 'STEPS',
+-        value: 1000,
+-      });
+-
+-      expect(result.ingested).toBe(true);
+-      expect(result.sampleCount).toBe(2);
+-      expect(result.lastSyncAt).toBe(FIXED_NOW.toISOString());
+-
+-      await expect(
+-        AsyncStorage.getItem(SAMSUNG_LAST_SYNC_KEY),
+-      ).resolves.toBe(FIXED_NOW.toISOString());
+-    });
+-
+-    it('first-run window is a 30-day backfill', async () => {
+-      await sync(now);
+-
+-      // No POST (empty read) but the window is still computed; assert via the
+-      // readRecords time filter.
+-      const [, options] = mockReadRecords.mock.calls[0];
+-      const expectedStart = new Date(
+-        FIXED_NOW.getTime() - DEFAULT_BACKFILL_DAYS * 24 * 60 * 60 * 1000,
+-      ).toISOString();
+-      expect(options.timeRangeFilter.startTime).toBe(expectedStart);
+-      expect(options.timeRangeFilter.endTime).toBe(FIXED_NOW.toISOString());
+-    });
+-
+-    it('subsequent run reads from the persisted lastSyncAt', async () => {
+-      await AsyncStorage.setItem(
+-        SAMSUNG_LAST_SYNC_KEY,
+-        '2026-05-30T18:00:00.000Z',
+-      );
+-
+-      await sync(now);
+-
+-      const [, options] = mockReadRecords.mock.calls[0];
+-      expect(options.timeRangeFilter.startTime).toBe('2026-05-30T18:00:00.000Z');
+-    });
+-
+-    it('persists lastSyncAt even when the read is empty (clean no-op)', async () => {
+-      mockReadRecords.mockResolvedValue([]);
+-
+-      const result = await sync(now);
+-
+-      expect(mockApiPost).not.toHaveBeenCalled();
+-      expect(result.ingested).toBe(false);
+-      await expect(
+-        AsyncStorage.getItem(SAMSUNG_LAST_SYNC_KEY),
+-      ).resolves.toBe(FIXED_NOW.toISOString());
+-    });
+-
+-    it('reads every granted record type', async () => {
+-      mockGetGrantedRecordTypes.mockResolvedValueOnce(['Steps', 'HeartRate', 'Weight']);
+-
+-      await sync(now);
+-
+-      expect(mockReadRecords).toHaveBeenCalledTimes(3);
+-      expect(mockReadRecords.mock.calls.map((c) => c[0])).toEqual([
+-        'Steps',
+-        'HeartRate',
+-        'Weight',
+-      ]);
+-    });
+-  });
+-
+-  describe('failed ingest does not advance lastSyncAt', () => {
+-    it('rethrows the POST error and leaves lastSyncAt unset', async () => {
+-      mockReadRecords.mockResolvedValueOnce([stepsRecord(1000)]);
+-      mockApiPost.mockRejectedValueOnce(new Error('500 ingest failed'));
+-
+-      await expect(sync(now)).rejects.toThrow('500 ingest failed');
+-
+-      await expect(
+-        AsyncStorage.getItem(SAMSUNG_LAST_SYNC_KEY),
+-      ).resolves.toBeNull();
+-    });
+-
+-    it('keeps a prior lastSyncAt unchanged on a failed ingest', async () => {
+-      await AsyncStorage.setItem(
+-        SAMSUNG_LAST_SYNC_KEY,
+-        '2026-05-30T18:00:00.000Z',
+-      );
+-      mockReadRecords.mockResolvedValueOnce([stepsRecord(1000)]);
+-      mockApiPost.mockRejectedValueOnce(new Error('boom'));
+-
+-      await expect(sync(now)).rejects.toThrow('boom');
+-
+-      await expect(
+-        AsyncStorage.getItem(SAMSUNG_LAST_SYNC_KEY),
+-      ).resolves.toBe('2026-05-30T18:00:00.000Z');
+-    });
+-  });
+-});
+diff --git a/src/services/health/samsungHealth/errors.ts b/src/services/health/samsungHealth/errors.ts
+deleted file mode 100644
+index 14ef908b..00000000
+--- a/src/services/health/samsungHealth/errors.ts
++++ /dev/null
+@@ -1,66 +0,0 @@
+-/**
+- * PR-HK-2.c — Samsung Health connector error taxonomy.
+- *
+- * Errors are explicit and typed (50-Failures #36 "no silent swallow", #50
+- * "fail-explicit"). The sync service surfaces these to the caller so the
+- * connection status can be set to `error` with a real `last_error` rather than
+- * degrading silently to "connected" (UNIFIED_BUILD_PLAN §0 provider-outage
+- * posture).
+- */
+-
+-/** Base class for all Samsung Health connector errors. */
+-export class SamsungHealthError extends Error {
+-  constructor(message: string) {
+-    super(message);
+-    this.name = 'SamsungHealthError';
+-    // Restore prototype chain for `instanceof` across transpile targets.
+-    Object.setPrototypeOf(this, new.target.prototype);
+-  }
+-}
+-
+-/**
+- * Thrown when the connector is invoked on a non-Android platform. Samsung
+- * Health is Android-only (PLATFORM GUARD: `Platform.OS === 'android'`).
+- */
+-export class SamsungHealthUnsupportedError extends SamsungHealthError {
+-  constructor(platformOs: string) {
+-    super(
+-      `Samsung Health is only available on Android (Platform.OS === 'android'); ` +
+-        `current platform is '${platformOs}'.`,
+-    );
+-    this.name = 'SamsungHealthUnsupportedError';
+-  }
+-}
+-
+-/**
+- * Thrown when the Health Connect bridge that Samsung Health writes into is not
+- * available/installed, or fails to initialize. Callers should degrade
+- * gracefully (treat as "no Samsung data available") rather than crash.
+- */
+-export class SamsungHealthUnavailableError extends SamsungHealthError {
+-  constructor(detail?: string) {
+-    super(
+-      `Samsung Health data is unavailable on this device` +
+-        (detail ? `: ${detail}` : '. Health Connect may not be installed.'),
+-    );
+-    this.name = 'SamsungHealthUnavailableError';
+-  }
+-}
+-
+-/**
+- * Thrown when the user has not granted the Health Connect read permissions the
+- * connector needs (the permission-denied path).
+- */
+-export class SamsungHealthPermissionDeniedError extends SamsungHealthError {
+-  /** The record types we needed read access to but were not granted. */
+-  readonly missingRecordTypes: string[];
+-
+-  constructor(missingRecordTypes: string[]) {
+-    super(
+-      `Samsung Health read permission denied for record types: ` +
+-        `${missingRecordTypes.join(', ') || '(none granted)'}.`,
+-    );
+-    this.name = 'SamsungHealthPermissionDeniedError';
+-    this.missingRecordTypes = missingRecordTypes;
+-  }
+-}
+diff --git a/src/services/health/samsungHealth/index.ts b/src/services/health/samsungHealth/index.ts
+deleted file mode 100644
+index 849bfd5d..00000000
+--- a/src/services/health/samsungHealth/index.ts
++++ /dev/null
+@@ -1,67 +0,0 @@
+-/**
+- * PR-HK-2.c — Samsung Health on-device connector (Android).
+- *
+- * Public surface for the Samsung Health connector. Samsung-origin samples are
+- * read through the Android Health Connect bridge, filtered to
+- * `com.sec.android.app.shealth`, and ingested as `provider: SAMSUNG_HEALTH`.
+- *
+- * The folder is file-disjoint from `src/services/health/healthConnect/`
+- * (PR-HK-2.b). The two connectors share the Health Connect bridge but report
+- * distinct providers and filter to distinct data origins.
+- */
+-
+-export {
+-  samsungHealthClient,
+-  initialize,
+-  getGrantedRecordTypes,
+-  readRecords,
+-  getBridge,
+-  __setBridgeForTests,
+-  SAMSUNG_REQUIRED_RECORD_TYPES,
+-  type SamsungHealthClient,
+-  type SamsungHealthBridge,
+-} from './samsungHealthClient';
+-
+-export {
+-  samsungHealthNormalizer,
+-  normalizeRecord,
+-  normalizeRecords,
+-  type NormalizedSample,
+-  type SamsungHealthNormalizer,
+-} from './samsungHealthNormalizer';
+-
+-export {
+-  samsungHealthSyncService,
+-  sync,
+-  getLastSyncAt,
+-  setLastSyncAt,
+-  clearLastSyncAt,
+-  SAMSUNG_LAST_SYNC_KEY,
+-  SAMSUNG_INGEST_PATH,
+-  DEFAULT_BACKFILL_DAYS,
+-  type SamsungSyncResult,
+-  type SamsungHealthSyncService,
+-} from './samsungHealthSyncService';
+-
+-export {
+-  SamsungHealthError,
+-  SamsungHealthUnsupportedError,
+-  SamsungHealthUnavailableError,
+-  SamsungHealthPermissionDeniedError,
+-} from './errors';
+-
+-export {
+-  SAMSUNG_HEALTH_PACKAGE_NAME,
+-  SAMSUNG_HEALTH_PROVIDER,
+-  extractPackageName,
+-  isSamsungHealthRecord,
+-  type SamsungHealthRecord,
+-  type SamsungReadableRecordType,
+-  type SamsungReadRecordsOptions,
+-  type SamsungTimeRangeFilter,
+-  type SamsungDataOrigin,
+-  type SamsungRecordMetadata,
+-  type WearableProvider,
+-  type WearableMetricType,
+-  type WearableMetricBucket,
+-} from './types';
+diff --git a/src/services/health/samsungHealth/samsungHealthClient.ts b/src/services/health/samsungHealth/samsungHealthClient.ts
+deleted file mode 100644
+index 8cf32587..00000000
+--- a/src/services/health/samsungHealth/samsungHealthClient.ts
++++ /dev/null
+@@ -1,228 +0,0 @@
+-/**
+- * PR-HK-2.c — `samsungHealthClient`
+- *
+- * The Samsung Health read seam. Today it reads through the Android Health
+- * Connect bridge (`react-native-health-connect`) and FILTERS the returned
+- * records to only those whose `metadata.dataOrigin.packageName` equals
+- * `com.sec.android.app.shealth` (Samsung Health). Tomorrow a native Samsung
+- * SDK module can replace {@link getBridge} with zero change to the public
+- * `readRecords` / `initialize` / `getGrantedRecordTypes` contract — that is the
+- * "clean seam" requirement (UNIFIED_BUILD_PLAN §0).
+- *
+- * This is the provider-distinct differentiator vs PR-HK-2.b (Health Connect):
+- * that connector reports every Health Connect record as `HEALTH_CONNECT`; this
+- * one keeps ONLY the Samsung-origin subset and reports `SAMSUNG_HEALTH`. The
+- * two folders are file-disjoint by construction.
+- *
+- * PLATFORM GUARD: every entry point throws {@link SamsungHealthUnsupportedError}
+- * off Android. Permission gaps throw {@link SamsungHealthPermissionDeniedError};
+- * a missing/failed Health Connect install surfaces as
+- * {@link SamsungHealthUnavailableError} (graceful-degrade signal).
+- */
+-
+-import { Platform } from 'react-native';
+-import { assertAndroidHealthConnectEnabled } from '../../../config/healthConnect';
+-import { logger } from '../../../utils/logger';
+-import {
+-  SAMSUNG_HEALTH_PACKAGE_NAME,
+-  isSamsungHealthRecord,
+-  type SamsungHealthRecord,
+-  type SamsungReadRecordsOptions,
+-  type SamsungReadableRecordType,
+-} from './types';
+-import {
+-  SamsungHealthPermissionDeniedError,
+-  SamsungHealthUnavailableError,
+-  SamsungHealthUnsupportedError,
+-} from './errors';
+-
+-const LOG_CONTEXT = 'samsungHealthClient';
+-
+-/**
+- * The narrow surface of `react-native-health-connect` this connector depends
+- * on. Declared locally so the connector keeps a typed contract against the
+- * bridge without a compile-time dependency on the native package's generated
+- * types (the package is Android-native and not resolvable in every build/test
+- * environment). A future Samsung SDK module implements this same shape.
+- */
+-export interface SamsungHealthBridge {
+-  /** Initialize the underlying client; resolves false if unavailable. */
+-  initialize(): Promise<boolean>;
+-  /** Return the set of currently-granted permissions. */
+-  getGrantedPermissions(): Promise<
+-    Array<{ accessType: string; recordType: string }>
+-  >;
+-  /** Read records of one type within the given options. */
+-  readRecords(
+-    recordType: SamsungReadableRecordType,
+-    options: SamsungReadRecordsOptions,
+-  ): Promise<{ records: SamsungHealthRecord[]; pageToken?: string }>;
+-}
+-
+-/**
+- * Lazily resolve the native bridge. Done via `require` (not a static `import`)
+- * so this module can be imported on any platform — and unit-tested with a
+- * mock — without the Android-only native package being present at module-load
+- * time. Tests inject a fake via {@link __setBridgeForTests}.
+- */
+-let bridgeOverride: SamsungHealthBridge | null = null;
+-
+-export function getBridge(): SamsungHealthBridge {
+-  assertAndroid();
+-  if (bridgeOverride) return bridgeOverride;
+-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+-  const mod = require('react-native-health-connect') as SamsungHealthBridge;
+-  return mod;
+-}
+-
+-/** Test-only seam to inject a fake Health Connect bridge. */
+-export function __setBridgeForTests(bridge: SamsungHealthBridge | null): void {
+-  bridgeOverride = bridge;
+-}
+-
+-/** Throw if we are not on Android (Samsung Health is Android-only). */
+-function assertAndroid(): void {
+-  if (Platform.OS !== 'android') {
+-    throw new SamsungHealthUnsupportedError(Platform.OS);
+-  }
+-  assertAndroidHealthConnectEnabled();
+-}
+-
+-/**
+- * The Health Connect record types the Samsung connector reads. These map to
+- * the canonical metrics enumerated in the normalizer (AGENT_2_CODING_PLAN
+- * §3.1 Samsung row: "all canonical metrics, both buckets").
+- */
+-export const SAMSUNG_REQUIRED_RECORD_TYPES: SamsungReadableRecordType[] = [
+-  'Steps',
+-  'ActiveCaloriesBurned',
+-  'HeartRate',
+-  'RestingHeartRate',
+-  'Vo2Max',
+-  'ExerciseSession',
+-  'Distance',
+-  'Weight',
+-  'BodyFat',
+-  'BloodPressure',
+-  'SleepSession',
+-  'HeartRateVariabilityRmssd',
+-  'OxygenSaturation',
+-  'RespiratoryRate',
+-  'BodyTemperature',
+-];
+-
+-/**
+- * Initialize the underlying bridge. Resolves the bridge handle or throws
+- * {@link SamsungHealthUnavailableError} if Health Connect is not installed /
+- * cannot initialize (graceful-degrade signal for the sync service).
+- */
+-export async function initialize(): Promise<SamsungHealthBridge> {
+-  assertAndroid();
+-  const bridge = getBridge();
+-  let ok = false;
+-  try {
+-    ok = await bridge.initialize();
+-  } catch (err) {
+-    logger.warn(LOG_CONTEXT, 'Health Connect initialize threw', err);
+-    throw new SamsungHealthUnavailableError(
+-      err instanceof Error ? err.message : String(err),
+-    );
+-  }
+-  if (!ok) {
+-    throw new SamsungHealthUnavailableError();
+-  }
+-  return bridge;
+-}
+-
+-/**
+- * Return the subset of {@link SAMSUNG_REQUIRED_RECORD_TYPES} for which the user
+- * has granted READ access. Used by callers to decide which record types are
+- * safe to read and to detect the permission-denied path.
+- *
+- * Note (PLATFORM GUARD detail): Health Connect permissions are per record
+- * type, not per data-origin, so this reflects which Samsung-eligible record
+- * types we can read at all. The Samsung-origin filtering happens at read time
+- * in {@link readRecords}.
+- */
+-export async function getGrantedRecordTypes(): Promise<SamsungReadableRecordType[]> {
+-  assertAndroid();
+-  const bridge = getBridge();
+-  let granted: Array<{ accessType: string; recordType: string }>;
+-  try {
+-    granted = await bridge.getGrantedPermissions();
+-  } catch (err) {
+-    logger.warn(LOG_CONTEXT, 'getGrantedPermissions threw', err);
+-    throw new SamsungHealthUnavailableError(
+-      err instanceof Error ? err.message : String(err),
+-    );
+-  }
+-  const grantedReadTypes = new Set(
+-    (granted ?? [])
+-      .filter((p) => p && p.accessType === 'read')
+-      .map((p) => p.recordType),
+-  );
+-  return SAMSUNG_REQUIRED_RECORD_TYPES.filter((t) => grantedReadTypes.has(t));
+-}
+-
+-/**
+- * Read Samsung Health records of one type within a time window.
+- *
+- * Behaviour:
+- *  1. Android-only (PLATFORM GUARD).
+- *  2. If READ permission for `recordType` is not granted →
+- *     {@link SamsungHealthPermissionDeniedError}.
+- *  3. Reads via the Health Connect bridge, then FILTERS to records whose
+- *     `metadata.dataOrigin.packageName === 'com.sec.android.app.shealth'`.
+- *     Non-Samsung-origin records (e.g. Google Fit, a Garmin sync, the phone's
+- *     own step counter) are dropped — this is what makes the connector
+- *     provider-distinct from PR-HK-2.b.
+- *
+- * The public shape matches the Health Connect `readRecords` API (same name,
+- * same args) so the future native-SDK seam is drop-in.
+- */
+-export async function readRecords(
+-  recordType: SamsungReadableRecordType,
+-  options: SamsungReadRecordsOptions,
+-): Promise<SamsungHealthRecord[]> {
+-  assertAndroid();
+-  const bridge = getBridge();
+-
+-  // Permission guard: confirm READ access for this record type.
+-  const grantedTypes = await getGrantedRecordTypes();
+-  if (!grantedTypes.includes(recordType)) {
+-    throw new SamsungHealthPermissionDeniedError([recordType]);
+-  }
+-
+-  let result: { records: SamsungHealthRecord[]; pageToken?: string };
+-  try {
+-    result = await bridge.readRecords(recordType, options);
+-  } catch (err) {
+-    logger.error(LOG_CONTEXT, `readRecords(${recordType}) failed`, err);
+-    throw new SamsungHealthUnavailableError(
+-      err instanceof Error ? err.message : String(err),
+-    );
+-  }
+-
+-  const all = Array.isArray(result?.records) ? result.records : [];
+-  // FILTER: Samsung-origin only. This is the connector's reason to exist.
+-  const samsungOnly = all.filter((record) => isSamsungHealthRecord(record));
+-
+-  logger.log(
+-    LOG_CONTEXT,
+-    `readRecords(${recordType}): kept ${samsungOnly.length}/${all.length} ` +
+-      `records with dataOrigin=${SAMSUNG_HEALTH_PACKAGE_NAME}`,
+-  );
+-
+-  // Ensure recordType is stamped (the bridge does, but defend the contract for
+-  // the normalizer which switches on it).
+-  return samsungOnly.map((r) => ({ ...r, recordType }));
+-}
+-
+-export const samsungHealthClient = {
+-  initialize,
+-  getGrantedRecordTypes,
+-  readRecords,
+-  SAMSUNG_REQUIRED_RECORD_TYPES,
+-};
+-
+-export type SamsungHealthClient = typeof samsungHealthClient;
+diff --git a/src/services/health/samsungHealth/samsungHealthNormalizer.ts b/src/services/health/samsungHealth/samsungHealthNormalizer.ts
+deleted file mode 100644
+index 08e5dbe2..00000000
+--- a/src/services/health/samsungHealth/samsungHealthNormalizer.ts
++++ /dev/null
+@@ -1,330 +0,0 @@
+-/**
+- * PR-HK-2.c — `samsungHealthNormalizer`
+- *
+- * Maps Samsung-origin Health Connect records to canonical
+- * {@link NormalizedSample}s. The record→metric mapping is the SAME as the
+- * Health Connect connector (PR-HK-2.b) — Samsung Health writes Health Connect
+- * record types — but every emitted sample carries `provider: 'SAMSUNG_HEALTH'`
+- * instead of `'HEALTH_CONNECT'`. That single field is the provider-distinct
+- * differentiator at the normalization boundary.
+- *
+- * The canonical boundary mirrors the backend `NormalizedSample`
+- * (growth-project-backend `src/wearables/normalization/normalizer.types.ts`),
+- * in camelCase, so the sync service can POST it straight to
+- * `POST /v1/wearables/samples/ingest`. Anything not listed below is dropped —
+- * no speculative ingestion (50-Failures #42; AGENT_2_CODING_PLAN §3.1).
+- */
+-
+-import {
+-  SAMSUNG_HEALTH_PROVIDER,
+-  extractPackageName,
+-  type SamsungHealthRecord,
+-  type WearableMetricBucket,
+-  type WearableMetricType,
+-  type WearableProvider,
+-} from './types';
+-
+-/**
+- * Canonical normalized sample (mobile mirror of the backend type, camelCase).
+- * `dedup_key` / `recorded_at` are computed server-side and intentionally
+- * absent here.
+- */
+-export interface NormalizedSample {
+-  provider: WearableProvider;
+-  metric: WearableMetricType;
+-  bucket: WearableMetricBucket;
+-  value: number;
+-  unit: string;
+-  startAt: string;
+-  endAt: string;
+-  sourceTz?: string | null;
+-  sourceRecordId?: string | null;
+-}
+-
+-/** Canonical bucket for each metric (mirror of `WearableMetricDef.bucket`). */
+-const METRIC_BUCKET: Record<WearableMetricType, WearableMetricBucket> = {
+-  STEPS: 'HEALTH_FITNESS',
+-  ACTIVE_ENERGY_KCAL: 'HEALTH_FITNESS',
+-  RESTING_HEART_RATE_BPM: 'SLEEP_RECOVERY',
+-  HEART_RATE_BPM: 'HEALTH_FITNESS',
+-  VO2_MAX: 'HEALTH_FITNESS',
+-  WORKOUT_DURATION_MIN: 'HEALTH_FITNESS',
+-  WORKOUT_DISTANCE_M: 'HEALTH_FITNESS',
+-  TRAINING_LOAD: 'HEALTH_FITNESS',
+-  BODY_WEIGHT_KG: 'HEALTH_FITNESS',
+-  BODY_FAT_PCT: 'HEALTH_FITNESS',
+-  BLOOD_PRESSURE_SYS: 'HEALTH_FITNESS',
+-  BLOOD_PRESSURE_DIA: 'HEALTH_FITNESS',
+-  SLEEP_TOTAL_MIN: 'SLEEP_RECOVERY',
+-  SLEEP_REM_MIN: 'SLEEP_RECOVERY',
+-  SLEEP_DEEP_MIN: 'SLEEP_RECOVERY',
+-  SLEEP_LIGHT_MIN: 'SLEEP_RECOVERY',
+-  SLEEP_AWAKE_MIN: 'SLEEP_RECOVERY',
+-  SLEEP_EFFICIENCY_PCT: 'SLEEP_RECOVERY',
+-  HRV_MS: 'SLEEP_RECOVERY',
+-  RECOVERY_SCORE: 'SLEEP_RECOVERY',
+-  READINESS_SCORE: 'SLEEP_RECOVERY',
+-  STRAIN_SCORE: 'SLEEP_RECOVERY',
+-  BODY_BATTERY: 'SLEEP_RECOVERY',
+-  BODY_TEMP_DEVIATION_C: 'SLEEP_RECOVERY',
+-  RESPIRATORY_RATE_BRPM: 'SLEEP_RECOVERY',
+-  SPO2_PCT: 'SLEEP_RECOVERY',
+-};
+-
+-/** Canonical unit for each metric (mirror of `WearableMetricDef.unit`). */
+-const METRIC_UNIT: Record<WearableMetricType, string> = {
+-  STEPS: 'count',
+-  ACTIVE_ENERGY_KCAL: 'kcal',
+-  RESTING_HEART_RATE_BPM: 'bpm',
+-  HEART_RATE_BPM: 'bpm',
+-  VO2_MAX: 'ml/kg/min',
+-  WORKOUT_DURATION_MIN: 'min',
+-  WORKOUT_DISTANCE_M: 'm',
+-  TRAINING_LOAD: 'score',
+-  BODY_WEIGHT_KG: 'kg',
+-  BODY_FAT_PCT: '%',
+-  BLOOD_PRESSURE_SYS: 'mmHg',
+-  BLOOD_PRESSURE_DIA: 'mmHg',
+-  SLEEP_TOTAL_MIN: 'min',
+-  SLEEP_REM_MIN: 'min',
+-  SLEEP_DEEP_MIN: 'min',
+-  SLEEP_LIGHT_MIN: 'min',
+-  SLEEP_AWAKE_MIN: 'min',
+-  SLEEP_EFFICIENCY_PCT: '%',
+-  HRV_MS: 'ms',
+-  RECOVERY_SCORE: 'score',
+-  READINESS_SCORE: 'score',
+-  STRAIN_SCORE: 'score',
+-  BODY_BATTERY: 'score',
+-  BODY_TEMP_DEVIATION_C: 'C',
+-  RESPIRATORY_RATE_BRPM: 'brpm',
+-  SPO2_PCT: '%',
+-};
+-
+-// ─── value/time helpers ──────────────────────────────────────────────────────
+-
+-function num(value: unknown): number | null {
+-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+-}
+-
+-/** Read a nested numeric field, e.g. path ['energy','inKilocalories']. */
+-function nestedNum(record: SamsungHealthRecord, path: string[]): number | null {
+-  let cur: unknown = record;
+-  for (const key of path) {
+-    if (cur == null || typeof cur !== 'object') return null;
+-    cur = (cur as Record<string, unknown>)[key];
+-  }
+-  return num(cur);
+-}
+-
+-function startOf(record: SamsungHealthRecord): string | null {
+-  return record.startTime ?? record.time ?? null;
+-}
+-
+-function endOf(record: SamsungHealthRecord): string | null {
+-  return record.endTime ?? record.startTime ?? record.time ?? null;
+-}
+-
+-function durationMinutes(record: SamsungHealthRecord): number | null {
+-  const start = startOf(record);
+-  const end = record.endTime ?? null;
+-  if (!start || !end) return null;
+-  const ms = new Date(end).getTime() - new Date(start).getTime();
+-  if (!Number.isFinite(ms) || ms < 0) return null;
+-  return ms / 60000;
+-}
+-
+-/** Sum the durations (minutes) of sleep stages matching the given stage codes. */
+-function sleepStageMinutes(
+-  record: SamsungHealthRecord,
+-  stageTypes: string[],
+-): number | null {
+-  const stages = (record as { stages?: unknown }).stages;
+-  if (!Array.isArray(stages)) return null;
+-  let total = 0;
+-  let matched = false;
+-  for (const stage of stages) {
+-    if (!stage || typeof stage !== 'object') continue;
+-    const s = stage as { stage?: string; startTime?: string; endTime?: string };
+-    if (s.stage && stageTypes.includes(s.stage) && s.startTime && s.endTime) {
+-      const ms = new Date(s.endTime).getTime() - new Date(s.startTime).getTime();
+-      if (Number.isFinite(ms) && ms >= 0) {
+-        total += ms / 60000;
+-        matched = true;
+-      }
+-    }
+-  }
+-  return matched ? total : null;
+-}
+-
+-// ─── per-metric sample factory ───────────────────────────────────────────────
+-
+-function sample(
+-  metric: WearableMetricType,
+-  value: number,
+-  record: SamsungHealthRecord,
+-  window?: { startAt?: string | null; endAt?: string | null },
+-): NormalizedSample | null {
+-  const startAt = window?.startAt ?? startOf(record);
+-  const endAt = window?.endAt ?? endOf(record);
+-  if (!startAt || !endAt) return null;
+-  if (!Number.isFinite(value)) return null;
+-  return {
+-    provider: SAMSUNG_HEALTH_PROVIDER,
+-    metric,
+-    bucket: METRIC_BUCKET[metric],
+-    value,
+-    unit: METRIC_UNIT[metric],
+-    startAt,
+-    endAt,
+-    sourceTz: (record as { sourceTz?: string | null }).sourceTz ?? null,
+-    sourceRecordId: record.metadata?.id ?? null,
+-  };
+-}
+-
+-/**
+- * Map a single Samsung-origin Health Connect record to zero-or-more canonical
+- * samples. Records of unrecognised types, or with no usable value, yield [].
+- */
+-export function normalizeRecord(record: SamsungHealthRecord): NormalizedSample[] {
+-  if (!record || !record.recordType) return [];
+-  const out: NormalizedSample[] = [];
+-  const push = (s: NormalizedSample | null): void => {
+-    if (s) out.push(s);
+-  };
+-
+-  switch (record.recordType) {
+-    case 'Steps': {
+-      const v = num((record as { count?: unknown }).count);
+-      if (v != null) push(sample('STEPS', v, record));
+-      break;
+-    }
+-    case 'ActiveCaloriesBurned': {
+-      const v = nestedNum(record, ['energy', 'inKilocalories']);
+-      if (v != null) push(sample('ACTIVE_ENERGY_KCAL', v, record));
+-      break;
+-    }
+-    case 'HeartRate': {
+-      // Health Connect HeartRate carries a `samples[]` of bpm readings.
+-      const samples = (record as { samples?: unknown }).samples;
+-      if (Array.isArray(samples)) {
+-        for (const hr of samples) {
+-          const bpm = num((hr as { beatsPerMinute?: unknown })?.beatsPerMinute);
+-          const t = (hr as { time?: string })?.time;
+-          if (bpm != null && t) {
+-            push(sample('HEART_RATE_BPM', bpm, record, { startAt: t, endAt: t }));
+-          }
+-        }
+-      }
+-      break;
+-    }
+-    case 'RestingHeartRate': {
+-      const v = num((record as { beatsPerMinute?: unknown }).beatsPerMinute);
+-      if (v != null) push(sample('RESTING_HEART_RATE_BPM', v, record));
+-      break;
+-    }
+-    case 'Vo2Max': {
+-      const v = num((record as { vo2MillilitersPerMinuteKilogram?: unknown })
+-        .vo2MillilitersPerMinuteKilogram);
+-      if (v != null) push(sample('VO2_MAX', v, record));
+-      break;
+-    }
+-    case 'ExerciseSession': {
+-      const dur = durationMinutes(record);
+-      if (dur != null) push(sample('WORKOUT_DURATION_MIN', dur, record));
+-      break;
+-    }
+-    case 'Distance': {
+-      const v = nestedNum(record, ['distance', 'inMeters']);
+-      if (v != null) push(sample('WORKOUT_DISTANCE_M', v, record));
+-      break;
+-    }
+-    case 'Weight': {
+-      const v = nestedNum(record, ['weight', 'inKilograms']);
+-      if (v != null) push(sample('BODY_WEIGHT_KG', v, record));
+-      break;
+-    }
+-    case 'BodyFat': {
+-      const v = nestedNum(record, ['percentage', 'value']);
+-      if (v != null) push(sample('BODY_FAT_PCT', v, record));
+-      break;
+-    }
+-    case 'BloodPressure': {
+-      const sys = nestedNum(record, ['systolic', 'inMillimetersOfMercury']);
+-      const dia = nestedNum(record, ['diastolic', 'inMillimetersOfMercury']);
+-      if (sys != null) push(sample('BLOOD_PRESSURE_SYS', sys, record));
+-      if (dia != null) push(sample('BLOOD_PRESSURE_DIA', dia, record));
+-      break;
+-    }
+-    case 'SleepSession': {
+-      const total = durationMinutes(record);
+-      if (total != null) push(sample('SLEEP_TOTAL_MIN', total, record));
+-      push(sampleStage(record, 'SLEEP_REM_MIN', ['STAGE_TYPE_REM', 'rem']));
+-      push(sampleStage(record, 'SLEEP_DEEP_MIN', ['STAGE_TYPE_DEEP', 'deep']));
+-      push(sampleStage(record, 'SLEEP_LIGHT_MIN', ['STAGE_TYPE_LIGHT', 'light']));
+-      push(sampleStage(record, 'SLEEP_AWAKE_MIN', ['STAGE_TYPE_AWAKE', 'awake']));
+-      break;
+-    }
+-    case 'HeartRateVariabilityRmssd': {
+-      const v = num((record as { heartRateVariabilityMillis?: unknown })
+-        .heartRateVariabilityMillis);
+-      if (v != null) push(sample('HRV_MS', v, record));
+-      break;
+-    }
+-    case 'OxygenSaturation': {
+-      const v = nestedNum(record, ['percentage', 'value']);
+-      if (v != null) push(sample('SPO2_PCT', v, record));
+-      break;
+-    }
+-    case 'RespiratoryRate': {
+-      const v = num((record as { rate?: unknown }).rate);
+-      if (v != null) push(sample('RESPIRATORY_RATE_BRPM', v, record));
+-      break;
+-    }
+-    case 'BodyTemperature': {
+-      const v = nestedNum(record, ['temperature', 'inCelsius']);
+-      if (v != null) push(sample('BODY_TEMP_DEVIATION_C', v, record));
+-      break;
+-    }
+-    default:
+-      // Unrecognised record type → drop (no speculative ingestion).
+-      break;
+-  }
+-
+-  return out;
+-}
+-
+-function sampleStage(
+-  record: SamsungHealthRecord,
+-  metric: WearableMetricType,
+-  stageTypes: string[],
+-): NormalizedSample | null {
+-  const mins = sleepStageMinutes(record, stageTypes);
+-  return mins != null ? sample(metric, mins, record) : null;
+-}
+-
+-/**
+- * Normalize a batch of records. Defends the Samsung-origin invariant a second
+- * time (defence in depth): even if a non-Samsung record reaches the
+- * normalizer, it is dropped, so a sample tagged `SAMSUNG_HEALTH` can never have
+- * come from another data origin.
+- */
+-export function normalizeRecords(records: SamsungHealthRecord[]): NormalizedSample[] {
+-  const out: NormalizedSample[] = [];
+-  for (const record of records ?? []) {
+-    if (extractPackageName(record?.metadata?.dataOrigin) !== 'com.sec.android.app.shealth') {
+-      continue;
+-    }
+-    out.push(...normalizeRecord(record));
+-  }
+-  return out;
+-}
+-
+-export const samsungHealthNormalizer = {
+-  normalizeRecord,
+-  normalizeRecords,
+-  METRIC_BUCKET,
+-  METRIC_UNIT,
+-};
+-
+-export type SamsungHealthNormalizer = typeof samsungHealthNormalizer;
+diff --git a/src/services/health/samsungHealth/samsungHealthSyncService.ts b/src/services/health/samsungHealth/samsungHealthSyncService.ts
+deleted file mode 100644
+index 9d90b2d7..00000000
+--- a/src/services/health/samsungHealth/samsungHealthSyncService.ts
++++ /dev/null
+@@ -1,208 +0,0 @@
+-/**
+- * PR-HK-2.c — `samsungHealthSyncService`
+- *
+- * Orchestrates the on-device Samsung Health sync:
+- *   1. PLATFORM GUARD — Android only (throws {@link SamsungHealthUnsupportedError}).
+- *   2. Initialize the Health Connect bridge Samsung writes into; if it is not
+- *      installed, degrade gracefully (no-op result, status reported) rather
+- *      than crash (UNIFIED_BUILD_PLAN §0; 50-Failures #50).
+- *   3. Read each granted, Samsung-eligible record type since `lastSyncAt`
+- *      (falling back to a 30-day backfill on first run), filtered to
+- *      Samsung-origin records by {@link samsungHealthClient}.
+- *   4. Normalize to canonical {@link NormalizedSample}s tagged
+- *      `provider: SAMSUNG_HEALTH`.
+- *   5. POST the batch to `POST /v1/wearables/samples/ingest` (one batched
+- *      request — no N+1, 50-Failures #21).
+- *   6. Persist `lastSyncAt` under `wearable:samsung-health:lastSyncAt` ONLY on
+- *      a successful ingest, so a failed sync re-reads the same window next run.
+- *
+- * This service holds the orchestration; the read seam (client) and the mapping
+- * seam (normalizer) are separate and independently testable.
+- */
+-
+-import AsyncStorage from '@react-native-async-storage/async-storage';
+-import { Platform } from 'react-native';
+-import { assertAndroidHealthConnectEnabled } from '../../../config/healthConnect';
+-import api from '../../api';
+-import { logger } from '../../../utils/logger';
+-import { samsungHealthClient } from './samsungHealthClient';
+-import {
+-  normalizeRecords,
+-  type NormalizedSample,
+-} from './samsungHealthNormalizer';
+-import {
+-  SamsungHealthPermissionDeniedError,
+-  SamsungHealthUnavailableError,
+-  SamsungHealthUnsupportedError,
+-} from './errors';
+-import type { SamsungReadableRecordType } from './types';
+-
+-const LOG_CONTEXT = 'samsungHealthSyncService';
+-
+-/** AsyncStorage key for the last successful sync timestamp (ISO 8601). */
+-export const SAMSUNG_LAST_SYNC_KEY = 'wearable:samsung-health:lastSyncAt';
+-
+-/** Backend ingest endpoint (relative to the `/api` base URL). */
+-export const SAMSUNG_INGEST_PATH = '/v1/wearables/samples/ingest';
+-
+-/** Default first-run backfill window: 30 days (AGENT_1 §3.4 "last 30 days"). */
+-export const DEFAULT_BACKFILL_DAYS = 30;
+-
+-/** Outcome of a sync run. */
+-export interface SamsungSyncResult {
+-  /** Whether any samples were read + ingested. */
+-  ingested: boolean;
+-  /** Count of canonical samples POSTed. */
+-  sampleCount: number;
+-  /** Record types actually read (granted + Samsung-eligible). */
+-  recordTypesRead: SamsungReadableRecordType[];
+-  /** The window start used for this run (ISO 8601). */
+-  windowStart: string;
+-  /** The window end used for this run (ISO 8601). */
+-  windowEnd: string;
+-  /** New lastSyncAt persisted (ISO 8601), or null if nothing was persisted. */
+-  lastSyncAt: string | null;
+-}
+-
+-// ─── lastSyncAt persistence ──────────────────────────────────────────────────
+-
+-/** Read the persisted lastSyncAt, or null if never synced / unreadable. */
+-export async function getLastSyncAt(): Promise<string | null> {
+-  try {
+-    const raw = await AsyncStorage.getItem(SAMSUNG_LAST_SYNC_KEY);
+-    if (!raw) return null;
+-    // Validate it is a parseable ISO timestamp before trusting it.
+-    const t = new Date(raw).getTime();
+-    return Number.isFinite(t) ? raw : null;
+-  } catch (err) {
+-    logger.warn(LOG_CONTEXT, 'getLastSyncAt read failed', err);
+-    return null;
+-  }
+-}
+-
+-/** Persist a new lastSyncAt (ISO 8601). */
+-export async function setLastSyncAt(iso: string): Promise<void> {
+-  await AsyncStorage.setItem(SAMSUNG_LAST_SYNC_KEY, iso);
+-}
+-
+-/** Clear the persisted lastSyncAt (e.g. on disconnect). */
+-export async function clearLastSyncAt(): Promise<void> {
+-  try {
+-    await AsyncStorage.removeItem(SAMSUNG_LAST_SYNC_KEY);
+-  } catch (err) {
+-    logger.warn(LOG_CONTEXT, 'clearLastSyncAt failed', err);
+-  }
+-}
+-
+-// ─── ingest ──────────────────────────────────────────────────────────────────
+-
+-async function postSamples(samples: NormalizedSample[]): Promise<void> {
+-  // Single batched request — never one POST per sample (50-Failures #21).
+-  await api.post(SAMSUNG_INGEST_PATH, {
+-    provider: 'SAMSUNG_HEALTH',
+-    samples,
+-  });
+-}
+-
+-// ─── sync ─────────────────────────────────────────────────────────────────────
+-
+-/**
+- * Run one Samsung Health sync cycle.
+- *
+- * @param now injectable clock (defaults to `Date`) for deterministic tests.
+- */
+-export async function sync(
+-  now: () => Date = () => new Date(),
+-): Promise<SamsungSyncResult> {
+-  if (Platform.OS !== 'android') {
+-    throw new SamsungHealthUnsupportedError(Platform.OS);
+-  }
+-  assertAndroidHealthConnectEnabled();
+-
+-  const end = now();
+-  const windowEnd = end.toISOString();
+-
+-  const last = await getLastSyncAt();
+-  const start = last
+-    ? new Date(last)
+-    : new Date(end.getTime() - DEFAULT_BACKFILL_DAYS * 24 * 60 * 60 * 1000);
+-  const windowStart = start.toISOString();
+-
+-  // Initialize the bridge; a missing Health Connect install degrades to a
+-  // no-op result rather than throwing up the stack (graceful degrade).
+-  try {
+-    await samsungHealthClient.initialize();
+-  } catch (err) {
+-    if (err instanceof SamsungHealthUnavailableError) {
+-      logger.warn(LOG_CONTEXT, 'Health Connect unavailable; skipping sync', err);
+-      return {
+-        ingested: false,
+-        sampleCount: 0,
+-        recordTypesRead: [],
+-        windowStart,
+-        windowEnd,
+-        lastSyncAt: last,
+-      };
+-    }
+-    throw err;
+-  }
+-
+-  // Only read the record types the user actually granted.
+-  const grantedTypes = await samsungHealthClient.getGrantedRecordTypes();
+-  if (grantedTypes.length === 0) {
+-    // Permission-denied path: nothing readable. Surface explicitly so the
+-    // connection status can reflect it; do NOT advance lastSyncAt.
+-    throw new SamsungHealthPermissionDeniedError([]);
+-  }
+-
+-  const timeRangeFilter = {
+-    operator: 'between' as const,
+-    startTime: windowStart,
+-    endTime: windowEnd,
+-  };
+-
+-  const allSamples: NormalizedSample[] = [];
+-  for (const recordType of grantedTypes) {
+-    const records = await samsungHealthClient.readRecords(recordType, {
+-      timeRangeFilter,
+-    });
+-    // Normalizer re-asserts Samsung-origin (defence in depth) and tags
+-    // provider: SAMSUNG_HEALTH.
+-    allSamples.push(...normalizeRecords(records));
+-  }
+-
+-  if (allSamples.length > 0) {
+-    await postSamples(allSamples);
+-  }
+-
+-  // Persist lastSyncAt ONLY after a successful ingest (or a clean empty read),
+-  // so a transient failure above re-reads the same window next run.
+-  await setLastSyncAt(windowEnd);
+-
+-  logger.log(
+-    LOG_CONTEXT,
+-    `sync complete: ${allSamples.length} samples from ${grantedTypes.length} ` +
+-      `record types; lastSyncAt=${windowEnd}`,
+-  );
+-
+-  return {
+-    ingested: allSamples.length > 0,
+-    sampleCount: allSamples.length,
+-    recordTypesRead: grantedTypes,
+-    windowStart,
+-    windowEnd,
+-    lastSyncAt: windowEnd,
+-  };
+-}
+-
+-export const samsungHealthSyncService = {
+-  sync,
+-  getLastSyncAt,
+-  setLastSyncAt,
+-  clearLastSyncAt,
+-  SAMSUNG_LAST_SYNC_KEY,
+-  SAMSUNG_INGEST_PATH,
+-  DEFAULT_BACKFILL_DAYS,
+-};
+-
+-export type SamsungHealthSyncService = typeof samsungHealthSyncService;
+diff --git a/src/services/health/samsungHealth/types.ts b/src/services/health/samsungHealth/types.ts
+deleted file mode 100644
+index de1006af..00000000
+--- a/src/services/health/samsungHealth/types.ts
++++ /dev/null
+@@ -1,181 +0,0 @@
+-/**
+- * PR-HK-2.c — Samsung Health on-device connector: shared types.
+- *
+- * Samsung Health has no stable JS↔RN bridge package on mainstream npm. The
+- * implemented approach (per UNIFIED_BUILD_PLAN §0 on-device locks and
+- * AGENT_2_CODING_PLAN §3 "Samsung Health … data types → all canonical metrics
+- * mapped device-side") reads Samsung-origin samples through the Android
+- * **Health Connect** bridge (`react-native-health-connect`): Samsung Health
+- * writes into Health Connect on devices that have it, tagging every record
+- * with a `dataOrigin` of `com.sec.android.app.shealth`. This connector FILTERS
+- * Health Connect records to that origin and reports them as
+- * `provider: SAMSUNG_HEALTH` — the provider-distinct differentiator vs the
+- * Health Connect connector (PR-HK-2.b), which reports `HEALTH_CONNECT`.
+- *
+- * `samsungHealthClient.ts` is also the clean seam for a future native Samsung
+- * SDK module: swapping the underlying reader changes nothing in this file's
+- * public `readRecords` contract.
+- *
+- * These types intentionally mirror the subset of the Health Connect record
+- * shape this connector depends on. They are kept local (not imported from
+- * `@prisma/client`, which is a backend-only dependency) so the mobile bundle
+- * stays free of server packages. The string-union enums below are the
+- * canonical wire values the backend ingest endpoint
+- * (`POST /v1/wearables/samples/ingest`) expects — they match the Prisma
+- * `WearableProvider` / `WearableMetricType` / `WearableMetricBucket` enums
+- * 1:1 (AGENT_2_CODING_PLAN §2.1/§2.2).
+- */
+-
+-/** Samsung Health's Health Connect package id — the filter discriminator. */
+-export const SAMSUNG_HEALTH_PACKAGE_NAME = 'com.sec.android.app.shealth' as const;
+-
+-/**
+- * Canonical wearable provider tag (mirror of Prisma `WearableProvider`). This
+- * connector only ever emits `SAMSUNG_HEALTH`.
+- */
+-export type WearableProvider =
+-  | 'APPLE_HEALTHKIT'
+-  | 'HEALTH_CONNECT'
+-  | 'GARMIN'
+-  | 'FITBIT'
+-  | 'STRAVA'
+-  | 'POLAR'
+-  | 'SAMSUNG_HEALTH'
+-  | 'WAHOO'
+-  | 'WITHINGS'
+-  | 'PELOTON'
+-  | 'MYFITNESSPAL'
+-  | 'OURA'
+-  | 'WHOOP'
+-  | 'EIGHT_SLEEP'
+-  | 'BEDDIT';
+-
+-/** The provider value this connector always tags samples with. */
+-export const SAMSUNG_HEALTH_PROVIDER: WearableProvider = 'SAMSUNG_HEALTH';
+-
+-/** Canonical metric taxonomy (mirror of Prisma `WearableMetricType`). */
+-export type WearableMetricType =
+-  // Health & Fitness
+-  | 'STEPS'
+-  | 'ACTIVE_ENERGY_KCAL'
+-  | 'RESTING_HEART_RATE_BPM'
+-  | 'HEART_RATE_BPM'
+-  | 'VO2_MAX'
+-  | 'WORKOUT_DURATION_MIN'
+-  | 'WORKOUT_DISTANCE_M'
+-  | 'TRAINING_LOAD'
+-  | 'BODY_WEIGHT_KG'
+-  | 'BODY_FAT_PCT'
+-  | 'BLOOD_PRESSURE_SYS'
+-  | 'BLOOD_PRESSURE_DIA'
+-  // Sleep & Recovery
+-  | 'SLEEP_TOTAL_MIN'
+-  | 'SLEEP_REM_MIN'
+-  | 'SLEEP_DEEP_MIN'
+-  | 'SLEEP_LIGHT_MIN'
+-  | 'SLEEP_AWAKE_MIN'
+-  | 'SLEEP_EFFICIENCY_PCT'
+-  | 'HRV_MS'
+-  | 'RECOVERY_SCORE'
+-  | 'READINESS_SCORE'
+-  | 'STRAIN_SCORE'
+-  | 'BODY_BATTERY'
+-  | 'BODY_TEMP_DEVIATION_C'
+-  | 'RESPIRATORY_RATE_BRPM'
+-  | 'SPO2_PCT';
+-
+-/** Canonical metric bucket (mirror of Prisma `WearableMetricBucket`). */
+-export type WearableMetricBucket = 'HEALTH_FITNESS' | 'SLEEP_RECOVERY';
+-
+-/**
+- * The Health Connect record types this connector reads. Kept as a string
+- * union (matching `react-native-health-connect` `RecordType` values) so the
+- * client and normalizer agree on the recognised set without depending on the
+- * native package's generated types at compile time.
+- */
+-export type SamsungReadableRecordType =
+-  | 'Steps'
+-  | 'ActiveCaloriesBurned'
+-  | 'HeartRate'
+-  | 'RestingHeartRate'
+-  | 'Vo2Max'
+-  | 'ExerciseSession'
+-  | 'Distance'
+-  | 'Weight'
+-  | 'BodyFat'
+-  | 'BloodPressure'
+-  | 'SleepSession'
+-  | 'HeartRateVariabilityRmssd'
+-  | 'OxygenSaturation'
+-  | 'RespiratoryRate'
+-  | 'BodyTemperature';
+-
+-/**
+- * The `dataOrigin` shape this connector filters on. The task contract is
+- * binding on `record.metadata.dataOrigin.packageName`. Some
+- * `react-native-health-connect` builds surface `dataOrigin` as a bare string
+- * (the package name) rather than an object; {@link extractPackageName}
+- * tolerates both shapes so the filter never silently passes the wrong origin.
+- */
+-export interface SamsungDataOrigin {
+-  packageName: string;
+-}
+-
+-/** Minimal metadata block we depend on from a Health Connect record. */
+-export interface SamsungRecordMetadata {
+-  id?: string;
+-  /** Either `{ packageName }` (contract shape) or a bare package-name string. */
+-  dataOrigin: SamsungDataOrigin | string;
+-  lastModifiedTime?: string;
+-  clientRecordId?: string | null;
+-}
+-
+-/**
+- * A Health Connect record as returned by `readRecords`, narrowed to the fields
+- * this connector consumes. Metric-specific value fields are kept open via an
+- * index signature so the normalizer can read the per-record-type payload
+- * (e.g. `count`, `beatsPerMinute`, `energy.inKilocalories`).
+- */
+-export interface SamsungHealthRecord {
+-  recordType: SamsungReadableRecordType;
+-  metadata: SamsungRecordMetadata;
+-  startTime?: string;
+-  endTime?: string;
+-  time?: string;
+-  [key: string]: unknown;
+-}
+-
+-/** Time-range filter passed through to the underlying Health Connect reader. */
+-export interface SamsungTimeRangeFilter {
+-  operator: 'between' | 'after' | 'before';
+-  startTime?: string;
+-  endTime?: string;
+-}
+-
+-/** Options accepted by {@link readRecords}. Mirrors `ReadRecordsOptions`. */
+-export interface SamsungReadRecordsOptions {
+-  timeRangeFilter: SamsungTimeRangeFilter;
+-  pageSize?: number;
+-  pageToken?: string;
+-}
+-
+-/**
+- * Resolve a `dataOrigin` (object-or-string) to its package name. Returns an
+- * empty string for malformed origins so the Samsung filter rejects them rather
+- * than throwing mid-read.
+- */
+-export function extractPackageName(
+-  dataOrigin: SamsungDataOrigin | string | null | undefined,
+-): string {
+-  if (!dataOrigin) return '';
+-  if (typeof dataOrigin === 'string') return dataOrigin;
+-  return typeof dataOrigin.packageName === 'string' ? dataOrigin.packageName : '';
+-}
+-
+-/**
+- * True iff a record originated from Samsung Health. This is the single
+- * predicate the client filter and any future native SDK seam share.
+- */
+-export function isSamsungHealthRecord(record: SamsungHealthRecord): boolean {
+-  return extractPackageName(record?.metadata?.dataOrigin) === SAMSUNG_HEALTH_PACKAGE_NAME;
+-}

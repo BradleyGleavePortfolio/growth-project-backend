@@ -1,0 +1,129 @@
+import { spawnSync } from 'child_process';
+import { createHash } from 'crypto';
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+
+const SCRIPT = join(__dirname, '..', '..', 'scripts', 'ci', 'assert-prod-sbom.sh');
+const CLEAN = {
+  bomFormat: 'CycloneDX',
+  components: [
+    { name: '@nestjs/core', version: '11.0.0' },
+    { name: '@prisma/client', version: '6.19.3' },
+    { name: 'prisma', version: '6.19.3' },
+  ],
+};
+const LOCK = {
+  packages: {
+    '': { name: 'probe', version: '1.0.0' },
+    'node_modules/@nestjs/core': { version: '11.0.0' },
+    'node_modules/@prisma/client': { version: '6.19.3' },
+    'node_modules/prisma': { version: '6.19.3', devOptional: true },
+    'node_modules/only-dev': { version: '1.0.0', dev: true },
+  },
+};
+
+function fixture() {
+  const dir = mkdtempSync(join(tmpdir(), 'aud-sol-fu1-118-sbom-'));
+  const bom = join(dir, 'sbom.json');
+  const lock = join(dir, 'lock.json');
+  const output = join(dir, 'output.txt');
+  writeFileSync(bom, JSON.stringify(CLEAN));
+  writeFileSync(lock, JSON.stringify(LOCK));
+  writeFileSync(output, '');
+  return { dir, bom, lock, output };
+}
+
+function run(f: ReturnType<typeof fixture>, env: Record<string, string> = {}) {
+  const r = spawnSync('bash', [SCRIPT, f.bom, f.lock], {
+    encoding: 'utf8',
+    timeout: 10_000,
+    env: {
+      PATH: process.env.PATH ?? '',
+      HOME: process.env.HOME ?? '/tmp',
+      GITHUB_OUTPUT: f.output,
+      ...env,
+    },
+  });
+  return { code: r.status, text: `${r.stdout}\n${r.stderr}` };
+}
+
+function fault(
+  f: ReturnType<typeof fixture>,
+  command: string,
+  when: string,
+  partial: string,
+) {
+  const real = spawnSync('bash', ['-c', `command -v ${command}`], { encoding: 'utf8' }).stdout.trim();
+  expect(real.startsWith('/')).toBe(true);
+  const path = join(f.dir, command);
+  writeFileSync(
+    path,
+    `#!/usr/bin/env bash\nif ${when}; then\n printf '%s\\n' '${partial}'\n exit 73\nfi\nexec '${real}' "$@"\n`,
+  );
+  chmodSync(path, 0o755);
+  return { PATH: `${f.dir}:${process.env.PATH ?? ''}` };
+}
+
+describe('AUD-SOL-FU1-118 independent SBOM fault and output probes', () => {
+  it.each([
+    ['jq', '[[ "$*" == *".components | length"* ]]', '3', /could not count the components/],
+    ['jq', '[[ "$*" == *".components[] | "* ]]', 'only-dev@1.0.0', /could not list the components/],
+    ['jq', '[[ "$*" == *"--arg f dev"* ]]', '', /could not read the dev entries/],
+    ['jq', '[[ "$*" == *"--arg f prod"* ]]', 'prisma@6.19.3', /could not read the production entries/],
+    ['jq', '[[ "$*" == *".components[].name"* ]]', '@nestjs/core', /could not list the component names/],
+    ['sort', 'true', '', /could not list the components/],
+    ['comm', '[[ "$1" == "-23" ]]', '', /could not compare the dev and production entries/],
+    ['comm', '[[ "$1" == "-12" ]]', '', /could not compare .* with the dev-only entries/],
+  ])('%s failure (%s) cannot become successful evidence', (command, when, partial, diagnostic) => {
+    const f = fixture();
+    const r = run(f, fault(f, command, when, partial));
+    expect(r.code).toBe(1);
+    expect(r.text).toMatch(diagnostic);
+    expect(r.text).not.toContain('assert-prod-sbom: OK');
+    expect(readFileSync(f.output, 'utf8')).toBe('');
+  });
+
+  it('accepts a shared production/dev version but rejects a distinct dev-only version', () => {
+    const f = fixture();
+    const components = [...CLEAN.components, { name: 'shared', version: '1.0.0' }];
+    const packages = {
+      ...LOCK.packages,
+      'node_modules/shared': { version: '1.0.0', dev: true },
+      'node_modules/runtime/node_modules/shared': { version: '1.0.0' },
+    };
+    writeFileSync(f.bom, JSON.stringify({ ...CLEAN, components }));
+    writeFileSync(f.lock, JSON.stringify({ packages }));
+    expect(run(f).code).toBe(0);
+    writeFileSync(
+      f.lock,
+      JSON.stringify({
+        packages: {
+          ...packages,
+          'node_modules/runtime/node_modules/shared': { version: '2.0.0' },
+        },
+      }),
+    );
+    const r = run(f);
+    expect(r.code).toBe(1);
+    expect(r.text).toMatch(/dev-only packages present.*shared@1\.0\.0/);
+  });
+
+  it('binds successful evidence outputs to the exact artifact hash', () => {
+    const f = fixture();
+    const r = run(f);
+    const digest = createHash('sha256').update(readFileSync(f.bom)).digest('hex');
+    expect(r.code).toBe(0);
+    expect(r.text).toContain(`assert-prod-sbom: sha256 ${digest}`);
+    expect(readFileSync(f.output, 'utf8')).toBe(`components=3\nsha256=${digest}\n`);
+  });
+
+  it.each(['-runtime', 'a.b[0]*?'])('literal required name %s is not pattern syntax', (name) => {
+    const f = fixture();
+    writeFileSync(f.bom, JSON.stringify({ ...CLEAN, components: [...CLEAN.components, { name, version: '1' }] }));
+    expect(run(f, { REQUIRE_LIST: name }).code).toBe(0);
+    const r = run(f, { DENY_LIST: name });
+    expect(r.code).toBe(1);
+    expect(r.text).toContain(`build/test tool '${name}' present`);
+  });
+});

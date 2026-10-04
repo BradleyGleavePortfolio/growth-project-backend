@@ -1,0 +1,2 @@
+#!/bin/bash
+/usr/bin/sort "$@" >/dev/null; exit 2

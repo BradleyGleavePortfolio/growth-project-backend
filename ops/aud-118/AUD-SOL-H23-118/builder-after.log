@@ -1,0 +1,232 @@
+targeted	UNKNOWN STEP	﻿2026-10-04T04:04:58.7282596Z Current runner version: '2.337.0'
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7319075Z ##[group]Runner Image Provisioner
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7320661Z Hosted Compute Agent
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7321644Z Version: 20260901.588
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7322929Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7324266Z Build Date: 2026-09-01T19:56:44Z
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7325574Z Worker ID: {ac83faf4-b746-4b0e-88fd-9161eb1b34bd}
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7326952Z Azure Region: eastus
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7328001Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7331450Z ##[group]Operating System
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7332569Z Ubuntu
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7333623Z 24.04.5
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7334559Z LTS
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7335530Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7336565Z ##[group]Runner Image
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7337577Z Image: ubuntu-24.04
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7339063Z Version: 20260927.320.1
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7341951Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7344891Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7346778Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7349169Z ##[group]GITHUB_TOKEN Permissions
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7352427Z Contents: read
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7353506Z Metadata: read
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7354686Z Packages: read
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7355644Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7359236Z Secret source: Actions
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7361034Z Cache mode: write
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7362910Z Prepare workflow directory
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7867537Z Prepare all required actions
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.7942457Z Getting action download info
+targeted	UNKNOWN STEP	2026-10-04T04:04:58.9780269Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.0823185Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.3200493Z Complete job name: targeted
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.3969318Z ##[group]Run actions/checkout@v6
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.3970289Z with:
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.3970858Z   repository: BradleyGleavePortfolio/growth-project-mobile
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.3974739Z   token: ***
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.3975176Z   ssh-strict: true
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.3975619Z   ssh-user: git
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.3976067Z   persist-credentials: true
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.3976562Z   clean: true
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.3977002Z   sparse-checkout-cone-mode: true
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.3977523Z   fetch-depth: 1
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.3977950Z   fetch-tags: false
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.3978398Z   show-progress: true
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.3979055Z   lfs: false
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.3979482Z   submodules: false
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.3979935Z   set-safe-directory: true
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.3980445Z   allow-unsafe-pr-checkout: false
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.3981232Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.4977726Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.4980164Z ##[group]Getting Git version info
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.4981084Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.4982267Z [command]/usr/bin/git version
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5060825Z git version 2.55.0
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5085016Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5100933Z Temporarily overriding HOME='/home/runner/work/_temp/8fd823ce-5b96-43e3-b446-bb4322ab56d0' before making global git config changes
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5103664Z Adding repository directory to the temporary git global config as a safe directory
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5106607Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5158497Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5162599Z ##[group]Determining repository object format
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5165401Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5166706Z ##[group]Initializing the repository
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5171063Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5287023Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5288611Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5289862Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5291217Z hint: call:
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5291730Z hint:
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5292263Z hint: 	git config --global init.defaultBranch <name>
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5292875Z hint:
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5293453Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5294378Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5295105Z hint:
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5295528Z hint: 	git branch -m <name>
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5296005Z hint:
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5296884Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5298081Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5302664Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5352187Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5352959Z ##[group]Disabling automatic garbage collection
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5356076Z [command]/usr/bin/git config --local gc.auto 0
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5385573Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5386631Z ##[group]Setting up auth
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5387562Z Removing SSH command configuration
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5394239Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5424341Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5808140Z Removing HTTP extra header
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5814178Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.5846165Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.6058076Z Removing includeIf entries pointing to credentials config files
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.6063907Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.6094326Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.6315820Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-3b46be58-d67d-4df1-9c12-fed0b8d10dbe.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.6352530Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-3b46be58-d67d-4df1-9c12-fed0b8d10dbe.config
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.6384740Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-3b46be58-d67d-4df1-9c12-fed0b8d10dbe.config
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.6417546Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-3b46be58-d67d-4df1-9c12-fed0b8d10dbe.config
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.6450845Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-3b46be58-d67d-4df1-9c12-fed0b8d10dbe.config
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.6484677Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.6486008Z ##[group]Fetching the repository
+targeted	UNKNOWN STEP	2026-10-04T04:04:59.6495048Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +004f6b0a0dccbe2242c94fa98a02b58dfed0c1aa:refs/remotes/origin/ci/B-W2-116-360-after
+targeted	UNKNOWN STEP	2026-10-04T04:05:00.4299921Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+targeted	UNKNOWN STEP	2026-10-04T04:05:00.4301454Z  * [new ref]         004f6b0a0dccbe2242c94fa98a02b58dfed0c1aa -> origin/ci/B-W2-116-360-after
+targeted	UNKNOWN STEP	2026-10-04T04:05:00.4341242Z [command]/usr/bin/git branch --list --remote origin/ci/B-W2-116-360-after
+targeted	UNKNOWN STEP	2026-10-04T04:05:00.4342851Z   origin/ci/B-W2-116-360-after
+targeted	UNKNOWN STEP	2026-10-04T04:05:00.4354289Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-W2-116-360-after
+targeted	UNKNOWN STEP	2026-10-04T04:05:00.4378679Z 004f6b0a0dccbe2242c94fa98a02b58dfed0c1aa
+targeted	UNKNOWN STEP	2026-10-04T04:05:00.4391644Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:05:00.4392957Z ##[group]Determining the checkout info
+targeted	UNKNOWN STEP	2026-10-04T04:05:00.4394405Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:05:00.4397010Z [command]/usr/bin/git sparse-checkout disable
+targeted	UNKNOWN STEP	2026-10-04T04:05:00.4451189Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	UNKNOWN STEP	2026-10-04T04:05:00.4483032Z ##[group]Checking out the ref
+targeted	UNKNOWN STEP	2026-10-04T04:05:00.4486457Z [command]/usr/bin/git checkout --progress --force -B ci/B-W2-116-360-after refs/remotes/origin/ci/B-W2-116-360-after
+targeted	UNKNOWN STEP	2026-10-04T04:05:00.5546672Z Switched to a new branch 'ci/B-W2-116-360-after'
+targeted	UNKNOWN STEP	2026-10-04T04:05:00.5550371Z branch 'ci/B-W2-116-360-after' set up to track 'origin/ci/B-W2-116-360-after'.
+targeted	UNKNOWN STEP	2026-10-04T04:05:00.5560471Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:05:00.5604908Z [command]/usr/bin/git log -1 --format=%H
+targeted	UNKNOWN STEP	2026-10-04T04:05:00.5629813Z 004f6b0a0dccbe2242c94fa98a02b58dfed0c1aa
+targeted	UNKNOWN STEP	2026-10-04T04:05:00.6007027Z ##[group]Run actions/setup-node@v6
+targeted	UNKNOWN STEP	2026-10-04T04:05:00.6008274Z with:
+targeted	UNKNOWN STEP	2026-10-04T04:05:00.6009452Z   node-version: 22.13
+targeted	UNKNOWN STEP	2026-10-04T04:05:00.6010488Z   cache: npm
+targeted	UNKNOWN STEP	2026-10-04T04:05:00.6011462Z   check-latest: false
+targeted	UNKNOWN STEP	2026-10-04T04:05:00.6020504Z   token: ***
+targeted	UNKNOWN STEP	2026-10-04T04:05:00.6021602Z   package-manager-cache: true
+targeted	UNKNOWN STEP	2026-10-04T04:05:00.6022750Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:05:00.7539482Z Attempting to download 22.13...
+targeted	UNKNOWN STEP	2026-10-04T04:05:01.0894701Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+targeted	UNKNOWN STEP	2026-10-04T04:05:01.6682837Z Extracting ...
+targeted	UNKNOWN STEP	2026-10-04T04:05:01.6809027Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/4c549ee9-25b1-4f36-801a-8477a6230e62 -f /home/runner/work/_temp/01fd0aa0-549b-47c1-ae7f-1a7124fff318
+targeted	UNKNOWN STEP	2026-10-04T04:05:02.8871264Z Adding to the cache ...
+targeted	UNKNOWN STEP	2026-10-04T04:05:05.0777021Z ##[group]Environment details
+targeted	UNKNOWN STEP	2026-10-04T04:05:05.3346096Z node: v22.13.1
+targeted	UNKNOWN STEP	2026-10-04T04:05:05.3346824Z npm: 10.9.2
+targeted	UNKNOWN STEP	2026-10-04T04:05:05.3347261Z yarn: 1.22.22
+targeted	UNKNOWN STEP	2026-10-04T04:05:05.3348090Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:05:05.3373722Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+targeted	UNKNOWN STEP	2026-10-04T04:05:05.4332063Z /home/runner/.npm
+targeted	UNKNOWN STEP	2026-10-04T04:05:05.5071864Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+targeted	UNKNOWN STEP	2026-10-04T04:05:06.5737276Z Received 241027159 of 241027159 (100.0%), 231.0 MBs/sec
+targeted	UNKNOWN STEP	2026-10-04T04:05:06.5738681Z Cache Size: ~230 MB (241027159 B)
+targeted	UNKNOWN STEP	2026-10-04T04:05:06.5817417Z [command]/usr/bin/tar -xf /home/runner/work/_temp/30e9d099-c514-4263-9fb5-8e5613c30fac/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+targeted	UNKNOWN STEP	2026-10-04T04:05:07.6407322Z Cache restored successfully
+targeted	UNKNOWN STEP	2026-10-04T04:05:07.6520510Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+targeted	UNKNOWN STEP	2026-10-04T04:05:07.6756559Z ##[group]Run npm ci
+targeted	UNKNOWN STEP	2026-10-04T04:05:07.6757054Z ^[[36;1mnpm ci^[[0m
+targeted	UNKNOWN STEP	2026-10-04T04:05:07.7101348Z shell: /usr/bin/bash -e {0}
+targeted	UNKNOWN STEP	2026-10-04T04:05:07.7101662Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:05:12.9719790Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	UNKNOWN STEP	2026-10-04T04:05:13.1919199Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+targeted	UNKNOWN STEP	2026-10-04T04:05:13.1993714Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+targeted	UNKNOWN STEP	2026-10-04T04:05:13.2015276Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+targeted	UNKNOWN STEP	2026-10-04T04:05:13.2157118Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+targeted	UNKNOWN STEP	2026-10-04T04:05:13.3526100Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+targeted	UNKNOWN STEP	2026-10-04T04:05:13.3571869Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-04T04:05:13.3581228Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-04T04:05:13.3600749Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-04T04:05:13.3607998Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-04T04:05:13.3627708Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-04T04:05:13.4015579Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	UNKNOWN STEP	2026-10-04T04:05:13.4574623Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+targeted	UNKNOWN STEP	2026-10-04T04:05:13.9497583Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+targeted	UNKNOWN STEP	2026-10-04T04:05:14.7101029Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+targeted	UNKNOWN STEP	2026-10-04T04:05:18.4155693Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+targeted	UNKNOWN STEP	2026-10-04T04:05:25.9610412Z 
+targeted	UNKNOWN STEP	2026-10-04T04:05:25.9611380Z added 1108 packages, and audited 1109 packages in 18s
+targeted	UNKNOWN STEP	2026-10-04T04:05:25.9611841Z 
+targeted	UNKNOWN STEP	2026-10-04T04:05:25.9612133Z 187 packages are looking for funding
+targeted	UNKNOWN STEP	2026-10-04T04:05:25.9612685Z   run `npm fund` for details
+targeted	UNKNOWN STEP	2026-10-04T04:05:26.3288295Z 
+targeted	UNKNOWN STEP	2026-10-04T04:05:26.3290965Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+targeted	UNKNOWN STEP	2026-10-04T04:05:26.3291493Z 
+targeted	UNKNOWN STEP	2026-10-04T04:05:26.3291958Z To address issues that do not require attention, run:
+targeted	UNKNOWN STEP	2026-10-04T04:05:26.3293217Z   npm audit fix
+targeted	UNKNOWN STEP	2026-10-04T04:05:26.3293505Z 
+targeted	UNKNOWN STEP	2026-10-04T04:05:26.3293945Z To address all issues (including breaking changes), run:
+targeted	UNKNOWN STEP	2026-10-04T04:05:26.3294635Z   npm audit fix --force
+targeted	UNKNOWN STEP	2026-10-04T04:05:26.3294931Z 
+targeted	UNKNOWN STEP	2026-10-04T04:05:26.3295173Z Run `npm audit` for details.
+targeted	UNKNOWN STEP	2026-10-04T04:05:26.4998313Z ##[group]Run set -euo pipefail
+targeted	UNKNOWN STEP	2026-10-04T04:05:26.4998655Z ^[[36;1mset -euo pipefail^[[0m
+targeted	UNKNOWN STEP	2026-10-04T04:05:26.4999483Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	UNKNOWN STEP	2026-10-04T04:05:26.5000253Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	UNKNOWN STEP	2026-10-04T04:05:26.5000628Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	UNKNOWN STEP	2026-10-04T04:05:26.5000903Z ^[[36;1mnpx jest --ci "${SPECS[@]}"^[[0m
+targeted	UNKNOWN STEP	2026-10-04T04:05:26.5066408Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	UNKNOWN STEP	2026-10-04T04:05:26.5066784Z ##[endgroup]
+targeted	UNKNOWN STEP	2026-10-04T04:05:26.5167021Z specs: src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts src/services/health/__tests__/onDeviceConnect.test.ts
+targeted	UNKNOWN STEP	2026-10-04T04:05:30.8721070Z PASS src/services/health/__tests__/onDeviceConnect.test.ts
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.1993459Z PASS src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.2316864Z 
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.2323455Z Test Suites: 2 passed, 2 total
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.2323947Z Tests:       53 passed, 53 total
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.2324427Z Snapshots:   0 total
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.2324685Z Time:        3.552 s
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.2325619Z Ran all test suites matching /src\/services\/health\/healthConnect\/__tests__\/healthConnectSyncService.test.ts|src\/services\/health\/__tests__\/onDeviceConnect.test.ts/i.
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.2797121Z Post job cleanup.
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.3975951Z Cache hit occurred on the primary key node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06, not saving cache.
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.4129980Z Post job cleanup.
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.4991690Z [command]/usr/bin/git version
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5029969Z git version 2.55.0
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5071807Z Temporarily overriding HOME='/home/runner/work/_temp/dbecaed7-4b4d-492b-9cbd-0e17b1e59bef' before making global git config changes
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5073438Z Adding repository directory to the temporary git global config as a safe directory
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5078684Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5109384Z Removing SSH command configuration
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5116888Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5150566Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5373367Z Removing HTTP extra header
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5379690Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5413463Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5635009Z Removing includeIf entries pointing to credentials config files
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5642038Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5670184Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5671679Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5672323Z includeif.gitdir:/github/workspace/.git.path
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5672778Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5681128Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5703900Z /home/runner/work/_temp/git-credentials-3b46be58-d67d-4df1-9c12-fed0b8d10dbe.config
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5717252Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-3b46be58-d67d-4df1-9c12-fed0b8d10dbe.config
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5760587Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5794192Z /home/runner/work/_temp/git-credentials-3b46be58-d67d-4df1-9c12-fed0b8d10dbe.config
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5798297Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-3b46be58-d67d-4df1-9c12-fed0b8d10dbe.config
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5866710Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5891875Z /github/runner_temp/git-credentials-3b46be58-d67d-4df1-9c12-fed0b8d10dbe.config
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5901139Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-3b46be58-d67d-4df1-9c12-fed0b8d10dbe.config
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5936450Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5959826Z /github/runner_temp/git-credentials-3b46be58-d67d-4df1-9c12-fed0b8d10dbe.config
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.5968210Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-3b46be58-d67d-4df1-9c12-fed0b8d10dbe.config
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.6005064Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.6249719Z Removing credentials config '/home/runner/work/_temp/git-credentials-3b46be58-d67d-4df1-9c12-fed0b8d10dbe.config'
+targeted	UNKNOWN STEP	2026-10-04T04:05:31.6429501Z Cleaning up orphan processes
