@@ -1,0 +1,17 @@
+src/ai/coach/coach-ai.service.ts:413 | day.daily_totals.calories | day.day day.daily_totals.calories target Math.round(drift * 100) ,
+src/auth/auth.service.ts:1835 | RECENT_AUTH_SECRET_MIN_LENGTH | RECENT_AUTH_SECRET_MIN_LENGTH ,
+src/auth/recent-auth.guard.ts:123 | RECENT_AUTH_SECRET_MIN_LENGTH | RECENT_AUTH_SECRET_MIN_LENGTH ,
+src/common/redact-secrets.ts:20 | redactSecrets | redactSecrets({ DATABASE_URL: STR , user: STR })
+src/macros/macros.service.ts:95 | dto.calories_kcal | coachId clientId dto.calories_kcal ,
+src/observability/process-errors.ts:12 | diagnostic | diagnostic
+src/roman/roman-erasure.sweep.ts:115 | diagnostic | trigger String(diagnostic)
+src/roman/roman-erasure.sweep.ts:124 | safeDiagnostic | trigger String(safeDiagnostic(err)) ,
+src/roman/roman.service.ts:219 | safeDiagnostic | surface String(safeDiagnostic(eraseErr)) ,
+src/roman/roman.service.ts:423 | diagnostic | logLine String(diagnostic)
+src/roman/roman.service.ts:639 | diagnostic | row.id diagnostic
+src/secrets/secrets.service.ts:232 | secretName | secretName ,
+src/secrets/secrets.service.ts:245 | secretName | secretName rotatedByUserId ,
+src/storefront/guest-checkout.service.ts:268 | connectAccount.details_submitted | connectAccount.charges_enabled connectAccount.payouts_enabled connectAccount.details_submitted connectAccount.disabled_reason ?? STR ,
+src/storefront/storefront.service.ts:145 | connectAccount.details_submitted | connectAccount.charges_enabled connectAccount.payouts_enabled connectAccount.details_submitted connectAccount.disabled_reason ?? STR ,
+src/wearables/ingestion/ingestion.service.ts:155 | submitted_count | { msg: STR , user_id: samples[0]?.userId, provider: samples[0]?.provider, inserted_count: inserted, skipped_count: skipped, submitted_count: samples.l
+total 16

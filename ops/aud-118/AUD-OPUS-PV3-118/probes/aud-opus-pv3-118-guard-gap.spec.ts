@@ -16,9 +16,9 @@ import { AudOpusPv3ProbeSink } from '../../src/observability/aud-opus-pv3-118-pr
 const ECHO = 'Email address "pat.client+tgp@example.com" is invalid';
 const LEVELS = ['log', 'warn', 'error', 'debug', 'verbose', 'fatal'] as const;
 
-function spyLogs(): () => string {
+function spyLogs(proto: typeof Logger.prototype = Logger.prototype): () => string {
   const spies = LEVELS.map((level) =>
-    jest.spyOn(Logger.prototype, level).mockImplementation(() => undefined),
+    jest.spyOn(proto, level).mockImplementation(() => undefined),
   );
   return () =>
     spies
@@ -59,6 +59,9 @@ describe('AUD-OPUS-PV3-118 C-700-6: checkout-recovery still logs the Redis error
 
   it('connect failure in development (checkout-recovery.service.ts:178)', async () => {
     let CRS!: new (p: unknown, c: ConfigService) => { onModuleInit(): Promise<void> };
+    // The service is loaded in an isolated registry, so its Logger is that
+    // registry's class: spy on that one (harness fix after run 37224534728).
+    let IsoLogger!: typeof Logger;
     jest.isolateModules(() => {
       jest.doMock('ioredis', () => {
         class FakeRedis {
@@ -71,8 +74,10 @@ describe('AUD-OPUS-PV3-118 C-700-6: checkout-recovery still logs the Redis error
       });
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       CRS = require('../../src/storefront/checkout-recovery.service').CheckoutRecoveryService;
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      IsoLogger = require('@nestjs/common').Logger;
     });
-    const logs = spyLogs();
+    const logs = spyLogs(IsoLogger.prototype);
     await new CRS({ guestCheckout: { findUnique: jest.fn() } }, config()).onModuleInit();
     expect(logs()).toContain('falling back to in-memory');
     expect(logs()).not.toContain(MARK);
@@ -83,6 +88,7 @@ describe('AUD-OPUS-PV3-118 C-700-6: checkout-recovery still logs the Redis error
       onModuleInit(): Promise<void>;
       onModuleDestroy(): Promise<void>;
     };
+    let IsoLogger!: typeof Logger;
     jest.isolateModules(() => {
       jest.doMock('ioredis', () => {
         class FakeRedis {
@@ -96,10 +102,12 @@ describe('AUD-OPUS-PV3-118 C-700-6: checkout-recovery still logs the Redis error
       });
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       CRS = require('../../src/storefront/checkout-recovery.service').CheckoutRecoveryService;
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      IsoLogger = require('@nestjs/common').Logger;
     });
     const svc = new CRS({ guestCheckout: { findUnique: jest.fn() } }, config());
     await svc.onModuleInit();
-    const logs = spyLogs();
+    const logs = spyLogs(IsoLogger.prototype);
     await svc.onModuleDestroy();
     expect(logs()).toContain('forcing disconnect');
     expect(logs()).not.toContain(MARK);

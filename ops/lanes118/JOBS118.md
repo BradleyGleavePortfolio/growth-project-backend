@@ -391,6 +391,6 @@ client-billing.service.ts:323-330 reversed amount from the last failed renewal, 
 P3 failing-before) and APPROVE #690 0/0/3 (5982575812). Same-line Cs: C-690-6 lock-order inversion checkout-webhook-handler:891-904 (same
 as Sol lock order B), C-690-7 payment-failed check/write not atomic (same as Sol failure/cancel race). Others to report: C-689-3, C-689-4,
 C-690-5, C-690-2 (Sol). Restack on B-DUNA's D2 top first (#688 2368d5fa, notify/dunning.txt); B-DUNA closed Opus D34's three D2-level Bs and checked W0-W4 probes on throwaway merges; pass the dispute's event time as closedAt in D4. Then dunning lens pairs on D1-D4 + D5 (#691 + #642).
-9. Lens pairs: trials after B-TR3; privacy after B-PRIVFU2; HC after B-HC4; lockout m#352+m#353 (B-LOCK READY) then m#354; wizard
+9. Lens pairs: trials #672 2690c07c + #673 5fdb5f5c; HC m#362 b3bc0ce4 + m#364 529ba345 (then m#363 2858bac5 restack delta); recurring R1+R2 #678 77bce450 + #679 8bbf4a41, R3 #680 216489ff + R4 #696 276610a3, R5 #701 72eb096b; dunning D1 #687 38d9b3ab + D2 #688 2368d5fa; lockout m#352+m#353 (B-LOCK READY) then m#354; wizard
    m#345+m#346 then #347 + W3 fix round; coach M4 #677; dunning D1-D4 + D5 (#691 + #642).
 10. Remainder: programs #355-#358, N1-N4.
