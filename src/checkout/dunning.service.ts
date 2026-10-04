@@ -183,6 +183,18 @@ export class DunningService {
   // ── Webhook entry points ──────────────────────────────────────────────────
 
   async recordFailure(input: RecordFailureInput): Promise<DunningState> {
+    try {
+      return await this.recordFailureOnce(input);
+    } catch (err) {
+      // C-688-3 (Opus): the state write is fenced on the reason read first, so
+      // a dispute marker written in between is never replaced. That lost race
+      // (P2025, nothing written yet) runs once more on a fresh read.
+      if ((err as { code?: unknown } | null)?.code !== 'P2025') throw err;
+      return this.recordFailureOnce(input);
+    }
+  }
+
+  private async recordFailureOnce(input: RecordFailureInput): Promise<DunningState> {
     const { purchase } = input;
     const now = new Date();
     const existing = await this.prisma.dunningState.findUnique({
@@ -217,7 +229,7 @@ export class DunningService {
 
     const row = existing
       ? await this.prisma.dunningState.update({
-          where: { purchase_id: purchase.id },
+          where: { purchase_id: purchase.id, last_failure_reason: existing.last_failure_reason },
           data: {
             // If the previous window had resolved, reopen with a fresh
             // cadence. Otherwise the existing window continues.
