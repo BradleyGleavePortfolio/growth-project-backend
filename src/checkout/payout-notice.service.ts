@@ -488,11 +488,22 @@ export class PayoutNoticeService {
       openBySettlement.set(r.settlement_id, (openBySettlement.get(r.settlement_id) ?? 0) + left);
     }
     const rows = page.slice(0, limit);
-    // Only the newest notice of a charge carries its live open amount.
-    const seen = new Set<string>();
+    // Only the newest notice of a charge carries its live open amount, on any page (C-684-2).
+    const openIds = [...new Set(rows.map((n) => n.settlement_id))].filter((id) =>
+      openBySettlement.has(id),
+    );
+    const newest = new Map<string, string>();
+    const latest = openIds.length
+      ? await this.prisma.payoutAdjustmentNotice.findMany({
+          where: { payee_user_id: payeeUserId, settlement_id: { in: openIds } },
+          orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+          select: { id: true, settlement_id: true },
+        })
+      : [];
+    for (const n of latest) if (!newest.has(n.settlement_id)) newest.set(n.settlement_id, n.id);
     const notices = rows.map((n): PayoutNoticeView => {
-      const live = seen.has(n.settlement_id) ? 0 : (openBySettlement.get(n.settlement_id) ?? 0);
-      seen.add(n.settlement_id);
+      const live =
+        newest.get(n.settlement_id) === n.id ? (openBySettlement.get(n.settlement_id) ?? 0) : 0;
       return {
         id: n.id,
         event: n.event,
