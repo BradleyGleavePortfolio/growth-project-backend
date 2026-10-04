@@ -5,7 +5,7 @@
 **Bounded T1:** none.
 **Canonical builder:** B-DUNSPLIT-119 (agent 119).
 **Parent owner:** operator agent 119; stack #687 D1 -> #688 D2a -> D2b -> this D2c -> #689 D3 -> #690 D4 -> #691 D5.
-**Acceptance evidence:** failing-before CI-lane run [37230001355](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37230001355) on D2b `d92c83df` with these specs: 30 failed / 42 passed (28 new R-DISPUTE-PAUSE cases + 2 replaced B-688-5 cases; the two one-time-purchase cases pass before and after, as they must). Passing-after: see the OPENING comment (run at this head).
+**Acceptance evidence:** failing-before CI-lane run [37230001355](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37230001355) on D2b `d92c83df` with these specs: 30 failed / 42 passed (28 new R-DISPUTE-PAUSE cases + 2 replaced B-688-5 cases; the two one-time-purchase cases pass before and after, as they must). Passing-after: [37230747608](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37230747608) at `77d009ec`, 237 passed (later change: privacy-list merge only; required checks green at `279ec167`).
 **Promotion triggers:** FEATURE_DUNNING_V2 stays off until D3-D5 wire the dispute webhooks (D4 `runDisputeEffect`) and the restart endpoint; see the handoff list below.
 
 ## Behaviour
@@ -52,4 +52,4 @@ Files: `dunning-v2.service.ts` (pause, restart, guards, status contract), `dunni
 ## Fix rounds
 | Round | Job | Head | Closed | Comment |
 |---|---|---|---|---|
-| OPENING | B-DUNSPLIT-119 (agent 119) | see comment | builds R-DISPUTE-PAUSE | OPENING comment |
+| OPENING | B-DUNSPLIT-119 (agent 119) | `279ec167` | builds R-DISPUTE-PAUSE | [OPENING](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/705#issuecomment-5984075259) |

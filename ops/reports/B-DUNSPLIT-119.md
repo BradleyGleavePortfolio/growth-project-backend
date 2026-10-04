@@ -1,6 +1,6 @@
 # B-DUNSPLIT-119 report (builder, Claude Opus 5.5, T4) — agent 119
 
-Started 12:30 PDT 10-04. Lock `dunning` taken 12:30 PDT (ops/lanes119/locks/dunning). Updated 13:05 PDT.
+Started 12:30 PDT 10-04. Lock `dunning` taken 12:30 PDT (ops/lanes119/locks/dunning). Updated 13:30 PDT. Lock released 13:30 PDT.
 
 ## PRs and heads (first push 13:02 PDT, second 13:14 PDT; normal pushes only)
 | Piece | PR | Branch | Base | Head | Changed lines |
@@ -71,5 +71,16 @@ Adapted copies in ops/reports/B-DUNSPLIT-119-evidence/probes.
 2. A cycle already locked keeps its earlier lock instant. Default: yes.
 3. Restart endpoint lands in D4 (service path here). Default: yes.
 
+## Comments posted (all at green heads, READY FOR AUDIT)
+- #687 FIX ROUND 3 @ c260a849: https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/687#issuecomment-5984088671 (17 checks pass)
+- #688 FIX ROUND 4 @ f29fc201: https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/688#issuecomment-5984083098 (10 pass)
+- #704 OPENING @ 276a9f60: https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/704#issuecomment-5984075128 (10 pass)
+- #705 OPENING @ 279ec167: https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/705#issuecomment-5984075259 (10 pass)
+- PR bodies updated (seams, line counts, fix-round rows; #705 body has the R138 gate and the mobile contract). Evidence: ops/reports/B-DUNSPLIT-119-evidence/.
+- Infra: one comment-deploy-readiness failure (artifact not found after a cancelled sibling job) cleared on the superseding run; no reruns needed.
+
 ## HANDOFF
-- In progress: waiting for final CI at all four heads, then FIX ROUND 3 (#687), FIX ROUND 4 (#688), OPENING + READY (#704, #705), notify file, lock release, cleanup.
+- Stack: #687 D1 @ c260a849 (2,822) -> #688 D2a @ f29fc201 (2,440) -> #704 D2b @ 276a9f60 (694) -> #705 D2c @ 279ec167 (1,287) -> #689 D3 -> #690 D4 -> #691 D5. All four READY FOR AUDIT; next: Opus 5.5 + Sol audits at these exact heads.
+- notify/dunning.txt: "dunning D2 top: #705 @ 279ec1677d574b86e773248174eef57c1d2a237d (B-DUNSPLIT-119, 13:30 PDT 10-04)". Lock `dunning` released 13:30 PDT. ci/B-DUNSPLIT-119-* deleted (10 branches); worktrees wt/B-DUNSPLIT-119-1..5 removed; local wk/* branches deleted.
+- For B-DUNB-119: retarget/restack #689 onto #705's branch (agent119/dunning-split-2c-dispute-pause); items under "Findings for B-DUNB-119" above (closedAt from event.created, dispute id on created, isDisputePaused guard in D4 handler code, restart POST endpoint, D5 compressed-cycle specs). The mobile lockout builder reads "Mobile contract" above.
+- Not touched: #689-#691, fees PRs #682/#683.

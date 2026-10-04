@@ -33,3 +33,7 @@ OPENING (B-DUNSPLIT-119, agent 119) — growth-project-backend#705 @ 279ec1677d5
 - C-688-9 (carried): v1 invoice.paid takes ClientPurchase before DunningState; rule: DunningState first.
 
 **Decisions for the operator (default first):** inquiries pause too ("any dispute"): yes. A cycle already locked keeps its lock instant: yes.
+
+**Required checks at this head:** all green (build-and-test, schema parity, live tests, npm audit, size-label, deploy readiness).
+
+READY FOR AUDIT

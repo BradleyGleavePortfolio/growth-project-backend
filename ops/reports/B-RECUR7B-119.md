@@ -1,6 +1,8 @@
 # B-RECUR7B-119 — recurring R3 #680 fix round 7 (+ tests #696, restack #701)
 
-Status: IN PROGRESS. Started 2026-10-04 12:46 PDT. Lock lanes119/locks/recurring-r34 taken 12:47.
+Status: BLOCKED AT PUSH (13:24 PDT). Fix, tests, restack and lane proofs are done locally; the push of the three PR branches was
+refused by the platform action-safety check (it did not see the gate line, which IS present: "R2 top: #679 @ 23d2c04c...; #701 tests @
+5e8f1ceb... (B-RECUR7A-119, 13:14:45 PDT)"). Not retried, per the refusal. Lock recurring-r34 released 13:32. Started 2026-10-04 12:46 PDT. Lock lanes119/locks/recurring-r34 taken 12:47.
 Push gate: wait for B-RECUR7A-119 R2 line in lanes119/notify/recurring.txt (absent at 12:55).
 
 ## Heads at start
@@ -47,5 +49,35 @@ Push gate: wait for B-RECUR7A-119 R2 line in lanes119/notify/recurring.txt (abse
 ## Log
 - 12:46 rules read; lock taken. 12:50 operator message received. 12:55 fix + tests written locally.
 
+- 13:14 gate line present. 13:23 lanes: failing-before https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37231939325
+  (24 fail / 20 pass); after + all prior probes on d624144c https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37231956053
+  (303 pass / 8 fail, all by design or known, see fr7-680-draft.md). 13:24 push refused. 13:32 ci/* branches deleted, wt-2/wt-5 removed,
+  lock released.
+
+## Operator decisions (recommended default)
+1. Push authorization: push f267417a -> agent115/recur-split-3-webhooks-fixes (#680, fast-forward from 216489ff), 13c9a6c8 ->
+   agent117/recur-split-4-service-specs (#696, ff from 276610a3), d624144c -> agent117/recur-split-5-round4-specs (#701, ff from
+   5e8f1ceb). Default: authorize a fresh B-RECUR7C (or this job) to push exactly these, wait for green, post FIX ROUND 7 (draft
+   ops/aud-119/B-RECUR7B-119/fr7-680-draft.md) + READY on #680/#696, READY (restack) on #701, and append notify line
+   "R5 top: #701 @ d624144c<full> (...)".
+2. B-680-2: the operator's accepted "narrower past_due exemption" default conflicts with Sol's open B; closing the B removes it, so
+   the paired past_due update now costs one Stripe redelivery before dunning opens. Default: accept (fail closed).
+3. Full refund on a recurring plan (outside this diff, refund-dispute-handler.service.ts:301): revokes the whole plan but leaves the
+   Stripe subscription billing; now nothing restores access, so the client could keep paying with no access. Default: the fees/money
+   stack pauses billing on a full recurring refund exactly as R-DISPUTE-PAUSE does (ticket).
+4. Dispute pause composition (D2c): this tree's dispute.created marks status disputed but keeps access; the fence covers disputed
+   only without access. Default: D2c writes disputed + entitlement_active=false in one tx BEFORE pausing collection.
+
+## Follow-ups (C) additions
+- C-680-16 refund-dispute-handler.service.ts:301-302 full refund on a recurring plan: pause billing (see decision 3).
+- C-680-17 refund-dispute-handler.service.ts:1043/1092 disputed on a recurring plan keeps entitlement: R-DISPUTE-PAUSE build sets
+  entitlement false in the same tx.
+
 ## HANDOFF
-- In progress; nothing pushed.
+- #680: PR head still 216489ff (nothing pushed). Ready local: wt/B-RECUR7B-119-1, branch wip/B-RECUR7B-119-680 @ f267417a
+  (bef96175 merge-only first, then fix). Size vs #679 @ 23d2c04c: 2,779.
+- #696: PR head still 276610a3. Ready local: wt/B-RECUR7B-119-3, wip/B-RECUR7B-119-696 @ 13c9a6c8 (merge 7392761f + new spec).
+  Size vs #680: 2,197.
+- #701: PR head still 5e8f1ceb. Ready local: wt/B-RECUR7B-119-4, wip/B-RECUR7B-119-701 @ d624144c (merge-only, B-RECUR7A tests kept).
+- Backup bundle: ops/aud-119/B-RECUR7B-119/r7-commits.bundle; lane logs and test copy in the same dir.
+- Next: decision 1, then green checks, comments, notify line, remove wt-1/3/4 and the wip branches.

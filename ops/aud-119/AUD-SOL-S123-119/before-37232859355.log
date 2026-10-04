@@ -1,0 +1,939 @@
+targeted	Set up job	﻿2026-10-04T20:38:18.0979837Z Current runner version: '2.337.0'
+targeted	Set up job	2026-10-04T20:38:18.1002997Z ##[group]Runner Image Provisioner
+targeted	Set up job	2026-10-04T20:38:18.1003923Z Hosted Compute Agent
+targeted	Set up job	2026-10-04T20:38:18.1004608Z Version: 20260901.588
+targeted	Set up job	2026-10-04T20:38:18.1005178Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	Set up job	2026-10-04T20:38:18.1005900Z Build Date: 2026-09-01T19:56:44Z
+targeted	Set up job	2026-10-04T20:38:18.1006519Z Worker ID: {5173f0e2-2192-418e-ad42-4c825560982b}
+targeted	Set up job	2026-10-04T20:38:18.1007165Z Azure Region: westus3
+targeted	Set up job	2026-10-04T20:38:18.1007697Z ##[endgroup]
+targeted	Set up job	2026-10-04T20:38:18.1009113Z ##[group]Operating System
+targeted	Set up job	2026-10-04T20:38:18.1009783Z Ubuntu
+targeted	Set up job	2026-10-04T20:38:18.1010251Z 24.04.5
+targeted	Set up job	2026-10-04T20:38:18.1010726Z LTS
+targeted	Set up job	2026-10-04T20:38:18.1011202Z ##[endgroup]
+targeted	Set up job	2026-10-04T20:38:18.1011700Z ##[group]Runner Image
+targeted	Set up job	2026-10-04T20:38:18.1012327Z Image: ubuntu-24.04
+targeted	Set up job	2026-10-04T20:38:18.1012865Z Version: 20260927.320.1
+targeted	Set up job	2026-10-04T20:38:18.1013799Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	Set up job	2026-10-04T20:38:18.1015547Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	Set up job	2026-10-04T20:38:18.1016714Z ##[endgroup]
+targeted	Set up job	2026-10-04T20:38:18.1017808Z ##[group]GITHUB_TOKEN Permissions
+targeted	Set up job	2026-10-04T20:38:18.1019875Z Contents: read
+targeted	Set up job	2026-10-04T20:38:18.1020448Z Metadata: read
+targeted	Set up job	2026-10-04T20:38:18.1020974Z Packages: read
+targeted	Set up job	2026-10-04T20:38:18.1021535Z ##[endgroup]
+targeted	Set up job	2026-10-04T20:38:18.1023454Z Secret source: Actions
+targeted	Set up job	2026-10-04T20:38:18.1024461Z Cache mode: write
+targeted	Set up job	2026-10-04T20:38:18.1025241Z Prepare workflow directory
+targeted	Set up job	2026-10-04T20:38:18.1373020Z Prepare all required actions
+targeted	Set up job	2026-10-04T20:38:18.1424616Z Getting action download info
+targeted	Set up job	2026-10-04T20:38:18.4367091Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	Set up job	2026-10-04T20:38:18.5107701Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	Set up job	2026-10-04T20:38:18.6600319Z Complete job name: targeted
+targeted	Run actions/checkout@v6	﻿2026-10-04T20:38:18.7235122Z ##[group]Run actions/checkout@v6
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.7236045Z with:
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.7236671Z   repository: BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.7240246Z   token: ***
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.7240730Z   ssh-strict: true
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.7241220Z   ssh-user: git
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.7241728Z   persist-credentials: true
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.7242233Z   clean: true
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.7242721Z   sparse-checkout-cone-mode: true
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.7243272Z   fetch-depth: 1
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.7243746Z   fetch-tags: false
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.7244348Z   show-progress: true
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.7244811Z   lfs: false
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.7245280Z   submodules: false
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.7245769Z   set-safe-directory: true
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.7246298Z   allow-unsafe-pr-checkout: false
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.7247152Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8311816Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8313966Z ##[group]Getting Git version info
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8315490Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8316579Z [command]/usr/bin/git version
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8317075Z git version 2.55.0
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8318458Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8322399Z Temporarily overriding HOME='/home/runner/work/_temp/08fd894b-de4b-44db-89c2-a19adcc971b5' before making global git config changes
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8323608Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8325079Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8343366Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8347570Z ##[group]Determining repository object format
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8349751Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8350406Z ##[group]Initializing the repository
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8353730Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8449334Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8450420Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8451715Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8452717Z hint: call:
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8453077Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8453528Z hint: 	git config --global init.defaultBranch <name>
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8454195Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8455053Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8456548Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8457254Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8457628Z hint: 	git branch -m <name>
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8458041Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8458591Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8460102Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8462336Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8499144Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8499839Z ##[group]Disabling automatic garbage collection
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8502402Z [command]/usr/bin/git config --local gc.auto 0
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8524520Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8525470Z ##[group]Setting up auth
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8525975Z Removing SSH command configuration
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8531099Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8554863Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8832064Z Removing HTTP extra header
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8836941Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.8859589Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.9020558Z Removing includeIf entries pointing to credentials config files
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.9026317Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.9049991Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.9219658Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-47798281-8146-4e04-bb11-ad9ff42f85ad.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.9247856Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-47798281-8146-4e04-bb11-ad9ff42f85ad.config
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.9269430Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-47798281-8146-4e04-bb11-ad9ff42f85ad.config
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.9293963Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-47798281-8146-4e04-bb11-ad9ff42f85ad.config
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.9316702Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-47798281-8146-4e04-bb11-ad9ff42f85ad.config
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.9342940Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.9343623Z ##[group]Fetching the repository
+targeted	Run actions/checkout@v6	2026-10-04T20:38:18.9350942Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +ee6a2aa9af8e6db1233e5fa3bdc2f75e4b2e8ba7:refs/remotes/origin/ci/B-SHEET4-119-343-before
+targeted	Run actions/checkout@v6	2026-10-04T20:38:20.3150010Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T20:38:20.3153768Z  * [new ref]         ee6a2aa9af8e6db1233e5fa3bdc2f75e4b2e8ba7 -> origin/ci/B-SHEET4-119-343-before
+targeted	Run actions/checkout@v6	2026-10-04T20:38:20.3160732Z [command]/usr/bin/git branch --list --remote origin/ci/B-SHEET4-119-343-before
+targeted	Run actions/checkout@v6	2026-10-04T20:38:20.3181116Z   origin/ci/B-SHEET4-119-343-before
+targeted	Run actions/checkout@v6	2026-10-04T20:38:20.3189730Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-SHEET4-119-343-before
+targeted	Run actions/checkout@v6	2026-10-04T20:38:20.3206596Z ee6a2aa9af8e6db1233e5fa3bdc2f75e4b2e8ba7
+targeted	Run actions/checkout@v6	2026-10-04T20:38:20.3211150Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:38:20.3212891Z ##[group]Determining the checkout info
+targeted	Run actions/checkout@v6	2026-10-04T20:38:20.3215190Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:38:20.3216176Z [command]/usr/bin/git sparse-checkout disable
+targeted	Run actions/checkout@v6	2026-10-04T20:38:20.3257283Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	Run actions/checkout@v6	2026-10-04T20:38:20.3281195Z ##[group]Checking out the ref
+targeted	Run actions/checkout@v6	2026-10-04T20:38:20.3284894Z [command]/usr/bin/git checkout --progress --force -B ci/B-SHEET4-119-343-before refs/remotes/origin/ci/B-SHEET4-119-343-before
+targeted	Run actions/checkout@v6	2026-10-04T20:38:20.4094174Z Switched to a new branch 'ci/B-SHEET4-119-343-before'
+targeted	Run actions/checkout@v6	2026-10-04T20:38:20.4098736Z branch 'ci/B-SHEET4-119-343-before' set up to track 'origin/ci/B-SHEET4-119-343-before'.
+targeted	Run actions/checkout@v6	2026-10-04T20:38:20.4107077Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:38:20.4148836Z [command]/usr/bin/git log -1 --format=%H
+targeted	Run actions/checkout@v6	2026-10-04T20:38:20.4167940Z ee6a2aa9af8e6db1233e5fa3bdc2f75e4b2e8ba7
+targeted	Run actions/setup-node@v6	﻿2026-10-04T20:38:20.4510697Z ##[group]Run actions/setup-node@v6
+targeted	Run actions/setup-node@v6	2026-10-04T20:38:20.4511905Z with:
+targeted	Run actions/setup-node@v6	2026-10-04T20:38:20.4512767Z   node-version: 22.13
+targeted	Run actions/setup-node@v6	2026-10-04T20:38:20.4513720Z   cache: npm
+targeted	Run actions/setup-node@v6	2026-10-04T20:38:20.4514722Z   check-latest: false
+targeted	Run actions/setup-node@v6	2026-10-04T20:38:20.4523544Z   token: ***
+targeted	Run actions/setup-node@v6	2026-10-04T20:38:20.4524531Z   package-manager-cache: true
+targeted	Run actions/setup-node@v6	2026-10-04T20:38:20.4525607Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T20:38:20.5881009Z Attempting to download 22.13...
+targeted	Run actions/setup-node@v6	2026-10-04T20:38:21.5765666Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+targeted	Run actions/setup-node@v6	2026-10-04T20:38:22.8011997Z Extracting ...
+targeted	Run actions/setup-node@v6	2026-10-04T20:38:22.8113482Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/ca06b979-5ecc-4c7b-ba8c-3423a836311f -f /home/runner/work/_temp/9b174b85-3799-4996-9170-78e60848c757
+targeted	Run actions/setup-node@v6	2026-10-04T20:38:23.9003678Z Adding to the cache ...
+targeted	Run actions/setup-node@v6	2026-10-04T20:38:25.2249238Z ##[group]Environment details
+targeted	Run actions/setup-node@v6	2026-10-04T20:38:25.4270501Z node: v22.13.1
+targeted	Run actions/setup-node@v6	2026-10-04T20:38:25.4271057Z npm: 10.9.2
+targeted	Run actions/setup-node@v6	2026-10-04T20:38:25.4271267Z yarn: 1.22.22
+targeted	Run actions/setup-node@v6	2026-10-04T20:38:25.4271731Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T20:38:25.4288808Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+targeted	Run actions/setup-node@v6	2026-10-04T20:38:25.5107452Z /home/runner/.npm
+targeted	Run actions/setup-node@v6	2026-10-04T20:38:25.7174812Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+targeted	Run actions/setup-node@v6	2026-10-04T20:38:26.9441912Z Received 41943040 of 241027159 (17.4%), 40.0 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-04T20:38:27.9449260Z Received 232638551 of 241027159 (96.5%), 110.8 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-04T20:38:28.0499916Z Received 241027159 of 241027159 (100.0%), 109.1 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-04T20:38:28.0501492Z Cache Size: ~230 MB (241027159 B)
+targeted	Run actions/setup-node@v6	2026-10-04T20:38:28.0539286Z [command]/usr/bin/tar -xf /home/runner/work/_temp/7d4a6bbb-d4aa-40a4-910a-c9923d3f232d/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+targeted	Run actions/setup-node@v6	2026-10-04T20:38:28.4571660Z Cache restored successfully
+targeted	Run actions/setup-node@v6	2026-10-04T20:38:28.4656689Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+targeted	Run npm ci	﻿2026-10-04T20:38:28.4823807Z ##[group]Run npm ci
+targeted	Run npm ci	2026-10-04T20:38:28.4824441Z ^[[36;1mnpm ci^[[0m
+targeted	Run npm ci	2026-10-04T20:38:28.5016177Z shell: /usr/bin/bash -e {0}
+targeted	Run npm ci	2026-10-04T20:38:28.5016499Z ##[endgroup]
+targeted	Run npm ci	2026-10-04T20:38:33.1696702Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	Run npm ci	2026-10-04T20:38:33.3405873Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+targeted	Run npm ci	2026-10-04T20:38:33.3573552Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+targeted	Run npm ci	2026-10-04T20:38:33.3615550Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+targeted	Run npm ci	2026-10-04T20:38:33.3846902Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+targeted	Run npm ci	2026-10-04T20:38:33.4793131Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+targeted	Run npm ci	2026-10-04T20:38:33.4824958Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T20:38:33.4828761Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T20:38:33.4840138Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T20:38:33.4843839Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T20:38:33.4904170Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T20:38:33.5145727Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T20:38:33.5531060Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+targeted	Run npm ci	2026-10-04T20:38:33.9208863Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+targeted	Run npm ci	2026-10-04T20:38:34.5341228Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+targeted	Run npm ci	2026-10-04T20:38:37.3221758Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+targeted	Run npm ci	2026-10-04T20:39:20.9183722Z 
+targeted	Run npm ci	2026-10-04T20:39:20.9186707Z added 1108 packages, and audited 1109 packages in 52s
+targeted	Run npm ci	2026-10-04T20:39:20.9187134Z 
+targeted	Run npm ci	2026-10-04T20:39:20.9187299Z 187 packages are looking for funding
+targeted	Run npm ci	2026-10-04T20:39:20.9187621Z   run `npm fund` for details
+targeted	Run npm ci	2026-10-04T20:39:21.2731741Z 
+targeted	Run npm ci	2026-10-04T20:39:21.2733204Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+targeted	Run npm ci	2026-10-04T20:39:21.2733621Z 
+targeted	Run npm ci	2026-10-04T20:39:21.2734002Z To address issues that do not require attention, run:
+targeted	Run npm ci	2026-10-04T20:39:21.2734756Z   npm audit fix
+targeted	Run npm ci	2026-10-04T20:39:21.2735509Z 
+targeted	Run npm ci	2026-10-04T20:39:21.2735921Z To address all issues (including breaking changes), run:
+targeted	Run npm ci	2026-10-04T20:39:21.2736474Z   npm audit fix --force
+targeted	Run npm ci	2026-10-04T20:39:21.2736696Z 
+targeted	Run npm ci	2026-10-04T20:39:21.2736885Z Run `npm audit` for details.
+targeted	Targeted jest	﻿2026-10-04T20:39:21.3979436Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T20:39:21.3979763Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T20:39:21.3980135Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T20:39:21.3980605Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T20:39:21.3980950Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T20:39:21.3981214Z ^[[36;1mnpx jest --ci "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T20:39:21.4021349Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T20:39:21.4021734Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T20:39:21.4094816Z specs: src/hooks/__tests__/usePackagePurchase.nativeFence.test.tsx src/hooks/__tests__/audSolS12119.nativeRejection.test.tsx src/components/__tests__/audOpusS12119.probe343.test.tsx src/hooks/__tests__/usePackagePurchase.boundary.test.tsx src/hooks/__tests__/usePackagePurchase.sheet2.test.tsx src/components/__tests__/PackageSelectionSheet.payment.test.tsx
+targeted	Targeted jest	2026-10-04T20:39:26.6555694Z PASS src/hooks/__tests__/usePackagePurchase.boundary.test.tsx
+targeted	Targeted jest	2026-10-04T20:39:26.9634269Z PASS src/hooks/__tests__/usePackagePurchase.sheet2.test.tsx
+targeted	Targeted jest	2026-10-04T20:39:27.3705495Z FAIL src/hooks/__tests__/usePackagePurchase.nativeFence.test.tsx
+targeted	Targeted jest	2026-10-04T20:39:27.3736101Z   ● B-343-1 rejected native initialization is fenced like a fulfilled one › initStripe rejects after one-time logout: no old notice, reference or report
+targeted	Targeted jest	2026-10-04T20:39:27.3759961Z 
+targeted	Targeted jest	2026-10-04T20:39:27.3784916Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T20:39:27.3814373Z 
+targeted	Targeted jest	2026-10-04T20:39:27.3814909Z     - Expected  -  2
+targeted	Targeted jest	2026-10-04T20:39:27.3844744Z     + Received  + 14
+targeted	Targeted jest	2026-10-04T20:39:27.3864582Z 
+targeted	Targeted jest	2026-10-04T20:39:27.3894904Z     - ObjectContaining {
+targeted	Targeted jest	2026-10-04T20:39:27.3913579Z     -   "notice": null,
+targeted	Targeted jest	2026-10-04T20:39:27.3935097Z     + Object {
+targeted	Targeted jest	2026-10-04T20:39:27.3964754Z     +   "alreadyActive": null,
+targeted	Targeted jest	2026-10-04T20:39:27.3974993Z     +   "checking": false,
+targeted	Targeted jest	2026-10-04T20:39:27.3975689Z     +   "notice": Object {
+targeted	Targeted jest	2026-10-04T20:39:27.3976361Z     +     "cause": "stripe_sheet_init_threw",
+targeted	Targeted jest	2026-10-04T20:39:27.3978286Z     +     "message": "This step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference 6cdeeb2f.",
+targeted	Targeted jest	2026-10-04T20:39:27.3980043Z     +     "openPlan": true,
+targeted	Targeted jest	2026-10-04T20:39:27.3987051Z     +     "reference": "6cdeeb2f",
+targeted	Targeted jest	2026-10-04T20:39:27.3987754Z     +     "support": true,
+targeted	Targeted jest	2026-10-04T20:39:27.3988291Z     +   },
+targeted	Targeted jest	2026-10-04T20:39:27.3988740Z         "packageId": null,
+targeted	Targeted jest	2026-10-04T20:39:27.3989297Z         "phase": "idle",
+targeted	Targeted jest	2026-10-04T20:39:27.3989827Z     +   "priceChange": null,
+targeted	Targeted jest	2026-10-04T20:39:27.3990349Z     +   "saleKind": null,
+targeted	Targeted jest	2026-10-04T20:39:27.3990877Z     +   "slowMessage": null,
+targeted	Targeted jest	2026-10-04T20:39:27.3991403Z     +   "success": null,
+targeted	Targeted jest	2026-10-04T20:39:27.3991873Z       }
+targeted	Targeted jest	2026-10-04T20:39:27.3992181Z 
+targeted	Targeted jest	2026-10-04T20:39:27.3993160Z     ^[[0m ^[[90m 86 |^[[39m     expect(mockPresent)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.3995020Z      ^[[90m 87 |^[[39m     ^[[36mif^[[39m (call ^[[33m===^[[39m ^[[32m'initStripe'^[[39m) expect(mockInitSheet)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.3998084Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 88 |^[[39m     expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate)^[[33m.^[[39mtoEqual(expect^[[33m.^[[39mobjectContaining({ phase^[[33m:^[[39m ^[[32m'idle'^[[39m^[[33m,^[[39m packageId^[[33m:^[[39m ^[[36mnull^[[39m^[[33m,^[[39m notice^[[33m:^[[39m ^[[36mnull^[[39m }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4000190Z      ^[[90m    |^[[39m                                    ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4001450Z      ^[[90m 89 |^[[39m     expect(mockCapture)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4007448Z      ^[[90m 90 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4020938Z      ^[[90m 91 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:39:27.4021488Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4022176Z       at toEqual (src/hooks/__tests__/usePackagePurchase.nativeFence.test.tsx:88:36)
+targeted	Targeted jest	2026-10-04T20:39:27.4023997Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T20:39:27.4025252Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T20:39:27.4025850Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4027107Z   ● B-343-1 rejected native initialization is fenced like a fulfilled one › initStripe rejects after one-time login: no old notice, reference or report
+targeted	Targeted jest	2026-10-04T20:39:27.4028169Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4028577Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T20:39:27.4029094Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4029500Z     - Expected  -  2
+targeted	Targeted jest	2026-10-04T20:39:27.4030036Z     + Received  + 14
+targeted	Targeted jest	2026-10-04T20:39:27.4050555Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4050998Z     - ObjectContaining {
+targeted	Targeted jest	2026-10-04T20:39:27.4051601Z     -   "notice": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4052137Z     + Object {
+targeted	Targeted jest	2026-10-04T20:39:27.4052695Z     +   "alreadyActive": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4053323Z     +   "checking": false,
+targeted	Targeted jest	2026-10-04T20:39:27.4053830Z     +   "notice": Object {
+targeted	Targeted jest	2026-10-04T20:39:27.4054645Z     +     "cause": "stripe_sheet_init_threw",
+targeted	Targeted jest	2026-10-04T20:39:27.4056515Z     +     "message": "This step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference 47f667ca.",
+targeted	Targeted jest	2026-10-04T20:39:27.4062573Z     +     "openPlan": true,
+targeted	Targeted jest	2026-10-04T20:39:27.4063002Z     +     "reference": "47f667ca",
+targeted	Targeted jest	2026-10-04T20:39:27.4063355Z     +     "support": true,
+targeted	Targeted jest	2026-10-04T20:39:27.4063679Z     +   },
+targeted	Targeted jest	2026-10-04T20:39:27.4063972Z         "packageId": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4064707Z         "phase": "idle",
+targeted	Targeted jest	2026-10-04T20:39:27.4065132Z     +   "priceChange": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4065589Z     +   "saleKind": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4066000Z     +   "slowMessage": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4066354Z     +   "success": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4066704Z       }
+targeted	Targeted jest	2026-10-04T20:39:27.4066865Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4067550Z     ^[[0m ^[[90m 86 |^[[39m     expect(mockPresent)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4069042Z      ^[[90m 87 |^[[39m     ^[[36mif^[[39m (call ^[[33m===^[[39m ^[[32m'initStripe'^[[39m) expect(mockInitSheet)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4070570Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 88 |^[[39m     expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate)^[[33m.^[[39mtoEqual(expect^[[33m.^[[39mobjectContaining({ phase^[[33m:^[[39m ^[[32m'idle'^[[39m^[[33m,^[[39m packageId^[[33m:^[[39m ^[[36mnull^[[39m^[[33m,^[[39m notice^[[33m:^[[39m ^[[36mnull^[[39m }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4071634Z      ^[[90m    |^[[39m                                    ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4072220Z      ^[[90m 89 |^[[39m     expect(mockCapture)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4072682Z      ^[[90m 90 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4072960Z      ^[[90m 91 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:39:27.4073181Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4073466Z       at toEqual (src/hooks/__tests__/usePackagePurchase.nativeFence.test.tsx:88:36)
+targeted	Targeted jest	2026-10-04T20:39:27.4084669Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T20:39:27.4085981Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T20:39:27.4086515Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4087752Z   ● B-343-1 rejected native initialization is fenced like a fulfilled one › initStripe rejects after renewing logout: no old notice, reference or report
+targeted	Targeted jest	2026-10-04T20:39:27.4088756Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4089020Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T20:39:27.4089362Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4089515Z     - Expected  -  2
+targeted	Targeted jest	2026-10-04T20:39:27.4089858Z     + Received  + 14
+targeted	Targeted jest	2026-10-04T20:39:27.4090078Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4090251Z     - ObjectContaining {
+targeted	Targeted jest	2026-10-04T20:39:27.4090622Z     -   "notice": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4090974Z     + Object {
+targeted	Targeted jest	2026-10-04T20:39:27.4091345Z     +   "alreadyActive": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4092080Z     +   "checking": false,
+targeted	Targeted jest	2026-10-04T20:39:27.4092630Z     +   "notice": Object {
+targeted	Targeted jest	2026-10-04T20:39:27.4093098Z     +     "cause": "stripe_sheet_init_threw",
+targeted	Targeted jest	2026-10-04T20:39:27.4094917Z     +     "message": "This step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference 0a8aaa09.",
+targeted	Targeted jest	2026-10-04T20:39:27.4096414Z     +     "openPlan": true,
+targeted	Targeted jest	2026-10-04T20:39:27.4097123Z     +     "reference": "0a8aaa09",
+targeted	Targeted jest	2026-10-04T20:39:27.4097566Z     +     "support": true,
+targeted	Targeted jest	2026-10-04T20:39:27.4097933Z     +   },
+targeted	Targeted jest	2026-10-04T20:39:27.4098296Z         "packageId": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4098691Z         "phase": "idle",
+targeted	Targeted jest	2026-10-04T20:39:27.4099083Z     +   "priceChange": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4099492Z     +   "saleKind": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4099907Z     +   "slowMessage": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4100301Z     +   "success": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4100661Z       }
+targeted	Targeted jest	2026-10-04T20:39:27.4100869Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4101589Z     ^[[0m ^[[90m 86 |^[[39m     expect(mockPresent)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4103193Z      ^[[90m 87 |^[[39m     ^[[36mif^[[39m (call ^[[33m===^[[39m ^[[32m'initStripe'^[[39m) expect(mockInitSheet)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4106113Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 88 |^[[39m     expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate)^[[33m.^[[39mtoEqual(expect^[[33m.^[[39mobjectContaining({ phase^[[33m:^[[39m ^[[32m'idle'^[[39m^[[33m,^[[39m packageId^[[33m:^[[39m ^[[36mnull^[[39m^[[33m,^[[39m notice^[[33m:^[[39m ^[[36mnull^[[39m }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4108082Z      ^[[90m    |^[[39m                                    ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4109124Z      ^[[90m 89 |^[[39m     expect(mockCapture)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4109979Z      ^[[90m 90 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4110475Z      ^[[90m 91 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:39:27.4110738Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4111222Z       at toEqual (src/hooks/__tests__/usePackagePurchase.nativeFence.test.tsx:88:36)
+targeted	Targeted jest	2026-10-04T20:39:27.4112304Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T20:39:27.4113306Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T20:39:27.4113776Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4115056Z   ● B-343-1 rejected native initialization is fenced like a fulfilled one › initStripe rejects after renewing login: no old notice, reference or report
+targeted	Targeted jest	2026-10-04T20:39:27.4115991Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4116299Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T20:39:27.4116700Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4116851Z     - Expected  -  2
+targeted	Targeted jest	2026-10-04T20:39:27.4117218Z     + Received  + 14
+targeted	Targeted jest	2026-10-04T20:39:27.4117467Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4117630Z     - ObjectContaining {
+targeted	Targeted jest	2026-10-04T20:39:27.4118022Z     -   "notice": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4118397Z     + Object {
+targeted	Targeted jest	2026-10-04T20:39:27.4118807Z     +   "alreadyActive": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4119259Z     +   "checking": false,
+targeted	Targeted jest	2026-10-04T20:39:27.4119655Z     +   "notice": Object {
+targeted	Targeted jest	2026-10-04T20:39:27.4120136Z     +     "cause": "stripe_sheet_init_threw",
+targeted	Targeted jest	2026-10-04T20:39:27.4121782Z     +     "message": "This step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference ac0a806e.",
+targeted	Targeted jest	2026-10-04T20:39:27.4123184Z     +     "openPlan": true,
+targeted	Targeted jest	2026-10-04T20:39:27.4123650Z     +     "reference": "ac0a806e",
+targeted	Targeted jest	2026-10-04T20:39:27.4126715Z     +     "support": true,
+targeted	Targeted jest	2026-10-04T20:39:27.4127248Z     +   },
+targeted	Targeted jest	2026-10-04T20:39:27.4127574Z         "packageId": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4127962Z         "phase": "idle",
+targeted	Targeted jest	2026-10-04T20:39:27.4128360Z     +   "priceChange": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4128797Z     +   "saleKind": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4129189Z     +   "slowMessage": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4129588Z     +   "success": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4130366Z       }
+targeted	Targeted jest	2026-10-04T20:39:27.4130542Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4131241Z     ^[[0m ^[[90m 86 |^[[39m     expect(mockPresent)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4132847Z      ^[[90m 87 |^[[39m     ^[[36mif^[[39m (call ^[[33m===^[[39m ^[[32m'initStripe'^[[39m) expect(mockInitSheet)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4135700Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 88 |^[[39m     expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate)^[[33m.^[[39mtoEqual(expect^[[33m.^[[39mobjectContaining({ phase^[[33m:^[[39m ^[[32m'idle'^[[39m^[[33m,^[[39m packageId^[[33m:^[[39m ^[[36mnull^[[39m^[[33m,^[[39m notice^[[33m:^[[39m ^[[36mnull^[[39m }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4137617Z      ^[[90m    |^[[39m                                    ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4138653Z      ^[[90m 89 |^[[39m     expect(mockCapture)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4139601Z      ^[[90m 90 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4140108Z      ^[[90m 91 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:39:27.4140351Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4140805Z       at toEqual (src/hooks/__tests__/usePackagePurchase.nativeFence.test.tsx:88:36)
+targeted	Targeted jest	2026-10-04T20:39:27.4141887Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T20:39:27.4142854Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T20:39:27.4143349Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4144671Z   ● B-343-1 rejected native initialization is fenced like a fulfilled one › initPaymentSheet rejects after one-time logout: no old notice, reference or report
+targeted	Targeted jest	2026-10-04T20:39:27.4145681Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4146010Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T20:39:27.4146383Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4146558Z     - Expected  -  2
+targeted	Targeted jest	2026-10-04T20:39:27.4146938Z     + Received  + 14
+targeted	Targeted jest	2026-10-04T20:39:27.4147159Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4147329Z     - ObjectContaining {
+targeted	Targeted jest	2026-10-04T20:39:27.4147735Z     -   "notice": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4148128Z     + Object {
+targeted	Targeted jest	2026-10-04T20:39:27.4148505Z     +   "alreadyActive": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4148940Z     +   "checking": false,
+targeted	Targeted jest	2026-10-04T20:39:27.4149313Z     +   "notice": Object {
+targeted	Targeted jest	2026-10-04T20:39:27.4149789Z     +     "cause": "stripe_sheet_init_threw",
+targeted	Targeted jest	2026-10-04T20:39:27.4151452Z     +     "message": "This step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference d7616aa8.",
+targeted	Targeted jest	2026-10-04T20:39:27.4152861Z     +     "openPlan": true,
+targeted	Targeted jest	2026-10-04T20:39:27.4153415Z     +     "reference": "d7616aa8",
+targeted	Targeted jest	2026-10-04T20:39:27.4153861Z     +     "support": true,
+targeted	Targeted jest	2026-10-04T20:39:27.4154405Z     +   },
+targeted	Targeted jest	2026-10-04T20:39:27.4154762Z         "packageId": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4155165Z         "phase": "idle",
+targeted	Targeted jest	2026-10-04T20:39:27.4155566Z     +   "priceChange": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4155955Z     +   "saleKind": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4156348Z     +   "slowMessage": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4156777Z     +   "success": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4157148Z       }
+targeted	Targeted jest	2026-10-04T20:39:27.4157326Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4158045Z     ^[[0m ^[[90m 86 |^[[39m     expect(mockPresent)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4159644Z      ^[[90m 87 |^[[39m     ^[[36mif^[[39m (call ^[[33m===^[[39m ^[[32m'initStripe'^[[39m) expect(mockInitSheet)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4162336Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 88 |^[[39m     expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate)^[[33m.^[[39mtoEqual(expect^[[33m.^[[39mobjectContaining({ phase^[[33m:^[[39m ^[[32m'idle'^[[39m^[[33m,^[[39m packageId^[[33m:^[[39m ^[[36mnull^[[39m^[[33m,^[[39m notice^[[33m:^[[39m ^[[36mnull^[[39m }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4164433Z      ^[[90m    |^[[39m                                    ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4165462Z      ^[[90m 89 |^[[39m     expect(mockCapture)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4166657Z      ^[[90m 90 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4167159Z      ^[[90m 91 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:39:27.4167396Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4167877Z       at toEqual (src/hooks/__tests__/usePackagePurchase.nativeFence.test.tsx:88:36)
+targeted	Targeted jest	2026-10-04T20:39:27.4168958Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T20:39:27.4169955Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T20:39:27.4170479Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4171643Z   ● B-343-1 rejected native initialization is fenced like a fulfilled one › initPaymentSheet rejects after one-time login: no old notice, reference or report
+targeted	Targeted jest	2026-10-04T20:39:27.4172614Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4172902Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T20:39:27.4173284Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4173448Z     - Expected  -  2
+targeted	Targeted jest	2026-10-04T20:39:27.4173845Z     + Received  + 14
+targeted	Targeted jest	2026-10-04T20:39:27.4174212Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4174368Z     - ObjectContaining {
+targeted	Targeted jest	2026-10-04T20:39:27.4174808Z     -   "notice": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4175198Z     + Object {
+targeted	Targeted jest	2026-10-04T20:39:27.4175580Z     +   "alreadyActive": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4176011Z     +   "checking": false,
+targeted	Targeted jest	2026-10-04T20:39:27.4176387Z     +   "notice": Object {
+targeted	Targeted jest	2026-10-04T20:39:27.4176858Z     +     "cause": "stripe_sheet_init_threw",
+targeted	Targeted jest	2026-10-04T20:39:27.4178522Z     +     "message": "This step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference e9d907e0.",
+targeted	Targeted jest	2026-10-04T20:39:27.4180014Z     +     "openPlan": true,
+targeted	Targeted jest	2026-10-04T20:39:27.4180459Z     +     "reference": "e9d907e0",
+targeted	Targeted jest	2026-10-04T20:39:27.4180952Z     +     "support": true,
+targeted	Targeted jest	2026-10-04T20:39:27.4181338Z     +   },
+targeted	Targeted jest	2026-10-04T20:39:27.4181704Z         "packageId": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4182105Z         "phase": "idle",
+targeted	Targeted jest	2026-10-04T20:39:27.4182529Z     +   "priceChange": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4182960Z     +   "saleKind": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4183383Z     +   "slowMessage": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4183823Z     +   "success": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4184369Z       }
+targeted	Targeted jest	2026-10-04T20:39:27.4184539Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4185242Z     ^[[0m ^[[90m 86 |^[[39m     expect(mockPresent)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4186803Z      ^[[90m 87 |^[[39m     ^[[36mif^[[39m (call ^[[33m===^[[39m ^[[32m'initStripe'^[[39m) expect(mockInitSheet)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4189512Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 88 |^[[39m     expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate)^[[33m.^[[39mtoEqual(expect^[[33m.^[[39mobjectContaining({ phase^[[33m:^[[39m ^[[32m'idle'^[[39m^[[33m,^[[39m packageId^[[33m:^[[39m ^[[36mnull^[[39m^[[33m,^[[39m notice^[[33m:^[[39m ^[[36mnull^[[39m }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4191467Z      ^[[90m    |^[[39m                                    ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4192551Z      ^[[90m 89 |^[[39m     expect(mockCapture)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4193367Z      ^[[90m 90 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4193874Z      ^[[90m 91 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:39:27.4194278Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4194750Z       at toEqual (src/hooks/__tests__/usePackagePurchase.nativeFence.test.tsx:88:36)
+targeted	Targeted jest	2026-10-04T20:39:27.4195818Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T20:39:27.4196781Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T20:39:27.4197270Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4198451Z   ● B-343-1 rejected native initialization is fenced like a fulfilled one › initPaymentSheet rejects after renewing logout: no old notice, reference or report
+targeted	Targeted jest	2026-10-04T20:39:27.4199532Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4199840Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T20:39:27.4200210Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4200366Z     - Expected  -  2
+targeted	Targeted jest	2026-10-04T20:39:27.4200764Z     + Received  + 14
+targeted	Targeted jest	2026-10-04T20:39:27.4201330Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4201520Z     - ObjectContaining {
+targeted	Targeted jest	2026-10-04T20:39:27.4201945Z     -   "notice": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4202328Z     + Object {
+targeted	Targeted jest	2026-10-04T20:39:27.4202693Z     +   "alreadyActive": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4203100Z     +   "checking": false,
+targeted	Targeted jest	2026-10-04T20:39:27.4203531Z     +   "notice": Object {
+targeted	Targeted jest	2026-10-04T20:39:27.4203979Z     +     "cause": "stripe_sheet_init_threw",
+targeted	Targeted jest	2026-10-04T20:39:27.4205730Z     +     "message": "This step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference c10275d6.",
+targeted	Targeted jest	2026-10-04T20:39:27.4207177Z     +     "openPlan": true,
+targeted	Targeted jest	2026-10-04T20:39:27.4207643Z     +     "reference": "c10275d6",
+targeted	Targeted jest	2026-10-04T20:39:27.4208075Z     +     "support": true,
+targeted	Targeted jest	2026-10-04T20:39:27.4208462Z     +   },
+targeted	Targeted jest	2026-10-04T20:39:27.4208781Z         "packageId": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4209193Z         "phase": "idle",
+targeted	Targeted jest	2026-10-04T20:39:27.4209617Z     +   "priceChange": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4210020Z     +   "saleKind": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4210429Z     +   "slowMessage": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4210851Z     +   "success": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4211261Z       }
+targeted	Targeted jest	2026-10-04T20:39:27.4211436Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4212179Z     ^[[0m ^[[90m 86 |^[[39m     expect(mockPresent)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4213779Z      ^[[90m 87 |^[[39m     ^[[36mif^[[39m (call ^[[33m===^[[39m ^[[32m'initStripe'^[[39m) expect(mockInitSheet)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4216772Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 88 |^[[39m     expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate)^[[33m.^[[39mtoEqual(expect^[[33m.^[[39mobjectContaining({ phase^[[33m:^[[39m ^[[32m'idle'^[[39m^[[33m,^[[39m packageId^[[33m:^[[39m ^[[36mnull^[[39m^[[33m,^[[39m notice^[[33m:^[[39m ^[[36mnull^[[39m }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4218746Z      ^[[90m    |^[[39m                                    ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4219851Z      ^[[90m 89 |^[[39m     expect(mockCapture)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4220688Z      ^[[90m 90 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4221181Z      ^[[90m 91 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:39:27.4221427Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4221923Z       at toEqual (src/hooks/__tests__/usePackagePurchase.nativeFence.test.tsx:88:36)
+targeted	Targeted jest	2026-10-04T20:39:27.4222953Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T20:39:27.4223957Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T20:39:27.4224606Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4225813Z   ● B-343-1 rejected native initialization is fenced like a fulfilled one › initPaymentSheet rejects after renewing login: no old notice, reference or report
+targeted	Targeted jest	2026-10-04T20:39:27.4226847Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4227132Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T20:39:27.4227501Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4227663Z     - Expected  -  2
+targeted	Targeted jest	2026-10-04T20:39:27.4228046Z     + Received  + 14
+targeted	Targeted jest	2026-10-04T20:39:27.4228271Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4228422Z     - ObjectContaining {
+targeted	Targeted jest	2026-10-04T20:39:27.4228836Z     -   "notice": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4229220Z     + Object {
+targeted	Targeted jest	2026-10-04T20:39:27.4229591Z     +   "alreadyActive": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4229981Z     +   "checking": false,
+targeted	Targeted jest	2026-10-04T20:39:27.4230346Z     +   "notice": Object {
+targeted	Targeted jest	2026-10-04T20:39:27.4230808Z     +     "cause": "stripe_sheet_init_threw",
+targeted	Targeted jest	2026-10-04T20:39:27.4232536Z     +     "message": "This step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference d14f8c45.",
+targeted	Targeted jest	2026-10-04T20:39:27.4233951Z     +     "openPlan": true,
+targeted	Targeted jest	2026-10-04T20:39:27.4234548Z     +     "reference": "d14f8c45",
+targeted	Targeted jest	2026-10-04T20:39:27.4234997Z     +     "support": true,
+targeted	Targeted jest	2026-10-04T20:39:27.4235352Z     +   },
+targeted	Targeted jest	2026-10-04T20:39:27.4235679Z         "packageId": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4236383Z         "phase": "idle",
+targeted	Targeted jest	2026-10-04T20:39:27.4236762Z     +   "priceChange": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4237184Z     +   "saleKind": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4237595Z     +   "slowMessage": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4237992Z     +   "success": null,
+targeted	Targeted jest	2026-10-04T20:39:27.4238339Z       }
+targeted	Targeted jest	2026-10-04T20:39:27.4238514Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4239194Z     ^[[0m ^[[90m 86 |^[[39m     expect(mockPresent)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4240794Z      ^[[90m 87 |^[[39m     ^[[36mif^[[39m (call ^[[33m===^[[39m ^[[32m'initStripe'^[[39m) expect(mockInitSheet)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4243512Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 88 |^[[39m     expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate)^[[33m.^[[39mtoEqual(expect^[[33m.^[[39mobjectContaining({ phase^[[33m:^[[39m ^[[32m'idle'^[[39m^[[33m,^[[39m packageId^[[33m:^[[39m ^[[36mnull^[[39m^[[33m,^[[39m notice^[[33m:^[[39m ^[[36mnull^[[39m }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4245695Z      ^[[90m    |^[[39m                                    ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4246746Z      ^[[90m 89 |^[[39m     expect(mockCapture)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4247596Z      ^[[90m 90 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4248092Z      ^[[90m 91 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:39:27.4248350Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4248835Z       at toEqual (src/hooks/__tests__/usePackagePurchase.nativeFence.test.tsx:88:36)
+targeted	Targeted jest	2026-10-04T20:39:27.4249918Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T20:39:27.4250940Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T20:39:27.4251414Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4252273Z   ● B-343-1 rejected native initialization is fenced like a fulfilled one › initStripe rejects after unmount: no report
+targeted	Targeted jest	2026-10-04T20:39:27.4253089Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4253362Z     expect(jest.fn()).not.toHaveBeenCalled()
+targeted	Targeted jest	2026-10-04T20:39:27.4253713Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4253933Z     Expected number of calls: 0
+targeted	Targeted jest	2026-10-04T20:39:27.4254564Z     Received number of calls: 1
+targeted	Targeted jest	2026-10-04T20:39:27.4254842Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4256465Z     1: [Error: package payment failed: stripe_sheet_init_threw], {"cause": "stripe_sheet_init_threw", "code": null, "reference": "fb4f3dce", "status": null, "step": "sheet_init", "stripe_decline_code": null, "stripe_error_code": null, "stripe_error_type": null, "where": "packagePurchase"}
+targeted	Targeted jest	2026-10-04T20:39:27.4258006Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4259571Z     ^[[0m ^[[90m 100 |^[[39m     ^[[36mawait^[[39m act(^[[36masync^[[39m () ^[[33m=>^[[39m { held^[[33m.^[[39mreject(^[[36mnew^[[39m ^[[33mError^[[39m(^[[32m'Synthetic native rejection after unmount'^[[39m))^[[33m;^[[39m ^[[36mawait^[[39m running^[[33m;^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4261474Z      ^[[90m 101 |^[[39m     expect(mockPresent)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4262813Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 102 |^[[39m     expect(mockCapture)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4263864Z      ^[[90m     |^[[39m                             ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4264686Z      ^[[90m 103 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4265188Z      ^[[90m 104 |^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4267074Z      ^[[90m 105 |^[[39m   it^[[33m.^[[39meach([[^[[32m'initStripe'^[[39m]^[[33m,^[[39m [^[[32m'initPaymentSheet'^[[39m]] ^[[36mas^[[39m ^[[36mconst^[[39m)(^[[32m'control: %s rejects on the same account: actionable notice'^[[39m^[[33m,^[[39m ^[[36masync^[[39m (call) ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T20:39:27.4268495Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4269014Z       at toHaveBeenCalled (src/hooks/__tests__/usePackagePurchase.nativeFence.test.tsx:102:29)
+targeted	Targeted jest	2026-10-04T20:39:27.4270120Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T20:39:27.4271101Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T20:39:27.4271625Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4272568Z   ● B-343-1 rejected native initialization is fenced like a fulfilled one › initPaymentSheet rejects after unmount: no report
+targeted	Targeted jest	2026-10-04T20:39:27.4273980Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4274400Z     expect(jest.fn()).not.toHaveBeenCalled()
+targeted	Targeted jest	2026-10-04T20:39:27.4274767Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4274960Z     Expected number of calls: 0
+targeted	Targeted jest	2026-10-04T20:39:27.4275425Z     Received number of calls: 1
+targeted	Targeted jest	2026-10-04T20:39:27.4275730Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4277396Z     1: [Error: package payment failed: stripe_sheet_init_threw], {"cause": "stripe_sheet_init_threw", "code": null, "reference": "69fbe376", "status": null, "step": "sheet_init", "stripe_decline_code": null, "stripe_error_code": null, "stripe_error_type": null, "where": "packagePurchase"}
+targeted	Targeted jest	2026-10-04T20:39:27.4279024Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4280636Z     ^[[0m ^[[90m 100 |^[[39m     ^[[36mawait^[[39m act(^[[36masync^[[39m () ^[[33m=>^[[39m { held^[[33m.^[[39mreject(^[[36mnew^[[39m ^[[33mError^[[39m(^[[32m'Synthetic native rejection after unmount'^[[39m))^[[33m;^[[39m ^[[36mawait^[[39m running^[[33m;^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4282514Z      ^[[90m 101 |^[[39m     expect(mockPresent)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4283927Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 102 |^[[39m     expect(mockCapture)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4285187Z      ^[[90m     |^[[39m                             ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4285882Z      ^[[90m 103 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4286413Z      ^[[90m 104 |^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.4288336Z      ^[[90m 105 |^[[39m   it^[[33m.^[[39meach([[^[[32m'initStripe'^[[39m]^[[33m,^[[39m [^[[32m'initPaymentSheet'^[[39m]] ^[[36mas^[[39m ^[[36mconst^[[39m)(^[[32m'control: %s rejects on the same account: actionable notice'^[[39m^[[33m,^[[39m ^[[36masync^[[39m (call) ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T20:39:27.4289667Z 
+targeted	Targeted jest	2026-10-04T20:39:27.4290240Z       at toHaveBeenCalled (src/hooks/__tests__/usePackagePurchase.nativeFence.test.tsx:102:29)
+targeted	Targeted jest	2026-10-04T20:39:27.4291372Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T20:39:27.4292411Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T20:39:27.4292925Z 
+targeted	Targeted jest	2026-10-04T20:39:27.6902057Z FAIL src/hooks/__tests__/audSolS12119.nativeRejection.test.tsx
+targeted	Targeted jest	2026-10-04T20:39:27.7034266Z   ● one-time logout: rejected sheet initialization cannot publish the old account notice
+targeted	Targeted jest	2026-10-04T20:39:27.7034843Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7035121Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T20:39:27.7035460Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7035605Z     - Expected  -  2
+targeted	Targeted jest	2026-10-04T20:39:27.7035934Z     + Received  + 14
+targeted	Targeted jest	2026-10-04T20:39:27.7036132Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7036322Z     - ObjectContaining {
+targeted	Targeted jest	2026-10-04T20:39:27.7036738Z     -   "notice": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7037153Z     + Object {
+targeted	Targeted jest	2026-10-04T20:39:27.7037561Z     +   "alreadyActive": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7038006Z     +   "checking": false,
+targeted	Targeted jest	2026-10-04T20:39:27.7038338Z     +   "notice": Object {
+targeted	Targeted jest	2026-10-04T20:39:27.7038751Z     +     "cause": "stripe_sheet_init_threw",
+targeted	Targeted jest	2026-10-04T20:39:27.7040161Z     +     "message": "This step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference dd993d3a.",
+targeted	Targeted jest	2026-10-04T20:39:27.7041377Z     +     "openPlan": true,
+targeted	Targeted jest	2026-10-04T20:39:27.7041767Z     +     "reference": "dd993d3a",
+targeted	Targeted jest	2026-10-04T20:39:27.7042201Z     +     "support": true,
+targeted	Targeted jest	2026-10-04T20:39:27.7042562Z     +   },
+targeted	Targeted jest	2026-10-04T20:39:27.7042883Z         "packageId": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7043242Z         "phase": "idle",
+targeted	Targeted jest	2026-10-04T20:39:27.7043608Z     +   "priceChange": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7044170Z     +   "saleKind": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7044557Z     +   "slowMessage": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7044999Z     +   "success": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7045397Z       }
+targeted	Targeted jest	2026-10-04T20:39:27.7045569Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7045936Z     ^[[0m ^[[90m 79 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7046903Z      ^[[90m 80 |^[[39m   expect(mockPresent)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7050072Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 81 |^[[39m   expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate)^[[33m.^[[39mtoEqual(expect^[[33m.^[[39mobjectContaining({ phase^[[33m:^[[39m ^[[32m'idle'^[[39m^[[33m,^[[39m packageId^[[33m:^[[39m ^[[36mnull^[[39m^[[33m,^[[39m notice^[[33m:^[[39m ^[[36mnull^[[39m }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7051999Z      ^[[90m    |^[[39m                                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7052671Z      ^[[90m 82 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7053151Z      ^[[90m 83 |^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7054543Z      ^[[90m 84 |^[[39m it(^[[32m'control: fulfilled initialization after logout is correctly retired'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T20:39:27.7055390Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7055861Z       at toEqual (src/hooks/__tests__/audSolS12119.nativeRejection.test.tsx:81:34)
+targeted	Targeted jest	2026-10-04T20:39:27.7056899Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T20:39:27.7057989Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T20:39:27.7058504Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7059145Z   ● one-time login: rejected sheet initialization cannot publish the old account notice
+targeted	Targeted jest	2026-10-04T20:39:27.7059687Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7059997Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T20:39:27.7060328Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7060479Z     - Expected  -  2
+targeted	Targeted jest	2026-10-04T20:39:27.7060823Z     + Received  + 14
+targeted	Targeted jest	2026-10-04T20:39:27.7061039Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7061192Z     - ObjectContaining {
+targeted	Targeted jest	2026-10-04T20:39:27.7061594Z     -   "notice": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7061976Z     + Object {
+targeted	Targeted jest	2026-10-04T20:39:27.7062391Z     +   "alreadyActive": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7062820Z     +   "checking": false,
+targeted	Targeted jest	2026-10-04T20:39:27.7063240Z     +   "notice": Object {
+targeted	Targeted jest	2026-10-04T20:39:27.7063727Z     +     "cause": "stripe_sheet_init_threw",
+targeted	Targeted jest	2026-10-04T20:39:27.7065630Z     +     "message": "This step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference ba04f8d9.",
+targeted	Targeted jest	2026-10-04T20:39:27.7066526Z     +     "openPlan": true,
+targeted	Targeted jest	2026-10-04T20:39:27.7066825Z     +     "reference": "ba04f8d9",
+targeted	Targeted jest	2026-10-04T20:39:27.7067092Z     +     "support": true,
+targeted	Targeted jest	2026-10-04T20:39:27.7067330Z     +   },
+targeted	Targeted jest	2026-10-04T20:39:27.7067540Z         "packageId": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7067778Z         "phase": "idle",
+targeted	Targeted jest	2026-10-04T20:39:27.7068024Z     +   "priceChange": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7068266Z     +   "saleKind": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7068505Z     +   "slowMessage": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7068749Z     +   "success": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7068970Z       }
+targeted	Targeted jest	2026-10-04T20:39:27.7069082Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7069303Z     ^[[0m ^[[90m 79 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7069836Z      ^[[90m 80 |^[[39m   expect(mockPresent)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7071202Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 81 |^[[39m   expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate)^[[33m.^[[39mtoEqual(expect^[[33m.^[[39mobjectContaining({ phase^[[33m:^[[39m ^[[32m'idle'^[[39m^[[33m,^[[39m packageId^[[33m:^[[39m ^[[36mnull^[[39m^[[33m,^[[39m notice^[[33m:^[[39m ^[[36mnull^[[39m }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7072238Z      ^[[90m    |^[[39m                                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7072627Z      ^[[90m 82 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7072909Z      ^[[90m 83 |^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7073605Z      ^[[90m 84 |^[[39m it(^[[32m'control: fulfilled initialization after logout is correctly retired'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T20:39:27.7074250Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7074526Z       at toEqual (src/hooks/__tests__/audSolS12119.nativeRejection.test.tsx:81:34)
+targeted	Targeted jest	2026-10-04T20:39:27.7075117Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T20:39:27.7075685Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T20:39:27.7076225Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7076599Z   ● renewing logout: rejected sheet initialization cannot publish the old account notice
+targeted	Targeted jest	2026-10-04T20:39:27.7076945Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7077115Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T20:39:27.7077344Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7077445Z     - Expected  -  2
+targeted	Targeted jest	2026-10-04T20:39:27.7077671Z     + Received  + 14
+targeted	Targeted jest	2026-10-04T20:39:27.7077803Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7077905Z     - ObjectContaining {
+targeted	Targeted jest	2026-10-04T20:39:27.7078137Z     -   "notice": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7078355Z     + Object {
+targeted	Targeted jest	2026-10-04T20:39:27.7078582Z     +   "alreadyActive": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7078836Z     +   "checking": false,
+targeted	Targeted jest	2026-10-04T20:39:27.7079070Z     +   "notice": Object {
+targeted	Targeted jest	2026-10-04T20:39:27.7079412Z     +     "cause": "stripe_sheet_init_threw",
+targeted	Targeted jest	2026-10-04T20:39:27.7080337Z     +     "message": "This step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference b5a2212a.",
+targeted	Targeted jest	2026-10-04T20:39:27.7081159Z     +     "openPlan": true,
+targeted	Targeted jest	2026-10-04T20:39:27.7081430Z     +     "reference": "b5a2212a",
+targeted	Targeted jest	2026-10-04T20:39:27.7081681Z     +     "support": true,
+targeted	Targeted jest	2026-10-04T20:39:27.7081905Z     +   },
+targeted	Targeted jest	2026-10-04T20:39:27.7082102Z         "packageId": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7082333Z         "phase": "idle",
+targeted	Targeted jest	2026-10-04T20:39:27.7082578Z     +   "priceChange": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7082823Z     +   "saleKind": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7083058Z     +   "slowMessage": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7083300Z     +   "success": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7083521Z       }
+targeted	Targeted jest	2026-10-04T20:39:27.7083623Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7083791Z     ^[[0m ^[[90m 79 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7084535Z      ^[[90m 80 |^[[39m   expect(mockPresent)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7085903Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 81 |^[[39m   expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate)^[[33m.^[[39mtoEqual(expect^[[33m.^[[39mobjectContaining({ phase^[[33m:^[[39m ^[[32m'idle'^[[39m^[[33m,^[[39m packageId^[[33m:^[[39m ^[[36mnull^[[39m^[[33m,^[[39m notice^[[33m:^[[39m ^[[36mnull^[[39m }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7086940Z      ^[[90m    |^[[39m                                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7087320Z      ^[[90m 82 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7087592Z      ^[[90m 83 |^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7088277Z      ^[[90m 84 |^[[39m it(^[[32m'control: fulfilled initialization after logout is correctly retired'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T20:39:27.7088752Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7089014Z       at toEqual (src/hooks/__tests__/audSolS12119.nativeRejection.test.tsx:81:34)
+targeted	Targeted jest	2026-10-04T20:39:27.7089599Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T20:39:27.7090148Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T20:39:27.7090431Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7090787Z   ● renewing login: rejected sheet initialization cannot publish the old account notice
+targeted	Targeted jest	2026-10-04T20:39:27.7091119Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7091284Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T20:39:27.7091510Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7091610Z     - Expected  -  2
+targeted	Targeted jest	2026-10-04T20:39:27.7091832Z     + Received  + 14
+targeted	Targeted jest	2026-10-04T20:39:27.7091968Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7092064Z     - ObjectContaining {
+targeted	Targeted jest	2026-10-04T20:39:27.7092313Z     -   "notice": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7092534Z     + Object {
+targeted	Targeted jest	2026-10-04T20:39:27.7092767Z     +   "alreadyActive": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7093023Z     +   "checking": false,
+targeted	Targeted jest	2026-10-04T20:39:27.7093260Z     +   "notice": Object {
+targeted	Targeted jest	2026-10-04T20:39:27.7093538Z     +     "cause": "stripe_sheet_init_threw",
+targeted	Targeted jest	2026-10-04T20:39:27.7094579Z     +     "message": "This step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference bbea8b88.",
+targeted	Targeted jest	2026-10-04T20:39:27.7095616Z     +     "openPlan": true,
+targeted	Targeted jest	2026-10-04T20:39:27.7095883Z     +     "reference": "bbea8b88",
+targeted	Targeted jest	2026-10-04T20:39:27.7096157Z     +     "support": true,
+targeted	Targeted jest	2026-10-04T20:39:27.7096388Z     +   },
+targeted	Targeted jest	2026-10-04T20:39:27.7096594Z         "packageId": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7096833Z         "phase": "idle",
+targeted	Targeted jest	2026-10-04T20:39:27.7097063Z     +   "priceChange": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7097307Z     +   "saleKind": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7097539Z     +   "slowMessage": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7097778Z     +   "success": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7097993Z       }
+targeted	Targeted jest	2026-10-04T20:39:27.7098104Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7098268Z     ^[[0m ^[[90m 79 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7098783Z      ^[[90m 80 |^[[39m   expect(mockPresent)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7100133Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 81 |^[[39m   expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate)^[[33m.^[[39mtoEqual(expect^[[33m.^[[39mobjectContaining({ phase^[[33m:^[[39m ^[[32m'idle'^[[39m^[[33m,^[[39m packageId^[[33m:^[[39m ^[[36mnull^[[39m^[[33m,^[[39m notice^[[33m:^[[39m ^[[36mnull^[[39m }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7101182Z      ^[[90m    |^[[39m                                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7101549Z      ^[[90m 82 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7101817Z      ^[[90m 83 |^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7102509Z      ^[[90m 84 |^[[39m it(^[[32m'control: fulfilled initialization after logout is correctly retired'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T20:39:27.7102974Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7103227Z       at toEqual (src/hooks/__tests__/audSolS12119.nativeRejection.test.tsx:81:34)
+targeted	Targeted jest	2026-10-04T20:39:27.7103804Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T20:39:27.7104507Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T20:39:27.7104780Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7105078Z   ● one-time logout: rejected initStripe is also fenced before publishing
+targeted	Targeted jest	2026-10-04T20:39:27.7105372Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7105543Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T20:39:27.7105762Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7105864Z     - Expected  -  2
+targeted	Targeted jest	2026-10-04T20:39:27.7106081Z     + Received  + 14
+targeted	Targeted jest	2026-10-04T20:39:27.7106212Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7106315Z     - ObjectContaining {
+targeted	Targeted jest	2026-10-04T20:39:27.7106541Z     -   "notice": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7106752Z     + Object {
+targeted	Targeted jest	2026-10-04T20:39:27.7106978Z     +   "alreadyActive": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7107221Z     +   "checking": false,
+targeted	Targeted jest	2026-10-04T20:39:27.7107448Z     +   "notice": Object {
+targeted	Targeted jest	2026-10-04T20:39:27.7107711Z     +     "cause": "stripe_sheet_init_threw",
+targeted	Targeted jest	2026-10-04T20:39:27.7108619Z     +     "message": "This step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference ec2e6f85.",
+targeted	Targeted jest	2026-10-04T20:39:27.7109415Z     +     "openPlan": true,
+targeted	Targeted jest	2026-10-04T20:39:27.7109687Z     +     "reference": "ec2e6f85",
+targeted	Targeted jest	2026-10-04T20:39:27.7110113Z     +     "support": true,
+targeted	Targeted jest	2026-10-04T20:39:27.7110397Z     +   },
+targeted	Targeted jest	2026-10-04T20:39:27.7110597Z         "packageId": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7110832Z         "phase": "idle",
+targeted	Targeted jest	2026-10-04T20:39:27.7111062Z     +   "priceChange": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7111300Z     +   "saleKind": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7111534Z     +   "slowMessage": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7111806Z     +   "success": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7112019Z       }
+targeted	Targeted jest	2026-10-04T20:39:27.7112128Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7112522Z     ^[[0m ^[[90m 120 |^[[39m   expect(mockInitSheet)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7113360Z      ^[[90m 121 |^[[39m   expect(mockPresent)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7114920Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 122 |^[[39m   expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate)^[[33m.^[[39mtoEqual(expect^[[33m.^[[39mobjectContaining({ phase^[[33m:^[[39m ^[[32m'idle'^[[39m^[[33m,^[[39m packageId^[[33m:^[[39m ^[[36mnull^[[39m^[[33m,^[[39m notice^[[33m:^[[39m ^[[36mnull^[[39m }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7116170Z      ^[[90m     |^[[39m                                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7116539Z      ^[[90m 123 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7116824Z      ^[[90m 124 |^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7117524Z      ^[[90m 125 |^[[39m it(^[[32m'archived package on a same-key retry cannot undo an unknown native outcome'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T20:39:27.7118023Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7118279Z       at toEqual (src/hooks/__tests__/audSolS12119.nativeRejection.test.tsx:122:34)
+targeted	Targeted jest	2026-10-04T20:39:27.7118877Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T20:39:27.7119427Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T20:39:27.7119706Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7119997Z   ● one-time login: rejected initStripe is also fenced before publishing
+targeted	Targeted jest	2026-10-04T20:39:27.7120328Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7120580Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T20:39:27.7121052Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7121292Z     - Expected  -  2
+targeted	Targeted jest	2026-10-04T20:39:27.7121915Z     + Received  + 14
+targeted	Targeted jest	2026-10-04T20:39:27.7122293Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7122568Z     - ObjectContaining {
+targeted	Targeted jest	2026-10-04T20:39:27.7123105Z     -   "notice": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7123661Z     + Object {
+targeted	Targeted jest	2026-10-04T20:39:27.7124177Z     +   "alreadyActive": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7124565Z     +   "checking": false,
+targeted	Targeted jest	2026-10-04T20:39:27.7124800Z     +   "notice": Object {
+targeted	Targeted jest	2026-10-04T20:39:27.7125126Z     +     "cause": "stripe_sheet_init_threw",
+targeted	Targeted jest	2026-10-04T20:39:27.7126098Z     +     "message": "This step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference 0150f2b5.",
+targeted	Targeted jest	2026-10-04T20:39:27.7126892Z     +     "openPlan": true,
+targeted	Targeted jest	2026-10-04T20:39:27.7127144Z     +     "reference": "0150f2b5",
+targeted	Targeted jest	2026-10-04T20:39:27.7127404Z     +     "support": true,
+targeted	Targeted jest	2026-10-04T20:39:27.7127628Z     +   },
+targeted	Targeted jest	2026-10-04T20:39:27.7127821Z         "packageId": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7128049Z         "phase": "idle",
+targeted	Targeted jest	2026-10-04T20:39:27.7128276Z     +   "priceChange": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7128518Z     +   "saleKind": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7128747Z     +   "slowMessage": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7128981Z     +   "success": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7129198Z       }
+targeted	Targeted jest	2026-10-04T20:39:27.7129301Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7129720Z     ^[[0m ^[[90m 120 |^[[39m   expect(mockInitSheet)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7130389Z      ^[[90m 121 |^[[39m   expect(mockPresent)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7131761Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 122 |^[[39m   expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate)^[[33m.^[[39mtoEqual(expect^[[33m.^[[39mobjectContaining({ phase^[[33m:^[[39m ^[[32m'idle'^[[39m^[[33m,^[[39m packageId^[[33m:^[[39m ^[[36mnull^[[39m^[[33m,^[[39m notice^[[33m:^[[39m ^[[36mnull^[[39m }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7132805Z      ^[[90m     |^[[39m                                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7133178Z      ^[[90m 123 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7133450Z      ^[[90m 124 |^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7134325Z      ^[[90m 125 |^[[39m it(^[[32m'archived package on a same-key retry cannot undo an unknown native outcome'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T20:39:27.7134811Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7135071Z       at toEqual (src/hooks/__tests__/audSolS12119.nativeRejection.test.tsx:122:34)
+targeted	Targeted jest	2026-10-04T20:39:27.7135649Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T20:39:27.7136202Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T20:39:27.7136483Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7136785Z   ● renewing logout: rejected initStripe is also fenced before publishing
+targeted	Targeted jest	2026-10-04T20:39:27.7137327Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7137491Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T20:39:27.7137718Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7137819Z     - Expected  -  2
+targeted	Targeted jest	2026-10-04T20:39:27.7138039Z     + Received  + 14
+targeted	Targeted jest	2026-10-04T20:39:27.7138179Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7138275Z     - ObjectContaining {
+targeted	Targeted jest	2026-10-04T20:39:27.7138530Z     -   "notice": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7138748Z     + Object {
+targeted	Targeted jest	2026-10-04T20:39:27.7138985Z     +   "alreadyActive": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7139241Z     +   "checking": false,
+targeted	Targeted jest	2026-10-04T20:39:27.7139605Z     +   "notice": Object {
+targeted	Targeted jest	2026-10-04T20:39:27.7140023Z     +     "cause": "stripe_sheet_init_threw",
+targeted	Targeted jest	2026-10-04T20:39:27.7141633Z     +     "message": "This step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference ffb38a77.",
+targeted	Targeted jest	2026-10-04T20:39:27.7143061Z     +     "openPlan": true,
+targeted	Targeted jest	2026-10-04T20:39:27.7143525Z     +     "reference": "ffb38a77",
+targeted	Targeted jest	2026-10-04T20:39:27.7143993Z     +     "support": true,
+targeted	Targeted jest	2026-10-04T20:39:27.7144523Z     +   },
+targeted	Targeted jest	2026-10-04T20:39:27.7144868Z         "packageId": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7145262Z         "phase": "idle",
+targeted	Targeted jest	2026-10-04T20:39:27.7145687Z     +   "priceChange": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7146111Z     +   "saleKind": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7146522Z     +   "slowMessage": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7146956Z     +   "success": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7147331Z       }
+targeted	Targeted jest	2026-10-04T20:39:27.7147502Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7148251Z     ^[[0m ^[[90m 120 |^[[39m   expect(mockInitSheet)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7149437Z      ^[[90m 121 |^[[39m   expect(mockPresent)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7151869Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 122 |^[[39m   expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate)^[[33m.^[[39mtoEqual(expect^[[33m.^[[39mobjectContaining({ phase^[[33m:^[[39m ^[[32m'idle'^[[39m^[[33m,^[[39m packageId^[[33m:^[[39m ^[[36mnull^[[39m^[[33m,^[[39m notice^[[33m:^[[39m ^[[36mnull^[[39m }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7153830Z      ^[[90m     |^[[39m                                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7154717Z      ^[[90m 123 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7155191Z      ^[[90m 124 |^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7156343Z      ^[[90m 125 |^[[39m it(^[[32m'archived package on a same-key retry cannot undo an unknown native outcome'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T20:39:27.7157185Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7157651Z       at toEqual (src/hooks/__tests__/audSolS12119.nativeRejection.test.tsx:122:34)
+targeted	Targeted jest	2026-10-04T20:39:27.7158604Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T20:39:27.7159562Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T20:39:27.7160092Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7160631Z   ● renewing login: rejected initStripe is also fenced before publishing
+targeted	Targeted jest	2026-10-04T20:39:27.7161138Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7161484Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T20:39:27.7161877Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7162054Z     - Expected  -  2
+targeted	Targeted jest	2026-10-04T20:39:27.7162441Z     + Received  + 14
+targeted	Targeted jest	2026-10-04T20:39:27.7162683Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7162856Z     - ObjectContaining {
+targeted	Targeted jest	2026-10-04T20:39:27.7163281Z     -   "notice": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7163659Z     + Object {
+targeted	Targeted jest	2026-10-04T20:39:27.7164369Z     +   "alreadyActive": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7164835Z     +   "checking": false,
+targeted	Targeted jest	2026-10-04T20:39:27.7165254Z     +   "notice": Object {
+targeted	Targeted jest	2026-10-04T20:39:27.7165774Z     +     "cause": "stripe_sheet_init_threw",
+targeted	Targeted jest	2026-10-04T20:39:27.7175598Z     +     "message": "This step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference 904965fb.",
+targeted	Targeted jest	2026-10-04T20:39:27.7177217Z     +     "openPlan": true,
+targeted	Targeted jest	2026-10-04T20:39:27.7177736Z     +     "reference": "904965fb",
+targeted	Targeted jest	2026-10-04T20:39:27.7178556Z     +     "support": true,
+targeted	Targeted jest	2026-10-04T20:39:27.7178942Z     +   },
+targeted	Targeted jest	2026-10-04T20:39:27.7179309Z         "packageId": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7179725Z         "phase": "idle",
+targeted	Targeted jest	2026-10-04T20:39:27.7180112Z     +   "priceChange": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7180543Z     +   "saleKind": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7180986Z     +   "slowMessage": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7181417Z     +   "success": null,
+targeted	Targeted jest	2026-10-04T20:39:27.7181804Z       }
+targeted	Targeted jest	2026-10-04T20:39:27.7182008Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7182810Z     ^[[0m ^[[90m 120 |^[[39m   expect(mockInitSheet)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7184286Z      ^[[90m 121 |^[[39m   expect(mockPresent)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7186903Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 122 |^[[39m   expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate)^[[33m.^[[39mtoEqual(expect^[[33m.^[[39mobjectContaining({ phase^[[33m:^[[39m ^[[32m'idle'^[[39m^[[33m,^[[39m packageId^[[33m:^[[39m ^[[36mnull^[[39m^[[33m,^[[39m notice^[[33m:^[[39m ^[[36mnull^[[39m }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7188962Z      ^[[90m     |^[[39m                                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7189647Z      ^[[90m 123 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7190144Z      ^[[90m 124 |^[[39m
+targeted	Targeted jest	2026-10-04T20:39:27.7191430Z      ^[[90m 125 |^[[39m it(^[[32m'archived package on a same-key retry cannot undo an unknown native outcome'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T20:39:27.7192360Z 
+targeted	Targeted jest	2026-10-04T20:39:27.7192851Z       at toEqual (src/hooks/__tests__/audSolS12119.nativeRejection.test.tsx:122:34)
+targeted	Targeted jest	2026-10-04T20:39:27.7193988Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T20:39:27.7195173Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T20:39:27.7195699Z 
+targeted	Targeted jest	2026-10-04T20:39:32.4165951Z FAIL src/components/__tests__/audOpusS12119.probe343.test.tsx (9.415 s)
+targeted	Targeted jest	2026-10-04T20:39:32.4167871Z   ● Q5 INFO (C-343-8) PAYMENT_ALREADY_COMPLETE without a plan destination › a notice that says "Open your plan" offers an action with that name
+targeted	Targeted jest	2026-10-04T20:39:32.4168571Z 
+targeted	Targeted jest	2026-10-04T20:39:32.4168944Z     expect(received).toBeTruthy()
+targeted	Targeted jest	2026-10-04T20:39:32.4169266Z 
+targeted	Targeted jest	2026-10-04T20:39:32.4169417Z     Received: null
+targeted	Targeted jest	2026-10-04T20:39:32.4169647Z 
+targeted	Targeted jest	2026-10-04T20:39:32.4170325Z     ^[[0m ^[[90m 197 |^[[39m     ^[[36mconst^[[39m msg ^[[33m=^[[39m r^[[33m.^[[39mgetByTestId(^[[32m'payment-error'^[[39m)^[[33m.^[[39mprops^[[33m.^[[39mchildren ^[[36mas^[[39m string^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:32.4171171Z      ^[[90m 198 |^[[39m     expect(msg)^[[33m.^[[39mtoMatch(^[[35m/Open your plan/^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:32.4171947Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 199 |^[[39m     expect(r^[[33m.^[[39mqueryByText(^[[32m'Open your plan'^[[39m))^[[33m.^[[39mtoBeTruthy()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:32.4172603Z      ^[[90m     |^[[39m                                             ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:39:32.4172992Z      ^[[90m 200 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:32.4173308Z      ^[[90m 201 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:32.4173611Z      ^[[90m 202 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:39:32.4173754Z 
+targeted	Targeted jest	2026-10-04T20:39:32.4174265Z       at Object.toBeTruthy (src/components/__tests__/audOpusS12119.probe343.test.tsx:199:45)
+targeted	Targeted jest	2026-10-04T20:39:32.4174904Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T20:39:32.4175482Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T20:39:32.4175762Z 
+targeted	Targeted jest	2026-10-04T20:39:32.7834465Z FAIL src/components/__tests__/PackageSelectionSheet.payment.test.tsx (9.739 s)
+targeted	Targeted jest	2026-10-04T20:39:32.7835868Z   ● specific copy per cause › package no longer offered (404 PACKAGE_NOT_FOUND)
+targeted	Targeted jest	2026-10-04T20:39:32.7836372Z 
+targeted	Targeted jest	2026-10-04T20:39:32.7836676Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T20:39:32.7837025Z 
+targeted	Targeted jest	2026-10-04T20:39:32.7839850Z     Expected: "This plan is no longer offered, so nothing was charged. Pull down to see your coach’s current plans, or message your coach."
+targeted	Targeted jest	2026-10-04T20:39:32.7843197Z     Received: "This plan is no longer offered, so it cannot be started from here. If an earlier payment for it did not show a clear result, open your plan in Membership to check it, or email support and quote reference c1b01742. Pull down to see your coach’s current plans, or message your coach."
+targeted	Targeted jest	2026-10-04T20:39:32.7844752Z 
+targeted	Targeted jest	2026-10-04T20:39:32.7846071Z     ^[[0m ^[[90m 344 |^[[39m       mockPost^[[33m.^[[39mmockRejectedValueOnce(httpError(^[[35m404^[[39m^[[33m,^[[39m { error^[[33m:^[[39m ^[[32m'PACKAGE_NOT_FOUND'^[[39m^[[33m,^[[39m message^[[33m:^[[39m ^[[32m'Package not available'^[[39m }))^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T20:39:32.7847372Z      ^[[90m 345 |^[[39m     )^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:32.7848918Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 346 |^[[39m     expect(text)^[[33m.^[[39mtoBe(^[[32m'This plan is no longer offered, so nothing was charged. Pull down to see your coach’s current plans, or message your coach.'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:32.7850147Z      ^[[90m     |^[[39m                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:39:32.7851063Z      ^[[90m 347 |^[[39m     expect(mockCapture)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:32.7851856Z      ^[[90m 348 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:39:32.7852362Z      ^[[90m 349 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:39:32.7852605Z 
+targeted	Targeted jest	2026-10-04T20:39:32.7853141Z       at Object.toBe (src/components/__tests__/PackageSelectionSheet.payment.test.tsx:346:18)
+targeted	Targeted jest	2026-10-04T20:39:32.7854355Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T20:39:32.7855224Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T20:39:32.7855643Z 
+targeted	Targeted jest	2026-10-04T20:39:32.8322965Z Test Suites: 4 failed, 2 passed, 6 total
+targeted	Targeted jest	2026-10-04T20:39:32.8323484Z Tests:       20 failed, 53 passed, 73 total
+targeted	Targeted jest	2026-10-04T20:39:32.8323789Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T20:39:32.8324212Z Time:        10.459 s
+targeted	Targeted jest	2026-10-04T20:39:32.8325988Z Ran all test suites matching /src\/hooks\/__tests__\/usePackagePurchase.nativeFence.test.tsx|src\/hooks\/__tests__\/audSolS12119.nativeRejection.test.tsx|src\/components\/__tests__\/audOpusS12119.probe343.test.tsx|src\/hooks\/__tests__\/usePackagePurchase.boundary.test.tsx|src\/hooks\/__tests__\/usePackagePurchase.sheet2.test.tsx|src\/components\/__tests__\/PackageSelectionSheet.payment.test.tsx/i.
+targeted	Targeted jest	2026-10-04T20:39:32.8954859Z ##[error]Process completed with exit code 1.
+targeted	Post Run actions/checkout@v6	﻿2026-10-04T20:39:32.9088279Z Post job cleanup.
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:32.9864392Z [command]/usr/bin/git version
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:32.9895696Z git version 2.55.0
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:32.9929367Z Temporarily overriding HOME='/home/runner/work/_temp/f5d05b96-6a4e-4231-97f0-7b5ed2ce6f9a' before making global git config changes
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:32.9930182Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:32.9934885Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:32.9959422Z Removing SSH command configuration
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:32.9965842Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:32.9993039Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:33.0162363Z Removing HTTP extra header
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:33.0166556Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:33.0193199Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:33.0356532Z Removing includeIf entries pointing to credentials config files
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:33.0362168Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:33.0384518Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:33.0386164Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:33.0387125Z includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:33.0388016Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:33.0392753Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:33.0409359Z /home/runner/work/_temp/git-credentials-47798281-8146-4e04-bb11-ad9ff42f85ad.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:33.0418679Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-47798281-8146-4e04-bb11-ad9ff42f85ad.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:33.0445914Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:33.0463337Z /home/runner/work/_temp/git-credentials-47798281-8146-4e04-bb11-ad9ff42f85ad.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:33.0470748Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-47798281-8146-4e04-bb11-ad9ff42f85ad.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:33.0494518Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:33.0510156Z /github/runner_temp/git-credentials-47798281-8146-4e04-bb11-ad9ff42f85ad.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:33.0516625Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-47798281-8146-4e04-bb11-ad9ff42f85ad.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:33.0540022Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:33.0555437Z /github/runner_temp/git-credentials-47798281-8146-4e04-bb11-ad9ff42f85ad.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:33.0562230Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-47798281-8146-4e04-bb11-ad9ff42f85ad.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:33.0587499Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Post Run actions/checkout@v6	2026-10-04T20:39:33.0748318Z Removing credentials config '/home/runner/work/_temp/git-credentials-47798281-8146-4e04-bb11-ad9ff42f85ad.config'
+targeted	Complete job	﻿2026-10-04T20:39:33.0865756Z Cleaning up orphan processes

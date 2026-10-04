@@ -341,6 +341,144 @@ operator default accept both as Cs). #701 @ 5e8f1ceb holds #679's 5 new tests an
 tests as part of #679's proof (they passed 525/525 merged locally), but post verdicts only on #678 and #679. Reports:
 ops/reports/AUD-OPUS-R12D-119.md, AUD-SOL-R12D-119.md.
 
+## B-SHEET4-119 (builder, Claude Opus 5.5, T4: payment sheet money copy, account fences) — mobile P1 #342 + P2 #343 (+ merge-only restack P3 #344)
+Heads: mobile #342 0b1985f46ae2d4baadfcc6a02f8257c2f504249d (2,153), #343 19678ce780d497513764a7827447c106fb14205e (2,933: 67 headroom),
+#344 8f53887a6fe12a928313fde3f4464a2ee0630f3d (FR3 READY by B-SHEET3-119; 2,728). Take lock `sheet`. Verdicts at these heads: Opus
+APPROVE #342 0/0/6 (5983935012), #343 0/0/6 (5983935229); Sol RC #342 0/1/6 (5983977653), #343 0/1/6 (5984020426). Close Sol's two Bs
+(report ops/reports/AUD-SOL-S12-119.md; probes ops/aud-119/AUD-SOL-S12-119/ and the S12B worktrees; runs 37231087077 = 2 failed,
+37231087091 = 9 failed incl. one S1-owned):
+- #342 residual B-342-1: after an unknown native outcome, package archival makes the same-key retry return PACKAGE_NOT_FOUND and the
+  copy still asserts nothing was charged (production backend 3e9a9a75 checks availability before the key lookup). Fix rule: an
+  archived/not-found refusal after an unknown same-key attempt is "not confirmed" (keep the key, plan + support actions), never "not
+  charged".
+- #343 residual B-343-1: a rejected initStripe / initPaymentSheet await bypasses live() in runSheet's catch; logout/login then rejection
+  publishes the old account's notice/reference. Fix rule: every await in the sheet path, fulfilled or rejected, is epoch/account fenced.
+Opus Cs that sit on the same lines may be folded in (say which); others stay follow-ups. SIZE: #343 has 67 lines: new tests go to #344
+(grandfathered, keep under 3,000); if #344 cannot take them, open a tests-only P4 on #344's branch (at or under 1,500). Merge-only
+restack #344 after your #343 push (B-SHEET3-119's FR3 content must survive unchanged; prove patch-ids). Replay both lenses' probes at
+your heads. FIX ROUND + READY on #342/#343, READY (restack) on #344 at green heads; write notify/sheet.txt; release the lock. Report:
+ops/reports/B-SHEET4-119.md.
+
+## B-HC5-119 (builder, Claude Opus 5.5, T4: health data, identity fences) — mobile Health Connect H4 #362 (+ tests in H5 #363; merge-only restack H6 #364)
+Heads: mobile #362 b3bc0ce4d7e62763671881e6babd60aa518203cc (base H3 #361, dual APPROVE: do not touch; 2,835: 165 headroom), #363
+2858bac5cdced8ba4941be50b471f4d53908eb42 (982), #364 529ba34524844403eb034dc1519ced21d208346c (2,937: 63 headroom; DUAL APPROVE at this
+head, Opus 5983806176, Sol 5983779549). Take lock `hc`. Verdicts on #362: Opus APPROVE 0/0/3 (5983805919); Sol RC 0/2/1 (5983778382).
+Close Sol's two Bs (report ops/reports/AUD-SOL-H46-119.md; probes ops/aud-119/AUD-SOL-H46-119/; runs 37229474471, 37229689090):
+- B-362-2 (partially open): onDeviceState.ts:158-168 checks the old grant, then awaits key enumeration; a newer consent written while
+  enumeration waits is deleted on release (not atomic across storage awaits; also the no-session branch in useWearableConnections).
+  Fix rule: local retirement is atomic per grant generation: never delete a consent newer than the one checked.
+- B-362-6: useWearableConnections.ts:150-156 performs no session check between either pre-request storage await and the DELETE:
+  switching account A -> B during identity capture or local-grant capture still sends A's Disconnect through B's authenticated
+  transport. Fix rule: re-check the session/account epoch after every await and before the request; abort if changed.
+Opus Cs on the same lines (C-362-6 comment, C-362-8 storage read error) may be folded in; say which. Stack rules: flag off, land H1-H6 as
+one, no raw provider error or health value in logs, permission and copy truth, no first person. SIZE: new tests go to #363 (H5);
+#362/#364 stay under 3,000. Merge-only restack #363 then #364 (prove #364's own-diff patch-ids unchanged). Replay both lenses' probes.
+FIX ROUND + READY on #362 (and #363 for the tests), READY (restack) on #364 at green heads; write notify/hc.txt; release the lock.
+Report: ops/reports/B-HC5-119.md.
+
+## AUD-OPUS-T23D-119 (Claude Opus 5.5) / AUD-SOL-T23D-119 (GPT-6.1 Sol) — trials T2 #672 + T3 #673 FIX ROUND 10 + new T4 #706
+Heads: #672 62c2c066a9347dcf16ad45d010f5434e85ae1a60 (2,968), #673 904b964250f4b7694b24f78fdef5a5f846957013 (2,947; merges #672), NEW #706
+a3f011638f29d80d92115b90ba0897a24f6ae709 (tests only, base #673 branch; 423; new-PR size rule: at or under 1,500). B-TR4-119 FIX ROUND 10
++ READY (#672 5984032484, #673 5984069501, #706 OPENING 5984106695); report ops/reports/B-TR4-119.md (verify every claim; before run
+37230366374, after 37231152495 = 280/291 with 11 ruled/expected reds listed in the FIX ROUNDs). Your lens's previous verdicts at
+2690c07c / 5fdb5f5c: Opus APPROVE #672 0/0/5 (5983711171), #673 0/0/5 (5983711331); Sol RC #672 0/1/1 (5983682719: B-672-3 customer-card
+admission during final preparation), #673 0/2/1 (5983683888: B-673-1 past_due/unpaid treated as never-billed; B-673-2 committed
+supersession does not veto an obsolete DELETE). Previous reports ops/reports/AUD-<LENS>-T23-119.md, probes ops/aud-119/AUD-<LENS>-T23-119/.
+Audit the round-10 delta deeply (REPEATABLE READ snapshot for purchase + customer card; paid-invoice completeness before cancelling
+past_due/unpaid; supersession/deletion/lease takeover vetoes the DELETE), replay your probes, and audit #706's tests. Builder decision
+for Sol: its customer-card probe matches "will be charged" inside the correct no-card copy "nothing will be charged": narrow the probe
+(operator default; no copy change). C-673-4 stays on the #680 integration round. Post verdicts on #672, #673 and #706. Lands T1 #671 ->
+T2 -> T3 -> T4 #706 as one, after recurring. Reports: ops/reports/AUD-OPUS-T23D-119.md, AUD-SOL-T23D-119.md.
+
+## AUD-OPUS-R34D-119 (Claude Opus 5.5) / AUD-SOL-R34D-119 (GPT-6.1 Sol) — recurring R3 #680 + R4 #696 FIX ROUND 7 (+ R5 #701 restack) (MOST CRITICAL OF ALL)
+Heads: #680 f267417a3ccd0864d3c8ba848323da16225d7aab (2,779; merge of new #679 23d2c04c first, then the fix), #696
+13c9a6c8a8f237f1d2ebf2cf280828f2fed778cb (2,197; merge + new test/b-recur7b-119-authority.spec.ts), #701 d624144c (615; merge-only, keeps
+B-RECUR7A's #679 tests). B-RECUR7B-119 FIX ROUND 7 (#680 5984124704, #696 5984124842, #701 RESTACK 5984124986; pushed by the operator from
+the builder's commits); report ops/reports/B-RECUR7B-119.md, evidence ops/aud-119/B-RECUR7B-119/ (failing-before 37231939325 = 24 fail;
+passing-after + probe replay on d624144c 37231956053 = 303 pass / 8 by-design or known). Your lens's verdicts at 216489ff / 276610a3:
+Opus APPROVE #680 0/0/6 (5983750522), #696 0/0/0 (5983750701); Sol RC #680 0/2/1 (5983671709: B-680-1 terminal/revoked purchases can regain
+access; B-680-2 a paid write into past_due bypasses the stale-decline fence), Sol APPROVE #696 (5983672143). Previous reports
+ops/reports/AUD-<LENS>-R34-119.md, probes ops/aud-119/AUD-<LENS>-R34-119/. Audit the round-7 delta deeply: REVOKED_STATUSES now
+includes refunded, chargeback_lost, disputed (no access) and nothing restores access (incl. customer.subscription.updated with
+pause_collection: Opus C-680-12 hard obligation); the past_due exemption is removed (any write after the decline read redelivers:
+operator accepts this override of the earlier "narrower exemption" default); C-680-11 decline keeps unpaid. Verify #680 and #696 are
+green at the exact heads before posting; #701 must be green too (its 5 #679 tests now compose). Known open product question (do not
+block on it, record a C if relevant): a full refund on a recurring plan revokes access but Stripe keeps billing (C-680-16; owner
+decision pending, default pause billing like R-DISPUTE-PAUSE). Post verdicts on #680, #696 and #701. Reports:
+ops/reports/AUD-OPUS-R34D-119.md, AUD-SOL-R34D-119.md.
+
+## AUD-OPUS-FL-119 (Claude Opus 5.5) / AUD-SOL-FL-119 (GPT-6.1 Sol) — fees F4 #684 + F4b #697 round 17/18, F5/F6 restacks, and the LANDING candidate
+Heads: #684 9fb9c48f0c8cfb2a76562c0f23ac7f3bbc652379 (FIX ROUND 17; 2,679), #697 c2585c97e013ffbcd5c826d9547a686302e0bae6 (FIX ROUND 18;
+2,276; new spec test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts), #685 a61d50f48a7bc2682c315367203b7301600f5854 (restack,
+own-diff patch-id d88942b5b1d2 unchanged), #686 30a118ddfd75339375ea4f6f6288669f3cbebfd5 (fees top; restack, patch-id f14b1e32b05a
+unchanged). #681 e9650dc4, #682 70f879a2, #683 cc183e0a are DUAL APPROVE and unchanged. B-FEES18-119 report ops/reports/B-FEES18-119.md
+(verify every claim: failing-before 37230855089 = 17 fail; passing-after 37230897422 with every prior probe replayed; scratch fees top +
+main 37232435047 green on all five jobs, 12,867 tests).
+Previous verdicts at 6b13af56 / 88c72200: #684 Sol RC 0/3/1 (5983705658: B-684-3 payout-notice claim/read vs deadline races; B-684-4
+refund.updated not routed; B-684-5 pending charge.refunded then succeeded full refund leaves access), Opus RC 0/2/4 (5983739251: B-684-7 =
+Sol B-684-4; B-684-8 a late older event rewrites a failed refund to succeeded and reverses the coach's money); #697 dual APPROVE tests only.
+#685/#686 dual APPROVE at c5e282fb / 8cb7b2d4. Previous reports ops/reports/AUD-<LENS>-F4-119.md and AUD-<LENS>-F56-119.md (+ probes).
+Do, in order:
+1. #684 + #697: audit the round-17/18 delta deeply (every changed line), confirm each B closed with failing-before evidence, replay your
+   probes, money list end to end (webhook order and redelivery incl. refund.updated + charge.refund.updated + charge.refunded, monotonic
+   refund status, concurrency, terminal states, fail closed on incomplete lists, currency, copy truth). C-686-3 log renames are commit
+   05bc6d31 in #684 (internal codes only; verify no personal data is logged). Post verdicts on #684 and #697.
+2. #685 + #686: verify the restack merges add no own-diff change (patch-ids), all checks green; post verdicts on both.
+3. LANDING candidate: branch wip/op119/land-fees @ 0bc3696d2bd1a25a4e963776db6f7f531881e4eb = merge of origin/main 3e9a9a75 into the
+   fees top 30a118dd (git auto-merged src/email/email.service.ts, src/email/email.types.ts, src/notifications/notifications.service.ts),
+   plus one commit lowering main's legacy log-exception baseline in test/privacy/no-pii-in-logs.spec.ts (C-686-3 ratchet; patch
+   ops/reports/B-FEES18-119-no-pii-baseline.patch). Its tree equals the scratch tree CI-proved in run 37232435047 (tree 317ea5ca).
+   Audit the three merged files (no lost template/type/route), the baseline edit (tightening only), migrations (one new:
+   20270210000000_s_fee_charge_settlement, additive; production latest 20270301000000; OR-113-4 keeps pending prefixes), and that the
+   landed tree = audited fees content + main. Record "LANDING CANDIDATE 0bc3696d: APPROVE / REQUEST CHANGES" in your report and write
+   one line to /home/user/workspace/ops/lanes119/notify/fees-landing.txt.
+4. The operator lands fees as one when #684/#697/#685/#686 have dual APPROVE: piece branches fast-forward to the candidate and #681's
+   head becomes 0bc3696d. Poll `gh pr view 681 --json headRefOid` every 3 minutes for up to 30 minutes after step 3; when it equals
+   0bc3696d2bd1a25a4e963776db6f7f531881e4eb, post your #681 verdict at that exact head (judge the whole fees stack + main as landed;
+   required checks must be green at that head; if CI is still running, wait for it within the 30 minutes). If it never appears, say so and
+   END.
+Reports: ops/reports/AUD-OPUS-FL-119.md, AUD-SOL-FL-119.md.
+
+## B-FEES19-119 (builder, Claude Opus 5.5, T4: refunds, payouts, concurrency) — fees F4 #684 (+ tests in #697; merge-only restack #685 -> #686)
+Heads: #684 9fb9c48f0c8cfb2a76562c0f23ac7f3bbc652379 (2,679; ceiling 3,000), #697 c2585c97e013ffbcd5c826d9547a686302e0bae6 (2,276; DUAL
+APPROVE), #685 a61d50f4 (DUAL APPROVE), #686 30a118dd (fees top; DUAL APPROVE; recurring #678 sits on its branch: do not touch recurring).
+#681-#683 DUAL APPROVE: do not touch. Take lock `fees`. JOB ONE, and this is the third round on B-684-3: make it final.
+Both lenses RC on #684 at 9fb9c48f (Opus 0/1/2 5984274116; Sol 0/2/1 5984278756; reports ops/reports/AUD-OPUS-FL-119.md,
+AUD-SOL-FL-119.md; probes ops/aud-119/AUD-*-FL-119/; runs 37233481399 Opus = 3 race cases fail, 37233585543 Sol = 3 fail):
+- B-684-12 (both lenses): refund-dispute-handler.service.ts:550-566,625-648: two refund events for the same refund race; a succeeded
+  writer reads pending, waits before SQL, a newer failed writer completes, the older writer's unconditional SQL restores succeeded and
+  the under-lock re-read accepts its own bad write: coach 4,630 -> 0 with no alert; one variant ends client access. Fix rule: the status
+  transition is atomic: compare-and-set (UPDATE ... WHERE id AND status/version = the value read; 0 rows = re-read and re-decide) or one
+  charge-level row lock held across read-decide-write; terminal/monotonic order enforced in SQL, not in memory.
+- B-684-3 (Sol; still open after three rounds): payout-notice.service.ts:408-414,470-481: the final email-attempt SQL and the
+  NotificationsService token read can finish after the 480,000 ms run budget (probe: 660,000 ms) and the mail/Expo send still starts
+  once, with no AbortSignal. Fix rule: re-check the deadline AFTER every awaited read and IMMEDIATELY before every provider call (email
+  and push); no provider call may start past the deadline; pass an AbortSignal (or equivalent timeout) to provider calls bounded by the
+  remaining budget; a skipped send releases its claim without burning a delivery attempt (C-684-10 behaviour stays fixed).
+Do: fix in #684 with failing-before tests that reproduce both lenses' exact probe inputs (their probe bundles must go green unchanged);
+regression tests in #697 (incl. C-697-3 race test); merge-only restack #697 -> #685 -> #686 (prove patch-ids unchanged). Keep C-686-3
+renames (05bc6d31) intact. Then build a scratch merge of the new #686 top + origin/main + ops/reports/B-FEES18-119-no-pii-baseline.patch in
+the CI lane and run the full suite (report the run and the scratch tree id). Money self-check (_COMMON_119 6). FIX ROUND + READY on #684
+and #697, READY (restack) on #685 and #686 at green heads; write notify/fees.txt "fees top: #686 @ <sha> (B-FEES19-119, <time>)"; release
+the lock. Report: ops/reports/B-FEES19-119.md.
+
+## AUD-OPUS-S123-119 (Claude Opus 5.5) / AUD-SOL-S123-119 (GPT-6.1 Sol) — mobile payment sheet P1 #342 + P2 #343 + P3 #344 (lands with recurring)
+Heads: mobile #342 e3226f3b50a1f609aea7805600ec124324cd12aa (FIX ROUND 3; 2,207), #343 691e0cf02a48db3e2d62f7c502673d9f1ef62215 (FIX ROUND 3;
+2,935), #344 7e17d142d45cfcf6d922b6e78f79881be2428041 (FIX ROUND 4 = B-SHEET3-119 FR3 content + restack + B-SHEET4 tests; 2,866).
+Builder reports ops/reports/B-SHEET4-119.md and B-SHEET3-119.md (verify every claim). Verdicts so far: #342/#343 Opus APPROVE at
+0b1985f4/19678ce7 (5983935012, 5983935229), Sol RC (5983977653: residual B-342-1 archived-package refusal claims nothing charged;
+5984020426: residual B-343-1 rejected native init republishes retired account notice). #344: never audited at a fixed head since
+B-SHEET3-119: earlier Sol RC 5982674874 (B-344-1..4), Opus RC 5982759668 (B-344-5/6) at e7fcc5d2. Previous lens reports:
+ops/reports/AUD-<LENS>-S12-119.md, AUD-<LENS>-SH3-118.md (+ probes in ops/aud-119 and ops/aud-118).
+Do: decide your lens's prior findings on all three (closing commit + failing-before test), audit the #342/#343 round-3 delta and #344
+deeply (B-SHEET3 FR3 plan management: list failure truth, cancel during dunning ends access now, voluntary cancel keeps access to
+period end, R-DISPUTE-PAUSE copy (access ended, billing paused, coach restarts), resume result, support action), replay your probes.
+Rules from the AUD-*-S12-119 entry above (copy truth, #661 and recurring reply codes, TODAY's production backend fallback, recurring
+never one-time-only, no first person). Builder decisions (operator defaults accept): one wording for "no longer offered"; production
+backend shows one "message your coach" line for in-app ending of a renewing plan; land #342-#344 as one with final-main Analyze, the
+recurring backend deploy and dunning D4 #690 (cancel route). Post verdicts on #342, #343 and #344. Reports:
+ops/reports/AUD-OPUS-S123-119.md, AUD-SOL-S123-119.md.
+
 ## QUEUE (operator launches as slots free; cap 15 concurrent, owner 12:28 PDT 10-04)
 1. R5 pair #701 72eb096b. 2. HC pair m#362 b3bc0ce4 + m#364 529ba345 (then m#363 2858bac5 delta). 3. Lockout pair m#352 ac244d22 +
 m#353 05d84f27 (then m#354 f084cc0f). 4. Wizard pair m#345 97c9005e + m#346 2baea5b8 (then #347 W3 fix round). 5. B-SHEET3-119 (m#344:

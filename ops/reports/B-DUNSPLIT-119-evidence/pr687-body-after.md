@@ -12,4 +12,4 @@ Split of #628 (dunning v2 live: card update, lockout, recovery; 12,334 lines at 
 |---|---|---|---|---|
 | 1 | B-D12-116 (agent 116) | `f8e47bf4` | Sol and Opus round-1 findings; cadence and dispatcher moved into D1 | [FIX ROUND 1](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/687#issuecomment-5976568403) |
 | 2 | B-DUNA-118 (agent 118) | `38d9b3ab` | main `2af682ca` merged (merge-only); Sol B-687-3, B-687-4; Opus B-687-5; Opus B-688-7 (template part); C-687-6, C-687-7, C-688-10 | [FIX ROUND 2](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/687#issuecomment-5982921310) |
-
+| 3 | B-DUNSPLIT-119 (agent 119) | `c260a849` | main `3e9a9a75` merged (merge-only); R-DISPUTE-PAUSE copy (client and coach); fixtures moved to #704; privacy-guard legacy list | [FIX ROUND 3](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/687#issuecomment-5984088671) |

@@ -71,3 +71,14 @@
 - Sheet Cs (Opus S12-119): C-342-7 'could not reach the server' on timeouts; C-343-7 'the team will put it right' promise; C-343-8 'Open your plan' with only 'Continue to the app' (pair with C-SH2-3); C-343-9 unused checkoutEnded string.
 - Coach Cs (B-CM5-119): C-674-6/7/8/9/11/13, C-641 float arithmetic, C-676-1/6, C-677-2 (file:line in ops/reports/B-CM5-119.md).
 - Sheet #344 Cs (B-SHEET3-119): C-344-1/5/6/8/9/10/11, C-SH3-1, one backend item (ops/reports/B-SHEET3-119.md). Land rule: #344 also needs dunning D4 #690 (cancel route).
+- R12D Cs (Sol): deletion busy copy, pool occupancy, missing-SetupIntent replay, mixed-snapshot duplicate plans, deleted-coach timeout copy, terminal-history pagination (cap 50 applies to nontrial canceled history only).
+- Dunning Cs (B-DUNSPLIT-119): C-688-9 lock order; reconciler to re-apply the Stripe pause; dispute lockout screen copy; dispute deep link; carried Cs (ops/reports/B-DUNSPLIT-119.md).
+- R12D Cs (Opus): C-678-5 coach deletion one Stripe read per stale attempt in one transaction; C-679-5 timed-out copy on coach deletion; C-679-6 history cap 50 no paging. Default: one follow-up PR on main after recurring lands.
+- C-680-16 (refund billing: full refund on recurring revokes access, Stripe keeps billing; owner decision), C-680-17 (dispute access) (B-RECUR7B-119). D2c should end access and mark disputed BEFORE pausing collection (B-RECUR7B decision 4) -> dunning lenses/B-DUNB.
+- Fees Cs (B-FEES18-119): C-684-4 in-memory distinct payout-notice.service.ts:576; C-684-11 pending refund ends access via amount_refunded :284 (alert only); C-684-3 dispute copy :1168; payout-notice push/email have no cancel signal (60 s margin); C-686-2, C-686-4.
+- Trials Cs (Opus T23D-119): C-672-12 snapshot failure at final send check burns tries; C-673-6 never-billed past_due cancel does not void the open invoice first (fix with C-673-4 in #680 integration round); C-706-1 card-race tests pass without snapshot.
+- Fees Cs (Opus FL-119): C-697-3 race test (asked of B-FEES19), C-685-3; Stripe endpoint: subscribe refund.updated, keep charge.refunded + charge.refund.updated.
+- HARD OBLIGATIONS for dunning (B-DUNB-119 / dunning lenses), from Opus R34D-119: C-680-18 with FEATURE_DUNNING_V2 on, a paid invoice
+  re-grants access to a refunded/lost/disputed plan and the next subscription update reopens it (flag stays off until fixed, whichever of
+  recurring/dunning lands second carries it); C-680-19 a won dispute sets the plan to paid -> access returns automatically, against
+  R-DISPUTE-PAUSE (fix in the R-DISPUTE-PAUSE build). C-680-16 full refund on recurring keeps billing (owner decision; default pause).

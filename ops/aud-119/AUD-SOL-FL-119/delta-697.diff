@@ -1,0 +1,1100 @@
+diff --git a/src/checkout/checkout-webhook-handler.service.ts b/src/checkout/checkout-webhook-handler.service.ts
+index 81b63279..52066cf1 100644
+--- a/src/checkout/checkout-webhook-handler.service.ts
++++ b/src/checkout/checkout-webhook-handler.service.ts
+@@ -216,8 +216,12 @@ export class CheckoutWebhookHandlerService {
+         return this.applyCustomerUpdated(event);
+       // Phase 6 — refund / dispute / transfer / payout events. Delegated
+       // to the RefundDisputeHandlerService.
++      // Round 17 (Sol B-684-4, Opus B-684-7): Stripe sends refund.updated for every refund and
++      // marks charge.refund.updated deprecated; both reach the refund handler (idempotent per
++      // refund id), so an async refund's later status moves its money either way.
+       case 'charge.refunded':
+       case 'charge.refund.updated':
++      case 'refund.updated':
+       case 'charge.dispute.created':
+       case 'charge.dispute.updated':
+       case 'charge.dispute.closed':
+diff --git a/src/checkout/payout-notice.service.ts b/src/checkout/payout-notice.service.ts
+index af1adfd3..84ec24d5 100644
+--- a/src/checkout/payout-notice.service.ts
++++ b/src/checkout/payout-notice.service.ts
+@@ -32,6 +32,9 @@ import { PrismaService } from '../prisma.service';
+ export const PAYOUT_NOTICE_DEEP_LINK = 'tgp://coach/money';
+ export const PAYOUT_NOTICE_CLAIM_TTL_MS = 5 * 60_000;
+ export const PAYOUT_NOTICE_MAX_ATTEMPTS = 6;
++// Round 17 (Sol B-684-3): no channel starts with less than this left on the notice's claim, so
++// a provider call (bounded by its own client timeout) ends before another worker may take over.
++export const PAYOUT_NOTICE_SEND_MARGIN_MS = 60_000;
+ export const PAYOUT_NOTICE_PAGE_MAX = 50;
+ 
+ // Channel outcomes that are final: a retry never repeats them (B-627-6).
+@@ -44,6 +47,8 @@ interface ChannelResult {
+   notification_id?: string;
+   // The channel's receipt was already written with the delivery itself.
+   receipt_saved?: boolean;
++  // Round 17 (Sol B-684-3): the send boundary refused; the channel stays as it was.
++  stopped?: boolean;
+ }
+ 
+ class InAppAlreadyRecorded extends Error {
+@@ -179,18 +184,45 @@ export class PayoutNoticeService {
+     deadlineAt?: number,
+   ): Promise<boolean> {
+     if (n.dispatched_at) return false;
++    // Round 17 (Sol B-684-3): the claim is stamped with the time it is taken, never an earlier
++    // batch start, so a claim is never born older than its TTL.
++    const claimedAt = new Date(Math.max(now.getTime(), Date.now()));
+     const claim = await this.prisma.payoutAdjustmentNotice.updateMany({
+       where: {
+         id: n.id,
+         dispatched_at: null,
+         OR: [
+           { dispatch_claimed_at: null },
+-          { dispatch_claimed_at: { lte: new Date(now.getTime() - PAYOUT_NOTICE_CLAIM_TTL_MS) } },
++          {
++            dispatch_claimed_at: {
++              lte: new Date(claimedAt.getTime() - PAYOUT_NOTICE_CLAIM_TTL_MS),
++            },
++          },
+         ],
+       },
+-      data: { dispatch_claimed_at: now, dispatch_attempts: { increment: 1 } },
++      data: { dispatch_claimed_at: claimedAt, dispatch_attempts: { increment: 1 } },
+     });
+     if (claim.count !== 1) return false;
++    // Round 17 (Sol B-684-3): immediately before each channel starts, the claim is re-proved
++    // (a fence that matches only this worker's claim) and then the run deadline and the claim's
++    // remaining lifetime are checked, after every preparatory await. A stop keeps the unfinished
++    // channels pending, releases the claim and does not count the attempt (C-684-10).
++    const canSend = async (): Promise<boolean> => {
++      const fence = await this.prisma.payoutAdjustmentNotice.updateMany({
++        where: { id: n.id, dispatched_at: null, dispatch_claimed_at: claimedAt },
++        data: { dispatch_claimed_at: claimedAt },
++      });
++      const sendBy =
++        claimedAt.getTime() + PAYOUT_NOTICE_CLAIM_TTL_MS - PAYOUT_NOTICE_SEND_MARGIN_MS;
++      return fence.count === 1 && !pastDeadline(deadlineAt) && Date.now() < sendBy;
++    };
++    const stop = async (): Promise<false> => {
++      await this.prisma.payoutAdjustmentNotice.updateMany({
++        where: { id: n.id, dispatched_at: null, dispatch_claimed_at: claimedAt },
++        data: { dispatch_claimed_at: null, dispatch_attempts: { decrement: 1 } },
++      });
++      return false;
++    };
+     // Re-read under the claim: the channels a previous attempt finished are
+     // never repeated (B-627-6, round 6).
+     const row = await this.prisma.payoutAdjustmentNotice.findUnique({ where: { id: n.id } });
+@@ -216,6 +248,7 @@ export class PayoutNoticeService {
+     // receipt commit together (C-627-8 Sol, round 7); push and email are
+     // at least once across a receipt write that fails after the provider
+     // accepted them (email additionally dedupes on its own attempt key).
++    if (!INAPP_DONE.has(row.inapp_status) && !(await canSend())) return stop();
+     const inapp: ChannelResult = INAPP_DONE.has(row.inapp_status)
+       ? { status: row.inapp_status }
+       : await this.deliverInApp(row, payload);
+@@ -226,25 +259,29 @@ export class PayoutNoticeService {
+       });
+     }
+     // Push and email wait for the next run once the deadline passes (Sol B-684-3).
+-    if (!PUSH_DONE.has(row.push_status) && pastDeadline(deadlineAt)) return false;
++    if (!PUSH_DONE.has(row.push_status) && !(await canSend())) return stop();
+     const push: ChannelResult = PUSH_DONE.has(row.push_status)
+       ? { status: row.push_status }
+-      : await this.deliverPush(row, payload);
++      : await this.deliverPush(row, payload, canSend);
+     if (push.status !== row.push_status || push.notification_id) {
+       await this.saveChannel(row.id, {
+         push_status: push.status,
+         ...(push.notification_id ? { push_notification_id: push.notification_id } : {}),
+       });
+     }
+-    if (!EMAIL_DONE.has(row.email_status) && pastDeadline(deadlineAt)) return false;
+-    const email: ChannelResult = EMAIL_DONE.has(row.email_status)
++    if (push.stopped) return stop();
++    if (!EMAIL_DONE.has(row.email_status) && !(await canSend())) return stop();
++    const mailOutcome: ChannelResult = EMAIL_DONE.has(row.email_status)
+       ? { status: row.email_status }
+-      : await this.deliverEmail(row, now);
+-    if (email.status !== row.email_status) {
+-      await this.saveChannel(row.id, { email_status: email.status });
++      : await this.deliverEmail(row, claimedAt, canSend);
++    if (mailOutcome.stopped) return stop();
++    if (mailOutcome.status !== row.email_status) {
++      await this.saveChannel(row.id, { email_status: mailOutcome.status });
+     }
+     const failed =
+-      !INAPP_DONE.has(inapp.status) || !PUSH_DONE.has(push.status) || !EMAIL_DONE.has(email.status);
++      !INAPP_DONE.has(inapp.status) ||
++      !PUSH_DONE.has(push.status) ||
++      !EMAIL_DONE.has(mailOutcome.status);
+     // A channel that is not done leaves the notice undelivered (the claim
+     // expires and the sweeper retries only that channel, up to
+     // PAYOUT_NOTICE_MAX_ATTEMPTS); the Money page shows it either way.
+@@ -257,7 +294,7 @@ export class PayoutNoticeService {
+     }
+     if (failed && finalAttempt) {
+       this.logger.error(
+-        `SFEE_NOTICE_UNDELIVERED alert=true notice=${row.id} payee=${row.payee_user_id} inapp=${inapp.status} push=${push.status} email=${email.status}: gave up after ${PAYOUT_NOTICE_MAX_ATTEMPTS} attempts; the payee still sees it on the Money page`,
++        `SFEE_NOTICE_UNDELIVERED alert=true notice=${row.id} payee=${row.payee_user_id} inapp=${inapp.status} push=${push.status} email=${mailOutcome.status}: gave up after ${PAYOUT_NOTICE_MAX_ATTEMPTS} attempts; the payee still sees it on the Money page`,
+       );
+     }
+     return !failed;
+@@ -331,7 +368,13 @@ export class PayoutNoticeService {
+   private async deliverPush(
+     n: PayoutAdjustmentNotice,
+     payload: Record<string, unknown>,
++    canSend: () => Promise<boolean>,
+   ): Promise<ChannelResult> {
++    const unchanged = (rowId?: string | null): ChannelResult => ({
++      status: n.push_status,
++      stopped: true,
++      ...(rowId ? { notification_id: rowId } : {}),
++    });
+     try {
+       let rowId = n.push_notification_id;
+       if (!rowId) {
+@@ -346,6 +389,7 @@ export class PayoutNoticeService {
+               )
+             : 'enabled';
+         if (gate !== 'enabled') return { status: 'off' };
++        if (!(await canSend())) return unchanged();
+         const pushRow = await this.notifications.createNotification({
+           user_id: n.payee_user_id,
+           kind: NotificationKind.COACH_ALERT,
+@@ -363,6 +407,7 @@ export class PayoutNoticeService {
+         }
+         rowId = pushRow.id;
+       }
++      if (!(await canSend())) return unchanged(rowId);
+       const res = await this.notifications.pushToUser(n.payee_user_id, n.title, n.body, {
+         type: 'payout_adjustment',
+         notice_id: n.id,
+@@ -394,7 +439,11 @@ export class PayoutNoticeService {
+    * sent again); sending and younger than the claim TTL = still in flight
+    * (wait); failed, missing or a stale sending row = send the next attempt.
+    */
+-  private async deliverEmail(n: PayoutAdjustmentNotice, now: Date): Promise<ChannelResult> {
++  private async deliverEmail(
++    n: PayoutAdjustmentNotice,
++    now: Date,
++    canSend: () => Promise<boolean>,
++  ): Promise<ChannelResult> {
+     if (!this.email) return { status: 'disabled' };
+     try {
+       const user = await this.prisma.user.findUnique({
+@@ -418,6 +467,7 @@ export class PayoutNoticeService {
+           return { status: 'pending' };
+         }
+       }
++      if (!(await canSend())) return { status: n.email_status, stopped: true };
+       const attempt = n.email_attempts + 1;
+       // Recorded before the send: a crash after it never reuses this key.
+       await this.prisma.payoutAdjustmentNotice.updateMany({
+diff --git a/src/checkout/refund-dispute-handler.service.ts b/src/checkout/refund-dispute-handler.service.ts
+index 79f3bbbd..4d1ab390 100644
+--- a/src/checkout/refund-dispute-handler.service.ts
++++ b/src/checkout/refund-dispute-handler.service.ts
+@@ -7,7 +7,7 @@ import {
+   isLegacyDestinationCharge,
+   settlementFailureCode,
+ } from '../connect/fees/charge-settlement.service';
+-import { isRetryableMoneyError } from '../connect/fees/money-errors';
++import { isRetryableMoneyError, RefundStateUnavailableError } from '../connect/fees/money-errors';
+ import { PayoutReadinessService } from '../connect/fees/payout-readiness.service';
+ import { SplitLedgerService } from '../connect/fees/split-ledger.service';
+ import { TransferOrchestratorService } from '../connect/fees/transfer-orchestrator.service';
+@@ -34,6 +34,18 @@ type WebhookTx = Prisma.TransactionClient;
+ const COACH_REFUND_DEEP_LINK = 'tgp://coach/billing/refunds';
+ const COACH_DISPUTE_DEEP_LINK = 'tgp://coach/billing/disputes';
+ 
++// Round 17 (Opus B-684-8): Stripe refund statuses that never change again.
++const FAILED_REFUND_STATUSES = new Set(['failed', 'canceled']);
++
++/** A refund's status only moves forward; an older event never rewrites a newer outcome. */
++function nextRefundStatus(current: string, incoming: string): string {
++  if (FAILED_REFUND_STATUSES.has(current)) return current;
++  if (current === 'succeeded' && (incoming === 'pending' || incoming === 'requires_action')) {
++    return current;
++  }
++  return incoming;
++}
++
+ // RefundDisputeHandlerService — webhook + admin-driven side of the
+ // refund / dispute / payout pipeline.
+ //
+@@ -142,7 +154,9 @@ export class RefundDisputeHandlerService {
+     type: string;
+     data: { object: Record<string, unknown> };
+   }): string | null {
+-    if (!this.payoutNotices || !event.type.startsWith('charge.')) return null;
++    // Round 17 (Sol B-684-4): refund.updated carries the refund, like charge.refund.updated.
++    if (!this.payoutNotices) return null;
++    if (!event.type.startsWith('charge.') && event.type !== 'refund.updated') return null;
+     const obj = event.data.object as { id?: unknown; charge?: unknown };
+     if (event.type === 'charge.refunded') return typeof obj.id === 'string' ? obj.id : null;
+     return typeof obj.charge === 'string' ? obj.charge : null;
+@@ -230,6 +244,9 @@ export class RefundDisputeHandlerService {
+     // we know which refund ids transitioned this delivery; redeliveries
+     // see ledger_reversed already true and skip.
+     const refunds = await this.completeRefunds(charge);
++    // Round 17 (Opus B-684-8): converge on the rows as written, so a stale snapshot never
++    // counts a refund this service already knows has failed.
++    let succeededCents = 0;
+     const newlyAppliedRefunds: Array<{
+       id: string;
+       amount_cents: number;
+@@ -245,6 +262,8 @@ export class RefundDisputeHandlerService {
+         status: r.status ?? 'pending',
+         reason: r.reason ?? null,
+       });
++      if (outcome.row.status === 'succeeded')
++        succeededCents += Math.max(0, outcome.row.amount_cents);
+       if (outcome.ledger_just_reversed) {
+         newlyAppliedRefunds.push({
+           id: r.id,
+@@ -276,73 +295,7 @@ export class RefundDisputeHandlerService {
+     // first-payment-refund-retention.spec.ts). If product later wants the
+     // celebration to be re-armable, delete the ledger row inside the inner
+     // $transaction below — but that is a deliberate product decision, not a bug.
+-    if (fullyRefunded) {
+-      // A276-F2-P2-3 — the ClientPurchase status flip and the
+-      // GuestCheckout lockstep mirror MUST commit atomically. The
+-      // previous implementation issued both writes on `this.prisma`,
+-      // so a crash between the two could leave ClientPurchase='refunded'
+-      // / GuestCheckout='converted' until the Stripe retry converged
+-      // via the WHERE guards. The WHERE-guards still keep both writes
+-      // idempotent under Stripe redelivery; the transaction adds the
+-      // crash-safety the audit flagged as missing.
+-      //
+-      // We deliberately do NOT include the upstream ledger reversals
+-      // or the Stripe-side transfer reversal in this transaction
+-      // because those involve Stripe HTTP calls (transfers.reverse)
+-      // — the exact in-tx HTTP anti-pattern P1-3 / P2-1 eliminate.
+-      // The ledger writes have already committed on `this.prisma`
+-      // above and the WHERE-guards make every step idempotent on
+-      // Stripe retry.
+-      await this.prisma.$transaction(async (tx) => {
+-        // WHERE-guard on status keeps this idempotent under Stripe
+-        // redelivery (the second delivery sees status already 'refunded'
+-        // and the updateMany returns count=0 as a no-op).
+-        await tx.clientPurchase.updateMany({
+-          where: { id: purchase.id, status: { not: 'refunded' } },
+-          data: { status: 'refunded', entitlement_active: false },
+-        });
+-
+-        // A276 P1-2 (refix) — keep the originating GuestCheckout row in
+-        // lockstep. After conversion the row's status is 'converted'; a
+-        // refund of the underlying charge must flip it to 'refunded' so
+-        // admin reports that filter `GuestCheckout WHERE status='refunded'`
+-        // surface the transaction. updateMany with a status guard makes
+-        // this idempotent under Stripe redelivery and a no-op when no
+-        // GuestCheckout exists (direct ClientPurchase paths). We never
+-        // re-stamp refunded_at here — the GuestCheckout-path handler
+-        // (handleChargeRefunded) owns that field's audit trail; in the
+-        // post-conversion case it stays null, which correctly reflects
+-        // "never refunded through the guest path".
+-        if (purchase.stripe_payment_intent_id) {
+-          await tx.guestCheckout.updateMany({
+-            where: {
+-              stripe_payment_intent_id: purchase.stripe_payment_intent_id,
+-              status: { not: 'refunded' },
+-            },
+-            data: { status: 'refunded' },
+-          });
+-        }
+-
+-        // PR-16 — full-refund branch: cancel every not-yet-fired drop
+-        // for this purchase. Runs in the SAME inner $transaction as the
+-        // ClientPurchase.status='refunded' / entitlement_active=false
+-        // flip so revoke + drop-cancel commit-or-rollback together. The
+-        // WHERE clause inside cancelPendingForPurchase filters
+-        // status IN ('pending','due') so a Stripe redelivery (which hits
+-        // count=0 on the WHERE-guarded updateMany above) is a true
+-        // no-op for drops too.
+-        //
+-        // Partial refunds: the brief mandates we match the entitlement
+-        // rule. Per existing code (lines ~152-156), partial refund keeps
+-        // entitlement_active=true (`fullyRefunded` gate is total>=cents).
+-        // So drops are ONLY canceled when the refund is full. Partial
+-        // refund = client keeps the access they paid net-of-credit for,
+-        // and continues receiving dripped content. Documented.
+-        if (this.fanout) {
+-          await this.fanout.cancelPendingForPurchase(purchase.id, 'refund', tx);
+-        }
+-      });
+-    }
++    if (fullyRefunded) await this.revokeFullyRefunded(purchase);
+ 
+     // F2 — partial-refund coach-decision surface. When the refund is NOT a
+     // full refund, entitlement_active stays true (the fullyRefunded branch
+@@ -383,10 +336,6 @@ export class RefundDisputeHandlerService {
+     // after the per-refund alerts, so a retried delivery loses none of them. Round 13 (Opus
+     // B-684-3): on the SUCCEEDED refunds of the complete list, never amount_refunded (it also
+     // counts pending refunds). A converted charge reads its own debits from Stripe (B-683-1).
+-    const succeededCents = refunds.reduce(
+-      (n, r) => n + (r.status === 'succeeded' && typeof r.amount === 'number' ? r.amount : 0),
+-      0,
+-    );
+     if (this.settlements && succeededCents > 0) {
+       await this.settlements.applyAdjustments({
+         purchase,
+@@ -398,6 +347,33 @@ export class RefundDisputeHandlerService {
+     return { claimed: true, purchase_id: purchase.id };
+   }
+ 
++  /**
++   * A full refund ends access (shared by charge.refunded and the refund status events, Sol
++   * B-684-5). The ClientPurchase flip, its GuestCheckout mirror and the drop cancel commit
++   * together (A276-F2-P2-3, PR-16); the status WHERE-guards make a redelivery a no-op. Money and
++   * Stripe calls stay outside this transaction (P1-3). Partial refunds keep access.
++   */
++  private async revokeFullyRefunded(purchase: ClientPurchase): Promise<void> {
++    await this.prisma.$transaction(async (tx) => {
++      await tx.clientPurchase.updateMany({
++        where: { id: purchase.id, status: { not: 'refunded' } },
++        data: { status: 'refunded', entitlement_active: false },
++      });
++      if (purchase.stripe_payment_intent_id) {
++        await tx.guestCheckout.updateMany({
++          where: {
++            stripe_payment_intent_id: purchase.stripe_payment_intent_id,
++            status: { not: 'refunded' },
++          },
++          data: { status: 'refunded' },
++        });
++      }
++      if (this.fanout) {
++        await this.fanout.cancelPendingForPurchase(purchase.id, 'refund', tx);
++      }
++    });
++  }
++
+   /**
+    * Round 13 (Sol B-684-1, Opus B-684-3): every refund on the charge. The event embeds at most
+    * the latest ten (none on current API versions), so unless the embedded list is explicitly
+@@ -473,8 +449,14 @@ export class RefundDisputeHandlerService {
+    * Round 13 (Opus B-684-3): a refund's terminal status moves its money. One that becomes
+    * succeeded is applied now (once, under the charge lock, idempotent on ledger_reversed) and
+    * the coach is told; a pending one moves nothing. One that fails or is canceled after its
+-   * money was applied raises an alert and flags the settlement for review (C-684-4; nothing is
+-   * re-credited automatically). A refund this service has not seen yet is recorded too.
++   * money was applied raises an alert and flags the settlement for review (C-684-4, decided
++   * under the charge lock in upsertAndApplyRefund; nothing is re-credited automatically). A
++   * refund this service has not seen yet is recorded too.
++   * Round 17 (Sol B-684-5): a succeeded refund also converges the purchase. Before anything
++   * moves, the charge (presentment amount) and its complete refund list are read from Stripe
++   * (fail closed: the webhook fails and Stripe redelivers); when the succeeded refunds cover
++   * the charge, access ends exactly as on charge.refunded, otherwise a newly applied refund
++   * gets the partial-refund decision. Re-run on every succeeded delivery (idempotent).
+    */
+   private async applyRefundUpdate(
+     refund: {
+@@ -492,18 +474,7 @@ export class RefundDisputeHandlerService {
+       : await this.resolvePurchaseByCharge(chargeId);
+     if (!purchase || !refund.id) return { claimed: false, reason: 'no_matching_purchase' };
+     const status = refund.status ?? existing?.status ?? 'pending';
+-    if (existing?.ledger_reversed && (status === 'failed' || status === 'canceled')) {
+-      this.logger.error(
+-        `SFEE_REFUND_FAILED_AFTER_APPLY alert=true charge=${chargeId} refund=${refund.id} status=${status}: the payout was already reduced for this refund; the settlement is flagged for review and nothing is re-credited automatically`,
+-      );
+-      await this.prisma.chargeSettlement.updateMany({
+-        where: { stripe_charge_id: chargeId },
+-        data: {
+-          reconcile_requested_at: new Date(),
+-          reconcile_reason: 'SFEE_REFUND_FAILED_AFTER_APPLY',
+-        },
+-      });
+-    }
++    const fullyRefunded = status === 'succeeded' ? await this.coversCharge(chargeId) : false;
+     const outcome = await this.upsertAndApplyRefund({
+       purchase,
+       stripe_refund_id: refund.id,
+@@ -513,13 +484,15 @@ export class RefundDisputeHandlerService {
+       status,
+       reason: refund.reason ?? existing?.reason ?? null,
+     });
+-    if (refund.failure_reason !== undefined) {
++    if (refund.failure_reason !== undefined && outcome.row.status === status) {
+       await this.prisma.chargeRefund.update({
+         where: { stripe_refund_id: refund.id },
+         data: { failure_reason: refund.failure_reason ?? null },
+       });
+     }
+-    if (outcome.ledger_just_reversed && this.partialRefundDecisions) {
++    if (outcome.row.status === 'succeeded' && outcome.row.ledger_reversed && fullyRefunded) {
++      await this.revokeFullyRefunded(purchase);
++    } else if (outcome.ledger_just_reversed && this.partialRefundDecisions) {
+       const fresh = await this.prisma.clientPurchase.findUnique({ where: { id: purchase.id } });
+       if (fresh && fresh.status !== 'refunded') {
+         await this.partialRefundDecisions.onPartialRefund({
+@@ -540,6 +513,18 @@ export class RefundDisputeHandlerService {
+     return { claimed: true, purchase_id: purchase.id };
+   }
+ 
++  // Round 17 (Sol B-684-5): whether the charge's succeeded refunds (complete Stripe list,
++  // presentment minor units on both sides) cover the charge's own amount, so a renewal charge
++  // is judged on itself. Unreadable state throws RefundStateUnavailableError before money moves.
++  private async coversCharge(chargeId: string): Promise<boolean> {
++    const charge = await this.stripe.retrieveCharge(chargeId).catch((err: unknown) => {
++      throw new RefundStateUnavailableError(chargeId, settlementFailureCode(err));
++    });
++    const list = await chargeRefundsFromStripe(this.stripe, chargeId, null);
++    const amount = typeof charge?.amount === 'number' ? charge.amount : 0;
++    return amount > 0 && list.succeeded_client_cents >= amount;
++  }
++
+   // Idempotently create a refund row + apply ledger reversals. Safe to
+   // re-run with the same payload — composite-unique on stripe_refund_id
+   // + ledger.applyReversal monotonically increases reversed_cents.
+@@ -559,18 +544,23 @@ export class RefundDisputeHandlerService {
+     note?: string | null;
+     initiated_by_user_id?: string | null;
+   }): Promise<{ row: ChargeRefund; ledger_just_reversed: boolean }> {
+-    const updateExisting = (existing: ChargeRefund) =>
+-      this.prisma.chargeRefund.update({
++    // Round 17 (Opus B-684-8): a refund's status only moves forward. failed and canceled are
++    // terminal, and succeeded never goes back to pending / requires_action, so a stale or
++    // redelivered older event (or snapshot) never rewrites a newer outcome.
++    const updateExisting = (existing: ChargeRefund) => {
++      const status = nextRefundStatus(existing.status, args.status);
++      return this.prisma.chargeRefund.update({
+         where: { stripe_refund_id: args.stripe_refund_id },
+         data: {
+-          status: args.status,
++          status,
+           amount_cents: args.amount_cents,
+           reason: args.reason ?? existing.reason,
+           note: args.note ?? existing.note,
+           initiated_by_user_id: args.initiated_by_user_id ?? existing.initiated_by_user_id,
+-          posted_at: args.status === 'succeeded' ? new Date() : existing.posted_at,
++          posted_at: status === 'succeeded' ? new Date() : existing.posted_at,
+         },
+       });
++    };
+     const existing = await this.prisma.chargeRefund.findUnique({
+       where: { stripe_refund_id: args.stripe_refund_id },
+     });
+@@ -606,10 +596,19 @@ export class RefundDisputeHandlerService {
+       }
+     }
+ 
++    // Round 17 (Opus B-684-8): a failed / canceled refund whose money was already applied is
++    // decided under the charge lock, after this status write, so a concurrent apply either saw
++    // the terminal status (and moved nothing) or finished first (and is flagged here).
++    if (FAILED_REFUND_STATUSES.has(row.status) && this.settlements) {
++      await this.settlements.withChargeLock(args.stripe_charge_id, () =>
++        this.flagFailedAfterApply(row.id, args.stripe_charge_id),
++      );
++      return { row, ledger_just_reversed: false };
++    }
+     // Apply ledger reversals only once per refund (idempotency flag),
+     // and only when the refund is actually `succeeded` — pending refunds
+     // shouldn't move our books.
+-    if (args.status !== 'succeeded' || row.ledger_reversed) {
++    if (row.status !== 'succeeded' || row.ledger_reversed) {
+       return { row, ledger_just_reversed: false };
+     }
+ 
+@@ -626,8 +625,9 @@ export class RefundDisputeHandlerService {
+     // releases, because it re-reads the charge's succeeded refunds).
+     const apply = async (): Promise<ChargeRefund | null> => {
+       if (this.settlements) {
++        // Round 17 (Opus B-684-8): the status as it is now, under the lock.
+         const fresh = await this.prisma.chargeRefund.findUnique({ where: { id: row.id } });
+-        if (!fresh || fresh.ledger_reversed) return null;
++        if (!fresh || fresh.ledger_reversed || fresh.status !== 'succeeded') return null;
+       }
+       const settled = await this.applySettlementRefund(args.purchase, args.stripe_charge_id);
+       if (!settled) {
+@@ -655,6 +655,23 @@ export class RefundDisputeHandlerService {
+     return { row: updated, ledger_just_reversed: true };
+   }
+ 
++  // C-684-4 / Opus B-684-8: the payout was already reduced for a refund Stripe now reports
++  // failed or canceled. Runs under the charge lock; nothing is re-credited automatically.
++  private async flagFailedAfterApply(rowId: string, chargeId: string): Promise<void> {
++    const fresh = await this.prisma.chargeRefund.findUnique({ where: { id: rowId } });
++    if (!fresh?.ledger_reversed || !FAILED_REFUND_STATUSES.has(fresh.status)) return;
++    this.logger.error(
++      `SFEE_REFUND_FAILED_AFTER_APPLY alert=true charge=${chargeId} refund=${fresh.stripe_refund_id} status=${fresh.status}: the payout was already reduced for this refund; the settlement is flagged for review and nothing is re-credited automatically`,
++    );
++    await this.prisma.chargeSettlement.updateMany({
++      where: { stripe_charge_id: chargeId },
++      data: {
++        reconcile_requested_at: new Date(),
++        reconcile_reason: 'SFEE_REFUND_FAILED_AFTER_APPLY',
++      },
++    });
++  }
++
+   // A276 P0-2 (refix) — single source of truth for the post-conversion
+   // refund COACH_ALERT envelope. Pulled out so both the webhook path
+   // (upsertAndApplyRefund) and any future admin-initiated refund path
+diff --git a/src/connect/fees/charge-settlement.service.ts b/src/connect/fees/charge-settlement.service.ts
+index 5ea42a9a..fc551940 100644
+--- a/src/connect/fees/charge-settlement.service.ts
++++ b/src/connect/fees/charge-settlement.service.ts
+@@ -2123,14 +2123,14 @@ export class ChargeSettlementService {
+   private async markAwaiting(
+     row: ChargeSettlement,
+     chargeId: string,
+-    message: string,
++    diagnostic: string,
+   ): Promise<SettleOutcome> {
+     await this.prisma.chargeSettlement.updateMany({
+       where: { id: row.id, status: 'awaiting_fee' },
+-      data: { last_error: message },
++      data: { last_error: diagnostic },
+     });
+-    this.logger.warn(`settleCharge waiting charge=${chargeId}: ${message}`);
+-    return this.outcome('awaiting_fee', chargeId, row.id, message);
++    this.logger.warn(`settleCharge waiting charge=${chargeId}: ${diagnostic}`);
++    return this.outcome('awaiting_fee', chargeId, row.id, diagnostic);
+   }
+ 
+   private async attemptPendingTransfers(settlementId: string, chargeId: string): Promise<void> {
+diff --git a/src/connect/fees/transfer-orchestrator.service.ts b/src/connect/fees/transfer-orchestrator.service.ts
+index d7b76981..54b66e04 100644
+--- a/src/connect/fees/transfer-orchestrator.service.ts
++++ b/src/connect/fees/transfer-orchestrator.service.ts
+@@ -868,17 +868,17 @@ export class TransferOrchestratorService {
+   // pending with its marker and is looked up again on the next sweep.
+   private async holdUncertain(
+     row: ConnectTransfer,
+-    message: string,
++    diagnostic: string,
+     justSent: boolean,
+   ): Promise<ConnectTransfer> {
+     this.logger.error(
+       `SFEE_TRANSFER_UNCERTAIN alert=true transfer=${row.id} kind=${row.kind} purchase=${row.purchase_id} ` +
+         `settlement=${row.settlement_id ?? 'none'} op=${row.idempotency_key} amount=${row.amount_cents} ` +
+-        `unresolved_since=${row.stripe_send_unresolved_at?.toISOString() ?? 'unknown'}: ${message}; ` +
++        `unresolved_since=${row.stripe_send_unresolved_at?.toISOString() ?? 'unknown'}: ${diagnostic}; ` +
+         (justSent ? 'outcome unknown' : 'not re-sent') +
+         ', looked up again before any re-send',
+     );
+-    return this.scheduleRecheck(row, { message: `${TRANSFER_UNCERTAIN_CODE}: ${message}` });
++    return this.scheduleRecheck(row, { message: `${TRANSFER_UNCERTAIN_CODE}: ${diagnostic}` });
+   }
+ 
+   // B-627-9 — a create sent inside the in-flight window is not visible at
+@@ -1138,15 +1138,15 @@ export class TransferOrchestratorService {
+       const lookup = await this.findStripeReversal(row.stripe_transfer_id, op.idempotency_key);
+       if (lookup.kind === 'found') return this.completeReversal(op, lookup.id);
+       if (lookup.kind === 'unknown') {
+-        const message = `reversal lookup unavailable: ${lookup.reason}`;
++        const diagnostic = `reversal lookup unavailable: ${lookup.reason}`;
+         await this.prisma.transferReversalOp.updateMany({
+           where: { id: op.id, status: 'pending' },
+-          data: { last_error: message.slice(0, 500) },
++          data: { last_error: diagnostic.slice(0, 500) },
+         });
+         this.logger.error(
+-          `SFEE_REVERSAL_UNCERTAIN alert=true transfer=${row.id} op=${op.idempotency_key} amount=${op.amount_cents}: ${message}; not re-sent`,
++          `SFEE_REVERSAL_UNCERTAIN alert=true transfer=${row.id} op=${op.idempotency_key} amount=${op.amount_cents}: ${diagnostic}; not re-sent`,
+         );
+-        throw new ReversalUncertainError(row.id, op.idempotency_key, message);
++        throw new ReversalUncertainError(row.id, op.idempotency_key, diagnostic);
+       }
+     }
+     // Round 11 (B-682-1): the transfer-send protocol, for reversals. Claim the
+@@ -1219,16 +1219,16 @@ export class TransferOrchestratorService {
+       }
+       const lookup = await this.findStripeReversal(row.stripe_transfer_id, op.idempotency_key);
+       if (lookup.kind === 'found') return this.completeReversal(op, lookup.id);
+-      const message =
++      const diagnostic =
+         lookup.kind === 'unknown' ? `${diag}; reversal lookup unavailable: ${lookup.reason}` : diag;
+       await this.prisma.transferReversalOp.updateMany({
+         where: { id: op.id, status: 'pending' },
+-        data: { last_error: message.slice(0, 500) },
++        data: { last_error: diagnostic.slice(0, 500) },
+       });
+       this.logger.error(
+-        `SFEE_REVERSAL_UNCERTAIN alert=true transfer=${row.id} op=${op.idempotency_key} amount=${op.amount_cents}: ${message}`,
++        `SFEE_REVERSAL_UNCERTAIN alert=true transfer=${row.id} op=${op.idempotency_key} amount=${op.amount_cents}: ${diagnostic}`,
+       );
+-      throw new ReversalUncertainError(row.id, op.idempotency_key, message);
++      throw new ReversalUncertainError(row.id, op.idempotency_key, diagnostic);
+     }
+     // Stripe moved the money. If this receipt write fails the op stays
+     // pending with attempts > 0, and every retry reconciles by the Stripe
+@@ -1329,18 +1329,21 @@ export class TransferOrchestratorService {
+     return { status: 'succeeded', transfer, op_id: op.id };
+   }
+ 
+-  private async refuseReversal(op: TransferReversalOp, message: string): Promise<ReverseOutcome> {
++  private async refuseReversal(
++    op: TransferReversalOp,
++    diagnostic: string,
++  ): Promise<ReverseOutcome> {
+     const transfer = await this.prisma.$transaction(async (tx) => {
+       await tx.transferReversalOp.updateMany({
+         where: { id: op.id, status: 'pending' },
+-        data: { status: 'refused', last_error: message.slice(0, 500), resolved_at: new Date() },
++        data: { status: 'refused', last_error: diagnostic.slice(0, 500), resolved_at: new Date() },
+       });
+       return tx.connectTransfer.findUniqueOrThrow({ where: { id: op.transfer_id } });
+     });
+     this.logger.warn(
+-      `SFEE_REVERSAL_REFUSED transfer=${op.transfer_id} op=${op.idempotency_key} amount=${op.amount_cents}: ${message}`,
++      `SFEE_REVERSAL_REFUSED transfer=${op.transfer_id} op=${op.idempotency_key} amount=${op.amount_cents}: ${diagnostic}`,
+     );
+-    return { status: 'refused', transfer, op_id: op.id, error: message };
++    return { status: 'refused', transfer, op_id: op.id, error: diagnostic };
+   }
+ 
+   // B-627-9 — every write is a CAS on the attempt that was read or claimed
+diff --git a/test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts b/test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts
+new file mode 100644
+index 00000000..7e5dc7e5
+--- /dev/null
++++ b/test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts
+@@ -0,0 +1,445 @@
++// S-FEE round 17 (B-FEES18-119, agent 119): failing-before tests for the open findings at
++// #684 6b13af56. Every amount is exact (4,900 charge, 172 Stripe fee, coach net 4,630).
++//   Sol B-684-4 / Opus B-684-7  refund.updated reaches the refund handler through the production
++//                               checkout router, and its charge gets the payout-notice handoff
++//   Sol B-684-5                 a succeeded async full refund ends access, not just money
++//   Opus B-684-8                a refund status only moves forward; stale events move nothing
++//   Sol B-684-3                 notice channels start only with a live claim inside the deadline
++import { Logger } from '@nestjs/common';
++import type { ClientPurchase } from '@prisma/client';
++import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
++import { PayoutNoticeService } from '../src/checkout/payout-notice.service';
++import { RefundDisputeHandlerService } from '../src/checkout/refund-dispute-handler.service';
++import { ChargeSettlementService } from '../src/connect/fees/charge-settlement.service';
++import { FeePolicyService } from '../src/connect/fees/fee-policy.service';
++import { PayoutReadinessService } from '../src/connect/fees/payout-readiness.service';
++import { SplitLedgerService } from '../src/connect/fees/split-ledger.service';
++import { TransferOrchestratorService } from '../src/connect/fees/transfer-orchestrator.service';
++import type { EmailService } from '../src/email/email.service';
++import type { NotificationsService } from '../src/notifications/notifications.service';
++import type { PurchaseFanoutService } from '../src/packages/purchase-fanout.service';
++import type { PartialRefundDecisionService } from '../src/regimes/partial-refund-decision.service';
++import {
++  FakeStripe,
++  Table,
++  asPrisma,
++  makeCharge,
++  makeSettlementPrisma,
++  type Row,
++} from './utils/settlement-fakes';
++
++type RefundFixture = { id: string; status: string; amount: number; currency: string } & Row;
++
++function setup(opts: { purchaseCents?: number } = {}) {
++  const { prisma, db } = makeSettlementPrisma();
++  const user = new Table([{ id: 'coach_1', email: 'payee@example.invalid', name: null }], {
++    prefix: 'u',
++  });
++  Object.assign(prisma, { user, emailSendLog: new Table([], { prefix: 'em' }) });
++  const stripe = new FakeStripe();
++  const ledger = new SplitLedgerService(asPrisma(prisma));
++  const fee = new FeePolicyService(asPrisma(prisma));
++  const transfers = new TransferOrchestratorService(asPrisma(prisma), stripe, ledger);
++  const settlements = new ChargeSettlementService(asPrisma(prisma), stripe, fee, ledger, transfers);
++  const fns = {
++    createNotification: jest.fn(async (..._a: unknown[]): Promise<{ id: string } | null> => ({
++      id: 'n_1',
++    })),
++    channelGate: jest.fn(async (..._a: unknown[]) => 'enabled'),
++    pushToUser: jest.fn(async (..._a: unknown[]) => ({ delivered: true, code: 'delivered' })),
++    send: jest.fn(async (..._a: unknown[]) => ({ status: 'sent' })),
++  };
++  const stub: object = fns;
++  const fanoutFns = { cancelPendingForPurchase: jest.fn(async (..._a: unknown[]) => 0) };
++  const decisionFns = { onPartialRefund: jest.fn(async (..._a: unknown[]) => undefined) };
++  const fanout: object = fanoutFns;
++  const decisions: object = decisionFns;
++  const notices = new PayoutNoticeService(
++    asPrisma(prisma),
++    stub as NotificationsService,
++    stub as EmailService,
++  );
++  const refunds = new RefundDisputeHandlerService(
++    asPrisma(prisma),
++    stripe,
++    ledger,
++    transfers,
++    new PayoutReadinessService(asPrisma(prisma), stripe),
++    stub as NotificationsService,
++    fanout as PurchaseFanoutService,
++    decisions as PartialRefundDecisionService,
++    settlements,
++    notices,
++  );
++  const router = new CheckoutWebhookHandlerService(
++    asPrisma(prisma),
++    stripe,
++    undefined,
++    undefined,
++    refunds,
++  );
++  const purchase = {
++    id: 'cp_1',
++    coach_user_id: 'coach_1',
++    client_user_id: 'client_1',
++    package_id: 'pkg_1',
++    amount_cents: opts.purchaseCents ?? 4_900,
++    currency: 'usd',
++    status: 'paid',
++    source: null,
++    entitlement_active: true,
++    billing_type: 'one_time',
++    stripe_payment_intent_id: null,
++    stripe_subscription_id: null,
++    created_at: new Date(),
++  } as ClientPurchase;
++  db.purchases.push(purchase as Row);
++  db.accounts.push({ coach_user_id: 'coach_1', stripe_account_id: 'acct_1' });
++  stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4_900, fee: 172 }));
++  const list = (data: RefundFixture[]) => stripe.refundsByCharge.set('ch_1', data);
++  return {
++    prisma,
++    db,
++    stripe,
++    settlements,
++    notices,
++    refunds,
++    router,
++    fns,
++    fanoutFns,
++    decisionFns,
++    list,
++    user,
++  };
++}
++
++const usd = (id: string, amount: number, status = 'succeeded'): RefundFixture => ({
++  id,
++  status,
++  amount,
++  currency: 'usd',
++});
++const refunded = (data: RefundFixture[]) => ({
++  id: `evt_refunded_${data.map((r) => `${r.id}_${r.status}`).join('_')}`,
++  type: 'charge.refunded',
++  data: {
++    object: {
++      id: 'ch_1',
++      amount: 4_900,
++      amount_refunded: data.reduce((n, r) => n + (r.status === 'succeeded' ? r.amount : 0), 0),
++      refunds: { data, has_more: false },
++    },
++  },
++});
++const update = (type: string, status: string, id = 're_1', amount = 4_900) => ({
++  id: `evt_${type}_${id}_${status}`,
++  type,
++  data: { object: { id, object: 'refund', charge: 'ch_1', amount, status, failure_reason: null } },
++});
++
++async function settledWithPending(c: ReturnType<typeof setup>, id = 're_1', amount = 4_900) {
++  await c.settlements.settleCharge({
++    purchase: c.db.purchases[0] as ClientPurchase,
++    charge_id: 'ch_1',
++  });
++  expect(c.stripe.netTo('acct_1')).toBe(4_630);
++  c.list([usd(id, amount, 'pending')]);
++  await c.router.handle(refunded([usd(id, amount, 'pending')]));
++  expect(c.db.settlements[0].refunded_cents).toBe(0);
++}
++
++afterEach(() => jest.restoreAllMocks());
++
++describe('Sol B-684-4 / Opus B-684-7: refund.updated through the production checkout router', () => {
++  it('a succeeded refund.updated is claimed, moves the coach 4,630 back once and delivers its notice', async () => {
++    const c = setup();
++    await settledWithPending(c);
++    c.list([usd('re_1', 4_900)]);
++    const out = await c.router.handle(update('refund.updated', 'succeeded'));
++    expect(out).toMatchObject({ claimed: true, purchase_id: 'cp_1' });
++    expect(c.db.refunds[0]).toMatchObject({ status: 'succeeded', ledger_reversed: true });
++    expect(c.db.settlements[0].refunded_cents).toBe(4_900);
++    expect(c.stripe.netTo('acct_1')).toBe(0);
++    expect(c.db.notices?.[0]).toMatchObject({ inapp_status: 'sent' });
++  });
++
++  it('inside the webhook transaction the refund.updated charge is handed off for post-commit delivery', async () => {
++    const c = setup();
++    await settledWithPending(c);
++    c.list([usd('re_1', 4_900)]);
++    const out = await c.router.handle(update('refund.updated', 'succeeded'), asPrisma(c.prisma));
++    expect(out).toMatchObject({ claimed: true, deferredPayoutNoticeChargeId: 'ch_1' });
++    expect(c.db.notices?.[0]).toMatchObject({ inapp_status: 'pending' });
++    await c.refunds.deliverPayoutNotices('ch_1');
++    expect(c.db.notices?.[0]).toMatchObject({ inapp_status: 'sent' });
++  });
++
++  it('both refund events for one transition (Stripe sends both while charge.refund.updated lives) apply once', async () => {
++    const c = setup();
++    await settledWithPending(c);
++    c.list([usd('re_1', 4_900)]);
++    await c.router.handle(update('charge.refund.updated', 'succeeded'));
++    await c.router.handle(update('refund.updated', 'succeeded'));
++    expect(c.stripe.reversals).toHaveLength(1);
++    expect(c.stripe.netTo('acct_1')).toBe(0);
++    expect(c.db.notices).toHaveLength(1);
++  });
++
++  it('a failed refund.updated through the router records failed and moves nothing', async () => {
++    const c = setup();
++    await settledWithPending(c);
++    c.list([usd('re_1', 4_900, 'failed')]);
++    await c.router.handle(update('refund.updated', 'failed'));
++    expect(c.db.refunds[0].status).toBe('failed');
++    expect(c.stripe.netTo('acct_1')).toBe(4_630);
++  });
++});
++
++describe('Sol B-684-5: a succeeded async refund converges access with the money', () => {
++  it('pending full refund, then succeeded: the purchase is refunded, access ends and drops are canceled', async () => {
++    const c = setup();
++    await settledWithPending(c);
++    expect(c.db.purchases[0]).toMatchObject({ status: 'paid', entitlement_active: true });
++    c.list([usd('re_1', 4_900)]);
++    await c.router.handle(update('charge.refund.updated', 'succeeded'));
++    expect(c.db.purchases[0]).toMatchObject({ status: 'refunded', entitlement_active: false });
++    expect(c.fanoutFns.cancelPendingForPurchase).toHaveBeenCalledWith(
++      'cp_1',
++      'refund',
++      expect.anything(),
++    );
++    expect(c.decisionFns.onPartialRefund).not.toHaveBeenCalled();
++  });
++
++  it('pending then failed or canceled: access stays, nothing moves', async () => {
++    for (const status of ['failed', 'canceled']) {
++      const c = setup();
++      await settledWithPending(c);
++      c.list([usd('re_1', 4_900, status)]);
++      await c.router.handle(update('refund.updated', status));
++      expect(c.db.purchases[0]).toMatchObject({ status: 'paid', entitlement_active: true });
++      expect(c.stripe.netTo('acct_1')).toBe(4_630);
++    }
++  });
++
++  it('a partial succeeded refund keeps access with a decision; the partial that completes the charge ends it', async () => {
++    const c = setup();
++    await settledWithPending(c, 're_a', 2_000);
++    c.list([usd('re_a', 2_000)]);
++    await c.router.handle(update('refund.updated', 'succeeded', 're_a', 2_000));
++    expect(c.db.purchases[0]).toMatchObject({ status: 'paid', entitlement_active: true });
++    expect(c.decisionFns.onPartialRefund).toHaveBeenCalledTimes(1);
++    c.list([usd('re_b', 2_900, 'pending'), usd('re_a', 2_000)]);
++    await c.router.handle(update('refund.updated', 'pending', 're_b', 2_900));
++    c.list([usd('re_b', 2_900), usd('re_a', 2_000)]);
++    await c.router.handle(update('refund.updated', 'succeeded', 're_b', 2_900));
++    expect(c.db.purchases[0]).toMatchObject({ status: 'refunded', entitlement_active: false });
++    expect(c.decisionFns.onPartialRefund).toHaveBeenCalledTimes(1);
++    expect(c.stripe.netTo('acct_1')).toBe(0);
++  });
++
++  it('a charge is judged on its own amount (a renewal invoice below the plan price)', async () => {
++    const c = setup({ purchaseCents: 9_900 });
++    await settledWithPending(c);
++    c.list([usd('re_1', 4_900)]);
++    await c.router.handle(update('refund.updated', 'succeeded'));
++    expect(c.db.purchases[0]).toMatchObject({ status: 'refunded', entitlement_active: false });
++  });
++
++  it('an unreadable refund list fails the delivery before anything moves (Stripe redelivers)', async () => {
++    const c = setup();
++    await settledWithPending(c);
++    c.stripe.failListRefunds = true;
++    await expect(c.router.handle(update('refund.updated', 'succeeded'))).rejects.toMatchObject({
++      code: 'SFEE_REFUND_STATE_UNAVAILABLE',
++    });
++    expect(c.db.refunds[0].status).toBe('pending');
++    expect(c.db.refunds[0].ledger_reversed).not.toBe(true);
++    expect(c.stripe.netTo('acct_1')).toBe(4_630);
++    expect(c.db.purchases[0]).toMatchObject({ status: 'paid', entitlement_active: true });
++  });
++});
++
++describe('Opus B-684-8: a refund status only moves forward', () => {
++  it('failed processed, then the older succeeded redelivered: the row stays failed and the coach keeps 4,630', async () => {
++    const c = setup();
++    await settledWithPending(c);
++    c.list([usd('re_1', 4_900, 'failed')]);
++    await c.router.handle(update('charge.refund.updated', 'failed'));
++    await c.router.handle(update('charge.refund.updated', 'succeeded'));
++    await c.router.handle(update('refund.updated', 'succeeded'));
++    expect(c.db.refunds[0].status).toBe('failed');
++    expect(c.stripe.reversals).toHaveLength(0);
++    expect(c.stripe.netTo('acct_1')).toBe(4_630);
++    expect(c.db.purchases[0]).toMatchObject({ status: 'paid', entitlement_active: true });
++  });
++
++  it('a late charge.refunded snapshot that still says succeeded never re-applies a failed refund', async () => {
++    const c = setup();
++    await settledWithPending(c);
++    c.list([usd('re_1', 4_900, 'failed')]);
++    await c.router.handle(update('refund.updated', 'failed'));
++    await c.router.handle(refunded([usd('re_1', 4_900)]));
++    expect(c.db.refunds[0].status).toBe('failed');
++    expect(c.db.settlements[0].refunded_cents).toBe(0);
++    expect(c.stripe.netTo('acct_1')).toBe(4_630);
++  });
++
++  it('a stale pending snapshot never moves an applied refund back to pending', async () => {
++    const c = setup();
++    await settledWithPending(c);
++    c.list([usd('re_1', 4_900)]);
++    await c.router.handle(update('refund.updated', 'succeeded'));
++    await c.router.handle(refunded([usd('re_1', 4_900, 'pending')]));
++    expect(c.db.refunds[0]).toMatchObject({ status: 'succeeded', ledger_reversed: true });
++    expect(c.stripe.reversals).toHaveLength(1);
++  });
++
++  it('a failure written while the apply waits for the lock: the apply re-reads it and moves nothing', async () => {
++    const c = setup();
++    await settledWithPending(c);
++    c.list([usd('re_1', 4_900)]);
++    const realLock = c.settlements.withChargeLock.bind(c.settlements);
++    jest.spyOn(c.settlements, 'withChargeLock').mockImplementation(async (id, fn) => {
++      // Another worker records the refund's failure just before this worker gets the lock.
++      c.db.refunds[0].status = 'failed';
++      return realLock(id, fn);
++    });
++    await c.router.handle(update('refund.updated', 'succeeded'));
++    expect(c.db.refunds[0].status).toBe('failed');
++    expect(c.db.refunds[0].ledger_reversed).not.toBe(true);
++    expect(c.stripe.netTo('acct_1')).toBe(4_630);
++  });
++
++  it('applied, then failed: one alert under the lock, the settlement is flagged, nothing re-credited', async () => {
++    const c = setup();
++    const errors = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
++    await settledWithPending(c);
++    c.list([usd('re_1', 4_900)]);
++    await c.router.handle(update('refund.updated', 'succeeded'));
++    c.list([usd('re_1', 4_900, 'failed')]);
++    await c.router.handle(update('refund.updated', 'failed'));
++    const alerts = errors.mock.calls.filter((a) =>
++      String(a[0]).startsWith('SFEE_REFUND_FAILED_AFTER_APPLY'),
++    );
++    expect(alerts).toHaveLength(1);
++    expect(c.db.settlements[0].reconcile_reason).toBe('SFEE_REFUND_FAILED_AFTER_APPLY');
++    expect(c.stripe.netTo('acct_1')).toBe(0);
++  });
++});
++
++describe('Sol B-684-3: a notice channel starts only with a live claim inside the run deadline', () => {
++  async function notice(c: ReturnType<typeof setup>, started: number, patch: Row = {}) {
++    await c.prisma.payoutAdjustmentNotice.create({
++      data: {
++        id: 'pan_1',
++        idempotency_key: 'pan_key_1',
++        payee_user_id: 'coach_1',
++        settlement_id: 'cs_1',
++        stripe_charge_id: 'ch_1',
++        purchase_id: 'cp_1',
++        event: 'refund',
++        title: 'A client was refunded',
++        body: 'A client got $1.00 back.',
++        created_at: new Date(started - 120_000),
++        ...patch,
++      },
++    });
++  }
++
++  it('a claim and re-read that use up the budget start no in-app row; the claim is released, the attempt not counted', async () => {
++    const c = setup();
++    const started = Date.now();
++    let clock = started;
++    jest.spyOn(Date, 'now').mockImplementation(() => clock);
++    await notice(c, started, { push_status: 'off', email_status: 'disabled' });
++    const real = c.prisma.payoutAdjustmentNotice.findUnique.getMockImplementation()!;
++    c.prisma.payoutAdjustmentNotice.findUnique.mockImplementation(async (args) => {
++      clock = started + 480_001;
++      return real(args);
++    });
++    await c.notices.dispatchPending(new Date(started), 25, started + 480_000);
++    expect(c.fns.createNotification).not.toHaveBeenCalled();
++    expect(c.db.notices?.[0]).toMatchObject({
++      dispatched_at: null,
++      dispatch_claimed_at: null,
++      dispatch_attempts: 0,
++      inapp_status: 'pending',
++    });
++  });
++
++  it('a slow push gate starts no push after the deadline; the push stays pending for the next run', async () => {
++    const c = setup();
++    const started = Date.now();
++    let clock = started;
++    jest.spyOn(Date, 'now').mockImplementation(() => clock);
++    await notice(c, started, { inapp_status: 'sent', email_status: 'disabled' });
++    c.fns.channelGate.mockImplementation(async () => {
++      clock = started + 660_000;
++      return 'enabled';
++    });
++    await c.notices.dispatchPending(new Date(started), 25, started + 480_000);
++    expect(c.fns.pushToUser).not.toHaveBeenCalled();
++    expect(c.db.notices?.[0]).toMatchObject({ push_status: 'pending', dispatched_at: null });
++    c.fns.channelGate.mockImplementation(async () => 'enabled');
++    await c.notices.dispatchPending(new Date(clock), 25, clock + 480_000);
++    expect(c.fns.pushToUser).toHaveBeenCalledTimes(1);
++    expect(c.db.notices?.[0].push_status).toBe('sent');
++  });
++
++  it('a slow address read starts no email after the deadline', async () => {
++    const c = setup();
++    const started = Date.now();
++    let clock = started;
++    jest.spyOn(Date, 'now').mockImplementation(() => clock);
++    await notice(c, started, { inapp_status: 'sent', push_status: 'off' });
++    c.user.findUnique.mockImplementation(async () => {
++      clock = started + 660_000;
++      return { id: 'coach_1', email: 'payee@example.invalid', name: null };
++    });
++    await c.notices.dispatchPending(new Date(started), 25, started + 480_000);
++    expect(c.fns.send).not.toHaveBeenCalled();
++    expect(c.db.notices?.[0]).toMatchObject({ email_status: 'pending', email_attempts: 0 });
++  });
++
++  it('a push row created just before the claim runs low is kept and reused, the push itself waits', async () => {
++    const c = setup();
++    const started = Date.now();
++    let clock = started;
++    jest.spyOn(Date, 'now').mockImplementation(() => clock);
++    await notice(c, started, { inapp_status: 'sent', email_status: 'disabled' });
++    c.fns.createNotification.mockImplementationOnce(async () => {
++      clock = started + 240_001; // under 60 s left on the 5-minute claim
++      return { id: 'n_push' };
++    });
++    await c.notices.dispatchPending(new Date(started), 25, started + 3_600_000);
++    expect(c.fns.pushToUser).not.toHaveBeenCalled();
++    expect(c.db.notices?.[0]).toMatchObject({
++      push_status: 'pending',
++      push_notification_id: 'n_push',
++    });
++  });
++
++  it('a later batch row is claimed at the time it is taken, so a second worker cannot push it too', async () => {
++    const c = setup();
++    const started = Date.now();
++    jest.useFakeTimers({ now: started });
++    try {
++      await notice(c, started, { inapp_status: 'sent', email_status: 'disabled' });
++      jest.setSystemTime(started + 360_000); // earlier rows used six minutes of this sweep
++      let entered = false;
++      c.fns.pushToUser.mockImplementation(async () => {
++        if (!entered) {
++          entered = true;
++          await c.notices.dispatchForCharge('ch_1');
++        }
++        return { delivered: true, code: 'delivered' };
++      });
++      await c.notices.dispatchPending(new Date(started), 25, started + 480_000);
++      expect(c.fns.pushToUser).toHaveBeenCalledTimes(1);
++      expect(c.db.notices?.[0].dispatch_claimed_at).toEqual(new Date(started + 360_000));
++    } finally {
++      jest.useRealTimers();
++    }
++  });
++});

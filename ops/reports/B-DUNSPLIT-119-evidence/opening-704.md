@@ -9,3 +9,7 @@ OPENING (B-DUNSPLIT-119, agent 119) — growth-project-backend#704 @ 276a9f60139
 **Evidence (CI lane, at `2b8f0c8f`; later change: merge of the D1/D2a privacy-list fix):** [37230734885](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37230734885), 150 passed, 0 failed (success) — dunning-v2-service, dunning-v2-service-fixes, dunning.service, foundation-fixes, and every prior probe (Opus 116 lost-dispute, Sol 116 d2, Sol 118 688-probe/-v2, Opus 118 688 parts 1-4, D1 probes): pass.
 
 **Money self-check:** no behaviour change (move only); as audited at `2368d5fa`.
+
+**Required checks at this head:** all green (build-and-test, schema parity, live tests, npm audit, size-label, deploy readiness).
+
+READY FOR AUDIT

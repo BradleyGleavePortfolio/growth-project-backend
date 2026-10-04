@@ -1,0 +1,439 @@
+targeted	Set up job	﻿2026-10-04T20:48:03.3634604Z Current runner version: '2.337.0'
+targeted	Set up job	2026-10-04T20:48:03.3660793Z ##[group]Runner Image Provisioner
+targeted	Set up job	2026-10-04T20:48:03.3661734Z Hosted Compute Agent
+targeted	Set up job	2026-10-04T20:48:03.3662473Z Version: 20260901.588
+targeted	Set up job	2026-10-04T20:48:03.3663441Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	Set up job	2026-10-04T20:48:03.3664227Z Build Date: 2026-09-01T19:56:44Z
+targeted	Set up job	2026-10-04T20:48:03.3665002Z Worker ID: {bdc47b7a-3004-4dcc-9e3c-735af467ff0f}
+targeted	Set up job	2026-10-04T20:48:03.3665705Z Azure Region: northcentralus
+targeted	Set up job	2026-10-04T20:48:03.3666372Z ##[endgroup]
+targeted	Set up job	2026-10-04T20:48:03.3667746Z ##[group]Operating System
+targeted	Set up job	2026-10-04T20:48:03.3668343Z Ubuntu
+targeted	Set up job	2026-10-04T20:48:03.3668866Z 24.04.5
+targeted	Set up job	2026-10-04T20:48:03.3669371Z LTS
+targeted	Set up job	2026-10-04T20:48:03.3670314Z ##[endgroup]
+targeted	Set up job	2026-10-04T20:48:03.3670865Z ##[group]Runner Image
+targeted	Set up job	2026-10-04T20:48:03.3671485Z Image: ubuntu-24.04
+targeted	Set up job	2026-10-04T20:48:03.3672046Z Version: 20260927.320.1
+targeted	Set up job	2026-10-04T20:48:03.3673187Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	Set up job	2026-10-04T20:48:03.3674883Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	Set up job	2026-10-04T20:48:03.3675821Z ##[endgroup]
+targeted	Set up job	2026-10-04T20:48:03.3676949Z ##[group]GITHUB_TOKEN Permissions
+targeted	Set up job	2026-10-04T20:48:03.3679746Z Contents: read
+targeted	Set up job	2026-10-04T20:48:03.3680336Z Metadata: read
+targeted	Set up job	2026-10-04T20:48:03.3680875Z Packages: read
+targeted	Set up job	2026-10-04T20:48:03.3681468Z ##[endgroup]
+targeted	Set up job	2026-10-04T20:48:03.3683686Z Secret source: Actions
+targeted	Set up job	2026-10-04T20:48:03.3684656Z Cache mode: write
+targeted	Set up job	2026-10-04T20:48:03.3685576Z Prepare workflow directory
+targeted	Set up job	2026-10-04T20:48:03.4264777Z Prepare all required actions
+targeted	Set up job	2026-10-04T20:48:03.4311595Z Getting action download info
+targeted	Set up job	2026-10-04T20:48:03.6786003Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	Set up job	2026-10-04T20:48:03.9785305Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	Set up job	2026-10-04T20:48:04.1907033Z Complete job name: targeted
+targeted	Initialize containers	﻿2026-10-04T20:48:04.2344278Z ##[group]Checking docker version
+targeted	Initialize containers	2026-10-04T20:48:04.2357101Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+targeted	Initialize containers	2026-10-04T20:48:04.3132800Z '1.48'
+targeted	Initialize containers	2026-10-04T20:48:04.3140445Z Docker daemon API version: '1.48'
+targeted	Initialize containers	2026-10-04T20:48:04.3141480Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+targeted	Initialize containers	2026-10-04T20:48:04.3313635Z '1.48'
+targeted	Initialize containers	2026-10-04T20:48:04.3323399Z Docker client API version: '1.48'
+targeted	Initialize containers	2026-10-04T20:48:04.3328152Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T20:48:04.3330433Z ##[group]Clean up resources from previous jobs
+targeted	Initialize containers	2026-10-04T20:48:04.3335285Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=96c2b4"
+targeted	Initialize containers	2026-10-04T20:48:04.3477071Z ##[command]/usr/bin/docker network prune --force --filter "label=96c2b4"
+targeted	Initialize containers	2026-10-04T20:48:04.3620254Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T20:48:04.3621122Z ##[group]Create local container network
+targeted	Initialize containers	2026-10-04T20:48:04.3635030Z ##[command]/usr/bin/docker network create --label 96c2b4 github_network_8cf967046ad740038227200bd3c7205f
+targeted	Initialize containers	2026-10-04T20:48:04.4369595Z e393b92541b2729ef0b39dc3357a1a06e34ccdebe0a5354c8de6f327268b6b7d
+targeted	Initialize containers	2026-10-04T20:48:04.4384465Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T20:48:04.4409638Z ##[group]Starting redis service container
+targeted	Initialize containers	2026-10-04T20:48:04.4430601Z ##[command]/usr/bin/docker pull redis:7-alpine
+targeted	Initialize containers	2026-10-04T20:48:04.8853788Z 7-alpine: Pulling from library/redis
+targeted	Initialize containers	2026-10-04T20:48:05.0093637Z 16333ee0c00f: Pulling fs layer
+targeted	Initialize containers	2026-10-04T20:48:05.0095654Z 83234986c742: Pulling fs layer
+targeted	Initialize containers	2026-10-04T20:48:05.0096862Z 7eb50503c2b0: Pulling fs layer
+targeted	Initialize containers	2026-10-04T20:48:05.0098106Z 1522f9c6f453: Pulling fs layer
+targeted	Initialize containers	2026-10-04T20:48:05.0099506Z 9928009b15c8: Pulling fs layer
+targeted	Initialize containers	2026-10-04T20:48:05.0101065Z 4f4fb700ef54: Pulling fs layer
+targeted	Initialize containers	2026-10-04T20:48:05.0103144Z 4eb14bae0e1d: Pulling fs layer
+targeted	Initialize containers	2026-10-04T20:48:05.0104779Z 9928009b15c8: Waiting
+targeted	Initialize containers	2026-10-04T20:48:05.0105665Z 4f4fb700ef54: Waiting
+targeted	Initialize containers	2026-10-04T20:48:05.0106542Z 4eb14bae0e1d: Waiting
+targeted	Initialize containers	2026-10-04T20:48:05.0107469Z 1522f9c6f453: Waiting
+targeted	Initialize containers	2026-10-04T20:48:05.0998250Z 7eb50503c2b0: Verifying Checksum
+targeted	Initialize containers	2026-10-04T20:48:05.1001171Z 7eb50503c2b0: Download complete
+targeted	Initialize containers	2026-10-04T20:48:05.1044811Z 83234986c742: Download complete
+targeted	Initialize containers	2026-10-04T20:48:05.1180859Z 16333ee0c00f: Download complete
+targeted	Initialize containers	2026-10-04T20:48:05.1939061Z 9928009b15c8: Verifying Checksum
+targeted	Initialize containers	2026-10-04T20:48:05.1942010Z 9928009b15c8: Download complete
+targeted	Initialize containers	2026-10-04T20:48:05.1947232Z 4f4fb700ef54: Verifying Checksum
+targeted	Initialize containers	2026-10-04T20:48:05.1949837Z 4f4fb700ef54: Download complete
+targeted	Initialize containers	2026-10-04T20:48:05.2270128Z 1522f9c6f453: Verifying Checksum
+targeted	Initialize containers	2026-10-04T20:48:05.2277166Z 1522f9c6f453: Download complete
+targeted	Initialize containers	2026-10-04T20:48:05.2278877Z 16333ee0c00f: Pull complete
+targeted	Initialize containers	2026-10-04T20:48:05.2753286Z 4eb14bae0e1d: Verifying Checksum
+targeted	Initialize containers	2026-10-04T20:48:05.2755147Z 4eb14bae0e1d: Download complete
+targeted	Initialize containers	2026-10-04T20:48:11.2200616Z 83234986c742: Pull complete
+targeted	Initialize containers	2026-10-04T20:48:11.3425019Z 7eb50503c2b0: Pull complete
+targeted	Initialize containers	2026-10-04T20:48:11.7389975Z 1522f9c6f453: Pull complete
+targeted	Initialize containers	2026-10-04T20:48:11.7485882Z 9928009b15c8: Pull complete
+targeted	Initialize containers	2026-10-04T20:48:11.7582534Z 4f4fb700ef54: Pull complete
+targeted	Initialize containers	2026-10-04T20:48:11.7719619Z 4eb14bae0e1d: Pull complete
+targeted	Initialize containers	2026-10-04T20:48:11.7771250Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+targeted	Initialize containers	2026-10-04T20:48:11.7790575Z Status: Downloaded newer image for redis:7-alpine
+targeted	Initialize containers	2026-10-04T20:48:11.7801510Z docker.io/library/redis:7-alpine
+targeted	Initialize containers	2026-10-04T20:48:11.7833464Z ##[command]/usr/bin/docker create --name a93daea4c9bb46919cab4473328294f2_redis7alpine_0d4890 --label 96c2b4 --network github_network_8cf967046ad740038227200bd3c7205f --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+targeted	Initialize containers	2026-10-04T20:48:11.8092260Z c10a0971f4442e92367219fb4ee2e6c8e095fa0cd60556ae5e9884b231f15839
+targeted	Initialize containers	2026-10-04T20:48:11.8109857Z ##[command]/usr/bin/docker start c10a0971f4442e92367219fb4ee2e6c8e095fa0cd60556ae5e9884b231f15839
+targeted	Initialize containers	2026-10-04T20:48:11.9929152Z c10a0971f4442e92367219fb4ee2e6c8e095fa0cd60556ae5e9884b231f15839
+targeted	Initialize containers	2026-10-04T20:48:11.9947151Z ##[command]/usr/bin/docker ps --all --filter id=c10a0971f4442e92367219fb4ee2e6c8e095fa0cd60556ae5e9884b231f15839 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+targeted	Initialize containers	2026-10-04T20:48:12.0076324Z c10a0971f4442e92367219fb4ee2e6c8e095fa0cd60556ae5e9884b231f15839 Up Less than a second (health: starting)
+targeted	Initialize containers	2026-10-04T20:48:12.0091031Z ##[command]/usr/bin/docker port c10a0971f4442e92367219fb4ee2e6c8e095fa0cd60556ae5e9884b231f15839
+targeted	Initialize containers	2026-10-04T20:48:12.0211068Z 6379/tcp -> 0.0.0.0:6379
+targeted	Initialize containers	2026-10-04T20:48:12.0213596Z 6379/tcp -> [::]:6379
+targeted	Initialize containers	2026-10-04T20:48:12.0249863Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T20:48:12.0258702Z ##[group]Waiting for all services to be ready
+targeted	Initialize containers	2026-10-04T20:48:12.0272181Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" c10a0971f4442e92367219fb4ee2e6c8e095fa0cd60556ae5e9884b231f15839
+targeted	Initialize containers	2026-10-04T20:48:12.0390206Z starting
+targeted	Initialize containers	2026-10-04T20:48:12.0404937Z redis service is starting, waiting 2 seconds before checking again.
+targeted	Initialize containers	2026-10-04T20:48:14.0410120Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" c10a0971f4442e92367219fb4ee2e6c8e095fa0cd60556ae5e9884b231f15839
+targeted	Initialize containers	2026-10-04T20:48:14.0538933Z starting
+targeted	Initialize containers	2026-10-04T20:48:14.0548447Z redis service is starting, waiting 4 seconds before checking again.
+targeted	Initialize containers	2026-10-04T20:48:18.4399801Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" c10a0971f4442e92367219fb4ee2e6c8e095fa0cd60556ae5e9884b231f15839
+targeted	Initialize containers	2026-10-04T20:48:18.4526948Z healthy
+targeted	Initialize containers	2026-10-04T20:48:18.4559139Z redis service is healthy.
+targeted	Initialize containers	2026-10-04T20:48:18.4559922Z ##[endgroup]
+targeted	Run actions/checkout@v6	﻿2026-10-04T20:48:18.4838581Z ##[group]Run actions/checkout@v6
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.4839106Z with:
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.4839579Z   repository: BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.4842246Z   token: ***
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.4842545Z   ssh-strict: true
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.4842896Z   ssh-user: git
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.4843437Z   persist-credentials: true
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.4843954Z   clean: true
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.4844267Z   sparse-checkout-cone-mode: true
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.4844600Z   fetch-depth: 1
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.4844900Z   fetch-tags: false
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.4845200Z   show-progress: true
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.4845501Z   lfs: false
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.4845841Z   submodules: false
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.4846130Z   set-safe-directory: true
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.4846854Z   allow-unsafe-pr-checkout: false
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.4847428Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.5780784Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.5782486Z ##[group]Getting Git version info
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.5783595Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.5784555Z [command]/usr/bin/git version
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.5835571Z git version 2.55.0
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.5855835Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.5868964Z Temporarily overriding HOME='/home/runner/work/_temp/1019a57f-ba80-4bf7-bd41-f615758cb532' before making global git config changes
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.5870230Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.5874162Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.5916059Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.5919722Z ##[group]Determining repository object format
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.5921795Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.5922463Z ##[group]Initializing the repository
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.5925963Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6016285Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6017044Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6017582Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6018098Z hint: call:
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6018485Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6019046Z hint: 	git config --global init.defaultBranch <name>
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6019500Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6019864Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6020407Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6021089Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6021541Z hint: 	git branch -m <name>
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6021924Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6022311Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6023251Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6028736Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6070210Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6070938Z ##[group]Disabling automatic garbage collection
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6074121Z [command]/usr/bin/git config --local gc.auto 0
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6102070Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6102698Z ##[group]Setting up auth
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6103531Z Removing SSH command configuration
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6108293Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6134424Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6419170Z Removing HTTP extra header
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6424393Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6448033Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6618058Z Removing includeIf entries pointing to credentials config files
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6623745Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6648658Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6838605Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-1472937d-89bf-4116-a457-bb1f25a9872e.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6870416Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-1472937d-89bf-4116-a457-bb1f25a9872e.config
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6898094Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-1472937d-89bf-4116-a457-bb1f25a9872e.config
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6927748Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-1472937d-89bf-4116-a457-bb1f25a9872e.config
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6955633Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-1472937d-89bf-4116-a457-bb1f25a9872e.config
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6986879Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6987482Z ##[group]Fetching the repository
+targeted	Run actions/checkout@v6	2026-10-04T20:48:18.6994019Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +0b111d175fe1dcb76adc03e29ba25d7683336cd4:refs/remotes/origin/audit/AUD-OPUS-FL-119/684-lostupdate
+targeted	Run actions/checkout@v6	2026-10-04T20:48:20.1519968Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T20:48:20.1520990Z  * [new ref]         0b111d175fe1dcb76adc03e29ba25d7683336cd4 -> origin/audit/AUD-OPUS-FL-119/684-lostupdate
+targeted	Run actions/checkout@v6	2026-10-04T20:48:20.1531657Z [command]/usr/bin/git branch --list --remote origin/audit/AUD-OPUS-FL-119/684-lostupdate
+targeted	Run actions/checkout@v6	2026-10-04T20:48:20.1554812Z   origin/audit/AUD-OPUS-FL-119/684-lostupdate
+targeted	Run actions/checkout@v6	2026-10-04T20:48:20.1563823Z [command]/usr/bin/git rev-parse refs/remotes/origin/audit/AUD-OPUS-FL-119/684-lostupdate
+targeted	Run actions/checkout@v6	2026-10-04T20:48:20.1584288Z 0b111d175fe1dcb76adc03e29ba25d7683336cd4
+targeted	Run actions/checkout@v6	2026-10-04T20:48:20.1587131Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:48:20.1587771Z ##[group]Determining the checkout info
+targeted	Run actions/checkout@v6	2026-10-04T20:48:20.1588344Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:48:20.1614197Z [command]/usr/bin/git sparse-checkout disable
+targeted	Run actions/checkout@v6	2026-10-04T20:48:20.1640486Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	Run actions/checkout@v6	2026-10-04T20:48:20.1673945Z ##[group]Checking out the ref
+targeted	Run actions/checkout@v6	2026-10-04T20:48:20.1674802Z [command]/usr/bin/git checkout --progress --force -B audit/AUD-OPUS-FL-119/684-lostupdate refs/remotes/origin/audit/AUD-OPUS-FL-119/684-lostupdate
+targeted	Run actions/checkout@v6	2026-10-04T20:48:20.3428982Z Switched to a new branch 'audit/AUD-OPUS-FL-119/684-lostupdate'
+targeted	Run actions/checkout@v6	2026-10-04T20:48:20.3433545Z branch 'audit/AUD-OPUS-FL-119/684-lostupdate' set up to track 'origin/audit/AUD-OPUS-FL-119/684-lostupdate'.
+targeted	Run actions/checkout@v6	2026-10-04T20:48:20.3441975Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:48:20.3484303Z [command]/usr/bin/git log -1 --format=%H
+targeted	Run actions/checkout@v6	2026-10-04T20:48:20.3505835Z 0b111d175fe1dcb76adc03e29ba25d7683336cd4
+targeted	Run actions/setup-node@v6	﻿2026-10-04T20:48:20.3735946Z ##[group]Run actions/setup-node@v6
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:20.3736325Z with:
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:20.3736627Z   node-version: 20
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:20.3736897Z   cache: npm
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:20.3737209Z   check-latest: false
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:20.3739782Z   token: ***
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:20.3740091Z   package-manager-cache: true
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:20.3740435Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:20.5098640Z Attempting to download 20...
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:21.1201089Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:21.4037642Z Extracting ...
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:21.4131560Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/62276d99-ba49-4c23-aca1-6656ad2631f5 -f /home/runner/work/_temp/05324804-e69e-4ccf-a493-15be96f27145
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:22.4742380Z Adding to the cache ...
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:24.3731032Z ##[group]Environment details
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:24.5868180Z node: v20.20.2
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:24.5868851Z npm: 10.8.2
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:24.5869129Z yarn: 1.22.22
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:24.5869873Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:24.5894018Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:24.6820594Z /home/runner/.npm
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:24.8113735Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:25.6909691Z Received 86828135 of 86828135 (100.0%), 110.1 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:25.6910807Z Cache Size: ~83 MB (86828135 B)
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:25.6938391Z [command]/usr/bin/tar -xf /home/runner/work/_temp/e499f521-161c-4d00-9c56-aaf20fe48c04/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:25.8003874Z Cache restored successfully
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:25.8041539Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+targeted	Run npm ci	﻿2026-10-04T20:48:25.8245558Z ##[group]Run npm ci
+targeted	Run npm ci	2026-10-04T20:48:25.8246079Z ^[[36;1mnpm ci^[[0m
+targeted	Run npm ci	2026-10-04T20:48:25.8397155Z shell: /usr/bin/bash -e {0}
+targeted	Run npm ci	2026-10-04T20:48:25.8397552Z ##[endgroup]
+targeted	Run npm ci	2026-10-04T20:48:31.0189152Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	Run npm ci	2026-10-04T20:48:31.9094866Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+targeted	Run npm ci	2026-10-04T20:48:33.0059393Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T20:48:34.0644840Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T20:48:34.0851700Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T20:48:34.1165480Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T20:48:45.6158250Z 
+targeted	Run npm ci	2026-10-04T20:48:45.6159967Z > growth-project-backend@1.0.0 postinstall
+targeted	Run npm ci	2026-10-04T20:48:46.4355915Z > prisma generate
+targeted	Run npm ci	2026-10-04T20:48:46.4356382Z 
+targeted	Run npm ci	2026-10-04T20:48:46.4356730Z Prisma schema loaded from prisma/schema.prisma
+targeted	Run npm ci	2026-10-04T20:48:50.0527270Z ┌─────────────────────────────────────────────────────────┐
+targeted	Run npm ci	2026-10-04T20:48:50.0528537Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+targeted	Run npm ci	2026-10-04T20:48:50.0529442Z │                                                         │
+targeted	Run npm ci	2026-10-04T20:48:50.0530406Z │  This is a major update - please follow the guide at    │
+targeted	Run npm ci	2026-10-04T20:48:50.0531407Z │  https://pris.ly/d/major-version-upgrade                │
+targeted	Run npm ci	2026-10-04T20:48:50.0532284Z │                                                         │
+targeted	Run npm ci	2026-10-04T20:48:50.0533232Z │  Run the following to update                            │
+targeted	Run npm ci	2026-10-04T20:48:50.0534121Z │    npm i --save-dev prisma@latest                       │
+targeted	Run npm ci	2026-10-04T20:48:50.0535273Z │    npm i @prisma/client@latest                          │
+targeted	Run npm ci	2026-10-04T20:48:50.0536181Z └─────────────────────────────────────────────────────────┘
+targeted	Run npm ci	2026-10-04T20:48:50.0536574Z 
+targeted	Run npm ci	2026-10-04T20:48:50.0537213Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.96s
+targeted	Run npm ci	2026-10-04T20:48:50.0537795Z 
+targeted	Run npm ci	2026-10-04T20:48:50.0538341Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	Run npm ci	2026-10-04T20:48:50.0538918Z 
+targeted	Run npm ci	2026-10-04T20:48:50.0539398Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+targeted	Run npm ci	2026-10-04T20:48:50.0539923Z 
+targeted	Run npm ci	2026-10-04T20:48:50.0896382Z 
+targeted	Run npm ci	2026-10-04T20:48:50.0897847Z > growth-project-backend@1.0.0 prepare
+targeted	Run npm ci	2026-10-04T20:48:50.0898940Z > lefthook install
+targeted	Run npm ci	2026-10-04T20:48:50.0899399Z 
+targeted	Run npm ci	2026-10-04T20:48:50.1330348Z sync hooks: ✔️(pre-commit, commit-msg)
+targeted	Run npm ci	2026-10-04T20:48:50.1467617Z 
+targeted	Run npm ci	2026-10-04T20:48:50.1469114Z added 1115 packages, and audited 1116 packages in 24s
+targeted	Run npm ci	2026-10-04T20:48:50.1469663Z 
+targeted	Run npm ci	2026-10-04T20:48:50.1469971Z 202 packages are looking for funding
+targeted	Run npm ci	2026-10-04T20:48:50.1470444Z   run `npm fund` for details
+targeted	Run npm ci	2026-10-04T20:48:50.1498593Z 
+targeted	Run npm ci	2026-10-04T20:48:50.1499088Z 3 high severity vulnerabilities
+targeted	Run npm ci	2026-10-04T20:48:50.1499378Z 
+targeted	Run npm ci	2026-10-04T20:48:50.1499690Z To address all issues (including breaking changes), run:
+targeted	Run npm ci	2026-10-04T20:48:50.1500552Z   npm audit fix --force
+targeted	Run npm ci	2026-10-04T20:48:50.1500763Z 
+targeted	Run npm ci	2026-10-04T20:48:50.1500941Z Run `npm audit` for details.
+targeted	Run npx prisma generate	﻿2026-10-04T20:48:50.1869550Z ##[group]Run npx prisma generate
+targeted	Run npx prisma generate	2026-10-04T20:48:50.1869998Z ^[[36;1mnpx prisma generate^[[0m
+targeted	Run npx prisma generate	2026-10-04T20:48:50.1912308Z shell: /usr/bin/bash -e {0}
+targeted	Run npx prisma generate	2026-10-04T20:48:50.1912726Z ##[endgroup]
+targeted	Run npx prisma generate	2026-10-04T20:48:51.2685347Z Prisma schema loaded from prisma/schema.prisma
+targeted	Run npx prisma generate	2026-10-04T20:48:55.0941818Z 
+targeted	Run npx prisma generate	2026-10-04T20:48:55.0949018Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.19s
+targeted	Run npx prisma generate	2026-10-04T20:48:55.0949652Z 
+targeted	Run npx prisma generate	2026-10-04T20:48:55.0950364Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	Run npx prisma generate	2026-10-04T20:48:55.0950767Z 
+targeted	Run npx prisma generate	2026-10-04T20:48:55.0951141Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+targeted	Run npx prisma generate	2026-10-04T20:48:55.0951501Z 
+targeted	Targeted jest	﻿2026-10-04T20:48:55.2040067Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T20:48:55.2040509Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T20:48:55.2040998Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T20:48:55.2041546Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T20:48:55.2042001Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T20:48:55.2042373Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T20:48:55.2084694Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T20:48:55.2085197Z env:
+targeted	Targeted jest	2026-10-04T20:48:55.2085525Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T20:48:55.2085960Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T20:48:55.2086410Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T20:48:55.2197620Z specs: test/audit-opus-fl-119-684.spec.ts test/audit-opus-f4-119-684.spec.ts test/audit-opus-f34-117-684.spec.ts test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts
+targeted	Targeted jest	2026-10-04T20:48:58.5008332Z PASS test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts (185 MB heap size)
+targeted	Targeted jest	2026-10-04T20:48:58.8807126Z ^[[31m[Nest] 3053  - ^[[39m10/04/2026, 8:48:58 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mSFEE_REFUND_FAILED_AFTER_APPLY alert=true charge=ch_1 refund=re_ach status=failed: the payout was already reduced for this refund; the settlement is flagged for review and nothing is re-credited automatically^[[39m
+targeted	Targeted jest	2026-10-04T20:48:58.8811131Z ^[[31m[Nest] 3053  - ^[[39m10/04/2026, 8:48:58 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mSFEE_REFUND_FAILED_AFTER_APPLY alert=true charge=ch_1 refund=re_ach status=failed: the payout was already reduced for this refund; the settlement is flagged for review and nothing is re-credited automatically^[[39m
+targeted	Targeted jest	2026-10-04T20:48:58.8815018Z ^[[31m[Nest] 3053  - ^[[39m10/04/2026, 8:48:58 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mSFEE_REFUND_FAILED_AFTER_APPLY alert=true charge=ch_1 refund=re_ach status=failed: the payout was already reduced for this refund; the settlement is flagged for review and nothing is re-credited automatically^[[39m
+targeted	Targeted jest	2026-10-04T20:48:58.9076488Z PASS test/audit-opus-f4-119-684.spec.ts (120 MB heap size)
+targeted	Targeted jest	2026-10-04T20:48:59.2330373Z ^[[31m[Nest] 3053  - ^[[39m10/04/2026, 8:48:59 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mSFEE_REFUND_FAILED_AFTER_APPLY alert=true charge=ch_1 refund=re_1 status=failed: the payout was already reduced for this refund; the settlement is flagged for review and nothing is re-credited automatically^[[39m
+targeted	Targeted jest	2026-10-04T20:48:59.2920147Z ^[[33m[Nest] 3053  - ^[[39m10/04/2026, 8:48:58 PM ^[[33m   WARN^[[39m ^[[38;5;3m[PayoutNoticeService] ^[[39m^[[33mSFEE_NOTICE_EMAIL_FAILED notice=pan-11 payee=coach_1: kind=unknown^[[39m
+targeted	Targeted jest	2026-10-04T20:48:59.2922303Z ^[[33m[Nest] 3053  - ^[[39m10/04/2026, 8:48:58 PM ^[[33m   WARN^[[39m ^[[38;5;3m[PayoutNoticeService] ^[[39m^[[33mSFEE_NOTICE_EMAIL_FAILED notice=pan-22 payee=coach_1: kind=unknown^[[39m
+targeted	Targeted jest	2026-10-04T20:48:59.2924617Z ^[[33m[Nest] 3053  - ^[[39m10/04/2026, 8:48:58 PM ^[[33m   WARN^[[39m ^[[38;5;3m[PayoutNoticeService] ^[[39m^[[33mSFEE_NOTICE_EMAIL_FAILED notice=pan-59 payee=coach_1: kind=unknown^[[39m
+targeted	Targeted jest	2026-10-04T20:48:59.2926699Z ^[[33m[Nest] 3053  - ^[[39m10/04/2026, 8:48:58 PM ^[[33m   WARN^[[39m ^[[38;5;3m[PayoutNoticeService] ^[[39m^[[33mSFEE_NOTICE_EMAIL_FAILED notice=pan-82 payee=coach_1: kind=unknown^[[39m
+targeted	Targeted jest	2026-10-04T20:48:59.2928080Z FAIL test/audit-opus-fl-119-684.spec.ts (162 MB heap size)
+targeted	Targeted jest	2026-10-04T20:48:59.2929926Z   ● AUD-OPUS-FL-119 L1-L3: a failure processed between a stale worker read and its status write › L1 refund.updated succeeded redelivery races refund.updated failed: the row ends failed and the coach keeps 4,630
+targeted	Targeted jest	2026-10-04T20:48:59.2930962Z 
+targeted	Targeted jest	2026-10-04T20:48:59.2931322Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T20:48:59.2931881Z 
+targeted	Targeted jest	2026-10-04T20:48:59.2932140Z     - Expected  - 2
+targeted	Targeted jest	2026-10-04T20:48:59.2932604Z     + Received  + 2
+targeted	Targeted jest	2026-10-04T20:48:59.2933135Z 
+targeted	Targeted jest	2026-10-04T20:48:59.2933336Z       Object {
+targeted	Targeted jest	2026-10-04T20:48:59.2934258Z         "flagged": false,
+targeted	Targeted jest	2026-10-04T20:48:59.2934836Z     -   "net": 4630,
+targeted	Targeted jest	2026-10-04T20:48:59.2935318Z     -   "status": "failed",
+targeted	Targeted jest	2026-10-04T20:48:59.2935821Z     +   "net": 0,
+targeted	Targeted jest	2026-10-04T20:48:59.2936317Z     +   "status": "succeeded",
+targeted	Targeted jest	2026-10-04T20:48:59.2936778Z       }
+targeted	Targeted jest	2026-10-04T20:48:59.2936987Z 
+targeted	Targeted jest	2026-10-04T20:48:59.2937840Z     ^[[0m ^[[90m 182 |^[[39m     ^[[90m// Stripe's final state is failed: no money may move, or (if it moved) the settlement is flagged.^[[39m
+targeted	Targeted jest	2026-10-04T20:48:59.2939743Z      ^[[90m 183 |^[[39m     ^[[36mconst^[[39m flagged ^[[33m=^[[39m c^[[33m.^[[39mdb^[[33m.^[[39msettlements[^[[35m0^[[39m]^[[33m.^[[39mreconcile_reason ^[[33m===^[[39m ^[[32m'SFEE_REFUND_FAILED_AFTER_APPLY'^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:48:59.2942424Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 184 |^[[39m     expect({ status^[[33m:^[[39m c^[[33m.^[[39mdb^[[33m.^[[39mrefunds[^[[35m0^[[39m]^[[33m.^[[39mstatus^[[33m,^[[39m net^[[33m:^[[39m c^[[33m.^[[39mstripe^[[33m.^[[39mnetTo(^[[32m'acct_1'^[[39m)^[[33m,^[[39m flagged })^[[33m.^[[39mtoEqual({
+targeted	Targeted jest	2026-10-04T20:48:59.2944422Z      ^[[90m     |^[[39m                                                                                        ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:48:59.2945406Z      ^[[90m 185 |^[[39m       status^[[33m:^[[39m ^[[32m'failed'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T20:48:59.2946362Z      ^[[90m 186 |^[[39m       net^[[33m:^[[39m ^[[35m4^[[39m_630^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T20:48:59.2947269Z      ^[[90m 187 |^[[39m       flagged^[[33m:^[[39m ^[[36mfalse^[[39m^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:48:59.2947733Z 
+targeted	Targeted jest	2026-10-04T20:48:59.2948176Z       at Object.<anonymous> (test/audit-opus-fl-119-684.spec.ts:184:88)
+targeted	Targeted jest	2026-10-04T20:48:59.2948677Z 
+targeted	Targeted jest	2026-10-04T20:48:59.2949943Z   ● AUD-OPUS-FL-119 L1-L3: a failure processed between a stale worker read and its status write › L2 same race while Stripe still lists the refund succeeded at the stale read: access and money stay
+targeted	Targeted jest	2026-10-04T20:48:59.2951252Z 
+targeted	Targeted jest	2026-10-04T20:48:59.2951528Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T20:48:59.2952021Z 
+targeted	Targeted jest	2026-10-04T20:48:59.2952282Z     - Expected  - 3
+targeted	Targeted jest	2026-10-04T20:48:59.2953221Z     + Received  + 3
+targeted	Targeted jest	2026-10-04T20:48:59.2953498Z 
+targeted	Targeted jest	2026-10-04T20:48:59.2953673Z       Object {
+targeted	Targeted jest	2026-10-04T20:48:59.2955386Z     -   "net": 4630,
+targeted	Targeted jest	2026-10-04T20:48:59.2955946Z     -   "purchase": "paid",
+targeted	Targeted jest	2026-10-04T20:48:59.2956493Z     -   "status": "failed",
+targeted	Targeted jest	2026-10-04T20:48:59.2956967Z     +   "net": 0,
+targeted	Targeted jest	2026-10-04T20:48:59.2957470Z     +   "purchase": "refunded",
+targeted	Targeted jest	2026-10-04T20:48:59.2957974Z     +   "status": "succeeded",
+targeted	Targeted jest	2026-10-04T20:48:59.2958478Z       }
+targeted	Targeted jest	2026-10-04T20:48:59.2958703Z 
+targeted	Targeted jest	2026-10-04T20:48:59.2959456Z     ^[[0m ^[[90m 202 |^[[39m       net^[[33m:^[[39m c^[[33m.^[[39mstripe^[[33m.^[[39mnetTo(^[[32m'acct_1'^[[39m)^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T20:48:59.2960665Z      ^[[90m 203 |^[[39m       purchase^[[33m:^[[39m c^[[33m.^[[39mdb^[[33m.^[[39mpurchases[^[[35m0^[[39m]^[[33m.^[[39mstatus^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T20:48:59.2962484Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 204 |^[[39m     })^[[33m.^[[39mtoEqual({ status^[[33m:^[[39m ^[[32m'failed'^[[39m^[[33m,^[[39m net^[[33m:^[[39m ^[[35m4^[[39m_630^[[33m,^[[39m purchase^[[33m:^[[39m ^[[32m'paid'^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:48:59.2963874Z      ^[[90m     |^[[39m        ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:48:59.2964589Z      ^[[90m 205 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:48:59.2965095Z      ^[[90m 206 |^[[39m
+targeted	Targeted jest	2026-10-04T20:48:59.2967388Z      ^[[90m 207 |^[[39m   it(^[[32m'L3 a charge.refunded redelivery (snapshot succeeded) races refund.updated failed: the row ends failed'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T20:48:59.2968499Z 
+targeted	Targeted jest	2026-10-04T20:48:59.2968892Z       at Object.<anonymous> (test/audit-opus-fl-119-684.spec.ts:204:8)
+targeted	Targeted jest	2026-10-04T20:48:59.2969306Z 
+targeted	Targeted jest	2026-10-04T20:48:59.2970406Z   ● AUD-OPUS-FL-119 L1-L3: a failure processed between a stale worker read and its status write › L3 a charge.refunded redelivery (snapshot succeeded) races refund.updated failed: the row ends failed
+targeted	Targeted jest	2026-10-04T20:48:59.2971496Z 
+targeted	Targeted jest	2026-10-04T20:48:59.2971785Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T20:48:59.2972184Z 
+targeted	Targeted jest	2026-10-04T20:48:59.2972348Z     - Expected  - 3
+targeted	Targeted jest	2026-10-04T20:48:59.2973316Z     + Received  + 3
+targeted	Targeted jest	2026-10-04T20:48:59.2973543Z 
+targeted	Targeted jest	2026-10-04T20:48:59.2973737Z       Object {
+targeted	Targeted jest	2026-10-04T20:48:59.2974188Z     -   "net": 4630,
+targeted	Targeted jest	2026-10-04T20:48:59.2974732Z     -   "refunded": 0,
+targeted	Targeted jest	2026-10-04T20:48:59.2975131Z     -   "status": "failed",
+targeted	Targeted jest	2026-10-04T20:48:59.2975749Z     +   "net": 0,
+targeted	Targeted jest	2026-10-04T20:48:59.2976143Z     +   "refunded": 4900,
+targeted	Targeted jest	2026-10-04T20:48:59.2976753Z     +   "status": "succeeded",
+targeted	Targeted jest	2026-10-04T20:48:59.2977210Z       }
+targeted	Targeted jest	2026-10-04T20:48:59.2977435Z 
+targeted	Targeted jest	2026-10-04T20:48:59.2978160Z     ^[[0m ^[[90m 217 |^[[39m       net^[[33m:^[[39m c^[[33m.^[[39mstripe^[[33m.^[[39mnetTo(^[[32m'acct_1'^[[39m)^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T20:48:59.2979591Z      ^[[90m 218 |^[[39m       refunded^[[33m:^[[39m c^[[33m.^[[39mdb^[[33m.^[[39msettlements[^[[35m0^[[39m]^[[33m.^[[39mrefunded_cents^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T20:48:59.2981368Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 219 |^[[39m     })^[[33m.^[[39mtoEqual({ status^[[33m:^[[39m ^[[32m'failed'^[[39m^[[33m,^[[39m net^[[33m:^[[39m ^[[35m4^[[39m_630^[[33m,^[[39m refunded^[[33m:^[[39m ^[[35m0^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:48:59.2982706Z      ^[[90m     |^[[39m        ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T20:48:59.2983509Z      ^[[90m 220 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:48:59.2984068Z      ^[[90m 221 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T20:48:59.2984645Z      ^[[90m 222 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T20:48:59.2984888Z 
+targeted	Targeted jest	2026-10-04T20:48:59.2985274Z       at Object.<anonymous> (test/audit-opus-fl-119-684.spec.ts:219:8)
+targeted	Targeted jest	2026-10-04T20:48:59.2985957Z 
+targeted	Targeted jest	2026-10-04T20:48:59.5539975Z PASS test/audit-opus-f34-117-684.spec.ts (183 MB heap size)
+targeted	Targeted jest	2026-10-04T20:48:59.5567955Z 
+targeted	Targeted jest	2026-10-04T20:48:59.5577870Z Test Suites: 1 failed, 3 passed, 4 total
+targeted	Targeted jest	2026-10-04T20:48:59.5578680Z Tests:       3 failed, 33 passed, 36 total
+targeted	Targeted jest	2026-10-04T20:48:59.5579097Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T20:48:59.5579788Z Time:        3.6 s
+targeted	Targeted jest	2026-10-04T20:48:59.5580780Z Ran all test suites matching test/audit-opus-fl-119-684.spec.ts|test/audit-opus-f4-119-684.spec.ts|test/audit-opus-f34-117-684.spec.ts|test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts.
+targeted	Targeted jest	2026-10-04T20:48:59.6352610Z ^[[33m[Nest] 3053  - ^[[39m10/04/2026, 8:48:59 PM ^[[33m   WARN^[[39m ^[[38;5;3m[PayoutNoticeService] ^[[39m^[[33mSFEE_NOTICE_EMAIL_FAILED notice=pan-26 payee=coach_1: kind=unknown^[[39m
+targeted	Targeted jest	2026-10-04T20:48:59.6354534Z ^[[33m[Nest] 3053  - ^[[39m10/04/2026, 8:48:59 PM ^[[33m   WARN^[[39m ^[[38;5;3m[PayoutNoticeService] ^[[39m^[[33mSFEE_NOTICE_EMAIL_FAILED notice=pan-37 payee=coach_1: kind=unknown^[[39m
+targeted	Targeted jest	2026-10-04T20:48:59.6355899Z ^[[33m[Nest] 3053  - ^[[39m10/04/2026, 8:48:59 PM ^[[33m   WARN^[[39m ^[[38;5;3m[PayoutNoticeService] ^[[39m^[[33mSFEE_NOTICE_EMAIL_FAILED notice=pan-48 payee=coach_1: kind=unknown^[[39m
+targeted	Targeted jest	2026-10-04T20:48:59.6844734Z ##[error]Process completed with exit code 1.
+targeted	Post Run actions/checkout@v6	﻿2026-10-04T20:48:59.6967871Z Post job cleanup.
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.7791301Z [command]/usr/bin/git version
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.7824034Z git version 2.55.0
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.7857010Z Temporarily overriding HOME='/home/runner/work/_temp/8039e346-a410-4885-8f65-3ffc88205c44' before making global git config changes
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.7858020Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.7861452Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.7889887Z Removing SSH command configuration
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.7895761Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.7926063Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.8113452Z Removing HTTP extra header
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.8118086Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.8144595Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.8320496Z Removing includeIf entries pointing to credentials config files
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.8325677Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.8348951Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.8350486Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.8351549Z includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.8352877Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.8357754Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.8376875Z /home/runner/work/_temp/git-credentials-1472937d-89bf-4116-a457-bb1f25a9872e.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.8386761Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-1472937d-89bf-4116-a457-bb1f25a9872e.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.8419788Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.8437977Z /home/runner/work/_temp/git-credentials-1472937d-89bf-4116-a457-bb1f25a9872e.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.8445363Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-1472937d-89bf-4116-a457-bb1f25a9872e.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.8475335Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.8493432Z /github/runner_temp/git-credentials-1472937d-89bf-4116-a457-bb1f25a9872e.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.8498370Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-1472937d-89bf-4116-a457-bb1f25a9872e.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.8529355Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.8548631Z /github/runner_temp/git-credentials-1472937d-89bf-4116-a457-bb1f25a9872e.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.8556736Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-1472937d-89bf-4116-a457-bb1f25a9872e.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.8588818Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Post Run actions/checkout@v6	2026-10-04T20:48:59.8769175Z Removing credentials config '/home/runner/work/_temp/git-credentials-1472937d-89bf-4116-a457-bb1f25a9872e.config'
+targeted	Stop containers	﻿2026-10-04T20:48:59.8877780Z Print service container logs: a93daea4c9bb46919cab4473328294f2_redis7alpine_0d4890
+targeted	Stop containers	2026-10-04T20:48:59.8882610Z ##[command]/usr/bin/docker logs --details c10a0971f4442e92367219fb4ee2e6c8e095fa0cd60556ae5e9884b231f15839
+targeted	Stop containers	2026-10-04T20:48:59.9008298Z  1:C 04 Oct 2026 20:48:11.998 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+targeted	Stop containers	2026-10-04T20:48:59.9010905Z  1:C 04 Oct 2026 20:48:11.998 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+targeted	Stop containers	2026-10-04T20:48:59.9011839Z  1:C 04 Oct 2026 20:48:11.998 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+targeted	Stop containers	2026-10-04T20:48:59.9013325Z  1:C 04 Oct 2026 20:48:11.998 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+targeted	Stop containers	2026-10-04T20:48:59.9014517Z  1:M 04 Oct 2026 20:48:11.998 * monotonic clock: POSIX clock_gettime
+targeted	Stop containers	2026-10-04T20:48:59.9015272Z  1:M 04 Oct 2026 20:48:11.999 * Running mode=standalone, port=6379.
+targeted	Stop containers	2026-10-04T20:48:59.9015964Z  1:M 04 Oct 2026 20:48:11.999 * Server initialized
+targeted	Stop containers	2026-10-04T20:48:59.9016605Z  1:M 04 Oct 2026 20:48:11.999 * Ready to accept connections tcp
+targeted	Stop containers	2026-10-04T20:48:59.9024308Z Stop and remove container: a93daea4c9bb46919cab4473328294f2_redis7alpine_0d4890
+targeted	Stop containers	2026-10-04T20:48:59.9028736Z ##[command]/usr/bin/docker rm --force c10a0971f4442e92367219fb4ee2e6c8e095fa0cd60556ae5e9884b231f15839
+targeted	Stop containers	2026-10-04T20:49:00.5045241Z c10a0971f4442e92367219fb4ee2e6c8e095fa0cd60556ae5e9884b231f15839
+targeted	Stop containers	2026-10-04T20:49:00.5067303Z Remove container network: github_network_8cf967046ad740038227200bd3c7205f
+targeted	Stop containers	2026-10-04T20:49:00.5071514Z ##[command]/usr/bin/docker network rm github_network_8cf967046ad740038227200bd3c7205f
+targeted	Stop containers	2026-10-04T20:49:00.5932119Z github_network_8cf967046ad740038227200bd3c7205f
+targeted	Complete job	﻿2026-10-04T20:49:00.6008187Z Cleaning up orphan processes

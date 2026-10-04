@@ -14,8 +14,10 @@ Builder B-FEES18-119 (Claude Opus 5.5, T4). Closes every A/B from both lenses at
 ## Proof
 - Failing-before (r17 spec on the unfixed stack 88c72200): [run 37230855089](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37230855089): 17 failed / 2 passed (the two passing are controls).
 - Passing-after, with every prior probe of both lenses replayed unchanged: [run 37230897422](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37230897422) green.
-- Scratch merge of the new fees top + main 3e9a9a75 (branch `ci/B-FEES18-119-main-scratch`, never merged), full ci.yml: SCRATCH_LINE
-- R75 `b644198b..c2585c97`: OK (as any -14; as unknown as, as never, empty-catch net 0).
+- Scratch merge of the new fees top + main 3e9a9a75 (branch `ci/B-FEES18-119-main-scratch`, never merged), full ci.yml at 51bc416c (fees top 30a118dd + main + the baseline edit below): [run 37232435047](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37232435047) green on all five jobs; Lint, Type-check and Test pass (747 suites, 12,867 tests passed, 0 failed). Without the baseline edit, the only failure is main's `test/privacy/no-pii-in-logs.spec.ts` legacy counts ([run 37231458163](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37231458163): 1 failed of 13,113), which shows the renames clear every strict rule. The baseline edit (main-only file, so it cannot live in #684): delete `src/checkout/purchase-split-handler.service.ts: 2`, delete `src/connect/fees/transfer-orchestrator.service.ts: 1`, `src/checkout/refund-dispute-handler.service.ts` 5 -> 4. The three files touched by both sides (`src/email/email.service.ts`, `src/email/email.types.ts`, `src/notifications/notifications.service.ts`) merge without conflicts; `coach-payout-adjustment` keeps its type, subject and template, `channelGate` and `throttle_key` stay, and `email.service.spec` plus every notification spec pass.
+- PR CI at this head: build-and-test green [run 37231460850](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37231460850); every required check passes.
+- Passing-after note: run 37230897422 ran at a5816328; the only later change is 9fb9c48f (a comment moved above the case labels).
+- R75 `b644198b..c2585c97` (and `..30a118dd`): OK (as any -14; as unknown as, as never, empty-catch net 0).
 
 ## Prior probes replayed (pass/fail at this code)
 | Probe | Result |

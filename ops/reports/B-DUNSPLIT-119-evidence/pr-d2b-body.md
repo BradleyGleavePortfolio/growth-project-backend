@@ -30,4 +30,4 @@ Seam rule: file-level only. An intra-file seam would leave unaudited intermediat
 ## Fix rounds
 | Round | Job | Head | Closed | Comment |
 |---|---|---|---|---|
-| OPENING | B-DUNSPLIT-119 (agent 119) | see comment | split from #688 (no behaviour change) | OPENING comment |
+| OPENING | B-DUNSPLIT-119 (agent 119) | `276a9f60` | split from #688 (no behaviour change) | [OPENING](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/704#issuecomment-5984075128) |

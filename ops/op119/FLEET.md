@@ -47,3 +47,25 @@ B-RECUR7A-119 DONE 13:15: #678 FR7 READY 09e159d8 (2,594) 5983942447; #679 FR7 R
 AUD-OPUS-R12D-119 + AUD-SOL-R12D-119 launched 13:15. Running 9.
 B-CM5-119 DONE 13:16: #674 FR4 READY 8cc17809 (2,975) 5983931098; #676 FR4 READY ecaf75fd (2,984) 5983964524; #677 restack READY 6340993b (2,918) 5983964646; NEW #703 M5 tests d60a6d58 (460) 5983964779. Running 8.
 B-SHEET3-119 DONE 13:23: m#344 FR3 READY 8f53887a (2,728) 5984026424. Running 7 (DUNSPLIT, FEES18, RECUR7B, TR4, Sol S12B, Opus R12D, Sol R12D).
+AUD-SOL-S12B-119 DONE 13:23: m#342 RC 0/1/6 5983977653 (residual B-342-1 archived-package refusal claims nothing charged); m#343 RC 0/1/6 5984020426 (residual B-343-1 rejected native init republishes retired account notice). B-SHEET4-119 queued. Running 6.
+AUD-SOL-R12D-119 DONE 13:25: #678 APPROVE 0/0/2 5984029294; #679 APPROVE 0/0/4 5984037223. Running 5 (drain reached; cap 5 from now).
+B-DUNSPLIT-119 DONE 13:31: #687 FR3 READY c260a849 (2,822); #688 D2a FR4 READY f29fc201 (2,440); NEW #704 D2b 276a9f60 (694); NEW #705 D2c 279ec167 (1,287) R-DISPUTE-PAUSE (pause_collection=void + open invoices uncollectible; restart service owner-only, endpoint in D4; mobile contract reason 'dispute_paused', no lock date, no card path). Decisions: inquiries also pause (to owner); locked cycle keeps original lock time (accept); FEATURE_DUNNING_V2 off until #705 merges (accept).
+B-SHEET4-119 launched 13:31. Running 5.
+AUD-OPUS-R12D-119 DONE 13:32: #678 APPROVE 0/0/2 5984097954; #679 APPROVE 0/0/2 5984098174 -> #678/#679 DUAL APPROVE at FR7 heads.
+B-HC5-119 launched 13:32. Running 5 (FEES18, RECUR7B, TR4, SHEET4, HC5).
+B-TR4-119 DONE 13:32: #672 FR10 READY 62c2c066 (2,968); #673 FR10 READY 904b9642 (2,947); NEW #706 T4 tests a3f01163 (423).
+AUD-OPUS-T23D-119 launched 13:32. Running 5 (FEES18, RECUR7B, SHEET4, HC5, Opus T23D). Next slot: fees pair if FEES18 done, else Sol T23D.
+B-RECUR7B-119 DONE 13:34 (push blocked by platform; operator pushed fast-forward): #680 FR7 f267417a (2,779) 5984124704; #696 FR7 13c9a6c8 (2,197) 5984124842; #701 restack d624144c (615) 5984124986. READY after CI. Decisions: past_due exemption removed (accept); full refund on recurring keeps billing (to owner, default pause); D2c order end access + mark disputed before pausing (to dunning).
+AUD-OPUS-R34D-119 launched 13:34. Running 5 (FEES18, SHEET4, HC5, Opus T23D, Opus R34D).
+B-FEES18-119 DONE: #684 FR17 READY 9fb9c48f (2,679); #697 FR18 READY c2585c97 (2,276); #685 restack a61d50f4; #686 restack 30a118dd (fees top). Scratch top+main green 37232435047.
+Operator 13:42: landing candidate wip/op119/land-fees 0bc3696d (merge main 3e9a9a75 into 30a118dd + baseline patch; tree == scratch 317ea5ca). AUD-OPUS-FL-119 launched 13:42; Sol FL at next slot. Running 5 (SHEET4, HC5, Opus T23D, Opus R34D, Opus FL).
+AUD-OPUS-T23D-119 DONE 13:46: #672 APPROVE 0/0/6 5984213235; #673 APPROVE 0/0/5 5984213420; #706 APPROVE 0/0/1 5984213585.
+AUD-SOL-FL-119 launched 13:46. Running 5 (SHEET4, HC5, Opus R34D, Opus FL, Sol FL). Next: Sol R34D, Sol T23D.
+AUD-OPUS-FL-119 DONE 13:56: #684 RC 0/1/2 5984274116 (B-684-12 refund status race); #697 APPROVE 0/0/1 5984274225; #685 APPROVE 0/0/1 5984283110; #686 APPROVE 0/0/3 5984283221; candidate 0bc3696d RC (contains #684). Sol FL: #684 RC 0/2/1 5984278756 (B-684-3 final boundaries, B-684-12).
+B-FEES19-119 launched 13:56. Sol FL told to skip #681 watch. Running 5 (SHEET4, HC5, Opus R34D, Sol FL, FEES19).
+B-SHEET4-119 DONE 13:56: m#342 FR3 READY e3226f3b (2,207); m#343 FR3 READY 691e0cf0 (2,935); m#344 FR4 READY 7e17d142 (2,866).
+AUD-SOL-R34D-119 launched 13:56. Running 5 (HC5, Opus R34D, Sol FL, FEES19, Sol R34D). Queue: S123 pair, Sol T23D, coach pair, dunning pair, B-LOCK2, B-WIZ2, B-DUNB.
+AUD-OPUS-R34D-119 DONE 14:00: #680 APPROVE 0/0/7 5984321005; #696 APPROVE 0/0/0 5984321161; #701 RC 0/1/0 5984321334 (B-701-1: 5 'as any' make R75 fail by +1 on the fees top). Builder for #701 after Sol R34D.
+AUD-OPUS-S123-119 launched 14:00. Running 5 (HC5, Sol FL, FEES19, Sol R34D, Opus S123).
+AUD-SOL-FL-119 DONE 14:00: #684 RC 0/2/1 5984278756; #697 APPROVE 5984279038; #685 APPROVE 5984279275; #686 APPROVE 5984279478 -> #697/#685/#686 DUAL APPROVE at c2585c97/a61d50f4/30a118dd (will need restack deltas after B-FEES19).
+AUD-SOL-S123-119 launched 14:00. Running 5 (HC5, FEES19, Sol R34D, Opus S123, Sol S123).

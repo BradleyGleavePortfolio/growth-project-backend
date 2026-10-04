@@ -1,0 +1,1318 @@
+diff --git a/test/audit-sol-f4-119-boundaries.spec.ts b/test/audit-sol-f4-119-boundaries.spec.ts
+new file mode 100644
+index 00000000..188cc3c3
+--- /dev/null
++++ b/test/audit-sol-f4-119-boundaries.spec.ts
+@@ -0,0 +1,190 @@
++// Independent exact-head acceptance probes; audit branch only, never merge.
++import type { ClientPurchase } from '@prisma/client';
++import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
++import { PayoutNoticeService } from '../src/checkout/payout-notice.service';
++import { RefundDisputeHandlerService } from '../src/checkout/refund-dispute-handler.service';
++import { ChargeSettlementService } from '../src/connect/fees/charge-settlement.service';
++import { FeePolicyService } from '../src/connect/fees/fee-policy.service';
++import { PayoutReadinessService } from '../src/connect/fees/payout-readiness.service';
++import { SplitLedgerService } from '../src/connect/fees/split-ledger.service';
++import { TransferOrchestratorService } from '../src/connect/fees/transfer-orchestrator.service';
++import type { EmailService } from '../src/email/email.service';
++import type { NotificationsService } from '../src/notifications/notifications.service';
++import { FakeStripe, Table, asPrisma, makeCharge, makeSettlementPrisma, type Row } from './utils/settlement-fakes';
++
++function setup() {
++  const { prisma, db } = makeSettlementPrisma();
++  const user = new Table([{ id: 'coach_1', email: 'synthetic@example.invalid', name: null }], { prefix: 'u' });
++  Object.assign(prisma, { user, emailSendLog: new Table([], { prefix: 'em' }) });
++  const stripe = new FakeStripe();
++  const ledger = new SplitLedgerService(asPrisma(prisma));
++  const transfers = new TransferOrchestratorService(asPrisma(prisma), stripe, ledger);
++  const settlements = new ChargeSettlementService(asPrisma(prisma), stripe,
++    new FeePolicyService(asPrisma(prisma)), ledger, transfers);
++  const calls = {
++    createNotification: jest.fn(async (..._args: unknown[]) => ({ id: 'n_1' })),
++    channelGate: jest.fn(async (..._args: unknown[]) => 'enabled'),
++    pushToUser: jest.fn(async (..._args: unknown[]) => ({ delivered: true, code: 'delivered' })),
++    send: jest.fn(async (..._args: unknown[]) => ({ status: 'sent' })),
++  };
++  const stub: object = calls;
++  const notices = new PayoutNoticeService(asPrisma(prisma), stub as NotificationsService, stub as EmailService);
++  const refund = new RefundDisputeHandlerService(asPrisma(prisma), stripe, ledger, transfers,
++    new PayoutReadinessService(asPrisma(prisma), stripe), stub as NotificationsService,
++    undefined, undefined, settlements, notices);
++  const checkout = new CheckoutWebhookHandlerService(asPrisma(prisma), stripe,
++    undefined, undefined, refund);
++  const purchase = {
++    id: 'cp_1', coach_user_id: 'coach_1', client_user_id: 'client_1', package_id: 'pkg_1',
++    amount_cents: 4900, currency: 'usd', status: 'paid', source: null,
++    entitlement_active: true, billing_type: 'one_time', stripe_payment_intent_id: null,
++    stripe_subscription_id: null, created_at: new Date(),
++  } as ClientPurchase;
++  db.purchases.push(purchase as Row);
++  db.accounts.push({ coach_user_id: 'coach_1', stripe_account_id: 'acct_1' });
++  stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4900, fee: 172 }));
++  return { prisma, db, stripe, settlements, notices, calls, purchase, refund, checkout, user };
++}
++
++afterEach(() => jest.restoreAllMocks());
++
++const pending = {
++  id: 'evt_pending', type: 'charge.refunded', data: { object: {
++    id: 'ch_1', amount: 4900, amount_refunded: 0, refunded: false,
++    refunds: { data: [{ id: 're_1', amount: 4900, status: 'pending', currency: 'usd' }], has_more: false },
++  } },
++};
++const succeeded = (type: string) => ({
++  id: `evt_${type}`, type, data: { object: {
++    id: 're_1', charge: 'ch_1', amount: 4900, currency: 'usd', status: 'succeeded',
++  } },
++});
++
++it('refund.updated reaches the production checkout router, applies the pending refund and delivers its notice', async () => {
++  const c = setup();
++  await c.settlements.settleCharge({ purchase: c.purchase, charge_id: 'ch_1' });
++  await c.checkout.handle(pending);
++  c.stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4900, fee: 172, amount_refunded: 4900 }));
++  const result = await c.checkout.handle(succeeded('refund.updated'));
++  console.log('OBS_ROUTE', JSON.stringify({ result, row: c.db.refunds[0], net: c.stripe.netTo('acct_1') }));
++  expect(result).toMatchObject({ claimed: true, purchase_id: 'cp_1' });
++  expect(c.db.refunds[0].status).toBe('succeeded');
++  expect(c.stripe.netTo('acct_1')).toBe(0);
++});
++
++it('a succeeded async full refund also revokes access, not just money, without a second charge.refunded event', async () => {
++  const c = setup();
++  await c.settlements.settleCharge({ purchase: c.purchase, charge_id: 'ch_1' });
++  await c.checkout.handle(pending);
++  c.stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4900, fee: 172, amount_refunded: 4900 }));
++  await c.checkout.handle(succeeded('charge.refund.updated'));
++  // Passing money controls establish this is the implemented refund path.
++  expect(c.stripe.netTo('acct_1')).toBe(0);
++  expect(c.db.refunds[0].ledger_reversed).toBe(true);
++  console.log('OBS_ASYNC_ENTITLEMENT', JSON.stringify(c.db.purchases[0]));
++  expect(c.db.purchases[0]).toMatchObject({ status: 'refunded', entitlement_active: false });
++});
++
++it('refund.updated from the inner handler also schedules or delivers its exact-amount payout notice', async () => {
++  const c = setup();
++  await c.settlements.settleCharge({ purchase: c.purchase, charge_id: 'ch_1' });
++  await c.refund.handle(pending);
++  c.stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4900, fee: 172, amount_refunded: 4900 }));
++  await c.refund.handle(succeeded('refund.updated'));
++  expect(c.stripe.netTo('acct_1')).toBe(0);
++  expect(c.db.notices?.length).toBeGreaterThan(0);
++  expect(c.db.notices?.[0].inapp_status).toBe('sent');
++});
++
++async function notice(c: ReturnType<typeof setup>, started: number, patch: Row = {}) {
++  await c.prisma.payoutAdjustmentNotice.create({ data: {
++    id: 'pan_1', idempotency_key: 'pan_key_1', payee_user_id: 'coach_1',
++    settlement_id: 'cs_1', stripe_charge_id: 'ch_1', purchase_id: 'cp_1',
++    event: 'refund', title: 'A client was refunded', body: 'A client got $1.00 back.',
++    created_at: new Date(started - 120000), ...patch,
++  } });
++}
++
++it('B-684-3: a claim/read that consumes the deadline cannot start an in-app channel afterward', async () => {
++  const c = setup();
++  const started = Date.now();
++  let clock = started;
++  jest.spyOn(Date, 'now').mockImplementation(() => clock);
++  await notice(c, started, { push_status: 'off', email_status: 'disabled' });
++  const update = c.prisma.payoutAdjustmentNotice.updateMany.getMockImplementation()!;
++  c.prisma.payoutAdjustmentNotice.updateMany.mockImplementation(async (args) => {
++    const result = await update(args);
++    if (args.data.dispatch_claimed_at) clock = started + 480001;
++    return result;
++  });
++  await c.notices.dispatchPending(new Date(started), 25, started + 480000);
++  console.log('OBS_LATE_INAPP', JSON.stringify({ elapsed: clock - started, calls: c.calls.createNotification.mock.calls.length }));
++  expect(c.calls.createNotification).not.toHaveBeenCalled();
++  expect(c.db.notices?.[0].dispatched_at ?? null).toBeNull();
++});
++
++it('B-684-3: a delayed push gate cannot start the provider after the run deadline and notice claim expire', async () => {
++  const c = setup();
++  const started = Date.now();
++  let clock = started;
++  jest.spyOn(Date, 'now').mockImplementation(() => clock);
++  await notice(c, started, { inapp_status: 'sent', email_status: 'disabled' });
++  c.calls.channelGate.mockImplementation(async () => {
++    clock = started + 660000;
++    return 'enabled';
++  });
++  await c.notices.dispatchPending(new Date(started), 25, started + 480000);
++  console.log('OBS_LATE_PUSH', JSON.stringify({ elapsed: clock - started, calls: c.calls.pushToUser.mock.calls.length }));
++  expect(c.calls.pushToUser).not.toHaveBeenCalled();
++  expect(c.db.notices?.[0].push_status).toBe('pending');
++});
++
++it('B-684-3: a delayed email address lookup cannot start an email after the run deadline', async () => {
++  const c = setup();
++  const started = Date.now();
++  let clock = started;
++  jest.spyOn(Date, 'now').mockImplementation(() => clock);
++  await notice(c, started, { inapp_status: 'sent', push_status: 'off' });
++  c.user.findUnique.mockImplementation(async () => {
++    clock = started + 660000;
++    return { id: 'coach_1', email: 'synthetic@example.invalid', name: null };
++  });
++  await c.notices.dispatchPending(new Date(started), 25, started + 480000);
++  console.log('OBS_LATE_EMAIL', JSON.stringify({ elapsed: clock - started, calls: c.calls.send.mock.calls.length }));
++  expect(c.calls.send).not.toHaveBeenCalled();
++  expect(c.db.notices?.[0].email_status).toBe('pending');
++});
++
++it('B-684-3: a later batch row uses a fresh claim, so a second worker cannot push it simultaneously', async () => {
++  const c = setup();
++  const started = Date.now();
++  jest.useFakeTimers({ now: started });
++  try {
++    await notice(c, started, { inapp_status: 'sent', email_status: 'disabled' });
++    // Settlement work / previous notices used six minutes of this sweep.
++    jest.setSystemTime(started + 360000);
++    let entered = false;
++    c.calls.pushToUser.mockImplementation(async () => {
++      if (!entered) {
++        entered = true;
++        await c.notices.dispatchForCharge('ch_1');
++      }
++      return { delivered: true, code: 'delivered' };
++    });
++    await c.notices.dispatchPending(new Date(started), 25, started + 480000);
++    console.log('OBS_STALE_CLAIM', JSON.stringify({ pushes: c.calls.pushToUser.mock.calls.length, notice: c.db.notices?.[0] }));
++    expect(c.calls.pushToUser).toHaveBeenCalledTimes(1);
++  } finally {
++    jest.useRealTimers();
++  }
++});
++
++it('control: a spent budget starts no channel at all', async () => {
++  const c = setup();
++  const started = Date.now();
++  await notice(c, started);
++  await c.notices.dispatchPending(new Date(started), 25, started - 1);
++  expect(c.calls.createNotification).not.toHaveBeenCalled();
++  expect(c.calls.pushToUser).not.toHaveBeenCalled();
++  expect(c.calls.send).not.toHaveBeenCalled();
++});
+diff --git a/test/audit-sol-f4-119-prior-116.spec.ts b/test/audit-sol-f4-119-prior-116.spec.ts
+new file mode 100644
+index 00000000..8ce28262
+--- /dev/null
++++ b/test/audit-sol-f4-119-prior-116.spec.ts
+@@ -0,0 +1,105 @@
++import { Logger } from '@nestjs/common';
++import type { ClientPurchase } from '@prisma/client';
++import { PayoutNoticeService } from '../src/checkout/payout-notice.service';
++import { RefundDisputeHandlerService } from '../src/checkout/refund-dispute-handler.service';
++import { ChargeSettlementService } from '../src/connect/fees/charge-settlement.service';
++import { FeePolicyService } from '../src/connect/fees/fee-policy.service';
++import { PayoutReadinessService } from '../src/connect/fees/payout-readiness.service';
++import { SplitLedgerService } from '../src/connect/fees/split-ledger.service';
++import { TransferOrchestratorService } from '../src/connect/fees/transfer-orchestrator.service';
++import type { NotificationsService } from '../src/notifications/notifications.service';
++import {
++  FakeStripe, asPrisma, makeCharge, makeSettlementPrisma, type Row,
++} from './utils/settlement-fakes';
++
++function setup() {
++  const { prisma, db } = makeSettlementPrisma();
++  const stripe = new FakeStripe();
++  const ledger = new SplitLedgerService(asPrisma(prisma));
++  const fee = new FeePolicyService(asPrisma(prisma));
++  const transfers = new TransferOrchestratorService(asPrisma(prisma), stripe, ledger);
++  const settlements = new ChargeSettlementService(asPrisma(prisma), stripe, fee, ledger, transfers);
++  const notificationStub: object = {
++    createNotification: jest.fn(async () => ({ id: 'n_audit' })),
++    channelGate: jest.fn(async () => 'off'),
++  };
++  const notifications = notificationStub as NotificationsService;
++  const notices = new PayoutNoticeService(asPrisma(prisma), notifications);
++  const readiness = new PayoutReadinessService(asPrisma(prisma), stripe);
++  const refunds = new RefundDisputeHandlerService(
++    asPrisma(prisma), stripe, ledger, transfers, readiness, notifications,
++    undefined, undefined, settlements, notices,
++  );
++  const purchase = {
++    id: 'cp_audit', coach_user_id: 'coach_audit', client_user_id: 'client_audit',
++    package_id: 'pkg_audit', amount_cents: 4_900, currency: 'usd',
++    status: 'paid', source: null, entitlement_active: true, billing_type: 'one_time',
++    // No saved PI is needed: routing resolves through the real settlement.
++    stripe_payment_intent_id: null, stripe_subscription_id: null, created_at: new Date(),
++  } as ClientPurchase;
++  db.purchases.push(purchase as Row);
++  db.accounts.push({ coach_user_id: purchase.coach_user_id, stripe_account_id: 'acct_audit' });
++  stripe.charges.set('ch_audit', makeCharge({ id: 'ch_audit', amount: 4_900, fee: 172 }));
++  return { prisma, db, stripe, settlements, purchase, refunds, notices, notifications };
++}
++
++afterEach(() => jest.restoreAllMocks());
++
++describe('Independent F4 actual-service boundary probes', () => {
++  it('control: complete refund list converges a fully refunded sale exactly once', async () => {
++    const { db, stripe, settlements, purchase, refunds } = setup();
++    await settlements.settleCharge({ purchase, charge_id: 'ch_audit' });
++    stripe.charges.set('ch_audit',
++      makeCharge({ id: 'ch_audit', amount: 4_900, fee: 172, amount_refunded: 4_900 }));
++    const event = {
++      id: 'evt_control', type: 'charge.refunded',
++      data: { object: {
++        id: 'ch_audit', amount: 4_900, amount_refunded: 4_900, refunded: true,
++        refunds: { data: [{ id: 're_full', amount: 4_900, status: 'succeeded' }] },
++      } },
++    };
++    await refunds.handle(event);
++    await refunds.handle(event);
++    expect(stripe.netTo('acct_audit')).toBe(0);
++    expect(db.settlements[0].refunded_cents).toBe(4_900);
++    expect(db.recoveries[0].amount_cents).toBe(270);
++  });
++
++  it('truncated latest-10 refund list still uses the canonical cumulative amount_refunded', async () => {
++    const { db, stripe, settlements, purchase, refunds } = setup();
++    await settlements.settleCharge({ purchase, charge_id: 'ch_audit' });
++    stripe.charges.set('ch_audit',
++      makeCharge({ id: 'ch_audit', amount: 4_900, fee: 172, amount_refunded: 4_900 }));
++    // First delivered event after eleven dashboard partial refunds.
++    // Stripe embeds only its latest ten: 10 * USD 4, omitting an earlier USD 9.
++    const embedded = Array.from({ length: 10 }, (_, i) => ({
++      id: `re_recent_${i}`, amount: 400, status: 'succeeded',
++    }));
++    const event = {
++      id: 'evt_truncated', type: 'charge.refunded',
++      data: { object: {
++        id: 'ch_audit', amount: 4_900, amount_refunded: 4_900, refunded: true,
++        refunds: { data: embedded, has_more: true },
++      } },
++    };
++    await refunds.handle(event);
++    await refunds.handle(event);
++    expect(db.purchases[0]).toMatchObject({ status: 'refunded', entitlement_active: false });
++    expect(db.settlements[0].refunded_cents).toBe(4_900);
++    expect(stripe.netTo('acct_audit')).toBe(0);
++    expect(db.recoveries[0].amount_cents).toBe(270);
++  });
++
++  it('failed in-app delivery must not send message bodies or arbitrary errors to logs', async () => {
++    const { db, settlements, purchase, refunds, notifications } = setup();
++    await settlements.settleCharge({ purchase, charge_id: 'ch_audit' });
++    await settlements.applyAdjustments({ purchase, charge_id: 'ch_audit', refunded_cents: 2_000 });
++    expect(db.notices).toHaveLength(1);
++    const canary = 'AUDIT_NOTICE_BODY_contact_at_example_invalid';
++    jest.spyOn(notifications, 'createNotification').mockRejectedValueOnce(new Error(canary));
++    const warns = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
++    await refunds.deliverPayoutNotices('ch_audit');
++    expect(db.notices?.[0].inapp_status).toBe('failed');
++    expect(warns.mock.calls.map((c) => String(c[0])).join('\n')).not.toContain(canary);
++  });
++});
+diff --git a/test/audit-sol-f4-119-prior-budget.spec.ts b/test/audit-sol-f4-119-prior-budget.spec.ts
+new file mode 100644
+index 00000000..b7c4c469
+--- /dev/null
++++ b/test/audit-sol-f4-119-prior-budget.spec.ts
+@@ -0,0 +1,92 @@
++import type { ClientPurchase } from '@prisma/client';
++import { PayoutNoticeService } from '../src/checkout/payout-notice.service';
++import { PurchaseSplitHandlerService } from '../src/checkout/purchase-split-handler.service';
++import { RefundDisputeHandlerService } from '../src/checkout/refund-dispute-handler.service';
++import { ChargeSettlementService } from '../src/connect/fees/charge-settlement.service';
++import { FeePolicyService } from '../src/connect/fees/fee-policy.service';
++import { PayoutReadinessService } from '../src/connect/fees/payout-readiness.service';
++import { SplitLedgerService } from '../src/connect/fees/split-ledger.service';
++import { TransferOrchestratorService } from '../src/connect/fees/transfer-orchestrator.service';
++import type { NotificationsService } from '../src/notifications/notifications.service';
++import { FakeStripe, asPrisma, makeCharge, makeSettlementPrisma, type Row } from './utils/settlement-fakes';
++
++it('all canonical refund identities and amounts are retained when the embedded page omits an older refund', async () => {
++  const { prisma, db } = makeSettlementPrisma();
++  const stripe = new FakeStripe();
++  const ledger = new SplitLedgerService(asPrisma(prisma));
++  const transfers = new TransferOrchestratorService(asPrisma(prisma), stripe, ledger);
++  const settlements = new ChargeSettlementService(asPrisma(prisma), stripe, new FeePolicyService(asPrisma(prisma)), ledger, transfers);
++  const notificationStub: object = { createNotification: jest.fn(async () => ({ id: 'n_1' })) };
++  const purchase = {
++    id: 'cp_1', coach_user_id: 'coach_1', client_user_id: 'client_1', package_id: 'pkg_1',
++    amount_cents: 4_900, currency: 'usd', status: 'paid', source: null, billing_type: 'one_time',
++    stripe_payment_intent_id: null, stripe_subscription_id: null, entitlement_active: true,
++    created_at: new Date(),
++  } as ClientPurchase;
++  db.purchases.push(purchase as Row);
++  db.accounts.push({ coach_user_id: 'coach_1', stripe_account_id: 'acct_1' });
++  stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4_900, fee: 172 }));
++  await settlements.settleCharge({ purchase, charge_id: 'ch_1' });
++  const recent = Array.from({ length: 10 }, (_, i) => ({ id: `re_recent_${i}`, amount: 400, status: 'succeeded', charge: 'ch_1', currency: 'usd' }));
++  const older = { id: 're_older', amount: 900, status: 'succeeded', charge: 'ch_1', currency: 'usd' };
++  Object.assign(stripe, { listChargeRefunds: jest.fn(async () => ({ data: [...recent, older], has_more: false })) });
++  stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4_900, fee: 172, amount_refunded: 4_900 }));
++  const refunds = new RefundDisputeHandlerService(asPrisma(prisma), stripe, ledger, transfers,
++    new PayoutReadinessService(asPrisma(prisma), stripe), notificationStub as NotificationsService,
++    undefined, undefined, settlements);
++  const event = { id: 'evt_truncated', type: 'charge.refunded', data: { object: {
++    id: 'ch_1', amount: 4_900, amount_refunded: 4_900, refunded: true, refunds: { data: recent, has_more: true },
++  } } };
++  await refunds.handle(event);
++  await refunds.handle(event);
++  expect(db.settlements[0].refunded_cents).toBe(4_900);
++  expect(stripe.netTo('acct_1')).toBe(0);
++  console.log('OBSERVATION_CANONICAL_REFUNDS', JSON.stringify({ refund_rows: db.refunds, settlement_refunded: db.settlements[0].refunded_cents }));
++  expect(db.refunds.map((r) => r.stripe_refund_id)).toContain('re_older');
++  expect(db.refunds.reduce((n, r) => n + Number(r.amount_cents), 0)).toBe(4_900);
++});
++
++it('the sweep never starts more notices after its 8-minute run budget expires', async () => {
++  const { prisma, db } = makeSettlementPrisma();
++  const stripe = new FakeStripe();
++  const ledger = new SplitLedgerService(asPrisma(prisma));
++  const fee = new FeePolicyService(asPrisma(prisma));
++  const transfers = new TransferOrchestratorService(asPrisma(prisma), stripe, ledger);
++  const settlements = new ChargeSettlementService(asPrisma(prisma), stripe, fee, ledger, transfers);
++  jest.spyOn(settlements, 'runSettlementSweep').mockResolvedValue({
++    retried: 0, backfilled: 0, settled: 0, invoices_scanned: 0, invoices_backfilled: 0,
++    stale_awaiting: 0, stale_transfers: 0, reversals_resolved: 0, reconciled: 0, open_recovery_payees: 0,
++  });
++  const started = Date.now();
++  let clock = started;
++  const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => clock);
++  const createNotification = jest.fn(async (..._args: unknown[]) => ({ id: 'n_1' }));
++  const pushToUser = jest.fn(async (..._args: unknown[]) => {
++    clock += 30_000;
++    return { delivered: true, code: 'delivered' };
++  });
++  const stub: object = { createNotification, pushToUser, channelGate: jest.fn(async () => 'enabled') };
++  const notices = new PayoutNoticeService(asPrisma(prisma), stub as NotificationsService);
++  for (let i = 0; i < 25; i += 1) {
++    await prisma.payoutAdjustmentNotice.create({ data: {
++      id: `pan_budget_${i}`, idempotency_key: `budget_${i}`, payee_user_id: 'coach_1',
++      settlement_id: `cs_budget_${i}`, stripe_charge_id: `ch_budget_${i}`, purchase_id: 'cp_1',
++      title: 'Refund payout update', body: 'A synthetic refund notice', event: 'refund',
++      created_at: new Date(started - 120_000), email_status: 'disabled',
++    } });
++  }
++  const splits = new PurchaseSplitHandlerService(asPrisma(prisma), stripe, fee, ledger, transfers, settlements, notices);
++  try {
++    await splits.runTransferSweeper(new Date(started), { deadlineAt: started + 8 * 60_000 });
++    console.log('OBSERVATION_NOTICE_BUDGET', JSON.stringify({
++      elapsed_minutes: (clock - started) / 60_000,
++      calls: pushToUser.mock.calls.length,
++      notices: db.notices?.map((n) => ({ id: n.id, dispatch_attempts: n.dispatch_attempts, dispatched_at: n.dispatched_at })),
++    }));
++    expect(pushToUser).toHaveBeenCalledTimes(16);
++    expect(db.notices?.[16].dispatch_attempts).toBe(0);
++  } finally {
++    nowSpy.mockRestore();
++    jest.restoreAllMocks();
++  }
++});
+diff --git a/test/audit-sol-f4-119-prior-opus.spec.ts b/test/audit-sol-f4-119-prior-opus.spec.ts
+new file mode 100644
+index 00000000..43a8782d
+--- /dev/null
++++ b/test/audit-sol-f4-119-prior-opus.spec.ts
+@@ -0,0 +1,122 @@
++import type { ClientPurchase } from '@prisma/client';
++import { PayoutNoticeService } from '../src/checkout/payout-notice.service';
++import { RefundDisputeHandlerService } from '../src/checkout/refund-dispute-handler.service';
++import { ChargeSettlementService } from '../src/connect/fees/charge-settlement.service';
++import { FeePolicyService } from '../src/connect/fees/fee-policy.service';
++import { PayoutReadinessService } from '../src/connect/fees/payout-readiness.service';
++import { SplitLedgerService } from '../src/connect/fees/split-ledger.service';
++import { TransferOrchestratorService } from '../src/connect/fees/transfer-orchestrator.service';
++import type { EmailService } from '../src/email/email.service';
++import type { NotificationsService } from '../src/notifications/notifications.service';
++import {
++  FakeStripe,
++  makeCharge,
++  makeSettlementPrisma,
++  asPrisma,
++  type Row,
++} from './utils/settlement-fakes';
++
++// AUD-OPUS-F34-117 probe (lens only, never merged). Async-rail refund (ACH / bank debit):
++// Stripe sends charge.refunded when the refund is CREATED (status pending) and the terminal
++// status only as a refund update. Sequence measured by Stripe's own connector docs:
++// bank transfer: refund.created(PENDING) -> charge.refunded -> refund.updated(succeeded).
++function setup() {
++  const { prisma, db } = makeSettlementPrisma();
++  const stripe = new FakeStripe();
++  const ledger = new SplitLedgerService(asPrisma(prisma));
++  const fee = new FeePolicyService(asPrisma(prisma));
++  const transfers = new TransferOrchestratorService(asPrisma(prisma), stripe, ledger);
++  const settlements = new ChargeSettlementService(asPrisma(prisma), stripe, fee, ledger, transfers);
++  const fns = {
++    createNotification: jest.fn(async (..._a: unknown[]): Promise<{ id: string } | null> => ({ id: 'n_1' })),
++    channelGate: jest.fn(async (..._a: unknown[]) => 'enabled'),
++    pushToUser: jest.fn(async (..._a: unknown[]) => ({ delivered: true, code: 'delivered' })),
++    send: jest.fn(async (..._a: unknown[]) => ({ status: 'sent' })),
++  };
++  const stub: object = fns;
++  const notifications = stub as NotificationsService;
++  const email = stub as EmailService;
++  const notices = new PayoutNoticeService(asPrisma(prisma), notifications, email);
++  const readiness = new PayoutReadinessService(asPrisma(prisma), stripe);
++  const refunds = new RefundDisputeHandlerService(
++    asPrisma(prisma), stripe, ledger, transfers, readiness, notifications,
++    undefined, undefined, settlements, notices,
++  );
++  const purchase = {
++    id: 'cp_1', coach_user_id: 'coach_1', client_user_id: 'client_1', package_id: 'pkg_1',
++    amount_cents: 4_900, currency: 'usd', status: 'paid', source: null,
++    entitlement_active: true, billing_type: 'one_time', stripe_payment_intent_id: null,
++    stripe_subscription_id: null, created_at: new Date(),
++  } as ClientPurchase;
++  db.purchases.push(purchase as Row);
++  db.accounts.push({ coach_user_id: 'coach_1', stripe_account_id: 'acct_1' });
++  stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4_900, fee: 172 }));
++  return { db, stripe, settlements, refunds, purchase };
++}
++
++const refunded = (amountRefunded: number, status: string) => ({
++  id: 'evt_refunded', type: 'charge.refunded',
++  data: { object: {
++    id: 'ch_1', amount: 4_900, amount_refunded: amountRefunded, refunded: amountRefunded >= 4_900,
++    refunds: { data: [{ id: 're_ach', amount: 4_900, status }], has_more: false },
++  } },
++});
++const refundUpdated = (status: string) => ({
++  id: `evt_updated_${status}`, type: 'charge.refund.updated',
++  data: { object: { id: 're_ach', charge: 'ch_1', amount: 4_900, status, failure_reason: null } },
++});
++
++describe('AUD-OPUS-F34-117: async-rail refund status transitions on a settlement charge', () => {
++  it('P1 pending refund (amount_refunded counts it): no money moves until it succeeds', async () => {
++    const ctx = setup();
++    await ctx.settlements.settleCharge({ purchase: ctx.purchase, charge_id: 'ch_1' });
++    expect(ctx.stripe.netTo('acct_1')).toBe(4_630);
++    ctx.stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4_900, fee: 172, amount_refunded: 4_900 }));
++    await ctx.refunds.handle(refunded(4_900, 'pending'));
++    expect(ctx.db.settlements[0].refunded_cents).toBe(0);
++    expect(ctx.stripe.netTo('acct_1')).toBe(4_630);
++  });
++
++  it('P2 the pending refund then fails: the coach keeps the sale', async () => {
++    const ctx = setup();
++    await ctx.settlements.settleCharge({ purchase: ctx.purchase, charge_id: 'ch_1' });
++    ctx.stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4_900, fee: 172, amount_refunded: 4_900 }));
++    await ctx.refunds.handle(refunded(4_900, 'pending'));
++    // Stripe returns the funds to the platform balance (failure_balance_transaction).
++    ctx.stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4_900, fee: 172, amount_refunded: 0 }));
++    await ctx.refunds.handle(refundUpdated('failed'));
++    expect(ctx.db.settlements[0].refunded_cents).toBe(0);
++    expect(ctx.stripe.netTo('acct_1')).toBe(4_630);
++  });
++
++  it('P3 pending at charge.refunded (amount_refunded excludes it), then succeeded: the refund converges', async () => {
++    const ctx = setup();
++    await ctx.settlements.settleCharge({ purchase: ctx.purchase, charge_id: 'ch_1' });
++    await ctx.refunds.handle(refunded(0, 'pending'));
++    ctx.stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4_900, fee: 172, amount_refunded: 4_900 }));
++    await ctx.refunds.handle(refundUpdated('succeeded'));
++    expect(ctx.db.settlements[0].refunded_cents).toBe(4_900);
++    expect(ctx.stripe.netTo('acct_1')).toBe(0);
++  });
++
++  it('P4 control: pending at charge.refunded (amount_refunded counts it), then succeeded: converged', async () => {
++    const ctx = setup();
++    await ctx.settlements.settleCharge({ purchase: ctx.purchase, charge_id: 'ch_1' });
++    ctx.stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4_900, fee: 172, amount_refunded: 4_900 }));
++    await ctx.refunds.handle(refunded(4_900, 'pending'));
++    await ctx.refunds.handle(refundUpdated('succeeded'));
++    expect(ctx.db.settlements[0].refunded_cents).toBe(4_900);
++    expect(ctx.stripe.netTo('acct_1')).toBe(0);
++  });
++
++  it('P5 control: a succeeded card refund converges once', async () => {
++    const ctx = setup();
++    await ctx.settlements.settleCharge({ purchase: ctx.purchase, charge_id: 'ch_1' });
++    ctx.stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4_900, fee: 172, amount_refunded: 4_900 }));
++    await ctx.refunds.handle(refunded(4_900, 'succeeded'));
++    await ctx.refunds.handle(refunded(4_900, 'succeeded'));
++    expect(ctx.db.settlements[0].refunded_cents).toBe(4_900);
++    expect(ctx.stripe.netTo('acct_1')).toBe(0);
++    expect(ctx.stripe.reversals).toHaveLength(1);
++  });
++});
+diff --git a/test/audit-sol-f4-119-prior-refunds.spec.ts b/test/audit-sol-f4-119-prior-refunds.spec.ts
+new file mode 100644
+index 00000000..7bc9759d
+--- /dev/null
++++ b/test/audit-sol-f4-119-prior-refunds.spec.ts
+@@ -0,0 +1,45 @@
++import type { ClientPurchase } from '@prisma/client';
++import { RefundDisputeHandlerService } from '../src/checkout/refund-dispute-handler.service';
++import { ChargeSettlementService } from '../src/connect/fees/charge-settlement.service';
++import { FeePolicyService } from '../src/connect/fees/fee-policy.service';
++import { PayoutReadinessService } from '../src/connect/fees/payout-readiness.service';
++import { SplitLedgerService } from '../src/connect/fees/split-ledger.service';
++import { TransferOrchestratorService } from '../src/connect/fees/transfer-orchestrator.service';
++import type { NotificationsService } from '../src/notifications/notifications.service';
++import { FakeStripe, asPrisma, makeCharge, makeSettlementPrisma, type Row } from './utils/settlement-fakes';
++
++it('all canonical refund identities and amounts are retained when the embedded page omits an older refund', async () => {
++  const { prisma, db } = makeSettlementPrisma();
++  const stripe = new FakeStripe();
++  const ledger = new SplitLedgerService(asPrisma(prisma));
++  const transfers = new TransferOrchestratorService(asPrisma(prisma), stripe, ledger);
++  const settlements = new ChargeSettlementService(asPrisma(prisma), stripe, new FeePolicyService(asPrisma(prisma)), ledger, transfers);
++  const notificationStub: object = { createNotification: jest.fn(async () => ({ id: 'n_1' })) };
++  const purchase = {
++    id: 'cp_1', coach_user_id: 'coach_1', client_user_id: 'client_1', package_id: 'pkg_1',
++    amount_cents: 4_900, currency: 'usd', status: 'paid', source: null, billing_type: 'one_time',
++    stripe_payment_intent_id: null, stripe_subscription_id: null, entitlement_active: true,
++    created_at: new Date(),
++  } as ClientPurchase;
++  db.purchases.push(purchase as Row);
++  db.accounts.push({ coach_user_id: 'coach_1', stripe_account_id: 'acct_1' });
++  stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4_900, fee: 172 }));
++  await settlements.settleCharge({ purchase, charge_id: 'ch_1' });
++  const recent = Array.from({ length: 10 }, (_, i) => ({ id: `re_recent_${i}`, amount: 400, status: 'succeeded', charge: 'ch_1', currency: 'usd' }));
++  const older = { id: 're_older', amount: 900, status: 'succeeded', charge: 'ch_1', currency: 'usd' };
++  Object.assign(stripe, { listChargeRefunds: jest.fn(async () => ({ data: [...recent, older], has_more: false })) });
++  stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4_900, fee: 172, amount_refunded: 4_900 }));
++  const refunds = new RefundDisputeHandlerService(asPrisma(prisma), stripe, ledger, transfers,
++    new PayoutReadinessService(asPrisma(prisma), stripe), notificationStub as NotificationsService,
++    undefined, undefined, settlements);
++  const event = { id: 'evt_truncated', type: 'charge.refunded', data: { object: {
++    id: 'ch_1', amount: 4_900, amount_refunded: 4_900, refunded: true, refunds: { data: recent, has_more: true },
++  } } };
++  await refunds.handle(event);
++  await refunds.handle(event);
++  expect(db.settlements[0].refunded_cents).toBe(4_900);
++  expect(stripe.netTo('acct_1')).toBe(0);
++  console.log('OBSERVATION_CANONICAL_REFUNDS', JSON.stringify({ refund_rows: db.refunds, settlement_refunded: db.settlements[0].refunded_cents }));
++  expect(db.refunds.map((r) => r.stripe_refund_id)).toContain('re_older');
++  expect(db.refunds.reduce((n, r) => n + Number(r.amount_cents), 0)).toBe(4_900);
++});
+diff --git a/test/audit-sol-fl-119-adversarial.spec.ts b/test/audit-sol-fl-119-adversarial.spec.ts
+new file mode 100644
+index 00000000..5fda098a
+--- /dev/null
++++ b/test/audit-sol-fl-119-adversarial.spec.ts
+@@ -0,0 +1,277 @@
++// Independent exact-head acceptance probes; audit branch only, never merge.
++import type { ClientPurchase } from '@prisma/client';
++import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
++import { PayoutNoticeService } from '../src/checkout/payout-notice.service';
++import { RefundDisputeHandlerService } from '../src/checkout/refund-dispute-handler.service';
++import { ChargeSettlementService } from '../src/connect/fees/charge-settlement.service';
++import { FeePolicyService } from '../src/connect/fees/fee-policy.service';
++import { PayoutReadinessService } from '../src/connect/fees/payout-readiness.service';
++import { SplitLedgerService } from '../src/connect/fees/split-ledger.service';
++import { TransferOrchestratorService } from '../src/connect/fees/transfer-orchestrator.service';
++import type { EmailService } from '../src/email/email.service';
++import { NotificationsService } from '../src/notifications/notifications.service';
++import { FakeStripe, Table, asPrisma, makeCharge, makeSettlementPrisma, type Row } from './utils/settlement-fakes';
++
++function setup() {
++  const { prisma, db } = makeSettlementPrisma();
++  const user = new Table([{ id: 'coach_1', email: 'synthetic@example.invalid', name: null }], { prefix: 'u' });
++  Object.assign(prisma, { user, emailSendLog: new Table([], { prefix: 'em' }) });
++  const stripe = new FakeStripe();
++  const ledger = new SplitLedgerService(asPrisma(prisma));
++  const transfers = new TransferOrchestratorService(asPrisma(prisma), stripe, ledger);
++  const settlements = new ChargeSettlementService(asPrisma(prisma), stripe,
++    new FeePolicyService(asPrisma(prisma)), ledger, transfers);
++  const calls = {
++    createNotification: jest.fn(async (..._args: unknown[]) => ({ id: 'n_1' })),
++    channelGate: jest.fn(async (..._args: unknown[]) => 'enabled'),
++    pushToUser: jest.fn(async (..._args: unknown[]) => ({ delivered: true, code: 'delivered' })),
++    send: jest.fn(async (..._args: unknown[]) => ({ status: 'sent' })),
++  };
++  const stub: object = calls;
++  const notices = new PayoutNoticeService(asPrisma(prisma), stub as NotificationsService, stub as EmailService);
++  const refund = new RefundDisputeHandlerService(asPrisma(prisma), stripe, ledger, transfers,
++    new PayoutReadinessService(asPrisma(prisma), stripe), stub as NotificationsService,
++    undefined, undefined, settlements, notices);
++  const checkout = new CheckoutWebhookHandlerService(asPrisma(prisma), stripe,
++    undefined, undefined, refund);
++  const purchase = {
++    id: 'cp_1', coach_user_id: 'coach_1', client_user_id: 'client_1', package_id: 'pkg_1',
++    amount_cents: 4900, currency: 'usd', status: 'paid', source: null,
++    entitlement_active: true, billing_type: 'one_time', stripe_payment_intent_id: null,
++    stripe_subscription_id: null, created_at: new Date(),
++  } as ClientPurchase;
++  db.purchases.push(purchase as Row);
++  db.accounts.push({ coach_user_id: 'coach_1', stripe_account_id: 'acct_1' });
++  stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4900, fee: 172 }));
++  return { prisma, db, stripe, settlements, notices, calls, purchase, refund, checkout, user };
++}
++
++afterEach(() => jest.restoreAllMocks());
++
++const pending = {
++  id: 'evt_pending', type: 'charge.refunded', data: { object: {
++    id: 'ch_1', amount: 4900, amount_refunded: 0, refunded: false,
++    refunds: { data: [{ id: 're_1', amount: 4900, status: 'pending', currency: 'usd' }], has_more: false },
++  } },
++};
++const succeeded = (type: string) => ({
++  id: `evt_${type}`, type, data: { object: {
++    id: 're_1', charge: 'ch_1', amount: 4900, currency: 'usd', status: 'succeeded',
++  } },
++});
++
++it('refund.updated reaches the production checkout router, applies the pending refund and delivers its notice', async () => {
++  const c = setup();
++  await c.settlements.settleCharge({ purchase: c.purchase, charge_id: 'ch_1' });
++  await c.checkout.handle(pending);
++  c.stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4900, fee: 172, amount_refunded: 4900 }));
++  const result = await c.checkout.handle(succeeded('refund.updated'));
++  console.log('OBS_ROUTE', JSON.stringify({ result, row: c.db.refunds[0], net: c.stripe.netTo('acct_1') }));
++  expect(result).toMatchObject({ claimed: true, purchase_id: 'cp_1' });
++  expect(c.db.refunds[0].status).toBe('succeeded');
++  expect(c.stripe.netTo('acct_1')).toBe(0);
++});
++
++it('a succeeded async full refund also revokes access, not just money, without a second charge.refunded event', async () => {
++  const c = setup();
++  await c.settlements.settleCharge({ purchase: c.purchase, charge_id: 'ch_1' });
++  await c.checkout.handle(pending);
++  c.stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4900, fee: 172, amount_refunded: 4900 }));
++  await c.checkout.handle(succeeded('charge.refund.updated'));
++  // Passing money controls establish this is the implemented refund path.
++  expect(c.stripe.netTo('acct_1')).toBe(0);
++  expect(c.db.refunds[0].ledger_reversed).toBe(true);
++  console.log('OBS_ASYNC_ENTITLEMENT', JSON.stringify(c.db.purchases[0]));
++  expect(c.db.purchases[0]).toMatchObject({ status: 'refunded', entitlement_active: false });
++});
++
++it('refund.updated from the inner handler also schedules or delivers its exact-amount payout notice', async () => {
++  const c = setup();
++  await c.settlements.settleCharge({ purchase: c.purchase, charge_id: 'ch_1' });
++  await c.refund.handle(pending);
++  c.stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4900, fee: 172, amount_refunded: 4900 }));
++  await c.refund.handle(succeeded('refund.updated'));
++  expect(c.stripe.netTo('acct_1')).toBe(0);
++  expect(c.db.notices?.length).toBeGreaterThan(0);
++  expect(c.db.notices?.[0].inapp_status).toBe('sent');
++});
++
++async function notice(c: ReturnType<typeof setup>, started: number, patch: Row = {}) {
++  await c.prisma.payoutAdjustmentNotice.create({ data: {
++    id: 'pan_1', idempotency_key: 'pan_key_1', payee_user_id: 'coach_1',
++    settlement_id: 'cs_1', stripe_charge_id: 'ch_1', purchase_id: 'cp_1',
++    event: 'refund', title: 'A client was refunded', body: 'A client got $1.00 back.',
++    created_at: new Date(started - 120000), ...patch,
++  } });
++}
++
++it('B-684-3: a claim/read that consumes the deadline cannot start an in-app channel afterward', async () => {
++  const c = setup();
++  const started = Date.now();
++  let clock = started;
++  jest.spyOn(Date, 'now').mockImplementation(() => clock);
++  await notice(c, started, { push_status: 'off', email_status: 'disabled' });
++  const update = c.prisma.payoutAdjustmentNotice.updateMany.getMockImplementation()!;
++  c.prisma.payoutAdjustmentNotice.updateMany.mockImplementation(async (args) => {
++    const result = await update(args);
++    if (args.data.dispatch_claimed_at) clock = started + 480001;
++    return result;
++  });
++  await c.notices.dispatchPending(new Date(started), 25, started + 480000);
++  console.log('OBS_LATE_INAPP', JSON.stringify({ elapsed: clock - started, calls: c.calls.createNotification.mock.calls.length }));
++  expect(c.calls.createNotification).not.toHaveBeenCalled();
++  expect(c.db.notices?.[0].dispatched_at ?? null).toBeNull();
++});
++
++it('B-684-3: a delayed push gate cannot start the provider after the run deadline and notice claim expire', async () => {
++  const c = setup();
++  const started = Date.now();
++  let clock = started;
++  jest.spyOn(Date, 'now').mockImplementation(() => clock);
++  await notice(c, started, { inapp_status: 'sent', email_status: 'disabled' });
++  c.calls.channelGate.mockImplementation(async () => {
++    clock = started + 660000;
++    return 'enabled';
++  });
++  await c.notices.dispatchPending(new Date(started), 25, started + 480000);
++  console.log('OBS_LATE_PUSH', JSON.stringify({ elapsed: clock - started, calls: c.calls.pushToUser.mock.calls.length }));
++  expect(c.calls.pushToUser).not.toHaveBeenCalled();
++  expect(c.db.notices?.[0].push_status).toBe('pending');
++});
++
++it('B-684-3: a delayed email address lookup cannot start an email after the run deadline', async () => {
++  const c = setup();
++  const started = Date.now();
++  let clock = started;
++  jest.spyOn(Date, 'now').mockImplementation(() => clock);
++  await notice(c, started, { inapp_status: 'sent', push_status: 'off' });
++  c.user.findUnique.mockImplementation(async () => {
++    clock = started + 660000;
++    return { id: 'coach_1', email: 'synthetic@example.invalid', name: null };
++  });
++  await c.notices.dispatchPending(new Date(started), 25, started + 480000);
++  console.log('OBS_LATE_EMAIL', JSON.stringify({ elapsed: clock - started, calls: c.calls.send.mock.calls.length }));
++  expect(c.calls.send).not.toHaveBeenCalled();
++  expect(c.db.notices?.[0].email_status).toBe('pending');
++});
++
++it('B-684-3: a later batch row uses a fresh claim, so a second worker cannot push it simultaneously', async () => {
++  const c = setup();
++  const started = Date.now();
++  jest.useFakeTimers({ now: started });
++  try {
++    await notice(c, started, { inapp_status: 'sent', email_status: 'disabled' });
++    // Settlement work / previous notices used six minutes of this sweep.
++    jest.setSystemTime(started + 360000);
++    let entered = false;
++    c.calls.pushToUser.mockImplementation(async () => {
++      if (!entered) {
++        entered = true;
++        await c.notices.dispatchForCharge('ch_1');
++      }
++      return { delivered: true, code: 'delivered' };
++    });
++    await c.notices.dispatchPending(new Date(started), 25, started + 480000);
++    console.log('OBS_STALE_CLAIM', JSON.stringify({ pushes: c.calls.pushToUser.mock.calls.length, notice: c.db.notices?.[0] }));
++    expect(c.calls.pushToUser).toHaveBeenCalledTimes(1);
++  } finally {
++    jest.useRealTimers();
++  }
++});
++
++it('control: a spent budget starts no channel at all', async () => {
++  const c = setup();
++  const started = Date.now();
++  await notice(c, started);
++  await c.notices.dispatchPending(new Date(started), 25, started - 1);
++  expect(c.calls.createNotification).not.toHaveBeenCalled();
++  expect(c.calls.pushToUser).not.toHaveBeenCalled();
++  expect(c.calls.send).not.toHaveBeenCalled();
++});
++
++it('B-684-3 residual: the awaited email-attempt write must not start mail after budget/claim expiry', async () => {
++  const c = setup();
++  const started = Date.now();
++  let clock = started;
++  jest.spyOn(Date, 'now').mockImplementation(() => clock);
++  await notice(c, started, { inapp_status: 'sent', push_status: 'off' });
++  const real = c.prisma.payoutAdjustmentNotice.updateMany.getMockImplementation()!;
++  c.prisma.payoutAdjustmentNotice.updateMany.mockImplementation(async (args) => {
++    const out = await real(args);
++    if (typeof args.data.email_attempts === 'number') clock = started + 660000;
++    return out;
++  });
++  await c.notices.dispatchPending(new Date(started), 25, started + 480000);
++  console.log('OBS_EMAIL_ATTEMPT_AWAIT', JSON.stringify({
++    elapsed: clock - started, sends: c.calls.send.mock.calls.length, notice: c.db.notices?.[0],
++  }));
++  expect(c.calls.send).not.toHaveBeenCalled();
++  expect(c.db.notices?.[0].email_status).toBe('pending');
++});
++
++it('B-684-3 residual: the real push token await must not start Expo after the deadline/claim expires', async () => {
++  const c = setup();
++  const started = Date.now();
++  let clock = started;
++  jest.spyOn(Date, 'now').mockImplementation(() => clock);
++  await notice(c, started, { inapp_status: 'sent', email_status: 'disabled' });
++  const send = jest.fn(async (..._args: unknown[]) => [{ status: 'ok' }]);
++  const push = Object.create(NotificationsService.prototype) as NotificationsService;
++  Object.assign(push, {
++    prisma: {
++      user: { findUnique: async () => {
++        clock = started + 660000;
++        return { expo_push_token: 'ExponentPushToken[synthetic-audit-token]' };
++      } },
++    },
++    expo: { chunkPushNotifications: (messages: unknown[]) => [messages], sendPushNotificationsAsync: send },
++    logger: { error: jest.fn() },
++  });
++  c.calls.pushToUser.mockImplementation(async (...args) =>
++    push.pushToUser(
++      String(args[0]), String(args[1]), String(args[2]),
++      args[3] as Record<string, unknown>,
++      args[4] as AbortSignal | undefined,
++    ),
++  );
++  await c.notices.dispatchPending(new Date(started), 25, started + 480000);
++  console.log('OBS_REAL_PUSH_TOKEN_AWAIT', JSON.stringify({
++    elapsed: clock - started, expoSends: send.mock.calls.length,
++    hasSignal: c.calls.pushToUser.mock.calls[0]?.[4] !== undefined,
++  }));
++  expect(send).not.toHaveBeenCalled();
++  expect(c.db.notices?.[0].push_status).toBe('pending');
++});
++
++it('monotonic refund concurrency: a succeeded writer paused at SQL must not overwrite a newer failed writer', async () => {
++  const c = setup();
++  await c.settlements.settleCharge({ purchase: c.purchase, charge_id: 'ch_1' });
++  await c.checkout.handle(pending);
++  c.stripe.charges.set('ch_1', makeCharge({
++    id: 'ch_1', amount: 4900, fee: 172, amount_refunded: 4900,
++  }));
++  const real = c.prisma.chargeRefund.update.getMockImplementation()!;
++  let raced = false;
++  c.prisma.chargeRefund.update.mockImplementation(async (args) => {
++    // Worker A computed succeeded from its earlier pending read. Its SQL
++    // write has not run. Worker B now completes the newer terminal event.
++    if (!raced && args.data.status === 'succeeded') {
++      raced = true;
++      await c.refund.upsertAndApplyRefund({
++        purchase: c.purchase, stripe_refund_id: 're_1', stripe_charge_id: 'ch_1',
++        amount_cents: 4900, status: 'failed', reason: null,
++      });
++      expect(c.db.refunds[0].status).toBe('failed');
++      expect(c.stripe.netTo('acct_1')).toBe(4630);
++    }
++    return real(args);
++  });
++  await c.checkout.handle(succeeded('refund.updated'));
++  console.log('OBS_REFUND_WRITE_RACE', JSON.stringify({
++    refund: c.db.refunds[0], net: c.stripe.netTo('acct_1'), purchase: c.db.purchases[0],
++  }));
++  expect(c.db.refunds[0].status).toBe('failed');
++  expect(c.db.refunds[0].ledger_reversed).not.toBe(true);
++  expect(c.stripe.netTo('acct_1')).toBe(4630);
++  expect(c.db.purchases[0].entitlement_active).toBe(true);
++});
+diff --git a/test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts b/test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts
+new file mode 100644
+index 00000000..7e5dc7e5
+--- /dev/null
++++ b/test/s-fee-r17-refund-routing-status-notice-boundaries.spec.ts
+@@ -0,0 +1,445 @@
++// S-FEE round 17 (B-FEES18-119, agent 119): failing-before tests for the open findings at
++// #684 6b13af56. Every amount is exact (4,900 charge, 172 Stripe fee, coach net 4,630).
++//   Sol B-684-4 / Opus B-684-7  refund.updated reaches the refund handler through the production
++//                               checkout router, and its charge gets the payout-notice handoff
++//   Sol B-684-5                 a succeeded async full refund ends access, not just money
++//   Opus B-684-8                a refund status only moves forward; stale events move nothing
++//   Sol B-684-3                 notice channels start only with a live claim inside the deadline
++import { Logger } from '@nestjs/common';
++import type { ClientPurchase } from '@prisma/client';
++import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
++import { PayoutNoticeService } from '../src/checkout/payout-notice.service';
++import { RefundDisputeHandlerService } from '../src/checkout/refund-dispute-handler.service';
++import { ChargeSettlementService } from '../src/connect/fees/charge-settlement.service';
++import { FeePolicyService } from '../src/connect/fees/fee-policy.service';
++import { PayoutReadinessService } from '../src/connect/fees/payout-readiness.service';
++import { SplitLedgerService } from '../src/connect/fees/split-ledger.service';
++import { TransferOrchestratorService } from '../src/connect/fees/transfer-orchestrator.service';
++import type { EmailService } from '../src/email/email.service';
++import type { NotificationsService } from '../src/notifications/notifications.service';
++import type { PurchaseFanoutService } from '../src/packages/purchase-fanout.service';
++import type { PartialRefundDecisionService } from '../src/regimes/partial-refund-decision.service';
++import {
++  FakeStripe,
++  Table,
++  asPrisma,
++  makeCharge,
++  makeSettlementPrisma,
++  type Row,
++} from './utils/settlement-fakes';
++
++type RefundFixture = { id: string; status: string; amount: number; currency: string } & Row;
++
++function setup(opts: { purchaseCents?: number } = {}) {
++  const { prisma, db } = makeSettlementPrisma();
++  const user = new Table([{ id: 'coach_1', email: 'payee@example.invalid', name: null }], {
++    prefix: 'u',
++  });
++  Object.assign(prisma, { user, emailSendLog: new Table([], { prefix: 'em' }) });
++  const stripe = new FakeStripe();
++  const ledger = new SplitLedgerService(asPrisma(prisma));
++  const fee = new FeePolicyService(asPrisma(prisma));
++  const transfers = new TransferOrchestratorService(asPrisma(prisma), stripe, ledger);
++  const settlements = new ChargeSettlementService(asPrisma(prisma), stripe, fee, ledger, transfers);
++  const fns = {
++    createNotification: jest.fn(async (..._a: unknown[]): Promise<{ id: string } | null> => ({
++      id: 'n_1',
++    })),
++    channelGate: jest.fn(async (..._a: unknown[]) => 'enabled'),
++    pushToUser: jest.fn(async (..._a: unknown[]) => ({ delivered: true, code: 'delivered' })),
++    send: jest.fn(async (..._a: unknown[]) => ({ status: 'sent' })),
++  };
++  const stub: object = fns;
++  const fanoutFns = { cancelPendingForPurchase: jest.fn(async (..._a: unknown[]) => 0) };
++  const decisionFns = { onPartialRefund: jest.fn(async (..._a: unknown[]) => undefined) };
++  const fanout: object = fanoutFns;
++  const decisions: object = decisionFns;
++  const notices = new PayoutNoticeService(
++    asPrisma(prisma),
++    stub as NotificationsService,
++    stub as EmailService,
++  );
++  const refunds = new RefundDisputeHandlerService(
++    asPrisma(prisma),
++    stripe,
++    ledger,
++    transfers,
++    new PayoutReadinessService(asPrisma(prisma), stripe),
++    stub as NotificationsService,
++    fanout as PurchaseFanoutService,
++    decisions as PartialRefundDecisionService,
++    settlements,
++    notices,
++  );
++  const router = new CheckoutWebhookHandlerService(
++    asPrisma(prisma),
++    stripe,
++    undefined,
++    undefined,
++    refunds,
++  );
++  const purchase = {
++    id: 'cp_1',
++    coach_user_id: 'coach_1',
++    client_user_id: 'client_1',
++    package_id: 'pkg_1',
++    amount_cents: opts.purchaseCents ?? 4_900,
++    currency: 'usd',
++    status: 'paid',
++    source: null,
++    entitlement_active: true,
++    billing_type: 'one_time',
++    stripe_payment_intent_id: null,
++    stripe_subscription_id: null,
++    created_at: new Date(),
++  } as ClientPurchase;
++  db.purchases.push(purchase as Row);
++  db.accounts.push({ coach_user_id: 'coach_1', stripe_account_id: 'acct_1' });
++  stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4_900, fee: 172 }));
++  const list = (data: RefundFixture[]) => stripe.refundsByCharge.set('ch_1', data);
++  return {
++    prisma,
++    db,
++    stripe,
++    settlements,
++    notices,
++    refunds,
++    router,
++    fns,
++    fanoutFns,
++    decisionFns,
++    list,
++    user,
++  };
++}
++
++const usd = (id: string, amount: number, status = 'succeeded'): RefundFixture => ({
++  id,
++  status,
++  amount,
++  currency: 'usd',
++});
++const refunded = (data: RefundFixture[]) => ({
++  id: `evt_refunded_${data.map((r) => `${r.id}_${r.status}`).join('_')}`,
++  type: 'charge.refunded',
++  data: {
++    object: {
++      id: 'ch_1',
++      amount: 4_900,
++      amount_refunded: data.reduce((n, r) => n + (r.status === 'succeeded' ? r.amount : 0), 0),
++      refunds: { data, has_more: false },
++    },
++  },
++});
++const update = (type: string, status: string, id = 're_1', amount = 4_900) => ({
++  id: `evt_${type}_${id}_${status}`,
++  type,
++  data: { object: { id, object: 'refund', charge: 'ch_1', amount, status, failure_reason: null } },
++});
++
++async function settledWithPending(c: ReturnType<typeof setup>, id = 're_1', amount = 4_900) {
++  await c.settlements.settleCharge({
++    purchase: c.db.purchases[0] as ClientPurchase,
++    charge_id: 'ch_1',
++  });
++  expect(c.stripe.netTo('acct_1')).toBe(4_630);
++  c.list([usd(id, amount, 'pending')]);
++  await c.router.handle(refunded([usd(id, amount, 'pending')]));
++  expect(c.db.settlements[0].refunded_cents).toBe(0);
++}
++
++afterEach(() => jest.restoreAllMocks());
++
++describe('Sol B-684-4 / Opus B-684-7: refund.updated through the production checkout router', () => {
++  it('a succeeded refund.updated is claimed, moves the coach 4,630 back once and delivers its notice', async () => {
++    const c = setup();
++    await settledWithPending(c);
++    c.list([usd('re_1', 4_900)]);
++    const out = await c.router.handle(update('refund.updated', 'succeeded'));
++    expect(out).toMatchObject({ claimed: true, purchase_id: 'cp_1' });
++    expect(c.db.refunds[0]).toMatchObject({ status: 'succeeded', ledger_reversed: true });
++    expect(c.db.settlements[0].refunded_cents).toBe(4_900);
++    expect(c.stripe.netTo('acct_1')).toBe(0);
++    expect(c.db.notices?.[0]).toMatchObject({ inapp_status: 'sent' });
++  });
++
++  it('inside the webhook transaction the refund.updated charge is handed off for post-commit delivery', async () => {
++    const c = setup();
++    await settledWithPending(c);
++    c.list([usd('re_1', 4_900)]);
++    const out = await c.router.handle(update('refund.updated', 'succeeded'), asPrisma(c.prisma));
++    expect(out).toMatchObject({ claimed: true, deferredPayoutNoticeChargeId: 'ch_1' });
++    expect(c.db.notices?.[0]).toMatchObject({ inapp_status: 'pending' });
++    await c.refunds.deliverPayoutNotices('ch_1');
++    expect(c.db.notices?.[0]).toMatchObject({ inapp_status: 'sent' });
++  });
++
++  it('both refund events for one transition (Stripe sends both while charge.refund.updated lives) apply once', async () => {
++    const c = setup();
++    await settledWithPending(c);
++    c.list([usd('re_1', 4_900)]);
++    await c.router.handle(update('charge.refund.updated', 'succeeded'));
++    await c.router.handle(update('refund.updated', 'succeeded'));
++    expect(c.stripe.reversals).toHaveLength(1);
++    expect(c.stripe.netTo('acct_1')).toBe(0);
++    expect(c.db.notices).toHaveLength(1);
++  });
++
++  it('a failed refund.updated through the router records failed and moves nothing', async () => {
++    const c = setup();
++    await settledWithPending(c);
++    c.list([usd('re_1', 4_900, 'failed')]);
++    await c.router.handle(update('refund.updated', 'failed'));
++    expect(c.db.refunds[0].status).toBe('failed');
++    expect(c.stripe.netTo('acct_1')).toBe(4_630);
++  });
++});
++
++describe('Sol B-684-5: a succeeded async refund converges access with the money', () => {
++  it('pending full refund, then succeeded: the purchase is refunded, access ends and drops are canceled', async () => {
++    const c = setup();
++    await settledWithPending(c);
++    expect(c.db.purchases[0]).toMatchObject({ status: 'paid', entitlement_active: true });
++    c.list([usd('re_1', 4_900)]);
++    await c.router.handle(update('charge.refund.updated', 'succeeded'));
++    expect(c.db.purchases[0]).toMatchObject({ status: 'refunded', entitlement_active: false });
++    expect(c.fanoutFns.cancelPendingForPurchase).toHaveBeenCalledWith(
++      'cp_1',
++      'refund',
++      expect.anything(),
++    );
++    expect(c.decisionFns.onPartialRefund).not.toHaveBeenCalled();
++  });
++
++  it('pending then failed or canceled: access stays, nothing moves', async () => {
++    for (const status of ['failed', 'canceled']) {
++      const c = setup();
++      await settledWithPending(c);
++      c.list([usd('re_1', 4_900, status)]);
++      await c.router.handle(update('refund.updated', status));
++      expect(c.db.purchases[0]).toMatchObject({ status: 'paid', entitlement_active: true });
++      expect(c.stripe.netTo('acct_1')).toBe(4_630);
++    }
++  });
++
++  it('a partial succeeded refund keeps access with a decision; the partial that completes the charge ends it', async () => {
++    const c = setup();
++    await settledWithPending(c, 're_a', 2_000);
++    c.list([usd('re_a', 2_000)]);
++    await c.router.handle(update('refund.updated', 'succeeded', 're_a', 2_000));
++    expect(c.db.purchases[0]).toMatchObject({ status: 'paid', entitlement_active: true });
++    expect(c.decisionFns.onPartialRefund).toHaveBeenCalledTimes(1);
++    c.list([usd('re_b', 2_900, 'pending'), usd('re_a', 2_000)]);
++    await c.router.handle(update('refund.updated', 'pending', 're_b', 2_900));
++    c.list([usd('re_b', 2_900), usd('re_a', 2_000)]);
++    await c.router.handle(update('refund.updated', 'succeeded', 're_b', 2_900));
++    expect(c.db.purchases[0]).toMatchObject({ status: 'refunded', entitlement_active: false });
++    expect(c.decisionFns.onPartialRefund).toHaveBeenCalledTimes(1);
++    expect(c.stripe.netTo('acct_1')).toBe(0);
++  });
++
++  it('a charge is judged on its own amount (a renewal invoice below the plan price)', async () => {
++    const c = setup({ purchaseCents: 9_900 });
++    await settledWithPending(c);
++    c.list([usd('re_1', 4_900)]);
++    await c.router.handle(update('refund.updated', 'succeeded'));
++    expect(c.db.purchases[0]).toMatchObject({ status: 'refunded', entitlement_active: false });
++  });
++
++  it('an unreadable refund list fails the delivery before anything moves (Stripe redelivers)', async () => {
++    const c = setup();
++    await settledWithPending(c);
++    c.stripe.failListRefunds = true;
++    await expect(c.router.handle(update('refund.updated', 'succeeded'))).rejects.toMatchObject({
++      code: 'SFEE_REFUND_STATE_UNAVAILABLE',
++    });
++    expect(c.db.refunds[0].status).toBe('pending');
++    expect(c.db.refunds[0].ledger_reversed).not.toBe(true);
++    expect(c.stripe.netTo('acct_1')).toBe(4_630);
++    expect(c.db.purchases[0]).toMatchObject({ status: 'paid', entitlement_active: true });
++  });
++});
++
++describe('Opus B-684-8: a refund status only moves forward', () => {
++  it('failed processed, then the older succeeded redelivered: the row stays failed and the coach keeps 4,630', async () => {
++    const c = setup();
++    await settledWithPending(c);
++    c.list([usd('re_1', 4_900, 'failed')]);
++    await c.router.handle(update('charge.refund.updated', 'failed'));
++    await c.router.handle(update('charge.refund.updated', 'succeeded'));
++    await c.router.handle(update('refund.updated', 'succeeded'));
++    expect(c.db.refunds[0].status).toBe('failed');
++    expect(c.stripe.reversals).toHaveLength(0);
++    expect(c.stripe.netTo('acct_1')).toBe(4_630);
++    expect(c.db.purchases[0]).toMatchObject({ status: 'paid', entitlement_active: true });
++  });
++
++  it('a late charge.refunded snapshot that still says succeeded never re-applies a failed refund', async () => {
++    const c = setup();
++    await settledWithPending(c);
++    c.list([usd('re_1', 4_900, 'failed')]);
++    await c.router.handle(update('refund.updated', 'failed'));
++    await c.router.handle(refunded([usd('re_1', 4_900)]));
++    expect(c.db.refunds[0].status).toBe('failed');
++    expect(c.db.settlements[0].refunded_cents).toBe(0);
++    expect(c.stripe.netTo('acct_1')).toBe(4_630);
++  });
++
++  it('a stale pending snapshot never moves an applied refund back to pending', async () => {
++    const c = setup();
++    await settledWithPending(c);
++    c.list([usd('re_1', 4_900)]);
++    await c.router.handle(update('refund.updated', 'succeeded'));
++    await c.router.handle(refunded([usd('re_1', 4_900, 'pending')]));
++    expect(c.db.refunds[0]).toMatchObject({ status: 'succeeded', ledger_reversed: true });
++    expect(c.stripe.reversals).toHaveLength(1);
++  });
++
++  it('a failure written while the apply waits for the lock: the apply re-reads it and moves nothing', async () => {
++    const c = setup();
++    await settledWithPending(c);
++    c.list([usd('re_1', 4_900)]);
++    const realLock = c.settlements.withChargeLock.bind(c.settlements);
++    jest.spyOn(c.settlements, 'withChargeLock').mockImplementation(async (id, fn) => {
++      // Another worker records the refund's failure just before this worker gets the lock.
++      c.db.refunds[0].status = 'failed';
++      return realLock(id, fn);
++    });
++    await c.router.handle(update('refund.updated', 'succeeded'));
++    expect(c.db.refunds[0].status).toBe('failed');
++    expect(c.db.refunds[0].ledger_reversed).not.toBe(true);
++    expect(c.stripe.netTo('acct_1')).toBe(4_630);
++  });
++
++  it('applied, then failed: one alert under the lock, the settlement is flagged, nothing re-credited', async () => {
++    const c = setup();
++    const errors = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
++    await settledWithPending(c);
++    c.list([usd('re_1', 4_900)]);
++    await c.router.handle(update('refund.updated', 'succeeded'));
++    c.list([usd('re_1', 4_900, 'failed')]);
++    await c.router.handle(update('refund.updated', 'failed'));
++    const alerts = errors.mock.calls.filter((a) =>
++      String(a[0]).startsWith('SFEE_REFUND_FAILED_AFTER_APPLY'),
++    );
++    expect(alerts).toHaveLength(1);
++    expect(c.db.settlements[0].reconcile_reason).toBe('SFEE_REFUND_FAILED_AFTER_APPLY');
++    expect(c.stripe.netTo('acct_1')).toBe(0);
++  });
++});
++
++describe('Sol B-684-3: a notice channel starts only with a live claim inside the run deadline', () => {
++  async function notice(c: ReturnType<typeof setup>, started: number, patch: Row = {}) {
++    await c.prisma.payoutAdjustmentNotice.create({
++      data: {
++        id: 'pan_1',
++        idempotency_key: 'pan_key_1',
++        payee_user_id: 'coach_1',
++        settlement_id: 'cs_1',
++        stripe_charge_id: 'ch_1',
++        purchase_id: 'cp_1',
++        event: 'refund',
++        title: 'A client was refunded',
++        body: 'A client got $1.00 back.',
++        created_at: new Date(started - 120_000),
++        ...patch,
++      },
++    });
++  }
++
++  it('a claim and re-read that use up the budget start no in-app row; the claim is released, the attempt not counted', async () => {
++    const c = setup();
++    const started = Date.now();
++    let clock = started;
++    jest.spyOn(Date, 'now').mockImplementation(() => clock);
++    await notice(c, started, { push_status: 'off', email_status: 'disabled' });
++    const real = c.prisma.payoutAdjustmentNotice.findUnique.getMockImplementation()!;
++    c.prisma.payoutAdjustmentNotice.findUnique.mockImplementation(async (args) => {
++      clock = started + 480_001;
++      return real(args);
++    });
++    await c.notices.dispatchPending(new Date(started), 25, started + 480_000);
++    expect(c.fns.createNotification).not.toHaveBeenCalled();
++    expect(c.db.notices?.[0]).toMatchObject({
++      dispatched_at: null,
++      dispatch_claimed_at: null,
++      dispatch_attempts: 0,
++      inapp_status: 'pending',
++    });
++  });
++
++  it('a slow push gate starts no push after the deadline; the push stays pending for the next run', async () => {
++    const c = setup();
++    const started = Date.now();
++    let clock = started;
++    jest.spyOn(Date, 'now').mockImplementation(() => clock);
++    await notice(c, started, { inapp_status: 'sent', email_status: 'disabled' });
++    c.fns.channelGate.mockImplementation(async () => {
++      clock = started + 660_000;
++      return 'enabled';
++    });
++    await c.notices.dispatchPending(new Date(started), 25, started + 480_000);
++    expect(c.fns.pushToUser).not.toHaveBeenCalled();
++    expect(c.db.notices?.[0]).toMatchObject({ push_status: 'pending', dispatched_at: null });
++    c.fns.channelGate.mockImplementation(async () => 'enabled');
++    await c.notices.dispatchPending(new Date(clock), 25, clock + 480_000);
++    expect(c.fns.pushToUser).toHaveBeenCalledTimes(1);
++    expect(c.db.notices?.[0].push_status).toBe('sent');
++  });
++
++  it('a slow address read starts no email after the deadline', async () => {
++    const c = setup();
++    const started = Date.now();
++    let clock = started;
++    jest.spyOn(Date, 'now').mockImplementation(() => clock);
++    await notice(c, started, { inapp_status: 'sent', push_status: 'off' });
++    c.user.findUnique.mockImplementation(async () => {
++      clock = started + 660_000;
++      return { id: 'coach_1', email: 'payee@example.invalid', name: null };
++    });
++    await c.notices.dispatchPending(new Date(started), 25, started + 480_000);
++    expect(c.fns.send).not.toHaveBeenCalled();
++    expect(c.db.notices?.[0]).toMatchObject({ email_status: 'pending', email_attempts: 0 });
++  });
++
++  it('a push row created just before the claim runs low is kept and reused, the push itself waits', async () => {
++    const c = setup();
++    const started = Date.now();
++    let clock = started;
++    jest.spyOn(Date, 'now').mockImplementation(() => clock);
++    await notice(c, started, { inapp_status: 'sent', email_status: 'disabled' });
++    c.fns.createNotification.mockImplementationOnce(async () => {
++      clock = started + 240_001; // under 60 s left on the 5-minute claim
++      return { id: 'n_push' };
++    });
++    await c.notices.dispatchPending(new Date(started), 25, started + 3_600_000);
++    expect(c.fns.pushToUser).not.toHaveBeenCalled();
++    expect(c.db.notices?.[0]).toMatchObject({
++      push_status: 'pending',
++      push_notification_id: 'n_push',
++    });
++  });
++
++  it('a later batch row is claimed at the time it is taken, so a second worker cannot push it too', async () => {
++    const c = setup();
++    const started = Date.now();
++    jest.useFakeTimers({ now: started });
++    try {
++      await notice(c, started, { inapp_status: 'sent', email_status: 'disabled' });
++      jest.setSystemTime(started + 360_000); // earlier rows used six minutes of this sweep
++      let entered = false;
++      c.fns.pushToUser.mockImplementation(async () => {
++        if (!entered) {
++          entered = true;
++          await c.notices.dispatchForCharge('ch_1');
++        }
++        return { delivered: true, code: 'delivered' };
++      });
++      await c.notices.dispatchPending(new Date(started), 25, started + 480_000);
++      expect(c.fns.pushToUser).toHaveBeenCalledTimes(1);
++      expect(c.db.notices?.[0].dispatch_claimed_at).toEqual(new Date(started + 360_000));
++    } finally {
++      jest.useRealTimers();
++    }
++  });
++});

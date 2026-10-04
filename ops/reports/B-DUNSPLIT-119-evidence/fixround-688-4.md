@@ -26,3 +26,7 @@ Compressed-cycle assertions in these probes still hold on D2a/D2b; they are supe
 **Money self-check:** no behaviour change in D2a (byte-identical move). Webhook order/redelivery, concurrency, terminal states, list completeness, currency, copy truth: as audited at `2368d5fa`; R-DISPUTE-PAUSE changes are in #705.
 
 **Note:** #689 is based on this branch; its displayed diff includes #704/#705 until B-DUNB-119 retargets it (not touched here).
+
+**Required checks at this head:** all green.
+
+READY FOR AUDIT

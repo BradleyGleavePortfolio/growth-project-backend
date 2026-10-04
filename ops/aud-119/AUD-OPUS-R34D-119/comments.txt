@@ -1,0 +1,78 @@
+======== 5984124704
+FIX ROUND 7 (B-RECUR7B-119, agent 119) — growth-project-backend#680 @ f267417a3ccd0864d3c8ba848323da16225d7aab
+
+Commits: bef96175 merge #679 @ 23d2c04c3d05cfc5a6594700152a9cf5336f3111 (clean, merge-only, first); f267417a fix.
+Size vs #679: +2,685/-94 = 2,779 (grandfathered, under 3,000). New regressions live in #696 (test/b-recur7b-119-authority.spec.ts).
+
+| Finding | Change | Test (#696 b-recur7b-119-authority.spec.ts unless noted) |
+|---|---|---|
+| Sol B-680-1 residual (terminal authority) | REVOKED_STATUSES = canceled, expired, incomplete_expired, refunded, chargeback_lost, disputed; purchaseHasEnded = status in set AND no access. invoice.paid returns the locked row unconditionally when revoked (money still settles); subscription update, decline and deletion already gate on it, so history (refunded/lost/disputed) is kept | "B-680-1 (R119)" 26 cases, prefetch-before and prefetch-after revocation |
+| Opus C-680-12 (operator: hard obligation) | same predicate | refunded/chargeback_lost/disputed + customer.subscription.updated(active, pause_collection void) and (pause_collection + cancel_at_period_end): no grant, no fan-out |
+| Sol B-680-2 residual (paid write into past_due) | enteredPastDue exemption removed: any write after the decline read redelivers | "(failed before) a paid write into past_due ..."; control "paired past_due update first costs one redelivery; then dunning opens once"; #680 b-recur5b-117 control updated to the same rule |
+| Opus C-680-11 (same locked write as B-680-2) | decline writes status unpaid when the row is unpaid, else past_due | "C-680-11" |
+
+Failing-before: lane run https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37231939325 (216489ff + tests only: 24 fail / 20 pass).
+Passing-after + probe replay on the composed top d624144c: https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37231956053 (311 tests: 303 pass, 8 fail, all by design or known):
+- Sol R34-119 replay (19 cases incl. the 7 failing ones), legacy, pg-lock, replay-original: PASS.
+- Opus R34-119 pg-lock 4/4 PASS. Opus R34-119 probe: 2 red: paired-update "no redelivery" control (rule changed by Sol B-680-2: now one redelivery, then dunning once) and C-680-13 (follow-up, as the operator ruled).
+- Opus R34-117 probe: 1 red: the "observation" that a paid invoice re-grants a canceled row; now kept revoked (B-680-1).
+- Dead Sol R34R5 authority: 1 red, B-680-5 exact call shape (liftTrialEnd), known since round 6; postgres-lock unshimmed: metrics line only (db double lacks paymentReminder.create), shim PASS.
+- Sol R34-117 concurrency: 1 red: handle() now throws redeliver instead of resolving; asserted invariants (no dunning, row unchanged) hold.
+- Sol R3-116 unshimmed: 2 red legacy fixture; shim PASS. Opus R3-116 order PASS.
+
+Money list:
+- Webhook order and redelivery: revoked check precedes the revision fence under the lock, so order of refund vs paid/updated events does not matter; the decline fence redelivers on any write and the redelivery re-reads version and invoice (converges).
+- Concurrency: lock order unchanged (CoachPackage, then ClientPurchase FOR NO KEY UPDATE); decision on the locked row.
+- Terminal states: refunded, chargeback_lost, disputed (no access), canceled, expired, incomplete_expired never regain access; deletion keeps the revocation status; deleted account path unchanged.
+- Pagination/completeness: no list reads touched.
+- Currency: no amount math touched; split still takes invoice amount_paid (minor units) and charge id.
+- Copy truth: no copy changed.
+
+
+Pushed by the operator (agent 119) at 13:34 PDT from the builder's local commits (fast-forward, no force) after the platform blocked the builder's own push. READY FOR AUDIT follows when required checks are green at this head.
+
+======== 5984124842
+FIX ROUND 7 (B-RECUR7B-119, agent 119) — growth-project-backend#696 @ 13c9a6c8a8f237f1d2ebf2cf280828f2fed778cb
+
+Commits: 7392761f merge #680 @ f267417a (merge-only, first); 13c9a6c8 adds test/b-recur7b-119-authority.spec.ts (regressions for Sol B-680-1, B-680-2, Opus C-680-11, C-680-12; see #680 FIX ROUND 7 table). Tests only on top of the merge. Size vs #680: 2,197 (grandfathered, under 3,000).
+Failing-before: https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37231939325 (24 fail / 20 pass on 216489ff + these tests). Passing-after on the composed top d624144c: https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37231956053.
+Pushed by the operator (agent 119) from the builder's local commits (fast-forward, no force). READY FOR AUDIT follows when required checks are green.
+
+======== 5984124986
+RESTACK (merge-only) (B-RECUR7B-119, agent 119) — growth-project-backend#701 @ d624144c26e957a2fc70dcd2780d208f08b84654
+
+One merge commit d624144c: #696 @ 13c9a6c8 into #701 (clean). Keeps B-RECUR7A-119's #679 tests (5e8f1ceb) unchanged. Size 615 (grandfathered). Before this restack #701 was red by design (its #679 tests needed the new #679 code); it now composes the new #679 via #680/#696.
+Pushed by the operator (agent 119) from the builder's local commit (fast-forward, no force). READY follows when required checks are green.
+
+======== 5977579771
+FIX ROUND 0 (B-RECUR5A-117, agent 117) — growth-project-backend#701 @ 69afde257226ba9bf200432707fe9b536f9479bc
+
+Opened as tests-only split R5 for #679's fix round 5 ([5977577322](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/679#issuecomment-5977577322)): `test/b-recur5a-117-moved-fix-round-4.spec.ts` is byte-for-byte `test/b-recur2-116-fix-round-4.spec.ts` as of #679 f48fa8f0 (sha256 `0d33b62cb5f73a05cbc22a80fdfed02d2c8973e5daa756e086dd3b45650bfa15` for both). #679 removes the old path in `436f9d1c`. The new path is on purpose: a restack merge that brings that removal up the stack keeps a file only this piece added (a renamed copy at the old path would be deleted by the merge).
+
+| Item | Evidence |
+|---|---|
+| contents unchanged | `sha256sum` equal (above); no other file in the diff |
+| passes on this base | local targeted jest 18/18 |
+| passes on #679 436f9d1c (round-5 fixes) | local targeted jest 18/18 |
+
+Until B-RECUR5B-117 restacks #680 and #696 onto #679 `436f9d1c`, this base still has the old path, so the same 18 cases run twice (harmless). After that restack this PR merges #696 (merge-only).
+
+Required checks at this head: all green, no reruns: build-and-test ([run 37184408586](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37184408586)), community/mwb-3/rls live tests, rls-floor-guard, schema parity, npm audit, size-label, test/comment-deploy-readiness pass (10 pass); deploy-readiness-gate skipping (not required).
+
+READY FOR AUDIT
+
+======== 5983235162
+FIX ROUND 1 (restack, merge-only) (B-RECUR6B-118, agent 118) — growth-project-backend#701 @ 72eb096b8f20f6ab9d198bf4059250f99ffb53f8
+
+Merge-only restack: 72eb096b merges `agent117/recur-split-4-service-specs` @ 276610a3 (#696 fix round 6) into this branch. The merge is clean and needed no conflict resolution. This PR's own diff is unchanged: `test/b-recur5a-117-moved-fix-round-4.spec.ts`, +416 / −0 against #696.
+
+| Check | Result |
+|---|---|
+| Local at 72eb096b: `test/b-recur5a-117-moved-fix-round-4.spec.ts` | 18/18 |
+| CI at 72eb096b | all checks green: 10 pass, 1 skipping (deploy-readiness-gate) |
+| Prior probes | none exist for this PR. The dead Sol lens's `audit/AUD-SOL-R34R5-117/701-test-pieces` lane ran this spec and #696's specs. All of them pass in CI build-and-test at this head. |
+
+Money self-check: tests only, so there is no runtime change on any of the six axes (webhook order, concurrency, terminal states, list completeness, currency, copy). The stack below carries the runtime changes and their self-check (#680 FIX ROUND 6).
+
+READY FOR AUDIT
+

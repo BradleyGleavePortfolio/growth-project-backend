@@ -35,3 +35,7 @@ FIX ROUND 3 (B-DUNSPLIT-119, agent 119) — growth-project-backend#687 @ c260a84
 **Follow-ups (C):** see growth-project-backend#705 body and ops report; carried: LOCKOUT_SCREEN copy and LR_LOCKOUT_SCREEN reuse the card-update text (`src/checkout/dunning-v2/dunning-v2.copy.ts`), rule: dispute lockout text = access ended, billing paused, coach decides; dispute blocker deep link `tgp://billing/update`, rule: open the plan screen.
 
 Stack: #687 D1 -> #688 D2a -> #704 D2b -> #705 D2c -> #689 -> #690 -> #691. FEATURE_DUNNING_V2 must stay off until #705 merges.
+
+**Required checks at this head:** all green (danger, build-and-test, CodeQL, migrations, live tests, size-label, deploy readiness).
+
+READY FOR AUDIT
