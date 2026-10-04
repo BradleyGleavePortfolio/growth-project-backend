@@ -331,3 +331,50 @@ describe('B-682-3 payout notices are impersonal, exact and short', () => {
     );
   });
 });
+
+// Round 14 (B-682-4 / B-682-8): a lost send, Stripe's 24 h key window passes,
+// then an incomplete list page. On be26e289 every case here sends twice.
+describe('B-682-4 an incomplete Stripe list never proves a lost send absent', () => {
+  const bad: Array<[string, unknown]> = [
+    ['no has_more', { data: [] }],
+    ['no data', { has_more: false }],
+    ['empty object', {}],
+    ['an item without an id', { data: [{ amount: 400 }], has_more: false }],
+  ];
+  const age = (f: Fixture) => {
+    f.stripe.failListTransfers = f.stripe.failListReversals = false;
+    f.stripe.expireIdempotencyKeys();
+    f.svc.clock = () => new Date(Date.now() + DAY + 3_600_000);
+  };
+
+  it.each(bad)('transfer, %s: held, not re-sent; a full list repairs it', async (_n, page) => {
+    const f = fixture();
+    const row = await pending(f);
+    f.stripe.failListTransfers = true;
+    f.stripe.transferResponsesLost = 1;
+    await f.svc.attempt(row.id);
+    age(f);
+    f.stripe.listTransfers.mockResolvedValueOnce(page as never);
+    expect(await f.svc.attempt(row.id)).toMatchObject({ status: 'pending' });
+    expect(lines(error).pop()).toMatch(/^SFEE_TRANSFER_UNCERTAIN .*list_page_malformed/);
+    expect(await f.svc.attempt(row.id)).toMatchObject({ stripe_transfer_id: 'tr_1' });
+    expect(f.stripe.transfers.map((t) => t.amount)).toEqual([1_000]);
+  });
+
+  it.each(bad)('reversal, %s: not re-sent; a full list repairs it', async (_n, page) => {
+    const f = fixture();
+    const row = await paid(f);
+    f.stripe.failListReversals = true;
+    f.stripe.reversalResponsesLost = 1;
+    await f.svc.reverse({ transfer_row_id: row.id, amount_cents: 400 }).catch(() => undefined);
+    age(f);
+    f.stripe.listTransferReversals.mockResolvedValueOnce(page as never);
+    await expect(f.svc.resolvePendingReversals(row.id)).rejects.toThrow(/list_page_malformed/);
+    await f.svc.resolvePendingReversals(row.id);
+    expect(f.db.reversalOps![0]).toMatchObject({
+      status: 'succeeded',
+      stripe_reversal_id: 'trr_1',
+    });
+    expect(f.stripe.reversals.map((r) => r.amount)).toEqual([400]);
+  });
+});
