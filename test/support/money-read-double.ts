@@ -55,6 +55,13 @@ const RELATIONS: Record<string, Record<string, Relation>> = {
         (db.state.dunningAttempt ?? []).filter((x) => x.dunning_state_id === r.id),
     },
   },
+  chargeRefund: {
+    purchase: {
+      model: 'clientPurchase',
+      many: false,
+      resolve: (r, db) => (db.state.clientPurchase ?? []).filter((p) => p.id === r.purchase_id),
+    },
+  },
   chargeDispute: {
     purchase: {
       model: 'clientPurchase',
@@ -178,6 +185,7 @@ export function moneyReadPrisma(db: StatefulPrisma) {
     },
     splitLedgerEntry: { findMany: many('splitLedgerEntry') },
     chargeDispute: { findMany: many('chargeDispute') },
+    chargeRefund: { findMany: many('chargeRefund') },
     connectAccount: {
       findUnique: async (args: Row) => findMany(db, 'connectAccount', args)[0] ?? null,
     },
