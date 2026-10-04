@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { describeFailure } from '../observability/log-pii';
 import { AuditAction, AuditService } from '../audit/audit.service';
 import { DELETION_GRACE_PERIOD_DAYS } from './account.service';
 
@@ -171,11 +172,11 @@ export class GdprScrubService {
         // A failure on one user (e.g. a UserProfile constraint) must not
         // poison the rest of the batch. Record and move on; the cron job
         // will retry on the next tick.
-        const message = err instanceof Error ? err.message : String(err);
-        this.logger.error(
-          `GDPR scrub failed for user=${c.user_id}: ${message}`,
-        );
-        errors.push({ user_id: c.user_id, message });
+        // C-700-2: a Prisma error can quote the row it failed on; the log
+        // line and the report hold the class and code only.
+        const failure = describeFailure(err);
+        this.logger.error(`GDPR scrub failed for user=${c.user_id}: ${failure}`);
+        errors.push({ user_id: c.user_id, message: failure });
       }
     }
 

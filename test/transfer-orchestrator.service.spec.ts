@@ -123,7 +123,7 @@ class StripeStub extends StripeConnectApiService {
   }));
   listTransferReversals = jest.fn(async () => ({ data: [], has_more: false }));
   // B-627-8 (round 7): nothing at Stripe unless a test says otherwise.
-  listTransfers = jest.fn(async () => ({ data: [] as any[], has_more: false }));
+  listTransfers = jest.fn(async () => ({ data: [], has_more: false }));
 }
 
 describe('TransferOrchestratorService', () => {
