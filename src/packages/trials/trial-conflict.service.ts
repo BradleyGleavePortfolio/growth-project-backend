@@ -52,6 +52,8 @@ import { PrismaService } from '../../prisma.service';
 // decides (charged: supersede; none: cancel; else retry). Sol B-673-2: a
 // supersession, cancellation or new lease committed during the reads vetoes
 // the DELETE (re-checked after the reads, before the decision).
+// B-TR5-119 (agent 119) — Sol B-673-1 / Opus C-673-6: that cancel first voids every
+// open invoice, each confirmed void (a payment that won fails its void, no DELETE).
 
 export const TRIAL_CONFLICT_LEASE_MS = 60 * 1000;
 export const TRIAL_CONFLICT_CANCEL_TIMEOUT_MS = 20 * 1000;
@@ -89,6 +91,8 @@ export function trialPaidHistory(list: unknown): TrialPaidHistory {
     const paid = inv?.amount_paid;
     if (typeof paid !== 'number') wellFormed = false;
     else if (paid > 0 || (typeof inv?.total === 'number' && inv.total > 0)) return 'charged';
+    // C-673-7 — none needs both amounts exactly 0 (a credit-funded charge shows in total).
+    else if (paid !== 0 || inv?.total !== 0) wellFormed = false;
   }
   return wellFormed && page.has_more === false ? 'none' : 'unknown';
 }
@@ -262,23 +266,30 @@ export class TrialConflictService {
           this.stripe.retrieveSubscription(row.stripe_subscription_id),
           TRIAL_CONFLICT_CANCEL_TIMEOUT_MS,
         );
-        const history = HISTORY_STATUSES.has(String(sub?.status))
-          ? trialPaidHistory(
-              await withDeadline(
-                this.stripe.listPaidInvoices(row.stripe_subscription_id),
-                TRIAL_CONFLICT_CANCEL_TIMEOUT_MS,
-              ).catch(() => null),
-            )
+        const historic = HISTORY_STATUSES.has(String(sub?.status));
+        // B-TR5-119 — open invoices are read before the paid list: a payment
+        // between the reads shows as paid, one after them fails its void.
+        const subId = row.stripe_subscription_id;
+        const open = historic ? await readOrNull(this.stripe.listOpenInvoices(subId)) : null;
+        const history = historic
+          ? trialPaidHistory(await readOrNull(this.stripe.listPaidInvoices(subId)))
           : undefined;
-        // B-673-2 — the row must still be owed under this lease after the reads.
-        const still = await this.prisma.packageTrialConflict.findFirst({
-          where: { id: row.id, lease_token: token, status: 'owed' },
-          select: { id: true },
-        });
-        if (!still) return 'stale';
-        // Decided and sent with no await in between (the admission point).
+        // B-673-2 — the row must still be owed under this lease after the
+        // reads, and (B-TR5-119) again after the voids, before the DELETE.
+        const owned = async () =>
+          !!(await this.prisma.packageTrialConflict.findFirst({
+            where: { id: row.id, lease_token: token, status: 'owed' },
+            select: { id: true },
+          }));
+        if (!(await owned())) return 'stale';
         const action = trialConflictAction(sub, clock(), until, history);
-        if (action === 'cancel') {
+        const voided =
+          action === 'cancel' && historic ? await voidOpen(this.stripe, open, until, clock) : null;
+        if (voided === 'ok' && !(await owned())) return 'stale';
+        if (voided && voided !== 'ok') {
+          outcome = 'retry';
+          code = voided;
+        } else if (action === 'cancel') {
           await withDeadline(
             this.stripe.cancelSubscription(row.stripe_subscription_id),
             TRIAL_CONFLICT_CANCEL_TIMEOUT_MS,
@@ -423,6 +434,33 @@ export class TrialConflictService {
       return 0;
     }
   }
+}
+
+/** B-TR5-119 — a bounded Stripe call; a failure proves nothing (null). */
+async function readOrNull<T>(promise: Promise<T>): Promise<T | null> {
+  try {
+    return await withDeadline(promise, TRIAL_CONFLICT_CANCEL_TIMEOUT_MS);
+  } catch {
+    return null;
+  }
+}
+
+/** B-TR5-119 — void a complete, non-empty open page; voids + DELETE fit the lease. */
+async function voidOpen(
+  stripe: StripeConnectApiService,
+  open: { data?: Array<{ id?: unknown } | null>; has_more?: unknown } | null,
+  until: Date,
+  clock: () => Date,
+): Promise<'ok' | 'invoices_unknown' | 'lease_exhausted' | 'invoice_not_voided'> {
+  const ids = open?.has_more === false && Array.isArray(open.data) ? open.data : [];
+  if (!ids.length || ids.some((i) => typeof i?.id !== 'string')) return 'invoices_unknown';
+  const budget = TRIAL_CONFLICT_CANCEL_TIMEOUT_MS * (ids.length + 1);
+  if (clock().getTime() + budget >= until.getTime()) return 'lease_exhausted';
+  for (const inv of ids) {
+    const res = await readOrNull(stripe.voidInvoice(String(inv?.id)));
+    if (res?.status !== 'void') return 'invoice_not_voided';
+  }
+  return 'ok';
 }
 
 /** A clock that starts at `start` and advances with real elapsed time (C-673-2). */

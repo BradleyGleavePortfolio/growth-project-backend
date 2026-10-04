@@ -218,6 +218,8 @@ function world(
       data: [{ id: 'in_trial', amount_paid: 0, total: 0 }],
       has_more: false,
     })),
+    listOpenInvoices: jest.fn(async () => ({ data: [{ id: 'in_open' }], has_more: false })),
+    voidInvoice: jest.fn(async (id: string) => ({ id, status: 'void' })),
   });
   const conflictSvc = new TrialConflictService(
     stub<ConstructorParameters<typeof TrialConflictService>[0]>(prisma),
