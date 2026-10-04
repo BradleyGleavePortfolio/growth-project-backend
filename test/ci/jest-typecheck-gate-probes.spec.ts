@@ -83,7 +83,7 @@ async function runGuard(m: Mutation): Promise<GuardRun> {
         readFile: (p: string) => virtual(p) ?? host.readFile(p),
       }),
   };
-  const requireView = (id: string): unknown => {
+  const load = (id: string): unknown => {
     if (id === 'fs') return fsView;
     if (id === 'typescript') return tsView;
     if (resolve(id) === JEST_CONFIG) {
@@ -95,6 +95,7 @@ async function runGuard(m: Mutation): Promise<GuardRun> {
     }
     return require(id);
   };
+  const requireView = Object.assign(load, { resolve: require.resolve });
 
   const tests: Array<{ name: string; body: () => unknown }> = [];
   const code = ts.transpileModule(fs.readFileSync(GUARD, 'utf8'), {

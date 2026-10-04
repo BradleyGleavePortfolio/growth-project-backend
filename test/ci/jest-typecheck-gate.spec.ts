@@ -34,7 +34,7 @@
 
 import * as fs from 'fs';
 import { load as parseYaml } from 'js-yaml';
-import { join, relative, resolve, sep } from 'path';
+import { dirname, join, relative, resolve, sep } from 'path';
 import * as ts from 'typescript';
 
 const ROOT = resolve(__dirname, '..', '..');
@@ -334,9 +334,18 @@ function checkStrict(program: Program, v: string[]): void {
     v.push(`${posix(program.configPath)}: effective noCheck is on, so tsc reports no type errors`);
 }
 
+/** The jest-config the installed jest CLI itself loads (jest -> jest-cli -> jest-config). */
+function jestConfigLib(): JestConfigLib {
+  const pkgDir = (pkg: string, from: string) =>
+    dirname(require.resolve(`${pkg}/package.json`, { paths: [from] }));
+  return require(
+    require.resolve('jest-config', { paths: [pkgDir('jest-cli', pkgDir('jest', ROOT))] }),
+  );
+}
+
 /** 3./4. What jest really does with each CI config, as jest-config resolves it. */
 async function effectiveJest(inputs: GateInputs, v: string[]): Promise<EffectiveJest[]> {
-  const lib: JestConfigLib = require('jest-config');
+  const lib = jestConfigLib();
   const out: EffectiveJest[] = [];
   for (const [file, raw] of Object.entries(inputs.jestConfigs)) {
     const rootDir = raw.rootDir === undefined ? ROOT : resolve(ROOT, String(raw.rootDir));
