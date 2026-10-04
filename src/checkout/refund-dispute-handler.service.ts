@@ -500,6 +500,16 @@ export class RefundDisputeHandlerService {
     const existing = await this.prisma.chargeRefund.findUnique({
       where: { stripe_refund_id: args.stripe_refund_id },
     });
+    // B-641-6: posted_at is the FIRST success time (a redelivery never moves
+    // the refund to a later window). B-674-12: the database elects it
+    // (posted_at IS NULL in the UPDATE), so overlapping deliveries that both
+    // read null keep one instant, and the update below returns it.
+    if (existing && args.status === 'succeeded') {
+      await this.prisma.chargeRefund.updateMany({
+        where: { id: existing.id, posted_at: null },
+        data: { posted_at: new Date() },
+      });
+    }
     const row = existing
       ? await this.prisma.chargeRefund.update({
           where: { stripe_refund_id: args.stripe_refund_id },
@@ -510,13 +520,6 @@ export class RefundDisputeHandlerService {
             note: args.note ?? existing.note,
             initiated_by_user_id:
               args.initiated_by_user_id ?? existing.initiated_by_user_id,
-            // B-641-6 (S-COACH-3): posted_at is the FIRST time the refund
-            // succeeded. A Stripe redelivery days later must not move the
-            // refund into a later Money window or tax export.
-            posted_at:
-              args.status === 'succeeded'
-                ? existing.posted_at ?? new Date()
-                : existing.posted_at,
           },
         })
       : await this.prisma.chargeRefund.create({
