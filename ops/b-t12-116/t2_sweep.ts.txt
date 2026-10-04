@@ -1,0 +1,58 @@
+  @Cron('*/10 * * * *', { name: 'trial-notice-sweep', timeZone: 'UTC' })
+  async sweep(now: Date = new Date()): Promise<number> {
+    const clock = elapsedClock(now);
+    let reconciled = 0;
+    try {
+      reconciled = await this.reconcileDue(now);
+    } catch (err) {
+      // A reconcile failure never blocks the delivery retries below.
+      this.logger.error(`trial notice reconcile errored: ${trialErrorClass(err)}`);
+    }
+    // B-672-2 — keyset paging on (created_at, id): rows that stay pending
+    // (unknown card, a live lease elsewhere) never hold back the rows after
+    // them. A sweep that hits its page or time budget resumes from its
+    // cursor next time; a sweep that reaches the end starts over next time.
+    let cursor = this.sweepCursor;
+    this.sweepCursor = null;
+    let handled = 0;
+    for (let page = 0; page < SWEEP_MAX_PAGES; page += 1) {
+      const at = clock();
+      const due = await this.prisma.packageTrialNotice.findMany({
+        where: {
+          AND: [
+            {
+              trial_ends_at: { gt: at },
+              created_at: { lt: new Date(at.getTime() - SWEEP_MIN_AGE_MS) },
+              OR: [
+                { push_status: 'pending', push_attempts: { lt: TRIAL_NOTICE_MAX_ATTEMPTS } },
+                { email_status: 'pending', email_attempts: { lt: TRIAL_NOTICE_MAX_ATTEMPTS } },
+              ],
+            },
+            ...(cursor
+              ? [
+                  {
+                    OR: [
+                      { created_at: { gt: cursor.createdAt } },
+                      { created_at: cursor.createdAt, id: { gt: cursor.id } },
+                    ],
+                  },
+                ]
+              : []),
+          ],
+        },
+        orderBy: [{ created_at: 'asc' }, { id: 'asc' }],
+        take: SWEEP_BATCH,
+        select: { id: true, created_at: true },
+      });
+      for (const row of due) await this.deliver(row.id, clock());
+      handled += due.length;
+      if (due.length < SWEEP_BATCH) return reconciled + handled;
+      const last = due[due.length - 1];
+      cursor = { createdAt: last.created_at, id: last.id };
+      if (clock().getTime() - now.getTime() >= SWEEP_BUDGET_MS) break;
+    }
+    this.sweepCursor = cursor;
+    this.logger.warn('trial notice sweep hit its page or time budget; resumes next sweep');
+    return reconciled + handled;
+  }
+

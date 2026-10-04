@@ -1,0 +1,7 @@
+PASS test/checkout-webhook-handler.spec.ts (12.034 s)
+PASS test/cancel-pending-on-refund.spec.ts
+PASS test/checkout-settlement-round5.spec.ts
+PASS test/checkout-hosted-activation-once.spec.ts
+PASS test/zz-sol-probe-adapted-r5.spec.ts
+Test Suites: 5 passed, 5 total
+Tests:       110 passed, 110 total

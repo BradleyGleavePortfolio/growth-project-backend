@@ -1,0 +1,1329 @@
+diff --git a/contracts/wearables-ingest-v1.fixture.json b/contracts/wearables-ingest-v1.fixture.json
+new file mode 100644
+index 0000000..e2eba74
+--- /dev/null
++++ b/contracts/wearables-ingest-v1.fixture.json
+@@ -0,0 +1,262 @@
++{
++  "version": "wearables-ingest-v1",
++  "requests": [
++    [
++      {
++        "connectionId": "11111111-1111-4111-8111-111111111111",
++        "provider": "APPLE_HEALTHKIT",
++        "metric": "STEPS",
++        "bucket": "HEALTH_FITNESS",
++        "value": 812,
++        "unit": "count",
++        "startAt": "2026-09-29T07:00:00.000-0700",
++        "endAt": "2026-09-29T08:00:00.000-0700",
++        "sourceTz": "America/Los_Angeles"
++      },
++      {
++        "connectionId": "11111111-1111-4111-8111-111111111111",
++        "provider": "APPLE_HEALTHKIT",
++        "metric": "STEPS",
++        "bucket": "HEALTH_FITNESS",
++        "value": 2405,
++        "unit": "count",
++        "startAt": "2026-09-29T08:00:00.000-0700",
++        "endAt": "2026-09-29T09:00:00.000-0700",
++        "sourceTz": "America/Los_Angeles"
++      },
++      {
++        "connectionId": "11111111-1111-4111-8111-111111111111",
++        "provider": "APPLE_HEALTHKIT",
++        "metric": "ACTIVE_ENERGY_KCAL",
++        "bucket": "HEALTH_FITNESS",
++        "value": 61.5,
++        "unit": "kcal",
++        "startAt": "2026-09-29T07:00:00.000-0700",
++        "endAt": "2026-09-29T08:00:00.000-0700",
++        "sourceTz": "America/Los_Angeles"
++      },
++      {
++        "connectionId": "11111111-1111-4111-8111-111111111111",
++        "provider": "APPLE_HEALTHKIT",
++        "metric": "RESTING_HEART_RATE_BPM",
++        "bucket": "SLEEP_RECOVERY",
++        "value": 54,
++        "unit": "bpm",
++        "startAt": "2026-09-29T00:00:00.000-0700",
++        "endAt": "2026-09-29T23:59:59.000-0700",
++        "sourceTz": "America/Los_Angeles"
++      },
++      {
++        "connectionId": "11111111-1111-4111-8111-111111111111",
++        "provider": "APPLE_HEALTHKIT",
++        "metric": "HEART_RATE_BPM",
++        "bucket": "HEALTH_FITNESS",
++        "value": 72,
++        "unit": "bpm",
++        "startAt": "2026-09-29T08:15:00.000-0700",
++        "endAt": "2026-09-29T08:15:00.000-0700",
++        "sourceTz": "America/Los_Angeles"
++      },
++      {
++        "connectionId": "11111111-1111-4111-8111-111111111111",
++        "provider": "APPLE_HEALTHKIT",
++        "metric": "BODY_WEIGHT_KG",
++        "bucket": "HEALTH_FITNESS",
++        "value": 81.6,
++        "unit": "kg",
++        "startAt": "2026-09-29T06:40:00.000-0700",
++        "endAt": "2026-09-29T06:40:00.000-0700",
++        "sourceTz": "America/Los_Angeles"
++      },
++      {
++        "connectionId": "11111111-1111-4111-8111-111111111111",
++        "provider": "APPLE_HEALTHKIT",
++        "metric": "SLEEP_REM_MIN",
++        "bucket": "SLEEP_RECOVERY",
++        "value": 90,
++        "unit": "min",
++        "startAt": "2026-09-29T05:45:00.000Z",
++        "endAt": "2026-09-29T13:15:00.000Z",
++        "sourceTz": "America/Los_Angeles"
++      },
++      {
++        "connectionId": "11111111-1111-4111-8111-111111111111",
++        "provider": "APPLE_HEALTHKIT",
++        "metric": "SLEEP_DEEP_MIN",
++        "bucket": "SLEEP_RECOVERY",
++        "value": 90,
++        "unit": "min",
++        "startAt": "2026-09-29T05:45:00.000Z",
++        "endAt": "2026-09-29T13:15:00.000Z",
++        "sourceTz": "America/Los_Angeles"
++      },
++      {
++        "connectionId": "11111111-1111-4111-8111-111111111111",
++        "provider": "APPLE_HEALTHKIT",
++        "metric": "SLEEP_LIGHT_MIN",
++        "bucket": "SLEEP_RECOVERY",
++        "value": 255,
++        "unit": "min",
++        "startAt": "2026-09-29T05:45:00.000Z",
++        "endAt": "2026-09-29T13:15:00.000Z",
++        "sourceTz": "America/Los_Angeles"
++      },
++      {
++        "connectionId": "11111111-1111-4111-8111-111111111111",
++        "provider": "APPLE_HEALTHKIT",
++        "metric": "SLEEP_AWAKE_MIN",
++        "bucket": "SLEEP_RECOVERY",
++        "value": 15,
++        "unit": "min",
++        "startAt": "2026-09-29T05:45:00.000Z",
++        "endAt": "2026-09-29T13:15:00.000Z",
++        "sourceTz": "America/Los_Angeles"
++      },
++      {
++        "connectionId": "11111111-1111-4111-8111-111111111111",
++        "provider": "APPLE_HEALTHKIT",
++        "metric": "SLEEP_TOTAL_MIN",
++        "bucket": "SLEEP_RECOVERY",
++        "value": 435,
++        "unit": "min",
++        "startAt": "2026-09-29T05:45:00.000Z",
++        "endAt": "2026-09-29T13:15:00.000Z",
++        "sourceTz": "America/Los_Angeles"
++      },
++      {
++        "connectionId": "11111111-1111-4111-8111-111111111111",
++        "provider": "APPLE_HEALTHKIT",
++        "metric": "HRV_MS",
++        "bucket": "SLEEP_RECOVERY",
++        "value": 48,
++        "unit": "ms",
++        "startAt": "2026-09-29T06:10:00.000-0700",
++        "endAt": "2026-09-29T06:10:00.000-0700",
++        "sourceTz": "America/Los_Angeles"
++      }
++    ],
++    [
++      {
++        "connectionId": "22222222-2222-4222-8222-222222222222",
++        "provider": "HEALTH_CONNECT",
++        "metric": "STEPS",
++        "bucket": "HEALTH_FITNESS",
++        "value": 1320,
++        "unit": "count",
++        "startAt": "2026-09-29T14:00:00.000Z",
++        "endAt": "2026-09-29T15:00:00.000Z",
++        "sourceRecordId": "hc-steps-1"
++      },
++      {
++        "connectionId": "22222222-2222-4222-8222-222222222222",
++        "provider": "HEALTH_CONNECT",
++        "metric": "HEART_RATE_BPM",
++        "bucket": "HEALTH_FITNESS",
++        "value": 88,
++        "unit": "bpm",
++        "startAt": "2026-09-29T15:00:00.000Z",
++        "endAt": "2026-09-29T15:00:00.000Z",
++        "sourceRecordId": "hc-hr-1"
++      },
++      {
++        "connectionId": "22222222-2222-4222-8222-222222222222",
++        "provider": "HEALTH_CONNECT",
++        "metric": "HEART_RATE_BPM",
++        "bucket": "HEALTH_FITNESS",
++        "value": 91,
++        "unit": "bpm",
++        "startAt": "2026-09-29T15:05:00.000Z",
++        "endAt": "2026-09-29T15:05:00.000Z",
++        "sourceRecordId": "hc-hr-1"
++      },
++      {
++        "connectionId": "22222222-2222-4222-8222-222222222222",
++        "provider": "HEALTH_CONNECT",
++        "metric": "RESTING_HEART_RATE_BPM",
++        "bucket": "SLEEP_RECOVERY",
++        "value": 56,
++        "unit": "bpm",
++        "startAt": "2026-09-29T13:00:00.000Z",
++        "endAt": "2026-09-29T13:00:00.000Z",
++        "sourceRecordId": "hc-rhr-1"
++      },
++      {
++        "connectionId": "22222222-2222-4222-8222-222222222222",
++        "provider": "HEALTH_CONNECT",
++        "metric": "SLEEP_TOTAL_MIN",
++        "bucket": "SLEEP_RECOVERY",
++        "value": 480,
++        "unit": "min",
++        "startAt": "2026-09-29T05:30:00.000Z",
++        "endAt": "2026-09-29T13:30:00.000Z",
++        "sourceRecordId": "hc-sleep-1"
++      },
++      {
++        "connectionId": "22222222-2222-4222-8222-222222222222",
++        "provider": "HEALTH_CONNECT",
++        "metric": "SLEEP_REM_MIN",
++        "bucket": "SLEEP_RECOVERY",
++        "value": 90,
++        "unit": "min",
++        "startAt": "2026-09-29T05:30:00.000Z",
++        "endAt": "2026-09-29T13:30:00.000Z",
++        "sourceRecordId": "hc-sleep-1"
++      },
++      {
++        "connectionId": "22222222-2222-4222-8222-222222222222",
++        "provider": "HEALTH_CONNECT",
++        "metric": "SLEEP_DEEP_MIN",
++        "bucket": "SLEEP_RECOVERY",
++        "value": 90,
++        "unit": "min",
++        "startAt": "2026-09-29T05:30:00.000Z",
++        "endAt": "2026-09-29T13:30:00.000Z",
++        "sourceRecordId": "hc-sleep-1"
++      },
++      {
++        "connectionId": "22222222-2222-4222-8222-222222222222",
++        "provider": "HEALTH_CONNECT",
++        "metric": "SLEEP_LIGHT_MIN",
++        "bucket": "SLEEP_RECOVERY",
++        "value": 150,
++        "unit": "min",
++        "startAt": "2026-09-29T05:30:00.000Z",
++        "endAt": "2026-09-29T13:30:00.000Z",
++        "sourceRecordId": "hc-sleep-1"
++      },
++      {
++        "connectionId": "22222222-2222-4222-8222-222222222222",
++        "provider": "HEALTH_CONNECT",
++        "metric": "SLEEP_AWAKE_MIN",
++        "bucket": "SLEEP_RECOVERY",
++        "value": 20,
++        "unit": "min",
++        "startAt": "2026-09-29T05:30:00.000Z",
++        "endAt": "2026-09-29T13:30:00.000Z",
++        "sourceRecordId": "hc-sleep-1"
++      },
++      {
++        "connectionId": "22222222-2222-4222-8222-222222222222",
++        "provider": "HEALTH_CONNECT",
++        "metric": "SLEEP_EFFICIENCY_PCT",
++        "bucket": "SLEEP_RECOVERY",
++        "value": 94.28571428571428,
++        "unit": "%",
++        "startAt": "2026-09-29T05:30:00.000Z",
++        "endAt": "2026-09-29T13:30:00.000Z",
++        "sourceRecordId": "hc-sleep-1"
++      },
++      {
++        "connectionId": "22222222-2222-4222-8222-222222222222",
++        "provider": "HEALTH_CONNECT",
++        "metric": "BODY_WEIGHT_KG",
++        "bucket": "HEALTH_FITNESS",
++        "value": 81.4,
++        "unit": "kg",
++        "startAt": "2026-09-29T14:30:00.000Z",
++        "endAt": "2026-09-29T14:30:00.000Z",
++        "sourceRecordId": "hc-w-1"
++      }
++    ]
++  ]
++}
+diff --git a/src/api/wearablesConnectionsApi.ts b/src/api/wearablesConnectionsApi.ts
+index 37284d8..8dfc427 100644
+--- a/src/api/wearablesConnectionsApi.ts
++++ b/src/api/wearablesConnectionsApi.ts
+@@ -346,6 +346,25 @@ export const wearablesConnectionsApi = {
+     return startOauthResultSchema.parse(res.data);
+   },
+ 
++  /**
++   * S14 — register (or re-activate) the caller's on-device source after the
++   * user granted read access in Apple Health / Health Connect. Idempotent on
++   * the server. Returns the token-free connection; its `id` is the
++   * `connectionId` every ingested sample references. The owner is the JWT
++   * user; the body carries only the provider.
++   *
++   * The server answers 503 `wearables_ingest_disabled` while
++   * FEATURE_WEARABLES_INGEST_POST is off; callers render that as a plain
++   * "not available yet" state.
++   * @throws ZodError on a drifted response.
++   */
++  async registerOnDevice(
++    provider: 'APPLE_HEALTHKIT' | 'HEALTH_CONNECT',
++  ): Promise<WearableConnection> {
++    const res = await api.post<unknown>(`${BASE}/on-device`, { provider });
++    return safeWearableConnectionSchema.parse(res.data);
++  },
++
+   /**
+    * Soft-disconnect the caller's connection for a provider. Idempotent from the
+    * UI's perspective: a 404 (no connection) is surfaced as a thrown error so
+diff --git a/src/services/health/__tests__/ingestBatching.test.ts b/src/services/health/__tests__/ingestBatching.test.ts
+new file mode 100644
+index 0000000..60baf64
+--- /dev/null
++++ b/src/services/health/__tests__/ingestBatching.test.ts
+@@ -0,0 +1,191 @@
++/**
++ * S14 — shared ingest wire + batching.
++ */
++
++jest.mock('../../api', () => ({
++  __esModule: true,
++  default: { post: jest.fn() },
++}));
++
++import { AxiosError, AxiosHeaders } from 'axios';
++import {
++  MAX_ATTEMPTS_PER_BATCH,
++  MAX_REQUEST_BYTES,
++  MAX_SAMPLES_PER_REQUEST,
++  WEARABLES_INGEST_PATH,
++  chunkForIngest,
++  chunkForIngestWithReport,
++  postIngestBatches,
++  utf8ByteLength,
++  toIngestWire,
++  type IngestableSample,
++} from '../ingestBatching';
++
++function sample(i: number, extra: Partial<IngestableSample> = {}): IngestableSample {
++  return {
++    connectionId: 'c1',
++    provider: 'HEALTH_CONNECT',
++    metric: 'HEART_RATE_BPM',
++    bucket: 'HEALTH_FITNESS',
++    value: 60 + (i % 50),
++    unit: 'bpm',
++    startAt: new Date(Date.UTC(2026, 8, 1, 0, i)),
++    endAt: new Date(Date.UTC(2026, 8, 1, 0, i)),
++    ...extra,
++  };
++}
++
++function rateLimited(retryAfter?: string): AxiosError {
++  const headers = new AxiosHeaders();
++  if (retryAfter) headers.set('retry-after', retryAfter);
++  return new AxiosError('rate limited', '429', undefined, undefined, {
++    status: 429,
++    statusText: 'Too Many Requests',
++    headers,
++    config: { headers: new AxiosHeaders() },
++    data: {},
++  });
++}
++
++describe('toIngestWire', () => {
++  it('keeps only allow-listed keys and serializes dates', () => {
++    const wire = toIngestWire({
++      ...sample(0, { sourceRecordId: 'r1', sourceTz: null }),
++      ...({ userId: 'u-from-caller' } as object),
++    } as IngestableSample);
++    expect(wire).not.toHaveProperty('userId');
++    expect(wire).not.toHaveProperty('sourceTz');
++    expect(wire.sourceRecordId).toBe('r1');
++    expect(wire.startAt).toBe('2026-09-01T00:00:00.000Z');
++  });
++
++  it('passes string times through unchanged (Apple Health local-offset format)', () => {
++    const wire = toIngestWire(
++      sample(0, {
++        startAt: '2026-09-29T07:00:00.000-0700',
++        endAt: '2026-09-29T08:00:00.000-0700',
++      }),
++    );
++    expect(wire.startAt).toBe('2026-09-29T07:00:00.000-0700');
++  });
++});
++
++describe('chunkForIngest', () => {
++  it('caps each batch by sample count', () => {
++    const wire = Array.from({ length: 600 }, (_, i) => toIngestWire(sample(i)));
++    const batches = chunkForIngest(wire);
++    expect(batches.map((b) => b.length)).toEqual([
++      MAX_SAMPLES_PER_REQUEST,
++      MAX_SAMPLES_PER_REQUEST,
++      600 - 2 * MAX_SAMPLES_PER_REQUEST,
++    ]);
++    expect(batches.flat()).toEqual(wire);
++  });
++
++  it('caps each batch by serialized size under the 100 KB body limit', () => {
++    const big = 'x'.repeat(1500);
++    const wire = Array.from({ length: 200 }, (_, i) =>
++      toIngestWire(sample(i, { rawRef: big, sourceRecordId: big })),
++    );
++    const batches = chunkForIngest(wire);
++    expect(batches.length).toBeGreaterThan(1);
++    for (const b of batches) {
++      expect(JSON.stringify(b).length).toBeLessThanOrEqual(MAX_REQUEST_BYTES);
++    }
++    expect(batches.flat()).toHaveLength(200);
++  });
++
++  it('counts UTF-8 bytes, not UTF-16 length (C-317-1)', () => {
++    // 3-byte (CJK) and 4-byte (emoji surrogate pair) code points.
++    const cjk = '\u6c34'.repeat(600); // 600 chars, 1800 bytes
++    const astral = '\ud83d\ude00'.repeat(300); // 600 UTF-16 units, 1200 bytes
++    expect(utf8ByteLength(cjk)).toBe(1800);
++    expect(utf8ByteLength(astral)).toBe(1200);
++    expect(utf8ByteLength('\u00b0C')).toBe(3);
++    expect(utf8ByteLength('abc')).toBe(3);
++    const wire = Array.from({ length: 200 }, (_, i) =>
++      toIngestWire(sample(i, { rawRef: cjk, sourceRecordId: cjk })),
++    );
++    const batches = chunkForIngest(wire);
++    for (const b of batches) {
++      const encoded = Buffer.byteLength(JSON.stringify(b), 'utf8');
++      expect(encoded).toBeLessThanOrEqual(MAX_REQUEST_BYTES);
++    }
++    expect(batches.flat()).toHaveLength(200);
++  });
++
++  it('never sends a sample whose own encoded size exceeds one request', () => {
++    const huge = '\u6c34'.repeat(40_000); // 120,000 bytes
++    const ok = toIngestWire(sample(1));
++    const tooBig = toIngestWire(sample(2, { rawRef: huge }));
++    const { batches, oversized } = chunkForIngestWithReport([ok, tooBig]);
++    expect(batches).toEqual([[ok]]);
++    expect(oversized).toEqual([tooBig]);
++  });
++
++  it('returns no batches for no samples', () => {
++    expect(chunkForIngest([])).toEqual([]);
++  });
++});
++
++describe('postIngestBatches', () => {
++  it('posts batches sequentially and sums the counts', async () => {
++    const post = jest
++      .fn()
++      .mockResolvedValueOnce({ data: { inserted: 250, skipped: 0 } })
++      .mockResolvedValueOnce({ data: { inserted: 40, skipped: 10 } });
++    const res = await postIngestBatches(
++      Array.from({ length: 300 }, (_, i) => sample(i)),
++      { post },
++    );
++    expect(post).toHaveBeenCalledTimes(2);
++    expect(post.mock.calls[0][0]).toBe(WEARABLES_INGEST_PATH);
++    expect(res).toEqual({ inserted: 290, skipped: 10, requests: 2, oversized: 0 });
++  });
++
++  it('waits for Retry-After on 429 and retries the same batch', async () => {
++    const post = jest
++      .fn()
++      .mockRejectedValueOnce(rateLimited('7'))
++      .mockResolvedValueOnce({ data: { inserted: 1, skipped: 0 } });
++    const sleep = jest.fn().mockResolvedValue(undefined);
++    const res = await postIngestBatches([sample(0)], { post, sleep });
++    expect(sleep).toHaveBeenCalledWith(7000);
++    expect(post).toHaveBeenCalledTimes(2);
++    expect(post.mock.calls[1][1]).toEqual(post.mock.calls[0][1]);
++    expect(res.inserted).toBe(1);
++  });
++
++  it('gives up after MAX_ATTEMPTS_PER_BATCH rate-limited attempts', async () => {
++    const post = jest.fn().mockRejectedValue(rateLimited('1'));
++    const sleep = jest.fn().mockResolvedValue(undefined);
++    await expect(postIngestBatches([sample(0)], { post, sleep })).rejects.toBeInstanceOf(
++      AxiosError,
++    );
++    expect(post).toHaveBeenCalledTimes(MAX_ATTEMPTS_PER_BATCH);
++  });
++
++  it('runs beforeEachRequest before every request and stops when it throws', async () => {
++    const post = jest.fn().mockResolvedValue({ data: { inserted: 1, skipped: 0 } });
++    let calls = 0;
++    const beforeEachRequest = jest.fn(() => {
++      calls += 1;
++      if (calls === 2) throw new Error('session changed');
++    });
++    await expect(
++      postIngestBatches(
++        Array.from({ length: 300 }, (_, i) => sample(i)),
++        { post, beforeEachRequest },
++      ),
++    ).rejects.toThrow('session changed');
++    expect(post).toHaveBeenCalledTimes(1);
++  });
++
++  it('rejects immediately on any other failure', async () => {
++    const post = jest.fn().mockRejectedValue(new Error('network'));
++    const sleep = jest.fn();
++    await expect(postIngestBatches([sample(0)], { post, sleep })).rejects.toThrow('network');
++    expect(post).toHaveBeenCalledTimes(1);
++    expect(sleep).not.toHaveBeenCalled();
++  });
++});
+diff --git a/src/services/health/__tests__/onDeviceState.test.ts b/src/services/health/__tests__/onDeviceState.test.ts
+new file mode 100644
+index 0000000..55f08eb
+--- /dev/null
++++ b/src/services/health/__tests__/onDeviceState.test.ts
+@@ -0,0 +1,93 @@
++/**
++ * S14 — account-scoped on-device state (A-317-1 / B-317-1).
++ */
++
++import AsyncStorage from '@react-native-async-storage/async-storage';
++import {
++  ON_DEVICE_STATE_PREFIX,
++  getLocalAuthorization,
++  getSyncProgress,
++  recordLocalAuthorization,
++  retireOnDeviceState,
++  setSyncProgress,
++  type OnDeviceScope,
++} from '../onDeviceState';
++
++const A: OnDeviceScope = { userId: 'user-a', connectionId: 'conn-1', source: 'APPLE_HEALTHKIT' };
++
++beforeEach(async () => {
++  await AsyncStorage.clear();
++});
++
++describe('local authorization', () => {
++  it('is keyed by user + source and bound to the connection id', async () => {
++    await recordLocalAuthorization(A, new Date('2026-10-01T00:00:00.000Z'));
++    expect(await getLocalAuthorization('user-a', 'APPLE_HEALTHKIT')).toEqual({
++      v: 1,
++      userId: 'user-a',
++      source: 'APPLE_HEALTHKIT',
++      connectionId: 'conn-1',
++      grantedAt: '2026-10-01T00:00:00.000Z',
++    });
++    expect(await getLocalAuthorization('user-b', 'APPLE_HEALTHKIT')).toBeNull();
++    expect(await getLocalAuthorization('user-a', 'HEALTH_CONNECT')).toBeNull();
++  });
++
++  it('rejects a record stored under one user that names another', async () => {
++    await AsyncStorage.setItem(
++      `${ON_DEVICE_STATE_PREFIX}auth:APPLE_HEALTHKIT:user-b`,
++      JSON.stringify({ v: 1, userId: 'user-a', source: 'APPLE_HEALTHKIT', connectionId: 'c', grantedAt: 'x' }),
++    );
++    expect(await getLocalAuthorization('user-b', 'APPLE_HEALTHKIT')).toBeNull();
++  });
++
++  it('ignores corrupt values', async () => {
++    await AsyncStorage.setItem(`${ON_DEVICE_STATE_PREFIX}auth:APPLE_HEALTHKIT:user-a`, '{nope');
++    expect(await getLocalAuthorization('user-a', 'APPLE_HEALTHKIT')).toBeNull();
++  });
++});
++
++describe('sync progress', () => {
++  it('is separate per user and per connection', async () => {
++    await setSyncProgress(A, {
++      v: 1,
++      completedThrough: { steps: '2026-10-01T00:00:00.000Z' },
++      resume: {},
++    });
++    expect((await getSyncProgress(A)).completedThrough.steps).toBe('2026-10-01T00:00:00.000Z');
++    expect((await getSyncProgress({ ...A, userId: 'user-b' })).completedThrough).toEqual({});
++    expect((await getSyncProgress({ ...A, connectionId: 'conn-2' })).completedThrough).toEqual({});
++  });
++
++  it('drops invalid entries', async () => {
++    await setSyncProgress(A, {
++      v: 1,
++      completedThrough: { steps: 'not-a-date', sleep: '2026-10-01T00:00:00.000Z' },
++      resume: { Steps: { startTime: 'a', endTime: 'b', pageToken: '' } },
++    });
++    const p = await getSyncProgress(A);
++    expect(p.completedThrough).toEqual({ sleep: '2026-10-01T00:00:00.000Z' });
++    expect(p.resume).toEqual({});
++  });
++});
++
++describe('retireOnDeviceState', () => {
++  it('with a source removes only that source (disconnect)', async () => {
++    await recordLocalAuthorization(A);
++    await setSyncProgress(A, { v: 1, completedThrough: {}, resume: {} });
++    const hc: OnDeviceScope = { ...A, source: 'HEALTH_CONNECT' };
++    await recordLocalAuthorization(hc);
++    await retireOnDeviceState('APPLE_HEALTHKIT');
++    expect(await getLocalAuthorization('user-a', 'APPLE_HEALTHKIT')).toBeNull();
++    expect(await getLocalAuthorization('user-a', 'HEALTH_CONNECT')).not.toBeNull();
++    const keys = await AsyncStorage.getAllKeys();
++    expect(keys.some((k) => k.includes('progress:APPLE_HEALTHKIT'))).toBe(false);
++  });
++
++  it('without a source removes everything under the prefix and nothing else', async () => {
++    await recordLocalAuthorization(A);
++    await AsyncStorage.setItem('unrelated', 'x');
++    await retireOnDeviceState();
++    expect(await AsyncStorage.getAllKeys()).toEqual(['unrelated']);
++  });
++});
+diff --git a/src/services/health/__tests__/sessionFence.test.ts b/src/services/health/__tests__/sessionFence.test.ts
+new file mode 100644
+index 0000000..d5717e1
+--- /dev/null
++++ b/src/services/health/__tests__/sessionFence.test.ts
+@@ -0,0 +1,135 @@
++/**
++ * S14 (A-317-1) — session fence for on-device health work.
++ */
++
++jest.mock('../../../lib/userCache', () => ({
++  readUserCache: jest.fn(),
++}));
++
++import { authEvents } from '../../../utils/authEvents';
++import { readUserCache } from '../../../lib/userCache';
++import {
++  OnDeviceSessionChangedError,
++  beginSessionFence,
++  createSessionFence,
++  isOnDeviceStop,
++  readSignedInUserId,
++  stopOnDeviceHealthWork,
++} from '../sessionFence';
++
++const mockRead = readUserCache as jest.Mock;
++
++describe('createSessionFence', () => {
++  it('passes while the same user stays signed in', async () => {
++    const fence = createSessionFence('user-a', async () => 'user-a');
++    await expect(fence.assertCurrent()).resolves.toBeUndefined();
++  });
++
++  it('fails when a different account is signed in', async () => {
++    const fence = createSessionFence('user-a', async () => 'user-b');
++    await expect(fence.assertCurrent()).rejects.toBeInstanceOf(OnDeviceSessionChangedError);
++  });
++
++  it('fails when nobody is signed in', async () => {
++    const fence = createSessionFence('user-a', async () => null);
++    await expect(fence.assertCurrent()).rejects.toBeInstanceOf(OnDeviceSessionChangedError);
++  });
++
++  it('fails after any auth event (logout, login), even if the id reads the same', async () => {
++    const fence = createSessionFence('user-a', async () => 'user-a');
++    authEvents.emit('logout');
++    await expect(fence.assertCurrent()).rejects.toBeInstanceOf(OnDeviceSessionChangedError);
++    // A fence created after the event works again.
++    const fresh = createSessionFence('user-a', async () => 'user-a');
++    await expect(fresh.assertCurrent()).resolves.toBeUndefined();
++  });
++});
++
++describe('readSignedInUserId', () => {
++  it('reads the identity cache', async () => {
++    mockRead.mockResolvedValueOnce({ id: 'user-a', email: 'a@example.com' });
++    expect(await readSignedInUserId()).toBe('user-a');
++    mockRead.mockResolvedValueOnce(null);
++    expect(await readSignedInUserId()).toBeNull();
++    mockRead.mockRejectedValueOnce(new Error('storage'));
++    expect(await readSignedInUserId()).toBeNull();
++  });
++});
++
++// S14 round 3 (Sol A-317-1): the fence is taken at the Continue tap, before
++// the native permission prompt, and can be cancelled when the sheet closes.
++describe('beginSessionFence', () => {
++  it('binds to the signed-in user', async () => {
++    const fence = await beginSessionFence(async () => 'user-a');
++    expect(fence?.userId).toBe('user-a');
++    await expect(fence?.assertCurrent()).resolves.toBeUndefined();
++  });
++
++  it('returns null when nobody is signed in', async () => {
++    expect(await beginSessionFence(async () => null)).toBeNull();
++  });
++
++  it('returns null when an auth event lands while the user is read', async () => {
++    const fence = await beginSessionFence(async () => {
++      authEvents.emit('logout');
++      return 'user-a';
++    });
++    expect(fence).toBeNull();
++  });
++
++  it('fails after a later auth event, even for the same user (re-login)', async () => {
++    const fence = await beginSessionFence(async () => 'user-a');
++    authEvents.emit('login');
++    await expect(fence?.assertCurrent()).rejects.toBeInstanceOf(OnDeviceSessionChangedError);
++  });
++
++  it('cancel() stops every later check with reason cancelled', async () => {
++    const fence = await beginSessionFence(async () => 'user-a');
++    fence?.cancel();
++    const err = await fence?.assertCurrent().catch((e: unknown) => e);
++    expect(err).toBeInstanceOf(OnDeviceSessionChangedError);
++    expect((err as OnDeviceSessionChangedError).reason).toBe('cancelled');
++  });
++});
++
++describe('S-WEAR-3 (Sol B-317-7): synchronous stop', () => {
++  it('throwIfStopped passes while nothing happened', () => {
++    const fence = createSessionFence('user-a', async () => 'user-a');
++    expect(() => fence.throwIfStopped()).not.toThrow();
++  });
++
++  it('stopOnDeviceHealthWork stops every open fence at once, synchronously', async () => {
++    const a = createSessionFence('user-a', async () => 'user-a');
++    const b = await beginSessionFence(async () => 'user-a');
++    stopOnDeviceHealthWork();
++    expect(() => a.throwIfStopped()).toThrow(OnDeviceSessionChangedError);
++    expect(() => b?.throwIfStopped()).toThrow(OnDeviceSessionChangedError);
++    await expect(a.assertCurrent()).rejects.toBeInstanceOf(OnDeviceSessionChangedError);
++    // A fence taken afterwards (the next sign-in) works.
++    expect(() => createSessionFence('user-a', async () => 'user-a').throwIfStopped()).not.toThrow();
++  });
++
++  it('throwIfStopped throws after an auth event and after cancel', () => {
++    const fence = createSessionFence('user-a', async () => 'user-a');
++    authEvents.emit('logout');
++    expect(() => fence.throwIfStopped()).toThrow(OnDeviceSessionChangedError);
++    const other = createSessionFence('user-a', async () => 'user-a');
++    other.cancel();
++    let err: unknown;
++    try {
++      other.throwIfStopped();
++    } catch (e) {
++      err = e;
++    }
++    expect(isOnDeviceStop(err)).toBe(true);
++    expect((err as OnDeviceSessionChangedError).reason).toBe('cancelled');
++  });
++
++  it('a stop during beginSessionFence identity read returns no fence', async () => {
++    const fence = await beginSessionFence(async () => {
++      stopOnDeviceHealthWork();
++      return 'user-a';
++    });
++    expect(fence).toBeNull();
++  });
++});
+diff --git a/src/services/health/ingestBatching.ts b/src/services/health/ingestBatching.ts
+new file mode 100644
+index 0000000..1f980a3
+--- /dev/null
++++ b/src/services/health/ingestBatching.ts
+@@ -0,0 +1,244 @@
++/**
++ * S14 — shared on-device ingest wire contract and batching.
++ *
++ * Both on-device connectors (Apple Health on iOS, Health Connect on Android)
++ * post through this one module so the wire shape cannot drift between them.
++ *
++ * Contract with `POST /v1/wearables/samples/ingest` (backend
++ * `src/wearables/samples/dto/ingest-samples.dto.ts`, `.strict()`):
++ *  - Exactly the keys in {@link IngestWireSample}. The body never names the
++ *    subject user: the server takes it from the JWT and rejects a body
++ *    `userId` with `WEARABLES_INGEST_USER_ID_FORBIDDEN`. {@link toIngestWire}
++ *    builds each sample from an allow-list, so no extra key can leak through.
++ *  - `bucket` must match the canonical bucket of `metric`.
++ *  - At most 2000 samples per request; in practice the binding limit is the
++ *    backend's default 100 KB JSON body limit, so batches are capped by both a
++ *    sample count and a serialized size well under it.
++ *
++ * The shared fixture `contracts/wearables-ingest-v1.fixture.json` (pinned by
++ * sha256 in this repo and in growth-project-backend) is produced from the real
++ * normalizers through {@link toIngestWire}; the backend contract test parses
++ * the same bytes with its schema.
++ */
++
++import axios from 'axios';
++import api from '../api';
++
++/** Endpoint the device posts normalized samples to (JWT-authenticated). */
++export const WEARABLES_INGEST_PATH = '/v1/wearables/samples/ingest';
++
++/** Upper bound on samples per request (backend schema cap is 2000). */
++export const MAX_SAMPLES_PER_REQUEST = 250;
++
++/**
++ * Upper bound on the UTF-8 encoded JSON body per request, in bytes. The
++ * backend uses the default 100 KB (102,400 byte) JSON limit; 90,000 leaves
++ * headroom for headers-free framing differences. Sizes are counted as UTF-8
++ * bytes (see {@link utf8ByteLength}), not UTF-16 string length, so multi-byte
++ * characters (for example the unit string for Celsius) are counted correctly.
++ */
++export const MAX_REQUEST_BYTES = 90_000;
++
++/** Attempts per batch when the server answers 429 (rate limited). */
++export const MAX_ATTEMPTS_PER_BATCH = 3;
++
++/** Longest wait honoured from a Retry-After header, in milliseconds. */
++export const MAX_RETRY_WAIT_MS = 60_000;
++
++/** The exact over-the-wire sample shape the backend schema accepts. */
++export interface IngestWireSample {
++  connectionId: string;
++  provider: string;
++  metric: string;
++  bucket: string;
++  value: number;
++  unit: string;
++  startAt: string;
++  endAt: string;
++  sourceTz?: string | null;
++  sourceRecordId?: string | null;
++  rawRef?: string | null;
++}
++
++/** Any connector's normalized sample (Date or ISO string time fields). */
++export interface IngestableSample {
++  connectionId: string;
++  provider: string;
++  metric: string;
++  bucket: string;
++  value: number;
++  unit: string;
++  startAt: Date | string;
++  endAt: Date | string;
++  sourceTz?: string | null;
++  sourceRecordId?: string | null;
++  rawRef?: string | null;
++}
++
++/** Backend response — counts of newly inserted vs deduplicated rows. */
++export interface IngestResult {
++  inserted: number;
++  skipped: number;
++}
++
++function toIso(t: Date | string): string {
++  return typeof t === 'string' ? t : t.toISOString();
++}
++
++/**
++ * Build the wire sample from an explicit allow-list of keys. Optional fields
++ * are included only when present so the payload stays small.
++ */
++export function toIngestWire(sample: IngestableSample): IngestWireSample {
++  const wire: IngestWireSample = {
++    connectionId: sample.connectionId,
++    provider: sample.provider,
++    metric: sample.metric,
++    bucket: sample.bucket,
++    value: sample.value,
++    unit: sample.unit,
++    startAt: toIso(sample.startAt),
++    endAt: toIso(sample.endAt),
++  };
++  if (sample.sourceTz != null) wire.sourceTz = sample.sourceTz;
++  if (sample.sourceRecordId != null) wire.sourceRecordId = sample.sourceRecordId;
++  if (sample.rawRef != null) wire.rawRef = sample.rawRef;
++  return wire;
++}
++
++/**
++ * UTF-8 encoded byte length of a string. Counted by hand (no TextEncoder) so
++ * it behaves the same on Hermes, JSC and Node. A valid surrogate pair is one
++ * 4-byte code point; a lone surrogate is encoded by JSON.stringify as a
++ * 6-character ASCII escape before it reaches here, and is otherwise counted as
++ * the 3-byte replacement character.
++ */
++export function utf8ByteLength(str: string): number {
++  let bytes = 0;
++  for (let i = 0; i < str.length; i += 1) {
++    const code = str.charCodeAt(i);
++    if (code < 0x80) bytes += 1;
++    else if (code < 0x800) bytes += 2;
++    else if (code >= 0xd800 && code <= 0xdbff && i + 1 < str.length) {
++      const next = str.charCodeAt(i + 1);
++      if (next >= 0xdc00 && next <= 0xdfff) {
++        bytes += 4;
++        i += 1;
++      } else {
++        bytes += 3;
++      }
++    } else bytes += 3;
++  }
++  return bytes;
++}
++
++/** Result of {@link chunkForIngest}. */
++export interface IngestChunks {
++  batches: IngestWireSample[][];
++  /** Samples whose own encoded size cannot fit one request; never sent. */
++  oversized: IngestWireSample[];
++}
++
++/**
++ * Split wire samples into request-sized batches, bounded by both
++ * {@link MAX_SAMPLES_PER_REQUEST} and {@link MAX_REQUEST_BYTES} (UTF-8
++ * bytes). Order is preserved. A sample that alone exceeds the byte bound is
++ * returned in `oversized` instead of being sent (the server would reject the
++ * whole request); every batch holds at least one sample.
++ */
++export function chunkForIngestWithReport(samples: IngestWireSample[]): IngestChunks {
++  const batches: IngestWireSample[][] = [];
++  const oversized: IngestWireSample[] = [];
++  let current: IngestWireSample[] = [];
++  let bytes = 2; // the enclosing [ ]
++  for (const sample of samples) {
++    const size = utf8ByteLength(JSON.stringify(sample)) + 1; // + separating comma
++    if (size + 2 > MAX_REQUEST_BYTES) {
++      oversized.push(sample);
++      continue;
++    }
++    if (
++      current.length > 0 &&
++      (current.length >= MAX_SAMPLES_PER_REQUEST || bytes + size > MAX_REQUEST_BYTES)
++    ) {
++      batches.push(current);
++      current = [];
++      bytes = 2;
++    }
++    current.push(sample);
++    bytes += size;
++  }
++  if (current.length > 0) batches.push(current);
++  return { batches, oversized };
++}
++
++/** {@link chunkForIngestWithReport} batches only (oversized samples dropped). */
++export function chunkForIngest(samples: IngestWireSample[]): IngestWireSample[][] {
++  return chunkForIngestWithReport(samples).batches;
++}
++
++/** Injectable seams for tests. */
++export interface PostIngestDeps {
++  post?: (path: string, body: IngestWireSample[]) => Promise<{ data: IngestResult }>;
++  sleep?: (ms: number) => Promise<void>;
++  /**
++   * Called before every request (including retries). Throwing stops the post
++   * before anything else is sent. The session fence uses it so a sign-out or
++   * account switch mid-import can never send one account's data under
++   * another account's session.
++   */
++  beforeEachRequest?: () => void | Promise<void>;
++}
++
++function defaultSleep(ms: number): Promise<void> {
++  return new Promise((resolve) => setTimeout(resolve, ms));
++}
++
++/** Seconds from a Retry-After header, as bounded milliseconds. */
++function retryWaitMs(err: unknown): number {
++  if (!axios.isAxiosError(err)) return MAX_RETRY_WAIT_MS;
++  const header = err.response?.headers?.['retry-after'];
++  const seconds = Number(Array.isArray(header) ? header[0] : header);
++  if (!Number.isFinite(seconds) || seconds <= 0) return MAX_RETRY_WAIT_MS;
++  return Math.min(seconds * 1000, MAX_RETRY_WAIT_MS);
++}
++
++function isRateLimited(err: unknown): boolean {
++  return axios.isAxiosError(err) && err.response?.status === 429;
++}
++
++/**
++ * POST every batch sequentially. A 429 waits for Retry-After (bounded) and
++ * retries the same batch, up to {@link MAX_ATTEMPTS_PER_BATCH} attempts; any
++ * other failure rejects immediately so the caller keeps its sync cursor and
++ * the next run re-reads the same window (ingest is idempotent on dedup_key).
++ */
++export async function postIngestBatches(
++  samples: IngestableSample[],
++  deps: PostIngestDeps = {},
++): Promise<IngestResult & { requests: number; oversized: number }> {
++  const post =
++    deps.post ?? ((path: string, body: IngestWireSample[]) => api.post<IngestResult>(path, body));
++  const sleep = deps.sleep ?? defaultSleep;
++
++  const { batches, oversized } = chunkForIngestWithReport(samples.map(toIngestWire));
++  let inserted = 0;
++  let skipped = 0;
++  let requests = 0;
++  for (const batch of batches) {
++    for (let attempt = 1; ; attempt += 1) {
++      try {
++        if (deps.beforeEachRequest) await deps.beforeEachRequest();
++        requests += 1;
++        const res = await post(WEARABLES_INGEST_PATH, batch);
++        inserted += res.data?.inserted ?? 0;
++        skipped += res.data?.skipped ?? 0;
++        break;
++      } catch (err) {
++        if (!isRateLimited(err) || attempt >= MAX_ATTEMPTS_PER_BATCH) throw err;
++        await sleep(retryWaitMs(err));
++      }
++    }
++  }
++  return { inserted, skipped, requests, oversized: oversized.length };
++}
+diff --git a/src/services/health/onDeviceState.ts b/src/services/health/onDeviceState.ts
+new file mode 100644
+index 0000000..5093b88
+--- /dev/null
++++ b/src/services/health/onDeviceState.ts
+@@ -0,0 +1,181 @@
++/**
++ * S14 — local, account-scoped state for the on-device health lane.
++ *
++ * Two kinds of record, both in AsyncStorage under {@link ON_DEVICE_STATE_PREFIX}
++ * (swept by `signOut()` in `services/authActions.ts`, which also runs after
++ * account deletion):
++ *
++ *  1. Local Connect authorization (audit A-317-1). Written ONLY when the
++ *     signed-in person taps Connect on THIS phone and the platform permission
++ *     step completes. Keyed by user id + device source and bound to the
++ *     server connection id. A remote "connected" row is never enough to read
++ *     this phone's health store: automatic refresh requires this record for
++ *     the current user AND a matching connection id.
++ *
++ *  2. Sync progress (audit B-317-1 / B-317-2). Keyed by source + user id +
++ *     connection id, never provider-global, so a second account (or a
++ *     recreated connection) starts its own 30-day import. Holds a per-type
++ *     "completed through" instant and, for Health Connect, a per-type resume
++ *     page token, so a failed or truncated read is retried instead of being
++ *     marked complete.
++ *
++ * This module has no native imports, so it is safe to load from auth code.
++ */
++
++import AsyncStorage from '@react-native-async-storage/async-storage';
++
++/** Every key this module writes starts with this prefix. */
++export const ON_DEVICE_STATE_PREFIX = 'wearables_on_device:';
++
++/** The on-device sources this lane supports. */
++export type OnDeviceSource = 'APPLE_HEALTHKIT' | 'HEALTH_CONNECT';
++
++/** Who and through which server connection a sync runs. */
++export interface OnDeviceScope {
++  userId: string;
++  connectionId: string;
++  source: OnDeviceSource;
++}
++
++/** Stored proof that the current user tapped Connect on this phone. */
++export interface LocalAuthorization {
++  v: 1;
++  userId: string;
++  source: OnDeviceSource;
++  connectionId: string;
++  grantedAt: string;
++}
++
++/** A Health Connect read that stopped at the page bound and can resume. */
++export interface ResumePoint {
++  /** The window the paged read covers (ISO). */
++  startTime: string;
++  endTime: string;
++  pageToken: string;
++}
++
++/** Per-scope sync progress. */
++export interface SyncProgress {
++  v: 1;
++  /** Per data type: everything before this instant (ISO) has been posted. */
++  completedThrough: Record<string, string>;
++  /** Per data type: a truncated read to resume (Health Connect only). */
++  resume: Record<string, ResumePoint>;
++}
++
++export function emptyProgress(): SyncProgress {
++  return { v: 1, completedThrough: {}, resume: {} };
++}
++
++function authKey(userId: string, source: OnDeviceSource): string {
++  return `${ON_DEVICE_STATE_PREFIX}auth:${source}:${userId}`;
++}
++
++function progressKey(scope: OnDeviceScope): string {
++  return `${ON_DEVICE_STATE_PREFIX}progress:${scope.source}:${scope.userId}:${scope.connectionId}`;
++}
++
++function isRecord(x: unknown): x is Record<string, unknown> {
++  return typeof x === 'object' && x !== null && !Array.isArray(x);
++}
++
++async function readJson(key: string): Promise<unknown> {
++  try {
++    const raw = await AsyncStorage.getItem(key);
++    return raw ? (JSON.parse(raw) as unknown) : null;
++  } catch {
++    return null;
++  }
++}
++
++/** Record that the current user authorized this phone's source (Connect tap). */
++export async function recordLocalAuthorization(
++  scope: OnDeviceScope,
++  now: Date = new Date(),
++): Promise<LocalAuthorization> {
++  const record: LocalAuthorization = {
++    v: 1,
++    userId: scope.userId,
++    source: scope.source,
++    connectionId: scope.connectionId,
++    grantedAt: now.toISOString(),
++  };
++  await AsyncStorage.setItem(authKey(scope.userId, scope.source), JSON.stringify(record));
++  return record;
++}
++
++/** The local authorization for this user + source, or null. */
++export async function getLocalAuthorization(
++  userId: string,
++  source: OnDeviceSource,
++): Promise<LocalAuthorization | null> {
++  const parsed = await readJson(authKey(userId, source));
++  if (!isRecord(parsed)) return null;
++  if (
++    parsed.v !== 1 ||
++    parsed.userId !== userId ||
++    parsed.source !== source ||
++    typeof parsed.connectionId !== 'string' ||
++    parsed.connectionId.length === 0 ||
++    typeof parsed.grantedAt !== 'string'
++  ) {
++    return null;
++  }
++  return {
++    v: 1,
++    userId,
++    source,
++    connectionId: parsed.connectionId,
++    grantedAt: parsed.grantedAt,
++  };
++}
++
++/**
++ * Remove local authorizations and progress. With a source, only that
++ * source's records (all users) are removed (disconnect); without one,
++ * everything this module wrote (sign-out sweeps the same prefix).
++ */
++export async function retireOnDeviceState(source?: OnDeviceSource): Promise<void> {
++  const keys = await AsyncStorage.getAllKeys();
++  const doomed = keys.filter((k) => {
++    if (!k.startsWith(ON_DEVICE_STATE_PREFIX)) return false;
++    if (!source) return true;
++    return (
++      k.startsWith(`${ON_DEVICE_STATE_PREFIX}auth:${source}:`) ||
++      k.startsWith(`${ON_DEVICE_STATE_PREFIX}progress:${source}:`)
++    );
++  });
++  if (doomed.length > 0) await AsyncStorage.removeMany(doomed);
++}
++
++/** Read the progress for a scope (empty when none or unreadable). */
++export async function getSyncProgress(scope: OnDeviceScope): Promise<SyncProgress> {
++  const parsed = await readJson(progressKey(scope));
++  if (!isRecord(parsed) || parsed.v !== 1) return emptyProgress();
++  const completedThrough: Record<string, string> = {};
++  if (isRecord(parsed.completedThrough)) {
++    for (const [k, v] of Object.entries(parsed.completedThrough)) {
++      if (typeof v === 'string' && !Number.isNaN(Date.parse(v))) completedThrough[k] = v;
++    }
++  }
++  const resume: Record<string, ResumePoint> = {};
++  if (isRecord(parsed.resume)) {
++    for (const [k, v] of Object.entries(parsed.resume)) {
++      if (
++        isRecord(v) &&
++        typeof v.startTime === 'string' &&
++        typeof v.endTime === 'string' &&
++        typeof v.pageToken === 'string' &&
++        v.pageToken.length > 0
++      ) {
++        resume[k] = { startTime: v.startTime, endTime: v.endTime, pageToken: v.pageToken };
++      }
++    }
++  }
++  return { v: 1, completedThrough, resume };
++}
++
++/** Persist the progress for a scope. */
++export async function setSyncProgress(scope: OnDeviceScope, progress: SyncProgress): Promise<void> {
++  await AsyncStorage.setItem(progressKey(scope), JSON.stringify(progress));
++}
+diff --git a/src/services/health/sessionFence.ts b/src/services/health/sessionFence.ts
+new file mode 100644
+index 0000000..c0119b6
+--- /dev/null
++++ b/src/services/health/sessionFence.ts
+@@ -0,0 +1,151 @@
++/**
++ * S14 (audit A-317-1) — session fence for on-device health work.
++ *
++ * A history import reads the phone's health store and posts it in many
++ * requests. If the person signs out, or a different account signs in, while
++ * that is running, nothing more may be sent: the shared HTTP client would
++ * attach the NEW session's token to the OLD account's data.
++ *
++ * A fence captures the user id and an auth generation when the work starts.
++ * Every auth event (login, logout, role change) bumps the generation, and
++ * `assertCurrent()` also re-reads the signed-in user. The sync services call
++ * it before every ingest request and before saving progress.
++ */
++
++import { readUserCache } from '../../lib/userCache';
++import { authEvents } from '../../utils/authEvents';
++
++/** Why on-device work stopped. */
++export type OnDeviceStopReason = 'session_changed' | 'cancelled';
++
++/** Thrown when the session changed under in-flight on-device work. */
++export class OnDeviceSessionChangedError extends Error {
++  readonly reason: OnDeviceStopReason;
++
++  constructor(reason: OnDeviceStopReason = 'session_changed') {
++    super(
++      reason === 'cancelled'
++        ? 'The on-device health work was cancelled.'
++        : 'The signed-in account changed; on-device health work stopped.',
++    );
++    this.name = 'OnDeviceSessionChangedError';
++    this.reason = reason;
++  }
++}
++
++let generation = 0;
++authEvents.onAuthChange(() => {
++  generation += 1;
++});
++
++/**
++ * S-WEAR-3 (Sol B-317-7): stop every running on-device health run NOW.
++ *
++ * `signOut()` calls this as its very first, synchronous statement. The
++ * `logout` auth event is emitted only at the END of sign-out (after the push
++ * token, storage and cache work), so without this call a Health Connect read
++ * could keep starting new pages and record types for the signing-out person
++ * for that whole time. After this call every fence fails its next check:
++ * no new native page, record type, request or progress write starts.
++ */
++export function stopOnDeviceHealthWork(): void {
++  generation += 1;
++}
++
++/**
++ * Current auth generation. Moves on every auth event and at the start of
++ * sign-out; the Connect sheet's cloud flow compares it after the browser
++ * returns (Sol B-317-10).
++ */
++export function currentAuthGeneration(): number {
++  return generation;
++}
++
++/** Signed-in user id from the identity cache, or null. */
++export async function readSignedInUserId(): Promise<string | null> {
++  try {
++    const user = await readUserCache();
++    return typeof user?.id === 'string' && user.id.length > 0 ? user.id : null;
++  } catch {
++    return null;
++  }
++}
++
++export interface SessionFence {
++  readonly userId: string;
++  /** Throws {@link OnDeviceSessionChangedError} if the session moved on. */
++  assertCurrent(): Promise<void>;
++  /**
++   * Synchronous check (S-WEAR-3, Sol B-317-7): throws
++   * {@link OnDeviceSessionChangedError} when the run was cancelled or any auth
++   * event (including the start of sign-out) happened since the fence was
++   * taken. Called immediately before every native read starts, so there is
++   * no await between the check and the read.
++   */
++  throwIfStopped(): void;
++  /**
++   * Stop this run for good (the Connect sheet closed or unmounted). Every
++   * later {@link assertCurrent} throws with reason `cancelled`.
++   */
++  cancel(): void;
++}
++
++function fenceFrom(
++  userId: string,
++  startedAt: number,
++  readUserId: () => Promise<string | null>,
++): SessionFence {
++  let cancelled = false;
++  const check = (): void => {
++    if (cancelled) throw new OnDeviceSessionChangedError('cancelled');
++    if (generation !== startedAt) throw new OnDeviceSessionChangedError();
++  };
++  return {
++    userId,
++    async assertCurrent() {
++      check();
++      const now = await readUserId();
++      check();
++      if (now !== userId) throw new OnDeviceSessionChangedError();
++    },
++    throwIfStopped() {
++      check();
++    },
++    cancel() {
++      cancelled = true;
++    },
++  };
++}
++
++/**
++ * A fence for a user id that was read BEFORE this call. Prefer
++ * {@link beginSessionFence}: it captures the auth generation before it reads
++ * the user, so an auth event during that read is caught too.
++ */
++export function createSessionFence(
++  userId: string,
++  readUserId: () => Promise<string | null> = readSignedInUserId,
++): SessionFence {
++  return fenceFrom(userId, generation, readUserId);
++}
++
++/**
++ * S14 round 3 (Sol A-317-1): capture the auth generation synchronously,
++ * THEN read the signed-in user. Called when the person taps Continue, before
++ * any native permission prompt, so the whole Connect run (prompt, register,
++ * local authorization, import) stays bound to the person who tapped. Resolves
++ * null when nobody is signed in or the session moved during the read.
++ */
++export async function beginSessionFence(
++  readUserId: () => Promise<string | null> = readSignedInUserId,
++): Promise<SessionFence | null> {
++  const startedAt = generation;
++  const userId = await readUserId();
++  if (!userId || generation !== startedAt) return null;
++  return fenceFrom(userId, startedAt, readUserId);
++}
++
++/** True for the error a stopped fence throws (session change or cancel). */
++export function isOnDeviceStop(err: unknown): err is OnDeviceSessionChangedError {
++  return err instanceof OnDeviceSessionChangedError;
++}

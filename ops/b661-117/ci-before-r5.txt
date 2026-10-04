@@ -1,0 +1,17 @@
+● B-661-3 a late-delivered earlier decline never revokes a successful retry › prefetchForOuterTx asks Stripe for the PaymentIntent status only when the purchase already settled
+● B-661-3 round 5: a successful settlement is never revoked by an older failure › a decline of a settled purchase checks the row version under a row lock before it ends access
+● B-661-3 round 5: a successful settlement is never revoked by an older failure › a late completion event never re-activates a purchase that was activated and then really failed
+● B-661-3 round 5: a successful settlement is never revoked by an older failure › an activated hosted purchase whose payment really failed is recovered when the same PaymentIntent then succeeds: access and drops come back, nothing runs twice
+● B-661-3 round 5: a successful settlement is never revoked by an older failure › the success writes in the same millisecond as the version an old failure was read against: the old failure is retried, never applied
+● B-661-8 round 5: a successful retry never overwrites a state committed after its read › a purchase that became canceled after the retry read it stays so (entitled: false)
+● B-661-8 round 5: a successful retry never overwrites a state committed after its read › a purchase that became chargeback_lost after the retry read it stays so (entitled: false)
+● B-661-8 round 5: a successful retry never overwrites a state committed after its read › a purchase that became disputed after the retry read it stays so (entitled: true)
+● B-661-8 round 5: a successful retry never overwrites a state committed after its read › a purchase that became expired after the retry read it stays so (entitled: false)
+● B-661-8 round 5: a successful retry never overwrites a state committed after its read › a purchase that became refunded after the retry read it stays so (entitled: false)
+● B-661-8 round 5: a successful retry never overwrites a state committed after its read › a refund committed after a pending PaymentSheet purchase was read is not overwritten either
+● B-661-8 round 5: a successful retry never overwrites a state committed after its read › inside the webhook transaction the purchases of the PaymentIntent are locked before they are read
+● B-661-8 round 5: a successful retry never overwrites a state committed after its read › two deliveries of a success race: only the one that wins the write activates (one fanout, one split)
+● C-661-8: only a 404 or 400 from Stripe drops a decline of a settled purchase › a 400 is permanent: not applied, logged at error level with ids and the code
+● C-661-8: only a 404 or 400 from Stripe drops a decline of a settled purchase › a 401 (revoked or rotated key) is retried: Stripe redelivers, access unchanged
+● C-661-8: only a 404 or 400 from Stripe drops a decline of a settled purchase › a 403 (revoked or rotated key) is retried: Stripe redelivers, access unchanged
+● C-661-8: only a 404 or 400 from Stripe drops a decline of a settled purchase › a 404 is permanent: not applied, logged at error level with ids and the code

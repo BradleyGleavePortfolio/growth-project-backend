@@ -1,0 +1,1246 @@
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+index d04ace3f..ef118c23 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -3997,7 +3997,10 @@ model SplitLedgerEntry {
+   // reversed back to the platform. Always <= amount_cents.
+   reversed_cents            Int            @default(0)
+   // Idempotency-key we sent to Stripe when posting this slice. Lets the
+-  // worker retry safely. Globally unique.
++  // worker retry safely. Globally unique. S-FEE round 11 (B-681-2): a legacy
++  // per-purchase row carries its durable identity here
++  // (sfee-legacy-ledger:<purchase>:<kind>:<payee account>, ids only), so two
++  // concurrent legacy planners can never create a second row.
+   idempotency_key           String?        @unique
+   last_error                String?
+   posted_at                 DateTime?
+diff --git a/src/connect/fees/charge-lock.ts b/src/connect/fees/charge-lock.ts
+index 49630c53..14e5c565 100644
+--- a/src/connect/fees/charge-lock.ts
++++ b/src/connect/fees/charge-lock.ts
+@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
+ import { hostname } from 'node:os';
+ import { randomUUID } from 'node:crypto';
+ import type { PrismaService } from '../../prisma.service';
++import { dbErrorKind } from './money-diagnostics';
+ 
+ // S-FEE round 3 (B-627-2) — per-charge mutex for every money movement on one
+ // Stripe charge: settlement, refund / dispute adjustments, and the legacy
+@@ -226,9 +227,12 @@ export class ChargeLock {
+     try {
+       await this.db.cronLease.deleteMany({ where: { name, holder } });
+     } catch (err) {
+-      // The lease expires on its own after ttlMs.
++      // The lease expires on its own after ttlMs. B-681-1 (round 11): the
++      // failure is named by its closed DB error kind only, never by the
++      // error's message, name or code.
+       this.logger.warn(
+-        `SFEE_CHARGE_LOCK_RELEASE_FAILED lock=${name}: ${(err as Error).message}; it expires in ${this.ttlMs / 1000} s`,
++        `SFEE_CHARGE_LOCK_RELEASE_FAILED lock=${name} error_kind=${dbErrorKind(err)}: ` +
++          `the lease was not deleted; it expires in ${this.ttlMs / 1000} s and the next holder takes it over`,
+       );
+     }
+   }
+diff --git a/src/connect/fees/money-diagnostics.ts b/src/connect/fees/money-diagnostics.ts
+new file mode 100644
+index 00000000..ee1d2331
+--- /dev/null
++++ b/src/connect/fees/money-diagnostics.ts
+@@ -0,0 +1,86 @@
++import { Prisma } from '@prisma/client';
++import { StripeConnectApiError } from '../stripe-connect-api.service';
++
++// S-FEE round 11 (B-681-1 / B-682-2, agent 116) — money-path diagnostics name
++// a failure only by this closed vocabulary. An error's message, name and code
++// are free text that a database driver, a provider or a caller can fill with
++// anything (request input, a notice body, an email address), so none of them
++// ever reaches a log line, a persisted last_error or a money exception
++// message. Every unknown shape maps to the fixed label `unknown`.
++
++export type DbErrorKind = 'db_request' | 'db_unavailable' | 'db_validation' | 'unknown';
++
++/** The Prisma error class of `err`, or `unknown`. */
++export function dbErrorKind(err: unknown): DbErrorKind {
++  if (
++    err instanceof Prisma.PrismaClientKnownRequestError ||
++    err instanceof Prisma.PrismaClientUnknownRequestError
++  ) {
++    return 'db_request';
++  }
++  if (
++    err instanceof Prisma.PrismaClientInitializationError ||
++    err instanceof Prisma.PrismaClientRustPanicError
++  ) {
++    return 'db_unavailable';
++  }
++  if (err instanceof Prisma.PrismaClientValidationError) return 'db_validation';
++  return 'unknown';
++}
++
++// Stripe error types and codes the money path reports by name. Anything else
++// Stripe (or a proxy in front of it) sends is reported as `other`.
++const STRIPE_TYPES = new Set([
++  'api_error',
++  'api_connection_error',
++  'authentication_error',
++  'card_error',
++  'idempotency_error',
++  'invalid_request_error',
++  'permission_error',
++  'rate_limit_error',
++]);
++const STRIPE_CODES = new Set([
++  'account_closed',
++  'account_country_invalid_address',
++  'account_invalid',
++  'balance_insufficient',
++  'idempotency_key_in_use',
++  'insufficient_capabilities_for_transfer',
++  'insufficient_funds',
++  'lock_timeout',
++  'parameter_invalid_integer',
++  'parameter_missing',
++  'rate_limit',
++  'request_timeout',
++  'resource_missing',
++  'transfers_not_allowed',
++]);
++
++function allowListed(value: string | null | undefined, allowed: Set<string>): string {
++  if (value === null || value === undefined || value === '') return 'none';
++  return allowed.has(value) ? value : 'other';
++}
++
++/**
++ * `kind=<kind>`, plus `http=<status> type=<type> code=<code>` for a Stripe
++ * error, every part from a closed set. Safe for logs and persisted fields.
++ */
++export function moneyErrorDiagnostic(err: unknown): string {
++  if (err instanceof StripeConnectApiError) {
++    const status =
++      Number.isInteger(err.httpStatus) && err.httpStatus >= 100 && err.httpStatus <= 599
++        ? String(err.httpStatus)
++        : 'other';
++    return (
++      `kind=stripe http=${status} type=${allowListed(err.stripeType, STRIPE_TYPES)} ` +
++      `code=${allowListed(err.stripeCode, STRIPE_CODES)}`
++    );
++  }
++  const db = dbErrorKind(err);
++  if (db !== 'unknown') return `kind=${db}`;
++  if (err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')) {
++    return 'kind=timeout';
++  }
++  return 'kind=unknown';
++}
+diff --git a/src/connect/fees/payout-notice-copy.ts b/src/connect/fees/payout-notice-copy.ts
+index 4b674d0d..6c521992 100644
+--- a/src/connect/fees/payout-notice-copy.ts
++++ b/src/connect/fees/payout-notice-copy.ts
+@@ -1,7 +1,8 @@
+ // S-FEE round 5 (owner decision OR-111-1) — the words a payee sees when a
+ // refund, chargeback or dispute outcome changes what they are paid for a sale.
+ // Pure functions: integer cents in, plain sentences out. Shipped copy rules:
+-// no emojis, no exclamation marks, plain warm words, exact amounts.
++// no emojis, no exclamation marks, no first person (round 11, B-682-3),
++// plain warm words, exact amounts.
+ 
+ export type PayoutNoticeEvent = 'refund' | 'chargeback' | 'dispute_won' | 'dispute_lost';
+ export type PayoutNoticeRole = 'coach' | 'head_coach';
+@@ -64,7 +65,7 @@ export function formatMoney(cents: number, currency: string): string {
+ // Money page show the total, the part already taken and the part still open.
+ function heldSentence(a: PayoutNoticeAmounts, cents: number): string {
+   return cents > 0
+-    ? `We will hold ${formatMoney(cents, a.currency)} from your next sale.`
++    ? `${formatMoney(cents, a.currency)} is held from your next sale.`
+     : 'Nothing is held from your next sale.';
+ }
+ 
+@@ -76,7 +77,7 @@ export function payoutNoticeCopy(
+ ): { title: string; body: string } {
+   const m = (cents: number) => formatMoney(cents, a.currency);
+   const from = role === 'coach' ? "that sale's payout" : 'your share of that sale';
+-  const took = a.reversed_cents > 0 ? ` We took ${m(a.reversed_cents)} back from ${from}.` : '';
++  const took = a.reversed_cents > 0 ? ` ${m(a.reversed_cents)} was taken back from ${from}.` : '';
+   let title: string;
+   let body: string;
+   switch (event) {
+@@ -90,15 +91,15 @@ export function payoutNoticeCopy(
+       break;
+     case 'dispute_won': {
+       title = 'Dispute won';
+-      const paid = a.reinstated_cents > 0 ? `We paid ${m(a.reinstated_cents)} back to you` : '';
+-      const freed = a.released_cents > 0 ? `released the ${m(a.released_cents)} hold` : '';
++      const paid = a.reinstated_cents > 0 ? `${m(a.reinstated_cents)} was paid back to you` : '';
++      const freed = a.released_cents > 0 ? `the ${m(a.released_cents)} hold was released` : '';
+       const what =
+         paid && freed
+           ? ` ${paid} and ${freed}.`
+           : paid
+             ? ` ${paid}.`
+             : freed
+-              ? ` We ${freed}.`
++              ? ` The ${m(a.released_cents)} hold was released.`
+               : '';
+       body = `You won the dispute on a ${m(a.charge_gross_cents)} charge.${what} ${heldSentence(a, a.held_open_cents)}`;
+       break;
+diff --git a/src/connect/fees/split-ledger.service.ts b/src/connect/fees/split-ledger.service.ts
+index 4bc1a633..8c75218c 100644
+--- a/src/connect/fees/split-ledger.service.ts
++++ b/src/connect/fees/split-ledger.service.ts
+@@ -29,6 +29,12 @@ import type { SplitPlan } from './fee-policy.service';
+ // Legacy (pre-S-FEE destination charges, ensurePendingEntries): one set of
+ // rows per purchase keyed on (purchase_id, kind, payee_user_id), exactly as
+ // before; renewals of a legacy subscription collapse onto that set.
++// Round 11 (B-681-2): the 4-column unique no longer makes that set
++// exactly-once (stripe_charge_id is null when a legacy row is created, and
++// Postgres treats NULLs as distinct), so every legacy row is created with a
++// durable identity in the unique idempotency_key column
++// (legacyLedgerKey). Two planners that both find no row race on one INSERT;
++// the database lets exactly one win, and the loser adopts the winner's row.
+ 
+ export interface SplitLedgerInputs {
+   purchase: ClientPurchase;
+@@ -38,6 +44,26 @@ export interface SplitLedgerInputs {
+   head_coach_stripe_account_id: string | null;
+ }
+ 
++interface LegacyEntryArgs {
++  purchase_id: string;
++  kind: string;
++  payee_user_id: string | null;
++  payee_stripe_account_id: string | null;
++  amount_cents: number;
++  currency: string;
++}
++
++/**
++ * Round 11 (B-681-2) — the durable identity of one legacy per-purchase ledger
++ * row: purchase, kind and the payee's Stripe account (`platform` for TGP's
++ * own slice). Ids only, no user id: the key lives in a free-text column.
++ */
++export function legacyLedgerKey(
++  args: Pick<LegacyEntryArgs, 'purchase_id' | 'kind' | 'payee_stripe_account_id'>,
++): string {
++  return `sfee-legacy-ledger:${args.purchase_id}:${args.kind}:${args.payee_stripe_account_id ?? 'platform'}`;
++}
++
+ @Injectable()
+ export class SplitLedgerService {
+   private readonly logger = new Logger(SplitLedgerService.name);
+@@ -194,25 +220,6 @@ export class SplitLedgerService {
+     });
+   }
+ 
+-  // S-FEE — undo part of a reversal (a won dispute reinstated the payee).
+-  async undoReversal(args: {
+-    entry_id: string;
+-    reinstated_cents: number;
+-  }): Promise<SplitLedgerEntry> {
+-    const current = await this.prisma.splitLedgerEntry.findUniqueOrThrow({
+-      where: { id: args.entry_id },
+-    });
+-    const newReversed = Math.max(0, current.reversed_cents - args.reinstated_cents);
+-    return this.prisma.splitLedgerEntry.update({
+-      where: { id: args.entry_id },
+-      data: {
+-        reversed_cents: newReversed,
+-        status: current.status === 'reversed' ? 'posted' : current.status,
+-        reversed_at: newReversed === 0 ? null : current.reversed_at,
+-      },
+-    });
+-  }
+-
+   // Mark an entry as posted with the Stripe ids that locate it in Stripe's
+   // books. Safe to re-call (idempotent on the ledger row).
+   async markPosted(args: {
+@@ -322,19 +329,10 @@ export class SplitLedgerService {
+     });
+   }
+ 
+-  private async upsertEntry(args: {
+-    purchase_id: string;
+-    kind: string;
+-    payee_user_id: string | null;
+-    payee_stripe_account_id: string | null;
+-    amount_cents: number;
+-    currency: string;
+-  }): Promise<SplitLedgerEntry> {
+-    // Legacy per-purchase rows. S-FEE moved the unique to include
+-    // stripe_charge_id (nullable), so the per-purchase dedupe is explicit:
+-    // findFirst on (purchase_id, kind, payee_user_id), then create or update.
+-    // Postgres NULL != NULL, so this also covers the payee-null
+-    // application_fee row exactly as before.
++  private async upsertEntry(args: LegacyEntryArgs): Promise<SplitLedgerEntry> {
++    // Legacy per-purchase rows. An existing row for (purchase_id, kind,
++    // payee_user_id) is the set every renewal collapses onto; Postgres
++    // NULL != NULL, so this also covers the payee-null application_fee row.
+     const existing = await this.prisma.splitLedgerEntry.findFirst({
+       where: {
+         purchase_id: args.purchase_id,
+@@ -343,25 +341,45 @@ export class SplitLedgerService {
+       },
+       orderBy: { created_at: 'asc' },
+     });
+-    if (existing) {
+-      if (args.payee_user_id === null) return existing;
+-      return this.prisma.splitLedgerEntry.update({
+-        where: { id: existing.id },
++    if (existing) return this.refreshLegacyEntry(existing, args);
++    const key = legacyLedgerKey(args);
++    try {
++      return await this.prisma.splitLedgerEntry.create({
+         data: {
+-          amount_cents: args.amount_cents,
++          purchase_id: args.purchase_id,
++          kind: args.kind,
++          payee_user_id: args.payee_user_id,
+           payee_stripe_account_id: args.payee_stripe_account_id,
++          amount_cents: args.amount_cents,
++          currency: args.currency,
++          status: 'pending',
++          idempotency_key: key,
+         },
+       });
++    } catch (err) {
++      // B-681-2: another planner created this row first (the unique key let
++      // exactly one INSERT win). Adopt its row; never write a second one.
++      if ((err as { code?: unknown } | null)?.code !== 'P2002') throw err;
++      const winner = await this.prisma.splitLedgerEntry.findUnique({
++        where: { idempotency_key: key },
++      });
++      if (!winner) throw err;
++      return this.refreshLegacyEntry(winner, args);
+     }
+-    return this.prisma.splitLedgerEntry.create({
++  }
++
++  // A legacy renewal may carry a new amount or a reconnected payee account;
++  // the platform row (payee null) is never rewritten, exactly as before.
++  private async refreshLegacyEntry(
++    existing: SplitLedgerEntry,
++    args: LegacyEntryArgs,
++  ): Promise<SplitLedgerEntry> {
++    if (args.payee_user_id === null) return existing;
++    return this.prisma.splitLedgerEntry.update({
++      where: { id: existing.id },
+       data: {
+-        purchase_id: args.purchase_id,
+-        kind: args.kind,
+-        payee_user_id: args.payee_user_id,
+-        payee_stripe_account_id: args.payee_stripe_account_id,
+         amount_cents: args.amount_cents,
+-        currency: args.currency,
+-        status: 'pending',
++        payee_stripe_account_id: args.payee_stripe_account_id,
+       },
+     });
+   }
+diff --git a/src/connect/fees/transfer-orchestrator.service.ts b/src/connect/fees/transfer-orchestrator.service.ts
+index 14332933..04420840 100644
+--- a/src/connect/fees/transfer-orchestrator.service.ts
++++ b/src/connect/fees/transfer-orchestrator.service.ts
+@@ -8,6 +8,7 @@ import {
+   StripeConnectApiService,
+ } from '../stripe-connect-api.service';
+ import { ReversalUncertainError } from './money-errors';
++import { dbErrorKind, moneyErrorDiagnostic, type DbErrorKind } from './money-diagnostics';
+ import { SplitLedgerService } from './split-ledger.service';
+ 
+ // TransferOrchestratorService — mints Stripe Transfers from the platform
+@@ -165,23 +166,22 @@ export class TransferSendExpiredError extends Error {
+ 
+ // Round 10 (B-627-10, Sol): a log line names a park failure only by this
+ // closed vocabulary, never by the error's name, message or code (all of them
+-// are free text a library or caller can set).
+-export type ParkFailureKind = 'db_request' | 'db_unavailable' | 'db_validation' | 'unknown';
+-export function parkFailureKind(err: unknown): ParkFailureKind {
+-  if (
+-    err instanceof Prisma.PrismaClientKnownRequestError ||
+-    err instanceof Prisma.PrismaClientUnknownRequestError
+-  ) {
+-    return 'db_request';
+-  }
+-  if (
+-    err instanceof Prisma.PrismaClientInitializationError ||
+-    err instanceof Prisma.PrismaClientRustPanicError
+-  ) {
+-    return 'db_unavailable';
++// are free text a library or caller can set). Round 11: the shared money
++// diagnostics vocabulary (money-diagnostics.ts) is the one mapping.
++export type ParkFailureKind = DbErrorKind;
++export const parkFailureKind: (err: unknown) => ParkFailureKind = dbErrorKind;
++
++// Round 11 (B-682-1): a reversal send that was claimed and not started inside
++// the start budget (TRANSFER_SEND_START_BUDGET_MS). Nothing was sent; the op
++// stays pending with attempts > 0, so the next driver lists Stripe first.
++export const REVERSAL_SEND_ABANDONED_CODE = 'SFEE_REVERSAL_SEND_ABANDONED';
++// Round 11 (B-682-1): Stripe holds a second reversal for an operation whose
++// receipt names another one. Ids and cents only; a person recovers the extra.
++export const REVERSAL_DUPLICATE_CODE = 'SFEE_REVERSAL_DUPLICATE';
++class ReversalSendExpiredError extends Error {
++  constructor(readonly ageMs: number) {
++    super(REVERSAL_SEND_ABANDONED_CODE);
+   }
+-  if (err instanceof Prisma.PrismaClientValidationError) return 'db_validation';
+-  return 'unknown';
+ }
+ 
+ function sameInstant(a: Date | null | undefined, b: Date | null | undefined): boolean {
+@@ -559,7 +559,10 @@ export class TransferOrchestratorService {
+       stripeTransferId = transfer.id;
+     } catch (err) {
+       if (err instanceof TransferSendExpiredError) return this.abandonSend(sent, err.message);
+-      const message = (err as Error)?.message ?? 'unknown transfer error';
++      // B-682-2 (round 11): logs and last_error name the failure by the
++      // closed diagnostic only; the error text only feeds the classification.
++      const message = (err as Error)?.message ?? '';
++      const diag = moneyErrorDiagnostic(err);
+       const code = transferFailureCode(err);
+       if (isDefinitiveStripeRefusal(err)) {
+         // Proven not executed: the marker is cleared and the row is retried
+@@ -574,10 +577,10 @@ export class TransferOrchestratorService {
+         const line =
+           `${code}${final ? '_FINAL' : ''} transfer=${row.id} kind=${row.kind} ` +
+           `purchase=${row.purchase_id} settlement=${row.settlement_id ?? 'none'} ` +
+-          `attempt=${attemptCount}/${row.max_attempts} alert=${needsPerson}: ${message}`;
++          `attempt=${attemptCount}/${row.max_attempts} alert=${needsPerson}: ${diag}`;
+         if (needsPerson) this.logger.error(line);
+         else this.logger.warn(line);
+-        return this.markFailed(sent, `${code}: ${message}`, final, { resolved: true });
++        return this.markFailed(sent, `${code}: ${diag}`, final, { resolved: true });
+       }
+       // The outcome is unknown: Stripe may have moved the money. Look first.
+       const lookup = await this.findStripeTransfer(sent);
+@@ -585,7 +588,7 @@ export class TransferOrchestratorService {
+       if (lookup.kind === 'unknown') {
+         return this.holdUncertain(
+           sent,
+-          `${message}; transfer lookup unavailable: ${lookup.reason}`,
++          `${diag}; transfer lookup unavailable: ${lookup.reason}`,
+           true,
+         );
+       }
+@@ -598,7 +601,7 @@ export class TransferOrchestratorService {
+       const line =
+         `${code} transfer=${row.id} kind=${row.kind} ` +
+         `purchase=${row.purchase_id} settlement=${row.settlement_id ?? 'none'} ` +
+-        `attempt=${attemptCount}/${row.max_attempts} alert=${needsPerson}: ${message}; ` +
++        `attempt=${attemptCount}/${row.max_attempts} alert=${needsPerson}: ${diag}; ` +
+         'not visible at Stripe yet, re-checked before any re-send' +
+         (budgetSpent
+           ? `; attempt budget spent: the payout of ${row.amount_cents} ${row.currency} stays pending and is ` +
+@@ -606,7 +609,7 @@ export class TransferOrchestratorService {
+           : '');
+       if (needsPerson) this.logger.error(line);
+       else this.logger.warn(line);
+-      return this.markFailed(sent, `${code}: ${message}`, false, { resolved: false });
++      return this.markFailed(sent, `${code}: ${diag}`, false, { resolved: false });
+     }
+     return this.recordPosted(sent, stripeTransferId, 'created');
+   }
+@@ -800,11 +803,11 @@ export class TransferOrchestratorService {
+         return won;
+       });
+     } catch (err) {
+-      const message = (err as Error)?.message ?? 'unknown receipt error';
++      const diag = moneyErrorDiagnostic(err);
+       this.logger.error(
+-        `SFEE_TRANSFER_RECEIPT_PENDING alert=true transfer=${row.id} kind=${row.kind} stripe_transfer=${stripeTransferId} amount=${row.amount_cents}: Stripe holds this transfer but the receipt was not written (${message}); the next attempt records it from Stripe and sends nothing`,
++        `SFEE_TRANSFER_RECEIPT_PENDING alert=true transfer=${row.id} kind=${row.kind} stripe_transfer=${stripeTransferId} amount=${row.amount_cents}: Stripe holds this transfer but the receipt was not written (${diag}); the next attempt records it from Stripe and sends nothing`,
+       );
+-      return this.scheduleRecheck(row, { message: `SFEE_TRANSFER_RECEIPT_PENDING: ${message}` });
++      return this.scheduleRecheck(row, { message: `SFEE_TRANSFER_RECEIPT_PENDING: ${diag}` });
+     }
+     if (!recorded) return this.reconcileLostOutcome(row, 'posted', stripeTransferId);
+     if (recorded === 'from_failed') {
+@@ -892,8 +895,10 @@ export class TransferOrchestratorService {
+       won = res.count === 1;
+     } catch (err) {
+       // The row is still pending with its marker; the sweeper picks it up.
++      // Round 11 (C-685-2 / B-682-2): the closed DB error kind only.
+       this.logger.warn(
+-        `could not schedule the transfer re-check transfer=${row.id}: ${(err as Error)?.message}`,
++        `SFEE_TRANSFER_RECHECK_UNSCHEDULED transfer=${row.id} error_kind=${dbErrorKind(err)}: ` +
++          'the re-check was not written; the row stays pending and the sweeper picks it up',
+       );
+       return { ...row, ...data };
+     }
+@@ -948,7 +953,7 @@ export class TransferOrchestratorService {
+         reason: `more than ${TransferOrchestratorService.TRANSFER_LIST_MAX_PAGES * 100} transfers listed without a match`,
+       };
+     } catch (err) {
+-      const reason = (err as Error)?.message ?? 'unknown listing error';
++      const reason = moneyErrorDiagnostic(err);
+       this.logger.warn(
+         `listing transfers for transfer=${row.id} op=${row.idempotency_key} failed: ${reason}`,
+       );
+@@ -1133,13 +1138,47 @@ export class TransferOrchestratorService {
+         throw new ReversalUncertainError(row.id, op.idempotency_key, message);
+       }
+     }
++    // Round 11 (B-682-1): the transfer-send protocol, for reversals. Claim the
++    // send with a CAS on the attempt this worker read (attempts only grows,
++    // by one per claim), re-prove the lease and the claim after that await,
++    // and start the request only inside the start budget (checked again
++    // synchronously at the HTTP boundary). A claim that is not started stays
++    // pending with attempts > 0, so the next driver lists Stripe first.
+     if (fence) await fence();
+-    await this.prisma.transferReversalOp.update({
+-      where: { id: op.id },
+-      data: { attempts: { increment: 1 }, last_attempt_at: new Date() },
++    const claimedAt = this.clock();
++    const claimedMono = performance.now();
++    const claimedAttempts = op.attempts + 1;
++    const claim = await this.prisma.transferReversalOp.updateMany({
++      where: {
++        id: op.id,
++        status: 'pending',
++        attempts: op.attempts,
++        last_attempt_at: op.last_attempt_at,
++      },
++      data: { attempts: claimedAttempts, last_attempt_at: claimedAt },
+     });
++    if (claim.count !== 1) return this.reversalMoved(op, 'claim_lost');
++    if (fence) await fence();
++    const live = await this.prisma.transferReversalOp.findUnique({
++      where: { idempotency_key: op.idempotency_key },
++    });
++    if (
++      live?.status !== 'pending' ||
++      live.attempts !== claimedAttempts ||
++      !sameInstant(live.last_attempt_at, claimedAt)
++    ) {
++      return this.reversalMoved(op, 'claim_moved');
++    }
++    const startable = () => {
++      const age = Math.max(
++        this.clock().getTime() - claimedAt.getTime(),
++        Math.round(performance.now() - claimedMono),
++      );
++      if (age > this.sendStartBudgetMs) throw new ReversalSendExpiredError(age);
++    };
+     let stripeReversalId: string;
+     try {
++      startable();
+       const rev = await this.stripe.reverseTransfer({
+         transfer_id: row.stripe_transfer_id,
+         amount: op.amount_cents,
+@@ -1150,13 +1189,27 @@ export class TransferOrchestratorService {
+           tgp_purpose: op.purpose,
+         },
+         idempotencyKey: op.idempotency_key,
++        beforeSend: startable,
+       });
+       stripeReversalId = rev.id;
+     } catch (err) {
+-      const message = (err as Error)?.message ?? 'unknown reversal error';
+-      if (isDefinitiveStripeRefusal(err)) return this.refuseReversal(op, message);
++      if (err instanceof ReversalSendExpiredError) {
++        this.logger.warn(
++          `${REVERSAL_SEND_ABANDONED_CODE} transfer=${row.id} op=${op.idempotency_key} attempt=${claimedAttempts} ` +
++            `age_ms=${err.ageMs} budget_ms=${this.sendStartBudgetMs}: nothing sent; the op stays pending and ` +
++            'the next driver lists Stripe before any re-send',
++        );
++        return this.reversalMoved(op, 'send_abandoned');
++      }
++      // B-682-2 (round 11): closed diagnostics only (logs, last_error, errors).
++      const diag = moneyErrorDiagnostic(err);
++      if (isDefinitiveStripeRefusal(err)) {
++        return this.refuseReversal(op, diag);
++      }
+       const lookup = await this.findStripeReversal(row.stripe_transfer_id, op.idempotency_key);
+       if (lookup.kind === 'found') return this.completeReversal(op, lookup.id);
++      const message =
++        lookup.kind === 'unknown' ? `${diag}; reversal lookup unavailable: ${lookup.reason}` : diag;
+       await this.prisma.transferReversalOp.updateMany({
+         where: { id: op.id, status: 'pending' },
+         data: { last_error: message.slice(0, 500) },
+@@ -1201,7 +1254,7 @@ export class TransferOrchestratorService {
+         reason: `more than ${TransferOrchestratorService.REVERSAL_LIST_MAX_PAGES * 100} reversals listed without a match`,
+       };
+     } catch (err) {
+-      const reason = (err as Error)?.message ?? 'unknown listing error';
++      const reason = moneyErrorDiagnostic(err);
+       this.logger.warn(
+         `listing reversals of ${stripeTransferId} failed while reconciling op=${key}: ${reason}`,
+       );
+@@ -1209,6 +1262,21 @@ export class TransferOrchestratorService {
+     }
+   }
+ 
++  // Round 11 (B-682-1): this worker's claim lost (or it did not start its
++  // send). The recorded state stands: a resolved op returns its outcome, a
++  // pending one is retried by the next driver (SFEE_REVERSAL_UNCERTAIN).
++  private async reversalMoved(op: TransferReversalOp, why: string): Promise<ReverseOutcome> {
++    const live = await this.prisma.transferReversalOp.findUnique({
++      where: { idempotency_key: op.idempotency_key },
++    });
++    if (live && live.status !== 'pending') return this.outcomeOf(live);
++    throw new ReversalUncertainError(
++      op.transfer_id,
++      op.idempotency_key,
++      `${why}: the operation is still pending under another attempt; nothing sent by this worker`,
++    );
++  }
++
+   private async completeReversal(
+     op: TransferReversalOp,
+     stripeReversalId: string,
+@@ -1224,7 +1292,22 @@ export class TransferOrchestratorService {
+         },
+       });
+       const t = await tx.connectTransfer.findUniqueOrThrow({ where: { id: op.transfer_id } });
+-      if (done.count !== 1) return t; // another completer recorded it
++      if (done.count !== 1) {
++        // Another completer recorded it. Round 11 (B-682-1): when its receipt
++        // names another Stripe reversal, Stripe holds two for one operation.
++        const recorded = await tx.transferReversalOp.findUnique({
++          where: { idempotency_key: op.idempotency_key },
++        });
++        if (recorded && recorded.stripe_reversal_id !== stripeReversalId) {
++          this.logger.error(
++            `${REVERSAL_DUPLICATE_CODE} alert=true transfer=${op.transfer_id} op=${op.idempotency_key} ` +
++              `amount=${op.amount_cents} status=${recorded.status} ` +
++              `recorded_stripe_reversal=${recorded.stripe_reversal_id ?? 'none'} also_at_stripe=${stripeReversalId}: ` +
++              'Stripe holds a reversal the books do not record; recover those cents by hand',
++          );
++        }
++        return t;
++      }
+       const reversed = Math.min(
+         t.amount_cents,
+         Math.max(t.reversed_amount_cents, op.base_reversed_cents + op.amount_cents),
+diff --git a/src/connect/stripe-connect-api.service.ts b/src/connect/stripe-connect-api.service.ts
+index aeb05817..647409ae 100644
+--- a/src/connect/stripe-connect-api.service.ts
++++ b/src/connect/stripe-connect-api.service.ts
+@@ -787,6 +787,9 @@ export class StripeConnectApiService {
+     description?: string;
+     metadata?: Record<string, string>;
+     idempotencyKey: string;
++    // S-FEE round 11 (B-682-1): same contract as createTransfer's beforeSend
++    // (the reversal send-start budget); when it throws, nothing is sent.
++    beforeSend?: () => void;
+   }): Promise<{
+     id: string;
+     transfer: string;
+@@ -805,6 +808,7 @@ export class StripeConnectApiService {
+       `/transfers/${encodeURIComponent(args.transfer_id)}/reversals`,
+       form,
+       args.idempotencyKey,
++      args.beforeSend,
+     );
+   }
+ 
+diff --git a/test/s-fee-r11-ledger-identity-diagnostics.spec.ts b/test/s-fee-r11-ledger-identity-diagnostics.spec.ts
+new file mode 100644
+index 00000000..828c26db
+--- /dev/null
++++ b/test/s-fee-r11-ledger-identity-diagnostics.spec.ts
+@@ -0,0 +1,246 @@
++// S-FEE round 11 (agent 116) — Sol's F1 findings at 5a19178d:
++//   B-681-1  a failed charge-lock release logged the DB error's free text.
++//   B-682-1  (F1 half) reverseTransfer had no send-start hook at the HTTP
++//            boundary; F2's reversal driver now passes one.
++//   B-681-2  the legacy ledger lost its atomic per-purchase identity: two
++//            concurrent planners both saw no row and both created one (the
++//            new 4-column unique holds a NULL charge id, and Postgres treats
++//            NULLs as distinct).
++// The first test of each group fails on 5a19178d. No live Stripe or DB: the fake below enforces
++// the two unique indexes on SplitLedgerEntry the way Postgres does (a NULL in
++// any indexed column never conflicts).
++import { Logger } from '@nestjs/common';
++import { Prisma, type ClientPurchase } from '@prisma/client';
++import { ChargeLock } from '../src/connect/fees/charge-lock';
++import type { SplitPlan } from '../src/connect/fees/fee-policy.service';
++import { SplitLedgerService } from '../src/connect/fees/split-ledger.service';
++import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++import type { PrismaService } from '../src/prisma.service';
++
++type Row = Record<string, unknown>;
++const CANARY = 'AUDIT_CANARY client@example.invalid body="Your refund"';
++
++function canaryError(): Error {
++  return Object.assign(new Error(CANARY), { name: CANARY, code: CANARY });
++}
++
++/** SplitLedgerEntry with Postgres unique semantics (NULLs never conflict). */
++function makeLedgerDb() {
++  const rows: Row[] = [];
++  let n = 0;
++  const composite = ['purchase_id', 'kind', 'payee_user_id', 'stripe_charge_id'];
++  const conflicts = (candidate: Row, other: Row) =>
++    (candidate.idempotency_key != null && candidate.idempotency_key === other.idempotency_key) ||
++    composite.every((k) => candidate[k] != null && candidate[k] === other[k]);
++  const assertUnique = (candidate: Row, self?: Row) => {
++    if (rows.some((r) => r !== self && conflicts(candidate, r))) {
++      throw Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
++    }
++  };
++  const match = (row: Row, where: Row) =>
++    Object.entries(where).every(([k, v]) => (v === null ? row[k] == null : row[k] === v));
++  const splitLedgerEntry = {
++    // The result is computed when the call starts, like a SELECT that ran
++    // before the other planner's INSERT committed.
++    findFirst: jest.fn(async ({ where }: { where: Row }) => {
++      const hit = rows.find((r) => match(r, where));
++      return hit ? { ...hit } : null;
++    }),
++    findUnique: jest.fn(async ({ where }: { where: Row }) => {
++      const hit = rows.find((r) => match(r, where));
++      return hit ? { ...hit } : null;
++    }),
++    create: jest.fn(async ({ data }: { data: Row }) => {
++      await Promise.resolve();
++      const row: Row = {
++        id: `le-${++n}`,
++        stripe_charge_id: null,
++        idempotency_key: null,
++        status: 'pending',
++        reversed_cents: 0,
++        created_at: new Date(Date.now() + n),
++        ...data,
++      };
++      assertUnique(row);
++      rows.push(row);
++      return { ...row };
++    }),
++    update: jest.fn(async ({ where, data }: { where: { id: string }; data: Row }) => {
++      const row = rows.find((r) => r.id === where.id);
++      if (!row) throw new Error('update target missing');
++      const next = {
++        ...row,
++        ...Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined)),
++      };
++      assertUnique(next, row);
++      Object.assign(row, next);
++      return { ...row };
++    }),
++  };
++  return { rows, prisma: { splitLedgerEntry } as object as PrismaService, splitLedgerEntry };
++}
++
++const purchase = { id: 'cp-legacy', coach_user_id: 'coach-1', currency: 'usd' } as ClientPurchase;
++const plan = (destination: number, headCoach = 0) =>
++  ({
++    application_fee_cents: 200,
++    destination_cents: destination,
++    head_coach_split_cents: headCoach,
++    head_coach_id: headCoach > 0 ? 'head-1' : null,
++  }) as SplitPlan;
++const inputs = (destination = 9_800, headCoach = 0) => ({
++  purchase,
++  plan: plan(destination, headCoach),
++  platform_account_id: null,
++  seller_stripe_account_id: 'acct_coach',
++  head_coach_stripe_account_id: headCoach > 0 ? 'acct_head' : null,
++});
++
++describe('B-681-2 legacy ledger identity survives concurrent planners', () => {
++  it('two concurrent planners for one legacy purchase write one row per slice and return the same rows', async () => {
++    const { rows, prisma } = makeLedgerDb();
++    const ledger = new SplitLedgerService(prisma);
++    const [a, b] = await Promise.all([
++      ledger.ensurePendingEntries(inputs(9_300, 500)),
++      ledger.ensurePendingEntries(inputs(9_300, 500)),
++    ]);
++    for (const kind of ['application_fee', 'destination', 'head_coach_split']) {
++      expect(rows.filter((r) => r.kind === kind)).toHaveLength(1);
++    }
++    expect(rows.find((r) => r.kind === 'destination')).toMatchObject({
++      amount_cents: 9_300,
++      stripe_charge_id: null,
++      // The durable legacy identity (ids only, no user id).
++      idempotency_key: 'sfee-legacy-ledger:cp-legacy:destination:acct_coach',
++    });
++    expect(a.map((r) => r.id).sort()).toEqual(b.map((r) => r.id).sort());
++  });
++
++  it('charge attachment, a replay, and a renewal with a new charge and amount keep one legacy set', async () => {
++    const { rows, prisma } = makeLedgerDb();
++    const ledger = new SplitLedgerService(prisma);
++    const first = await ledger.ensurePendingEntries(inputs());
++    for (const e of first) await ledger.markPosted({ entry_id: e.id, stripe_charge_id: 'ch_1' });
++    // Replayed webhook, then a concurrent pair for the renewal (new amount).
++    await ledger.ensurePendingEntries(inputs());
++    await Promise.all([
++      ledger.ensurePendingEntries(inputs(9_700)),
++      ledger.ensurePendingEntries(inputs(9_700)),
++    ]);
++    expect(rows).toHaveLength(2);
++    expect(rows.find((r) => r.kind === 'destination')).toMatchObject({
++      amount_cents: 9_700,
++      stripe_charge_id: 'ch_1',
++      status: 'posted',
++    });
++    expect(rows.find((r) => r.kind === 'application_fee')).toMatchObject({ amount_cents: 200 });
++  });
++
++  it('per-charge S-FEE slices of different renewals stay distinct and never take a legacy key', async () => {
++    const { rows, prisma } = makeLedgerDb();
++    const ledger = new SplitLedgerService(prisma);
++    for (const charge of ['ch_r1', 'ch_r2']) {
++      await ledger.createChargeEntry({
++        purchase_id: 'cp-sfee',
++        stripe_charge_id: charge,
++        kind: 'destination',
++        payee_user_id: 'coach-1',
++        payee_stripe_account_id: 'acct_coach',
++        amount_cents: 4_630,
++        currency: 'usd',
++        status: 'pending',
++      });
++    }
++    expect(rows.map((r) => [r.stripe_charge_id, r.idempotency_key])).toEqual([
++      ['ch_r1', null],
++      ['ch_r2', null],
++    ]);
++  });
++
++  it('an INSERT that fails for any other reason is not swallowed', async () => {
++    const { prisma, splitLedgerEntry } = makeLedgerDb();
++    splitLedgerEntry.create.mockRejectedValueOnce(new Error('connection terminated'));
++    await expect(new SplitLedgerService(prisma).ensurePendingEntries(inputs())).rejects.toThrow(
++      'connection terminated',
++    );
++  });
++});
++
++describe('B-681-1 lock-release failures log a closed error kind only', () => {
++  afterEach(() => jest.restoreAllMocks());
++
++  function lockWith(deleteError: unknown) {
++    const cronLease = {
++      updateMany: jest.fn(async () => ({ count: 0 })),
++      create: jest.fn(async () => ({})),
++      deleteMany: jest.fn(async () => {
++        throw deleteError;
++      }),
++    };
++    return new ChargeLock({ cronLease } as object as PrismaService);
++  }
++
++  it.each([
++    ['custom message, name and code', canaryError(), 'unknown'],
++    [
++      'Prisma known request error carrying input',
++      new Prisma.PrismaClientKnownRequestError(CANARY, { code: 'P2010', clientVersion: 'x' }),
++      'db_request',
++    ],
++    [
++      'Prisma validation error',
++      new Prisma.PrismaClientValidationError(CANARY, { clientVersion: 'x' }),
++      'db_validation',
++    ],
++  ])('%s: the work completes, the warning names only the kind', async (_label, err, kind) => {
++    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
++    await expect(lockWith(err).run('ch_audit', async () => 'completed')).resolves.toBe('completed');
++    expect(warn).toHaveBeenCalledTimes(1);
++    const line = String(warn.mock.calls[0][0]);
++    expect(line).not.toContain('AUDIT_CANARY');
++    expect(line).not.toContain('example.invalid');
++    expect(line).toMatch(
++      new RegExp(`^SFEE_CHARGE_LOCK_RELEASE_FAILED lock=sfee-charge:ch_audit error_kind=${kind}: `),
++    );
++  });
++});
++
++describe('B-682-1 (F1 half): reverseTransfer runs beforeSend at the HTTP boundary', () => {
++  class BoundaryStripe extends StripeConnectApiService {
++    readonly events: string[] = [];
++    protected fetchImpl: typeof fetch = async () => {
++      this.events.push('fetch');
++      return new Response(JSON.stringify({ id: 'trr_1', transfer: 'tr_1', amount: 400 }), {
++        status: 200,
++      });
++    };
++  }
++  beforeEach(() => {
++    process.env.STRIPE_SECRET_KEY = 'sk_test_round11reversal01';
++  });
++  afterEach(() => {
++    delete process.env.STRIPE_SECRET_KEY;
++  });
++  const base = { transfer_id: 'tr_1', amount: 400, idempotencyKey: 'tgp-tr-rev-t1-op1' };
++
++  it('makes no request when beforeSend throws, and surfaces that error', async () => {
++    const stripe = new BoundaryStripe();
++    const expired = new Error('send window closed');
++    // A variable, not a literal: on 5a19178d the option does not exist yet.
++    const args = {
++      ...base,
++      beforeSend: () => {
++        throw expired;
++      },
++    };
++    await expect(stripe.reverseTransfer(args)).rejects.toBe(expired);
++    expect(stripe.events).toEqual([]);
++  });
++
++  it('runs beforeSend right before the request and sends when it passes', async () => {
++    const stripe = new BoundaryStripe();
++    const args = { ...base, beforeSend: () => void stripe.events.push('beforeSend') };
++    await expect(stripe.reverseTransfer(args)).resolves.toMatchObject({ id: 'trr_1' });
++    expect(stripe.events).toEqual(['beforeSend', 'fetch']);
++  });
++});
+diff --git a/test/s-fee-r11-reversal-admission-diagnostics.spec.ts b/test/s-fee-r11-reversal-admission-diagnostics.spec.ts
+new file mode 100644
+index 00000000..37ee6847
+--- /dev/null
++++ b/test/s-fee-r11-reversal-admission-diagnostics.spec.ts
+@@ -0,0 +1,333 @@
++// S-FEE round 11 (agent 116) — F2 findings at 007d3dcb:
++//   B-682-1  a reversal sender paused after its attempt write (or at the HTTP
++//            boundary) sent again after a takeover and Stripe key expiry:
++//            800 cents reversed at Stripe against a 400-cent receipt.
++//   B-682-2  free-text error messages reached logs, last_error and errors
++//            (C-682-4; the park-after-lock-loss path is C-685-2).
++//   B-682-3  payout notices used first person (C-682-1).
++// Real orchestrator, ledger and charge lock on the repo fakes; no DB, no
++// network. On 007d3dcb (+ F1 round 11) 18 of these fail; the controls (an
++// ordinary reversal, the F1 vocabulary, dispute_lost copy) pass on both.
++import { Logger } from '@nestjs/common';
++import {
++  ChargeLock,
++  ChargeLockLostError,
++  CHARGE_LOCK_TTL_MS,
++} from '../src/connect/fees/charge-lock';
++import { moneyErrorDiagnostic } from '../src/connect/fees/money-diagnostics';
++import { payoutNoticeCopy, type PayoutNoticeAmounts } from '../src/connect/fees/payout-notice-copy';
++import { SplitLedgerService } from '../src/connect/fees/split-ledger.service';
++import { TransferOrchestratorService } from '../src/connect/fees/transfer-orchestrator.service';
++import { StripeConnectApiError } from '../src/connect/stripe-connect-api.service';
++import { asPrisma, FakeStripe, makeSettlementPrisma } from './utils/settlement-fakes';
++
++const CANARY = 'AUDIT_CANARY client@example.invalid body="Your refund"';
++const DAY = 24 * 3_600_000;
++
++function fixture() {
++  const { db, prisma } = makeSettlementPrisma();
++  const stripe = new FakeStripe();
++  const ledger = new SplitLedgerService(asPrisma(prisma));
++  const svc = new TransferOrchestratorService(asPrisma(prisma), stripe, ledger);
++  return { db, prisma, stripe, svc };
++}
++type Fixture = ReturnType<typeof fixture>;
++
++const pending = (f: Fixture) =>
++  f.svc.enqueueSettlementTransfer({
++    settlement_id: 'cs_1',
++    purchase_id: 'p1',
++    kind: 'coach_net',
++    ledger_entry_id: null,
++    destination_stripe_account_id: 'acct_coach',
++    destination_user_id: 'coach-1',
++    amount_cents: 1_000,
++    netted_recovery_cents: 0,
++    currency: 'usd',
++    source_stripe_charge_id: 'ch1',
++    idempotency_key: 'op1',
++  });
++const paid = async (f: Fixture) => f.svc.attempt((await pending(f)).id);
++
++function gate() {
++  let open!: () => void;
++  let reached!: () => void;
++  const opened = new Promise<void>((r) => (open = r));
++  const atGate = new Promise<void>((r) => (reached = r));
++  return { open, reached: () => reached(), atGate, opened };
++}
++
++// Pause the first reversal-op write that records an attempt, after it
++// commits (007d3dcb: update with increment; round 11: the claim CAS).
++function pauseAfterAttemptWrite(f: Fixture) {
++  const g = gate();
++  let paused = false;
++  const hold = async <T>(data: Record<string, unknown>, out: T): Promise<T> => {
++    if (!paused && data.attempts !== undefined) {
++      paused = true;
++      g.reached();
++      await g.opened;
++    }
++    return out;
++  };
++  const ops = f.prisma.transferReversalOp;
++  const update = ops.update.getMockImplementation()!;
++  ops.update.mockImplementation(async (args) => hold(args.data, await update(args)));
++  const updateMany = ops.updateMany.getMockImplementation()!;
++  ops.updateMany.mockImplementation(async (args) => hold(args.data, await updateMany(args)));
++  return g;
++}
++
++// Pause inside the Stripe call, before the fake applies beforeSend.
++function pauseAtHttpBoundary(f: Fixture, inFlight = false) {
++  const g = gate();
++  const real = f.stripe.reverseTransfer.getMockImplementation()!;
++  f.stripe.reverseTransfer.mockImplementationOnce(async (args) => {
++    if (inFlight) args.beforeSend?.(); // the request already started
++    g.reached();
++    await g.opened;
++    return real(inFlight ? { ...args, beforeSend: undefined } : args);
++  });
++  return g;
++}
++
++let warn: jest.SpyInstance;
++let error: jest.SpyInstance;
++beforeEach(() => {
++  warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
++  error = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
++  jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
++});
++afterEach(() => jest.restoreAllMocks());
++const lines = (spy: jest.SpyInstance) => spy.mock.calls.map((c) => String(c[0]));
++
++describe('B-682-1 a claimed reversal is re-proven before and at the HTTP boundary', () => {
++  it('paused after the attempt write under the charge lock: takeover, key expiry, resume reverse 400 once', async () => {
++    const f = fixture();
++    const row = await paid(f);
++    let now = Date.now();
++    const lockA = new ChargeLock(asPrisma(f.prisma), { now: () => new Date(now), waitMs: 0 });
++    const lockB = new ChargeLock(asPrisma(f.prisma), { now: () => new Date(now), waitMs: 0 });
++    const g = pauseAfterAttemptWrite(f);
++    const a = lockA.run('ch1', () =>
++      f.svc.reverse({
++        transfer_row_id: row.id,
++        amount_cents: 400,
++        fence: (tx) => lockA.fence('ch1', tx ?? asPrisma(f.prisma)),
++      }),
++    );
++    await g.atGate;
++    now += CHARGE_LOCK_TTL_MS + 1;
++    await lockB.run('ch1', () =>
++      f.svc.resolvePendingReversals(row.id, (tx) => lockB.fence('ch1', tx ?? asPrisma(f.prisma))),
++    );
++    now += DAY + 1;
++    f.stripe.expireIdempotencyKeys();
++    g.open();
++    const outcome = await a.then(
++      () => 'resolved',
++      (e: unknown) => e,
++    );
++    expect(f.stripe.reversedOn(row.stripe_transfer_id!)).toBe(400);
++    expect(f.db.transfers[0].reversed_amount_cents).toBe(400);
++    expect(outcome).toBeInstanceOf(ChargeLockLostError);
++  });
++
++  it('paused after the attempt write without a lock: the resumed worker sees the recorded op and sends nothing', async () => {
++    const f = fixture();
++    const row = await paid(f);
++    const g = pauseAfterAttemptWrite(f);
++    const a = f.svc.reverse({ transfer_row_id: row.id, amount_cents: 400 });
++    await g.atGate;
++    await f.svc.resolvePendingReversals(row.id);
++    f.stripe.expireIdempotencyKeys();
++    g.open();
++    await expect(a).resolves.toMatchObject({ status: 'succeeded' });
++    expect(f.stripe.reversedOn(row.stripe_transfer_id!)).toBe(400);
++    expect(f.stripe.reverseTransfer).toHaveBeenCalledTimes(1); // only the takeover sent
++    expect(f.stripe.reversals).toHaveLength(1);
++  });
++
++  it('paused at the HTTP boundary past the start budget: nothing sent, the recorded op stands', async () => {
++    const f = fixture();
++    const row = await paid(f);
++    const g = pauseAtHttpBoundary(f);
++    const a = f.svc.reverse({ transfer_row_id: row.id, amount_cents: 400 });
++    await g.atGate;
++    await f.svc.resolvePendingReversals(row.id);
++    const later = new Date(Date.now() + DAY + 1);
++    f.svc.clock = () => later;
++    f.stripe.expireIdempotencyKeys();
++    g.open();
++    await expect(a).resolves.toMatchObject({ status: 'succeeded' });
++    expect(f.stripe.reversedOn(row.stripe_transfer_id!)).toBe(400);
++    expect(f.db.transfers[0].reversed_amount_cents).toBe(400);
++    expect(
++      lines(warn).some((l) =>
++        /^SFEE_REVERSAL_SEND_ABANDONED transfer=\S+ op=\S+ attempt=1 /.test(l),
++      ),
++    ).toBe(true);
++  });
++
++  it('a request already in flight past key expiry is detected: SFEE_REVERSAL_DUPLICATE names both Stripe ids', async () => {
++    const f = fixture();
++    const row = await paid(f);
++    const g = pauseAtHttpBoundary(f, true);
++    const a = f.svc.reverse({ transfer_row_id: row.id, amount_cents: 400 });
++    await g.atGate;
++    await f.svc.resolvePendingReversals(row.id);
++    f.stripe.expireIdempotencyKeys();
++    g.open();
++    await a;
++    expect(f.db.transfers[0].reversed_amount_cents).toBe(400);
++    expect(lines(error)).toContainEqual(
++      expect.stringMatching(
++        /^SFEE_REVERSAL_DUPLICATE alert=true transfer=\S+ op=\S+ amount=400 status=succeeded recorded_stripe_reversal=trr_1 also_at_stripe=trr_2: /,
++      ),
++    );
++  });
++
++  it('control: an ordinary reversal reverses once and records it', async () => {
++    const f = fixture();
++    const row = await paid(f);
++    await expect(
++      f.svc.reverse({ transfer_row_id: row.id, amount_cents: 400 }),
++    ).resolves.toMatchObject({
++      status: 'succeeded',
++    });
++    expect(f.stripe.reversedOn(row.stripe_transfer_id!)).toBe(400);
++    expect(f.db.reversalOps![0]).toMatchObject({ status: 'succeeded', attempts: 1 });
++  });
++});
++
++describe('B-682-2 money-path failures are named by closed codes only', () => {
++  const stripeErr = (status: number, code: string) =>
++    new StripeConnectApiError(CANARY, status, code, 'invalid_request_error');
++  const paths: Record<string, (f: Fixture) => Promise<unknown>> = {
++    'transfer refused (final)': async (f) => {
++      const row = await pending(f);
++      f.stripe.createTransfer.mockRejectedValueOnce(
++        new StripeConnectApiError(`No such destination ${CANARY}`, 400, 'resource_missing', null),
++      );
++      return f.svc.attempt(row.id);
++    },
++    'transfer uncertain and listing down': async (f) => {
++      const row = await pending(f);
++      f.stripe.createTransfer.mockRejectedValueOnce(new Error(CANARY));
++      f.stripe.listTransfers.mockRejectedValueOnce(new Error(CANARY));
++      return f.svc.attempt(row.id);
++    },
++    'transfer not visible yet': async (f) => {
++      const row = await pending(f);
++      f.stripe.createTransfer.mockRejectedValueOnce(new Error(CANARY));
++      return f.svc.attempt(row.id);
++    },
++    'transfer receipt write fails': async (f) => {
++      const row = await pending(f);
++      const tx = f.prisma.$transaction.getMockImplementation()!;
++      f.prisma.$transaction.mockImplementation(async (fn: (db: object) => Promise<unknown>) => {
++        if (f.stripe.createTransfer.mock.calls.length > 0) throw new Error(CANARY);
++        return tx(fn);
++      });
++      return f.svc.attempt(row.id);
++    },
++    'park write fails after the lock is lost': async (f) => {
++      const row = await pending(f);
++      let calls = 0;
++      const fence = async () => {
++        if (++calls === 2) {
++          f.prisma.connectTransfer.updateMany.mockRejectedValueOnce(
++            Object.assign(new Error(CANARY), { code: CANARY }),
++          );
++          throw new ChargeLockLostError('ch1', 'taken_over');
++        }
++      };
++      return f.svc.attempt(row.id, { beforeStripe: fence });
++    },
++    'reversal refused': async (f) => {
++      const row = await paid(f);
++      f.stripe.reverseTransfer.mockRejectedValueOnce(stripeErr(400, 'balance_insufficient'));
++      return f.svc.reverse({ transfer_row_id: row.id, amount_cents: 400 });
++    },
++    'reversal uncertain and listing down': async (f) => {
++      const row = await paid(f);
++      f.stripe.reverseTransfer.mockRejectedValueOnce(new Error(CANARY));
++      f.stripe.listTransferReversals.mockRejectedValueOnce(new Error(CANARY));
++      return f.svc.reverse({ transfer_row_id: row.id, amount_cents: 400 });
++    },
++  };
++
++  it.each(Object.keys(paths))(
++    '%s: no free text in logs, rows, outcomes or errors',
++    async (path) => {
++      const f = fixture();
++      const outcome = await paths[path](f).catch((e: unknown) => ({
++        thrown: (e as Error).message,
++      }));
++      const seen = JSON.stringify({ logs: [...lines(warn), ...lines(error)], db: f.db, outcome });
++      expect(seen).not.toContain('AUDIT_CANARY');
++      expect(seen).not.toContain('example.invalid');
++      expect(seen).toMatch(/kind=(stripe|unknown)|error_kind=unknown/);
++    },
++  );
++
++  it('the vocabulary maps unknown Stripe fields to fixed labels', () => {
++    expect(
++      moneyErrorDiagnostic(
++        new StripeConnectApiError(CANARY, 400, 'balance_insufficient', 'invalid_request_error'),
++      ),
++    ).toBe('kind=stripe http=400 type=invalid_request_error code=balance_insufficient');
++    expect(moneyErrorDiagnostic(new StripeConnectApiError(CANARY, 9_999, CANARY, CANARY))).toBe(
++      'kind=stripe http=other type=other code=other',
++    );
++    expect(moneyErrorDiagnostic(Object.assign(new Error(CANARY), { name: 'AbortError' }))).toBe(
++      'kind=timeout',
++    );
++    expect(moneyErrorDiagnostic(CANARY)).toBe('kind=unknown');
++  });
++});
++
++describe('B-682-3 payout notices are impersonal, exact and short', () => {
++  const amounts = (over: Partial<PayoutNoticeAmounts> = {}): PayoutNoticeAmounts => ({
++    currency: 'usd',
++    charge_gross_cents: 10_000,
++    customer_refunded_cents: 10_000,
++    reversed_cents: 9_480,
++    reinstated_cents: 7_980,
++    released_cents: 2_020,
++    held_cents: 520,
++    held_tgp_fee_cents: 200,
++    held_stripe_fee_cents: 320,
++    held_dispute_fee_cents: 0,
++    held_not_reversed_cents: 0,
++    held_open_cents: 520,
++    ...over,
++  });
++  const cases = [amounts(), amounts({ reinstated_cents: 0 }), amounts({ held_open_cents: 0 })];
++  for (const event of ['refund', 'chargeback', 'dispute_won', 'dispute_lost'] as const) {
++    for (const role of ['coach', 'head_coach'] as const) {
++      it(`${event} / ${role}: no first person, no exclamation mark, at most 160 characters`, () => {
++        for (const a of cases) {
++          const { title, body } = payoutNoticeCopy(event, role, a);
++          expect(`${title} ${body}`).not.toMatch(/\b(we|we'll|we've|us|our|ours)\b/i);
++          expect(`${title} ${body}`).not.toMatch(/!/);
++          expect(body.length).toBeLessThanOrEqual(160);
++        }
++      });
++    }
++  }
++
++  it('keeps exact amounts in the new sentences', () => {
++    expect(payoutNoticeCopy('refund', 'coach', amounts()).body).toBe(
++      "A client got $100.00 back. $94.80 was taken back from that sale's payout. $5.20 is held from your next sale.",
++    );
++    expect(
++      payoutNoticeCopy('dispute_won', 'head_coach', amounts({ held_open_cents: 0 })).body,
++    ).toBe(
++      'You won the dispute on a $100.00 charge. $79.80 was paid back to you and the $20.20 hold was released. Nothing is held from your next sale.',
++    );
++    expect(payoutNoticeCopy('dispute_won', 'coach', amounts({ reinstated_cents: 0 })).body).toBe(
++      'You won the dispute on a $100.00 charge. The $20.20 hold was released. $5.20 is held from your next sale.',
++    );
++  });
++});
+diff --git a/test/utils/settlement-fakes.ts b/test/utils/settlement-fakes.ts
+index c5b5fd48..d6d4eeed 100644
+--- a/test/utils/settlement-fakes.ts
++++ b/test/utils/settlement-fakes.ts
+@@ -683,7 +683,14 @@ export class FakeStripe extends StripeConnectApiService {
+   });
+ 
+   reverseTransfer = jest.fn(
+-    async (args: { transfer_id: string; amount?: number; idempotencyKey: string }) => {
++    async (args: {
++      transfer_id: string;
++      amount?: number;
++      idempotencyKey: string;
++      beforeSend?: () => void;
++    }) => {
++      // Round 11 (B-682-1): the caller's send-start check, as in createTransfer.
++      if (args.beforeSend) args.beforeSend();
+       if (this.failReversals) {
+         throw new StripeConnectApiError(
+           'Insufficient funds in the connected account to reverse this transfer',

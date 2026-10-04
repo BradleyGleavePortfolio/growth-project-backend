@@ -1,0 +1,2149 @@
+diff --git a/.env.example b/.env.example
+index 9f5e2dee..75e2b0e8 100644
+--- a/.env.example
++++ b/.env.example
+@@ -985,3 +985,10 @@ MWB_AUTOSAVE_LOCK_TOKEN_SECRET=
+ # deterministic dev fallback is used. Set 32+ random bytes in production for a
+ # verifiable token. Generate with: openssl rand -hex 32
+ PUBLIC_LISTING_CURSOR_SECRET=
++
++# Smart Dunning v2 — feature flag (DEFAULT OFF everywhere). Exactly "true"
++# enables the 10-day non-payment sequence: Day 0/1/3/7 client notices (Stripe's
++# retry schedule does every charge), Day-7 coach alert, Day-10 lockout
++# (403 LOCKED_DUNNING outside billing / export / deletion / coach thread), and
++# immediate unlock on payment. Unset or any other value = v1 dunning.
++FEATURE_DUNNING_V2=false
+diff --git a/jest.config.js b/jest.config.js
+index 769a4146..daab2f99 100644
+--- a/jest.config.js
++++ b/jest.config.js
+@@ -139,4 +139,12 @@ module.exports = {
+   collectCoverageFrom: ['src/**/*.ts'],
+   coveragePathIgnorePatterns: ['/node_modules/', '/dist/'],
+   testTimeout: 10000,
++  // S-DUNNING-R6: recycle a worker whose heap stays above 2 GB after a test
++  // file. The build-and-test lane runs every suite in a few long-lived
++  // workers under a 4 GB heap (ci.yml NODE_OPTIONS); retained module
++  // registries accumulate across files until one worker OOM-aborts ("Jest
++  // worker ran out of memory") on whichever suite it happens to hold. A fresh
++  // worker per threshold crossing keeps every suite under the heap limit
++  // without changing what runs or how.
++  workerIdleMemoryLimit: '2GB',
+ };
+diff --git a/prisma/migrations/20270215000000_dunning_billing_actions/down.sql b/prisma/migrations/20270215000000_dunning_billing_actions/down.sql
+new file mode 100644
+index 00000000..0ffd18e8
+--- /dev/null
++++ b/prisma/migrations/20270215000000_dunning_billing_actions/down.sql
+@@ -0,0 +1,10 @@
++-- Reverse of 20270215000000_dunning_billing_actions. Drops only what that
++-- migration creates (tables take their indexes, FKs and policies with them).
++-- Billing leases, operation journals, notice delivery records, dispute obligations and 2A markers
++-- written after the migration are lost; run only with no billing action in
++-- flight and the dunning v2 flag off.
++DROP TABLE IF EXISTS "DunningDisputeObligation";
++DROP TABLE IF EXISTS "DunningNoticeDelivery";
++DROP TABLE IF EXISTS "ClientBillingOperation";
++DROP TABLE IF EXISTS "ClientBillingLease";
++ALTER TABLE "DunningState" DROP COLUMN IF EXISTS "client_canceled_at";
+diff --git a/prisma/migrations/20270215000000_dunning_billing_actions/migration.sql b/prisma/migrations/20270215000000_dunning_billing_actions/migration.sql
+new file mode 100644
+index 00000000..bd28d1f5
+--- /dev/null
++++ b/prisma/migrations/20270215000000_dunning_billing_actions/migration.sql
+@@ -0,0 +1,157 @@
++-- S-DUNNING-R2/R3 (owner rulings 1A / 2A, 2026-10-01 16:30 PDT; fix round 3).
++-- Additive only: one nullable column on "DunningState" and four new
++-- server-only tables. No backfill, no shipped migration altered. Reverse:
++-- down.sql (drops only what this file creates).
++--   "DunningState"."client_canceled_at": the client ended the plan during the
++--     dunning cycle (2A); written with the durable intent before any void.
++--   "ClientBillingLease": per-purchase billing-action lease with a monotonic
++--     fence (CAS on holder before every Stripe money call and inside every
++--     money-write transaction). Works when no DunningState row exists.
++--   "ClientBillingOperation": durable journal of one 1A pay / 2A cancel
++--     (phase, per-invoice integer-cent lines); the reconciler resumes it.
++--   "DunningNoticeDelivery": durable per-channel notice outbox, keyed per
++--     cycle, retried by the hourly sweep. Each delivery is claimed (CAS to
++--     'sending' with a claim_token; next_attempt_at is then the claim's
++--     expiry) before its transport is called; receipts are written only by
++--     the holder of that claim (R4).
++--   "DunningDisputeObligation": one Stripe dispute per purchase as the
++--     dunning path saw it (created -> 'open', closed -> its status), written
++--     under the DunningState row lock, so one won dispute never lifts a
++--     reversal lock while another dispute is open or lost (R5).
++-- RLS: the four tables are server-only (service_role full access; anon and
++-- authenticated get nothing). No client ever reads them directly.
++
++SET lock_timeout = '5s';
++
++-- AlterTable
++ALTER TABLE "DunningState" ADD COLUMN IF NOT EXISTS "client_canceled_at" TIMESTAMP(3);
++
++-- CreateTable
++CREATE TABLE "ClientBillingLease" (
++    "purchase_id" TEXT NOT NULL,
++    "holder" TEXT,
++    "holder_until" TIMESTAMP(3),
++    "fence" INTEGER NOT NULL DEFAULT 0,
++    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updated_at" TIMESTAMP(3) NOT NULL,
++
++    CONSTRAINT "ClientBillingLease_pkey" PRIMARY KEY ("purchase_id")
++);
++
++-- CreateTable
++CREATE TABLE "ClientBillingOperation" (
++    "id" TEXT NOT NULL,
++    "purchase_id" TEXT NOT NULL,
++    "kind" TEXT NOT NULL,
++    "phase" TEXT NOT NULL,
++    "fence" INTEGER NOT NULL,
++    "setup_intent_id" TEXT,
++    "lines" JSONB,
++    "error_code" TEXT,
++    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updated_at" TIMESTAMP(3) NOT NULL,
++    "completed_at" TIMESTAMP(3),
++
++    CONSTRAINT "ClientBillingOperation_pkey" PRIMARY KEY ("id")
++);
++
++-- CreateTable
++CREATE TABLE "DunningNoticeDelivery" (
++    "id" TEXT NOT NULL,
++    "dunning_state_id" TEXT NOT NULL,
++    "cycle_key" TEXT NOT NULL,
++    "step_index" INTEGER NOT NULL,
++    "channel" TEXT NOT NULL,
++    "status" TEXT NOT NULL DEFAULT 'pending',
++    "attempts" INTEGER NOT NULL DEFAULT 0,
++    "last_error" TEXT,
++    "next_attempt_at" TIMESTAMP(3),
++    "sent_at" TIMESTAMP(3),
++    "claim_token" TEXT,
++    "key_attempt" INTEGER,
++    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updated_at" TIMESTAMP(3) NOT NULL,
++
++    CONSTRAINT "DunningNoticeDelivery_pkey" PRIMARY KEY ("id")
++);
++
++-- CreateTable
++CREATE TABLE "DunningDisputeObligation" (
++    "stripe_dispute_id" TEXT NOT NULL,
++    "purchase_id" TEXT NOT NULL,
++    "stripe_charge_id" TEXT,
++    "status" TEXT NOT NULL,
++    "closed_at" TIMESTAMP(3),
++    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updated_at" TIMESTAMP(3) NOT NULL,
++
++    CONSTRAINT "DunningDisputeObligation_pkey" PRIMARY KEY ("stripe_dispute_id")
++);
++
++-- CreateIndex
++CREATE INDEX "ClientBillingOperation_purchase_id_kind_completed_at_idx" ON "ClientBillingOperation"("purchase_id", "kind", "completed_at");
++
++-- CreateIndex
++CREATE INDEX "ClientBillingOperation_kind_completed_at_updated_at_idx" ON "ClientBillingOperation"("kind", "completed_at", "updated_at");
++
++-- CreateIndex
++CREATE INDEX "ClientBillingOperation_setup_intent_id_idx" ON "ClientBillingOperation"("setup_intent_id");
++
++-- CreateIndex
++CREATE INDEX "DunningNoticeDelivery_status_next_attempt_at_idx" ON "DunningNoticeDelivery"("status", "next_attempt_at");
++
++-- CreateIndex
++CREATE INDEX "DunningNoticeDelivery_dunning_state_id_cycle_key_idx" ON "DunningNoticeDelivery"("dunning_state_id", "cycle_key");
++
++-- CreateIndex
++CREATE INDEX "DunningDisputeObligation_purchase_id_idx" ON "DunningDisputeObligation"("purchase_id");
++
++-- AddForeignKey
++ALTER TABLE "ClientBillingLease" ADD CONSTRAINT "ClientBillingLease_purchase_id_fkey" FOREIGN KEY ("purchase_id") REFERENCES "ClientPurchase"("id") ON DELETE CASCADE ON UPDATE CASCADE;
++
++-- AddForeignKey
++ALTER TABLE "ClientBillingOperation" ADD CONSTRAINT "ClientBillingOperation_purchase_id_fkey" FOREIGN KEY ("purchase_id") REFERENCES "ClientPurchase"("id") ON DELETE CASCADE ON UPDATE CASCADE;
++
++-- AddForeignKey
++ALTER TABLE "DunningNoticeDelivery" ADD CONSTRAINT "DunningNoticeDelivery_dunning_state_id_fkey" FOREIGN KEY ("dunning_state_id") REFERENCES "DunningState"("id") ON DELETE CASCADE ON UPDATE CASCADE;
++
++-- AddForeignKey
++ALTER TABLE "DunningDisputeObligation" ADD CONSTRAINT "DunningDisputeObligation_purchase_id_fkey" FOREIGN KEY ("purchase_id") REFERENCES "ClientPurchase"("id") ON DELETE CASCADE ON UPDATE CASCADE;
++
++
++-- RLS: server-only tables.
++ALTER TABLE "ClientBillingLease" ENABLE ROW LEVEL SECURITY;
++ALTER TABLE "ClientBillingLease" FORCE ROW LEVEL SECURITY;
++ALTER TABLE "ClientBillingOperation" ENABLE ROW LEVEL SECURITY;
++ALTER TABLE "ClientBillingOperation" FORCE ROW LEVEL SECURITY;
++ALTER TABLE "DunningNoticeDelivery" ENABLE ROW LEVEL SECURITY;
++ALTER TABLE "DunningNoticeDelivery" FORCE ROW LEVEL SECURITY;
++ALTER TABLE "DunningDisputeObligation" ENABLE ROW LEVEL SECURITY;
++ALTER TABLE "DunningDisputeObligation" FORCE ROW LEVEL SECURITY;
++
++REVOKE ALL ON TABLE "ClientBillingLease" FROM anon;
++REVOKE ALL ON TABLE "ClientBillingOperation" FROM anon;
++REVOKE ALL ON TABLE "DunningNoticeDelivery" FROM anon;
++REVOKE ALL ON TABLE "DunningDisputeObligation" FROM anon;
++
++CREATE POLICY "p_clientbillinglease_service_role_all" ON "ClientBillingLease"
++    AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
++CREATE POLICY "deny_all_anon_clientbillinglease" ON "ClientBillingLease"
++    AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false);
++
++CREATE POLICY "p_clientbillingoperation_service_role_all" ON "ClientBillingOperation"
++    AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
++CREATE POLICY "deny_all_anon_clientbillingoperation" ON "ClientBillingOperation"
++    AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false);
++
++CREATE POLICY "p_dunningnoticedelivery_service_role_all" ON "DunningNoticeDelivery"
++    AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
++CREATE POLICY "deny_all_anon_dunningnoticedelivery" ON "DunningNoticeDelivery"
++    AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false);
++
++CREATE POLICY "p_dunningdisputeobligation_service_role_all" ON "DunningDisputeObligation"
++    AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
++CREATE POLICY "deny_all_anon_dunningdisputeobligation" ON "DunningDisputeObligation"
++    AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false);
++
++RESET lock_timeout;
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+index fd5c9270..62937258 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -3860,6 +3860,11 @@ model ClientPurchase {
+   splits                 SplitLedgerEntry[]
+   transfers              ConnectTransfer[]
+   dunning                DunningState?
++  // S-DUNNING-R3: per-purchase billing-action lease (fenced) and the durable
++  // journal of the client's own billing operations (1A pay, 2A cancel).
++  billing_lease          ClientBillingLease?
++  billing_operations     ClientBillingOperation[]
++  dispute_obligations    DunningDisputeObligation[]
+   reminders              PaymentReminder[]
+   refunds                ChargeRefund[]
+   disputes               ChargeDispute[]
+@@ -4112,14 +4117,123 @@ model DunningState {
+   // charge is later reversed. Drives regular-vs-"again" copy selection.
+   // Defaulted: existing rows read back 0 (zero-mutation-elsewhere).
+   reversal_count           Int            @default(0)
+-
+-  attempts DunningAttempt[]
++  // S-DUNNING-R2/R3 (owner 2A) — the client ended their plan during this
++  // dunning cycle. Written together with the durable ClientBillingOperation
++  // intent BEFORE the first void; status 'abandoned' follows once the
++  // subscription is canceled. Cleared again when the cancel falls back to
++  // option A because the period turned out to be paid. While set, the
++  // cycle sends no notices, never Day-10 locks, and a live
++  // customer.subscription.updated cannot hand access back.
++  client_canceled_at       DateTime?
++
++  attempts         DunningAttempt[]
++  // S-DUNNING-R3 (B-628-6): durable per-channel notice outbox.
++  notice_deliveries DunningNoticeDelivery[]
+ 
+   @@index([status])
+   @@index([status, cancel_scheduled_at])
+   @@index([status, next_attempt_at])
+ }
+ 
++/// S-DUNNING-R3 (B-628-9) — per-purchase billing-action lease with a
++/// monotonic fence. A client card update that pays open invoices and a
++/// client cancel that voids them claim it by CAS (free when holder is null
++/// or holder_until has passed; every claim increments fence). The holder
++/// re-checks it (CAS on holder) before every Stripe money call and inside
++/// every money-write transaction, so a stalled holder whose lease expired
++/// can never write after a newer holder took over. One row per purchase,
++/// created on first use, so it works when no DunningState exists.
++model ClientBillingLease {
++  purchase_id  String         @id
++  purchase     ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
++  holder       String?
++  holder_until DateTime?
++  fence        Int            @default(0)
++  created_at   DateTime       @default(now())
++  updated_at   DateTime       @updatedAt
++}
++
++/// S-DUNNING-R3 (B-628-2/5) — durable journal of one client billing
++/// operation on one purchase. kind 'card_pay' (owner 1A: pay the approved
++/// open invoices with the card just saved; one row per purchase and
++/// SetupIntent) or 'cancel' (owner 2A: written BEFORE the first void).
++/// phase records how far it got; completed_at null + stale updated_at is
++/// resumed by the hourly reconciler. lines holds per-invoice integer-cent
++/// results ([{invoice_id, currency, amount_due_cents, amount_paid_cents,
++/// result}]); never summed across currencies.
++model ClientBillingOperation {
++  id              String         @id @default(uuid())
++  purchase_id     String
++  purchase        ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
++  kind            String
++  phase           String
++  fence           Int
++  setup_intent_id String?
++  lines           Json?
++  error_code      String?
++  created_at      DateTime       @default(now())
++  updated_at      DateTime       @updatedAt
++  completed_at    DateTime?
++
++  @@index([purchase_id, kind, completed_at])
++  @@index([kind, completed_at, updated_at])
++  @@index([setup_intent_id])
++}
++
++/// S-DUNNING-R3 (B-628-6) — durable per-channel delivery record for one
++/// dunning v2 notice step of one cycle. id is deterministic
++/// "<dunning_state_id>:<cycle_key>:<step_index>:<channel>" so a step is
++/// recorded once per cycle; cycle_key is the cycle's entered_at instant, so
++/// a later renewal cycle on the same DunningState never reuses a key.
++/// status pending | sent | failed | skipped | dead. A pending or failed row
++/// whose next_attempt_at has passed is retried by the hourly sweep.
++model DunningNoticeDelivery {
++  id               String       @id
++  dunning_state_id String
++  dunning_state    DunningState @relation(fields: [dunning_state_id], references: [id], onDelete: Cascade)
++  cycle_key        String
++  step_index       Int
++  channel          String
++  status           String       @default("pending")
++  attempts         Int          @default(0)
++  last_error       String?
++  next_attempt_at  DateTime?
++  sent_at          DateTime?
++  /// S-DUNNING-R4 (B-628-6): the worker that claimed this delivery
++  /// ('sending'; next_attempt_at is then the claim's expiry). Only that
++  /// holder may write the receipt.
++  claim_token      String?
++  /// Transport idempotency attempt of the current claim; a takeover of an
++  /// expired claim reuses it so an email that did go out is not sent again.
++  key_attempt      Int?
++  created_at       DateTime     @default(now())
++  updated_at       DateTime     @updatedAt
++
++  @@index([status, next_attempt_at])
++  @@index([dunning_state_id, cycle_key])
++}
++
++/// S-DUNNING-R5 (B-628-8) — one Stripe dispute obligation on one purchase,
++/// as the dunning v2 path saw it. Written under the purchase's DunningState
++/// row lock by BOTH charge.dispute.created (status 'open') and
++/// charge.dispute.closed (the closing status), so a won dispute can never
++/// lift a purchase-wide reversal lock while another dispute on that purchase
++/// is open or lost, whichever webhook lands first. ChargeDispute (refund /
++/// dispute ledger) is read alongside it; a terminal status on either wins.
++model DunningDisputeObligation {
++  stripe_dispute_id String         @id
++  purchase_id       String
++  purchase          ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
++  stripe_charge_id  String?
++  /// open | won | warning_closed | lost | <other Stripe dispute status>
++  status            String
++  closed_at         DateTime?
++  created_at        DateTime       @default(now())
++  updated_at        DateTime       @updatedAt
++
++  @@index([purchase_id])
++}
++
+ // DUNNING-V2 (B3 §2.1) — branded JWT recovery links. NEW TABLE ONLY; no FK
+ // alter on any existing table. `dunning_attempt_id` is a bare unique string
+ // (no Prisma @relation) so DunningAttempt is not mutated. The row exists for
+diff --git a/prod-switches.yml b/prod-switches.yml
+index 5b40a3c2..7df9185c 100644
+--- a/prod-switches.yml
++++ b/prod-switches.yml
+@@ -1484,3 +1484,14 @@ switches:
+     auto_flip_on_in_prod: false
+     owner: auth
+     description: "Clinic C13 — per-IP ceiling on brand-new COACH accounts created through /auth/google and /auth/apple per hour (login success never resets it). Client creates are not counted (clinic QR intake). Default 5, clamped to [1, 500]."
++
++  # ── Smart Dunning v2 (S-DUNNING, 2026-10-01): register the existing v2 flag
++  # (Lens B P2-1). Read via env[FEATURE_DUNNING_V2_ENV] in
++  # src/checkout/dunning-v2/dunning-v2.feature.ts, so the process.env scan
++  # never discovered it. Registry only; no runtime change, never auto-flipped. ──
++  - name: FEATURE_DUNNING_V2
++    tier: feature
++    prod_default: OFF
++    auto_flip_on_in_prod: false
++    owner: payments
++    description: "Smart Dunning v2 (10-day non-payment sequence: Day 0/1/3/7 notices, Day-10 lockout, immediate unlock on payment). Exactly 'true' enables; unset = v1 dunning. Default OFF; flip only per the S-DUNNING flip plan (PR body)."
+diff --git a/src/checkout/client-billing.money.ts b/src/checkout/client-billing.money.ts
+new file mode 100644
+index 00000000..51a6acf9
+--- /dev/null
++++ b/src/checkout/client-billing.money.ts
+@@ -0,0 +1,83 @@
++/**
++ * S-DUNNING-R3 — integer minor-unit money helpers for the client billing
++ * actions. Amounts are never added across currencies: every total is a list
++ * of { currency, amount_cents } with one entry per currency.
++ */
++
++export interface MoneyTotal {
++  currency: string;
++  amount_cents: number;
++}
++
++/** ISO 4217 currencies Stripe treats as zero-decimal (no minor unit). */
++const ZERO_DECIMAL = new Set([
++  'bif',
++  'clp',
++  'djf',
++  'gnf',
++  'jpy',
++  'kmf',
++  'krw',
++  'mga',
++  'pyg',
++  'rwf',
++  'ugx',
++  'vnd',
++  'vuv',
++  'xaf',
++  'xof',
++  'xpf',
++]);
++
++export function normalizeCurrency(currency: string | null | undefined): string {
++  const c = typeof currency === 'string' ? currency.trim().toLowerCase() : '';
++  return /^[a-z]{3}$/.test(c) ? c : 'usd';
++}
++
++/** Sum integer amounts per currency, in first-seen currency order. */
++export function totalsByCurrency(
++  items: Array<{ currency: string; amount_cents: number }>,
++): MoneyTotal[] {
++  const order: string[] = [];
++  const sums = new Map<string, number>();
++  for (const it of items) {
++    if (!Number.isInteger(it.amount_cents) || it.amount_cents <= 0) continue;
++    const cur = normalizeCurrency(it.currency);
++    if (!sums.has(cur)) {
++      order.push(cur);
++      sums.set(cur, 0);
++    }
++    sums.set(cur, (sums.get(cur) ?? 0) + it.amount_cents);
++  }
++  // Alphabetical by currency code: a stable order for copy and quote digests.
++  order.sort();
++  return order.map((currency) => ({ currency, amount_cents: sums.get(currency) ?? 0 }));
++}
++
++/** One amount as the client reads it: "$150.00", "12,000 JPY", "45.50 EUR". */
++export function formatMinor(cents: number, currency: string | null | undefined): string {
++  const cur = normalizeCurrency(currency);
++  const safe = Number.isInteger(cents) ? cents : 0;
++  if (ZERO_DECIMAL.has(cur)) {
++    return `${safe.toLocaleString('en-US')} ${cur.toUpperCase()}`;
++  }
++  const negative = safe < 0;
++  const abs = Math.abs(safe);
++  const whole = Math.floor(abs / 100).toLocaleString('en-US');
++  const minor = String(abs % 100).padStart(2, '0');
++  const body = `${whole}.${minor}`;
++  if (cur === 'usd') return `${negative ? '-' : ''}$${body}`;
++  return `${negative ? '-' : ''}${body} ${cur.toUpperCase()}`;
++}
++
++/** "$150.00", or "$150.00 and 45.50 EUR" for more than one currency. */
++export function formatTotals(totals: MoneyTotal[]): string {
++  const parts = totals.map((t) => formatMinor(t.amount_cents, t.currency));
++  if (parts.length <= 1) return parts[0] ?? formatMinor(0, 'usd');
++  return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
++}
++
++/** The single currency of a total list, or null when there are several. */
++export function singleCurrency(totals: MoneyTotal[]): string | null {
++  return totals.length === 1 ? totals[0].currency : null;
++}
+diff --git a/src/checkout/dunning-v2/dunning-effective-access.ts b/src/checkout/dunning-v2/dunning-effective-access.ts
+new file mode 100644
+index 00000000..6ad29258
+--- /dev/null
++++ b/src/checkout/dunning-v2/dunning-effective-access.ts
+@@ -0,0 +1,67 @@
++import type { Prisma } from '@prisma/client';
++import type { PrismaService } from '../../prisma.service';
++
++/**
++ * S-DUNNING-R3 (B-628-7): the ONE rule for "does a Day-10 lock actually stop
++ * this client", shared by the request guard (DunningLockoutGuard) and the
++ * client read model (GET /v1/me/dunning-status). Before this the guard waived
++ * the lock for a client holding another live entitlement (comp / invite-code
++ * grant, another paid package, access the coach kept on) while the status
++ * endpoint still answered `locked`, so the app showed a lockout screen to a
++ * client whose requests all went through.
++ */
++type Db = Prisma.TransactionClient | PrismaService;
++
++export interface EffectiveLock {
++  /** The locked cycle's purchase, or null when no cycle is locked. */
++  lockedPurchaseId: string | null;
++  /** True when a locked cycle exists but other live access waives it. */
++  waived: boolean;
++  /** True when the client is actually locked out (locked and not waived). */
++  locked: boolean;
++}
++
++/**
++ * Live access other than `excludePurchaseId`: an entitled, unexpired
++ * purchase in a paid status whose own cycle (if any) is not locked.
++ */
++export async function hasOtherLiveAccess(
++  db: Db,
++  clientUserId: string,
++  excludePurchaseId: string,
++  now: Date = new Date(),
++): Promise<boolean> {
++  const others = await db.clientPurchase.findMany({
++    where: {
++      client_user_id: clientUserId,
++      id: { not: excludePurchaseId },
++      entitlement_active: true,
++      status: { in: ['paid', 'active', 'trialing'] },
++      OR: [{ access_expires_at: null }, { access_expires_at: { gt: now } }],
++    },
++    select: {
++      id: true,
++      dunning: { select: { status: true, locked_out_at: true } },
++    },
++    take: 20,
++  });
++  return others.some((p) => !(p.dunning?.status === 'active' && p.dunning.locked_out_at != null));
++}
++
++export async function effectiveLock(
++  db: Db,
++  clientUserId: string,
++  now: Date = new Date(),
++): Promise<EffectiveLock> {
++  const lockedRow = await db.dunningState.findFirst({
++    where: {
++      locked_out_at: { not: null },
++      status: 'active',
++      purchase: { client_user_id: clientUserId },
++    },
++    select: { id: true, purchase_id: true },
++  });
++  if (lockedRow == null) return { lockedPurchaseId: null, waived: false, locked: false };
++  const waived = await hasOtherLiveAccess(db, clientUserId, lockedRow.purchase_id, now);
++  return { lockedPurchaseId: lockedRow.purchase_id, waived, locked: !waived };
++}
+diff --git a/src/connect/stripe-connect-api.service.ts b/src/connect/stripe-connect-api.service.ts
+index 86a1ec51..c1c01b5b 100644
+--- a/src/connect/stripe-connect-api.service.ts
++++ b/src/connect/stripe-connect-api.service.ts
+@@ -24,6 +24,12 @@ export class StripeConnectApiError extends Error {
+     public readonly httpStatus: number,
+     public readonly stripeCode: string | null,
+     public readonly stripeType: string | null,
++    // S-DUNNING-R2: the issuer's decline reason on a card_error
++    // (e.g. insufficient_funds), so a failed in-app payment is truthful.
++    public readonly declineCode: string | null = null,
++    // B-628-11 (R9): Stripe's `Idempotent-Replayed: true` header. Only a
++    // replayed answer is the cached result of the key's first execution.
++    public readonly idempotentReplayed: boolean = false,
+   ) {
+     super(message);
+     this.name = 'StripeConnectApiError';
+@@ -117,6 +123,31 @@ export interface StripeSubscriptionObject {
+   [k: string]: unknown;
+ }
+ 
++export interface StripeSetupIntentObject {
++  id: string;
++  status: string;
++  client_secret?: string | null;
++  customer?: string | null;
++  payment_method?: string | { id?: string } | null;
++  usage?: string;
++  metadata?: Record<string, string>;
++  [k: string]: unknown;
++}
++
++export interface StripeInvoiceObject {
++  id: string;
++  status: string; // draft | open | paid | uncollectible | void
++  subscription?: string | null;
++  customer?: string | null;
++  amount_due?: number;
++  amount_paid?: number;
++  amount_remaining?: number;
++  currency?: string;
++  created?: number;
++  payment_intent?: string | { id?: string; status?: string; client_secret?: string | null } | null;
++  [k: string]: unknown;
++}
++
+ @Injectable()
+ export class StripeConnectApiService {
+   private readonly logger = new Logger(StripeConnectApiService.name);
+@@ -132,9 +163,7 @@ export class StripeConnectApiService {
+   protected fetchImpl: typeof fetch = (input, init) => {
+     const controller = new AbortController();
+     const timer = setTimeout(() => controller.abort(), this.stripeTimeoutMs);
+-    return fetch(input, { ...init, signal: controller.signal }).finally(() =>
+-      clearTimeout(timer),
+-    );
++    return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+   };
+ 
+   isConfigured(): boolean {
+@@ -183,8 +212,7 @@ export class StripeConnectApiService {
+         : null;
+     const code = (errEnvelope?.code as string | undefined) ?? null;
+     const type = (errEnvelope?.type as string | undefined) ?? null;
+-    const messageFromStripe =
+-      (errEnvelope?.message as string | undefined) ?? null;
++    const messageFromStripe = (errEnvelope?.message as string | undefined) ?? null;
+     // Stripe returns 400 with code "account_invalid" or similar when
+     // Connect isn't enabled. Map every non-2xx to a 503 from our side so
+     // the controller renders the owner-action message.
+@@ -236,18 +264,11 @@ export class StripeConnectApiService {
+       return_url: args.returnUrl,
+       type: 'account_onboarding',
+     };
+-    return this.post<StripeAccountLink>(
+-      '/account_links',
+-      form,
+-      args.idempotencyKey,
+-    );
++    return this.post<StripeAccountLink>('/account_links', form, args.idempotencyKey);
+   }
+ 
+   async createLoginLink(accountId: string): Promise<StripeLoginLink> {
+-    return this.post<StripeLoginLink>(
+-      `/accounts/${encodeURIComponent(accountId)}/login_links`,
+-      {},
+-    );
++    return this.post<StripeLoginLink>(`/accounts/${encodeURIComponent(accountId)}/login_links`, {});
+   }
+ 
+   // --- Phase 2-3 — Product / Price / Customer / Checkout ---
+@@ -272,17 +293,11 @@ export class StripeConnectApiService {
+         form[`metadata[${k}]`] = v;
+       }
+     }
+-    return this.post<StripeCustomerObject>(
+-      '/customers',
+-      form,
+-      args.idempotencyKey,
+-    );
++    return this.post<StripeCustomerObject>('/customers', form, args.idempotencyKey);
+   }
+ 
+   async retrieveCustomer(customerId: string): Promise<StripeCustomerObject> {
+-    return this.get<StripeCustomerObject>(
+-      `/customers/${encodeURIComponent(customerId)}`,
+-    );
++    return this.get<StripeCustomerObject>(`/customers/${encodeURIComponent(customerId)}`);
+   }
+ 
+   async retrievePaymentMethod(paymentMethodId: string): Promise<{
+@@ -295,14 +310,10 @@ export class StripeConnectApiService {
+     };
+     [k: string]: unknown;
+   }> {
+-    return this.get(
+-      `/payment_methods/${encodeURIComponent(paymentMethodId)}`,
+-    );
++    return this.get(`/payment_methods/${encodeURIComponent(paymentMethodId)}`);
+   }
+ 
+-  async retrieveSubscription(
+-    subscriptionId: string,
+-  ): Promise<StripeSubscriptionObject> {
++  async retrieveSubscription(subscriptionId: string): Promise<StripeSubscriptionObject> {
+     return this.get<StripeSubscriptionObject>(
+       `/subscriptions/${encodeURIComponent(subscriptionId)}`,
+     );
+@@ -398,16 +409,21 @@ export class StripeConnectApiService {
+     applicationFeePercent?: number;
+     metadata?: Record<string, string>;
+     idempotencyKey: string;
+-  }): Promise<StripeSubscriptionObject & {
+-    latest_invoice?: {
+-      id?: string;
+-      payment_intent?: {
++  }): Promise<
++    StripeSubscriptionObject & {
++      latest_invoice?: {
+         id?: string;
+-        client_secret?: string;
+-        status?: string;
+-      } | string | null;
+-    } | null;
+-  }> {
++        payment_intent?:
++          | {
++              id?: string;
++              client_secret?: string;
++              status?: string;
++            }
++          | string
++          | null;
++      } | null;
++    }
++  > {
+     const form: Record<string, string> = {
+       customer: args.customer,
+       'items[0][price]': args.recurringPriceId,
+@@ -476,15 +492,9 @@ export class StripeConnectApiService {
+       form.client_reference_id = args.clientReferenceId;
+     }
+     if (args.mode === 'payment') {
+-      form['payment_intent_data[transfer_data][destination]'] =
+-        args.destinationAccount;
+-      if (
+-        typeof args.applicationFeeAmount === 'number' &&
+-        args.applicationFeeAmount > 0
+-      ) {
+-        form['payment_intent_data[application_fee_amount]'] = String(
+-          args.applicationFeeAmount,
+-        );
++      form['payment_intent_data[transfer_data][destination]'] = args.destinationAccount;
++      if (typeof args.applicationFeeAmount === 'number' && args.applicationFeeAmount > 0) {
++        form['payment_intent_data[application_fee_amount]'] = String(args.applicationFeeAmount);
+       }
+       if (args.paymentIntentMetadata) {
+         for (const [k, v] of Object.entries(args.paymentIntentMetadata)) {
+@@ -492,15 +502,9 @@ export class StripeConnectApiService {
+         }
+       }
+     } else {
+-      form['subscription_data[transfer_data][destination]'] =
+-        args.destinationAccount;
+-      if (
+-        typeof args.applicationFeePercent === 'number' &&
+-        args.applicationFeePercent > 0
+-      ) {
+-        form['subscription_data[application_fee_percent]'] = String(
+-          args.applicationFeePercent,
+-        );
++      form['subscription_data[transfer_data][destination]'] = args.destinationAccount;
++      if (typeof args.applicationFeePercent === 'number' && args.applicationFeePercent > 0) {
++        form['subscription_data[application_fee_percent]'] = String(args.applicationFeePercent);
+       }
+       if (args.subscriptionMetadata) {
+         for (const [k, v] of Object.entries(args.subscriptionMetadata)) {
+@@ -518,11 +522,7 @@ export class StripeConnectApiService {
+     // Collected tax is remitted by TGP as the Merchant of Record.
+     form['automatic_tax[enabled]'] = 'true';
+ 
+-    return this.post<StripeCheckoutSessionObject>(
+-      '/checkout/sessions',
+-      form,
+-      args.idempotencyKey,
+-    );
++    return this.post<StripeCheckoutSessionObject>('/checkout/sessions', form, args.idempotencyKey);
+   }
+ 
+   // Phase 7 — Payment Sheet (in-app checkout). Creates a PaymentIntent
+@@ -576,11 +576,7 @@ export class StripeConnectApiService {
+     for (const [k, v] of Object.entries(params.metadata)) {
+       form[`metadata[${k}]`] = v;
+     }
+-    return this.post<StripePaymentIntentObject>(
+-      '/payment_intents',
+-      form,
+-      params.idempotencyKey,
+-    );
++    return this.post<StripePaymentIntentObject>('/payment_intents', form, params.idempotencyKey);
+   }
+ 
+   // Phase 7 — create an EphemeralKey scoped to a customer so the mobile
+@@ -615,9 +611,7 @@ export class StripeConnectApiService {
+     return { secret: parsed.secret };
+   }
+ 
+-  async retrieveCheckoutSession(
+-    sessionId: string,
+-  ): Promise<StripeCheckoutSessionObject> {
++  async retrieveCheckoutSession(sessionId: string): Promise<StripeCheckoutSessionObject> {
+     return this.get<StripeCheckoutSessionObject>(
+       `/checkout/sessions/${encodeURIComponent(sessionId)}`,
+     );
+@@ -751,6 +745,181 @@ export class StripeConnectApiService {
+     });
+   }
+ 
++  // --- S-DUNNING-R2 — native card update (OR-110-2) and owner rulings 1A/2A ---
++  //
++  // All on the PLATFORM account (no Stripe-Account header): the client's
++  // Customer, the subscription and its invoices live on the platform; funds
++  // reach the coach through the subscription's transfer_data (destination
++  // charges). Every mutation carries an Idempotency-Key.
++
++  /**
++   * SetupIntent the in-app PaymentSheet confirms to save a new card on the
++   * platform Customer for future off-session subscription charges (the same
++   * place Checkout saves the first card; no on_behalf_of, so the card is
++   * usable by every subscription the client holds).
++   */
++  async createSetupIntent(args: {
++    customer: string;
++    metadata?: Record<string, string>;
++    idempotencyKey: string;
++  }): Promise<StripeSetupIntentObject> {
++    const form: Record<string, string> = {
++      customer: args.customer,
++      usage: 'off_session',
++      'payment_method_types[0]': 'card',
++    };
++    if (args.metadata) {
++      for (const [k, v] of Object.entries(args.metadata)) {
++        form[`metadata[${k}]`] = v;
++      }
++    }
++    return this.post<StripeSetupIntentObject>('/setup_intents', form, args.idempotencyKey);
++  }
++
++  async retrieveSetupIntent(setupIntentId: string): Promise<StripeSetupIntentObject> {
++    return this.get<StripeSetupIntentObject>(`/setup_intents/${encodeURIComponent(setupIntentId)}`);
++  }
++
++  /** Customer default for future invoices (priority 3 in Stripe's order). */
++  async setCustomerDefaultPaymentMethod(args: {
++    customerId: string;
++    paymentMethodId: string;
++    idempotencyKey: string;
++  }): Promise<StripeCustomerObject> {
++    return this.post<StripeCustomerObject>(
++      `/customers/${encodeURIComponent(args.customerId)}`,
++      { 'invoice_settings[default_payment_method]': args.paymentMethodId },
++      args.idempotencyKey,
++    );
++  }
++
++  /**
++   * Subscription default (priority 2, above the customer default). Checkout
++   * saves the first card ON the subscription
++   * (`save_default_payment_method=on_subscription`), so Stripe keeps retrying
++   * the old card unless this field is replaced too.
++   */
++  async setSubscriptionDefaultPaymentMethod(args: {
++    subscriptionId: string;
++    paymentMethodId: string;
++    idempotencyKey: string;
++  }): Promise<StripeSubscriptionObject> {
++    return this.post<StripeSubscriptionObject>(
++      `/subscriptions/${encodeURIComponent(args.subscriptionId)}`,
++      { default_payment_method: args.paymentMethodId },
++      args.idempotencyKey,
++    );
++  }
++
++  /** Open (finalized, unpaid) invoices of one subscription, newest first. */
++  /**
++   * Every open invoice on a subscription, following Stripe's `has_more`
++   * cursor (S-DUNNING-R3 B-628-4: a single page silently dropped invoices
++   * past the first 10). A partial list is never returned: past the page cap
++   * or on a malformed page this throws, so callers never act on (charge,
++   * void, quote) an incomplete set.
++   */
++  async listOpenInvoices(
++    subscriptionId: string,
++    opts: { pageSize?: number; maxPages?: number } = {},
++  ): Promise<StripeInvoiceObject[]> {
++    const pageSize = Math.min(Math.max(opts.pageSize ?? 100, 1), 100);
++    const maxPages = Math.max(opts.maxPages ?? 10, 1);
++    const all: StripeInvoiceObject[] = [];
++    let startingAfter: string | null = null;
++    for (let page = 0; page < maxPages; page++) {
++      const params: Record<string, string> = {
++        subscription: subscriptionId,
++        status: 'open',
++        limit: String(pageSize),
++      };
++      if (startingAfter) params.starting_after = startingAfter;
++      const q = new URLSearchParams(params).toString();
++      const res = await this.get<{ data?: StripeInvoiceObject[]; has_more?: boolean }>(
++        `/invoices?${q}`,
++      );
++      if (!Array.isArray(res?.data)) {
++        throw new StripeConnectApiError(
++          'Stripe returned a malformed invoice list',
++          502,
++          'invoice_list_malformed',
++          'api_error',
++        );
++      }
++      all.push(...res.data);
++      const last = res.data[res.data.length - 1];
++      if (res.has_more !== true) return all;
++      if (!last?.id) {
++        throw new StripeConnectApiError(
++          'Stripe invoice list said has_more without a cursor',
++          502,
++          'invoice_list_malformed',
++          'api_error',
++        );
++      }
++      startingAfter = last.id;
++    }
++    throw new StripeConnectApiError(
++      `Open invoice list exceeded ${maxPages * pageSize} invoices`,
++      502,
++      'invoice_list_incomplete',
++      'api_error',
++    );
++  }
++
++  async retrieveInvoice(invoiceId: string): Promise<StripeInvoiceObject> {
++    const q = new URLSearchParams({ 'expand[0]': 'payment_intent' }).toString();
++    return this.get<StripeInvoiceObject>(`/invoices/${encodeURIComponent(invoiceId)}?${q}`);
++  }
++
++  /**
++   * Attempt payment of one open invoice with an explicit payment method,
++   * on-session (the client is in the app, having just saved the card). The
++   * invoice owns exactly one PaymentIntent, so this and any Stripe retry
++   * confirm the SAME PaymentIntent: an invoice can be paid at most once.
++   * Stripe answers 402 `invoice_payment_intent_requires_action` when the
++   * bank wants 3DS; the caller then hands the invoice's PaymentIntent
++   * client_secret to the app.
++   */
++  async payInvoice(args: {
++    invoiceId: string;
++    paymentMethodId: string;
++    idempotencyKey: string;
++  }): Promise<StripeInvoiceObject> {
++    return this.post<StripeInvoiceObject>(
++      `/invoices/${encodeURIComponent(args.invoiceId)}/pay`,
++      { payment_method: args.paymentMethodId, off_session: 'false' },
++      args.idempotencyKey,
++    );
++  }
++
++  /** Mark an open invoice void (terminal: it can never be paid). */
++  async voidInvoice(args: {
++    invoiceId: string;
++    idempotencyKey: string;
++  }): Promise<StripeInvoiceObject> {
++    return this.post<StripeInvoiceObject>(
++      `/invoices/${encodeURIComponent(args.invoiceId)}/void`,
++      {},
++      args.idempotencyKey,
++    );
++  }
++
++  /**
++   * Voluntary cancel outside dunning (owner 13:43 option A): the client keeps
++   * access through the period already paid, no refund, no proration.
++   */
++  async setCancelAtPeriodEnd(args: {
++    subscriptionId: string;
++    idempotencyKey: string;
++  }): Promise<StripeSubscriptionObject> {
++    return this.post<StripeSubscriptionObject>(
++      `/subscriptions/${encodeURIComponent(args.subscriptionId)}`,
++      { cancel_at_period_end: 'true', proration_behavior: 'none' },
++      args.idempotencyKey,
++    );
++  }
++
+   // --- Phase 6 — Payout readiness, balance, refunds, disputes ---
+   //
+   // All four read methods use Stripe's `Stripe-Account` header to scope
+@@ -792,10 +961,7 @@ export class StripeConnectApiService {
+     const params = new URLSearchParams();
+     params.set('limit', String(Math.min(args.limit ?? 10, 100)));
+     if (args.status) params.set('status', args.status);
+-    return this.getOnAccount(
+-      `/payouts?${params.toString()}`,
+-      args.connectedAccountId,
+-    );
++    return this.getOnAccount(`/payouts?${params.toString()}`, args.connectedAccountId);
+   }
+ 
+   // List balance transactions for a connected account — needed for the
+@@ -825,10 +991,7 @@ export class StripeConnectApiService {
+     params.set('limit', String(Math.min(args.limit ?? 25, 100)));
+     if (args.type) params.set('type', args.type);
+     if (args.payout) params.set('payout', args.payout);
+-    return this.getOnAccount(
+-      `/balance_transactions?${params.toString()}`,
+-      args.connectedAccountId,
+-    );
++    return this.getOnAccount(`/balance_transactions?${params.toString()}`, args.connectedAccountId);
+   }
+ 
+   // Retrieve a single Refund (used for webhook handlers + admin lookup).
+@@ -898,10 +1061,7 @@ export class StripeConnectApiService {
+ 
+   // GET that adds the Stripe-Account header so the request is scoped to a
+   // connected account (used for balance, payouts, balance transactions).
+-  protected async getOnAccount<T>(
+-    path: string,
+-    connectedAccountId: string,
+-  ): Promise<T> {
++  protected async getOnAccount<T>(path: string, connectedAccountId: string): Promise<T> {
+     const secret = this.requireSecret();
+     try {
+       const res = await this.fetchImpl(`${STRIPE_API_BASE}${path}`, {
+@@ -978,8 +1138,7 @@ export class StripeConnectApiService {
+   // DOMException bubbling up through NestJS.
+   private handleFetchError(err: unknown, path: string): never {
+     const isAbort =
+-      err instanceof Error &&
+-      (err.name === 'AbortError' || err.name === 'TimeoutError');
++      err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError');
+     if (isAbort) {
+       throw new StripeConnectApiError(
+         `Stripe API timed out after ${this.stripeTimeoutMs}ms on ${path}`,
+@@ -999,11 +1158,12 @@ export class StripeConnectApiService {
+           ? (parsed as { error: Record<string, unknown> }).error
+           : null;
+       const message =
+-        (errEnvelope?.message as string | undefined) ??
+-        `Stripe API ${res.status} on ${path}`;
++        (errEnvelope?.message as string | undefined) ?? `Stripe API ${res.status} on ${path}`;
+       const code = (errEnvelope?.code as string | undefined) ?? null;
+       const type = (errEnvelope?.type as string | undefined) ?? null;
+-      throw new StripeConnectApiError(message, res.status, code, type);
++      const declineCode = (errEnvelope?.decline_code as string | undefined) ?? null;
++      const replayed = res.headers?.get?.('idempotent-replayed') === 'true';
++      throw new StripeConnectApiError(message, res.status, code, type, declineCode, replayed);
+     }
+     return parsed as T;
+   }
+diff --git a/src/email/email.service.ts b/src/email/email.service.ts
+index 228bb313..f257dd82 100644
+--- a/src/email/email.service.ts
++++ b/src/email/email.service.ts
+@@ -62,6 +62,11 @@ const TEMPLATE_SUBJECTS: Record<EmailTemplateKey, string> = {
+   'payment-final-notice':
+     "A second heads-up — subscription ends {{cancellation_date}} if payment doesn't go through",
+   'payment-recovered': "You're all set — payment received",
++  // S-DUNNING-R2 — the dispatcher passes a per-step `subject`.
++  'dunning-v2-client':
++    '{{#if subject}}{{subject}}{{else}}About your Growth Project payment{{/if}}',
++  'dunning-v2-coach':
++    '{{#if clientName}}A payment from {{clientName}} needs attention{{else}}A client payment needs attention{{/if}}',
+ };
+ 
+ // EmailService is the single entry point for sending transactional email.
+diff --git a/src/email/email.types.ts b/src/email/email.types.ts
+index f203c1f6..d21dbb9a 100644
+--- a/src/email/email.types.ts
++++ b/src/email/email.types.ts
+@@ -26,6 +26,11 @@ export const EmailTemplateKey = {
+   PAYMENT_REMINDER_URGENT: 'payment-reminder-urgent',
+   PAYMENT_FINAL_NOTICE: 'payment-final-notice',
+   PAYMENT_RECOVERED: 'payment-recovered',
++  // S-DUNNING-R2 — Smart Dunning v2 notices. The body is Roman's rendered
++  // copy (`roman_body`); the button opens the native in-app card update via
++  // the https universal link (`update_card_url`). Append-only.
++  DUNNING_V2_CLIENT: 'dunning-v2-client',
++  DUNNING_V2_COACH: 'dunning-v2-coach',
+ } as const;
+ export type EmailTemplateKey =
+   (typeof EmailTemplateKey)[keyof typeof EmailTemplateKey];
+diff --git a/src/email/templates/dunning-v2-client.hbs b/src/email/templates/dunning-v2-client.hbs
+new file mode 100644
+index 00000000..eac69160
+--- /dev/null
++++ b/src/email/templates/dunning-v2-client.hbs
+@@ -0,0 +1,15 @@
++<!doctype html>
++<html lang="en">
++  <body style="font-family: -apple-system, system-ui, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; color: #1a1a1a; line-height: 1.5;">
++    <div style="white-space: pre-line; font-size: 16px;">{{roman_body}}</div>
++    {{#if update_card_url}}
++    <p style="margin: 28px 0 8px;">
++      <a href="{{update_card_url}}" style="display: inline-block; background: #1f2a24; color: #ffffff; padding: 12px 22px; border-radius: 8px; text-decoration: none; font-weight: 600;">Update card in the app</a>
++    </p>
++    <p style="font-size: 13px; color: #555; margin: 0 0 24px;">Open this on the phone where The Growth Project app is installed. It goes straight to the card screen. Once the new card is saved, the amount owed is paid with it and your access stays on.</p>
++    {{/if}}
++    <p style="font-size: 13px; color: #555;">If you would rather end your plan, open the app and choose End my plan on the payment screen. The unpaid amount is then canceled and nothing more is charged.</p>
++    <hr style="border: 0; border-top: 1px solid #eaeaea; margin: 32px 0;" />
++    <p style="font-size: 12px; color: #888;">Questions about this payment? Reply to this email and a person on our team will help.</p>
++  </body>
++</html>
+diff --git a/src/email/templates/dunning-v2-coach.hbs b/src/email/templates/dunning-v2-coach.hbs
+new file mode 100644
+index 00000000..7fcc3818
+--- /dev/null
++++ b/src/email/templates/dunning-v2-coach.hbs
+@@ -0,0 +1,8 @@
++<!doctype html>
++<html lang="en">
++  <body style="font-family: -apple-system, system-ui, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; color: #1a1a1a; line-height: 1.5;">
++    <div style="white-space: pre-line; font-size: 16px;">{{roman_body}}</div>
++    <hr style="border: 0; border-top: 1px solid #eaeaea; margin: 32px 0;" />
++    <p style="font-size: 12px; color: #888;">Your client has already been asked to update their card in the app. You do not need to collect the payment yourself.</p>
++  </body>
++</html>
+diff --git a/test/fixtures/stripe/dunning-v2/charge.dispute.created.json b/test/fixtures/stripe/dunning-v2/charge.dispute.created.json
+new file mode 100644
+index 00000000..181450c3
+--- /dev/null
++++ b/test/fixtures/stripe/dunning-v2/charge.dispute.created.json
+@@ -0,0 +1,20 @@
++{
++  "id": "evt_dv2_dispute_created",
++  "object": "event",
++  "api_version": "2024-06-20",
++  "type": "charge.dispute.created",
++  "livemode": false,
++  "data": {
++    "object": {
++      "id": "dp_dv2_1",
++      "object": "dispute",
++      "amount": 15000,
++      "currency": "usd",
++      "charge": "ch_dv2_retry_paid",
++      "payment_intent": "pi_dv2_renewal_1",
++      "reason": "fraudulent",
++      "status": "needs_response",
++      "created": 0
++    }
++  }
++}
+diff --git a/test/fixtures/stripe/dunning-v2/charge.refunded.json b/test/fixtures/stripe/dunning-v2/charge.refunded.json
+new file mode 100644
+index 00000000..96cf91a4
+--- /dev/null
++++ b/test/fixtures/stripe/dunning-v2/charge.refunded.json
+@@ -0,0 +1,20 @@
++{
++  "id": "evt_dv2_charge_refunded",
++  "object": "event",
++  "api_version": "2024-06-20",
++  "type": "charge.refunded",
++  "livemode": false,
++  "data": {
++    "object": {
++      "id": "ch_dv2_retry_paid",
++      "object": "charge",
++      "amount": 15000,
++      "amount_refunded": 15000,
++      "refunded": true,
++      "currency": "usd",
++      "customer": "cus_dv2_client",
++      "payment_intent": "pi_dv2_renewal_1",
++      "created": 0
++    }
++  }
++}
+diff --git a/test/fixtures/stripe/dunning-v2/customer.subscription.deleted.json b/test/fixtures/stripe/dunning-v2/customer.subscription.deleted.json
+new file mode 100644
+index 00000000..a124642c
+--- /dev/null
++++ b/test/fixtures/stripe/dunning-v2/customer.subscription.deleted.json
+@@ -0,0 +1,20 @@
++{
++  "id": "evt_dv2_sub_deleted",
++  "object": "event",
++  "api_version": "2024-06-20",
++  "type": "customer.subscription.deleted",
++  "livemode": false,
++  "data": {
++    "object": {
++      "id": "sub_dv2_client",
++      "object": "subscription",
++      "customer": "cus_dv2_client",
++      "status": "canceled",
++      "cancel_at_period_end": true,
++      "canceled_at": 0,
++      "ended_at": 0,
++      "current_period_end": 0,
++      "cancellation_details": { "reason": "cancellation_requested" }
++    }
++  }
++}
+diff --git a/test/fixtures/stripe/dunning-v2/customer.subscription.updated.cancel_at_period_end.json b/test/fixtures/stripe/dunning-v2/customer.subscription.updated.cancel_at_period_end.json
+new file mode 100644
+index 00000000..3f3322b1
+--- /dev/null
++++ b/test/fixtures/stripe/dunning-v2/customer.subscription.updated.cancel_at_period_end.json
+@@ -0,0 +1,22 @@
++{
++  "id": "evt_dv2_sub_updated_cancel_at_period_end",
++  "object": "event",
++  "api_version": "2024-06-20",
++  "type": "customer.subscription.updated",
++  "livemode": false,
++  "data": {
++    "object": {
++      "id": "sub_dv2_client",
++      "object": "subscription",
++      "customer": "cus_dv2_client",
++      "status": "active",
++      "cancel_at_period_end": true,
++      "cancel_at": 0,
++      "canceled_at": 0,
++      "current_period_start": 0,
++      "current_period_end": 0,
++      "cancellation_details": { "reason": "cancellation_requested" }
++    },
++    "previous_attributes": { "cancel_at_period_end": false }
++  }
++}
+diff --git a/test/fixtures/stripe/dunning-v2/customer.subscription.updated.past_due.json b/test/fixtures/stripe/dunning-v2/customer.subscription.updated.past_due.json
+new file mode 100644
+index 00000000..d2af0ed6
+--- /dev/null
++++ b/test/fixtures/stripe/dunning-v2/customer.subscription.updated.past_due.json
+@@ -0,0 +1,22 @@
++{
++  "id": "evt_dv2_sub_updated_past_due",
++  "object": "event",
++  "api_version": "2024-06-20",
++  "type": "customer.subscription.updated",
++  "livemode": false,
++  "data": {
++    "object": {
++      "id": "sub_dv2_client",
++      "object": "subscription",
++      "customer": "cus_dv2_client",
++      "status": "past_due",
++      "cancel_at_period_end": false,
++      "cancel_at": null,
++      "canceled_at": null,
++      "current_period_start": 0,
++      "current_period_end": 0,
++      "latest_invoice": "in_dv2_renewal_1"
++    },
++    "previous_attributes": { "status": "active" }
++  }
++}
+diff --git a/test/fixtures/stripe/dunning-v2/invoice.paid.json b/test/fixtures/stripe/dunning-v2/invoice.paid.json
+new file mode 100644
+index 00000000..398ac407
+--- /dev/null
++++ b/test/fixtures/stripe/dunning-v2/invoice.paid.json
+@@ -0,0 +1,23 @@
++{
++  "id": "evt_dv2_invoice_paid",
++  "object": "event",
++  "api_version": "2024-06-20",
++  "type": "invoice.paid",
++  "livemode": false,
++  "data": {
++    "object": {
++      "id": "in_dv2_renewal_1",
++      "object": "invoice",
++      "billing_reason": "subscription_cycle",
++      "subscription": "sub_dv2_client",
++      "customer": "cus_dv2_client",
++      "amount_due": 15000,
++      "amount_paid": 15000,
++      "currency": "usd",
++      "attempt_count": 3,
++      "status": "paid",
++      "charge": "ch_dv2_retry_paid",
++      "status_transitions": { "paid_at": 0 }
++    }
++  }
++}
+diff --git a/test/fixtures/stripe/dunning-v2/invoice.payment_failed.json b/test/fixtures/stripe/dunning-v2/invoice.payment_failed.json
+new file mode 100644
+index 00000000..cb87b860
+--- /dev/null
++++ b/test/fixtures/stripe/dunning-v2/invoice.payment_failed.json
+@@ -0,0 +1,30 @@
++{
++  "id": "evt_dv2_invoice_payment_failed",
++  "object": "event",
++  "api_version": "2024-06-20",
++  "type": "invoice.payment_failed",
++  "livemode": false,
++  "data": {
++    "object": {
++      "id": "in_dv2_renewal_1",
++      "object": "invoice",
++      "billing_reason": "subscription_cycle",
++      "subscription": "sub_dv2_client",
++      "customer": "cus_dv2_client",
++      "amount_due": 15000,
++      "amount_paid": 0,
++      "currency": "usd",
++      "attempt_count": 1,
++      "attempted": true,
++      "status": "open",
++      "collection_method": "charge_automatically",
++      "next_payment_attempt": null,
++      "hosted_invoice_url": "https://invoice.stripe.com/i/acct_dv2/test_in_dv2_renewal_1",
++      "last_payment_error": {
++        "code": "card_declined",
++        "decline_code": "insufficient_funds",
++        "message": "Your card has insufficient funds."
++      }
++    }
++  }
++}
+diff --git a/test/support/dunning-v2-fake-prisma.ts b/test/support/dunning-v2-fake-prisma.ts
+new file mode 100644
+index 00000000..ff95d8df
+--- /dev/null
++++ b/test/support/dunning-v2-fake-prisma.ts
+@@ -0,0 +1,382 @@
++/**
++ * In-memory Prisma stand-in for the Smart Dunning v2 specs (S-DUNNING).
++ *
++ * Deterministic and dependency-free: every model is an array of plain rows.
++ * Supports the query surface the dunning path uses — findUnique / findFirst /
++ * findMany / create / update / updateMany / deleteMany / count / upsert —
++ * with the where operators it needs (equality incl. null, not, in, lt, lte,
++ * gt, gte, AND / OR / NOT, and the to-one relations DunningState.purchase and
++ * ClientPurchase.dunning, plain or via is / isNot), select / include with one
++ * level of relation, orderBy and take, and `{ increment }` updates.
++ *
++ * `$transaction(fn)` runs `fn` against a TX VIEW of the same store and records
++ * the call, so a spec can assert whether code opened its own transaction or
++ * joined the caller's. Writes through a tx view are tagged with `viaTx`.
++ */
++
++type Row = Record<string, unknown>;
++type Where = Record<string, unknown>;
++
++export interface FakeWrite {
++  model: string;
++  op: string;
++  viaTx: boolean;
++  where?: Where;
++}
++
++const RELATIONS: Record<
++  string,
++  Record<string, { model: string; local: string; foreign: string }>
++> = {
++  dunningState: {
++    purchase: { model: 'clientPurchase', local: 'purchase_id', foreign: 'id' },
++  },
++  clientPurchase: {
++    dunning: { model: 'dunningState', local: 'id', foreign: 'purchase_id' },
++    billing_lease: { model: 'clientBillingLease', local: 'id', foreign: 'purchase_id' },
++  },
++  clientBillingOperation: {
++    purchase: { model: 'clientPurchase', local: 'purchase_id', foreign: 'id' },
++  },
++  dunningNoticeDelivery: {
++    dunning_state: { model: 'dunningState', local: 'dunning_state_id', foreign: 'id' },
++  },
++};
++
++const MODELS = [
++  'clientPurchase',
++  'dunningState',
++  'dunningAttempt',
++  'paymentReminder',
++  'notification',
++  'paymentRecoveryToken',
++  'user',
++  'connectCustomer',
++  'connectTransfer',
++  'coachPackage',
++  'notificationPreferences',
++  'stripeProcessedEvent',
++  'clientBillingLease',
++  'clientBillingOperation',
++  'dunningNoticeDelivery',
++  'chargeDispute',
++  'dunningDisputeObligation',
++] as const;
++
++export type FakeModelName = (typeof MODELS)[number];
++
++/** Models whose Prisma schema has `@updatedAt` the code under test reads. */
++const UPDATED_AT_MODELS = new Set<string>([
++  'clientBillingLease',
++  'clientBillingOperation',
++  'dunningNoticeDelivery',
++  'dunningDisputeObligation',
++]);
++
++function isPlainObject(v: unknown): v is Record<string, unknown> {
++  return typeof v === 'object' && v !== null && !(v instanceof Date) && !Array.isArray(v);
++}
++
++function cmp(a: unknown, b: unknown): number {
++  const av = a instanceof Date ? a.getTime() : (a as number);
++  const bv = b instanceof Date ? b.getTime() : (b as number);
++  if (av === bv) return 0;
++  return av < bv ? -1 : 1;
++}
++
++function eq(a: unknown, b: unknown): boolean {
++  if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
++  if (a === undefined) return b === null || b === undefined;
++  return a === b;
++}
++
++const SCALAR_OPS = new Set(['not', 'in', 'notIn', 'lt', 'lte', 'gt', 'gte', 'equals']);
++
++function matchScalar(value: unknown, cond: unknown): boolean {
++  if (!isPlainObject(cond) || !Object.keys(cond).every((k) => SCALAR_OPS.has(k))) {
++    return eq(value, cond);
++  }
++  for (const [op, arg] of Object.entries(cond)) {
++    if (arg === undefined) continue;
++    switch (op) {
++      case 'equals':
++        if (!eq(value, arg)) return false;
++        break;
++      case 'not':
++        if (isPlainObject(arg)) {
++          if (matchScalar(value, arg)) return false;
++        } else if (eq(value, arg)) return false;
++        break;
++      case 'in':
++        if (!(arg as unknown[]).some((x) => eq(value, x))) return false;
++        break;
++      case 'notIn':
++        if ((arg as unknown[]).some((x) => eq(value, x))) return false;
++        break;
++      case 'lt':
++        if (value == null || cmp(value, arg) >= 0) return false;
++        break;
++      case 'lte':
++        if (value == null || cmp(value, arg) > 0) return false;
++        break;
++      case 'gt':
++        if (value == null || cmp(value, arg) <= 0) return false;
++        break;
++      case 'gte':
++        if (value == null || cmp(value, arg) < 0) return false;
++        break;
++      default:
++        break;
++    }
++  }
++  return true;
++}
++
++export class FakePrisma {
++  readonly store: Record<FakeModelName, Row[]>;
++  readonly writes: FakeWrite[] = [];
++  transactionCalls = 0;
++  private seq = 0;
++
++  constructor() {
++    const store = {} as Record<FakeModelName, Row[]>;
++    for (const m of MODELS) store[m] = [];
++    this.store = store;
++  }
++
++  /**
++   * The prisma-shaped client. `viaTx` tags writes made inside $transaction.
++   * Typed `any` on purpose: it stands in for PrismaService / TransactionClient
++   * in constructor slots without a cast.
++   */
++  // eslint-disable-next-line @typescript-eslint/no-explicit-any
++  client(viaTx = false): any {
++    const out: Record<string, unknown> = {};
++    for (const m of MODELS) out[m] = this.delegate(m, viaTx);
++    out.$transaction = async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
++      this.transactionCalls += 1;
++      return fn(this.client(true));
++    };
++    out.$queryRaw = async () => [];
++    out.$executeRaw = async () => 0;
++    return out;
++  }
++
++  seed(model: FakeModelName, row: Row): Row {
++    const full = { id: row.id ?? this.nextId(model), ...row };
++    this.store[model].push(full);
++    return full;
++  }
++
++  rows(model: FakeModelName): Row[] {
++    return this.store[model];
++  }
++
++  find(model: FakeModelName, where: Where): Row | undefined {
++    return this.store[model].find((r) => this.matches(model, r, where));
++  }
++
++  private nextId(model: string): string {
++    this.seq += 1;
++    return `${model}_${this.seq}`;
++  }
++
++  matches(model: string, row: Row, where: Where | undefined): boolean {
++    if (!where) return true;
++    for (const [key, cond] of Object.entries(where)) {
++      if (cond === undefined) continue;
++      if (key === 'AND') {
++        const list = Array.isArray(cond) ? cond : [cond];
++        if (!list.every((w) => this.matches(model, row, w as Where))) return false;
++        continue;
++      }
++      if (key === 'OR') {
++        if (!(cond as Where[]).some((w) => this.matches(model, row, w))) return false;
++        continue;
++      }
++      if (key === 'NOT') {
++        const list = Array.isArray(cond) ? cond : [cond];
++        if (list.some((w) => this.matches(model, row, w as Where))) return false;
++        continue;
++      }
++      const rel = RELATIONS[model]?.[key];
++      if (rel) {
++        const related = this.store[rel.model as FakeModelName].find(
++          (r) => r[rel.foreign] === row[rel.local],
++        );
++        const c = cond as Where | null;
++        if (c === null) {
++          if (related) return false;
++          continue;
++        }
++        if (isPlainObject(c) && 'is' in c) {
++          if (c.is === null) {
++            if (related) return false;
++          } else if (!related || !this.matches(rel.model, related, c.is as Where)) {
++            return false;
++          }
++          continue;
++        }
++        if (isPlainObject(c) && 'isNot' in c) {
++          if (c.isNot === null) {
++            if (!related) return false;
++          } else if (related && this.matches(rel.model, related, c.isNot as Where)) {
++            return false;
++          }
++          continue;
++        }
++        if (!related || !this.matches(rel.model, related, c as Where)) return false;
++        continue;
++      }
++      if (!matchScalar(row[key], cond)) return false;
++    }
++    return true;
++  }
++
++  private project(model: string, row: Row, args: { select?: Row; include?: Row }): Row {
++    const withRel = (name: string, spec: unknown): unknown => {
++      const rel = RELATIONS[model]?.[name];
++      if (!rel) return row[name];
++      const related = this.store[rel.model as FakeModelName].find(
++        (r) => r[rel.foreign] === row[rel.local],
++      );
++      if (!related) return null;
++      if (isPlainObject(spec) && (spec.select || spec.include)) {
++        return this.project(rel.model, related, spec as { select?: Row; include?: Row });
++      }
++      return { ...related };
++    };
++    if (args.select) {
++      const out: Row = {};
++      for (const [k, v] of Object.entries(args.select)) {
++        if (!v) continue;
++        out[k] = RELATIONS[model]?.[k] ? withRel(k, v) : row[k];
++      }
++      return out;
++    }
++    const out: Row = { ...row };
++    if (args.include) {
++      for (const [k, v] of Object.entries(args.include)) {
++        if (v) out[k] = withRel(k, v);
++      }
++    }
++    return out;
++  }
++
++  private applyData(row: Row, data: Row): void {
++    for (const [k, v] of Object.entries(data)) {
++      if (v === undefined) continue;
++      if (isPlainObject(v) && 'increment' in v) {
++        row[k] = ((row[k] as number) ?? 0) + (v.increment as number);
++      } else if (isPlainObject(v) && 'set' in v) {
++        row[k] = v.set;
++      } else {
++        row[k] = v;
++      }
++    }
++  }
++
++  private sort(rows: Row[], orderBy: unknown): Row[] {
++    if (!orderBy) return rows;
++    const specs = (Array.isArray(orderBy) ? orderBy : [orderBy]) as Row[];
++    return [...rows].sort((a, b) => {
++      for (const spec of specs) {
++        for (const [k, dir] of Object.entries(spec)) {
++          const av = a[k];
++          const bv = b[k];
++          if (av == null && bv == null) continue;
++          // Nulls sort last in either direction (callers here never depend
++          // on null placement).
++          if (av == null) return 1;
++          if (bv == null) return -1;
++          const c = cmp(av, bv);
++          if (c !== 0) return dir === 'desc' ? -c : c;
++        }
++      }
++      return 0;
++    });
++  }
++
++  private delegate(model: FakeModelName, viaTx: boolean) {
++    const rows = () => this.store[model];
++    const record = (op: string, where?: Where) => this.writes.push({ model, op, viaTx, where });
++    const touch = (row: Row) => {
++      if (UPDATED_AT_MODELS.has(model)) row.updated_at = new Date();
++    };
++    type Args = {
++      where?: Where;
++      data?: Row;
++      select?: Row;
++      include?: Row;
++      orderBy?: unknown;
++      take?: number;
++      create?: Row;
++      update?: Row;
++    };
++    const many = (args: Args = {}) => {
++      let out = rows().filter((r) => this.matches(model, r, args.where));
++      out = this.sort(out, args.orderBy);
++      if (typeof args.take === 'number') out = out.slice(0, args.take);
++      return out.map((r) => this.project(model, r, args));
++    };
++    return {
++      findUnique: jest.fn(async (args: Args) => {
++        const r = rows().find((x) => this.matches(model, x, args.where));
++        return r ? this.project(model, r, args) : null;
++      }),
++      findFirst: jest.fn(async (args: Args = {}) => many({ ...args, take: 1 })[0] ?? null),
++      findMany: jest.fn(async (args: Args = {}) => many(args)),
++      count: jest.fn(
++        async (args: Args = {}) => rows().filter((r) => this.matches(model, r, args.where)).length,
++      ),
++      create: jest.fn(async (args: Args) => {
++        record('create');
++        const row: Row = {
++          id: (args.data?.id as string) ?? this.nextId(model),
++          created_at: new Date(),
++          ...args.data,
++        };
++        touch(row);
++        rows().push(row);
++        return this.project(model, row, args);
++      }),
++      update: jest.fn(async (args: Args) => {
++        record('update', args.where);
++        const row = rows().find((x) => this.matches(model, x, args.where));
++        if (!row) throw new Error(`fake ${model}.update: record not found`);
++        this.applyData(row, args.data ?? {});
++        touch(row);
++        return this.project(model, row, args);
++      }),
++      updateMany: jest.fn(async (args: Args) => {
++        record('updateMany', args.where);
++        const hit = rows().filter((x) => this.matches(model, x, args.where));
++        for (const row of hit) {
++          this.applyData(row, args.data ?? {});
++          touch(row);
++        }
++        return { count: hit.length };
++      }),
++      upsert: jest.fn(async (args: Args) => {
++        record('upsert', args.where);
++        const row = rows().find((x) => this.matches(model, x, args.where));
++        if (row) {
++          this.applyData(row, args.update ?? {});
++          touch(row);
++          return { ...row };
++        }
++        const created: Row = { id: this.nextId(model), created_at: new Date(), ...args.create };
++        touch(created);
++        rows().push(created);
++        return { ...created };
++      }),
++      deleteMany: jest.fn(async (args: Args = {}) => {
++        record('deleteMany', args.where);
++        const keep = rows().filter((x) => !this.matches(model, x, args.where));
++        const removed = rows().length - keep.length;
++        this.store[model] = keep;
++        return { count: removed };
++      }),
++    };
++  }
++}
+diff --git a/test/support/fake-stripe-billing.ts b/test/support/fake-stripe-billing.ts
+new file mode 100644
+index 00000000..82e4c287
+--- /dev/null
++++ b/test/support/fake-stripe-billing.ts
+@@ -0,0 +1,477 @@
++/**
++ * Stateful Stripe stand-in for the S-DUNNING-R2 specs (native card update,
++ * owner rulings 1A / 2A). Models exactly the Stripe behaviour those paths
++ * rely on, with integer minor units everywhere:
++ *
++ *   - an invoice owns ONE PaymentIntent and can be paid at most once; paying
++ *     a paid (or void) invoice errors; voiding a paid invoice errors;
++ *   - `invoices.pay` charges the given card on-session: ok / declined
++ *     (card_error + decline_code) / 3DS (`invoice_payment_intent_requires_action`);
++ *   - Stripe's own retry charges the SUBSCRIPTION's default payment method
++ *     (Stripe's priority: subscription default before customer default);
++ *   - voiding the latest open invoice of a past_due subscription makes it
++ *     active (Stripe docs, "Subscription invoices");
++ *   - POSTs carry Idempotency-Keys and a replayed key returns the first result.
++ *
++ * Every charge is appended to `charges`, so a spec can prove "charged once".
++ */
++import { StripeConnectApiError } from '../../src/connect/stripe-connect-api.service';
++
++export type CardBehavior = 'ok' | 'decline' | 'requires_action';
++
++export interface FakeInvoice {
++  id: string;
++  object: 'invoice';
++  status: 'open' | 'paid' | 'void';
++  subscription: string;
++  customer: string;
++  amount_due: number;
++  amount_paid: number;
++  amount_remaining: number;
++  currency: string;
++  created: number;
++  payment_intent: { id: string; status: string; client_secret: string };
++}
++
++export interface FakeSubscription {
++  id: string;
++  status: string;
++  customer: string;
++  current_period_end: number;
++  default_payment_method: string | null;
++  cancel_at_period_end: boolean;
++  latest_invoice: string | null;
++}
++
++export interface FakeSetupIntent {
++  id: string;
++  status: string;
++  client_secret: string;
++  customer: string;
++  payment_method: string | null;
++  usage: string;
++  metadata: Record<string, string>;
++}
++
++export interface FakeCharge {
++  invoice: string;
++  payment_method: string;
++  amount: number;
++  by: 'tgp_pay' | 'stripe_retry' | 'client_3ds';
++}
++
++export class FakeStripeBilling {
++  readonly invoices = new Map<string, FakeInvoice>();
++  readonly subs = new Map<string, FakeSubscription>();
++  readonly customers = new Map<string, { id: string; default_payment_method: string | null }>();
++  readonly setupIntents = new Map<string, FakeSetupIntent>();
++  readonly cards = new Map<
++    string,
++    { behavior: CardBehavior; brand: string; last4: string; exp_month: number; exp_year: number }
++  >();
++  readonly charges: FakeCharge[] = [];
++  readonly calls: Array<{ op: string; key?: string; args?: unknown }> = [];
++  private readonly idem = new Map<string, { ok: unknown } | { err: unknown }>();
++  private seq = 0;
++
++  /** Test hooks: run before a pay / void / cancel executes (e.g. a race). */
++  beforePay?: (invoiceId: string) => Promise<void> | void;
++  beforeVoid?: (invoiceId: string) => Promise<void> | void;
++  /** Number of upcoming cancelSubscription calls that fail with a 503. */
++  cancelFailures = 0;
++  /** S-DUNNING-R3: subscriptions whose open-invoice list answers 503. */
++  readonly listFailures = new Set<string>();
++  /** S-DUNNING-R3: upcoming pays that SETTLE, then lose the reply (timeout). */
++  loseNextPayReply = 0;
++  /** S-DUNNING-R7: upcoming invoice GETs that answer 503 (a failed re-read). */
++  failInvoiceReads = 0;
++  /**
++   * S-DUNNING-R7: errors the next pay calls fail with BEFORE Stripe executes
++   * them (nothing is charged, nothing is stored under the key), e.g. a 503
++   * from the edge or a 409 `idempotency_key_in_use`.
++   */
++  readonly payErrors: StripeConnectApiError[] = [];
++
++  /**
++   * S-DUNNING-R7: Stripe prunes idempotency keys that are at least 24 hours
++   * old; a later request with a pruned key is executed as a NEW request.
++   */
++  pruneIdempotencyKeys(prefix = 'pay:'): void {
++    for (const k of [...this.idem.keys()]) if (k.startsWith(prefix)) this.idem.delete(k);
++  }
++
++  addCard(id: string, behavior: CardBehavior, last4: string, brand = 'visa'): void {
++    this.cards.set(id, { behavior, brand, last4, exp_month: 12, exp_year: 2030 });
++  }
++
++  addInvoice(
++    inv: Partial<FakeInvoice> & { id: string; subscription: string; amount_due: number },
++  ): FakeInvoice {
++    const full: FakeInvoice = {
++      object: 'invoice',
++      status: 'open',
++      customer: 'cus_dv2_client',
++      amount_paid: 0,
++      amount_remaining: inv.amount_due,
++      currency: 'usd',
++      created: 0,
++      payment_intent: {
++        id: `pi_for_${inv.id}`,
++        status: 'requires_payment_method',
++        client_secret: `pi_for_${inv.id}_secret_test`,
++      },
++      ...inv,
++    };
++    this.invoices.set(full.id, full);
++    const sub = this.subs.get(full.subscription);
++    if (sub) sub.latest_invoice = full.id;
++    return full;
++  }
++
++  // ── Stripe API surface (StripeConnectApiService shape) ──────────────────
++
++  async createSetupIntent(args: {
++    customer: string;
++    metadata?: Record<string, string>;
++    idempotencyKey: string;
++  }): Promise<FakeSetupIntent> {
++    this.calls.push({ op: 'createSetupIntent', key: args.idempotencyKey, args });
++    return this.once(`seti:${args.idempotencyKey}`, () => {
++      this.seq += 1;
++      const si: FakeSetupIntent = {
++        id: `seti_test${this.seq}`,
++        status: 'requires_payment_method',
++        client_secret: `seti_test${this.seq}_secret_x`,
++        customer: args.customer,
++        payment_method: null,
++        usage: 'off_session',
++        metadata: { ...(args.metadata ?? {}) },
++      };
++      this.setupIntents.set(si.id, si);
++      return { ...si };
++    });
++  }
++
++  async retrieveSetupIntent(id: string): Promise<FakeSetupIntent> {
++    this.calls.push({ op: 'retrieveSetupIntent', args: id });
++    const si = this.setupIntents.get(id);
++    if (!si) {
++      throw new StripeConnectApiError(
++        `No such setupintent: '${id}'`,
++        404,
++        'resource_missing',
++        'invalid_request_error',
++      );
++    }
++    return { ...si, metadata: { ...si.metadata } };
++  }
++
++  async createEphemeralKey(
++    customerId: string,
++    idempotencyKey: string,
++  ): Promise<{ secret: string }> {
++    this.calls.push({ op: 'createEphemeralKey', key: idempotencyKey, args: customerId });
++    return { secret: `ek_test_${customerId}` };
++  }
++
++  async setCustomerDefaultPaymentMethod(args: {
++    customerId: string;
++    paymentMethodId: string;
++    idempotencyKey: string;
++  }): Promise<{ id: string }> {
++    this.calls.push({ op: 'setCustomerDefaultPaymentMethod', key: args.idempotencyKey, args });
++    const c = this.customers.get(args.customerId);
++    if (c) c.default_payment_method = args.paymentMethodId;
++    return { id: args.customerId };
++  }
++
++  async setSubscriptionDefaultPaymentMethod(args: {
++    subscriptionId: string;
++    paymentMethodId: string;
++    idempotencyKey: string;
++  }): Promise<FakeSubscription> {
++    this.calls.push({ op: 'setSubscriptionDefaultPaymentMethod', key: args.idempotencyKey, args });
++    const sub = this.mustSub(args.subscriptionId);
++    sub.default_payment_method = args.paymentMethodId;
++    return { ...sub };
++  }
++
++  async listOpenInvoices(subscriptionId: string): Promise<FakeInvoice[]> {
++    this.calls.push({ op: 'listOpenInvoices', args: subscriptionId });
++    if (this.listFailures.has(subscriptionId)) {
++      throw new StripeConnectApiError('Stripe API timed out', 503, 'request_timeout', 'api_error');
++    }
++    return [...this.invoices.values()]
++      .filter((i) => i.subscription === subscriptionId && i.status === 'open')
++      .sort((a, b) => b.created - a.created) // Stripe lists newest first
++      .map((i) => this.copy(i));
++  }
++
++  /**
++   * S-DUNNING-R5: Stripe Charge objects a spec seeds (pinned API
++   * 2024-09-30.acacia still carries `charge.invoice`).
++   */
++  readonly chargeObjects = new Map<
++    string,
++    { id: string; amount: number; invoice: string | null; payment_intent: string | null }
++  >();
++
++  async retrieveCharge(id: string): Promise<{
++    id: string;
++    amount: number;
++    invoice: string | null;
++    payment_intent: string | null;
++  }> {
++    this.calls.push({ op: 'retrieveCharge', args: id });
++    const ch = this.chargeObjects.get(id);
++    if (!ch) {
++      throw new StripeConnectApiError(
++        `No such charge: '${id}'`,
++        404,
++        'resource_missing',
++        'invalid_request_error',
++      );
++    }
++    return { ...ch };
++  }
++
++  async retrieveInvoice(id: string): Promise<FakeInvoice> {
++    this.calls.push({ op: 'retrieveInvoice', args: id });
++    if (this.failInvoiceReads > 0) {
++      this.failInvoiceReads -= 1;
++      throw new StripeConnectApiError('Stripe API unavailable', 503, null, 'api_error');
++    }
++    const inv = this.invoices.get(id);
++    if (!inv) {
++      throw new StripeConnectApiError(
++        `No such invoice: '${id}'`,
++        404,
++        'resource_missing',
++        'invalid_request_error',
++      );
++    }
++    return this.copy(inv);
++  }
++
++  async payInvoice(args: {
++    invoiceId: string;
++    paymentMethodId: string;
++    idempotencyKey: string;
++  }): Promise<FakeInvoice> {
++    this.calls.push({ op: 'payInvoice', key: args.idempotencyKey, args });
++    const early = this.payErrors.shift();
++    if (early) throw early;
++    if (this.beforePay) await this.beforePay(args.invoiceId);
++    const paid = this.once(`pay:${args.idempotencyKey}`, () => {
++      const inv = this.invoices.get(args.invoiceId);
++      if (!inv) {
++        throw new StripeConnectApiError(
++          'No such invoice',
++          404,
++          'resource_missing',
++          'invalid_request_error',
++        );
++      }
++      if (inv.status !== 'open') {
++        throw new StripeConnectApiError(
++          `Invoice ${inv.id} is ${inv.status} and cannot be paid.`,
++          400,
++          null,
++          'invalid_request_error',
++        );
++      }
++      const card = this.cards.get(args.paymentMethodId);
++      if (!card || card.behavior === 'decline') {
++        inv.payment_intent.status = 'requires_payment_method';
++        throw new StripeConnectApiError(
++          'Your card has insufficient funds.',
++          402,
++          'card_declined',
++          'card_error',
++          'insufficient_funds',
++        );
++      }
++      if (card.behavior === 'requires_action') {
++        inv.payment_intent.status = 'requires_action';
++        throw new StripeConnectApiError(
++          'Payment for this invoice requires additional user action.',
++          402,
++          'invoice_payment_intent_requires_action',
++          'invalid_request_error',
++        );
++      }
++      this.settle(inv, args.paymentMethodId, 'tgp_pay');
++      return this.copy(inv);
++    });
++    if (this.loseNextPayReply > 0) {
++      this.loseNextPayReply -= 1;
++      // The charge landed; the answer never reached us.
++      throw new StripeConnectApiError('Stripe API timed out', 503, 'request_timeout', 'api_error');
++    }
++    return paid;
++  }
++
++  async voidInvoice(args: { invoiceId: string; idempotencyKey: string }): Promise<FakeInvoice> {
++    this.calls.push({ op: 'voidInvoice', key: args.idempotencyKey, args });
++    if (this.beforeVoid) await this.beforeVoid(args.invoiceId);
++    return this.once(`void:${args.idempotencyKey}`, () => {
++      const inv = this.invoices.get(args.invoiceId);
++      if (!inv || inv.status !== 'open') {
++        throw new StripeConnectApiError(
++          'You can only pass in open invoices.',
++          400,
++          null,
++          'invalid_request_error',
++        );
++      }
++      inv.status = 'void';
++      inv.amount_remaining = 0;
++      inv.payment_intent.status = 'canceled';
++      const sub = this.subs.get(inv.subscription);
++      if (sub && sub.status === 'past_due' && sub.latest_invoice === inv.id) sub.status = 'active';
++      return this.copy(inv);
++    });
++  }
++
++  async setCancelAtPeriodEnd(args: {
++    subscriptionId: string;
++    idempotencyKey: string;
++  }): Promise<FakeSubscription> {
++    this.calls.push({ op: 'setCancelAtPeriodEnd', key: args.idempotencyKey, args });
++    const sub = this.mustSub(args.subscriptionId);
++    sub.cancel_at_period_end = true;
++    return { ...sub };
++  }
++
++  async cancelSubscription(subId: string): Promise<{ id: string; status: string }> {
++    this.calls.push({ op: 'cancelSubscription', args: subId });
++    if (this.cancelFailures > 0) {
++      this.cancelFailures -= 1;
++      throw new StripeConnectApiError(
++        'Stripe API timed out',
++        503,
++        'request_timeout',
++        'api_connection_error',
++      );
++    }
++    const sub = this.mustSub(subId);
++    sub.status = 'canceled';
++    return { id: sub.id, status: sub.status };
++  }
++
++  async retrieveSubscription(id: string): Promise<FakeSubscription> {
++    this.calls.push({ op: 'retrieveSubscription', args: id });
++    return { ...this.mustSub(id) };
++  }
++
++  async retrievePaymentMethod(id: string): Promise<{ id: string; card?: Record<string, unknown> }> {
++    const c = this.cards.get(id);
++    return {
++      id,
++      card: c
++        ? { brand: c.brand, last4: c.last4, exp_month: c.exp_month, exp_year: c.exp_year }
++        : undefined,
++    };
++  }
++
++  // ── Test-side actions (what the app SDK / Stripe itself would do) ───────
++
++  /** The in-app PaymentSheet confirms the SetupIntent with a card. */
++  confirmSetupIntentInSheet(setupIntentId: string, paymentMethodId: string): void {
++    const si = this.setupIntents.get(setupIntentId);
++    if (!si) throw new Error(`unknown SetupIntent ${setupIntentId}`);
++    si.status = 'succeeded';
++    si.payment_method = paymentMethodId;
++  }
++
++  /** The client passes 3DS in the app (handleNextAction) for an invoice. */
++  completeBankConfirmation(invoiceId: string): void {
++    const inv = this.invoices.get(invoiceId);
++    if (!inv || inv.status !== 'open') throw new Error(`invoice ${invoiceId} not open`);
++    const pm = this.subs.get(inv.subscription)?.default_payment_method ?? 'pm_unknown';
++    this.settle(inv, pm, 'client_3ds');
++  }
++
++  /** Stripe's scheduled retry: charges the subscription's default card. */
++  stripeRetry(invoiceId: string): 'paid' | 'failed' | 'not_open' {
++    const inv = this.invoices.get(invoiceId);
++    if (!inv || inv.status !== 'open') return 'not_open';
++    const sub = this.mustSub(inv.subscription);
++    const pm =
++      sub.default_payment_method ??
++      this.customers.get(sub.customer)?.default_payment_method ??
++      null;
++    const card = pm ? this.cards.get(pm) : undefined;
++    if (!pm || !card || card.behavior !== 'ok') return 'failed';
++    this.settle(inv, pm, 'stripe_retry');
++    return 'paid';
++  }
++
++  callsOf(op: string) {
++    return this.calls.filter((c) => c.op === op);
++  }
++
++  // ── internals ───────────────────────────────────────────────────────────
++
++  private settle(inv: FakeInvoice, pm: string, by: FakeCharge['by']): void {
++    if (inv.status !== 'open') throw new Error(`double charge attempted on ${inv.id}`);
++    inv.status = 'paid';
++    inv.amount_paid = inv.amount_due;
++    inv.amount_remaining = 0;
++    inv.payment_intent.status = 'succeeded';
++    this.charges.push({ invoice: inv.id, payment_method: pm, amount: inv.amount_due, by });
++    const sub = this.subs.get(inv.subscription);
++    const stillOpen = [...this.invoices.values()].some(
++      (i) => i.subscription === inv.subscription && i.status === 'open',
++    );
++    if (sub && !stillOpen && sub.status !== 'canceled') sub.status = 'active';
++  }
++
++  private once<T>(key: string, fn: () => T): T {
++    const hit = this.idem.get(key);
++    if (hit) {
++      // Stripe marks a cached answer with `Idempotent-Replayed: true`.
++      if ('err' in hit) {
++        const e = hit.err;
++        throw e instanceof StripeConnectApiError
++          ? Object.assign(
++              new StripeConnectApiError(
++                e.message,
++                e.httpStatus,
++                e.stripeCode,
++                e.stripeType,
++                e.declineCode,
++              ),
++              { idempotentReplayed: true },
++            )
++          : e;
++      }
++      return hit.ok as T;
++    }
++    try {
++      const ok = fn();
++      this.idem.set(key, { ok });
++      return ok;
++    } catch (err) {
++      this.idem.set(key, { err });
++      throw err;
++    }
++  }
++
++  private mustSub(id: string): FakeSubscription {
++    const sub = this.subs.get(id);
++    if (!sub) {
++      throw new StripeConnectApiError(
++        `No such subscription: '${id}'`,
++        404,
++        'resource_missing',
++        'invalid_request_error',
++      );
++    }
++    return sub;
++  }
++
++  private copy(inv: FakeInvoice): FakeInvoice {
++    return { ...inv, payment_intent: { ...inv.payment_intent } };
++  }
++}

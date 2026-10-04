@@ -1,0 +1,13 @@
+    ✓ control: a distinctly newer success timestamp invalidates an old failure prefetch (7 ms)
+    ✓ B-661-3: successful settlement at the witnessed millisecond still dominates stale failure evidence (2 ms)
+    ✓ control: PaymentSheet failure then same-PI success restores paid access (1 ms)
+    ✓ a previously completed hosted purchase regains access when its failed PI subsequently succeeds (2 ms)
+    ✓ control: a never-activated adopted hosted purchase still waits for its own completion (1 ms)
+    ✓ control: a terminal refund present before the success read remains terminal (1 ms)
+    ✓ a delayed duplicate completion cannot resurrect a hosted purchase after a real async failure (2 ms)
+    ✓ a successful retry read cannot overwrite terminal refunded committed before its activation write (1 ms)
+    ✓ a successful retry read cannot overwrite terminal canceled committed before its activation write (1 ms)
+    ✓ a successful retry read cannot overwrite terminal expired committed before its activation write (15 ms)
+    ✓ a successful retry read cannot overwrite terminal disputed committed before its activation write (6 ms)
+    ✓ a successful retry read cannot overwrite terminal chargeback_lost committed before its activation write (1 ms)
+Tests:       12 passed, 12 total

@@ -1,0 +1,71 @@
+Manage your apps with Sign in with Apple - Apple Support
+
+# Manage your apps with Sign in with Apple
+
+When you use Sign in with Apple, you can use your Apple Account to sign in to participating apps and websites from developers other than Apple. Learn how to view and manage the apps that you use with Sign in with Apple.
+
+## View the apps that you use with Sign in with Apple
+
+To see a list of the apps that you’re currently using with Sign in with Apple and manage your preferences for each one, go to Apple Account settings on your device or sign in on the web. Learn more about Sign in with Apple.
+
+### On your iPhone or iPad
+1. Open the Settings app, then tap [your name].
+2. Tap Sign in with Apple.
+
+### On your Mac
+1. Choose Apple menu , then click System Settings.
+2. Click [your name].
+3. Click Sign in with Apple.
+
+### On the web
+1. Sign in on account.apple.com.
+2. Go to Sign-In & Security.
+3. Select Sign in with Apple.
+
+## Manage your Sign in with Apple settings
+
+In your Apple Account settings, you can see a list of apps that you use with Sign in with Apple. To view the information that you originally shared with an app, select any app in the list. You can also choose to stop using Sign in with Apple with an app or website.
+
+For accounts you set up using Sign in with Apple, you can share the passwords in the Passwords app.
+
+If you use a Managed Apple Account at school or in the workplace, contact your system administrator to manage the apps that you use with Sign in with Apple at Work & School.
+
+### Stop using Sign in with Apple with an app
+1. On your iPhone, open the Settings app, then tap [your name].
+2. Tap Sign in with Apple.
+3. Select the app or developer, then tap Delete. Follow the onscreen steps to confirm that you want to stop using Sign in with Apple for this app or developer.
+
+### What happens if you stop using Sign in with Apple with an app
+
+When you stop using your Apple Account with an app, you’re signed out of the app on your device. The next time you visit the app or its associated website, you can either select Sign in with Apple to sign in again, or create a new account.
+
+If you choose to use Sign in with Apple again, you’re signed in to the same account that you previously used. Some apps might let you create a new password for your existing account so you can sign in again without using your Apple Account.
+
+If you delete your account in an app where you use Sign in with Apple, you might receive an email from Apple that the app has revoked your Sign in with Apple account. If you want to create a new account with that app, you have to share your name and email address with the app again or create a new account using Sign in with Apple.
+
+### If you stop using Sign in with Apple with a developer of multiple apps
+
+Some developers might use Sign in with Apple to give you an account for more than one app. If that’s the case and you turn off email forwarding or stop using Sign in with Apple for one app, it applies to all apps from that developer.
+
+## Manage your Hide My Email settings
+
+If you chose to hide your email address from an app, you can turn off email forwarding to your personal email address to stop emails sent by a particular developer from reaching your personal inbox. You can also change your forwarding address to any email address that you have on file in your Apple Account.
+
+### Turn off email forwarding
+1. On your iPhone, open the Settings app, then tap [your name].
+2. Tap iCloud.
+3. Scroll down to the iCloud+ Features section, then tap Hide My Email.
+4. Select the app or developer, then tap to turn off Forward To.
+
+### Change your forwarding address
+1. On your iPhone, open the Settings app, then tap [your name].
+2. Tap iCloud.
+3. Scroll down to the iCloud+ Features section, then tap Hide My Email.
+4. Scroll down and tap Forward To.
+5. Select the email address associated with your Apple Account that you want to use. This applies to email from all apps and developers using Hide My Email.
+
+## Need more help?
+
+Tell us more about what's happening, and we’ll suggest what you can do next.
+
+Published Date: September 14, 2026

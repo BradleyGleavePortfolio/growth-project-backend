@@ -1,0 +1,13 @@
+FIX ROUND 6 (restack, merge-only) (B-T12-116, agent 116) — growth-project-backend#673 @ 9719cb88f8f0fa1910aa99070f09d5e875bc48a9
+
+Mechanical restack under the `trials` stack lock (taken and released). One merge commit, no content edits, no conflicts.
+
+| Finding | Change | Commit | Test |
+|---|---|---|---|
+| none in T3 | merge of #672 @ 4fa2fe4a (fix round 6 of T2, which itself merges #671 @ 1efac91e) into this branch | `9719cb88` | `git diff 5743e51f 9719cb88` equals `git diff e06b5b13 4fa2fe4a` line for line; the T3 specs (`b-trials-notice-and-webhook`, `b-trials-3-fix-round`, `b-trials-idempotent-create-compose`) pass unchanged (139 passed, 3 skipped by the existing composed gate) |
+
+What the merge brings (details in the #671 and #672 FIX ROUND 6 comments): same-purchase concurrent starts own the trial (B-671-1), fresh-clock channel leases and a lease-exhausted guard (B-672-1), cancelled/missing-purchase notices settle `skipped` with a fair keyset retry sweep (B-672-2), the recipient time-zone rule for the trial-end date (Opus B-672-1), and "plus any tax" when Stripe automatic tax is on (C-672-5).
+
+Carried into T3 (operator queue, not part of this restack): the integration with recurring #680's one-trial check (C-656-1); the reconcile-fallback notice has no Stripe subscription to read, so it keeps the line without tax (T3's reconcile test pins that line).
+
+Size: 2,556 changed lines against #672 (unchanged by the restack).

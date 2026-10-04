@@ -1,0 +1,49 @@
+    return {
+      token,
+      attempt: channel === 'push' ? row.push_attempts : row.email_attempts,
+      until,
+    };
+  }
+
+  /**
+   * B-672-1 — true while the lease still has room for the bounded transport.
+   * Otherwise the claim is handed back unused (fenced: lease cleared, the
+   * attempt returned) and nothing is sent; the next claim retries it.
+   */
+  private async leaseCoversSend(
+    noticeId: string,
+    channel: 'push' | 'email',
+    lease: { token: string; until: Date },
+    clock: () => Date,
+  ): Promise<boolean> {
+    if (clock().getTime() + TRIAL_NOTICE_TRANSPORT_TIMEOUT_MS < lease.until.getTime()) return true;
+    await this.complete(
+      noticeId,
+      channel,
+      lease.token,
+      channel === 'push'
+        ? { push_attempts: { increment: -1 }, last_error: 'push:lease_exhausted' }
+        : { email_attempts: { increment: -1 }, last_error: 'email:lease_exhausted' },
+    );
+    return false;
+  }
+
+  /**
+   * B-672-2 — the purchase was cancelled or is gone: settle every channel
+   * that is still pending as 'skipped' (terminal), so the row never takes a
+   * place in a retry sweep again. A channel already settled is untouched.
+   */
+  private async settleSkipped(
+    noticeId: string,
+    code: 'purchase_canceled' | 'purchase_missing',
+  ): Promise<void> {
+    const last_error = `skip:${code}`;
+    await this.prisma.packageTrialNotice.updateMany({
+      where: { id: noticeId, push_status: 'pending' },
+      data: { push_status: 'skipped', last_error },
+    });
+    await this.prisma.packageTrialNotice.updateMany({
+      where: { id: noticeId, email_status: 'pending' },
+      data: { email_status: 'skipped', last_error },
+    });
+  }

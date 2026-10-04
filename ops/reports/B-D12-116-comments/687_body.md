@@ -1,0 +1,10 @@
+**Tier: T4 (money path).** Current head: `f8e47bf4` after FIX ROUND 1 (B-D12-116). The stack lands as one: D1 -> D2 -> D3 -> D4 -> D5, deployed only after D5 together with mobile #322.
+
+Split of #628 (dunning v2 live: card update, lockout, recovery; 12,334 lines at FIX ROUND 8 `dc47e0ef`, already current with main `d23fa317`) under the owner's PR size rule: over 3,000 changed lines is an automatic fail (MODEL_ROUTING.md 8.2, tgp-agent-context). Cut with an import-order check (no piece imports a later piece). Stack: D1 -> D2 -> D3 -> D4 -> D5, merged back to back; deploy only after D5, together with mobile #322. At split time the tree at D5 equalled #628's head (git diff); fix rounds change it from there. Behaviour notes for the owner from FIX ROUND 8 carry over: third-party-paid invoices settle one reconcile run later, and a dispute that arrives mid-cycle keeps the cycle open. No verdicts existed at dc47e0ef; each piece needs Opus 5.5 and Sol audits at its exact head (T4, money path). `tsc --noEmit` passes at every piece.
+
+**D1 (this PR, base main, 2,717 lines after FIX ROUND 1):** migration 20270215000000_dunning_billing_actions (+ down.sql; FIX ROUND 1 adds the nullable `DunningState.sweep_checked_at` the D2 sweep orders by), schema, effective-access rules, client billing money helpers, Stripe Connect API billing calls, email templates, env/prod-switch/jest config entries, Stripe event fixtures and test fakes. FIX ROUND 1 moved the v2 cadence and dispatcher (with their spec) here from D2, as the title already said, and added the closed error-code helper `dunning-v2.safe-error.ts`. Inert: nothing on main calls the dispatcher, and the sweep cron change only runs with FEATURE_DUNNING_V2 on. Existing specs that import these files pass locally (18 suites, 317 tests).
+
+## Fix rounds
+| Round | Job | Head | Closed | Comment |
+|---|---|---|---|---|
+| 1 | B-D12-116 (agent 116) | `f8e47bf4` | Sol B-687-1, C-687-1; Opus B-687-1, C-687-2; dispatcher/emitter halves of Sol B-688-3, B-688-4. Kept: Sol B-687-2 / Opus C-687-4 (OR-113-4, no dependency-order defect), Opus C-687-3 (operator) | COMMENT_URL |

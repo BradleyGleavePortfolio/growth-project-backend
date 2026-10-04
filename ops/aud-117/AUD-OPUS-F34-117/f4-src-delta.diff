@@ -1,0 +1,232 @@
+diff --git a/src/checkout/payout-notice.service.ts b/src/checkout/payout-notice.service.ts
+index fe120424..9b8e1407 100644
+--- a/src/checkout/payout-notice.service.ts
++++ b/src/checkout/payout-notice.service.ts
+@@ -5,6 +5,7 @@ import {
+   heldBreakdownLines,
+   type PayoutNoticeAmounts,
+ } from '../connect/fees/payout-notice-copy';
++import { settlementFailureCode } from '../connect/fees/charge-settlement.service';
+ import { EmailService } from '../email/email.service';
+ import { EmailTemplateKey } from '../email/email.types';
+ import { NotificationKind } from '../notifications/notification-kind';
+@@ -295,7 +296,7 @@ export class PayoutNoticeService {
+         return { status: fresh?.inapp_status ?? 'failed', receipt_saved: true };
+       }
+       this.logger.warn(
+-        `SFEE_NOTICE_INAPP_FAILED notice=${n.id} payee=${n.payee_user_id}: ${(err as Error).message}`,
++        `SFEE_NOTICE_INAPP_FAILED notice=${n.id} payee=${n.payee_user_id}: ${settlementFailureCode(err)}`,
+       );
+       return { status: 'failed' };
+     }
+@@ -356,7 +357,7 @@ export class PayoutNoticeService {
+       return { status: 'failed', notification_id: rowId };
+     } catch (err) {
+       this.logger.warn(
+-        `SFEE_NOTICE_PUSH_FAILED notice=${n.id} payee=${n.payee_user_id}: ${(err as Error).message}`,
++        `SFEE_NOTICE_PUSH_FAILED notice=${n.id} payee=${n.payee_user_id}: ${settlementFailureCode(err)}`,
+       );
+       return { status: 'failed', notification_id: n.push_notification_id ?? undefined };
+     }
+@@ -411,7 +412,7 @@ export class PayoutNoticeService {
+       return { status: status === 'skipped' ? 'pending' : status };
+     } catch (err) {
+       this.logger.warn(
+-        `SFEE_NOTICE_EMAIL_FAILED notice=${n.id} payee=${n.payee_user_id}: ${(err as Error).message}`,
++        `SFEE_NOTICE_EMAIL_FAILED notice=${n.id} payee=${n.payee_user_id}: ${settlementFailureCode(err)}`,
+       );
+       return { status: 'failed' };
+     }
+@@ -448,7 +449,7 @@ export class PayoutNoticeService {
+     });
+     if (res.status === 'failed') {
+       this.logger.warn(
+-        `SFEE_NOTICE_EMAIL_FAILED notice=${n.id} payee=${n.payee_user_id}: ${res.error ?? 'provider error'}`,
++        `SFEE_NOTICE_EMAIL_FAILED notice=${n.id} payee=${n.payee_user_id}: provider_failed`,
+       );
+     }
+     return res.status;
+@@ -487,11 +488,22 @@ export class PayoutNoticeService {
+       openBySettlement.set(r.settlement_id, (openBySettlement.get(r.settlement_id) ?? 0) + left);
+     }
+     const rows = page.slice(0, limit);
+-    // Only the newest notice of a charge carries its live open amount.
+-    const seen = new Set<string>();
++    // Only the newest notice of a charge carries its live open amount, on any page (C-684-2).
++    const openIds = [...new Set(rows.map((n) => n.settlement_id))].filter((id) =>
++      openBySettlement.has(id),
++    );
++    const newest = new Map<string, string>();
++    const latest = openIds.length
++      ? await this.prisma.payoutAdjustmentNotice.findMany({
++          where: { payee_user_id: payeeUserId, settlement_id: { in: openIds } },
++          orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
++          select: { id: true, settlement_id: true },
++        })
++      : [];
++    for (const n of latest) if (!newest.has(n.settlement_id)) newest.set(n.settlement_id, n.id);
+     const notices = rows.map((n): PayoutNoticeView => {
+-      const live = seen.has(n.settlement_id) ? 0 : (openBySettlement.get(n.settlement_id) ?? 0);
+-      seen.add(n.settlement_id);
++      const live =
++        newest.get(n.settlement_id) === n.id ? (openBySettlement.get(n.settlement_id) ?? 0) : 0;
+       return {
+         id: n.id,
+         event: n.event,
+@@ -540,7 +552,7 @@ export class PayoutNoticeService {
+       throw new NotFoundException({
+         code: 'PAYOUT_NOTICE_NOT_FOUND',
+         message:
+-          'We could not find that payout notice on your account. Refresh Money to see your current notices.',
++          'That payout notice is not on this account. Refresh Money to see the current notices.',
+       });
+     }
+     return { acknowledged_at: now.toISOString() };
+diff --git a/src/checkout/purchase-split-handler.service.ts b/src/checkout/purchase-split-handler.service.ts
+index 6d22507d..e5ec1346 100644
+--- a/src/checkout/purchase-split-handler.service.ts
++++ b/src/checkout/purchase-split-handler.service.ts
+@@ -2,6 +2,7 @@ import { Injectable, Logger, Optional } from '@nestjs/common';
+ import type { ClientPurchase } from '@prisma/client';
+ import {
+   ChargeSettlementService,
++  settlementFailureCode,
+   type SweepSummary,
+ } from '../connect/fees/charge-settlement.service';
+ import { FeePolicyService } from '../connect/fees/fee-policy.service';
+@@ -235,7 +236,7 @@ export class PurchaseSplitHandlerService {
+         noticesDelivered = await this.payoutNotices.dispatchPending(now);
+       } catch (err) {
+         this.logger.warn(
+-          `SFEE_NOTICE_DISPATCH_DEFERRED sweep: ${(err as Error).message}; the next run retries`,
++          `SFEE_NOTICE_DISPATCH_DEFERRED sweep: ${settlementFailureCode(err)}; the next run retries`,
+         );
+       }
+     }
+@@ -277,7 +278,7 @@ export class PurchaseSplitHandlerService {
+       if (!purchase || !(purchase.amount_cents > 0)) return;
+       await this.settlements.settlePurchase(purchase);
+     } catch (err) {
+-      this.logger.warn(`guest settlement failed pi=${paymentIntentId}: ${(err as Error).message}`);
++      this.logger.warn(`guest settlement failed pi=${paymentIntentId}: ${settlementFailureCode(err)}`);
+     }
+   }
+ }
+diff --git a/src/checkout/refund-dispute-handler.service.ts b/src/checkout/refund-dispute-handler.service.ts
+index 8bf35e8a..ef62e495 100644
+--- a/src/checkout/refund-dispute-handler.service.ts
++++ b/src/checkout/refund-dispute-handler.service.ts
+@@ -4,6 +4,7 @@ import {
+   ChargeSettlementService,
+   disputeAmountsFrom,
+   isLegacyDestinationCharge,
++  settlementFailureCode,
+ } from '../connect/fees/charge-settlement.service';
+ import { isRetryableMoneyError } from '../connect/fees/money-errors';
+ import { PayoutReadinessService } from '../connect/fees/payout-readiness.service';
+@@ -156,7 +157,7 @@ export class RefundDisputeHandlerService {
+       await this.payoutNotices.dispatchForCharge(chargeId);
+     } catch (err) {
+       this.logger.warn(
+-        `SFEE_NOTICE_DISPATCH_DEFERRED charge=${chargeId}: ${(err as Error).message}; the sweeper delivers it`,
++        `SFEE_NOTICE_DISPATCH_DEFERRED charge=${chargeId}: ${settlementFailureCode(err)}; the sweeper delivers it`,
+       );
+     }
+   }
+@@ -375,6 +376,19 @@ export class RefundDisputeHandlerService {
+       });
+     }
+ 
++    // B-684-1 (round 11): a Charge embeds only its latest ten refunds, so the settlement also
++    // converges once, under the charge lock, on Stripe's cumulative amount_refunded, even when
++    // every embedded row was applied before (an older refund missing from the page). It runs
++    // last, after the per-refund alerts, so a retried delivery loses none of them. A converted
++    // charge reads each refund's settlement-currency debit from Stripe instead (B-683-1).
++    if (this.settlements && refundedCents > 0) {
++      await this.settlements.applyAdjustments({
++        purchase,
++        charge_id: charge.id,
++        refunded_cents: refundedCents,
++      });
++    }
++
+     return { claimed: true, purchase_id: purchase.id };
+   }
+ 
+@@ -986,7 +1000,7 @@ export class RefundDisputeHandlerService {
+       const level = isRetryableMoneyError(err) ? 'warn' : 'error';
+       this.logger[level](
+         `dispute settlement adjustment failed dispute=${dispute.id} charge=${dispute.charge}` +
+-          `${level === 'error' ? ' alert=true' : ''}: ${(err as Error).message}; the delivery is retried`,
++          `${level === 'error' ? ' alert=true' : ''}: ${settlementFailureCode(err)}; the delivery is retried`,
+       );
+     }
+ 
+@@ -1248,7 +1262,7 @@ export class RefundDisputeHandlerService {
+       // re-reads the refunds) or by the charge.refunded webhook.
+       if (!isRetryableMoneyError(err)) throw err;
+       this.logger.warn(
+-        `admin refund recorded; payout adjustment deferred to the charge.refunded webhook refund=${stripe.id} charge=${chargeId}: ${(err as Error).message}`,
++        `admin refund recorded; payout adjustment deferred to the charge.refunded webhook refund=${stripe.id} charge=${chargeId}: ${settlementFailureCode(err)}`,
+       );
+       const recorded = await this.prisma.chargeRefund.findUnique({
+         where: { stripe_refund_id: stripe.id },
+@@ -1294,7 +1308,7 @@ export class RefundDisputeHandlerService {
+         const latest = typeof pi.latest_charge === 'string' ? pi.latest_charge : null;
+         if (latest) return latest;
+       } catch (err) {
+-        this.logger.warn(`retrievePaymentIntent failed: ${(err as Error).message}`);
++        this.logger.warn(`retrievePaymentIntent failed: ${settlementFailureCode(err)}`);
+       }
+     }
+     const latestSettled = await this.settlements?.latestChargeIdForPurchase(purchase.id);
+diff --git a/src/checkout/settlement-sweep.cron.ts b/src/checkout/settlement-sweep.cron.ts
+index 3767637f..8edb760a 100644
+--- a/src/checkout/settlement-sweep.cron.ts
++++ b/src/checkout/settlement-sweep.cron.ts
+@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
+ import { Cron } from '@nestjs/schedule';
+ import { hostname } from 'node:os';
+ import { randomUUID } from 'node:crypto';
++import { settlementFailureCode } from '../connect/fees/charge-settlement.service';
+ import { CronLeaseService } from './cron-lease.service';
+ import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
+ 
+@@ -86,7 +87,7 @@ export class SettlementSweepCron {
+       acquired = (await this.lease.tryAcquire(SWEEP_JOB_NAME, holder, LEASE_TTL_MS, now)).acquired;
+     } catch (err) {
+       this.logger.error(
+-        `${SWEEP_LOG_CODES.lockError} alert=true could not read the sweep lease; this tick is skipped and the next one retries: ${(err as Error).message}`,
++        `${SWEEP_LOG_CODES.lockError} alert=true could not read the sweep lease; this tick is skipped and the next one retries: ${settlementFailureCode(err)}`,
+       );
+       return { ran: false, reason: 'lock_error' };
+     }
+@@ -122,13 +123,13 @@ export class SettlementSweepCron {
+       };
+     } catch (err) {
+       this.logger.error(
+-        `${SWEEP_LOG_CODES.failed} alert=true sweep run failed; due work stays pending for the next run: ${(err as Error).message}`,
++        `${SWEEP_LOG_CODES.failed} alert=true sweep run failed; due work stays pending for the next run: ${settlementFailureCode(err)}`,
+       );
+       return { ran: true, ok: false };
+     } finally {
+       await this.lease.release(SWEEP_JOB_NAME, holder, now).catch((err: unknown) => {
+         this.logger.warn(
+-          `${SWEEP_LOG_CODES.lockError} could not release the sweep lease; it expires on its own in ${LEASE_TTL_MS / 60_000} minutes: ${(err as Error).message}`,
++          `${SWEEP_LOG_CODES.lockError} could not release the sweep lease; it expires on its own in ${LEASE_TTL_MS / 60_000} minutes: ${settlementFailureCode(err)}`,
+         );
+       });
+     }
+diff --git a/src/email/templates/coach-payout-adjustment.hbs b/src/email/templates/coach-payout-adjustment.hbs
+index 3d55da17..b13877b0 100644
+--- a/src/email/templates/coach-payout-adjustment.hbs
++++ b/src/email/templates/coach-payout-adjustment.hbs
+@@ -17,7 +17,7 @@
+     </table>
+     {{#if held_collected_display}}<p style="font-size: 14px; color: #555;">Already taken from a later sale: {{held_collected_display}}.</p>{{/if}}
+     <p><strong>Still to be held from your next sale: {{held_open_display}}</strong>, on top of that sale's usual fees.</p>
+-    <p style="font-size: 14px; color: #555;">We take it out of your next payout, and out of the ones after it if one sale is not enough. Nothing is taken from sales you were already paid for.</p>
++    <p style="font-size: 14px; color: #555;">It comes out of your next payout, and out of the ones after it if one sale is not enough. Nothing is taken from sales already paid out.</p>
+     {{else}}
+     <p style="font-size: 14px; color: #555;">Nothing is held from your next sale.</p>
+     {{/if}}

@@ -1,0 +1,95 @@
+# AUD-SOL-PRIV2-116 — backend #611 FR8 and privacy publication refresh pair
+
+Lens: GPT-6.1 Sol. Independent read-only T4 audit.
+
+## Scope
+
+Backend #611 FIX ROUND 8 is being audited at `357c40fe86aba7dd09fc39b4ec4118ef550e5ae0`, starting with independent closure of Sol B-611-7 and then reading every FR8 change; no other PR is in this audit mandate. [FR8 readiness comment](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/611#issuecomment-5976141854)
+
+The second phase stays for operator merge-only readiness comments on backend #611 and mobile #315, whose prior approved mobile head is `8fff3f8f3829aab4079973b38428e2d266bc3f3b`. [Prior mobile Sol approval](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/315#issuecomment-5972016148)
+
+## Evidence workspace
+
+Local independent worktree: `/home/user/workspace/wt/AUD-SOL-PRIV2-116-611`; evidence directory: `/home/user/workspace/ops/aud-116/AUD-SOL-PRIV2-116/`.
+
+## Backend #611 — FR8 review
+
+The intervening main merge `aeb3b4383076bdba1a1a6e6cbc888b59f4b3aff3` has parents `5eac8f21` and `d23fa317`; its committed tree and independent `git merge-tree` output are both `9decfbd2ef78f4030af31eca7acc6b94a0cba1c9`, with no conflict resolution and no public-page, deletion or Sentry change from main. [Mechanical merge](https://github.com/BradleyGleavePortfolio/growth-project-backend/commit/aeb3b4383076bdba1a1a6e6cbc888b59f4b3aff3)
+
+Every FR8 source/document/test hunk after that merge was read, including both added specs and the complete rendered privacy/consumer-health/deletion-help content; unchanged route/rendering/privacy evidence from the prior Sol audit is reused only where the relevant files and inputs remain unchanged. [FR8 fix](https://github.com/BradleyGleavePortfolio/growth-project-backend/commit/357c40fe86aba7dd09fc39b4ec4118ef550e5ae0), [prior Sol review](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/611#issuecomment-5975837459)
+
+### B-611-7 closure
+
+The public diagnostic item now attributes reports to opaque account ID and explicitly says no name/email is attached; the PR-body Sentry mapping and procedure agree with the unchanged mobile setter/scrubber and backend error envelope. [Corrected disclosure](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/357c40fe86aba7dd09fc39b4ec4118ef550e5ae0/src/public-pages/trust-pages.html.ts#L184), [mobile id-only setter](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/367e6c48dac676151400d4d4b9959c4cc3c7586a/src/services/sentry.ts#L160-L172), [backend envelope](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/357c40fe86aba7dd09fc39b4ec4118ef550e5ae0/src/observability/sentry-config.ts#L179-L224)
+
+The builder's before run was independently read: 17 assertions failed/10 passed, including the old affirmative email disclosure failing the rendered diagnostic assertion, while the telemetry control passes. [Builder before run](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37172439577)
+
+An independent exact-FR8 probe is committed as `413a969d9e9f72e7674d3ef853847906596f66e6` then `5d5ce1f2a237cee6a78f9ee77a673df29ec2957c`, with candidate source untouched; the active lane includes B-611-7 closure, the unchanged backend envelope, Apple claim boundary, distinct retained-record windows and the Apple navigation counterexample, plus seven existing guard suites. [Independent probe run](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37174254370)
+
+### FR8 finding dispositions
+
+- B-611-10 is corrected: the help retention list now includes the permanent closed-account record, temporary provider ID/30-day receipt, Anthropic exception, vendor windows and deidentified data using shared strings; these match the tombstone/auth-cleanup/receipt paths. [Help retention list](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/357c40fe86aba7dd09fc39b4ec4118ef550e5ae0/src/public-pages/help-pages.html.ts#L716-L732), [actual auth cleanup](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/357c40fe86aba7dd09fc39b4ec4118ef550e5ae0/src/account-deletion/account-deletion.service.ts#L867-L917)
+- B-611-11 is corrected at the documentation boundary: both dump-creation runbook steps carry the adopted 30/90-day deletion rules, and the weekly-export BCP points to the same procedure and noncurrent-version expiry; this is an owner-operated obligation, not an automatic deletion implementation. [Runbook limits](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/357c40fe86aba7dd09fc39b4ec4118ef550e5ae0/docs/deploy-runbook.md#L195-L210), [BCP rule](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/357c40fe86aba7dd09fc39b4ec4118ef550e5ae0/docs/soc2/policies/business-continuity-plan.md#L104-L108)
+- Mux's additional device/IP disclosure matches direct upload/playback and does not add account metadata to the API payload; PostHog's operator initiation deadline is shortened to 21 days while the public bound remains 30 days. [Mux upload/playback implementation](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/357c40fe86aba7dd09fc39b4ec4118ef550e5ae0/src/video/mux.service.ts#L85-L112), [updated vendor procedures](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/357c40fe86aba7dd09fc39b4ec4118ef550e5ae0/docs/privacy/vendor-deletion-and-backups.md#L210-L218), [PostHog asynchronous deletion](https://posthog.com/docs/privacy/data-storage)
+- Deidentified-data text now commits to both keeping and using data only in deidentified form, consistent with the statute's processing commitment; the new kept-while-open sentence yields to shorter listed retention periods. [Shared policy text](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/357c40fe86aba7dd09fc39b4ec4118ef550e5ae0/src/public-pages/trust-pages.html.ts#L47-L61), [RCW 19.373.010](https://app.leg.wa.gov/RCW/default.aspx?cite=19.373.010), [qualified account-retention sentence](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/357c40fe86aba7dd09fc39b4ec4118ef550e5ae0/src/public-pages/trust-pages.html.ts#L285-L298)
+- The operator's no-Apple-revocation-claim ruling is followed, with key configuration plus an observed `apple_revocation=revoked` required before restoring that claim; the actual revocation service requires all three secrets. [Policy replacement](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/357c40fe86aba7dd09fc39b4ec4118ef550e5ae0/src/public-pages/trust-pages.html.ts#L72-L81), [follow-up gate](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/357c40fe86aba7dd09fc39b4ec4118ef550e5ae0/docs/privacy/vendor-deletion-and-backups.md#L44-L46), [actual configuration boundary](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/357c40fe86aba7dd09fc39b4ec4118ef550e5ae0/src/account-deletion/apple-token-revocation.service.ts#L69-L76)
+
+### B-611-17 — Apple manual-unlink route mixes iPhone and website instructions
+
+The new policy sentence at `src/public-pages/trust-pages.html.ts:81` tells iPhone users to go through `Sign-In & Security`, as does the existing help counterpart at `help-pages.html.ts:673`; Apple's current official instructions instead say iPhone `Settings > [your name] > Sign in with Apple > app/developer > Delete`, while `Sign-In & Security` belongs to the `account.apple.com` web route. [Candidate sentence](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/357c40fe86aba7dd09fc39b4ec4118ef550e5ae0/src/public-pages/trust-pages.html.ts#L80-L81), [help counterpart](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/357c40fe86aba7dd09fc39b4ec4118ef550e5ae0/src/public-pages/help-pages.html.ts#L673), [Apple's current instructions](https://support.apple.com/en-us/102571)
+
+Apple's page was re-fetched without caching to confirm this distinction; this is material because manual unlinking is the sole described recovery while production revocation remains unconfigured, not an objection to removing the false revocation claim. [Apple instructions](https://support.apple.com/en-us/102571), [production limitation recorded by the operator](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/357c40fe86aba7dd09fc39b4ec4118ef550e5ae0/docs/privacy/vendor-deletion-and-backups.md#L44-L46)
+
+Minimal fix: use the current iPhone path on both pages (with the final Delete/confirmation action), optionally link the maintained Apple support article or provide the distinct website alternative, and repin the old test strings without restoring any automatic-revocation claim. [Maintained Apple support article](https://support.apple.com/en-us/102571)
+
+### Evidence limitations / CI
+
+All 11 required checks are successful at FR8; build-and-test's one rerun passed 718 suites/12,388 tests, with 23 suites/239 tests/5 todo skipped, which is CI success rather than production publication acceptance. [Exact-head rerun](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37172679752/job/111350501659)
+
+Vendor documentation was re-read for Anthropic, Sentry, Resend, Stripe and Supabase; their retention/deletion behavior remains consistent with the previously recorded owner answers, but those public pages do not prove this customer's dashboard settings or completion of each manual deletion step. [Anthropic API retention](https://privacy.claude.com/en/articles/7996866-how-long-do-you-store-my-organization-s-data), [Sentry retention](https://docs.sentry.io/security-legal-pii/security/data-retention-periods/), [Resend retention](https://resend.com/docs/knowledge-base/account-quotas-and-limits), [Stripe redaction](https://docs.stripe.com/privacy/deletion-requests), [Supabase backups](https://supabase.com/docs/guides/platform/backups)
+
+The first independent queued run `37174162802` was canceled before execution when the vendor-navigation assertion was added; it is not passing evidence. [Superseded run](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37174162802)
+
+### Operator refresh received while FR8 was being audited
+
+Backend moved to `acf9ff0f30117f6ea4ea00e79fccbd1fbfc0ad98` and mobile to `0277ce10170ae450a469bdf3e4e59351380105c0`; no stale-head verdict will be posted at FR8 because the contract requires re-reading and attesting the current head. [Backend merge](https://github.com/BradleyGleavePortfolio/growth-project-backend/commit/acf9ff0f30117f6ea4ea00e79fccbd1fbfc0ad98), [mobile merge](https://github.com/BradleyGleavePortfolio/growth-project-mobile/commit/0277ce10170ae450a469bdf3e4e59351380105c0)
+
+Both refreshes are mechanically exact clean merges: backend `merge-tree(357c40fe,a5b605d1)` equals committed tree `01137042b47f373588ce1deb2f1557c9f55195bb`, and mobile `merge-tree(8fff3f8f,367e6c48)` equals committed tree `960e867d323f1875b9d5733aab02f00c858a1089`; both remerge diffs contain no conflict-resolution hunk. [Backend merge](https://github.com/BradleyGleavePortfolio/growth-project-backend/commit/acf9ff0f30117f6ea4ea00e79fccbd1fbfc0ad98), [mobile merge](https://github.com/BradleyGleavePortfolio/growth-project-mobile/commit/0277ce10170ae450a469bdf3e4e59351380105c0)
+
+Main-relative zero-context stable patch IDs are unchanged: backend `41ac99d586e77c545af3a793aa4250c199581379`, mobile `0bbe3a4950cffc4e42e8e97bd74a34b9a4006fe9`; backend policy/procedure/FR8 regression files and mobile Trust Center links/recovery files are byte-identical across the refresh. [Backend merge](https://github.com/BradleyGleavePortfolio/growth-project-backend/commit/acf9ff0f30117f6ea4ea00e79fccbd1fbfc0ad98), [mobile merge](https://github.com/BradleyGleavePortfolio/growth-project-mobile/commit/0277ce10170ae450a469bdf3e4e59351380105c0)
+
+The mobile Sentry intersection was read explicitly: main adds closed-shape OTA contexts and removes ExpoContext while retaining both capture helpers, generated-reference tags, no-PII scope processor and the composed event scrubber; canonical URLs remain the exact backend `/privacy` and `/consumer-health-privacy` root routes. [Refreshed Sentry composition](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/0277ce10170ae450a469bdf3e4e59351380105c0/src/services/sentry.ts), [canonical URLs](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/0277ce10170ae450a469bdf3e4e59351380105c0/src/config/env.ts#L63-L72)
+
+Independent run `37174254370` failed before executing the independent spec because my synthetic `Sentry.ErrorEvent` omitted required `type: undefined`; six candidate guard suites nevertheless passed 89 tests. This is a probe authoring error, not evidence against candidate source or an executed Apple assertion. [Invalid independent probe run](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37174254370)
+
+The corrected probe was branched from the exact refreshed backend head as `a53ec754`, with only the independent test added; the fresh lane uses the correct `test/observability/sentry-config.spec.ts` path and is active as `37174589550`. [Corrected exact-refresh probe](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37174589550)
+
+After the Apple navigation counterexample and fix rule were already recorded above, the other lens posted an overlapping navigation finding as B-611-12; this job retains its independently assigned B-611-17 and its own Apple document/probe evidence rather than adopting that verdict. [Opus refreshed-head verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/611#issuecomment-5976218847)
+
+## Executed independent proof and posted verdicts
+
+Corrected exact-refresh probe commit `a53ec7540bf4eee641969c28067d030fafc06f6e`, then lane-only commit `a7135e9947ec6fdcfdbe51d9c91acad914f9ed25`, executes **1 expected failure / 107 passes across 8 suites**; the sole failure is the rendered privacy paragraph's wrong Apple intermediate menu, while all four other independent checks and all seven candidate guard suites pass. [Executed independent proof](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37174589550)
+
+**B-611-7 is closed with my own passing assertion**, and **B-611-17 is confirmed**; candidate source remains unchanged by this lens, with no installed-device acceptance claimed. [Independent assertion results](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37174589550)
+
+Backend **REQUEST CHANGES, A/B/C = 0/1/0**, was posted at exact current head `acf9ff0f30117f6ea4ea00e79fccbd1fbfc0ad98`, covering FR8 and its clean merge-only refresh; the head was re-read immediately before posting and unchanged. [Posted Sol backend verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/611#issuecomment-5976259162)
+
+Mobile **APPROVE, A/B/C = 0/0/0**, was posted at exact current head `0277ce10170ae450a469bdf3e4e59351380105c0`, with the head re-read immediately before posting and all three required contexts successful; its policy URL contract exactly matches #611. [Posted Sol mobile verdict](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/315#issuecomment-5976259150)
+
+The requested 4-minute stay polls received both actual operator refreshes; the expected separate `FIX ROUND (merge-only) ... READY FOR AUDIT` comments were not observed, so neither verdict invents such a readiness comment. Exact merge commits were independently reconstructed instead, and current CI was checked directly. [Backend refresh](https://github.com/BradleyGleavePortfolio/growth-project-backend/commit/acf9ff0f30117f6ea4ea00e79fccbd1fbfc0ad98), [mobile refresh](https://github.com/BradleyGleavePortfolio/growth-project-mobile/commit/0277ce10170ae450a469bdf3e4e59351380105c0)
+
+At verdict publication, 10 backend required checks were successful and build-and-test was still running; the final observation at `2026-10-04T03:45:14Z` confirms build-and-test also completed successfully, so backend is now **11/11 required checks green**, and mobile remains **3/3 green**. The backend REQUEST CHANGES is the proved copy defect, not a CI objection. [Backend successful build](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37174354742/job/111353758137), [mobile test/lint/typecheck](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37174367721/job/111353797064), [mobile JS analysis](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37174367732/job/111353797215), [mobile Actions analysis](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37174367732/job/111353797297)
+
+## Evidence preservation
+
+Both verdict payloads/receipts, the corrected independent probe, CI logs, vendor-document results and local worktrees are preserved under this job's workspace paths. No candidate source, production settings, secrets or builds were changed.
+
+All three completed/superseded remote `audit/AUD-SOL-PRIV2-116/*` branches were removed; immutable CI receipts and all local evidence remain available. [Final executed probe receipt](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37174589550)
+
+## HANDOFF
+
+Backend #611: **REQUEST CHANGES 0/1/0**, exact head `acf9ff0f30117f6ea4ea00e79fccbd1fbfc0ad98`, 11/11 required checks green; B-611-7 closed, B-611-17 open (same defect as Opus B-611-12). Next: builder corrects the current iPhone unlink path on the privacy and help pages, updates the existing pins, proves before/after, and requests fresh independent exact-head review; do not restore any automatic-revocation claim until key configuration plus an observed revoked outcome. [Posted backend verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/611#issuecomment-5976259162), [successful final build](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37174354742/job/111353758137)
+
+Mobile #315: **APPROVE 0/0/0**, exact head `0277ce10170ae450a469bdf3e4e59351380105c0`, 3/3 required checks successful. Next: hold paired publication until backend #611 clears the content finding and applicable publication/deployment gates; a later mobile head would require another merge-only applicability review. [Posted mobile verdict](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/315#issuecomment-5976259150)
+
+Both named PR refreshes have been audited and current-head verdicts posted; this job ends rather than taking the subsequent content-fix round. No new owner decision is required for the minimal truthful Apple-navigation correction. [Backend fix rule](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/611#issuecomment-5976259162), [mobile publication boundary](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/315#issuecomment-5976259150)

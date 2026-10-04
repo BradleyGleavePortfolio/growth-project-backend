@@ -1,0 +1,3403 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 2881aab4..d39a564a 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -586,3 +586,10 @@ jobs:
+         run: npx jest test/roman/roman-session-erase.live.spec.ts --runInBand --testTimeout=120000
+         env:
+           NODE_OPTIONS: --max-old-space-size=4096
++
++      - name: Run refund reversal concurrency live spec (#674 B-674-1)
++        # Two refunds reversing one slice / transfer at once both count, on
++        # real Postgres behind a held row lock (same gate and bootstrap).
++        run: npx jest test/refund-reversal-concurrency.live.spec.ts --runInBand --testTimeout=120000
++        env:
++          NODE_OPTIONS: --max-old-space-size=4096
+diff --git a/docs/runbooks/refund-transfer-reversal-review.md b/docs/runbooks/refund-transfer-reversal-review.md
+new file mode 100644
+index 00000000..58138172
+--- /dev/null
++++ b/docs/runbooks/refund-transfer-reversal-review.md
+@@ -0,0 +1,40 @@
++# Refund: head-coach transfer reversal still owed after 23 hours
++
++When a client is refunded on a team sale, the head coach's share comes back by reversing that sale's own head-coach transfer.
++The refund-scoped Stripe key is `tgp-tr-rev-refund-<ChargeRefund.id>`. Every path that completes a refund (`charge.refunded`,
++`charge.refund.updated`, the admin refund) and the 15-minute retry sweep send that same key, so Stripe makes one reversal.
++Stripe keeps a key for 24 hours after its first request. A resend after that could make a second reversal, so the backend
++resends only while the first attempt (`ChargeRefund.transfer_reversal_first_attempt_at`) is under 23 hours old. A reversal
++still owed after that leaves automatic retry and waits for an owner.
++
++## Alert
++
++Sentry issue **"head-coach transfer reversal needs operator review"**, tag `code=REFUND_TRANSFER_REVERSAL_REVIEW`, one issue per
++refund (fingerprint `refund-transfer-reversal-review` + the refund id). Extra fields: `charge_refund_id`, `purchase_id`,
++`amount_cents` (the client refund), `first_attempt_at`. It fires once per refund, when the row moves to review
++(`transfer_reversal_review_at` is set).
++
++## Runbook line
++
++Within one business day: `GET /v1/admin/payments/refund-reversals/review` (owner), then for each row
++`POST /v1/admin/payments/refund-reversals/<charge_refund_id>/reconcile` with an empty body. Both routes take the owner's
++Supabase JWT as the bearer (the owner-console service token is refused). Stripe is the truth:
++
++| Response `outcome` / `code`                      | Meaning                                                                                                                                              | Next action                                                                                                                                                                                                                                           |
++| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
++| `recorded_from_stripe`                           | Stripe already holds the reversal for this refund (metadata `tgp_charge_refund_id`); it is now recorded locally.                                     | None. Resolve the Sentry issue.                                                                                                                                                                                                                       |
++| `reversed`                                       | Stripe held none; one new reversal was sent under `tgp-tr-rev-refund-<id>-review` and recorded.                                                      | None. Resolve the Sentry issue.                                                                                                                                                                                                                       |
++| `nothing_owed`                                   | The head-coach transfer has nothing left to reverse.                                                                                                 | None.                                                                                                                                                                                                                                                 |
++| 409 `TRANSFER_REVERSAL_UNATTRIBUTED`             | Stripe holds reversals on that transfer that name no refund (made by hand in the Dashboard). The body lists their ids and amounts.                   | In the Stripe Dashboard (Connect > Transfers > the transfer > Reversals) decide whether one of them is this refund's. If yes, re-send with `{"stripe_transfer_reversal_id": "trr_..."}`. If none is, re-send with `{"confirm_none_in_stripe": true}`. |
++| 409 `TRANSFER_REVERSAL_BELONGS_TO_OTHER_REFUND`  | The id you named was made for a different refund.                                                                                                    | Pick the right reversal, or reconcile with an empty body.                                                                                                                                                                                             |
++| 409 `TRANSFER_REVERSAL_ASSIGNED_TO_OTHER_REFUND` | That reversal is already recorded for a different refund (one Stripe reversal settles one refund).                                                   | Pick the reversal made for this refund, or reconcile with an empty body.                                                                                                                                                                              |
++| 409 `TRANSFER_REVERSAL_UNDERSIZED`               | The reversal is smaller than this refund's head-coach share (`reversal_amount_cents` < `owed_cents`). Nothing was recorded; the row stays in review. | Escalate to engineering with the refund id and both amounts. Do not reverse the rest by hand.                                                                                                                                                         |
++| 422 `TRANSFER_REVERSAL_NOT_FOUND`                | No reversal with that id on this transfer.                                                                                                           | Copy the id again from the Dashboard.                                                                                                                                                                                                                 |
++| 409 `REFUND_TRANSFER_REVERSAL_NOT_IN_REVIEW`     | The row is still inside the automatic window.                                                                                                        | Wait; the sweep owns it.                                                                                                                                                                                                                              |
++
++Never reverse a head-coach transfer by hand in the Dashboard for a row in review without recording it here afterwards
++(`stripe_transfer_reversal_id`), or the books and Stripe disagree. Never reverse any other transfer of that coach (OR-111-1).
++
++The `transfer.reversed` webhook never changes the recorded totals. When Stripe's total on a transfer is higher than what
++the backend recorded, it logs `TRANSFER_REVERSAL_NOT_YET_RECORDED` with the transfer id and both totals: a reversal still
++being recorded (the sweep or this runbook settles it) or one made by hand in the Dashboard (record it here).
+diff --git a/prisma/migrations/20270314000000_charge_refund_transfer_reversal_review/down.sql b/prisma/migrations/20270314000000_charge_refund_transfer_reversal_review/down.sql
+new file mode 100644
+index 00000000..01f13597
+--- /dev/null
++++ b/prisma/migrations/20270314000000_charge_refund_transfer_reversal_review/down.sql
+@@ -0,0 +1,9 @@
++-- Reverse of 20270314000000_charge_refund_transfer_reversal_review. Drops only
++-- what the forward migration added. After rollback the pre-B-COACH-5 retry
++-- sweep (age measured from posted_at) applies again.
++DROP INDEX IF EXISTS "ChargeRefund_transfer_reversal_stripe_id_key";
++DROP INDEX IF EXISTS "ChargeRefund_transfer_reversed_transfer_reversal_review_at_idx";
++ALTER TABLE "ChargeRefund" DROP COLUMN IF EXISTS "transfer_reversal_stripe_id";
++ALTER TABLE "ChargeRefund" DROP COLUMN IF EXISTS "transfer_reversal_last_attempt_at";
++ALTER TABLE "ChargeRefund" DROP COLUMN IF EXISTS "transfer_reversal_review_at";
++ALTER TABLE "ChargeRefund" DROP COLUMN IF EXISTS "transfer_reversal_first_attempt_at";
+diff --git a/prisma/migrations/20270314000000_charge_refund_transfer_reversal_review/migration.sql b/prisma/migrations/20270314000000_charge_refund_transfer_reversal_review/migration.sql
+new file mode 100644
+index 00000000..c823bfc6
+--- /dev/null
++++ b/prisma/migrations/20270314000000_charge_refund_transfer_reversal_review/migration.sql
+@@ -0,0 +1,41 @@
++-- B-COACH-5 (backend #641, B-641-7 / B-641-8) — head-coach transfer reversal
++-- retry admission and operator review.
++--
++-- transfer_reversal_first_attempt_at: the first time a reversal for this
++-- refund was (or may have been) sent to Stripe under the refund-scoped
++-- idempotency key. Stripe keeps a key for 24 hours from its first request, so
++-- every caller (webhooks, the admin refund, the retry sweep) may resend only
++-- while this is under 23 hours old.
++-- transfer_reversal_review_at: set once when a reversal is still owed past that
++-- window; the row leaves automatic retry and an operator reconciles it.
++-- transfer_reversal_last_attempt_at (B-641-8): the latest admitted attempt; the
++-- retry sweep takes never-attempted rows first, then the least recently
++-- attempted, so persistent failures never hold later refunds back.
++-- transfer_reversal_stripe_id (B-641-9): the Stripe reversal (trr_...) an owner
++-- reconcile recorded for this refund; unique, so one Stripe reversal settles at
++-- most one refund. An id, not free text.
++--
++-- Additive and nullable; no RLS change (ChargeRefund policies are row-level and
++-- cover every column). No user id, email or free text is added, so the #608
++-- deletion manifest is unchanged (ChargeRefund rows follow their purchase).
++--
++-- Backfill (conservative): a refund whose books are reversed but whose
++-- head-coach transfer is still owed may already have reached Stripe at its
++-- first success, so its first attempt is taken to be that time. Rows older
++-- than the window then go to operator review instead of being resent.
++ALTER TABLE "ChargeRefund" ADD COLUMN IF NOT EXISTS "transfer_reversal_first_attempt_at" TIMESTAMP(3);
++ALTER TABLE "ChargeRefund" ADD COLUMN IF NOT EXISTS "transfer_reversal_review_at" TIMESTAMP(3);
++ALTER TABLE "ChargeRefund" ADD COLUMN IF NOT EXISTS "transfer_reversal_last_attempt_at" TIMESTAMP(3);
++ALTER TABLE "ChargeRefund" ADD COLUMN IF NOT EXISTS "transfer_reversal_stripe_id" TEXT;
++
++UPDATE "ChargeRefund"
++SET "transfer_reversal_first_attempt_at" = COALESCE("posted_at", "created_at")
++WHERE "ledger_reversed" = true
++  AND "transfer_reversed" = false
++  AND "transfer_reversal_first_attempt_at" IS NULL;
++
++CREATE INDEX IF NOT EXISTS "ChargeRefund_transfer_reversed_transfer_reversal_review_at_idx"
++    ON "ChargeRefund"("transfer_reversed", "transfer_reversal_review_at");
++
++CREATE UNIQUE INDEX IF NOT EXISTS "ChargeRefund_transfer_reversal_stripe_id_key"
++    ON "ChargeRefund"("transfer_reversal_stripe_id");
+diff --git a/prisma/migrations/20270317116000_split_ledger_reversal_posting/down.sql b/prisma/migrations/20270317116000_split_ledger_reversal_posting/down.sql
+new file mode 100644
+index 00000000..2798c3a0
+--- /dev/null
++++ b/prisma/migrations/20270317116000_split_ledger_reversal_posting/down.sql
+@@ -0,0 +1,3 @@
++-- Reverse of 20270317116000_split_ledger_reversal_posting (drops only what it added).
++DROP TABLE IF EXISTS "SplitLedgerReversal";
++ALTER TABLE "ChargeRefund" DROP COLUMN IF EXISTS "transfer_reversal_amount_cents";
+diff --git a/prisma/migrations/20270317116000_split_ledger_reversal_posting/migration.sql b/prisma/migrations/20270317116000_split_ledger_reversal_posting/migration.sql
+new file mode 100644
+index 00000000..b9928429
+--- /dev/null
++++ b/prisma/migrations/20270317116000_split_ledger_reversal_posting/migration.sql
+@@ -0,0 +1,30 @@
++-- B-CM1-116 (B-674-3, B-676-1). Additive. One immutable row per reversal
++-- event and slice. No user id or free text (deletion manifest unchanged); no
++-- backfill (legacy reversals keep the old split). Server-only, RLS deny-all.
++CREATE TABLE IF NOT EXISTS "SplitLedgerReversal" (
++    "id" TEXT NOT NULL,
++    "entry_id" TEXT NOT NULL,
++    "source_kind" TEXT NOT NULL,
++    "source_id" TEXT NOT NULL,
++    "cents" INTEGER NOT NULL,
++    "posted_at" TIMESTAMP(3) NOT NULL,
++    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++
++    CONSTRAINT "SplitLedgerReversal_pkey" PRIMARY KEY ("id")
++);
++
++CREATE INDEX IF NOT EXISTS "SplitLedgerReversal_posted_at_idx" ON "SplitLedgerReversal"("posted_at");
++
++CREATE UNIQUE INDEX IF NOT EXISTS "SplitLedgerReversal_entry_id_source_kind_source_id_key" ON "SplitLedgerReversal"("entry_id", "source_kind", "source_id");
++
++ALTER TABLE "SplitLedgerReversal" ADD CONSTRAINT "SplitLedgerReversal_entry_id_fkey" FOREIGN KEY ("entry_id") REFERENCES "SplitLedgerEntry"("id") ON DELETE CASCADE ON UPDATE CASCADE;
++
++ALTER TABLE "SplitLedgerReversal" ENABLE ROW LEVEL SECURITY;
++ALTER TABLE "SplitLedgerReversal" FORCE ROW LEVEL SECURITY;
++DROP POLICY IF EXISTS "SplitLedgerReversal_server_only" ON "SplitLedgerReversal";
++CREATE POLICY "SplitLedgerReversal_server_only" ON "SplitLedgerReversal"
++    FOR ALL USING (false);
++
++-- ChargeRefund.transfer_reversal_amount_cents: the amount the first head-coach
++-- reversal attempt sent; every resend under the same Stripe key replays it.
++ALTER TABLE "ChargeRefund" ADD COLUMN IF NOT EXISTS "transfer_reversal_amount_cents" INTEGER;
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+index fd5c9270..73330b6f 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -4002,6 +4002,8 @@ model SplitLedgerEntry {
+   reversed_at               DateTime?
+   created_at                DateTime       @default(now())
+   updated_at                DateTime       @updatedAt
++  // B-676-1 (B-CM1-116): one immutable row per reversal posted to this slice.
++  reversal_postings         SplitLedgerReversal[]
+ 
+   @@unique([purchase_id, kind, payee_user_id])
+   @@index([purchase_id])
+@@ -4010,6 +4012,22 @@ model SplitLedgerEntry {
+   @@index([payee_user_id, status])
+ }
+ 
++// B-676-1 (B-CM1-116): what ONE refund / lost chargeback (source_id) took back
++// from ONE slice, written once with the reversed_cents increase.
++model SplitLedgerReversal {
++  id          String           @id @default(uuid())
++  entry_id    String
++  entry       SplitLedgerEntry @relation(fields: [entry_id], references: [id], onDelete: Cascade)
++  source_kind String // refund | dispute
++  source_id   String
++  cents       Int
++  posted_at   DateTime
++  created_at  DateTime         @default(now())
++
++  @@unique([entry_id, source_kind, source_id])
++  @@index([posted_at])
++}
++
+ // Phase 4 Connect — Follow-on Connect transfer record.
+ //
+ // Distinct from SplitLedgerEntry: the ledger tells us "who owes whom how
+@@ -4390,6 +4408,24 @@ model ChargeRefund {
+   // Whether we've reversed the matching ledger entry / head-coach transfer.
+   ledger_reversed      Boolean        @default(false)
+   transfer_reversed    Boolean        @default(false)
++  // B-641-7/8 (B-COACH-5): the first time a head-coach transfer reversal for
++  // this refund was (or may have been) sent to Stripe under the refund-scoped
++  // key. Stripe keeps a key for 24 hours from its first request, so a retry is
++  // admitted only while this is under 23 hours old, for every caller.
++  transfer_reversal_first_attempt_at DateTime?
++  // Set once when a reversal is still owed past that window: the row leaves
++  // automatic retry, an operator alert fires once, and an owner reconciles it
++  // (POST /v1/admin/payments/refund-reversals/:id/reconcile).
++  transfer_reversal_review_at        DateTime?
++  // B-641-8 (narrowed): the latest admitted attempt. The retry sweep takes
++  // never-attempted rows first, then the least recently attempted, so rows
++  // that keep failing never hold later refunds back across runs.
++  transfer_reversal_last_attempt_at  DateTime?
++  // B-674-3 (d): the first attempt's amount; every resend replays it.
++  transfer_reversal_amount_cents     Int?
++  // B-641-9: the Stripe transfer reversal recorded for this refund (every
++  // path, B-674-3). Unique, so one Stripe reversal settles at most one refund.
++  transfer_reversal_stripe_id        String?   @unique
+   posted_at            DateTime?
+   created_at           DateTime       @default(now())
+   updated_at           DateTime       @updatedAt
+@@ -4397,6 +4433,7 @@ model ChargeRefund {
+   @@index([purchase_id])
+   @@index([status])
+   @@index([stripe_charge_id])
++  @@index([transfer_reversed, transfer_reversal_review_at])
+ }
+ 
+ // F2 — Partial-refund coach-decision surface.
+diff --git a/src/checkout/checkout.module.ts b/src/checkout/checkout.module.ts
+index cba6bd07..717ca2bc 100644
+--- a/src/checkout/checkout.module.ts
++++ b/src/checkout/checkout.module.ts
+@@ -18,6 +18,8 @@ import {
+   CoachPaymentOpsController,
+ } from './payment-ops.controller';
+ import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
++import { AdminRefundReversalController } from './refund-reversal-admin.controller';
++import { RefundTransferReversalScheduler } from './refund-transfer-reversal.scheduler';
+ import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
+ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
+ 
+@@ -74,6 +76,7 @@ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
+     CheckoutController,
+     CoachPurchasesController,
+     AdminPaymentOpsController,
++    AdminRefundReversalController,
+     CoachPaymentOpsController,
+   ],
+   providers: [
+@@ -82,6 +85,7 @@ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
+     PurchaseSplitHandlerService,
+     DunningService,
+     RefundDisputeHandlerService,
++    RefundTransferReversalScheduler,
+     AdminAnalyticsService,
+   ],
+   exports: [
+diff --git a/src/checkout/refund-dispute-handler.service.ts b/src/checkout/refund-dispute-handler.service.ts
+index 8759eb7b..4d524097 100644
+--- a/src/checkout/refund-dispute-handler.service.ts
++++ b/src/checkout/refund-dispute-handler.service.ts
+@@ -1,12 +1,26 @@
+-import { BadRequestException, Injectable, Logger, Optional } from '@nestjs/common';
++import {
++  BadRequestException,
++  ConflictException,
++  Injectable,
++  Logger,
++  NotFoundException,
++  Optional,
++  ServiceUnavailableException,
++  UnprocessableEntityException,
++} from '@nestjs/common';
+ import type {
+   ChargeDispute,
+   ChargeRefund,
+   ClientPurchase,
++  ConnectTransfer,
+   Prisma,
+ } from '@prisma/client';
++import * as Sentry from '@sentry/node';
+ import { PayoutReadinessService } from '../connect/fees/payout-readiness.service';
+-import { SplitLedgerService } from '../connect/fees/split-ledger.service';
++import {
++  SplitLedgerService,
++  type LedgerReversalSource,
++} from '../connect/fees/split-ledger.service';
+ import { TransferOrchestratorService } from '../connect/fees/transfer-orchestrator.service';
+ import {
+   StripeConnectApiError,
+@@ -24,6 +38,67 @@ import { PrismaService } from '../prisma.service';
+ // dispute paths.
+ type WebhookTx = Prisma.TransactionClient;
+ 
++// B-641-7: one Stripe reversal per refund, whoever sends it.
++export const refundTransferReversalKey = (refundRowId: string): string =>
++  `tgp-tr-rev-refund-${refundRowId}`;
++// Stripe keeps idempotency keys for 24 hours; retry well inside that.
++export const REFUND_TRANSFER_RETRY_WINDOW_MS = 23 * 60 * 60 * 1000;
++// B-641-8: pages per sweep run (x limit rows), so one run is bounded.
++export const REFUND_TRANSFER_SWEEP_MAX_PAGES = 20;
++// Operator alert (Sentry tag) and runbook for a reversal still owed past the
++// window. Machine code only; no free text reaches Sentry.
++export const REFUND_TRANSFER_REVERSAL_REVIEW_CODE = 'REFUND_TRANSFER_REVERSAL_REVIEW';
++export const REFUND_TRANSFER_REVERSAL_RUNBOOK = 'docs/runbooks/refund-transfer-reversal-review.md';
++export type RefundTransferReversalOutcome =
++  'reversed' | 'nothing_owed' | 'already_done' | 'pending' | 'needs_review';
++
++// B-641-11 (Sol): Stripe error codes a transfer reversal can answer with.
++// Anything else logs as `other`; an error's name or message never reaches a
++// log line (both are free text an exception can carry).
++const STRIPE_REVERSAL_ERROR_CODES = new Set([
++  'amount_too_large',
++  'api_key_expired',
++  'balance_insufficient',
++  'idempotency_key_in_use',
++  'idempotency_error',
++  'insufficient_funds',
++  'lock_timeout',
++  'parameter_invalid_integer',
++  'parameter_missing',
++  'rate_limit',
++  'request_timeout', // C-674-5: client timeout; Stripe may have made it
++  'resource_missing',
++  'transfer_already_reversed',
++]);
++
++// Machine code of a failed reversal attempt for logs, from a closed catalog.
++function transferReversalErrorCode(err: unknown): string {
++  if (err instanceof StripeConnectApiError) {
++    const status =
++      Number.isInteger(err.httpStatus) && err.httpStatus >= 100 && err.httpStatus <= 599
++        ? err.httpStatus
++        : 0;
++    const code =
++      err.stripeCode === null
++        ? 'none'
++        : STRIPE_REVERSAL_ERROR_CODES.has(err.stripeCode)
++          ? err.stripeCode
++          : 'other';
++    return `stripe_${status}_${code}`;
++  }
++  return 'error';
++}
++
++// B-641-9: the named Stripe reversal already settles another refund.
++function transferReversalAssignedElsewhere(): ConflictException {
++  return new ConflictException({
++    code: 'TRANSFER_REVERSAL_ASSIGNED_TO_OTHER_REFUND',
++    error: 'TRANSFER_REVERSAL_ASSIGNED_TO_OTHER_REFUND',
++    message:
++      'That reversal is already recorded for a different refund. Pick the reversal for this refund, or reconcile without an id.',
++  });
++}
++
+ // A276 P0-2 + P1-1 (refix) — deep-link routes for coach in-app alerts.
+ // Mirrors the guest-checkout path; mobile deep-link routing config owns
+ // the surface that these tgp:// URIs hit.
+@@ -331,6 +406,55 @@ export class RefundDisputeHandlerService {
+       // No-op: we'll see the parent charge.refunded shortly.
+       return { claimed: false, reason: 'no_known_refund' };
+     }
++    // B-641-6 (S-COACH-BE-4): a refund pending on charge.refunded completes
++    // through THIS event (never resent): book it like charge.refunded (first
++    // success time in posted_at, ledger reversal once, coach alert once).
++    // B-641-7: also re-enter while the head-coach transfer is still owed.
++    if (refund.status === 'succeeded' && !(existing.ledger_reversed && existing.transfer_reversed)) {
++      const purchase = await this.prisma.clientPurchase.findUnique({
++        where: { id: existing.purchase_id },
++      });
++      if (purchase) {
++        const amount = typeof refund.amount === 'number' ? refund.amount : existing.amount_cents;
++        const outcome = await this.upsertAndApplyRefund({
++          purchase,
++          stripe_refund_id: refund.id,
++          stripe_charge_id: existing.stripe_charge_id,
++          amount_cents: amount,
++          status: 'succeeded',
++          reason: existing.reason,
++        });
++        if (existing.failure_reason) {
++          // A succeeded refund carries no failure reason.
++          await this.prisma.chargeRefund.update({
++            where: { stripe_refund_id: refund.id },
++            data: { failure_reason: null },
++          });
++        }
++        if (outcome.ledger_just_reversed) {
++          // Same once-per-refund downstream signals as charge.refunded. The
++          // full-refund entitlement flip already ran there: Stripe's
++          // amount_refunded counts pending refunds.
++          const fresh = await this.prisma.clientPurchase.findUnique({
++            where: { id: purchase.id },
++          });
++          if (fresh?.status !== 'refunded' && this.partialRefundDecisions) {
++            await this.partialRefundDecisions.onPartialRefund({
++              client_purchase_id: purchase.id,
++              stripe_refund_id: refund.id,
++            });
++          }
++          await this.emitRefundCoachAlert({
++            purchase,
++            amount_cents: amount,
++            stripe_refund_id: refund.id,
++            stripe_charge_id: existing.stripe_charge_id,
++            reason: existing.reason,
++          });
++        }
++        return { claimed: true, purchase_id: existing.purchase_id };
++      }
++    }
+     await this.prisma.chargeRefund.update({
+       where: { stripe_refund_id: refund.id },
+       data: {
+@@ -373,7 +497,13 @@ export class RefundDisputeHandlerService {
+             note: args.note ?? existing.note,
+             initiated_by_user_id:
+               args.initiated_by_user_id ?? existing.initiated_by_user_id,
+-            posted_at: args.status === 'succeeded' ? new Date() : existing.posted_at,
++            // B-641-6 (S-COACH-3): posted_at is the FIRST time the refund
++            // succeeded. A Stripe redelivery days later must not move the
++            // refund into a later Money window or tax export.
++            posted_at:
++              args.status === 'succeeded'
++                ? existing.posted_at ?? new Date()
++                : existing.posted_at,
+           },
+         })
+       : await this.prisma.chargeRefund.create({
+@@ -390,21 +520,491 @@ export class RefundDisputeHandlerService {
+           },
+         });
+ 
+-    // Apply ledger reversals only once per refund (idempotency flag),
+-    // and only when the refund is actually `succeeded` — pending refunds
+-    // shouldn't move our books.
+-    if (args.status !== 'succeeded' || row.ledger_reversed) {
++    // Apply ledger reversals only once per refund, and only when the refund
++    // is actually `succeeded` — pending refunds shouldn't move our books.
++    if (args.status !== 'succeeded') {
+       return { row, ledger_just_reversed: false };
+     }
+ 
+-    await this.applyLedgerReversal(args.purchase.id, args.amount_cents);
+-    await this.applyHeadCoachReversal(args.purchase.id, args.amount_cents);
++    // B-641-7: three paths can complete one refund and overlap. The flag is
++    // CLAIMED (false -> true) in one transaction with the ledger reversal, so
++    // one caller reverses the books and a crash rolls both back.
++    const ledgerJustReversed = await this.prisma.$transaction(async (tx) => {
++      const claim = await tx.chargeRefund.updateMany({
++        where: { id: row.id, ledger_reversed: false },
++        data: { ledger_reversed: true },
++      });
++      if (claim.count !== 1) return false;
++      // B-676-1: each slice posts THIS refund's cents at its posted_at.
++      await this.applyLedgerReversal(args.purchase.id, args.amount_cents, tx, {
++        kind: 'refund',
++        id: row.id,
++        at: row.posted_at ?? new Date(),
++      });
++      return true;
++    });
++
++    // The head-coach transfer is Stripe HTTP, so it runs outside any
++    // transaction. transfer_reversed = false after the ledger claim is the
++    // durable "still owed" state; retryPendingTransferReversals picks it up.
++    await this.applyRefundTransferReversalOnce(row.id, args.purchase.id, args.amount_cents);
++
++    const updated = await this.prisma.chargeRefund.findUnique({ where: { id: row.id } });
++    return { row: updated ?? row, ledger_just_reversed: ledgerJustReversed };
++  }
++
++  // B-641-7: reverse the head-coach transfer for ONE refund exactly once.
++  // Every caller sends the same refund-scoped key and amount (one Stripe
++  // reversal); the local record claims transfer_reversed false -> true (one
++  // record). A Stripe failure leaves it owed for the retry sweep.
++  // B-641-7 (B-COACH-5): Stripe forgets a key after 24 hours, so a resend is
++  // admitted only within 23 hours of the first attempt (stamped before the
++  // call); past that the reversal moves to owner review, alerted once.
++  private async applyRefundTransferReversalOnce(
++    refundRowId: string,
++    purchaseId: string,
++    refundAmountCents: number,
++    now: Date = new Date(),
++  ): Promise<RefundTransferReversalOutcome> {
++    const current = await this.prisma.chargeRefund.findUnique({ where: { id: refundRowId } });
++    if (!current || current.transfer_reversed) return 'already_done';
++    if (current.transfer_reversal_review_at) return 'needs_review';
++    const owed = await this.owedHeadCoachReversal(purchaseId, refundAmountCents);
++    if (!owed) {
++      await this.markTransferReversalDone(this.prisma, refundRowId);
++      return 'nothing_owed';
++    }
++    const admission = await this.admitTransferReversalAttempt(refundRowId, now, owed.amount_cents);
++    if (admission.outcome !== 'admitted') return admission.outcome;
++    try {
++      await this.transfers.reverse({
++        transfer_row_id: owed.transfer.id,
++        // B-674-3 (d): every resend replays the first attempt's amount, so
++        // the same key never carries different parameters.
++        amount_cents: admission.amount_cents,
++        idempotency_key: refundTransferReversalKey(refundRowId),
++        metadata: { tgp_charge_refund_id: refundRowId },
++        claim: (tx, receipt) => this.markTransferReversalDone(tx, refundRowId, receipt.id),
++        ledger_source: { kind: 'refund', id: refundRowId },
++      });
++      return 'reversed';
++    } catch (err) {
++      // Ids and machine codes only: a Stripe message is free text.
++      this.logger.warn(
++        `head-coach transfer reverse pending purchase=${purchaseId} refund=${refundRowId} code=${transferReversalErrorCode(err)}`,
++      );
++      return 'pending';
++    }
++  }
++
++  private markTransferReversalDone(
++    db: Prisma.TransactionClient,
++    refundRowId: string,
++    stripeTransferReversalId?: string,
++  ): Promise<boolean> {
++    return db.chargeRefund
++      .updateMany({
++        where: { id: refundRowId, transfer_reversed: false },
++        data: {
++          transfer_reversed: true,
++          ...(stripeTransferReversalId
++            ? { transfer_reversal_stripe_id: stripeTransferReversalId }
++            : {}),
++        },
++      })
++      .then((r) => r.count === 1);
++  }
++
++  // The head-coach share of this refund still to reverse: the transfer's
++  // pro-rata share of the refund, capped by what is left on the transfer.
++  private async owedHeadCoachReversal(
++    purchaseId: string,
++    refundAmountCents: number,
++  ): Promise<{ transfer: ConnectTransfer; amount_cents: number } | null> {
++    const transfer = await this.prisma.connectTransfer.findFirst({
++      where: { purchase_id: purchaseId, status: 'succeeded' },
++    });
++    if (!transfer) return null;
++    const purchase = await this.prisma.clientPurchase.findUnique({ where: { id: purchaseId } });
++    if (!purchase) return null;
++    const amount = Math.min(
++      transfer.amount_cents - transfer.reversed_amount_cents,
++      Math.floor((transfer.amount_cents * refundAmountCents) / Math.max(purchase.amount_cents, 1)),
++    );
++    return amount > 0 ? { transfer, amount_cents: amount } : null;
++  }
++
++  // Shared retry admission (B-641-7). The first attempt is stamped BEFORE the
++  // Stripe call, so a stop after the stamp counts as "may have been sent" and
++  // the window is measured from no later than the real first request.
++  private async admitTransferReversalAttempt(
++    refundRowId: string,
++    now: Date,
++    amountCents: number,
++  ): Promise<
++    { outcome: 'admitted'; amount_cents: number } | { outcome: 'already_done' | 'needs_review' }
++  > {
++    await this.prisma.chargeRefund.updateMany({
++      where: {
++        id: refundRowId,
++        transfer_reversed: false,
++        transfer_reversal_review_at: null,
++        transfer_reversal_first_attempt_at: null,
++      },
++      data: {
++        transfer_reversal_first_attempt_at: now,
++        transfer_reversal_amount_cents: amountCents,
++      },
++    });
++    const row = await this.prisma.chargeRefund.findUnique({ where: { id: refundRowId } });
++    if (!row || row.transfer_reversed) return { outcome: 'already_done' };
++    if (row.transfer_reversal_review_at) return { outcome: 'needs_review' };
++    const firstAttempt = row.transfer_reversal_first_attempt_at ?? now;
++    if (now.getTime() - firstAttempt.getTime() <= REFUND_TRANSFER_RETRY_WINDOW_MS) {
++      // B-641-8 (narrowed): the sweep orders by this, least recent first.
++      await this.prisma.chargeRefund.updateMany({
++        where: { id: refundRowId, transfer_reversed: false, transfer_reversal_review_at: null },
++        data: { transfer_reversal_last_attempt_at: now },
++      });
++      return {
++        outcome: 'admitted',
++        amount_cents: row.transfer_reversal_amount_cents ?? amountCents,
++      };
++    }
++    await this.moveTransferReversalToReview(row, now);
++    return { outcome: 'needs_review' };
++  }
++
++  // Claims the review transition once; only the claimer alerts, so a row is
++  // reported to the operator exactly once however many callers see it.
++  private async moveTransferReversalToReview(row: ChargeRefund, now: Date): Promise<boolean> {
++    const claim = await this.prisma.chargeRefund.updateMany({
++      where: { id: row.id, transfer_reversed: false, transfer_reversal_review_at: null },
++      data: { transfer_reversal_review_at: now },
++    });
++    if (claim.count !== 1) return false;
++    const firstAttempt = row.transfer_reversal_first_attempt_at ?? row.posted_at ?? row.created_at;
++    this.logger.error(
++      `head-coach transfer reversal needs review refund=${row.id} purchase=${row.purchase_id} code=${REFUND_TRANSFER_REVERSAL_REVIEW_CODE}`,
++    );
++    Sentry.captureMessage('head-coach transfer reversal needs operator review', {
++      level: 'error',
++      fingerprint: ['refund-transfer-reversal-review', row.id],
++      tags: { code: REFUND_TRANSFER_REVERSAL_REVIEW_CODE },
++      extra: {
++        charge_refund_id: row.id,
++        purchase_id: row.purchase_id,
++        amount_cents: row.amount_cents,
++        first_attempt_at: firstAttempt.toISOString(),
++        runbook: REFUND_TRANSFER_REVERSAL_RUNBOOK,
++      },
++    });
++    return true;
++  }
++
++  // B-641-7 recovery: books reversed, head-coach transfer still owed; retried
++  // with the same refund-scoped key. B-641-8: rows past the window first move
++  // to review, then the pass pages (bounded) through admissible rows only.
++  async retryPendingTransferReversals(
++    now: Date = new Date(),
++    limit = 50,
++  ): Promise<{ retried: number; reversed: number; needs_review: number; in_review: number }> {
++    const owed = {
++      status: 'succeeded',
++      ledger_reversed: true,
++      transfer_reversed: false,
++      transfer_reversal_review_at: null,
++    };
++    const cutoff = new Date(now.getTime() - REFUND_TRANSFER_RETRY_WINDOW_MS);
++    const order: Prisma.ChargeRefundOrderByWithRelationInput[] = [
++      { created_at: 'asc' },
++      { id: 'asc' },
++    ];
++
++    let needsReview = 0;
++    for (let page = 0; page < REFUND_TRANSFER_SWEEP_MAX_PAGES; page++) {
++      const expired = await this.prisma.chargeRefund.findMany({
++        where: { ...owed, transfer_reversal_first_attempt_at: { lt: cutoff } },
++        orderBy: order,
++        take: limit,
++      });
++      for (const row of expired) {
++        if (await this.moveTransferReversalToReview(row, now)) needsReview++;
++      }
++      if (expired.length < limit) break;
++    }
++
++    let retried = 0;
++    let reversed = 0;
++    // B-641-8 (Sol): never-attempted rows first, then least recently tried.
++    // Each touched row leaves the owed set or is stamped with `now`, so the
++    // `last attempt before now` filter pages past it (no cursor).
++    for (let page = 0; page < REFUND_TRANSFER_SWEEP_MAX_PAGES; page++) {
++      const rows = await this.prisma.chargeRefund.findMany({
++        where: {
++          ...owed,
++          AND: [
++            {
++              OR: [
++                { transfer_reversal_first_attempt_at: null },
++                { transfer_reversal_first_attempt_at: { gte: cutoff } },
++              ],
++            },
++            {
++              OR: [
++                { transfer_reversal_last_attempt_at: null },
++                { transfer_reversal_last_attempt_at: { lt: now } },
++              ],
++            },
++          ],
++        },
++        orderBy: [
++          { transfer_reversal_last_attempt_at: { sort: 'asc', nulls: 'first' } },
++          ...order,
++        ],
++        take: limit,
++      });
++      for (const row of rows) {
++        retried++;
++        const outcome = await this.applyRefundTransferReversalOnce(
++          row.id,
++          row.purchase_id,
++          row.amount_cents,
++          now,
++        );
++        if (outcome === 'reversed') reversed++;
++        if (outcome === 'needs_review') needsReview++;
++      }
++      if (rows.length < limit) break;
++    }
++
++    const inReview = await this.prisma.chargeRefund.count({
++      where: { transfer_reversed: false, transfer_reversal_review_at: { not: null } },
++    });
++    return { retried, reversed, needs_review: needsReview, in_review: inReview };
++  }
++
++  // Owner view of the review queue (oldest first).
++  async listTransferReversalsInReview(limit = 50): Promise<
++    Array<{
++      charge_refund_id: string;
++      purchase_id: string;
++      stripe_refund_id: string;
++      amount_cents: number;
++      first_attempt_at: string | null;
++      review_at: string;
++    }>
++  > {
++    const rows = await this.prisma.chargeRefund.findMany({
++      where: { transfer_reversed: false, transfer_reversal_review_at: { not: null } },
++      orderBy: [{ transfer_reversal_review_at: 'asc' }, { id: 'asc' }],
++      take: Math.min(Math.max(limit, 1), 200),
++    });
++    return rows.map((r) => ({
++      charge_refund_id: r.id,
++      purchase_id: r.purchase_id,
++      stripe_refund_id: r.stripe_refund_id,
++      amount_cents: r.amount_cents,
++      first_attempt_at: r.transfer_reversal_first_attempt_at?.toISOString() ?? null,
++      review_at: (r.transfer_reversal_review_at as Date).toISOString(),
++    }));
++  }
++
++  // B-641-7 operator reconciliation for a row in review. Stripe is the truth:
++  //   - with stripe_transfer_reversal_id: record THAT reversal (it must be on
++  //     this head-coach transfer and must not name another refund);
++  //   - without: record the reversal Stripe holds for this refund
++  //     (metadata tgp_charge_refund_id); if Stripe holds none and every
++  //     reversal on the transfer is attributed, send ONE new reversal under a
++  //     review-scoped key; if unattributed reversals exist, refuse and list
++  //     them unless confirm_none_in_stripe is set.
++  // The local record is claimed (transfer_reversed false -> true), so two
++  // owners reconciling at once record it once.
++  async reconcileTransferReversal(
++    chargeRefundId: string,
++    args: { stripe_transfer_reversal_id?: string; confirm_none_in_stripe?: boolean } = {},
++  ): Promise<{
++    charge_refund_id: string;
++    outcome: 'recorded_from_stripe' | 'reversed' | 'nothing_owed' | 'already_recorded';
++    stripe_transfer_reversal_id: string | null;
++    amount_cents: number;
++  }> {
++    const row = await this.prisma.chargeRefund.findUnique({ where: { id: chargeRefundId } });
++    if (!row) {
++      throw new NotFoundException({
++        code: 'REFUND_NOT_FOUND',
++        error: 'REFUND_NOT_FOUND',
++        message: 'No refund with this id. Check the id in the review list.',
++      });
++    }
++    if (row.transfer_reversed) {
++      throw new ConflictException({
++        code: 'REFUND_TRANSFER_REVERSAL_ALREADY_RECORDED',
++        error: 'REFUND_TRANSFER_REVERSAL_ALREADY_RECORDED',
++        message: "This refund's head-coach reversal is already recorded. Nothing to do.",
++      });
++    }
++    if (!row.transfer_reversal_review_at) {
++      throw new ConflictException({
++        code: 'REFUND_TRANSFER_REVERSAL_NOT_IN_REVIEW',
++        error: 'REFUND_TRANSFER_REVERSAL_NOT_IN_REVIEW',
++        message:
++          'This refund is still inside the automatic retry window. The retry sweep owns it; reconcile only rows in the review list.',
++      });
++    }
++    const owed = await this.owedHeadCoachReversal(row.purchase_id, row.amount_cents);
++    if (!owed) {
++      await this.markTransferReversalDone(this.prisma, row.id);
++      return {
++        charge_refund_id: row.id,
++        outcome: 'nothing_owed',
++        stripe_transfer_reversal_id: null,
++        amount_cents: 0,
++      };
++    }
++    const stripeTransferId = owed.transfer.stripe_transfer_id;
++    if (!stripeTransferId) {
++      throw new ConflictException({
++        code: 'TRANSFER_NOT_IN_STRIPE',
++        error: 'TRANSFER_NOT_IN_STRIPE',
++        message:
++          'The head-coach transfer has no Stripe id, so there is nothing to reverse in Stripe.',
++      });
++    }
++    const reversals = await this.listAllTransferReversals(stripeTransferId);
++    let match: { id: string; amount: number } | undefined;
++    if (args.stripe_transfer_reversal_id) {
++      const named = reversals.find((r) => r.id === args.stripe_transfer_reversal_id);
++      if (!named) {
++        throw new UnprocessableEntityException({
++          code: 'TRANSFER_REVERSAL_NOT_FOUND',
++          error: 'TRANSFER_REVERSAL_NOT_FOUND',
++          message:
++            "Stripe has no reversal with this id on this refund's head-coach transfer. Check the id in the Stripe Dashboard.",
++        });
++      }
++      const owner = named.metadata?.tgp_charge_refund_id;
++      if (owner && owner !== row.id) {
++        throw new ConflictException({
++          code: 'TRANSFER_REVERSAL_BELONGS_TO_OTHER_REFUND',
++          error: 'TRANSFER_REVERSAL_BELONGS_TO_OTHER_REFUND',
++          message:
++            'That reversal was made for a different refund. Pick the reversal for this refund, or reconcile without an id.',
++        });
++      }
++      match = named;
++    } else {
++      match = reversals.find((r) => r.metadata?.tgp_charge_refund_id === row.id);
++      if (!match) {
++        const unattributed = reversals.filter((r) => !r.metadata?.tgp_charge_refund_id);
++        if (unattributed.length > 0 && !args.confirm_none_in_stripe) {
++          throw new ConflictException({
++            code: 'TRANSFER_REVERSAL_UNATTRIBUTED',
++            error: 'TRANSFER_REVERSAL_UNATTRIBUTED',
++            message:
++              "Stripe holds reversals on this transfer that name no refund. If one is this refund's, send its id as stripe_transfer_reversal_id; if none is, send confirm_none_in_stripe: true.",
++            unattributed: unattributed.map((r) => ({ id: r.id, amount_cents: r.amount })),
++          });
++        }
++      }
++    }
++    // Only the caller whose claim wins reports the record as its own.
++    let claimed = false;
++    const claim = async (tx: Prisma.TransactionClient, receipt: { id?: string }) => {
++      claimed = await this.markTransferReversalDone(tx, row.id, receipt.id);
++      return claimed;
++    };
++    if (match) {
++      const receipt = match;
++      // B-641-10 (Sol): a receipt smaller than this refund's share does not
++      // settle it. Nothing is recorded and the row stays in review.
++      if (receipt.amount < owed.amount_cents) {
++        throw new ConflictException({
++          code: 'TRANSFER_REVERSAL_UNDERSIZED',
++          error: 'TRANSFER_REVERSAL_UNDERSIZED',
++          message:
++            "That reversal is smaller than this refund's head-coach share, so it does not settle it. Nothing was recorded; the refund stays in review.",
++          reversal_amount_cents: receipt.amount,
++          owed_cents: owed.amount_cents,
++        });
++      }
++      // B-641-9 (Sol): one Stripe reversal settles at most one refund. The id
++      // is bound to this refund in the same transaction that claims it (a
++      // unique column), so a second refund, or a concurrent owner request for
++      // another refund, is refused instead of counting the money twice.
++      const bound = await this.prisma.chargeRefund.findFirst({
++        where: { transfer_reversal_stripe_id: receipt.id, NOT: { id: row.id } },
++      });
++      if (bound) throw transferReversalAssignedElsewhere();
++      // Stripe is the truth for the transfer: record what the receipt moved,
++      // capped by what is left on the transfer.
++      const amount = Math.min(
++        receipt.amount,
++        owed.transfer.amount_cents - owed.transfer.reversed_amount_cents,
++      );
++      try {
++        await this.transfers.recordReconciledReversal({
++          transfer_row_id: owed.transfer.id,
++          amount_cents: amount,
++          ledger_source: { kind: 'refund', id: row.id },
++          claim: async (tx) => {
++            claimed = await this.markTransferReversalDone(tx, row.id, receipt.id);
++            return claimed;
++          },
++        });
++      } catch (err) {
++        if ((err as { code?: unknown } | null)?.code === 'P2002') {
++          throw transferReversalAssignedElsewhere();
++        }
++        throw err;
++      }
++      return {
++        charge_refund_id: row.id,
++        outcome: claimed ? 'recorded_from_stripe' : 'already_recorded',
++        stripe_transfer_reversal_id: match.id,
++        amount_cents: amount,
++      };
++    }
++    // Stripe holds no reversal for this refund and the original key has
++    // expired, so one new request under a review-scoped key is safe; a second
++    // owner click inside 24 hours reuses that key.
++    await this.transfers.reverse({
++      transfer_row_id: owed.transfer.id,
++      amount_cents: owed.amount_cents,
++      idempotency_key: `${refundTransferReversalKey(row.id)}-review`,
++      metadata: { tgp_charge_refund_id: row.id },
++      claim,
++      ledger_source: { kind: 'refund', id: row.id },
++    });
++    return {
++      charge_refund_id: row.id,
++      outcome: claimed ? 'reversed' : 'already_recorded',
++      stripe_transfer_reversal_id: null,
++      amount_cents: owed.amount_cents,
++    };
++  }
+ 
+-    const updated = await this.prisma.chargeRefund.update({
+-      where: { id: row.id },
+-      data: { ledger_reversed: true, transfer_reversed: true },
++  private async listAllTransferReversals(
++    stripeTransferId: string,
++  ): Promise<Array<{ id: string; amount: number; metadata?: Record<string, string> | null }>> {
++    const out: Array<{ id: string; amount: number; metadata?: Record<string, string> | null }> = [];
++    let startingAfter: string | undefined;
++    for (let page = 0; page < 10; page++) {
++      const res = await this.stripe.listTransferReversals({
++        transfer_id: stripeTransferId,
++        limit: 100,
++        starting_after: startingAfter,
++      });
++      out.push(...res.data);
++      if (!res.has_more || res.data.length === 0) return out;
++      startingAfter = res.data[res.data.length - 1].id;
++    }
++    throw new ServiceUnavailableException({
++      code: 'TRANSFER_REVERSALS_TOO_MANY',
++      error: 'TRANSFER_REVERSALS_TOO_MANY',
++      message:
++        'This transfer has more than 1,000 reversals in Stripe. Reconcile it in the Stripe Dashboard and record it with stripe_transfer_reversal_id.',
+     });
+-    return { row: updated, ledger_just_reversed: true };
+   }
+ 
+   // A276 P0-2 (refix) — single source of truth for the post-conversion
+@@ -457,7 +1057,7 @@ export class RefundDisputeHandlerService {
+       // already committed. We log with PII-safe context (refund id,
+       // charge id, coach id) so ops can replay the alert manually.
+       this.logger.warn(
+-        `coach refund notification failed refund=${args.stripe_refund_id} charge=${args.stripe_charge_id} coach=${args.purchase.coach_user_id}: ${(err as Error).message}`,
++        `coach refund notification failed refund=${args.stripe_refund_id} charge=${args.stripe_charge_id} coach=${args.purchase.coach_user_id} code=COACH_REFUND_ALERT_FAILED`,
+       );
+     }
+   }
+@@ -467,9 +1067,11 @@ export class RefundDisputeHandlerService {
+   private async applyLedgerReversal(
+     purchaseId: string,
+     refundAmountCents: number,
++    db: Prisma.TransactionClient = this.prisma,
++    source?: LedgerReversalSource,
+   ): Promise<void> {
+-    const entries = await this.ledger.findByPurchase(purchaseId);
+-    const purchase = await this.prisma.clientPurchase.findUnique({
++    const entries = await this.ledger.findByPurchase(purchaseId, db);
++    const purchase = await db.clientPurchase.findUnique({
+       where: { id: purchaseId },
+     });
+     if (!purchase) return;
+@@ -481,10 +1083,14 @@ export class RefundDisputeHandlerService {
+           Math.floor(entry.amount_cents * ratio),
+         );
+         if (portion > 0) {
+-          await this.ledger.applyReversal({
+-            entry_id: entry.id,
+-            reversed_cents: portion,
+-          });
++          await this.ledger.applyReversal(
++            {
++              entry_id: entry.id,
++              reversed_cents: portion,
++              source,
++            },
++            db,
++          );
+         }
+       }
+     }
+@@ -498,6 +1104,7 @@ export class RefundDisputeHandlerService {
+   private async applyHeadCoachReversal(
+     purchaseId: string,
+     refundAmountCents: number,
++    disputeRowId?: string,
+   ): Promise<void> {
+     const transfer = await this.prisma.connectTransfer.findFirst({
+       where: { purchase_id: purchaseId, status: 'succeeded' },
+@@ -517,10 +1124,12 @@ export class RefundDisputeHandlerService {
+       await this.transfers.reverse({
+         transfer_row_id: transfer.id,
+         amount_cents: amount,
++        ledger_source: disputeRowId ? { kind: 'dispute', id: disputeRowId } : undefined,
+       });
+     } catch (err) {
++      // Ids and machine codes only (B-674-4): a Stripe message is free text.
+       this.logger.warn(
+-        `head-coach transfer reverse failed purchase=${purchaseId}: ${(err as Error).message}`,
++        `head-coach transfer reverse failed purchase=${purchaseId} code=${transferReversalErrorCode(err)}`,
+       );
+     }
+   }
+@@ -576,8 +1185,16 @@ export class RefundDisputeHandlerService {
+         where: { id: updated.purchase_id },
+       });
+       if (purchase) {
+-        await this.applyLedgerReversal(purchase.id, updated.amount_cents);
+-        await this.applyHeadCoachReversal(purchase.id, updated.amount_cents);
++        // B-676-1: the chargeback posts its own cents per slice, once.
++        const disputeSource: LedgerReversalSource = {
++          kind: 'dispute',
++          id: updated.id,
++          at: updated.closed_at ?? new Date(),
++        };
++        await this.prisma.$transaction((tx) =>
++          this.applyLedgerReversal(purchase.id, updated.amount_cents, tx, disputeSource),
++        );
++        await this.applyHeadCoachReversal(purchase.id, updated.amount_cents, updated.id);
+         // PR-16 — entitlement flip + drop-cancel commit atomically.
+         // The Stripe-HTTP-ridden ledger / transfer reversals above
+         // intentionally run outside this tx (P1-3 anti-pattern). The
+@@ -809,32 +1426,31 @@ export class RefundDisputeHandlerService {
+ 
+   // --- Transfer reversed ---
+ 
++  // B-674-3 (B-CM1-116): one writer per number. reversed_amount_cents is the
++  // sum of reversals this service recorded (each bound to one refund claim or
++  // reconciled receipt); mirroring Stripe's cumulative total into it counted a
++  // reversal twice when the webhook landed first. This webhook only observes:
++  // a Stripe total above the recorded one is logged (ids and cents); the owed
++  // refund keeps retrying under its key, or is reconciled from review.
+   private async onTransferReversed(event: {
+     data: { object: Record<string, unknown> };
+   }): Promise<{ claimed: boolean; reason?: string; purchase_id?: string }> {
+-    const transfer = event.data.object as {
+-      id?: string;
+-      amount_reversed?: number;
+-      reversed?: boolean;
+-      metadata?: Record<string, string>;
+-    };
++    const transfer = event.data.object as { id?: string; amount_reversed?: unknown };
+     if (!transfer?.id) return { claimed: false };
+     const row = await this.prisma.connectTransfer.findFirst({
+       where: { stripe_transfer_id: transfer.id },
+     });
+     if (!row) return { claimed: false };
+-    const fullyReversed = !!transfer.reversed;
+-    await this.prisma.connectTransfer.update({
+-      where: { id: row.id },
+-      data: {
+-        reversed_amount_cents:
+-          typeof transfer.amount_reversed === 'number'
+-            ? transfer.amount_reversed
+-            : row.reversed_amount_cents,
+-        status: fullyReversed ? 'reversed' : row.status,
+-        reversed_at: fullyReversed ? new Date() : row.reversed_at,
+-      },
+-    });
++    const stripeCents = transfer.amount_reversed;
++    if (
++      typeof stripeCents === 'number' &&
++      Number.isInteger(stripeCents) &&
++      stripeCents > row.reversed_amount_cents
++    ) {
++      this.logger.warn(
++        `transfer reversal not yet recorded transfer=${row.id} purchase=${row.purchase_id} stripe_cents=${stripeCents} recorded_cents=${row.reversed_amount_cents} code=TRANSFER_REVERSAL_NOT_YET_RECORDED`,
++      );
++    }
+     return { claimed: true, purchase_id: row.purchase_id };
+   }
+ 
+diff --git a/src/checkout/refund-reversal-admin.controller.ts b/src/checkout/refund-reversal-admin.controller.ts
+new file mode 100644
+index 00000000..ef5cb014
+--- /dev/null
++++ b/src/checkout/refund-reversal-admin.controller.ts
+@@ -0,0 +1,74 @@
++import {
++  BadRequestException,
++  Body,
++  Controller,
++  Get,
++  Param,
++  Post,
++  Query,
++  UseGuards,
++} from '@nestjs/common';
++import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
++import { JwtAuthGuard } from '../auth/auth.guard';
++import { RolesGuard } from '../auth/roles.guard';
++import { Roles } from '../common/decorators/roles.decorator';
++import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
++
++// B-641-7 — head-coach reversals still owed after the 23-hour Stripe window
++// leave automatic retry, alert once (REFUND_TRANSFER_REVERSAL_REVIEW) and are
++// reconciled here (docs/runbooks/refund-transfer-reversal-review.md).
++// B-674-2 (B-CM1-116): its own controller, gated by the owner's JWT alone.
++// AdminPaymentOpsController also runs ServiceTokenGuard on the SAME bearer,
++// so no request passed both and every owner got 401. A service token is not
++// a JWT and is refused.
++@ApiTags('admin-payments')
++@Controller('v1/admin/payments/refund-reversals')
++@UseGuards(JwtAuthGuard, RolesGuard)
++@Roles('owner')
++export class AdminRefundReversalController {
++  constructor(private readonly refundDispute: RefundDisputeHandlerService) {}
++
++  @Get('review')
++  @ApiOperation({ summary: 'List head-coach transfer reversals waiting for operator review' })
++  async listRefundReversalsInReview(@Query('limit') limitRaw?: string) {
++    const limit = Math.min(parseInt(limitRaw ?? '50', 10) || 50, 200);
++    return { refunds: await this.refundDispute.listTransferReversalsInReview(limit) };
++  }
++
++  @Post(':id/reconcile')
++  @ApiOperation({
++    summary:
++      'Reconcile one reversal in review against Stripe: record the reversal Stripe holds, or send one new reversal when Stripe holds none',
++  })
++  @ApiResponse({ status: 400, description: 'RECONCILE_BODY_INVALID' })
++  @ApiResponse({ status: 404, description: 'REFUND_NOT_FOUND' })
++  @ApiResponse({
++    status: 409,
++    description:
++      'REFUND_TRANSFER_REVERSAL_ALREADY_RECORDED | REFUND_TRANSFER_REVERSAL_NOT_IN_REVIEW | TRANSFER_REVERSAL_BELONGS_TO_OTHER_REFUND | TRANSFER_REVERSAL_UNATTRIBUTED | TRANSFER_NOT_IN_STRIPE',
++  })
++  @ApiResponse({ status: 422, description: 'TRANSFER_REVERSAL_NOT_FOUND' })
++  async reconcileRefundReversal(
++    @Param('id') chargeRefundId: string,
++    @Body()
++    body: { stripe_transfer_reversal_id?: unknown; confirm_none_in_stripe?: unknown } = {},
++  ) {
++    const id = body?.stripe_transfer_reversal_id;
++    const confirm = body?.confirm_none_in_stripe;
++    if (
++      (id !== undefined && (typeof id !== 'string' || !/^trr_[A-Za-z0-9]{1,250}$/.test(id))) ||
++      (confirm !== undefined && typeof confirm !== 'boolean')
++    ) {
++      throw new BadRequestException({
++        code: 'RECONCILE_BODY_INVALID',
++        error: 'RECONCILE_BODY_INVALID',
++        message:
++          'stripe_transfer_reversal_id must be a Stripe reversal id (trr_...) and confirm_none_in_stripe must be true or false.',
++      });
++    }
++    return this.refundDispute.reconcileTransferReversal(chargeRefundId, {
++      stripe_transfer_reversal_id: id as string | undefined,
++      confirm_none_in_stripe: confirm === true,
++    });
++  }
++}
+diff --git a/src/checkout/refund-transfer-reversal.scheduler.ts b/src/checkout/refund-transfer-reversal.scheduler.ts
+new file mode 100644
+index 00000000..adeaa4d9
+--- /dev/null
++++ b/src/checkout/refund-transfer-reversal.scheduler.ts
+@@ -0,0 +1,59 @@
++import { Injectable, Logger } from '@nestjs/common';
++import { Cron } from '@nestjs/schedule';
++import { Prisma } from '@prisma/client';
++import * as Sentry from '@sentry/node';
++import { LedgerWriteConflictError } from '../connect/fees/split-ledger.service';
++import { StripeConnectApiError } from '../connect/stripe-connect-api.service';
++import {
++  REFUND_TRANSFER_REVERSAL_RUNBOOK,
++  RefundDisputeHandlerService,
++} from './refund-dispute-handler.service';
++
++// B-674-4 (B-CM1-116): a failed sweep reports a closed code and a closed error
++// class only. The exception object, its name, message, code or any provider
++// or database text never reaches a log line or Sentry.
++export const REFUND_TRANSFER_SWEEP_FAILED_CODE = 'REFUND_TRANSFER_REVERSAL_SWEEP_FAILED';
++export function refundTransferSweepErrorClass(err: unknown): string {
++  if (err instanceof LedgerWriteConflictError) return 'ledger_write_conflict';
++  if (err instanceof StripeConnectApiError) return 'stripe';
++  return err instanceof Prisma.PrismaClientKnownRequestError ? 'database' : 'unknown';
++}
++
++/**
++ * B-641-7 — retries head-coach transfer reversals still owed for succeeded
++ * refunds (Stripe failed, or the process stopped between the Stripe call and
++ * the local record). Every 15 minutes so a retry lands well inside Stripe's
++ * 24-hour idempotency window; the refund-scoped key and the
++ * transfer_reversed claim make overlapping runs on several instances safe.
++ */
++@Injectable()
++export class RefundTransferReversalScheduler {
++  private readonly logger = new Logger(RefundTransferReversalScheduler.name);
++
++  constructor(private readonly refunds: RefundDisputeHandlerService) {}
++
++  @Cron('*/15 * * * *', { name: 'refund-transfer-reversal-retry', timeZone: 'UTC' })
++  async handleCron(): Promise<void> {
++    try {
++      const result = await this.refunds.retryPendingTransferReversals();
++      if (result.retried > 0 || result.needs_review > 0) {
++        this.logger.log(
++          `refund transfer reversal retry: retried=${result.retried} reversed=${result.reversed} needs_review=${result.needs_review}`,
++        );
++      }
++    } catch (err: unknown) {
++      const errorClass = refundTransferSweepErrorClass(err);
++      this.logger.error(
++        `refund transfer reversal retry failed code=${REFUND_TRANSFER_SWEEP_FAILED_CODE} error_class=${errorClass}`,
++      );
++      // The next run (15 minutes) retries the same rows; the alert tells the
++      // operator the sweep itself is failing, with the runbook to follow.
++      Sentry.captureMessage('refund transfer reversal retry sweep failed', {
++        level: 'error',
++        fingerprint: ['refund-transfer-reversal-sweep-failed', errorClass],
++        tags: { code: REFUND_TRANSFER_SWEEP_FAILED_CODE, error_class: errorClass },
++        extra: { runbook: REFUND_TRANSFER_REVERSAL_RUNBOOK },
++      });
++    }
++  }
++}
+diff --git a/src/connect/fees/split-ledger.service.ts b/src/connect/fees/split-ledger.service.ts
+index 4f0d25c9..6c486b13 100644
+--- a/src/connect/fees/split-ledger.service.ts
++++ b/src/connect/fees/split-ledger.service.ts
+@@ -1,8 +1,29 @@
+ import { Injectable, Logger } from '@nestjs/common';
+-import type { ClientPurchase, SplitLedgerEntry } from '@prisma/client';
++import type { ClientPurchase, Prisma, SplitLedgerEntry } from '@prisma/client';
+ import { PrismaService } from '../../prisma.service';
+ import type { SplitPlan } from './fee-policy.service';
+ 
++// B-674-1: compare-and-set attempts for one slice reversal before giving up.
++export const LEDGER_REVERSAL_CAS_ATTEMPTS = 8;
++
++// B-676-1: the refund or lost chargeback a reversal posting belongs to.
++export interface LedgerReversalSource {
++  kind: 'refund' | 'dispute';
++  /** ChargeRefund.id or ChargeDispute.id. */
++  id: string;
++  /** When the event took the money back (the Money window it reports in). */
++  at: Date;
++}
++
++// Closed code only: the slice id, never row contents.
++export class LedgerWriteConflictError extends Error {
++  readonly code = 'LEDGER_REVERSAL_WRITE_CONFLICT';
++  constructor(readonly entryId: string) {
++    super(`LEDGER_REVERSAL_WRITE_CONFLICT entry=${entryId}`);
++    this.name = 'LedgerWriteConflictError';
++  }
++}
++
+ // SplitLedgerService — append-only ledger of every dollar slice that a
+ // purchase produces. Three kinds:
+ //
+@@ -121,33 +142,71 @@ export class SplitLedgerService {
+   // Apply a (possibly partial) reversal to a ledger entry. Tracks the
+   // cumulative reversed_cents — when it reaches amount_cents we flip
+   // status=reversed.
+-  async applyReversal(args: {
+-    entry_id: string;
+-    reversed_cents: number;
+-    stripe_transfer_id?: string | null;
+-  }): Promise<SplitLedgerEntry> {
+-    const current = await this.prisma.splitLedgerEntry.findUniqueOrThrow({
+-      where: { id: args.entry_id },
+-    });
+-    const newReversed = Math.min(
+-      current.amount_cents,
+-      current.reversed_cents + args.reversed_cents,
+-    );
+-    const fullyReversed = newReversed >= current.amount_cents;
+-    return this.prisma.splitLedgerEntry.update({
+-      where: { id: args.entry_id },
+-      data: {
++  // `db` lets a caller apply the reversal inside its own transaction, next to
++  // the claim that makes it happen exactly once (B-641-7).
++  // B-674-1 (B-CM1-116): compare-and-set on the reversed_cents read, so a
++  // concurrent reversal of another refund is added to, never overwritten; a
++  // lost race re-reads; exhaustion throws and rolls the caller's claim back.
++  // B-676-1: with `source` (pass a transaction client) the event's cents are
++  // posted to SplitLedgerReversal in the same transaction, once per slice.
++  async applyReversal(
++    args: {
++      entry_id: string;
++      reversed_cents: number;
++      stripe_transfer_id?: string | null;
++      source?: LedgerReversalSource;
++    },
++    db: Prisma.TransactionClient = this.prisma,
++  ): Promise<SplitLedgerEntry> {
++    const source = args.source;
++    if (source) {
++      const posted = await db.splitLedgerReversal.findFirst({
++        where: { entry_id: args.entry_id, source_kind: source.kind, source_id: source.id },
++      });
++      if (posted) return db.splitLedgerEntry.findUniqueOrThrow({ where: { id: args.entry_id } });
++    }
++    for (let attempt = 0; attempt < LEDGER_REVERSAL_CAS_ATTEMPTS; attempt++) {
++      const current = await db.splitLedgerEntry.findUniqueOrThrow({
++        where: { id: args.entry_id },
++      });
++      const newReversed = Math.min(
++        current.amount_cents,
++        current.reversed_cents + Math.max(0, args.reversed_cents),
++      );
++      const fullyReversed = newReversed >= current.amount_cents;
++      const data = {
+         reversed_cents: newReversed,
+         status: fullyReversed ? 'reversed' : current.status,
+-        reversed_at: fullyReversed ? new Date() : current.reversed_at,
+-        stripe_transfer_id:
+-          args.stripe_transfer_id ?? current.stripe_transfer_id ?? undefined,
+-      },
+-    });
++        reversed_at: fullyReversed ? (current.reversed_at ?? new Date()) : current.reversed_at,
++        stripe_transfer_id: args.stripe_transfer_id ?? current.stripe_transfer_id,
++      };
++      const won = await db.splitLedgerEntry.updateMany({
++        where: { id: args.entry_id, reversed_cents: current.reversed_cents },
++        data,
++      });
++      if (won.count !== 1) continue;
++      const cents = newReversed - current.reversed_cents;
++      if (source && cents > 0) {
++        await db.splitLedgerReversal.create({
++          data: {
++            entry_id: args.entry_id,
++            source_kind: source.kind,
++            source_id: source.id,
++            cents,
++            posted_at: source.at,
++          },
++        });
++      }
++      return { ...current, ...data };
++    }
++    throw new LedgerWriteConflictError(args.entry_id);
+   }
+ 
+-  async findByPurchase(purchaseId: string): Promise<SplitLedgerEntry[]> {
+-    return this.prisma.splitLedgerEntry.findMany({
++  async findByPurchase(
++    purchaseId: string,
++    db: Prisma.TransactionClient = this.prisma,
++  ): Promise<SplitLedgerEntry[]> {
++    return db.splitLedgerEntry.findMany({
+       where: { purchase_id: purchaseId },
+       orderBy: [{ kind: 'asc' }, { created_at: 'asc' }],
+     });
+diff --git a/src/connect/fees/transfer-orchestrator.service.ts b/src/connect/fees/transfer-orchestrator.service.ts
+index f0d832e8..68c49c3b 100644
+--- a/src/connect/fees/transfer-orchestrator.service.ts
++++ b/src/connect/fees/transfer-orchestrator.service.ts
+@@ -1,11 +1,15 @@
+ import { Injectable, Logger } from '@nestjs/common';
+-import type { ConnectTransfer } from '@prisma/client';
++import type { ConnectTransfer, Prisma } from '@prisma/client';
+ import { PrismaService } from '../../prisma.service';
+ import {
+   StripeConnectApiError,
+   StripeConnectApiService,
+ } from '../stripe-connect-api.service';
+-import { SplitLedgerService } from './split-ledger.service';
++import {
++  LEDGER_REVERSAL_CAS_ATTEMPTS,
++  LedgerWriteConflictError,
++  SplitLedgerService,
++} from './split-ledger.service';
+ 
+ // TransferOrchestratorService — mints the head-coach 5%-style follow-on
+ // Stripe Transfer from the platform balance, and records the result
+@@ -186,9 +190,25 @@ export class TransferOrchestratorService {
+ 
+   // Reverse a posted transfer (partial or full). Used by the refund
+   // webhook handler when a payment is refunded.
++  // B-641-7: a caller that reverses on behalf of one refund passes
++  //   idempotency_key  a key scoped to that refund, so every racer and every
++  //                    retry sends the SAME Stripe request (Stripe returns the
++  //                    first reversal instead of making a second one), and
++  //   claim            run inside the local-record transaction; the local
++  //                    reversal is recorded only when it returns true, so a
++  //                    racer that also reached Stripe records nothing.
++  // Without them the legacy amount-scoped key and unconditional record apply.
+   async reverse(args: {
+     transfer_row_id: string;
+     amount_cents?: number; // omit = full reversal
++    idempotency_key?: string;
++    // B-674-3: gets Stripe's receipt, so its id is bound to the refund.
++    claim?: (tx: Prisma.TransactionClient, receipt: { id?: string }) => Promise<boolean>;
++    // B-COACH-5: ids only (e.g. tgp_charge_refund_id), so an operator and the
++    // reconcile path can attribute each reversal in Stripe to its refund.
++    metadata?: Record<string, string>;
++    // B-676-1: the event the head-coach slice posting belongs to.
++    ledger_source?: { kind: 'refund' | 'dispute'; id: string };
+   }): Promise<ConnectTransfer> {
+     const row = await this.prisma.connectTransfer.findUniqueOrThrow({
+       where: { id: args.transfer_row_id },
+@@ -198,31 +218,91 @@ export class TransferOrchestratorService {
+     }
+     const amount = args.amount_cents ?? row.amount_cents - row.reversed_amount_cents;
+     if (amount <= 0) return row;
+-    const idempotencyKey = `tgp-tr-rev-${row.id}-${row.reversed_amount_cents + amount}`;
+-    await this.stripe.reverseTransfer({
+-      transfer_id: row.stripe_transfer_id,
+-      amount,
+-      metadata: { tgp_purchase_id: row.purchase_id },
+-      idempotencyKey,
++    const idempotencyKey =
++      args.idempotency_key ?? `tgp-tr-rev-${row.id}-${row.reversed_amount_cents + amount}`;
++    const receipt: { id?: unknown; amount?: unknown } | undefined =
++      await this.stripe.reverseTransfer({
++        transfer_id: row.stripe_transfer_id,
++        amount,
++        metadata: { ...(args.metadata ?? {}), tgp_purchase_id: row.purchase_id },
++        idempotencyKey,
++      });
++    // B-674-3: record what Stripe says this reversal moved.
++    const moved =
++      typeof receipt?.amount === 'number' && Number.isInteger(receipt.amount) && receipt.amount > 0
++        ? receipt.amount
++        : amount;
++    const receiptId = typeof receipt?.id === 'string' ? receipt.id : undefined;
++    const claim = args.claim;
++    if (!claim) {
++      const source = args.ledger_source;
++      if (!source) return this.recordReversal(this.prisma, row.id, moved);
++      return this.prisma.$transaction((tx) => this.recordReversal(tx, row.id, moved, source));
++    }
++    return this.prisma.$transaction(async (tx) => {
++      if (!(await claim(tx, { id: receiptId }))) {
++        return tx.connectTransfer.findUniqueOrThrow({ where: { id: row.id } });
++      }
++      return this.recordReversal(tx, row.id, moved, args.ledger_source);
+     });
+-    const newReversed = row.reversed_amount_cents + amount;
+-    const fullyReversed = newReversed >= row.amount_cents;
+-    const updated = await this.prisma.connectTransfer.update({
+-      where: { id: row.id },
+-      data: {
++  }
++
++  // B-COACH-5 (B-641-7 review): record a reversal that already exists in
++  // Stripe (found by the owner reconcile path), with no Stripe call. Recorded
++  // only when `claim` returns true inside the same transaction.
++  async recordReconciledReversal(args: {
++    transfer_row_id: string;
++    amount_cents: number;
++    claim: (tx: Prisma.TransactionClient) => Promise<boolean>;
++    ledger_source?: { kind: 'refund' | 'dispute'; id: string };
++  }): Promise<ConnectTransfer> {
++    if (!Number.isInteger(args.amount_cents) || args.amount_cents <= 0) {
++      return this.prisma.connectTransfer.findUniqueOrThrow({ where: { id: args.transfer_row_id } });
++    }
++    return this.prisma.$transaction(async (tx) => {
++      if (!(await args.claim(tx))) {
++        return tx.connectTransfer.findUniqueOrThrow({ where: { id: args.transfer_row_id } });
++      }
++      return this.recordReversal(tx, args.transfer_row_id, args.amount_cents, args.ledger_source);
++    });
++  }
++
++  // Local half of a reversal (the only writer; the webhook observes, B-674-3).
++  // B-674-1: compare-and-set, as SplitLedgerService.applyReversal.
++  private async recordReversal(
++    db: Prisma.TransactionClient,
++    rowId: string,
++    amount: number,
++    ledgerSource?: { kind: 'refund' | 'dispute'; id: string },
++  ): Promise<ConnectTransfer> {
++    for (let attempt = 0; attempt < LEDGER_REVERSAL_CAS_ATTEMPTS; attempt++) {
++      const row = await db.connectTransfer.findUniqueOrThrow({ where: { id: rowId } });
++      const newReversed = Math.min(row.amount_cents, row.reversed_amount_cents + amount);
++      const fullyReversed = newReversed >= row.amount_cents;
++      const data = {
+         status: fullyReversed ? 'reversed' : row.status,
+         reversed_amount_cents: newReversed,
+-        reversed_at: fullyReversed ? new Date() : row.reversed_at,
+-      },
+-    });
+-    if (row.ledger_entry_id) {
+-      await this.ledger.applyReversal({
+-        entry_id: row.ledger_entry_id,
+-        reversed_cents: amount,
+-        stripe_transfer_id: row.stripe_transfer_id,
++        reversed_at: fullyReversed ? (row.reversed_at ?? new Date()) : row.reversed_at,
++      };
++      const won = await db.connectTransfer.updateMany({
++        where: { id: row.id, reversed_amount_cents: row.reversed_amount_cents },
++        data,
+       });
++      if (won.count !== 1) continue;
++      if (row.ledger_entry_id && newReversed > row.reversed_amount_cents) {
++        await this.ledger.applyReversal(
++          {
++            entry_id: row.ledger_entry_id,
++            reversed_cents: newReversed - row.reversed_amount_cents,
++            stripe_transfer_id: row.stripe_transfer_id,
++            source: ledgerSource ? { ...ledgerSource, at: new Date() } : undefined,
++          },
++          db,
++        );
++      }
++      return { ...row, ...data };
+     }
+-    return updated;
++    throw new LedgerWriteConflictError(rowId);
+   }
+ 
+   private async markFailed(
+diff --git a/src/connect/stripe-connect-api.service.ts b/src/connect/stripe-connect-api.service.ts
+index 86a1ec51..2c0dea7a 100644
+--- a/src/connect/stripe-connect-api.service.ts
++++ b/src/connect/stripe-connect-api.service.ts
+@@ -729,6 +729,31 @@ export class StripeConnectApiService {
+     );
+   }
+ 
++  // B-COACH-5 (B-641-7 review): the reversals Stripe holds on one transfer,
++  // newest first, for the owner reconcile path (canonical truth after the
++  // idempotency window has passed).
++  async listTransferReversals(args: {
++    transfer_id: string;
++    limit?: number;
++    starting_after?: string;
++  }): Promise<{
++    data: Array<{
++      id: string;
++      amount: number;
++      metadata?: Record<string, string> | null;
++      [k: string]: unknown;
++    }>;
++    has_more: boolean;
++  }> {
++    const qs = new URLSearchParams({
++      limit: String(Math.min(Math.max(args.limit ?? 100, 1), 100)),
++    });
++    if (args.starting_after) qs.set('starting_after', args.starting_after);
++    return this.get(
++      `/transfers/${encodeURIComponent(args.transfer_id)}/reversals?${qs.toString()}`,
++    );
++  }
++
+   // Phase 5: cancel a subscription (used by the dunning sweeper when
+   // grace period elapses).
+   async cancelSubscription(subId: string): Promise<{
+diff --git a/test/cancel-pending-on-refund.spec.ts b/test/cancel-pending-on-refund.spec.ts
+index f5ebff62..29624b4a 100644
+--- a/test/cancel-pending-on-refund.spec.ts
++++ b/test/cancel-pending-on-refund.spec.ts
+@@ -458,6 +458,9 @@ describe('RefundDisputeHandlerService dispute-lost × cancelPendingForPurchase',
+         }),
+       },
+       clientPurchase: {
++        // B-676-1: the dispute's ledger reversal now runs in a transaction.
++        findUnique: async (q: { where: { id: string } }) =>
++          purchases.find((p) => p.id === q.where.id) ?? null,
+         update: jest.fn(async ({ where, data }: any) => {
+           const row = purchases.find((p) => p.id === where.id);
+           if (!row) throw new Error('not found');
+diff --git a/test/refund-dispute-handler.service.spec.ts b/test/refund-dispute-handler.service.spec.ts
+index 87d771e0..268e649f 100644
+--- a/test/refund-dispute-handler.service.spec.ts
++++ b/test/refund-dispute-handler.service.spec.ts
+@@ -125,8 +125,22 @@ function makePrismaStub() {
+     },
+     chargeRefund: {
+       findUnique: jest.fn(async ({ where }: any) =>
+-        refunds.find((r) => r.stripe_refund_id === where.stripe_refund_id) ?? null,
++        refunds.find((r) =>
++          where.id ? r.id === where.id : r.stripe_refund_id === where.stripe_refund_id,
++        ) ?? null,
+       ),
++      // B-641-7: the once-only reversal claims ledger_reversed /
++      // transfer_reversed with a guarded updateMany.
++      updateMany: jest.fn(async ({ where, data }: any) => {
++        let count = 0;
++        for (const r of refunds) {
++          if (Object.entries(where).every(([k, v]) => r[k] === v)) {
++            Object.assign(r, data);
++            count++;
++          }
++        }
++        return { count };
++      }),
+       findMany: jest.fn(async ({ where = {}, take = 50 }: any) =>
+         refunds
+           .filter((r) =>
+diff --git a/test/refund-reversal-boundaries.spec.ts b/test/refund-reversal-boundaries.spec.ts
+new file mode 100644
+index 00000000..0f7c6d35
+--- /dev/null
++++ b/test/refund-reversal-boundaries.spec.ts
+@@ -0,0 +1,312 @@
++// FIX ROUND (B-CM1-116) — Sol + Opus REQUEST CHANGES @ 9a512028 (#674).
++// B-674-1 distinct refunds on one transfer / slice both count (live proof:
++// refund-reversal-concurrency.live). B-674-2 owner routes through the mounted
++// controllers and real guards. B-674-3 the transfer.reversed webhook never
++// double-counts. B-674-4 closed codes only. B-676-1 writer postings.
++import 'reflect-metadata';
++import { Logger, type INestApplication } from '@nestjs/common';
++import { Reflector } from '@nestjs/core';
++import { Test } from '@nestjs/testing';
++import * as Sentry from '@sentry/node';
++import { JwtAuthGuard } from '../src/auth/auth.guard';
++import { RolesGuard } from '../src/auth/roles.guard';
++import { ServiceTokenGuard } from '../src/auth/service-token.guard';
++import { CheckoutModule } from '../src/checkout/checkout.module';
++import { RefundDisputeHandlerService } from '../src/checkout/refund-dispute-handler.service';
++import { RefundTransferReversalScheduler } from '../src/checkout/refund-transfer-reversal.scheduler';
++import { SplitLedgerService } from '../src/connect/fees/split-ledger.service';
++import { StripeConnectApiError } from '../src/connect/stripe-connect-api.service';
++import {
++  HOUR,
++  harness,
++  refundRow,
++  seedPurchase,
++  staleOwedRefund,
++} from './support/refund-reversal-harness';
++
++jest.mock('@sentry/node', () => ({
++  ...jest.requireActual('@sentry/node'),
++  captureMessage: jest.fn(),
++  captureException: jest.fn(),
++}));
++const captureMessage = jest.mocked(Sentry.captureMessage);
++
++type Row = Record<string, any>;
++type H = ReturnType<typeof harness>;
++const CANARY = 'PRIVATE_CANARY_client_at_example_invalid';
++const rowOf = (h: H, model: string, id: string): Row => {
++  const row = (h.db.state[model] as Row[]).find((r) => r.id === id);
++  if (!row) throw new Error(`no ${model} ${id}`);
++  return row;
++};
++const transferReversed = (id: string, total: number) => ({
++  id: `evt_${id}_${total}`,
++  type: 'transfer.reversed',
++  data: { object: { id, amount_reversed: total, reversed: false } },
++});
++
++// A purchase (4,900) with a 245-cent head-coach transfer linked to its slice,
++// and one owed refund per id (2,450 each: 122 head-coach cents).
++function seeded(purchaseId: string, refunds: string[]): H {
++  const h = harness();
++  const at = new Date(Date.now() - HOUR);
++  seedPurchase(h.db, purchaseId, at);
++  const fee = rowOf(h, 'splitLedgerEntry', `${purchaseId}-application_fee`);
++  h.db.state.splitLedgerEntry.push({
++    ...fee,
++    id: `${purchaseId}-head`,
++    kind: 'head_coach_split',
++    payee_user_id: 'head-1',
++    amount_cents: 245,
++  });
++  rowOf(h, 'connectTransfer', `tr-${purchaseId}`).ledger_entry_id = `${purchaseId}-head`;
++  for (const id of refunds) {
++    h.db.state.chargeRefund.push(
++      refundRow(id, purchaseId, at, { transfer_reversal_first_attempt_at: null }),
++    );
++  }
++  return h;
++}
++
++// Stripe delivers transfer.reversed before the reversal request returns.
++function webhookBeforeRecord(h: H): void {
++  const provider = h.reverseTransfer.getMockImplementation()!;
++  h.reverseTransfer.mockImplementation(async (args) => {
++    const receipt = await provider(args);
++    await h.svc.handle(transferReversed(args.transfer_id, h.stripeTotal(args.transfer_id)));
++    return receipt;
++  });
++}
++
++// The nth read of row `id` returns the old row; only then does a DIFFERENT
++// refund's reversal of that row commit (READ COMMITTED, plain SELECT).
++function commitBetweenReadAndWrite(
++  h: H,
++  model: string,
++  id: string,
++  nth: number,
++  commit: () => void,
++) {
++  const m = h.db[model];
++  const original = m.findUniqueOrThrow;
++  let reads = 0;
++  m.findUniqueOrThrow = async (args: { where: { id?: string } }) => {
++    const row = await original(args);
++    if (args.where.id === id && ++reads === nth) commit();
++    return row;
++  };
++}
++
++describe('B-674-1 — a concurrent reversal of another refund is added to, never overwritten (unit)', () => {
++  it('transfer row and head-coach slice keep 122 + 50 when 50 commits between the record read and write', async () => {
++    const h = seeded('p-cc', ['r-a']);
++    // Read 1 is reverse()'s lookup before Stripe; read 2 is the record.
++    commitBetweenReadAndWrite(h, 'connectTransfer', 'tr-p-cc', 2, () => {
++      rowOf(h, 'connectTransfer', 'tr-p-cc').reversed_amount_cents += 50;
++      rowOf(h, 'splitLedgerEntry', 'p-cc-head').reversed_cents += 50;
++    });
++    await h.svc.retryPendingTransferReversals();
++    expect({
++      done: h.refund('r-a').transfer_reversed,
++      transfer: rowOf(h, 'connectTransfer', 'tr-p-cc').reversed_amount_cents,
++      slice: rowOf(h, 'splitLedgerEntry', 'p-cc-head').reversed_cents,
++    }).toEqual({ done: true, transfer: 172, slice: 172 });
++  });
++});
++
++describe('B-674-2 — owner recovery routes over HTTP with the real guards', () => {
++  const live = { deleted_at: null, deletion_scheduled_at: null };
++  const users: Record<string, Row> = {
++    owner: { id: 'owner-1', role: 'owner', ...live },
++    coach: { id: 'coach-9', role: 'coach', ...live },
++    student: { id: 'student-9', role: 'student', ...live },
++    deleted: { id: 'owner-2', role: 'owner', deleted_at: new Date(), deletion_scheduled_at: null },
++  };
++  const result = {
++    charge_refund_id: 'r-1',
++    outcome: 'recorded_from_stripe',
++    stripe_transfer_reversal_id: 'trr_1',
++    amount_cents: 122,
++  };
++  const refundDispute = {
++    listTransferReversalsInReview: jest.fn(async () => [] as unknown[]),
++    reconcileTransferReversal: jest.fn(async (_id: string, _body: unknown) => result),
++  };
++  let app: INestApplication;
++  let base: string;
++  const oldToken = process.env.ADMIN_SERVICE_TOKEN;
++
++  beforeAll(async () => {
++    process.env.ADMIN_SERVICE_TOKEN = 'opaque-service-token';
++    const jwt = Reflect.construct(JwtAuthGuard, [
++      { user: { findUnique: async ({ where }: Row) => users[where.supabase_id] ?? null } },
++      {
++        verify: async (token: string) => {
++          if (!token.startsWith('jwt-')) throw new Error('not a JWT');
++          return { sub: token.slice(4) };
++        },
++      },
++      new Reflector(),
++      { emit: jest.fn() },
++    ]);
++    // Every controller CheckoutModule mounts, so the route resolves wherever it lives.
++    const moduleRef = await Test.createTestingModule({
++      controllers: Reflect.getMetadata('controllers', CheckoutModule),
++    })
++      .overrideGuard(JwtAuthGuard)
++      .useValue(jwt)
++      .overrideGuard(ServiceTokenGuard)
++      .useValue(new ServiceTokenGuard())
++      .overrideGuard(RolesGuard)
++      .useValue(new RolesGuard(new Reflector()))
++      .useMocker((t) => (t === RefundDisputeHandlerService ? refundDispute : {}))
++      .compile();
++    app = moduleRef.createNestApplication({ logger: false });
++    await app.listen(0, '127.0.0.1');
++    base = `${await app.getUrl()}/v1/admin/payments/refund-reversals`;
++  });
++  afterAll(async () => {
++    await app?.close();
++    if (oldToken === undefined) delete process.env.ADMIN_SERVICE_TOKEN;
++    else process.env.ADMIN_SERVICE_TOKEN = oldToken;
++  });
++
++  const call = (path: string, auth?: string, body?: unknown) =>
++    fetch(`${base}${path}`, {
++      method: body === undefined ? 'GET' : 'POST',
++      headers: {
++        ...(auth ? { Authorization: `Bearer ${auth}` } : {}),
++        'Content-Type': 'application/json',
++      },
++      body: body === undefined ? undefined : JSON.stringify(body),
++    });
++
++  it('an owner JWT lists (200) and reconciles (201)', async () => {
++    const list = await call('/review', 'jwt-owner');
++    expect([list.status, await list.json()]).toEqual([200, { refunds: [] }]);
++    const rec = await call('/r-1/reconcile', 'jwt-owner', { stripe_transfer_reversal_id: 'trr_1' });
++    expect(rec.status).toBe(201);
++    expect(refundDispute.reconcileTransferReversal).toHaveBeenCalledWith('r-1', {
++      stripe_transfer_reversal_id: 'trr_1',
++      confirm_none_in_stripe: false,
++    });
++  });
++
++  it.each([
++    ['coach JWT', 'jwt-coach', 403],
++    ['student JWT', 'jwt-student', 403],
++    ['deleted owner JWT', 'jwt-deleted', 403],
++    ['service token (not a JWT)', 'opaque-service-token', 401],
++    ['no token', undefined, 401],
++  ])('%s is refused', async (_label, auth, status) => {
++    refundDispute.reconcileTransferReversal.mockClear();
++    expect([
++      (await call('/review', auth)).status,
++      (await call('/r-1/reconcile', auth, {})).status,
++    ]).toEqual([status, status]);
++    expect(refundDispute.reconcileTransferReversal).not.toHaveBeenCalled();
++  });
++});
++
++describe('B-674-3 — one Stripe reversal is recorded once, wherever the webhook lands', () => {
++  it('webhook before each record: both 122-cent shares reach Stripe and are recorded (244, not 123)', async () => {
++    const h = seeded('p-race', ['r-one', 'r-two']);
++    webhookBeforeRecord(h);
++    await h.svc.retryPendingTransferReversals();
++    expect({
++      done: [h.refund('r-one').transfer_reversed, h.refund('r-two').transfer_reversed],
++      amounts: h.reversals.map((r) => r.amount),
++      stripe: h.stripeTotal('tr_p-race'),
++      recorded: h.headCoach('p-race'),
++      slice: rowOf(h, 'splitLedgerEntry', 'p-race-head').reversed_cents,
++    }).toEqual({ done: [true, true], amounts: [122, 122], stripe: 244, recorded: 244, slice: 244 });
++  });
++
++  it('owner reconcile after the webhook records the Stripe reversal once (122 = Stripe)', async () => {
++    const h = await staleOwedRefund();
++    await h.svc.handle(transferReversed('tr_p-late', 122));
++    await h.svc.retryPendingTransferReversals();
++    const out = await h.svc.reconcileTransferReversal('r-late');
++    expect([out.outcome, h.stripeTotal('tr_p-late'), h.headCoach('p-late')]).toEqual([
++      'recorded_from_stripe',
++      122,
++      122,
++    ]);
++  });
++
++  it('a timed-out full reversal mirrored by the webhook is retried with the same amount and recorded once', async () => {
++    const h = seeded('p-to', ['r-to']);
++    rowOf(h, 'chargeRefund', 'r-to').amount_cents = 4900;
++    const made = h.reverseTransfer.getMockImplementation()!;
++    h.reverseTransfer.mockImplementationOnce(async (args) => {
++      await made(args);
++      await h.svc.handle(transferReversed(args.transfer_id, h.stripeTotal(args.transfer_id)));
++      throw new StripeConnectApiError('timed out', 503, 'request_timeout', null);
++    });
++    await h.svc.retryPendingTransferReversals();
++    expect(h.refund('r-to')).toMatchObject({
++      transfer_reversed: false,
++      transfer_reversal_amount_cents: 245,
++    });
++    await h.svc.retryPendingTransferReversals(new Date(Date.now() + HOUR));
++    expect({
++      done: h.refund('r-to').transfer_reversed,
++      sent: h.reverseTransfer.mock.calls.map(([a]) => a.amount),
++      stripe: h.stripeTotal('tr_p-to'),
++      recorded: h.headCoach('p-to'),
++      slice: rowOf(h, 'splitLedgerEntry', 'p-to-head').reversed_cents,
++    }).toEqual({ done: true, sent: [245, 245], stripe: 245, recorded: 245, slice: 245 });
++  });
++
++  it('stale or repeated webhooks change nothing that was recorded', async () => {
++    const h = seeded('p-st', ['r-st']);
++    await h.svc.retryPendingTransferReversals();
++    for (const total of [0, 122, 122, 60, 245])
++      await h.svc.handle(transferReversed('tr_p-st', total));
++    const tr = rowOf(h, 'connectTransfer', 'tr-p-st');
++    expect([tr.reversed_amount_cents, tr.status]).toEqual([122, 'succeeded']);
++  });
++});
++
++describe('B-674-4 — a failed retry sweep reports closed codes only', () => {
++  it.each([
++    ['Error', Object.assign(new Error(CANARY), { name: `X${CANARY}`, code: CANARY })],
++    ['Stripe error', new StripeConnectApiError(CANARY, 500, CANARY, CANARY)],
++    ['thrown string', CANARY],
++  ])('%s with private text', async (_label, thrown) => {
++    captureMessage.mockClear();
++    const scheduler = Reflect.construct(RefundTransferReversalScheduler, [
++      { retryPendingTransferReversals: async () => Promise.reject(thrown) },
++    ]);
++    const error = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
++    try {
++      await scheduler.handleCron();
++      const reported = JSON.stringify([error.mock.calls, captureMessage.mock.calls]);
++      expect(reported).toContain('code=REFUND_TRANSFER_REVERSAL_SWEEP_FAILED');
++      expect(reported).not.toContain(CANARY);
++      expect(captureMessage.mock.calls[0]?.[1]).toMatchObject({
++        tags: { code: 'REFUND_TRANSFER_REVERSAL_SWEEP_FAILED' },
++      });
++    } finally {
++      error.mockRestore();
++    }
++  });
++});
++
++// The per-event cents through the real writer and the Money reader (99 / 101
++// cents, lost chargeback, delayed head-coach reversal) are in #677.
++describe('B-676-1 (writer, #674) — one event posts to one slice once', () => {
++  it('the same event posting to the same slice again (redelivery) changes nothing', async () => {
++    const h = seeded('p-dup', []);
++    const ledger = Reflect.construct(SplitLedgerService, [h.db]);
++    const args = {
++      entry_id: 'p-dup-destination',
++      reversed_cents: 4802,
++      source: { kind: 'dispute', id: 'cd-1', at: new Date() },
++    };
++    for (let i = 0; i < 2; i++)
++      await h.db.$transaction((tx: unknown) => ledger.applyReversal(args, tx));
++    expect(rowOf(h, 'splitLedgerEntry', 'p-dup-destination').reversed_cents).toBe(4802);
++    expect((h.db.state.splitLedgerReversal as Row[]).map((p) => p.cents)).toEqual([4802]);
++  });
++});
+diff --git a/test/refund-reversal-concurrency.live.spec.ts b/test/refund-reversal-concurrency.live.spec.ts
+new file mode 100644
+index 00000000..1af11a42
+--- /dev/null
++++ b/test/refund-reversal-concurrency.live.spec.ts
+@@ -0,0 +1,175 @@
++// B-674-1 (= B-641-12) on real Postgres: two DIFFERENT refunds reversing one
++// slice or one head-coach transfer at once both count. A third transaction
++// holds the row lock until BOTH writers wait on it (pg_stat_activity); at
++// 9a512028 the second absolute write overwrote the first. mwb-3-live-tests.
++import 'reflect-metadata';
++import { PrismaService } from '../src/prisma.service';
++import { RefundDisputeHandlerService } from '../src/checkout/refund-dispute-handler.service';
++import { SplitLedgerService } from '../src/connect/fees/split-ledger.service';
++import { TransferOrchestratorService } from '../src/connect/fees/transfer-orchestrator.service';
++import { bootstrapTestSchema } from './utils/bootstrap-test-schema';
++import { resetPublicSchema } from './utils/reset-public-schema';
++
++const TEST_DB_URL = process.env.MWB3_TEST_DATABASE_URL || '';
++const liveDescribe = TEST_DB_URL ? describe : describe.skip;
++
++liveDescribe('B-674-1 live: concurrent reversals of different refunds both count', () => {
++  let prisma: PrismaService;
++  let svc: RefundDisputeHandlerService;
++  const reverseTransfer = jest.fn(async (a: { amount: number; idempotencyKey: string }) => ({
++    id: `trr_${a.idempotencyKey.replace(/[^A-Za-z0-9]/g, '')}`,
++    amount: a.amount,
++  }));
++
++  beforeAll(async () => {
++    prisma = new PrismaService({ datasources: { db: { url: TEST_DB_URL } } });
++    await prisma.$connect();
++    await resetPublicSchema(prisma);
++    await bootstrapTestSchema(prisma);
++    await prisma.user.createMany({
++      data: ['coach', 'head', 'client'].map((id) => ({
++        id,
++        supabase_id: id,
++        email: `${id}@example.test`,
++        name: id,
++      })),
++    });
++    await prisma.coachPackage.create({
++      data: { id: 'pkg', coach_id: 'coach', name: 'Coaching', amount_cents: 10_000 },
++    });
++    const ledger = new SplitLedgerService(prisma);
++    const stripe = { reverseTransfer };
++    const transfers = Reflect.construct(TransferOrchestratorService, [prisma, stripe, ledger]);
++    const notifications = { createNotification: jest.fn(async () => undefined) };
++    const payouts = { recordPayoutEvent: jest.fn() };
++    svc = Reflect.construct(RefundDisputeHandlerService, [
++      prisma,
++      stripe,
++      ledger,
++      transfers,
++      payouts,
++      notifications,
++    ]);
++  }, 180_000);
++  afterAll(async () => prisma?.$disconnect());
++
++  // 10,000-cent sale: destination 9,000, fee 1,000, head-coach transfer 500.
++  async function seedPurchase(id: string) {
++    const purchase = await prisma.clientPurchase.create({
++      data: {
++        id,
++        client_user_id: 'client',
++        coach_user_id: 'coach',
++        package_id: 'pkg',
++        amount_cents: 10_000,
++        status: 'paid',
++        stripe_checkout_session_id: `cs_${id}`,
++        idempotency_key: `idem_${id}`,
++      },
++    });
++    const slices = [
++      ['destination', 9_000, 'coach'],
++      ['application_fee', 1_000, null],
++      ['head_coach_split', 500, 'head'],
++    ] as const;
++    await prisma.splitLedgerEntry.createMany({
++      data: slices.map(([kind, amount_cents, payee_user_id]) => ({
++        id: `${id}-${kind}`,
++        purchase_id: id,
++        kind,
++        payee_user_id,
++        amount_cents,
++        status: 'posted',
++        stripe_charge_id: `ch_${id}`,
++      })),
++    });
++    await prisma.connectTransfer.create({
++      data: {
++        id: `${id}-tr`,
++        purchase_id: id,
++        destination_stripe_account_id: 'acct_head',
++        amount_cents: 500,
++        status: 'succeeded',
++        stripe_transfer_id: `tr_${id}`,
++        idempotency_key: `tr-${id}`,
++        ledger_entry_id: `${id}-head_coach_split`,
++      },
++    });
++    const refund = (suffix: string, cents: number) =>
++      svc.upsertAndApplyRefund({
++        purchase,
++        stripe_refund_id: `re_${id}_${suffix}`,
++        stripe_charge_id: `ch_${id}`,
++        amount_cents: cents,
++        status: 'succeeded',
++        reason: null,
++      });
++    return { purchase, refund };
++  }
++
++  // Runs `writers` while a third transaction holds FOR UPDATE on `ids`, and
++  // releases it only once both writers wait on that lock.
++  async function raceBehindLock(table: string, ids: string[], writers: () => Promise<unknown>[]) {
++    let release!: () => void;
++    let held!: () => void;
++    const released = new Promise<void>((r) => (release = r));
++    const isHeld = new Promise<void>((r) => (held = r));
++    const blocker = prisma.$transaction(
++      async (tx) => {
++        await tx.$queryRawUnsafe(`SELECT id FROM "${table}" WHERE id = ANY($1) FOR UPDATE`, ids);
++        held();
++        await released;
++      },
++      { timeout: 60_000, maxWait: 10_000 },
++    );
++    await isHeld;
++    const running = writers();
++    for (const deadline = Date.now() + 20_000; ;) {
++      const [{ n }] = await prisma.$queryRaw<Array<{ n: number }>>`
++        SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database()
++          AND wait_event_type = 'Lock' AND query LIKE ${`%"${table}"%`}`;
++      if (n >= 2) break;
++      if (Date.now() > deadline) throw new Error(`writers never blocked on ${table}`);
++      await new Promise((r) => setTimeout(r, 25));
++    }
++    release();
++    await blocker;
++    await Promise.all(running);
++  }
++
++  it('ledger slices: refunds of 2,000 and 1,000 behind held slice locks reverse 200 + 100 and 1,800 + 900', async () => {
++    const { purchase, refund } = await seedPurchase('pl');
++    await raceBehindLock('SplitLedgerEntry', ['pl-application_fee', 'pl-destination'], () => [
++      refund('a', 2_000),
++      refund('b', 1_000),
++    ]);
++    const slices = await prisma.splitLedgerEntry.findMany({
++      where: { purchase_id: purchase.id },
++      orderBy: { kind: 'asc' },
++    });
++    const transfer = await prisma.connectTransfer.findUniqueOrThrow({ where: { id: 'pl-tr' } });
++    expect([slices.map((s) => s.reversed_cents), transfer.reversed_amount_cents]).toEqual([
++      [300, 2_700, 150],
++      150,
++    ]);
++  }, 90_000);
++
++  it('head-coach transfer: two refunds recording behind a held transfer lock reverse 100 + 50', async () => {
++    const { refund } = await seedPurchase('pt');
++    reverseTransfer.mockClear();
++    await raceBehindLock('ConnectTransfer', ['pt-tr'], () => [
++      refund('a', 2_000),
++      refund('b', 1_000),
++    ]);
++    const transfer = await prisma.connectTransfer.findUniqueOrThrow({ where: { id: 'pt-tr' } });
++    const slice = await prisma.splitLedgerEntry.findUniqueOrThrow({
++      where: { id: 'pt-head_coach_split' },
++    });
++    const sent = reverseTransfer.mock.calls.map(([a]) => a.amount).sort((x, y) => x - y);
++    expect([sent, transfer.reversed_amount_cents, slice.reversed_cents]).toEqual([
++      [50, 100],
++      150,
++      150,
++    ]);
++  }, 90_000);
++});
+diff --git a/test/refund-reversal-once.spec.ts b/test/refund-reversal-once.spec.ts
+new file mode 100644
+index 00000000..cc0f5be4
+--- /dev/null
++++ b/test/refund-reversal-once.spec.ts
+@@ -0,0 +1,359 @@
++// B-641-7 (B-TRIALS-2, agent 114) — one refund reverses the books and the
++// head-coach transfer exactly once, whichever paths complete it and however
++// they overlap, and a failed or interrupted transfer reversal is retried with
++// the same Stripe request instead of being lost or doubled.
++//
++// Real RefundDisputeHandlerService, SplitLedgerService and
++// TransferOrchestratorService over the stateful Prisma double (transactions
++// run serially with rollback, which is how a row lock orders two claimers).
++// Only the Stripe provider is synthetic; it behaves like Stripe idempotency:
++// a repeated key returns the first reversal and creates nothing new.
++
++import 'reflect-metadata';
++import {
++  REFUND_TRANSFER_RETRY_WINDOW_MS,
++  RefundDisputeHandlerService,
++  refundTransferReversalKey,
++} from '../src/checkout/refund-dispute-handler.service';
++import { SplitLedgerService } from '../src/connect/fees/split-ledger.service';
++import { TransferOrchestratorService } from '../src/connect/fees/transfer-orchestrator.service';
++import { StatefulPrisma } from './support/stateful-prisma';
++
++const COACH = 'coach-1';
++
++function store(): StatefulPrisma {
++  const db = new StatefulPrisma();
++  db.model('user');
++  db.model('coachPackage');
++  db.model('clientPurchase');
++  db.model('chargeRefund', [['id'], ['stripe_refund_id']], () => ({
++    ledger_reversed: false,
++    transfer_reversed: false,
++  }));
++  db.model('splitLedgerEntry');
++  db.model('splitLedgerReversal', [['id'], ['entry_id', 'source_kind', 'source_id']]);
++  db.model('connectTransfer');
++  db.model('connectAccount', [['id'], ['coach_user_id']]);
++  db.model('guestCheckout');
++  db.model('notification');
++  db.state.user.push({ id: COACH, name: 'Coach One', email: 'coach@example.test' });
++  db.state.coachPackage.push({ id: 'pkg-1', name: 'Monthly coaching', interval: 'month' });
++  const at = new Date();
++  db.state.clientPurchase.push({
++    id: 'p-1',
++    coach_user_id: COACH,
++    client_user_id: 'client-1',
++    package_id: 'pkg-1',
++    amount_cents: 4900,
++    currency: 'usd',
++    billing_type: 'recurring',
++    status: 'active',
++    entitlement_active: true,
++    source: null,
++    canceled_at: null,
++    last_error: null,
++    stripe_payment_intent_id: null,
++    created_at: at,
++    updated_at: at,
++  });
++  const slice = (kind: string, amount: number, payee: string | null) => ({
++    id: `p-1-${kind}`,
++    purchase_id: 'p-1',
++    kind,
++    payee_user_id: payee,
++    amount_cents: amount,
++    reversed_cents: 0,
++    currency: 'usd',
++    status: 'posted',
++    stripe_charge_id: 'ch_1',
++    posted_at: at,
++    reversed_at: null,
++    created_at: at,
++    updated_at: at,
++  });
++  db.state.splitLedgerEntry.push(
++    slice('destination', 4802, COACH),
++    slice('application_fee', 98, null),
++  );
++  // A pending partial refund (USD 24.50 of 49.00) that completes later.
++  db.state.chargeRefund.push({
++    id: 'refund-1',
++    stripe_refund_id: 're_1',
++    purchase_id: 'p-1',
++    stripe_charge_id: 'ch_1',
++    amount_cents: 2450,
++    status: 'pending',
++    posted_at: null,
++    ledger_reversed: false,
++    transfer_reversed: false,
++    created_at: at,
++    reason: null,
++    note: null,
++    initiated_by_user_id: null,
++    failure_reason: null,
++  });
++  db.state.connectTransfer.push({
++    id: 'tr-1',
++    purchase_id: 'p-1',
++    stripe_transfer_id: 'tr_synthetic',
++    status: 'succeeded',
++    amount_cents: 245,
++    reversed_amount_cents: 0,
++    ledger_entry_id: null,
++    reversed_at: null,
++  });
++  return db;
++}
++
++interface Harness {
++  db: StatefulPrisma;
++  svc: RefundDisputeHandlerService;
++  reverseTransfer: jest.Mock;
++  stripeReversals: Map<string, number>;
++  alerts: jest.Mock;
++}
++
++function harness(): Harness {
++  const db = store();
++  const ledger = Reflect.construct(SplitLedgerService, [db]);
++  // Stripe idempotency: the first request per key creates the reversal;
++  // a repeat returns it and creates nothing.
++  const stripeReversals = new Map<string, number>();
++  const reverseTransfer = jest.fn(async (args: { amount: number; idempotencyKey: string }) => {
++    if (!stripeReversals.has(args.idempotencyKey)) {
++      stripeReversals.set(args.idempotencyKey, args.amount);
++    }
++    return { id: `trr_${args.idempotencyKey}` };
++  });
++  const transfers = Reflect.construct(TransferOrchestratorService, [
++    db,
++    { reverseTransfer },
++    ledger,
++  ]);
++  const alerts = jest.fn(async () => undefined);
++  const svc = Reflect.construct(RefundDisputeHandlerService, [
++    db,
++    { retrieveCharge: jest.fn(async () => ({ payment_intent: null })) },
++    ledger,
++    transfers,
++    { recordPayoutEvent: jest.fn() },
++    { createNotification: alerts },
++  ]);
++  return { db, svc, reverseTransfer, stripeReversals, alerts };
++}
++
++const refundUpdated = {
++  id: 'evt_updated',
++  type: 'charge.refund.updated',
++  data: { object: { id: 're_1', charge: 'ch_1', amount: 2450, status: 'succeeded' } },
++};
++const chargeRefunded = {
++  id: 'evt_refunded',
++  type: 'charge.refunded',
++  data: {
++    object: {
++      id: 'ch_1',
++      amount: 4900,
++      amount_refunded: 2450,
++      refunded: false,
++      refunds: { data: [{ id: 're_1', amount: 2450, status: 'succeeded' }] },
++    },
++  },
++};
++
++function destination(db: StatefulPrisma): number {
++  return db.state.splitLedgerEntry.find((r) => r.id === 'p-1-destination')!.reversed_cents;
++}
++function headCoach(db: StatefulPrisma): number {
++  return db.state.connectTransfer[0].reversed_amount_cents;
++}
++function refundRow(db: StatefulPrisma): Record<string, unknown> {
++  return db.state.chargeRefund[0];
++}
++const stripeTotal = (h: Harness) => [...h.stripeReversals.values()].reduce((a, b) => a + b, 0);
++
++describe('B-641-7 — one refund, one reversal', () => {
++  it('charge.refund.updated and charge.refunded overlapping on one partial refund reverse it once', async () => {
++    const h = harness();
++    let reached!: () => void;
++    let release!: () => void;
++    const atLedger = new Promise<void>((r) => {
++      reached = r;
++    });
++    const gate = new Promise<void>((r) => {
++      release = r;
++    });
++    const originalFind = h.db.splitLedgerEntry.findMany.bind(h.db.splitLedgerEntry);
++    let first = true;
++    h.db.splitLedgerEntry.findMany = async (...args: unknown[]) => {
++      if (first) {
++        first = false;
++        reached();
++        await gate;
++      }
++      return Reflect.apply(originalFind, h.db.splitLedgerEntry, args);
++    };
++    // The newer path stops inside its ledger read; the older path runs
++    // meanwhile; then the newer one resumes.
++    const newer = h.svc.handle(refundUpdated);
++    await atLedger;
++    const older = h.svc.handle(chargeRefunded);
++    await new Promise((r) => setTimeout(r, 30));
++    release();
++    await Promise.all([newer, older]);
++
++    expect(destination(h.db)).toBe(2401);
++    expect(headCoach(h.db)).toBe(122);
++    expect(new Set(h.reverseTransfer.mock.calls.map((c) => c[0].idempotencyKey))).toEqual(
++      new Set([refundTransferReversalKey('refund-1')]),
++    );
++    expect(stripeTotal(h)).toBe(122);
++    expect(h.alerts).toHaveBeenCalledTimes(1);
++    expect(refundRow(h.db)).toMatchObject({ ledger_reversed: true, transfer_reversed: true });
++  });
++
++  it('a redelivery after completion changes nothing', async () => {
++    const h = harness();
++    await h.svc.handle(refundUpdated);
++    await h.svc.handle(chargeRefunded);
++    await h.svc.handle(refundUpdated);
++    expect(destination(h.db)).toBe(2401);
++    expect(headCoach(h.db)).toBe(122);
++    expect(h.reverseTransfer).toHaveBeenCalledTimes(1);
++    expect(h.alerts).toHaveBeenCalledTimes(1);
++  });
++
++  it('a failed Stripe reversal stays owed and the retry sweep reverses it once with the same key', async () => {
++    const h = harness();
++    h.reverseTransfer.mockRejectedValueOnce(new Error('stripe unavailable'));
++    await h.svc.handle(refundUpdated);
++    expect(destination(h.db)).toBe(2401);
++    expect(headCoach(h.db)).toBe(0);
++    expect(refundRow(h.db)).toMatchObject({ ledger_reversed: true, transfer_reversed: false });
++    expect(h.alerts).toHaveBeenCalledTimes(1);
++
++    const first = await h.svc.retryPendingTransferReversals();
++    expect(first).toEqual({ retried: 1, reversed: 1, needs_review: 0, in_review: 0 });
++    const second = await h.svc.retryPendingTransferReversals();
++    expect(second).toEqual({ retried: 0, reversed: 0, needs_review: 0, in_review: 0 });
++
++    expect(headCoach(h.db)).toBe(122);
++    expect(stripeTotal(h)).toBe(122);
++    expect(h.reverseTransfer.mock.calls.map((c) => c[0].idempotencyKey)).toEqual([
++      refundTransferReversalKey('refund-1'),
++      refundTransferReversalKey('refund-1'),
++    ]);
++    expect(refundRow(h.db)).toMatchObject({ transfer_reversed: true });
++    expect(destination(h.db)).toBe(2401);
++    expect(h.alerts).toHaveBeenCalledTimes(1);
++  });
++
++  it('a stop between Stripe and the local record is recovered without a second reversal', async () => {
++    const h = harness();
++    // B-674-1: the reversal write is a compare-and-set updateMany.
++    const originalUpdate = h.db.connectTransfer.updateMany.bind(h.db.connectTransfer);
++    let failNext = true;
++    h.db.connectTransfer.updateMany = async (...args: unknown[]) => {
++      if (failNext) {
++        failNext = false;
++        throw new Error('process stopped');
++      }
++      return Reflect.apply(originalUpdate, h.db.connectTransfer, args);
++    };
++    await h.svc.handle(refundUpdated);
++    expect(h.reverseTransfer).toHaveBeenCalledTimes(1);
++    expect(headCoach(h.db)).toBe(0);
++    expect(refundRow(h.db)).toMatchObject({ transfer_reversed: false });
++
++    await h.svc.retryPendingTransferReversals();
++    // Stripe saw the same key twice and made one reversal; recorded once.
++    expect(h.reverseTransfer).toHaveBeenCalledTimes(2);
++    expect(stripeTotal(h)).toBe(122);
++    expect(headCoach(h.db)).toBe(122);
++    expect(refundRow(h.db)).toMatchObject({ transfer_reversed: true });
++  });
++
++  it('a stop inside the ledger reversal rolls the claim back so the redelivery applies it once', async () => {
++    const h = harness();
++    // B-674-1: the reversal write is a compare-and-set updateMany.
++    const originalUpdate = h.db.splitLedgerEntry.updateMany.bind(h.db.splitLedgerEntry);
++    let failNext = true;
++    h.db.splitLedgerEntry.updateMany = async (...args: unknown[]) => {
++      if (failNext) {
++        failNext = false;
++        throw new Error('process stopped');
++      }
++      return Reflect.apply(originalUpdate, h.db.splitLedgerEntry, args);
++    };
++    await expect(h.svc.handle(refundUpdated)).rejects.toThrow('process stopped');
++    expect(destination(h.db)).toBe(0);
++    expect(refundRow(h.db)).toMatchObject({ ledger_reversed: false });
++    expect(h.alerts).not.toHaveBeenCalled();
++
++    await h.svc.handle(refundUpdated);
++    expect(destination(h.db)).toBe(2401);
++    expect(headCoach(h.db)).toBe(122);
++    expect(h.alerts).toHaveBeenCalledTimes(1);
++  });
++
++  // B-674-3: transfer.reversed lands before the record on the webhook and
++  // admin completion paths; the reversal is recorded once and its id bound.
++  it.each(['charge.refund.updated', 'admin refund'])(
++    'B-674-3: %s, webhook first, records 122 once',
++    async (path) => {
++      const h = harness();
++      const provider = h.reverseTransfer.getMockImplementation()!;
++      h.reverseTransfer.mockImplementation(async (args) => {
++        const receipt = await provider(args);
++        const object = { id: 'tr_synthetic', amount_reversed: stripeTotal(h), reversed: false };
++        await h.svc.handle({ id: 'evt_rev', type: 'transfer.reversed', data: { object } });
++        return receipt;
++      });
++      if (path === 'admin refund') {
++        Reflect.get(h.svc, 'stripe').createRefund = async () => ({
++          id: 're_1',
++          amount: 2450,
++          status: 'succeeded',
++        });
++        await h.svc.createAdminRefund({
++          purchase_id: 'p-1',
++          amount_cents: 2450,
++          initiated_by_user_id: 'owner-1',
++        });
++      } else {
++        await h.svc.handle(refundUpdated);
++      }
++      expect([stripeTotal(h), headCoach(h.db)]).toEqual([122, 122]);
++      expect(refundRow(h.db)).toMatchObject({
++        transfer_reversed: true,
++        transfer_reversal_amount_cents: 122,
++        transfer_reversal_stripe_id: `trr_${refundTransferReversalKey('refund-1')}`,
++      });
++    },
++  );
++
++  it('outside the Stripe idempotency window the sweep reports instead of reversing again', async () => {
++    const h = harness();
++    h.reverseTransfer.mockRejectedValueOnce(new Error('stripe unavailable'));
++    await h.svc.handle(refundUpdated);
++    const later = new Date(Date.now() + REFUND_TRANSFER_RETRY_WINDOW_MS + 60_000);
++    const out = await h.svc.retryPendingTransferReversals(later);
++    expect(out).toEqual({ retried: 0, reversed: 0, needs_review: 1, in_review: 1 });
++    expect(h.reverseTransfer).toHaveBeenCalledTimes(1);
++    expect(headCoach(h.db)).toBe(0);
++  });
++
++  it('a refund with no head-coach transfer is marked done without a Stripe call', async () => {
++    const h = harness();
++    h.db.state.connectTransfer.length = 0;
++    await h.svc.handle(refundUpdated);
++    expect(h.reverseTransfer).not.toHaveBeenCalled();
++    expect(refundRow(h.db)).toMatchObject({ ledger_reversed: true, transfer_reversed: true });
++    expect(await h.svc.retryPendingTransferReversals()).toEqual({
++      retried: 0,
++      reversed: 0,
++      needs_review: 0,
++      in_review: 0,
++    });
++  });
++});
+diff --git a/test/refund-reversal-reconcile.spec.ts b/test/refund-reversal-reconcile.spec.ts
+new file mode 100644
+index 00000000..6d57ae17
+--- /dev/null
++++ b/test/refund-reversal-reconcile.spec.ts
+@@ -0,0 +1,291 @@
++// B-641-7 (B-COACH-5, agent 115) — owner reconciliation of a head-coach
++// transfer reversal in review: Stripe is the truth. See
++// docs/runbooks/refund-transfer-reversal-review.md.
++
++import 'reflect-metadata';
++import * as Sentry from '@sentry/node';
++import { AdminRefundReversalController } from '../src/checkout/refund-reversal-admin.controller';
++import { REFUND_TRANSFER_RETRY_WINDOW_MS } from '../src/checkout/refund-dispute-handler.service';
++import {
++  HOUR,
++  harness,
++  refundRow,
++  seedPurchase,
++  staleOwedRefund,
++} from './support/refund-reversal-harness';
++
++jest.mock('@sentry/node', () => ({
++  ...jest.requireActual('@sentry/node'),
++  captureMessage: jest.fn(),
++}));
++
++const captureMessage = jest.mocked(Sentry.captureMessage);
++
++beforeEach(() => captureMessage.mockClear());
++
++describe('B-641-7 — owner reconcile of a row in review (Stripe is the truth)', () => {
++  async function inReview() {
++    const h = await staleOwedRefund();
++    await h.svc.retryPendingTransferReversals();
++    h.reverseTransfer.mockClear();
++    return h;
++  }
++
++  it('records the reversal Stripe already holds for this refund, without a Stripe write', async () => {
++    const h = await inReview();
++    const out = await h.svc.reconcileTransferReversal('r-late');
++    expect(out).toMatchObject({
++      outcome: 'recorded_from_stripe',
++      stripe_transfer_reversal_id: 'trr_1',
++      amount_cents: 122,
++    });
++    expect(h.reverseTransfer).not.toHaveBeenCalled();
++    expect(h.headCoach('p-late')).toBe(122);
++    expect(h.refund('r-late').transfer_reversed).toBe(true);
++    // A second owner click is refused with a specific code.
++    await expect(h.svc.reconcileTransferReversal('r-late')).rejects.toMatchObject({
++      response: { code: 'REFUND_TRANSFER_REVERSAL_ALREADY_RECORDED' },
++    });
++  });
++
++  it('sends one new reversal under a review-scoped key when Stripe holds none', async () => {
++    const h = harness();
++    const at = new Date(Date.now() - 25 * HOUR);
++    seedPurchase(h.db, 'p-x', at);
++    h.db.state.chargeRefund.push(refundRow('r-x', 'p-x', at));
++    await h.svc.retryPendingTransferReversals();
++    const [a, b] = await Promise.all([
++      h.svc.reconcileTransferReversal('r-x'),
++      h.svc
++        .reconcileTransferReversal('r-x')
++        .catch((e: { response?: { code?: string } }) => e.response?.code),
++    ]);
++    expect(a).toMatchObject({ outcome: 'reversed', amount_cents: 122 });
++    // The second owner either sees the record already made or loses the claim.
++    expect(['REFUND_TRANSFER_REVERSAL_ALREADY_RECORDED', 'already_recorded']).toContain(
++      typeof b === 'string' ? b : (b as { outcome: string }).outcome,
++    );
++    expect(h.stripeTotal('tr_p-x')).toBe(122);
++    expect(h.headCoach('p-x')).toBe(122);
++    expect(new Set(h.reverseTransfer.mock.calls.map((c) => c[0].idempotencyKey))).toEqual(
++      new Set(['tgp-tr-rev-refund-r-x-review']),
++    );
++  });
++
++  it('refuses when Stripe holds an unattributed reversal, until the owner names it or confirms none', async () => {
++    const h = harness();
++    const at = new Date(Date.now() - 25 * HOUR);
++    seedPurchase(h.db, 'p-u', at);
++    h.db.state.chargeRefund.push(refundRow('r-u', 'p-u', at));
++    // Made by hand in the Dashboard: no tgp_charge_refund_id.
++    await h.reverseTransfer({ transfer_id: 'tr_p-u', amount: 122, idempotencyKey: 'dashboard-1' });
++    await h.svc.retryPendingTransferReversals();
++    h.reverseTransfer.mockClear();
++    await expect(h.svc.reconcileTransferReversal('r-u')).rejects.toMatchObject({
++      response: {
++        code: 'TRANSFER_REVERSAL_UNATTRIBUTED',
++        unattributed: [{ id: 'trr_1', amount_cents: 122 }],
++      },
++    });
++    await expect(
++      h.svc.reconcileTransferReversal('r-u', { stripe_transfer_reversal_id: 'trr_404' }),
++    ).rejects.toMatchObject({ response: { code: 'TRANSFER_REVERSAL_NOT_FOUND' } });
++    const out = await h.svc.reconcileTransferReversal('r-u', {
++      stripe_transfer_reversal_id: 'trr_1',
++    });
++    expect(out).toMatchObject({ outcome: 'recorded_from_stripe', amount_cents: 122 });
++    expect(h.reverseTransfer).not.toHaveBeenCalled();
++    expect(h.headCoach('p-u')).toBe(122);
++  });
++
++  it('refuses a reversal that names another refund, and a row still inside the window', async () => {
++    const h = await inReview();
++    await h.reverseTransfer({
++      transfer_id: 'tr_p-late',
++      amount: 10,
++      idempotencyKey: 'other',
++      metadata: { tgp_charge_refund_id: 'r-other' },
++    });
++    await expect(
++      h.svc.reconcileTransferReversal('r-late', { stripe_transfer_reversal_id: 'trr_2' }),
++    ).rejects.toMatchObject({ response: { code: 'TRANSFER_REVERSAL_BELONGS_TO_OTHER_REFUND' } });
++
++    const at = new Date(Date.now() - HOUR);
++    seedPurchase(h.db, 'p-w', at);
++    h.db.state.chargeRefund.push(refundRow('r-w', 'p-w', at));
++    await expect(h.svc.reconcileTransferReversal('r-w')).rejects.toMatchObject({
++      response: { code: 'REFUND_TRANSFER_REVERSAL_NOT_IN_REVIEW' },
++    });
++    await expect(h.svc.reconcileTransferReversal('r-missing')).rejects.toMatchObject({
++      response: { code: 'REFUND_NOT_FOUND' },
++    });
++  });
++
++  it('lists rows in review oldest first with ids only', async () => {
++    const h = await inReview();
++    const rows = await h.svc.listTransferReversalsInReview();
++    expect(rows).toEqual([
++      expect.objectContaining({
++        charge_refund_id: 'r-late',
++        purchase_id: 'p-late',
++        amount_cents: 2450,
++      }),
++    ]);
++  });
++
++  it('every new reversal request carries the refund id in Stripe metadata', async () => {
++    const h = harness();
++    const at = new Date(Date.now() - HOUR);
++    seedPurchase(h.db, 'p-m', at);
++    h.db.state.chargeRefund.push(
++      refundRow('r-m', 'p-m', at, { transfer_reversal_first_attempt_at: null }),
++    );
++    await h.svc.retryPendingTransferReversals(
++      new Date(Date.now() + REFUND_TRANSFER_RETRY_WINDOW_MS * 2),
++    );
++    expect(h.reverseTransfer.mock.calls[0][0].metadata).toEqual({
++      tgp_charge_refund_id: 'r-m',
++      tgp_purchase_id: 'p-m',
++    });
++  });
++});
++
++describe('B-641-7 — owner reconcile route', () => {
++  function controller() {
++    const reconcileTransferReversal = jest.fn(async () => ({ outcome: 'reversed' }));
++    const refundDispute = {
++      reconcileTransferReversal,
++      listTransferReversalsInReview: jest.fn(async () => []),
++    };
++    const ctrl: AdminRefundReversalController = Reflect.construct(AdminRefundReversalController, [
++      refundDispute,
++    ]);
++    return { ctrl, reconcileTransferReversal };
++  }
++
++  it.each([
++    [{ stripe_transfer_reversal_id: 'tr_wrong' }],
++    [{ stripe_transfer_reversal_id: 42 }],
++    [{ confirm_none_in_stripe: 'yes' }],
++  ])('refuses a malformed body %j with RECONCILE_BODY_INVALID', async (body) => {
++    const { ctrl, reconcileTransferReversal } = controller();
++    await expect(ctrl.reconcileRefundReversal('r-1', body)).rejects.toMatchObject({
++      response: { code: 'RECONCILE_BODY_INVALID' },
++    });
++    expect(reconcileTransferReversal).not.toHaveBeenCalled();
++  });
++
++  it('forwards a valid body to the service', async () => {
++    const { ctrl, reconcileTransferReversal } = controller();
++    await ctrl.reconcileRefundReversal('r-1', { stripe_transfer_reversal_id: 'trr_1' });
++    await ctrl.reconcileRefundReversal('r-2', {});
++    expect(reconcileTransferReversal.mock.calls).toEqual([
++      ['r-1', { stripe_transfer_reversal_id: 'trr_1', confirm_none_in_stripe: false }],
++      ['r-2', { stripe_transfer_reversal_id: undefined, confirm_none_in_stripe: false }],
++    ]);
++  });
++});
++
++// FIX ROUND 6 (B-COACH-5, agent 115) — Sol REQUEST CHANGES @ 02cd3f88.
++describe('B-641-9 / B-641-10 — one Stripe reversal settles at most one refund, and only in full', () => {
++  function review(ids: string[], purchase = 'p-r') {
++    const h = harness();
++    const at = new Date(Date.now() - 25 * HOUR);
++    seedPurchase(h.db, purchase, at);
++    for (const id of ids) {
++      h.db.state.chargeRefund.push(
++        refundRow(id, purchase, at, { transfer_reversal_review_at: new Date() }),
++      );
++    }
++    return h;
++  }
++
++  it('Sol probe: the same unattributed reversal cannot settle two refunds', async () => {
++    const h = review(['r-one', 'r-two']);
++    await h.reverseTransfer({ transfer_id: 'tr_p-r', amount: 122, idempotencyKey: 'manual-1' });
++    await h.svc.reconcileTransferReversal('r-one', { stripe_transfer_reversal_id: 'trr_1' });
++    await expect(
++      h.svc.reconcileTransferReversal('r-two', { stripe_transfer_reversal_id: 'trr_1' }),
++    ).rejects.toMatchObject({ response: { code: 'TRANSFER_REVERSAL_ASSIGNED_TO_OTHER_REFUND' } });
++    expect({
++      external: h.stripeTotal('tr_p-r'),
++      local: h.headCoach('p-r'),
++      firstBound: h.refund('r-one').transfer_reversal_stripe_id,
++      secondDone: h.refund('r-two').transfer_reversed,
++    }).toEqual({ external: 122, local: 122, firstBound: 'trr_1', secondDone: false });
++  });
++
++  it('two owners assigning one reversal to two refunds at once record it once', async () => {
++    const h = review(['r-one', 'r-two']);
++    await h.reverseTransfer({ transfer_id: 'tr_p-r', amount: 122, idempotencyKey: 'manual-1' });
++    const out = await Promise.allSettled([
++      h.svc.reconcileTransferReversal('r-one', { stripe_transfer_reversal_id: 'trr_1' }),
++      h.svc.reconcileTransferReversal('r-two', { stripe_transfer_reversal_id: 'trr_1' }),
++    ]);
++    expect(out.filter((o) => o.status === 'fulfilled')).toHaveLength(1);
++    const refused = out.find((o) => o.status === 'rejected') as PromiseRejectedResult;
++    expect(refused.reason).toMatchObject({
++      response: { code: 'TRANSFER_REVERSAL_ASSIGNED_TO_OTHER_REFUND' },
++    });
++    expect(h.headCoach('p-r')).toBe(122);
++    expect([h.refund('r-one'), h.refund('r-two')].filter((r) => r.transfer_reversed)).toHaveLength(
++      1,
++    );
++  });
++
++  it('two refunds on one transfer each settle with their own reversal (multiple receipts)', async () => {
++    const h = review(['r-one', 'r-two']);
++    await h.reverseTransfer({ transfer_id: 'tr_p-r', amount: 122, idempotencyKey: 'manual-1' });
++    await h.reverseTransfer({ transfer_id: 'tr_p-r', amount: 122, idempotencyKey: 'manual-2' });
++    await h.svc.reconcileTransferReversal('r-one', { stripe_transfer_reversal_id: 'trr_1' });
++    await h.svc.reconcileTransferReversal('r-two', { stripe_transfer_reversal_id: 'trr_2' });
++    expect(h.stripeTotal('tr_p-r')).toBe(244);
++    expect(h.headCoach('p-r')).toBe(244);
++    expect(h.refund('r-two').transfer_reversal_stripe_id).toBe('trr_2');
++  });
++
++  it('a replayed receipt for the same refund adds nothing', async () => {
++    const h = review(['r-one']);
++    await h.reverseTransfer({ transfer_id: 'tr_p-r', amount: 122, idempotencyKey: 'manual-1' });
++    await h.svc.reconcileTransferReversal('r-one', { stripe_transfer_reversal_id: 'trr_1' });
++    await expect(
++      h.svc.reconcileTransferReversal('r-one', { stripe_transfer_reversal_id: 'trr_1' }),
++    ).rejects.toMatchObject({ response: { code: 'REFUND_TRANSFER_REVERSAL_ALREADY_RECORDED' } });
++    expect(h.headCoach('p-r')).toBe(122);
++  });
++
++  it('Sol probe: an undersized receipt is refused and the refund stays owed in review', async () => {
++    const h = review(['r-partial']);
++    await h.reverseTransfer({
++      transfer_id: 'tr_p-r',
++      amount: 10,
++      idempotencyKey: 'partial',
++      metadata: { tgp_charge_refund_id: 'r-partial' },
++    });
++    await expect(h.svc.reconcileTransferReversal('r-partial')).rejects.toMatchObject({
++      response: {
++        code: 'TRANSFER_REVERSAL_UNDERSIZED',
++        reversal_amount_cents: 10,
++        owed_cents: 122,
++      },
++    });
++    expect({
++      external: h.stripeTotal('tr_p-r'),
++      local: h.headCoach('p-r'),
++      done: h.refund('r-partial').transfer_reversed,
++      inReview: h.refund('r-partial').transfer_reversal_review_at !== null,
++      bound: h.refund('r-partial').transfer_reversal_stripe_id,
++    }).toEqual({ external: 10, local: 0, done: false, inReview: true, bound: null });
++  });
++
++  it('an oversized receipt records what Stripe moved, capped by the transfer', async () => {
++    const h = review(['r-big']);
++    await h.reverseTransfer({ transfer_id: 'tr_p-r', amount: 200, idempotencyKey: 'manual-big' });
++    const out = await h.svc.reconcileTransferReversal('r-big', {
++      stripe_transfer_reversal_id: 'trr_1',
++    });
++    expect(out).toMatchObject({ outcome: 'recorded_from_stripe', amount_cents: 200 });
++    expect(h.headCoach('p-r')).toBe(200);
++    expect(h.refund('r-big').transfer_reversed).toBe(true);
++  });
++});
+diff --git a/test/refund-reversal-review.spec.ts b/test/refund-reversal-review.spec.ts
+new file mode 100644
+index 00000000..3b2fabf6
+--- /dev/null
++++ b/test/refund-reversal-review.spec.ts
+@@ -0,0 +1,279 @@
++// B-641-7 (narrowed) + B-641-8 (B-COACH-5, agent 115) — the 23-hour retry
++// admission for head-coach transfer reversals is enforced on the ONE shared
++// path, for every caller (late charge.refund.updated, admin re-entry, the
++// sweep, overlapping sweeps on several instances), and rows past the window
++// leave the retry batch so fresh refunds are never starved.
++//
++// Real RefundDisputeHandlerService, SplitLedgerService and
++// TransferOrchestratorService over the stateful Prisma double (which honors
++// orderBy / take / cursor like production Prisma). Only Stripe is synthetic,
++// and it models key retention: a key creates one reversal while it is
++// retained; `expireKeys()` forgets every key, as Stripe may after 24 hours.
++
++import 'reflect-metadata';
++import * as Sentry from '@sentry/node';
++import { Logger } from '@nestjs/common';
++import { StripeConnectApiError } from '../src/connect/stripe-connect-api.service';
++import {
++  HOUR,
++  harness,
++  refundRow,
++  seedPurchase,
++  staleOwedRefund,
++} from './support/refund-reversal-harness';
++
++jest.mock('@sentry/node', () => ({
++  ...jest.requireActual('@sentry/node'),
++  captureMessage: jest.fn(),
++}));
++
++const captureMessage = jest.mocked(Sentry.captureMessage);
++
++beforeEach(() => captureMessage.mockClear());
++
++describe('B-641-7 — one shared 23-hour admission for every caller', () => {
++  it('a late charge.refund.updated after the key expired sends nothing and moves the refund to review', async () => {
++    const h = await staleOwedRefund();
++    await h.svc.handle({
++      id: 'evt_late',
++      type: 'charge.refund.updated',
++      data: { object: { id: 're_r-late', charge: 'ch_p-late', amount: 2450, status: 'succeeded' } },
++    });
++    expect(h.reverseTransfer).not.toHaveBeenCalled();
++    expect(h.stripeTotal('tr_p-late')).toBe(122);
++    expect(h.refund('r-late').transfer_reversed).toBe(false);
++    expect(h.refund('r-late').transfer_reversal_review_at).toBeInstanceOf(Date);
++    expect(captureMessage).toHaveBeenCalledTimes(1);
++  });
++
++  it('an admin re-entry of the same refund after the key expired sends nothing', async () => {
++    const h = await staleOwedRefund();
++    await h.svc.createAdminRefund({
++      purchase_id: 'p-late',
++      amount_cents: 2450,
++      reason: 'requested_by_customer',
++      initiated_by_user_id: 'owner-1',
++    });
++    expect(h.reverseTransfer).not.toHaveBeenCalled();
++    expect(h.stripeTotal('tr_p-late')).toBe(122);
++    expect(h.refund('r-late').transfer_reversal_review_at).toBeInstanceOf(Date);
++  });
++
++  it('the sweep moves an expired row to review and alerts once, however many runs see it', async () => {
++    const h = await staleOwedRefund();
++    const first = await h.svc.retryPendingTransferReversals();
++    const second = await h.svc.retryPendingTransferReversals();
++    expect(first).toMatchObject({ retried: 0, reversed: 0, needs_review: 1, in_review: 1 });
++    expect(second).toMatchObject({ retried: 0, reversed: 0, needs_review: 0, in_review: 1 });
++    expect(h.reverseTransfer).not.toHaveBeenCalled();
++    expect(captureMessage).toHaveBeenCalledTimes(1);
++    const [message, context] = captureMessage.mock.calls[0];
++    expect(message).toBe('head-coach transfer reversal needs operator review');
++    // Ids and codes only reach Sentry.
++    expect(JSON.stringify(context)).not.toMatch(/coach@example|Coach One|client-1/);
++    expect(context).toMatchObject({
++      level: 'error',
++      tags: { code: 'REFUND_TRANSFER_REVERSAL_REVIEW' },
++      extra: { charge_refund_id: 'r-late', purchase_id: 'p-late' },
++    });
++  });
++
++  it('a refund that was never sent is admitted however old its success is, and stamps its first attempt', async () => {
++    const h = harness();
++    const at = new Date(Date.now() - 40 * HOUR);
++    seedPurchase(h.db, 'p-new', at);
++    h.db.state.chargeRefund.push(
++      refundRow('r-new', 'p-new', at, { transfer_reversal_first_attempt_at: null }),
++    );
++    const out = await h.svc.retryPendingTransferReversals();
++    expect(out).toMatchObject({ retried: 1, reversed: 1, needs_review: 0 });
++    expect(h.stripeTotal('tr_p-new')).toBe(122);
++    expect(h.headCoach('p-new')).toBe(122);
++    expect(h.refund('r-new').transfer_reversal_first_attempt_at).toBeInstanceOf(Date);
++  });
++
++  it('two sweeps on two instances overlapping on one owed refund reverse it once', async () => {
++    const h = harness();
++    const at = new Date(Date.now() - 2 * HOUR);
++    seedPurchase(h.db, 'p-2', at);
++    h.db.state.chargeRefund.push(refundRow('r-2', 'p-2', at));
++    await Promise.all([
++      h.svc.retryPendingTransferReversals(),
++      h.svc.retryPendingTransferReversals(),
++    ]);
++    expect(h.stripeTotal('tr_p-2')).toBe(122);
++    expect(h.headCoach('p-2')).toBe(122);
++    expect(h.refund('r-2').transfer_reversed).toBe(true);
++  });
++});
++
++describe('B-641-8 — expired rows never starve fresh recoverable refunds', () => {
++  it('a fresh owed refund behind more than one batch of expired rows is reversed in the first run', async () => {
++    const h = harness();
++    const old = new Date(Date.now() - 30 * HOUR);
++    for (let i = 0; i < 60; i++) {
++      const pid = `p-old-${String(i).padStart(2, '0')}`;
++      seedPurchase(h.db, pid, old);
++      h.db.state.chargeRefund.push(
++        refundRow(`r-old-${String(i).padStart(2, '0')}`, pid, new Date(old.getTime() + i)),
++      );
++    }
++    const fresh = new Date(Date.now() - HOUR);
++    seedPurchase(h.db, 'p-fresh', fresh);
++    h.db.state.chargeRefund.push(refundRow('r-fresh', 'p-fresh', fresh));
++
++    const out = await h.svc.retryPendingTransferReversals();
++    expect(out).toMatchObject({ reversed: 1, needs_review: 60, in_review: 60 });
++    expect(h.stripeTotal('tr_p-fresh')).toBe(122);
++    expect(h.refund('r-fresh').transfer_reversed).toBe(true);
++    // No expired row was resent.
++    expect(h.reverseTransfer).toHaveBeenCalledTimes(1);
++    expect(captureMessage).toHaveBeenCalledTimes(60);
++
++    // The next run repeats nothing.
++    const again = await h.svc.retryPendingTransferReversals();
++    expect(again).toMatchObject({ retried: 0, reversed: 0, needs_review: 0, in_review: 60 });
++    expect(captureMessage).toHaveBeenCalledTimes(60);
++  });
++
++  it('more than one batch of fresh owed refunds is reached in one run', async () => {
++    const h = harness();
++    const at = new Date(Date.now() - HOUR);
++    for (let i = 0; i < 120; i++) {
++      const pid = `p-f-${String(i).padStart(3, '0')}`;
++      seedPurchase(h.db, pid, at);
++      h.db.state.chargeRefund.push(
++        refundRow(`r-f-${String(i).padStart(3, '0')}`, pid, new Date(at.getTime() + i)),
++      );
++    }
++    const out = await h.svc.retryPendingTransferReversals(new Date(), 50);
++    expect(out).toMatchObject({ retried: 120, reversed: 120, needs_review: 0 });
++  });
++
++  it('pages past rows that leave the owed set and rows that stay owed, each retried once per run', async () => {
++    // Every third Stripe call fails, so a page mixes rows that leave the set
++    // (reversed) with rows that stay owed (pending). A cursor on a row that
++    // left the filter returned an empty page at 183ed462; the last-attempt
++    // filter reaches all 120 and never retries a row twice in one run.
++    const h = harness();
++    const at = new Date(Date.now() - HOUR);
++    for (let i = 0; i < 120; i++) {
++      const pid = `p-m-${String(i).padStart(3, '0')}`;
++      seedPurchase(h.db, pid, at);
++      h.db.state.chargeRefund.push(
++        refundRow(`r-m-${String(i).padStart(3, '0')}`, pid, new Date(at.getTime() + i)),
++      );
++    }
++    const real = h.reverseTransfer.getMockImplementation();
++    h.reverseTransfer.mockImplementation(async (args) => {
++      const n = Number(args.idempotencyKey.slice(-3));
++      if (n % 3 === 2) throw Object.assign(new Error('Stripe unavailable'), { code: 'api_error' });
++      return (real as NonNullable<typeof real>)(args);
++    });
++    const out = await h.svc.retryPendingTransferReversals(new Date(), 50);
++    expect(out).toMatchObject({ retried: 120, reversed: 80, needs_review: 0 });
++    const keys = h.reverseTransfer.mock.calls.map((c) => c[0].idempotencyKey);
++    expect(keys).toHaveLength(120);
++    expect(new Set(keys).size).toBe(120);
++  });
++});
++
++// FIX ROUND 6 (B-COACH-5, agent 115) — Sol REQUEST CHANGES @ 02cd3f88.
++describe('B-641-8 (narrowed) — persistent failures never hold later refunds back across runs', () => {
++  function backlog(failing: number) {
++    const h = harness();
++    const at = new Date(Date.now() - HOUR);
++    for (let i = 0; i < failing; i++) {
++      const id = String(i).padStart(2, '0');
++      seedPurchase(h.db, `p-a-${id}`, at);
++      h.db.state.chargeRefund.push(refundRow(`r-a-${id}`, `p-a-${id}`, new Date(at.getTime() + i)));
++    }
++    // Newest and last by id, so neither creation order nor id puts it first.
++    seedPurchase(h.db, 'p-z-fresh', new Date(at.getTime() + 100));
++    h.db.state.chargeRefund.push(refundRow('r-z-fresh', 'p-z-fresh', new Date(at.getTime() + 100)));
++    const real = h.reverseTransfer.getMockImplementation();
++    h.reverseTransfer.mockImplementation(async (args) => {
++      if (args.transfer_id !== 'tr_p-z-fresh') throw new Error('Synthetic provider failure');
++      return (real as NonNullable<typeof real>)(args);
++    });
++    return h;
++  }
++
++  it('Sol probe: 20 failing rows fill a run of 20 one-row pages; the next run reaches the fresh refund', async () => {
++    const h = backlog(20);
++    const first = await h.svc.retryPendingTransferReversals(new Date(), 1);
++    expect(first).toMatchObject({ retried: 20, reversed: 0 });
++    await h.svc.retryPendingTransferReversals(new Date(Date.now() + 15 * 60_000), 1);
++    expect({
++      external: h.stripeTotal('tr_p-z-fresh'),
++      local: h.headCoach('p-z-fresh'),
++      done: h.refund('r-z-fresh').transfer_reversed,
++    }).toEqual({ external: 122, local: 122, done: true });
++  });
++
++  it('more failures than the page budget: every owed row is tried within a bounded number of runs', async () => {
++    // 45 failing rows, 20 tries a run: runs take 20, 20, then the rest and
++    // the fresh row, never the same 20 again while others wait.
++    const h = backlog(45);
++    const tried = new Set<string>();
++    for (let run = 0; run < 3; run++) {
++      h.reverseTransfer.mockClear();
++      await h.svc.retryPendingTransferReversals(new Date(Date.now() + run * 15 * 60_000), 1);
++      for (const c of h.reverseTransfer.mock.calls) tried.add(c[0].transfer_id);
++    }
++    expect(tried.size).toBe(46);
++    expect(h.refund('r-z-fresh').transfer_reversed).toBe(true);
++    expect(h.stripeTotal('tr_p-z-fresh')).toBe(122);
++  });
++});
++
++describe('B-641-11 — reversal failure logs carry ids and closed codes only', () => {
++  async function failOnce(err: Error): Promise<string> {
++    const h = harness();
++    const at = new Date(Date.now() - HOUR);
++    seedPurchase(h.db, 'p-log', at);
++    h.db.state.chargeRefund.push(refundRow('r-log', 'p-log', at));
++    h.reverseTransfer.mockRejectedValueOnce(err);
++    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
++    try {
++      await h.svc.retryPendingTransferReversals();
++      return warn.mock.calls.map((c) => String(c[0])).join('\n');
++    } finally {
++      warn.mockRestore();
++    }
++  }
++
++  it('Sol probe: an arbitrary Error.name never reaches the logger', async () => {
++    const error = new Error('synthetic non-code');
++    error.name = 'AUDIT_FREE_TEXT_CANARY_contact_at_example_invalid';
++    const logged = await failOnce(error);
++    expect(logged).toContain('refund=r-log');
++    expect(logged).toContain('code=error');
++    expect(logged).not.toContain('AUDIT_FREE_TEXT_CANARY');
++  });
++
++  it('an unknown Stripe code or a bad status is logged as a closed fallback', async () => {
++    const logged = await failOnce(
++      new StripeConnectApiError(
++        'Card holder jane@example.test',
++        402,
++        'audit_free_text_canary_contact_at_example_invalid',
++        'invalid_request_error',
++      ),
++    );
++    expect(logged).toContain('code=stripe_402_other');
++    expect(logged).not.toMatch(/canary|example/);
++    expect(await failOnce(new StripeConnectApiError('x', 99999, 'rate_limit', null))).toContain(
++      'code=stripe_0_rate_limit',
++    );
++    expect(
++      await failOnce(new StripeConnectApiError('x', 400, 'balance_insufficient', null)),
++    ).toContain('code=stripe_400_balance_insufficient');
++    expect(await failOnce(new StripeConnectApiError('x', 500, null, null))).toContain(
++      'code=stripe_500_none',
++    );
++    // C-674-5: the client timeout (stripe-connect-api handleFetchError) is cataloged.
++    const timeout = new StripeConnectApiError('x', 503, 'request_timeout', 'api_connection_error');
++    expect(await failOnce(timeout)).toContain('code=stripe_503_request_timeout');
++  });
++});
+diff --git a/test/split-ledger.service.spec.ts b/test/split-ledger.service.spec.ts
+index 3d8ed166..4823a8bb 100644
+--- a/test/split-ledger.service.spec.ts
++++ b/test/split-ledger.service.spec.ts
+@@ -64,6 +64,12 @@ function makePrismaStub() {
+         Object.assign(row, data);
+         return { ...row };
+       }),
++      updateMany: jest.fn(async ({ where, data }: any) => {
++        const row = entries.find((r) => Object.entries(where).every(([k, v]) => r[k] === v));
++        if (!row) return { count: 0 };
++        Object.assign(row, data);
++        return { count: 1 };
++      }),
+     },
+   };
+ }
+diff --git a/test/support/refund-reversal-harness.ts b/test/support/refund-reversal-harness.ts
+new file mode 100644
+index 00000000..80bc7716
+--- /dev/null
++++ b/test/support/refund-reversal-harness.ts
+@@ -0,0 +1,206 @@
++// Shared harness for the B-641-7 / B-641-8 refund reversal specs (B-COACH-5).
++// Real RefundDisputeHandlerService, SplitLedgerService and
++// TransferOrchestratorService over the stateful Prisma double; only Stripe is
++// synthetic, and it models key retention: a key creates one reversal while it
++// is retained, and `expireKeys()` forgets every key, as Stripe may after 24 h.
++import 'reflect-metadata';
++import { RefundDisputeHandlerService } from '../../src/checkout/refund-dispute-handler.service';
++import { SplitLedgerService } from '../../src/connect/fees/split-ledger.service';
++import { TransferOrchestratorService } from '../../src/connect/fees/transfer-orchestrator.service';
++import { StatefulPrisma } from './stateful-prisma';
++
++const COACH = 'coach-1';
++export const HOUR = 60 * 60 * 1000;
++
++export type Row = Record<string, unknown>;
++
++export function refundRow(id: string, purchaseId: string, at: Date, extra: Row = {}): Row {
++  return {
++    id,
++    stripe_refund_id: `re_${id}`,
++    purchase_id: purchaseId,
++    stripe_charge_id: `ch_${purchaseId}`,
++    amount_cents: 2450,
++    currency: 'usd',
++    status: 'succeeded',
++    posted_at: at,
++    ledger_reversed: true,
++    transfer_reversed: false,
++    transfer_reversal_first_attempt_at: at,
++    transfer_reversal_review_at: null,
++    transfer_reversal_last_attempt_at: null,
++    transfer_reversal_stripe_id: null,
++    created_at: at,
++    reason: null,
++    note: null,
++    initiated_by_user_id: null,
++    failure_reason: null,
++    ...extra,
++  };
++}
++
++export function seedPurchase(db: StatefulPrisma, purchaseId: string, at: Date): void {
++  db.state.clientPurchase.push({
++    id: purchaseId,
++    coach_user_id: COACH,
++    client_user_id: 'client-1',
++    package_id: 'pkg-1',
++    amount_cents: 4900,
++    currency: 'usd',
++    billing_type: 'recurring',
++    status: 'active',
++    entitlement_active: true,
++    source: null,
++    canceled_at: null,
++    last_error: null,
++    stripe_payment_intent_id: null,
++    created_at: at,
++    updated_at: at,
++  });
++  const slice = (kind: string, amount: number, payee: string | null) => ({
++    id: `${purchaseId}-${kind}`,
++    purchase_id: purchaseId,
++    kind,
++    payee_user_id: payee,
++    amount_cents: amount,
++    reversed_cents: 0,
++    currency: 'usd',
++    status: 'posted',
++    stripe_charge_id: `ch_${purchaseId}`,
++    posted_at: at,
++    reversed_at: null,
++    created_at: at,
++    updated_at: at,
++  });
++  db.state.splitLedgerEntry.push(
++    slice('destination', 4802, COACH),
++    slice('application_fee', 98, null),
++  );
++  db.state.connectTransfer.push({
++    id: `tr-${purchaseId}`,
++    purchase_id: purchaseId,
++    stripe_transfer_id: `tr_${purchaseId}`,
++    status: 'succeeded',
++    amount_cents: 245,
++    reversed_amount_cents: 0,
++    ledger_entry_id: null,
++    reversed_at: null,
++  });
++}
++
++interface StripeReversal {
++  id: string;
++  transfer: string;
++  amount: number;
++  metadata: Record<string, string>;
++}
++
++export function harness() {
++  const db = new StatefulPrisma();
++  db.model('user');
++  db.model('coachPackage');
++  db.model('clientPurchase');
++  db.model('chargeRefund', [['id'], ['stripe_refund_id'], ['transfer_reversal_stripe_id']], () => ({
++    ledger_reversed: false,
++    transfer_reversed: false,
++    transfer_reversal_first_attempt_at: null,
++    transfer_reversal_review_at: null,
++    transfer_reversal_last_attempt_at: null,
++    transfer_reversal_stripe_id: null,
++  }));
++  db.model('splitLedgerEntry');
++  db.model('splitLedgerReversal', [['id'], ['entry_id', 'source_kind', 'source_id']]);
++  db.model('connectTransfer');
++  db.model('connectAccount', [['id'], ['coach_user_id']]);
++  db.model('guestCheckout');
++  db.model('notification');
++  db.state.user.push({ id: COACH, name: 'Coach One', email: 'coach@example.test' });
++  db.state.coachPackage.push({ id: 'pkg-1', name: 'Monthly coaching', interval: 'month' });
++
++  // Synthetic Stripe with key retention.
++  const retained = new Map<string, StripeReversal>();
++  const reversals: StripeReversal[] = [];
++  let seq = 0;
++  const reverseTransfer = jest.fn(
++    async (args: {
++      transfer_id: string;
++      amount: number;
++      idempotencyKey: string;
++      metadata?: Record<string, string>;
++    }) => {
++      const hit = retained.get(args.idempotencyKey);
++      if (hit) return hit;
++      const made: StripeReversal = {
++        id: `trr_${++seq}`,
++        transfer: args.transfer_id,
++        amount: args.amount,
++        metadata: args.metadata ?? {},
++      };
++      retained.set(args.idempotencyKey, made);
++      reversals.push(made);
++      return made;
++    },
++  );
++  const listTransferReversals = jest.fn(async (args: { transfer_id: string }) => ({
++    data: reversals.filter((r) => r.transfer === args.transfer_id),
++    has_more: false,
++  }));
++  const createRefund = jest.fn(async () => ({
++    id: 're_r-late',
++    status: 'succeeded',
++    amount: 2450,
++  }));
++  const stripe = {
++    reverseTransfer,
++    listTransferReversals,
++    createRefund,
++    retrieveCharge: jest.fn(async () => ({ payment_intent: null })),
++    retrievePaymentIntent: jest.fn(async () => ({ latest_charge: 'ch_p-late' })),
++  };
++  const ledger = Reflect.construct(SplitLedgerService, [db]);
++  const transfers = Reflect.construct(TransferOrchestratorService, [db, stripe, ledger]);
++  const alerts = jest.fn(async () => undefined);
++  const svc: RefundDisputeHandlerService = Reflect.construct(RefundDisputeHandlerService, [
++    db,
++    stripe,
++    ledger,
++    transfers,
++    { recordPayoutEvent: jest.fn() },
++    { createNotification: alerts },
++  ]);
++  return {
++    db,
++    svc,
++    reverseTransfer,
++    reversals,
++    expireKeys: () => retained.clear(),
++    stripeTotal: (transferId: string) =>
++      reversals.filter((r) => r.transfer === transferId).reduce((a, r) => a + r.amount, 0),
++    headCoach: (purchaseId: string) =>
++      Number(
++        db.state.connectTransfer.find((t) => t.purchase_id === purchaseId)?.reversed_amount_cents,
++      ),
++    refund: (id: string) => db.state.chargeRefund.find((r) => r.id === id) as Row,
++  };
++}
++
++// A refund whose Stripe reversal SUCCEEDED 25 hours ago under the
++// refund-scoped key, but whose local record rolled back (transfer still owed
++// locally). Stripe has since forgotten the key.
++export async function staleOwedRefund() {
++  const h = harness();
++  const at = new Date(Date.now() - 25 * HOUR);
++  seedPurchase(h.db, 'p-late', at);
++  h.db.state.chargeRefund.push(
++    refundRow('r-late', 'p-late', at, { stripe_refund_id: 're_r-late' }),
++  );
++  await h.reverseTransfer({
++    transfer_id: 'tr_p-late',
++    amount: 122,
++    idempotencyKey: 'tgp-tr-rev-refund-r-late',
++    metadata: { tgp_charge_refund_id: 'r-late' },
++  });
++  h.reverseTransfer.mockClear();
++  h.expireKeys();
++  return h;
++}
+diff --git a/test/support/stateful-prisma.ts b/test/support/stateful-prisma.ts
+index 4b706dd6..8045f096 100644
+--- a/test/support/stateful-prisma.ts
++++ b/test/support/stateful-prisma.ts
+@@ -19,6 +19,11 @@ function matchValue(actual: any, cond: any): boolean {
+   if (typeof cond === 'object' && !Array.isArray(cond)) {
+     const ops: Row = cond;
+     for (const [op, v] of Object.entries(ops)) {
++      // SQL: a range comparison against NULL is never true (JS would coerce
++      // null to 0 and call it smaller than any date).
++      if (['lt', 'lte', 'gt', 'gte'].includes(op) && (actual === null || actual === undefined)) {
++        return false;
++      }
+       switch (op) {
+         case 'lt':
+           if (!(actual < v)) return false;
+@@ -35,6 +40,9 @@ function matchValue(actual: any, cond: any): boolean {
+         case 'in':
+           if (!(v as unknown[]).includes(actual)) return false;
+           break;
++        case 'notIn':
++          if ((v as unknown[]).includes(actual)) return false;
++          break;
+         case 'not':
+           if (matchValue(actual, v)) return false;
+           break;
+@@ -71,7 +79,7 @@ export function matchWhere(row: Row, where: Row | undefined): boolean {
+       !(cond instanceof Date) &&
+       !Array.isArray(cond) &&
+       Object.keys(cond).some(
+-        (op) => !['lt', 'lte', 'gt', 'gte', 'in', 'not', 'equals'].includes(op),
++        (op) => !['lt', 'lte', 'gt', 'gte', 'in', 'notIn', 'not', 'equals'].includes(op),
+       )
+     ) {
+       // compound unique selector, e.g. { user_id_code: { user_id, code } }
+@@ -153,6 +161,15 @@ export class Model {
+     this.db.hit(this.name, 'findUnique', where);
+     return pick(this.rows.find((r) => matchWhere(r, where)) ?? null, select, include, this.db);
+   };
++  findUniqueOrThrow = async (args: any) => {
++    const row = await this.findUnique(args);
++    if (!row) {
++      const e: any = new Error(`${this.name} not found`);
++      e.code = 'P2025';
++      throw e;
++    }
++    return row;
++  };
+   findFirst = async ({ where, select, include, orderBy }: any = {}) => {
+     let rows = this.rows.filter((r) => matchWhere(r, where));
+     if (orderBy) {
+@@ -163,8 +180,46 @@ export class Model {
+     }
+     return pick(rows[0] ?? null, select, include, this.db);
+   };
+-  findMany = async ({ where, select }: any = {}) =>
+-    this.rows.filter((r) => matchWhere(r, where)).map((r) => pick(r, select) as Row);
++  // Honors orderBy (object or array; nulls sort last ascending, as Postgres),
++  // cursor (+ skip) and take, so a service's batch selection is exercised as
++  // production Prisma runs it (B-641-8: a fixture that ignored take/orderBy
++  // hid a starved retry batch).
++  findMany = async ({ where, select, orderBy, take, skip, cursor }: any = {}) => {
++    let rows = this.rows.filter((r) => matchWhere(r, where));
++    if (orderBy) {
++      // { field: 'asc' | 'desc' } or { field: { sort, nulls } }; without
++      // `nulls`, Postgres puts nulls last ascending and first descending.
++      const keys: Array<[string, string, string | undefined]> = (
++        Array.isArray(orderBy) ? orderBy : [orderBy]
++      ).map((o: Row) => {
++        const [k, spec] = Object.entries(o)[0] as [string, any];
++        return typeof spec === 'string' ? [k, spec, undefined] : [k, spec.sort, spec.nulls];
++      });
++      rows = [...rows].sort((a, b) => {
++        for (const [k, dir, nulls] of keys) {
++          const an = a[k] === null || a[k] === undefined;
++          const bn = b[k] === null || b[k] === undefined;
++          if (an || bn) {
++            if (an && bn) continue;
++            const nullsFirst = nulls ? nulls === 'first' : dir === 'desc';
++            return an === nullsFirst ? -1 : 1;
++          }
++          const av = a[k] instanceof Date ? a[k].getTime() : a[k];
++          const bv = b[k] instanceof Date ? b[k].getTime() : b[k];
++          const c = (av < bv ? -1 : av > bv ? 1 : 0) * (dir === 'desc' ? -1 : 1);
++          if (c !== 0) return c;
++        }
++        return 0;
++      });
++    }
++    if (cursor) {
++      const idx = rows.findIndex((r) => matchWhere(r, cursor));
++      rows = idx < 0 ? [] : rows.slice(idx);
++    }
++    if (typeof skip === 'number') rows = rows.slice(skip);
++    if (typeof take === 'number') rows = rows.slice(0, take);
++    return rows.map((r) => pick(r, select) as Row);
++  };
+   count = async ({ where }: any = {}) => this.rows.filter((r) => matchWhere(r, where)).length;
+   create = async ({ data, select }: any) => {
+     const row = {
+@@ -194,7 +249,10 @@ export class Model {
+     let count = 0;
+     this.rows.forEach((r, i) => {
+       if (matchWhere(r, where)) {
+-        this.rows[i] = applyData(r, data);
++        const next = applyData(r, data);
++        // Postgres enforces unique columns on UPDATE too (B-641-9).
++        if (this.violates(next, r)) throw this.uniqueError();
++        this.rows[i] = next;
+         count++;
+       }
+     });
+diff --git a/test/transfer-orchestrator.service.spec.ts b/test/transfer-orchestrator.service.spec.ts
+index f2a4a6c4..5103f248 100644
+--- a/test/transfer-orchestrator.service.spec.ts
++++ b/test/transfer-orchestrator.service.spec.ts
+@@ -41,6 +41,12 @@ function makePrismaStub() {
+         Object.assign(row, data);
+         return { ...row };
+       }),
++      updateMany: jest.fn(async ({ where, data }: any) => {
++        const row = transfers.find((r) => Object.entries(where).every(([k, v]) => r[k] === v));
++        if (!row) return { count: 0 };
++        Object.assign(row, data);
++        return { count: 1 };
++      }),
+       findMany: jest.fn(async () => transfers.filter((t) => t.status === 'pending')),
+     },
+     splitLedgerEntry: {
+@@ -54,6 +60,12 @@ function makePrismaStub() {
+         Object.assign(row, data);
+         return { ...row };
+       }),
++      updateMany: jest.fn(async ({ where, data }: any) => {
++        const row = ledger.find((r) => Object.entries(where).every(([k, v]) => r[k] === v));
++        if (!row) return { count: 0 };
++        Object.assign(row, data);
++        return { count: 1 };
++      }),
+     },
+   };
+ }
