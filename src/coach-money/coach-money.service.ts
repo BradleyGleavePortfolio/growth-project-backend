@@ -241,6 +241,17 @@ const COUNTED_SLICE_STATUSES = ['posted', 'reversed'];
 const LOST_DISPUTE_STATUS_LIST: string[] = [...LOST_DISPUTE_STATUSES];
 
 /**
+ * A purchase that billed: a paid status, or the ledger holds a posted coach
+ * slice for it. A free trial cancelled before its first bill has neither.
+ */
+const BILLED_WHERE = {
+  OR: [
+    { status: { in: [...PAID_PURCHASE_STATUSES] } },
+    { splits: { some: { kind: 'destination', status: { in: COUNTED_SLICE_STATUSES } } } },
+  ],
+};
+
+/**
  * A purchase was paid when its status says so OR the ledger holds a posted
  * coach slice for it (a paid purchase that later canceled or expired keeps
  * its ledger rows, so it still counts as a sale) — unless the money went back
@@ -253,12 +264,7 @@ export const PAID_WHERE = {
   AND: [
     { status: { notIn: [CHARGEBACK_LOST_PURCHASE_STATUS, REFUNDED_PURCHASE_STATUS] } },
     { disputes: { none: { status: { in: [...LOST_DISPUTE_STATUSES] } } } },
-    {
-      OR: [
-        { status: { in: [...PAID_PURCHASE_STATUSES] } },
-        { splits: { some: { kind: 'destination', status: { in: COUNTED_SLICE_STATUSES } } } },
-      ],
-    },
+    BILLED_WHERE,
   ],
 };
 
@@ -397,6 +403,9 @@ export interface ReversalPortion {
   cents: number;
   /** What the client got back in the event (null for `reversal`). */
   event_amount_cents: number | null;
+  /** B-676-3: the ChargeRefund / ChargeDispute id and the event's own time. */
+  source_id?: string;
+  event_at?: Date;
 }
 
 /** When a slice was posted (legacy rows without posted_at use created_at). */
@@ -428,7 +437,14 @@ export function allocateReversal(slice: ReversedSliceRow): ReversalPortion[] {
   const posted: ReversalPortion[] = postings.map((p) => {
     const kind = p.source_kind === 'refund' ? 'refund' : 'chargeback';
     const e = slice.events.find((x) => x.kind === kind && x.source_id === p.source_id);
-    return { kind, at: p.posted_at, cents: p.cents, event_amount_cents: e?.amount_cents ?? null };
+    return {
+      kind,
+      at: p.posted_at,
+      cents: p.cents,
+      event_amount_cents: e?.amount_cents ?? null,
+      source_id: p.source_id,
+      event_at: e?.at,
+    };
   });
   const total = slice.reversed_cents - posted.reduce((acc, p) => acc + p.cents, 0);
   if (total <= 0) return posted;
@@ -465,7 +481,14 @@ export function allocateReversal(slice: ReversedSliceRow): ReversalPortion[] {
         : 0;
     left -= share;
     if (share > 0) {
-      out.push({ kind: e.kind, at: e.at, cents: share, event_amount_cents: e.amount_cents });
+      out.push({
+        kind: e.kind,
+        at: e.at,
+        cents: share,
+        event_amount_cents: e.amount_cents,
+        source_id: e.source_id,
+        event_at: e.at,
+      });
     }
   });
   return out;
@@ -863,12 +886,20 @@ export function buildMoneyCsv(coachId: string, window: MoneyWindow, slices: Wind
     );
     r.net_to_you += s.amount_cents;
   }
+  // B-676-3: one row per money movement, i.e. one event (refund / chargeback
+  // id) at one time. The writer posts an event's slices at the event's own
+  // time, so they share a row; a later head-coach recovery (the sweep) is its
+  // own row, dated when it happened. What the client got back shows once, on
+  // the row at the event's own time, so it never repeats across rows or files.
+  const reversalKey = (type: string, s: TimedSliceRow, p: ReversalPortion) =>
+    `${type}|${s.purchase_id}|${s.stripe_charge_id ?? ''}|${p.source_id ?? ''}|${p.at.toISOString()}`;
   for (const s of slices.reversedSeller) {
     for (const p of allocateReversal(s)) {
       if (!inWindow(p.at, window)) continue;
-      const key = `${p.kind}|${s.purchase_id}|${s.stripe_charge_id ?? ''}|${p.at.toISOString()}`;
-      const r = row(key, () => emptyCsvRow(s, p.at, p.kind, true));
-      if (p.event_amount_cents !== null) r.client_refunded = p.event_amount_cents;
+      const r = row(reversalKey(p.kind, s, p), () => emptyCsvRow(s, p.at, p.kind, true));
+      if (p.event_amount_cents !== null && p.event_at?.getTime() === p.at.getTime()) {
+        r.client_refunded = p.event_amount_cents;
+      }
       if (s.kind === 'destination' && s.payee_user_id === coachId) r.net_to_you -= p.cents;
       else if (s.kind === 'application_fee') r.tgp_fee -= p.cents;
       else if (s.kind === 'head_coach_split') r.head_coach_share -= p.cents;
@@ -878,8 +909,9 @@ export function buildMoneyCsv(coachId: string, window: MoneyWindow, slices: Wind
     if (s.kind !== 'head_coach_split' || s.payee_user_id !== coachId) continue;
     for (const p of allocateReversal(s)) {
       if (!inWindow(p.at, window)) continue;
-      const key = `team_rev|${s.purchase_id}|${s.stripe_charge_id ?? ''}|${p.at.toISOString()}`;
-      const r = row(key, () => emptyCsvRow(s, p.at, 'team_share_reversal', false));
+      const r = row(reversalKey('team_rev', s, p), () =>
+        emptyCsvRow(s, p.at, 'team_share_reversal', false),
+      );
       r.net_to_you -= p.cents;
     }
   }
@@ -1274,6 +1306,8 @@ export class CoachMoneyService {
           source: null,
           amount_cents: { gt: 0 },
           canceled_at: { gte: thirtyAgo, lte: now },
+          // B-676-4: only a purchase that billed can churn.
+          ...BILLED_WHERE,
         },
         select: { client_user_id: true },
       }),
@@ -1332,10 +1366,12 @@ export class CoachMoneyService {
       const returning = new Set(earlier.map((p) => p.client_user_id));
       newClients = candidateIds.filter((id) => !returning.has(id)).length;
     }
-    // Churned = clients who canceled in the window and hold no other active
-    // paid purchase with this coach today.
+    // Churned = clients who canceled a billed purchase in the window and hold
+    // no entitled purchase with this coach today; a client still on a free
+    // trial (another plan) has not left (B-676-4).
+    const heldIds = new Set(active.map((p) => p.client_user_id));
     const churnedIds = new Set(
-      churned.map((p) => p.client_user_id).filter((id) => !payingIds.has(id)),
+      churned.map((p) => p.client_user_id).filter((id) => !heldIds.has(id)),
     );
     return {
       mrr_cents: mrr,
