@@ -192,8 +192,22 @@ even if the dashboard shows the new one.
      --file backups/staging-$(date +%F-%H%M).sql
    ```
 
-   Store the dump somewhere durable (1Password vault attachment, S3
-   bucket, etc.) — never commit it. Do **not** add `--no-owner --no-acl`:
+   The dump is a full copy of personal data, and the Privacy Policy,
+   the Consumer Health Data Privacy Policy and `/help/delete-account`
+   publish its limits ("deleted 30 days after the update is verified,
+   and never kept beyond 90 days"). Follow the adopted rules in
+   [`docs/privacy/vendor-deletion-and-backups.md` §1.1](privacy/vendor-deletion-and-backups.md#11-our-own-database-dumps-operator-held-copies):
+   - keep it in one owner-controlled location only (for example the
+     owner's 1Password vault), with the file named with its date; never
+     commit it, and delete the local `backups/` file the same day once
+     it is stored there;
+   - delete it 30 days after the deploy it was taken for is verified;
+   - never keep it more than 90 days, whatever happens;
+   - on the first working day of each month, list the stored dumps and
+     delete any older than these limits (monthly check, logged in the
+     quarterly review).
+
+   Do **not** add `--no-owner --no-acl`:
    the S1 privilege/RLS migration's state _is_ owners, grants and
    policies, and a dump that excludes them cannot reproduce it. Even a
    full dump is a reference copy for diagnosis and comparison; **this
@@ -281,7 +295,10 @@ by hand.
 
 For every migration:
 
-1. **Backup before deploy** with `pg_dump` (§2 step 3).
+1. **Backup before deploy** with `pg_dump` (§2 step 3). The same
+   limits apply: one owner-controlled location, deleted 30 days after
+   the deploy is verified, never kept more than 90 days
+   ([`docs/privacy/vendor-deletion-and-backups.md` §1.1](privacy/vendor-deletion-and-backups.md#11-our-own-database-dumps-operator-held-copies)).
 2. **Run the migration via the release command** (Fly auto-runs it; do
    not invoke `prisma migrate deploy` from your laptop against the
    prod DB).

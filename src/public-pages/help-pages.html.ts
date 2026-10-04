@@ -24,8 +24,12 @@
 // under the public hostname.
 
 import {
+  ANTHROPIC_RETENTION_TEXT,
+  CLOSED_ACCOUNT_RECORD_TEXT,
   CONSUMER_HEALTH_POLICY_PATH,
+  DEIDENTIFIED_TEXT,
   DELETE_ACCOUNT_HELP_PATH,
+  ONE_WAY_CODE_TEXT,
   PRIVACY_POLICY_PATH,
   SUPPORT_EMAIL,
   policyFooterLinks,
@@ -715,9 +719,16 @@ function deleteAccountContent(): HelpPageContent {
         bullets: [
           'Payment and tax records held by Stripe, our payment processor, for as long as the law requires. Our own copies keep only amounts, dates and payment references, with no name or contact details.',
           'One deletion record with a random reference, the date and the result. It holds no name, email or account details.',
+          // B-611-10 (Opus): the same kept items as the Privacy Policy's
+          // deletion paragraph and retention list, from shared strings.
+          `Closed account: ${CLOSED_ACCOUNT_RECORD_TEXT}, so the payment records and logs that must be kept still point to one closed account. It is kept with no end date.`,
+          `While removing your sign-in account at your sign-in provider is still being retried, that provider’s account ID is kept. Once it is removed, the account ID is replaced by ${ONE_WAY_CODE_TEXT}.`,
           'If you coach: your clients are not deleted. They keep their own data and the plans you assigned them, without your contact details, and are no longer linked to you.',
           'Backups: database backups and copies are never kept more than six months after a confirmed deletion request. Copies of the database made before an update to the service are deleted 30 days after the update is verified, and never kept beyond 90 days.',
           'Security and audit logs: as long as needed to protect the service and meet legal duties.',
+          `What Anthropic received: ${ANTHROPIC_RETENTION_TEXT}`,
+          'Copies at service providers: error reports in Sentry are kept 90 days and email logs in Resend 30 days, and a deleted person is removed from PostHog product analytics within 30 days of the deletion.',
+          `De-identified information: ${DEIDENTIFIED_TEXT}`,
         ],
       },
       {

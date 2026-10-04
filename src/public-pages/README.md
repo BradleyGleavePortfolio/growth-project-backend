@@ -171,6 +171,19 @@ public pages until it is built and audited.
   time-based purge), client delete. The consumer health "Consent" section is
   the approved text byte for byte (pinned in `test/trust-pages.spec.ts`).
 - The clinic partner is never named. Copy says "clinic partner".
+- What a deletion keeps is written once in `trust-pages.html.ts`
+  (`CLOSED_ACCOUNT_RECORD_TEXT`, `ONE_WAY_CODE_TEXT`,
+  `ANTHROPIC_RETENTION_TEXT`, `DEIDENTIFIED_TEXT`) and used by both
+  `/privacy` and the `/help/delete-account` "What we keep" list, so the
+  two list the same kept items (`test/privacy-round8-retention.spec.ts`).
+- Crash and performance reports carry the account id only (mobile
+  `setSentryUser` and `scrubEvent`; backend `beforeSend` sends no user).
+  The policy says no name or email address is attached; keep it that way
+  (`test/privacy-diagnostics-disclosure.spec.ts`).
+- Sign in with Apple: the policy makes no revocation claim while
+  production lacks the Apple key secrets (operator ruling 2026-10-03). A
+  follow-up restores the revocation sentence once the owner sets them
+  (`docs/privacy/vendor-deletion-and-backups.md` §0).
 - Section links go through `safeHref()`: site-relative paths, `mailto:`
   and `https:` only; anything else renders as `#`.
 

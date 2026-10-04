@@ -46,9 +46,39 @@ export const DELETE_ACCOUNT_HELP_PATH = '/help/delete-account';
 
 // O-611-6 (owner 2026-10-03): de-identified data under RCW 19.373.010
 // (reasonable measures, public commitment not to re-identify, recipients
-// bound to the same). Published on /privacy and /consumer-health-privacy.
-const DEIDENTIFIED_TEXT =
-  'After an account is deleted, de-identified, aggregated information that cannot identify the person may be kept. TGP takes reasonable measures so it cannot be linked to anyone, commits publicly to keep it only in de-identified form and never to try to re-identify it, and requires by contract anyone it shares it with to do the same.';
+// bound to the same). RCW 19.373.010 asks for a commitment to *process* the
+// data only in de-identified form, so the text says "keep and use" (Opus
+// C-611-15). Published on /privacy, /consumer-health-privacy and the
+// "What we keep" list of /help/delete-account.
+export const DEIDENTIFIED_TEXT =
+  'After an account is deleted, de-identified, aggregated information that cannot identify the person may be kept. TGP takes reasonable measures so it cannot be linked to anyone, commits publicly to keep and use it only in de-identified form and never to try to re-identify it, and requires by contract anyone it shares it with to do the same.';
+
+// O-611-2 (owner 2026-10-03): no zero-retention agreement with Anthropic.
+// Published on /privacy (retention list), the consumer health "Deletion"
+// section and the "What we keep" list of /help/delete-account.
+export const ANTHROPIC_RETENTION_TEXT =
+  'Anthropic deletes what it receives within 30 days, except where its usage policy or the law requires it to keep it longer.';
+
+// What the deletion run keeps (backend #608): the tombstone User row and the
+// sign-in receipt (src/account-deletion/deletion-receipt.ts,
+// DELETION_RECEIPT_DAYS = 30). Shared by the owner-approved /privacy
+// deletion paragraph and the /help/delete-account "What we keep" list so the
+// two cannot drift (Opus B-611-10). Neither phrase uses first person.
+export const CLOSED_ACCOUNT_RECORD_TEXT =
+  'a closed-account record with no name, contact details or profile, holding only an internal account number, the account type and dates such as when the account was opened and closed';
+export const ONE_WAY_CODE_TEXT =
+  'a one-way code made from it, for 30 days, so the app can tell you the account was deleted if you sign in again; then the code is discarded';
+
+// Sign in with Apple (operator 116 ruling on Opus RG-1, 2026-10-03): #608
+// revokes the Apple token only when APPLE_TEAM_ID, APPLE_SIGNIN_KEY_ID and
+// APPLE_SIGNIN_PRIVATE_KEY are set, and production does not have them yet
+// (apple-token-revocation.service.ts returns not_configured). The policy
+// states only what is true today: the deletion run removes the Supabase
+// sign-in identity, which is the app's link to the Apple ID, and the person
+// can remove the app from their Apple ID in iPhone settings. A follow-up
+// restores the revocation sentence once the owner sets the key.
+export const SIGN_IN_WITH_APPLE_DELETION_TEXT =
+  'If you used Sign in with Apple, deleting your account ends the app’s link to your Apple ID. To remove the app from your Apple ID as well, on your iPhone open Settings, tap your name, then Sign-In & Security, then Sign in with Apple, choose the app and stop using it with your Apple ID.';
 
 
 export type TrustPage = 'privacy' | 'consumer-health' | 'terms' | 'security' | 'status';
@@ -151,7 +181,7 @@ function privacyContent(): TrustPageContent {
           'Roman conversations — what you write to Roman and Roman’s replies.',
           'Payments — card details are entered into Stripe’s checkout and are collected by Stripe. We receive and store payment status, amounts, currency, the package or subscription purchased, refunds, invoices, billing email, and your card brand, last four digits and expiry month. For coaches we also store Stripe payout status and amounts, the bank name and last four digits of the payout account, and AI-credit balances and spending. We never receive or store full card or bank account numbers.',
           'Support — conversations in in-app support chat (provided by Crisp) together with your name, email, role, plan and account workspace, and emails you send us.',
-          'Device, usage and diagnostic data — IP address, browser or device type, app version, request times and security logs; product analytics events and screen views linked to your account ID; and crash and performance reports that include your account ID and email address.',
+          'Device, usage and diagnostic data — IP address, browser or device type, app version, request times and security logs; product analytics events and screen views linked to your account ID; and crash and performance reports linked to your account ID, with no name or email address attached.',
           'Food searches — the words you search for when logging food.',
         ],
       },
@@ -223,7 +253,7 @@ function privacyContent(): TrustPageContent {
           'Sentry — crash and performance monitoring.',
           'Crisp — in-app support chat.',
           'Resend — account and notification emails.',
-          'Mux — hosting and playback of the videos coaches upload. It receives the video files, with no name, email or account details attached.',
+          'Mux — hosting and playback of the videos coaches upload. It receives the video files, with no name, email or account details attached. When a video is uploaded or played, the device connects to Mux directly, so Mux also receives its IP address and device type.',
           'Expo, with Apple and Google push services — delivery of push notifications.',
           'Apple and Google — Sign in with Apple and Google sign-in, if you choose them.',
           'Apple Health (iPhone) and Health Connect (Android) — the on-device health stores you can choose to connect. We read from them; we do not send your TGP data to them.',
@@ -248,15 +278,23 @@ function privacyContent(): TrustPageContent {
           'Error reports in Sentry — 90 days.',
           'Email logs in Resend — 30 days.',
           'Product analytics in PostHog — a deleted person is removed from PostHog within 30 days of the deletion.',
-          'What Anthropic receives — Anthropic deletes what it receives within 30 days, except where its usage policy or the law requires it to keep it longer.',
+          `What Anthropic receives — ${ANTHROPIC_RETENTION_TEXT}`,
         ],
         paragraphs: [],
       },
       {
         heading: 'Deleting your account',
         paragraphs: [
-          'Your information is kept while your account is open. Deletion can be started in the app or by email.',
-          'You can delete your account in the app: Settings, then Delete account. You confirm with your password or Sign in with Apple, and deletion is scheduled straight away with a 14-day grace period during which you can cancel. After that, your profile, consultation answers, logs, connected health data, Roman conversations, notifications and community memberships are permanently deleted, and the content of your community posts and messages is removed. If you used Sign in with Apple, we ask Apple to revoke TGP’s access. We keep only what we must: the payment records the law requires; security and audit logs; one deletion record with a random reference, the date and the result; and a closed-account record with no name, contact details or profile, holding only an internal account number, the account type and dates such as when the account was opened and closed, so the records we must keep still point to one closed account. While removing your sign-in account at your sign-in provider is still being retried, we also keep that provider’s account ID. Once it is removed, we keep only a one-way code made from it, for 30 days, so the app can tell you the account was deleted if you sign in again; then the code is discarded.',
+          'Unless a shorter period is listed above, your information is kept while your account is open. Deletion can be started in the app or by email.',
+          // Owner-approved paragraph (O-611-1). Only the Sign in with Apple
+          // sentence changed in FIX ROUND 8 (operator ruling on RG-1); the
+          // shared constants render the approved words byte for byte.
+          'You can delete your account in the app: Settings, then Delete account. You confirm with your password or Sign in with Apple, and deletion is scheduled straight away with a 14-day grace period during which you can cancel. After that, your profile, consultation answers, logs, connected health data, Roman conversations, notifications and community memberships are permanently deleted, and the content of your community posts and messages is removed. ' +
+            `${SIGN_IN_WITH_APPLE_DELETION_TEXT} ` +
+            'We keep only what we must: the payment records the law requires; security and audit logs; one deletion record with a random reference, the date and the result; and ' +
+            `${CLOSED_ACCOUNT_RECORD_TEXT}, so the records we must keep still point to one closed account. ` +
+            'While removing your sign-in account at your sign-in provider is still being retried, we also keep that provider’s account ID. ' +
+            `Once it is removed, we keep only ${ONE_WAY_CODE_TEXT}.`,
           `You can also ask us to delete your account, or only some of your health data, by emailing ${SUPPORT_EMAIL}. We tell our service providers about deletion requests so they delete their copies too. At Stripe, deletion requests are handled with Stripe’s redaction tools; Stripe keeps the payment records the law requires.`,
         ],
         links: [
@@ -426,7 +464,9 @@ function consumerHealthContent(): TrustPageContent {
       {
         heading: 'Deletion',
         paragraphs: [
-          'When we delete your consumer health data we remove it from our live systems and tell every service provider we shared it with, so they delete their copies too. Database backups and copies are never kept more than six months after a confirmed deletion request; copies of the database made before an update to the service are deleted 30 days after the update is verified, and never kept beyond 90 days. Anthropic deletes what it receives within 30 days, except where its usage policy or the law requires it to keep it longer. Deleting your account in the app starts a 14-day grace period you can cancel; after that, deletion is permanent.',
+          'When we delete your consumer health data we remove it from our live systems and tell every service provider we shared it with, so they delete their copies too. Database backups and copies are never kept more than six months after a confirmed deletion request; copies of the database made before an update to the service are deleted 30 days after the update is verified, and never kept beyond 90 days. ' +
+            `${ANTHROPIC_RETENTION_TEXT} ` +
+            'Deleting your account in the app starts a 14-day grace period you can cancel; after that, deletion is permanent.',
           DEIDENTIFIED_TEXT,
         ],
       },

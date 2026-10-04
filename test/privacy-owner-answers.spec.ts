@@ -31,12 +31,12 @@ const BACKUPS = 'database backups and copies are never kept more than six months
 const DUMPS =
   'Copies of the database made before an update to the service are deleted 30 days after the update is verified, and never kept beyond 90 days.';
 const DEIDENTIFIED =
-  'After an account is deleted, de-identified, aggregated information that cannot identify the person may be kept. TGP takes reasonable measures so it cannot be linked to anyone, commits publicly to keep it only in de-identified form and never to try to re-identify it, and requires by contract anyone it shares it with to do the same.';
+  'After an account is deleted, de-identified, aggregated information that cannot identify the person may be kept. TGP takes reasonable measures so it cannot be linked to anyone, commits publicly to keep and use it only in de-identified form and never to try to re-identify it, and requires by contract anyone it shares it with to do the same.';
 const HEALTH_USE =
   'Health and fitness data is never used for advertising or for data mining other than to improve health management, and is used for health research only with your permission.';
 
 const NEW_SENTENCES = [
-  'Your information is kept while your account is open. Deletion can be started in the app or by email.',
+  'Unless a shorter period is listed above, your information is kept while your account is open. Deletion can be started in the app or by email.',
   ANTHROPIC,
   'Mux — hosting and playback of the videos coaches upload. It receives the video files, with no name, email or account details attached.',
   'Mux (video hosting and playback) receives the videos coaches upload',
@@ -54,7 +54,7 @@ const NEW_SENTENCES = [
 describe('#611 owner answers O-611-1..6', () => {
   it('O-611-1: kept while the account is open; deletion starts in the app or by email', () => {
     expect(privacy).toContain(
-      'Deleting your account Your information is kept while your account is open. Deletion can be started in the app or by email.',
+      'Deleting your account Unless a shorter period is listed above, your information is kept while your account is open. Deletion can be started in the app or by email.',
     );
   });
 

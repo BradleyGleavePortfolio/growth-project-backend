@@ -41,7 +41,9 @@ What stays (also stated on the Privacy Policy after the B-611-2 fix):
 - One random-id deletion outcome row.
 - Security and audit logs.
 
-Sign in with Apple: #608 revokes the Apple token when `APPLE_SIGNIN_KEY_ID` and `APPLE_SIGNIN_PRIVATE_KEY` are set. **UNVERIFIED (owner):** the key is not created yet, so the outcome is `not_configured`. The app then tells the person how to remove the app from their Apple ID.
+Sign in with Apple: #608 revokes the Apple token when `APPLE_TEAM_ID`, `APPLE_SIGNIN_KEY_ID` and `APPLE_SIGNIN_PRIVATE_KEY` are set. **UNVERIFIED (owner):** the key is not created yet, so the outcome is `not_configured`. The app then tells the person how to remove the app from their Apple ID.
+
+**Operator ruling (agent 116, 2026-10-03, on Opus RG-1 at #611 `5eac8f21`):** the policy must be true on the day it publishes, and production has no Sign in with Apple key yet. So the Privacy Policy does **not** claim that deletion revokes Sign in with Apple. It says what is true today: deleting the account ends the app's link to the Apple ID (the deletion run removes the Supabase sign-in identity), and the person can remove the app from their Apple ID in iPhone Settings (`SIGN_IN_WITH_APPLE_DELETION_TEXT` in `src/public-pages/trust-pages.html.ts`). **Follow-up:** once the owner sets the Apple key secrets in production and a deletion shows `apple_revocation=revoked`, a follow-up PR restores the revocation sentence.
 
 Everything below covers the copies the deletion run does **not** reach: vendor-side copies, logs and backups.
 
@@ -76,7 +78,7 @@ Supabase manages these backups. We cannot delete one person from them; they **ag
 
 ### 1.1 Our own database dumps (operator-held copies)
 
-**Fact (repo).** `docs/deploy-runbook.md` §2 step 3 / §3 tells the operator to `pg_dump` a reference copy before any deploy with a migration, and store it "somewhere durable (1Password vault attachment, S3 bucket, etc.)". The business continuity plan template also proposes a weekly manual export. These are full copies of personal data. **Nothing ages them out automatically.**
+**Fact (repo).** `docs/deploy-runbook.md` §2 step 3 / §3 step 1 tells the operator to `pg_dump` a reference copy before any deploy with a migration. The business continuity plan template (`docs/soc2/policies/business-continuity-plan.md`, "Manual backup cadence") also proposes a weekly manual export. These are full copies of personal data, and no system ages them out on its own, so both documents now state the rules below (FIX ROUND 8, Opus B-611-11). If a dump is ever kept in a versioned bucket, the bucket also needs a noncurrent-version expiry, or old versions outlive the 90-day limit.
 
 **Procedure (ADOPTED by the owner 2026-10-03, O-611-4; the 30-day and 90-day limits are published on the policies):**
 - Every dump is named with its date and stored only in one owner-controlled location.
@@ -178,7 +180,10 @@ Stripe keeps the payment and tax records the law requires. The policy already sa
 
 **What it holds:**
 - Error events from the API. `src/observability/sentry-config.ts` `beforeSend` scrubs them, and ORM errors are replaced by `safeDiagnostic`.
-- Error events from the mobile app. **Fact (repo, mobile `src/services/sentry.ts`, mobile #330 merged 2026-10-02):** `setSentryUser` sets only the opaque user **id** on events, never the email.
+- Error events from the mobile app. **Fact (repo, mobile `src/services/sentry.ts`, mobile #330 merged 2026-10-02):** `setSentryUser` sets only the opaque user **id** on events, never the email. `src/services/sentryPrivacy.ts` `scrubEvent` also reduces any event user to `{ id }` (mobile main `367e6c48`).
+- The backend sets no Sentry user: `beforeSend` forwards an allow-listed envelope without `user` (pinned by `test/privacy-diagnostics-disclosure.spec.ts`).
+
+The Privacy Policy says crash and performance reports are linked to the account id, with no name or email address attached. (Until FIX ROUND 8 it said they include the email address; Sol B-611-7, Opus C-611-12.)
 
 Events can include health details that appear in an error, as the policy says.
 
@@ -206,11 +211,11 @@ Events can include health details that appear in an error, as the policy says.
 
 | Provider | Holds | Deleted how, by whom, when | Status |
 |---|---|---|---|
-| PostHog (product analytics) | Events keyed by our user id (mobile `identify(user.id)`, server `distinctId` = user id; `src/analytics/`) | **Procedure (owner, within 30 days of the deletion finalizing):** delete the person in PostHog (Persons, or the persons API) with their events and recordings. [PostHog: controlling data storage](https://posthog.com/docs/privacy/data-storage): deletion runs asynchronously, and event data is cleared in off-peak runs. #608 does not call PostHog. | Owner (2026-10-03, O-611-5): product analytics on, session recording **off**; a deleted person is removed within 30 days of the deletion (published) |
+| PostHog (product analytics) | Events keyed by our user id (mobile `identify(user.id)`, server `distinctId` = user id; `src/analytics/`) | **Procedure (owner, within 21 days of the deletion finalizing):** delete the person in PostHog (Persons, or the persons API) with their events and recordings. [PostHog: controlling data storage](https://posthog.com/docs/privacy/data-storage): deletion runs asynchronously, and event data is cleared in off-peak runs (weekends on PostHog Cloud). The 21-day deadline leaves room for that run inside the published 30 days (Opus C-611-14). #608 does not call PostHog. | Owner (2026-10-03, O-611-5): product analytics on, session recording **off**; a deleted person is removed within 30 days of the deletion (published) |
 | Crisp (in-app support chat) | Whatever the person tells support, plus their contact | **Procedure (owner, within 30 days):** delete the contact and conversations in the Crisp inbox. [Crisp: how to delete a conversation](https://help.crisp.chat/en/article/how-to-delete-a-conversation-1g04h7j/): history is kept until deleted. | UNVERIFIED: whether the Crisp SDK is live in the production app build |
-| Mux (coach video media) | Video assets a coach uploaded | **Fact (repo, #608 `account-deletion.storage.ts`):** Mux assets are deleted by the deletion run. | Owner (2026-10-03, O-611-3): Mux is **live**; named in both policies with what it receives (the video files coaches upload, no name, email or account details attached) |
+| Mux (coach video media) | Video assets a coach uploaded; the IP address and device type of each device that uploads or plays a video (devices upload to the Mux upload URL and play from `stream.mux.com` directly; mobile `src/utils/workout/exerciseMedia.ts`) | **Fact (repo, #608 `account-deletion.storage.ts`):** Mux assets are deleted by the deletion run. Connection data ages out on Mux's schedule. | Owner (2026-10-03, O-611-3): Mux is **live**; named in both policies with what it receives (the video files coaches upload, no name, email or account details attached; the Privacy Policy also names the device IP address and device type, Opus C-611-13) |
 | Perplexity (milestone messages, if enabled) | Only the milestone type, no personal data (policy) | Nothing to delete | UNVERIFIED: flag state |
-| Apple / Google sign-in | Their own account link to TGP | Apple: token revocation by #608 when the key is set (§0). Google: the person removes TGP in their Google account; Supabase identity is removed by the deletion run | Apple key UNVERIFIED (not created) |
+| Apple / Google sign-in | Their own account link to TGP | Apple: token revocation by #608 when the key is set (§0); until then the policy says only that deletion ends the app's link to the Apple ID and where the person removes the app in Apple settings. Google: the person removes TGP in their Google account; Supabase identity is removed by the deletion run | Apple key UNVERIFIED (not created); a follow-up restores the revocation sentence once it is set (§0) |
 | USDA FoodData Central, Open Food Facts | Search words only (policy) | Nothing to delete | n/a |
 
 ---
@@ -234,10 +239,10 @@ Events can include health details that appear in an error, as the policy says.
 | Stripe redaction jobs available? | Yes, used for deletion requests | 2026-10-03 (owner) |
 | Sentry plan (retention 30 or 90 days) | 90 days | 2026-10-03 (owner) |
 | Resend plan (30 days) | 30 days | 2026-10-03 (owner) |
-| PostHog plan / recordings on? | Analytics on, recordings off, person removed within 30 days | 2026-10-03 (owner) |
+| PostHog plan / recordings on? | Analytics on, recordings off, person removed within 30 days (owner deletes within 21, §8) | 2026-10-03 (owner) |
 | Crisp live in production build? | _unverified_ | |
 | Mux live? Policy updated? | Live; both policies name it | 2026-10-03 (owner) |
-| Apple Sign in key created (revocation live)? | _no (not created)_ | |
+| Apple Sign in key created (revocation live)? | _no (not created)_; the policy makes no revocation claim until it is (§0) | |
 
 ## 10. Does each promise hold?
 
