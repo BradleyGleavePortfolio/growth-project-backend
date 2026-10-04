@@ -309,6 +309,7 @@ describe('OR-111-1 worked example 1: $100 full refund', () => {
       'A client was refunded',
       "A client got $100.00 back. $94.80 was taken back from that sale's payout. $5.20 is held from your next sale.",
       expect.objectContaining({ type: 'payout_adjustment', notice_id: ctx.db.notices![0].id }),
+      expect.any(AbortSignal),
     );
     expect(ctx.emails).toHaveLength(1);
     expect(ctx.emails[0]).toMatchObject({
