@@ -68,6 +68,9 @@ export interface PayoutNoticeView {
   body: string;
   charge_gross_cents: number;
   customer_refunded_cents: number;
+  // Round 13 (B-683-1): set on a converted charge's refund notice (the client's own currency).
+  client_currency: string | null;
+  client_refunded_cents: number | null;
   reversed_cents: number;
   reinstated_cents: number;
   held_cents: number;
@@ -86,11 +89,16 @@ export interface PayoutAdjustmentsView {
   next_cursor: string | null;
 }
 
+const pastDeadline = (deadlineAt?: number): boolean =>
+  deadlineAt !== undefined && Date.now() >= deadlineAt;
+
 function amountsOf(n: PayoutAdjustmentNotice): PayoutNoticeAmounts {
   return {
     currency: n.currency,
     charge_gross_cents: n.charge_gross_cents,
     customer_refunded_cents: n.customer_refunded_cents,
+    client_currency: n.client_currency,
+    client_refunded_cents: n.client_refunded_cents,
     reversed_cents: n.reversed_cents,
     reinstated_cents: n.reinstated_cents,
     released_cents: 0,
@@ -142,8 +150,12 @@ export class PayoutNoticeService {
     return n > 0;
   }
 
-  /** Sweeper: notices still undelivered a minute after they were written. */
-  async dispatchPending(now: Date = new Date(), limit = 25): Promise<number> {
+  /**
+   * Sweeper: notices still undelivered a minute after they were written. Round 13 (Sol
+   * B-684-3): no new notice or channel starts once `deadlineAt` passes; an unfinished
+   * channel stays pending and the next run sends only that channel.
+   */
+  async dispatchPending(now: Date = new Date(), limit = 25, deadlineAt?: number): Promise<number> {
     const rows = await this.prisma.payoutAdjustmentNotice.findMany({
       where: {
         dispatched_at: null,
@@ -154,11 +166,18 @@ export class PayoutNoticeService {
       take: limit,
     });
     let sent = 0;
-    for (const n of rows) if (await this.dispatchOne(n, now)) sent += 1;
+    for (const n of rows) {
+      if (pastDeadline(deadlineAt)) break;
+      if (await this.dispatchOne(n, now, deadlineAt)) sent += 1;
+    }
     return sent;
   }
 
-  private async dispatchOne(n: PayoutAdjustmentNotice, now: Date = new Date()): Promise<boolean> {
+  private async dispatchOne(
+    n: PayoutAdjustmentNotice,
+    now: Date = new Date(),
+    deadlineAt?: number,
+  ): Promise<boolean> {
     if (n.dispatched_at) return false;
     const claim = await this.prisma.payoutAdjustmentNotice.updateMany({
       where: {
@@ -206,6 +225,7 @@ export class PayoutNoticeService {
         ...(inapp.notification_id ? { inapp_notification_id: inapp.notification_id } : {}),
       });
     }
+    if (pastDeadline(deadlineAt)) return false; // push and email wait for the next run
     const push: ChannelResult = PUSH_DONE.has(row.push_status)
       ? { status: row.push_status }
       : await this.deliverPush(row, payload);
@@ -215,6 +235,7 @@ export class PayoutNoticeService {
         ...(push.notification_id ? { push_notification_id: push.notification_id } : {}),
       });
     }
+    if (pastDeadline(deadlineAt)) return false; // email waits for the next run
     const email: ChannelResult = EMAIL_DONE.has(row.email_status)
       ? { status: row.email_status }
       : await this.deliverEmail(row, now);
@@ -437,7 +458,10 @@ export class PayoutNoticeService {
         recipient_name: user.name,
         summary: n.body,
         charge_display: m(n.charge_gross_cents),
-        customer_refunded_display: m(n.customer_refunded_cents),
+        customer_refunded_display:
+          n.client_currency && n.client_refunded_cents !== null
+            ? `${formatMoney(n.client_refunded_cents, n.client_currency)} (${m(n.customer_refunded_cents)} after conversion)`
+            : m(n.customer_refunded_cents),
         reversed_display: m(n.reversed_cents),
         reinstated_display: n.reinstated_cents > 0 ? m(n.reinstated_cents) : null,
         held_display: m(n.held_cents),
@@ -496,7 +520,9 @@ export class PayoutNoticeService {
     const latest = openIds.length
       ? await this.prisma.payoutAdjustmentNotice.findMany({
           where: { payee_user_id: payeeUserId, settlement_id: { in: openIds } },
-          orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+          orderBy: [{ settlement_id: 'asc' }, { created_at: 'desc' }, { id: 'desc' }],
+          // Sol C-684-4: one row per settlement (DISTINCT ON), never every historical notice.
+          distinct: ['settlement_id'],
           select: { id: true, settlement_id: true },
         })
       : [];
@@ -515,6 +541,8 @@ export class PayoutNoticeService {
         body: n.body,
         charge_gross_cents: n.charge_gross_cents,
         customer_refunded_cents: n.customer_refunded_cents,
+        client_currency: n.client_currency,
+        client_refunded_cents: n.client_refunded_cents,
         reversed_cents: n.reversed_cents,
         reinstated_cents: n.reinstated_cents,
         held_cents: n.held_cents,
