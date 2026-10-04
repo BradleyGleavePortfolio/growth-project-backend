@@ -107,8 +107,43 @@ function confirmedFileSize(size: number | null): number | null {
   return size !== null && Number.isSafeInteger(size) && size >= 0 ? size : null;
 }
 
-/** Stable page order for exported tables (pagination by skip needs one). */
+/** Archive order for exported tables whose rows read best oldest first. */
 const CHRONOLOGICAL: ReadonlyArray<Record<string, 'asc'>> = [{ created_at: 'asc' }, { id: 'asc' }];
+
+/** Rows read per archive page (keyset pagination on the primary key). */
+const EXPORT_PAGE = 500;
+
+/**
+ * Statuses that hold the one active export of a user. The partial unique
+ * index data_export_request_one_active_per_user allows one such row per user.
+ */
+const ACTIVE_STATUSES: DataExportStatus[] = [
+  DataExportStatus.PENDING,
+  DataExportStatus.RUNNING,
+  DataExportStatus.READY,
+];
+
+/**
+ * Newest request first with a total order (F-EXPORT-TIE). created_at has
+ * millisecond precision and can repeat; `id` is a random UUID, so it only
+ * makes a tie stable (every read picks the same row), it does not say which
+ * row is newer. Which row is the latest request is decided by
+ * _findLatestRequest, never by this order alone.
+ */
+const NEWEST_FIRST: Prisma.DataExportRequestOrderByWithRelationInput[] = [
+  { created_at: 'desc' },
+  { id: 'desc' },
+];
+
+/** Compares two column values the way the archive presents them (dates by instant). */
+function compareExportValues(a: unknown, b: unknown): number {
+  const x = a instanceof Date ? a.getTime() : a;
+  const y = b instanceof Date ? b.getTime() : b;
+  if (x === y) return 0;
+  if (x === null || x === undefined) return -1;
+  if (y === null || y === undefined) return 1;
+  return (x as string | number) < (y as string | number) ? -1 : 1;
+}
 
 /** Recipe columns exported for recipes the user created. */
 const RECIPE_EXPORT_SELECT: Record<string, true> = {
@@ -312,11 +347,9 @@ export class DataExportService {
     const active = await this.prisma.dataExportRequest.findMany({
       where: {
         user_id: userId,
-        status: {
-          in: [DataExportStatus.PENDING, DataExportStatus.RUNNING, DataExportStatus.READY],
-        },
+        status: { in: ACTIVE_STATUSES },
       },
-      orderBy: { created_at: 'desc' },
+      orderBy: NEWEST_FIRST,
     });
 
     for (const candidate of active) {
@@ -394,10 +427,7 @@ export class DataExportService {
    * reported FAILED so the app never polls forever.
    */
   async getLatestStatus(userId: string): Promise<DataExportStatusView> {
-    let record = await this.prisma.dataExportRequest.findFirst({
-      where: { user_id: userId },
-      orderBy: { created_at: 'desc' },
-    });
+    let record = await this._findLatestRequest(userId);
 
     if (!record) {
       throw new NotFoundException({
@@ -459,10 +489,7 @@ export class DataExportService {
    * issued for the caller's own archive.
    */
   async createDownloadLink(userId: string): Promise<DataExportDownloadLink> {
-    const record = await this.prisma.dataExportRequest.findFirst({
-      where: { user_id: userId },
-      orderBy: { created_at: 'desc' },
-    });
+    const record = await this._findLatestRequest(userId);
     if (!record) {
       throw new NotFoundException({
         code: C.NOT_FOUND,
@@ -769,6 +796,31 @@ export class DataExportService {
   }
 
   // ─── Private helpers ─────────────────────────────────────────────────────
+
+  /**
+   * The user's latest export request (F-EXPORT-TIE). A request row is only
+   * created when the user has no active row (requestExport reaps or
+   * supersedes every active row first; the partial unique index rejects a
+   * second one), and no path writes FAILED or EXPIRED back to an active
+   * status (the worker's one RUNNING write follows the create at once, while
+   * a reap needs the stale-run window of at least 5 minutes). So the active
+   * row, when there is one, is the newest request even when its created_at
+   * equals or (after a database clock step) precedes an older row's. With no
+   * active row every request is terminal: the newest created_at wins and the
+   * id makes an equal-millisecond tie stable, so the status screen and the
+   * download link always describe the same row.
+   */
+  private async _findLatestRequest(userId: string): Promise<DataExportRequest | null> {
+    const active = await this.prisma.dataExportRequest.findFirst({
+      where: { user_id: userId, status: { in: ACTIVE_STATUSES } },
+      orderBy: NEWEST_FIRST,
+    });
+    if (active) return active;
+    return this.prisma.dataExportRequest.findFirst({
+      where: { user_id: userId },
+      orderBy: NEWEST_FIRST,
+    });
+  }
 
   /** READY, unexpired, and stored in this service's store. */
   private _isDownloadable(record: DataExportRequest, now: Date = new Date()): boolean {
@@ -1211,16 +1263,20 @@ export class DataExportService {
   }
 
   /**
-   * Generic helper: page through a model's rows 500 at a time.
+   * Generic helper: read every row of a model that matches `where`, 500 at a
+   * time. Pages follow the primary key (keyset: `id > last id`, ordered by
+   * id), never OFFSET over an unordered query: without an ORDER BY the
+   * database may return pages in different orders, so an archive could miss
+   * or repeat rows of a user with more than one page (F-EXPORT-TIE). A row
+   * inserted or deleted during the export cannot shift a later page either.
+   * `shape.orderBy` is the order the archive presents the rows in; it is
+   * applied once all pages are read.
    */
   private async _streamAll(
     model: string,
     where: Record<string, unknown>,
     shape: { select?: Record<string, true>; orderBy?: ReadonlyArray<Record<string, 'asc'>> } = {},
   ): Promise<unknown[]> {
-    const PAGE = 500;
-    const results: unknown[] = [];
-    let skip = 0;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const delegate = (this.prisma as any)[model];
 
@@ -1228,20 +1284,60 @@ export class DataExportService {
       return [];
     }
 
+    const results = await this._readAllById(model, (after) =>
+      delegate.findMany({
+        where: after === null ? where : { AND: [where, { id: { gt: after } }] },
+        ...(shape.select ? { select: shape.select } : {}),
+        orderBy: [{ id: 'asc' }],
+        take: EXPORT_PAGE,
+      }),
+    );
+    const order = shape.orderBy;
+    if (order) {
+      results.sort((a, b) => {
+        for (const key of order) {
+          const [column] = Object.keys(key);
+          const c = compareExportValues(
+            (a as Record<string, unknown>)[column],
+            (b as Record<string, unknown>)[column],
+          );
+          if (c !== 0) return c;
+        }
+        return 0;
+      });
+    }
+    return results;
+  }
+
+  /**
+   * Runs `readPage` until a short page: each call gets the id of the last
+   * row read so far (null for the first page). A full page whose last row has
+   * no string id, or the same id as the page before, would make the next
+   * read repeat a page, so it fails the export with the model name instead
+   * of looping or writing a partial archive. Ids are compared by the
+   * database's own collation (`id > last`), never by JavaScript order.
+   * `mapRow` shapes each row as its page arrives.
+   */
+  private async _readAllById(
+    model: string,
+    readPage: (after: string | null) => Promise<unknown[]>,
+    mapRow: (row: unknown) => unknown = (row) => row,
+  ): Promise<unknown[]> {
+    const results: unknown[] = [];
+    let after: string | null = null;
     // eslint-disable-next-line no-constant-condition
     while (true) {
-      const page: unknown[] = await delegate.findMany({
-        where,
-        ...(shape.select ? { select: shape.select } : {}),
-        ...(shape.orderBy ? { orderBy: [...shape.orderBy] } : {}),
-        skip,
-        take: PAGE,
-      });
-      results.push(...page);
-      if (page.length < PAGE) break;
-      skip += PAGE;
+      const page = await readPage(after);
+      for (const row of page) results.push(mapRow(row));
+      if (page.length < EXPORT_PAGE) break;
+      const last = (page[page.length - 1] as Record<string, unknown>).id;
+      if (typeof last !== 'string' || last === after) {
+        throw new Error(
+          `Data export paging stopped on ${model}: a page did not end on a newer row id.`,
+        );
+      }
+      after = last;
     }
-
     return results;
   }
 
@@ -1249,42 +1345,31 @@ export class DataExportService {
    * CoachMessage export. Messages sent by the requesting user are returned
    * verbatim. Messages sent by a third party that are visible to the user
    * are redacted to protect the other party's privacy rights under GDPR.
+   * Pages follow the primary key like _streamAll.
    */
   private async _streamCoachMessages(userId: string): Promise<unknown[]> {
-    const PAGE = 500;
-    const results: unknown[] = [];
-    let skip = 0;
-
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const page = await this.prisma.coachMessage.findMany({
-        where: {
-          OR: [{ sender_id: userId }, { coach_id: userId }, { client_id: userId }],
-        },
-        skip,
-        take: PAGE,
-      });
-
-      for (const msg of page) {
-        if ((msg as Record<string, unknown>).sender_id === userId) {
-          results.push(msg);
-        } else {
-          results.push({
-            id: (msg as Record<string, unknown>).id,
-            sent_at:
-              (msg as Record<string, unknown>).sent_at ??
-              (msg as Record<string, unknown>).created_at,
-            redacted: true,
-            note: 'This message was sent by another party. Its content is redacted to protect their privacy.',
-          });
-        }
-      }
-
-      if (page.length < PAGE) break;
-      skip += PAGE;
-    }
-
-    return results;
+    const where = {
+      OR: [{ sender_id: userId }, { coach_id: userId }, { client_id: userId }],
+    };
+    return this._readAllById(
+      'coachMessage',
+      (after) =>
+        this.prisma.coachMessage.findMany({
+          where: after === null ? where : { AND: [where, { id: { gt: after } }] },
+          orderBy: [{ id: 'asc' }],
+          take: EXPORT_PAGE,
+        }),
+      (row) => {
+        const msg = row as Record<string, unknown>;
+        if (msg.sender_id === userId) return msg;
+        return {
+          id: msg.id,
+          sent_at: msg.sent_at ?? msg.created_at,
+          redacted: true,
+          note: 'This message was sent by another party. Its content is redacted to protect their privacy.',
+        };
+      },
+    );
   }
 
   private async _streamBuildWeekCompletions(userId: string): Promise<unknown[]> {
