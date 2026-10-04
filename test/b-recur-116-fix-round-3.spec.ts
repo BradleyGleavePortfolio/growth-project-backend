@@ -380,7 +380,8 @@ describe('B-654-9 / C-654-10 a caught error reaches logs only as an allow-listed
     try {
       stripe.retrieveSubscriptionForCheckout.mockRejectedValueOnce(new Error(`for ${CANARY}`));
       const out = await buy(svc, KEY2);
-      expect(out.subscription_id).toBe('sub_2');
+      // B-679-1: the open attempt is reused at any age (no second subscription).
+      expect(out.subscription_id).toBe('sub_1');
       expect(logs.text()).toContain('stale trial attempt kept');
       expect(logs.text()).not.toContain(CANARY);
     } finally {

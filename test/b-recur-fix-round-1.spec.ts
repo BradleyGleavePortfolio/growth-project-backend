@@ -357,7 +357,22 @@ describe('R1-5 same-key retry of an attempt that is over', () => {
 });
 
 describe('R1-6 abandoned trial attempts older than 23 h', () => {
-  it('trialing without a card on Stripe -> canceled and marked expired; with a card -> left alone', async () => {
+  // B-679-1 (current rule): an open trial attempt holds the one trial with
+  // this coach at any age until Stripe shows it ended or never got a card.
+  it('trialing without a card on Stripe -> canceled and marked expired; the next plan of the coach gets the trial', async () => {
+    const { svc, stripe, prisma } = setup({ trial_days: 7 });
+    prisma._packages.push(recurringPkg({ id: PKG2, trial_days: 7, stripe_price_id: 'price_b' }));
+    await svc.createSubscriptionIntent(CLIENT, { package_id: PKG, idempotency_key: KEY1 });
+    const abandoned = prisma._purchases[0];
+    abandoned.created_at = new Date(Date.now() - 30 * HOUR);
+    await svc.createSubscriptionIntent(CLIENT, { package_id: PKG2, idempotency_key: KEY2 });
+    expect(stripe.cancelSubscription).toHaveBeenCalledWith(abandoned.stripe_subscription_id);
+    expect(abandoned.status).toBe('expired');
+    expect(abandoned.stripe_client_secret).toBeNull();
+    expect(prisma._purchases[1].trial_days).toBe(7);
+  });
+
+  it('trialing with a saved card -> left alone, and it keeps holding the one trial with this coach', async () => {
     const { svc, stripe, prisma } = setup({ trial_days: 7 });
     prisma._packages.push(recurringPkg({ id: PKG2, trial_days: 7, stripe_price_id: 'price_b' }));
     await svc.createSubscriptionIntent(CLIENT, { package_id: PKG, idempotency_key: KEY1 });
@@ -365,19 +380,13 @@ describe('R1-6 abandoned trial attempts older than 23 h', () => {
     carded.created_at = new Date(Date.now() - 30 * HOUR);
     // This one saved its card; only its webhook is late. Never cancel it.
     stripe._subs.get(carded.stripe_subscription_id).default_payment_method = 'pm_card';
-    await svc.createSubscriptionIntent(CLIENT, { package_id: PKG2, idempotency_key: KEY2 });
-    const abandoned = prisma._purchases[1];
-    expect(abandoned.trial_days).toBe(7);
-    abandoned.created_at = new Date(Date.now() - 30 * HOUR);
     await svc.createSubscriptionIntent(CLIENT, { package_id: PKG2, idempotency_key: KEY3 });
-    expect(stripe.cancelSubscription).toHaveBeenCalledWith(abandoned.stripe_subscription_id);
     expect(stripe.cancelSubscription).not.toHaveBeenCalledWith(carded.stripe_subscription_id);
-    expect(abandoned.status).toBe('expired');
-    expect(abandoned.stripe_client_secret).toBeNull();
     expect(carded.status).toBe('pending');
+    expect(prisma._purchases[1].trial_days).toBeNull();
   });
 
-  it('a Stripe error while retiring never blocks the new attempt', async () => {
+  it('a Stripe error while retiring never blocks the checkout: the open attempt is reused, no second subscription', async () => {
     const { svc, stripe, prisma } = setup({ trial_days: 7 });
     await svc.createSubscriptionIntent(CLIENT, { package_id: PKG, idempotency_key: KEY1 });
     prisma._purchases[0].created_at = new Date(Date.now() - 30 * HOUR);
@@ -386,7 +395,8 @@ describe('R1-6 abandoned trial attempts older than 23 h', () => {
       package_id: PKG,
       idempotency_key: KEY2,
     });
-    expect(out.subscription_id).toBe('sub_2');
+    expect(out.subscription_id).toBe('sub_1');
+    expect(stripe.createSubscription).toHaveBeenCalledTimes(1);
   });
 });
 

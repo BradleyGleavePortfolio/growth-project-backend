@@ -263,16 +263,20 @@ describe('B-654-1 checkout paths read the SetupIntent itself', () => {
     expect(row.status).toBe('expired');
   });
 
-  it('stale-trial cleanup keeps a trial whose SetupIntent cannot be read', async () => {
+  it('stale-trial cleanup keeps a trial whose SetupIntent cannot be read (it still holds the one trial)', async () => {
     const { svc, stripe, prisma } = setup({ trial_days: 7 });
+    const PKG_B = '44444444-4444-4444-8444-444444444444';
+    prisma._packages.push(recurringPkg({ id: PKG_B, trial_days: 7, stripe_price_id: 'price_b' }));
     await svc.createSubscriptionIntent(CLIENT, { package_id: PKG, idempotency_key: KEY1 });
     const row = prisma._purchases[0];
     row.created_at = new Date(Date.now() - 30 * HOUR);
     stripe._subs.get('sub_1').pending_setup_intent = null;
     stripe.retrieveSetupIntent.mockRejectedValueOnce(new Error('stripe down'));
-    await svc.createSubscriptionIntent(CLIENT, { package_id: PKG, idempotency_key: KEY2 });
+    // Another plan of the same coach: the cleanup reads the old trial only.
+    await svc.createSubscriptionIntent(CLIENT, { package_id: PKG_B, idempotency_key: KEY2 });
     expect(stripe.cancelSubscription).not.toHaveBeenCalledWith('sub_1');
     expect(row.status).not.toBe('expired');
+    expect(prisma._purchases[1].trial_days).toBeNull();
   });
 
   it('(failed before) reuse of an open trial whose card was saved: no cancel, no second subscription, ALREADY_ACTIVE', async () => {
