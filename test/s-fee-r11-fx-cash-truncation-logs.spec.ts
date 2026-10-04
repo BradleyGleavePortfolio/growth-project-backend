@@ -136,10 +136,10 @@ describe('B-683-1: a converted charge is refunded in its settlement currency', (
     });
     const input = { purchase: ctx.purchase, charge_id: 'ch_1', refunded_cents: 2_500 };
     await expect(ctx.settlements.applyAdjustments(input))
-      .rejects.toThrow(/^SFEE_REFUND_STATE_UNAVAILABLE charge=ch_1 reason=stripe_http_503$/);
+      .rejects.toThrow(/^SFEE_REFUND_STATE_UNAVAILABLE charge=ch_1 kind=stripe http=503 /);
     expect(ctx.stripe.netTo('acct_1')).toBe(7_640);
     expect(ctx.db.settlements[0].reconcile_reason)
-      .toBe('SFEE_REFUND_STATE_UNAVAILABLE charge=ch_1 reason=stripe_http_503');
+      .toBe('SFEE_REFUND_STATE_UNAVAILABLE charge=ch_1 kind=stripe http=503 type=other code=other');
   });
 
   it('control: a same-currency refund never lists refunds and moves the USD amount', async () => {
@@ -187,6 +187,21 @@ describe('B-683-2: reconciliation attests only transfers Stripe executed', () =>
   });
 });
 
+describe('C-683-3: reconciliation covers every settled charge of a purchase', () => {
+  it('drift on the oldest of thirteen renewals is reported', async () => {
+    const ctx = setup();
+    for (let k = 0; k < 13; k += 1) {
+      ctx.stripe.charges.set(`ch_r${k}`, makeCharge({ id: `ch_r${k}`, amount: 4_900, fee: 172 }));
+      await ctx.settlements.settleCharge({ purchase: ctx.purchase, charge_id: `ch_r${k}` });
+      ctx.db.settlements[k].created_at = new Date(Date.UTC(2026, 0, k + 1));
+    }
+    expect((await ctx.reconciliation.reconcilePurchase('cp_1')).status).toBe('ok');
+    // A refund Stripe recorded on the oldest charge that never reached the settlement.
+    ctx.stripe.charges.set('ch_r0', makeCharge({ id: 'ch_r0', amount: 4_900, fee: 172, amount_refunded: 1_000 }));
+    expect((await ctx.reconciliation.reconcilePurchase('cp_1')).status).toBe('drift');
+  });
+});
+
 describe('B-683-3 / B-684-2: logs carry closed codes and ids only', () => {
   it('a failed notice write and failed Stripe read log no free text', async () => {
     const ctx = setup();
@@ -223,7 +238,7 @@ describe('B-683-3 / B-684-2: logs carry closed codes and ids only', () => {
     await ctx.refunds.deliverPayoutNotices('ch_1');
     const text = logged(warns);
     for (const code of ['INAPP', 'PUSH', 'EMAIL']) expect(text).toContain(`SFEE_NOTICE_${code}_FAILED`);
-    expect(text).toContain('SFEE_NOTICE_DISPATCH_DEFERRED charge=ch_1: unknown_failure');
+    expect(text).toContain('SFEE_NOTICE_DISPATCH_DEFERRED charge=ch_1: kind=unknown');
     expect(text).not.toContain(CANARY);
   });
 
