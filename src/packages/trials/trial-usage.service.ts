@@ -235,31 +235,20 @@ export class TrialUsageService {
   /**
    * Record that this purchase's trial started (card saved, subscription
    * trialing). Creates the row when the subscription was minted without a
-   * reservation, and reports a conflict when another purchase holds it.
+   * reservation, and reports a conflict only when ANOTHER purchase holds it.
+   *
+   * B-T12-116 (B-671-1) — two events for one subscription can start the same
+   * purchase at once (customer.subscription.updated and invoice.paid, or two
+   * replicas). Under READ COMMITTED the loser's ON CONFLICT DO NOTHING insert
+   * waits for the winner's commit and then skips; the loser re-reads THIS
+   * purchase's row (and, after a lost released-row takeover, the holder) with
+   * a fresh snapshot before it may answer 'conflict'. Same-purchase rows go
+   * through the existing fenced transition (startOwned).
    */
   async markStarted(db: Db, args: MarkTrialStartedArgs): Promise<TrialStartOutcome> {
     const now = new Date();
-    const own = await db.packageTrialUsage.findUnique({ where: { purchase_id: args.purchaseId } });
-    if (own) {
-      if (own.status === 'started') {
-        if (args.trialEndsAt && own.trial_ends_at?.getTime() !== args.trialEndsAt.getTime()) {
-          await db.packageTrialUsage.updateMany({
-            where: { id: own.id, status: 'started' },
-            data: { trial_ends_at: args.trialEndsAt },
-          });
-        }
-        return 'owned';
-      }
-      const res = await db.packageTrialUsage.updateMany({
-        where: { id: own.id, purchase_id: args.purchaseId, status: own.status },
-        data: { status: 'started', started_at: now, trial_ends_at: args.trialEndsAt },
-      });
-      if (res.count === 1) return 'owned';
-      const reread = await db.packageTrialUsage.findUnique({ where: { id: own.id } });
-      return reread?.purchase_id === args.purchaseId && reread.status === 'started'
-        ? 'owned'
-        : 'conflict';
-    }
+    const own = await this.findByPurchase(db, args.purchaseId);
+    if (own) return this.startOwned(db, own, args, now);
 
     const inserted = await db.packageTrialUsage.createMany({
       data: [
@@ -277,6 +266,12 @@ export class TrialUsageService {
       skipDuplicates: true,
     });
     if (inserted.count === 1) return 'owned';
+
+    // B-671-1 — the skipped insert may have collided with this same purchase
+    // (a concurrent start, or a reservation that committed after the read
+    // above): that is this purchase's trial, never a second one.
+    const mine = await this.findByPurchase(db, args.purchaseId);
+    if (mine) return this.startOwned(db, mine, args, now);
 
     // Another purchase holds this client's trial with this coach. A released
     // row can still be claimed (that attempt never started).
@@ -303,11 +298,56 @@ export class TrialUsageService {
         },
       });
       if (res.count === 1) return 'owned';
+      // B-671-1 — lost the takeover: the winner may be this same purchase.
+      const after = await this.findByPurchase(db, args.purchaseId);
+      if (after) return this.startOwned(db, after, args, now);
     }
     this.logger.error(
       `trial conflict: purchase ${args.purchaseId} started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)`,
     );
     return 'conflict';
+  }
+
+  /**
+   * The fenced transition for a row that already belongs to this purchase:
+   * started stays started (refreshing the trial end), reserved or released
+   * becomes started by compare-and-set. A lost compare-and-set re-reads the
+   * row; it is 'owned' only while the row is still this purchase's and
+   * started (a released row taken over by another purchase is a conflict).
+   */
+  private async startOwned(
+    db: Db,
+    row: PackageTrialUsage,
+    args: MarkTrialStartedArgs,
+    now: Date,
+  ): Promise<TrialStartOutcome> {
+    let current: PackageTrialUsage | null = row;
+    // Bounded: each lost compare-and-set means another writer moved the row.
+    for (let attempt = 0; attempt < 3 && current; attempt += 1) {
+      if (current.purchase_id !== args.purchaseId) return 'conflict';
+      if (current.status === 'started') {
+        if (args.trialEndsAt && current.trial_ends_at?.getTime() !== args.trialEndsAt.getTime()) {
+          await db.packageTrialUsage.updateMany({
+            where: { id: current.id, purchase_id: args.purchaseId, status: 'started' },
+            data: { trial_ends_at: args.trialEndsAt },
+          });
+        }
+        return 'owned';
+      }
+      const res = await db.packageTrialUsage.updateMany({
+        where: { id: current.id, purchase_id: args.purchaseId, status: current.status },
+        data: { status: 'started', started_at: now, trial_ends_at: args.trialEndsAt },
+      });
+      if (res.count === 1) return 'owned';
+      current = await db.packageTrialUsage.findUnique({ where: { id: current.id } });
+    }
+    return current?.purchase_id === args.purchaseId && current.status === 'started'
+      ? 'owned'
+      : 'conflict';
+  }
+
+  private findByPurchase(db: Db, purchaseId: string): Promise<PackageTrialUsage | null> {
+    return db.packageTrialUsage.findUnique({ where: { purchase_id: purchaseId } });
   }
 
   /**

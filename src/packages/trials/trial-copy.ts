@@ -2,19 +2,39 @@
 // warm words, no emojis, no exclamation marks, no first person. Every string
 // names the date and, when a charge is coming, the exact amount.
 
-/** "$49" for whole amounts, "$49.99" otherwise; other currencies by code. */
+/**
+ * "$49" for whole amounts, "$49.99" otherwise; other currencies by code.
+ * B-T12-116 (C-671-3) — amounts are in the currency's own minor unit
+ * (Stripe convention): 4900 JPY is 4,900 yen, 4900 USD is 49 dollars.
+ */
 export function formatTrialAmount(amountCents: number, currency: string): string {
   const code = (currency || 'usd').toUpperCase();
-  const whole = amountCents % 100 === 0;
+  const digits = currencyMinorDigits(code);
+  const scale = 10 ** digits;
+  const whole = amountCents % scale === 0;
+  const value = amountCents / scale;
   try {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: code,
-      minimumFractionDigits: whole ? 0 : 2,
-      maximumFractionDigits: 2,
-    }).format(amountCents / 100);
+      minimumFractionDigits: whole ? 0 : digits,
+      maximumFractionDigits: digits,
+    }).format(value);
   } catch {
-    return `${(amountCents / 100).toFixed(whole ? 0 : 2)} ${code}`;
+    return `${value.toFixed(whole ? 0 : digits)} ${code}`;
+  }
+}
+
+/** Minor-unit digits of an ISO 4217 code (2 when unknown or invalid). */
+function currencyMinorDigits(code: string): number {
+  try {
+    const digits = new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: code,
+    }).resolvedOptions().maximumFractionDigits;
+    return typeof digits === 'number' && digits >= 0 && digits <= 3 ? digits : 2;
+  } catch {
+    return 2;
   }
 }
 
@@ -41,6 +61,12 @@ export interface TrialEndingCopyInput {
    * Omitted / true = a card will be charged.
    */
   cardOnFile?: boolean;
+  /**
+   * B-T12-116 (C-672-5) — Stripe may add tax to the trial-end invoice (the
+   * subscription has automatic tax enabled): the charge line then says
+   * "plus any tax" so the named amount never understates the charge.
+   */
+  taxMayApply?: boolean;
 }
 
 /** Why a trial end charges nothing (null = a card will be charged). */
@@ -93,10 +119,15 @@ export function trialEndingCopy(input: TrialEndingCopyInput): TrialEndingCopy {
   }
   return {
     title: 'Your free trial',
-    body: `Your free trial ends on ${dateLabel}. Your card will be charged ${amountLabel} then. Cancel anytime before.`,
+    body: `Your free trial ends on ${dateLabel}. Your card will be charged ${chargeLabel(amountLabel, input.taxMayApply)} then. Cancel anytime before.`,
     dateLabel,
     amountLabel,
   };
+}
+
+/** "$49" or, when tax may apply, "$49 plus any tax" (C-672-5). */
+export function chargeLabel(amountLabel: string, taxMayApply?: boolean): string {
+  return taxMayApply ? `${amountLabel} plus any tax` : amountLabel;
 }
 
 /**

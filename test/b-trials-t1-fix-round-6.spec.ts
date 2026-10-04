@@ -188,7 +188,12 @@ describe('C-671-1 — a trial that never started never reads "ended"', () => {
   it('control: a trial that started and is over still reads ended', () => {
     expect(
       purchaseTrialView(
-        { ...row, status: 'active', entitlement_active: true, trial_ends_at: new Date('2026-10-01T00:00:00Z') },
+        {
+          ...row,
+          status: 'active',
+          entitlement_active: true,
+          trial_ends_at: new Date('2026-10-01T00:00:00Z'),
+        },
         NOW,
       ).state,
     ).toBe('ended');
@@ -234,9 +239,11 @@ describe('C-672-5 — the charge line names tax when tax may apply', () => {
     expect(trialEndingCopy(input).body).toBe(
       'Your free trial ends on Oct 12. Your card will be charged $49 then. Cancel anytime before.',
     );
-    expect(trialEndingCopy(copyInput({ taxMayApply: true, cardOnFile: false })).body).not.toMatch(/tax/);
-    expect(trialEndingCopy(copyInput({ taxMayApply: true, cancelAtPeriodEnd: true })).body).not.toMatch(
+    expect(trialEndingCopy(copyInput({ taxMayApply: true, cardOnFile: false })).body).not.toMatch(
       /tax/,
     );
+    expect(
+      trialEndingCopy(copyInput({ taxMayApply: true, cancelAtPeriodEnd: true })).body,
+    ).not.toMatch(/tax/);
   });
 });

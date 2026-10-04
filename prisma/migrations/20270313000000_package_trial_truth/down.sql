@@ -4,10 +4,16 @@
 SET lock_timeout = '5s';
 DROP TABLE IF EXISTS "PackageTrialConflict";
 ALTER TABLE "PackageTrialNotice" DROP CONSTRAINT IF EXISTS "PackageTrialNotice_push_status_check";
-UPDATE "PackageTrialNotice" SET "push_status" = 'failed' WHERE "push_status" = 'suppressed';
+UPDATE "PackageTrialNotice" SET "push_status" = 'failed' WHERE "push_status" IN ('suppressed', 'skipped');
 ALTER TABLE "PackageTrialNotice"
     ADD CONSTRAINT "PackageTrialNotice_push_status_check"
     CHECK ("push_status" IN ('pending', 'delivered', 'no_token', 'failed'));
+ALTER TABLE "PackageTrialNotice" DROP CONSTRAINT IF EXISTS "PackageTrialNotice_email_status_check";
+UPDATE "PackageTrialNotice" SET "email_status" = 'failed' WHERE "email_status" = 'skipped';
+ALTER TABLE "PackageTrialNotice"
+    ADD CONSTRAINT "PackageTrialNotice_email_status_check"
+    CHECK ("email_status" IN ('pending', 'sent', 'no_email', 'failed'));
+ALTER TABLE "PackageTrialNotice" DROP COLUMN IF EXISTS "tax_may_apply";
 ALTER TABLE "PackageTrialNotice" DROP CONSTRAINT IF EXISTS "PackageTrialNotice_source_check";
 ALTER TABLE "PackageTrialNotice" DROP COLUMN IF EXISTS "email_lease_until";
 ALTER TABLE "PackageTrialNotice" DROP COLUMN IF EXISTS "email_lease_token";

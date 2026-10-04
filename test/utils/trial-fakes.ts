@@ -194,6 +194,7 @@ export function makeTrialNoticeTable() {
     email_lease_token: null,
     email_lease_until: null,
     last_error: null,
+    tax_may_apply: false,
   }));
 }
 

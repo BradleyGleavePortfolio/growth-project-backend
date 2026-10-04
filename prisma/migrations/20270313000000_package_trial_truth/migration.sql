@@ -23,6 +23,13 @@
 --    * per-channel lease (token + expiry) — exclusive delivery claim and
 --      fenced completion (B-656-2).
 --    * push_status 'suppressed' — the client muted notifications (B-656-4).
+--    * push_status / email_status 'skipped' — the purchase was cancelled or
+--      is gone before delivery, so the notice no longer applies; a terminal
+--      state keeps such rows out of every later retry sweep (B-T12-116 fix
+--      round 6, Sol B-672-2).
+--    * tax_may_apply — Stripe may add tax to the trial-end invoice (the
+--      subscription had automatic tax enabled when the notice was recorded),
+--      so the charge line says "plus any tax" (B-T12-116, Opus C-672-5).
 -- 3. PackageTrialConflict — durable obligation to cancel a subscription that
 --    tried to start a second free trial with the same coach (B-656-1). Written
 --    in the webhook transaction, settled after commit and by a sweep until
@@ -42,7 +49,7 @@ ALTER TABLE "ClientPurchase" ADD COLUMN "card_on_file" BOOLEAN;
 CREATE INDEX "ClientPurchase_status_trial_ends_at_idx" ON "ClientPurchase"("status", "trial_ends_at");
 
 -- =====================================================================
--- 2) PackageTrialNotice: source, leases, suppressed
+-- 2) PackageTrialNotice: source, leases, suppressed, skipped, tax_may_apply
 -- =====================================================================
 ALTER TABLE "PackageTrialNotice" ALTER COLUMN "stripe_event_id" DROP NOT NULL;
 ALTER TABLE "PackageTrialNotice" ADD COLUMN "source" TEXT NOT NULL DEFAULT 'trial_will_end';
@@ -58,7 +65,14 @@ ALTER TABLE "PackageTrialNotice"
 ALTER TABLE "PackageTrialNotice" DROP CONSTRAINT "PackageTrialNotice_push_status_check";
 ALTER TABLE "PackageTrialNotice"
     ADD CONSTRAINT "PackageTrialNotice_push_status_check"
-    CHECK ("push_status" IN ('pending', 'delivered', 'no_token', 'suppressed', 'failed'));
+    CHECK ("push_status" IN ('pending', 'delivered', 'no_token', 'suppressed', 'skipped', 'failed'));
+
+ALTER TABLE "PackageTrialNotice" DROP CONSTRAINT "PackageTrialNotice_email_status_check";
+ALTER TABLE "PackageTrialNotice"
+    ADD CONSTRAINT "PackageTrialNotice_email_status_check"
+    CHECK ("email_status" IN ('pending', 'sent', 'no_email', 'skipped', 'failed'));
+
+ALTER TABLE "PackageTrialNotice" ADD COLUMN "tax_may_apply" BOOLEAN NOT NULL DEFAULT false;
 
 -- =====================================================================
 -- 3) PackageTrialConflict
