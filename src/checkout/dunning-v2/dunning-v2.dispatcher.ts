@@ -11,6 +11,7 @@ import { DUNNING_UPDATE_CARD_URL, DUNNING_V2_CADENCE_DAYS } from './dunning-v2.c
 import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
 import { SurfaceKey, RomanCopyPayload } from '../../roman/voice/voice-policy.constants';
 import { applyTokens } from './dunning-v2.renderer';
+import { dunningErrorCode } from './dunning-v2.safe-error';
 
 /**
  * Phase 2 — map a dunning classifier `copyKey` to the Roman Phase 2 in-app
@@ -46,7 +47,8 @@ function phase2SurfaceForCopyKey(copyKey: string): SurfaceKey | undefined {
  *     idempotency key, so at-least-once after an expired claim, C-628-12).
  *   - email → EmailService.send (Resend pipeline; idempotency-keyed).
  *   - inapp → NotificationsService.createNotification (the durable feed row).
- *   - coach → CoachNotifierService fans out in-app + push + email at Step 3.
+ *   - coach → CoachAlertEmitter (in-app feed row, then push) and the coach
+ *     email at Step 3, each its own outbox channel (B-688-3).
  *
  * Coach-notify idempotency (spec §9.3): per-transport keys
  * `coach_notify:{dunning_state_id}:{inapp|push|email}` are threaded into the
@@ -59,12 +61,17 @@ function phase2SurfaceForCopyKey(copyKey: string): SurfaceKey | undefined {
 
 /** One transport of a step's notice (S-DUNNING-R3 outbox channel). */
 export type DunningChannel =
-  'client_push' | 'client_email' | 'client_blocker' | 'coach_alert' | 'coach_email';
+  'client_push' | 'client_email' | 'client_blocker' | 'coach_alert' | 'coach_push' | 'coach_email';
 
 export type ChannelStatus = 'sent' | 'skipped' | 'failed';
 
 export interface ChannelResult {
   status: ChannelStatus;
+  /**
+   * A closed code ("push_ticket-error", "email_failed", "error_unknown"),
+   * never provider or exception text (B-688-4): it is logged and stored in
+   * DunningNoticeDelivery.last_error.
+   */
   error?: string;
 }
 
@@ -79,7 +86,7 @@ export function dunningChannelsFor(decision: ChannelDecision): DunningChannel[] 
   if (decision.push) out.push('client_push');
   if (decision.email) out.push('client_email');
   if (decision.inAppBlocker) out.push('client_blocker');
-  if (decision.coachAllChannels) out.push('coach_alert', 'coach_email');
+  if (decision.coachAllChannels) out.push('coach_alert', 'coach_push', 'coach_email');
   return out;
 }
 
@@ -175,9 +182,13 @@ export class DunningV2Dispatcher {
         this.sendBlocker(ctx, decision, rotation, day),
       );
     }
-    if (decision.coachAllChannels && (wanted.has('coach_alert') || wanted.has('coach_email'))) {
+    const coachWanted = ['coach_alert', 'coach_push', 'coach_email'].some((c) =>
+      wanted.has(c as DunningChannel),
+    );
+    if (decision.coachAllChannels && coachWanted) {
       const coach = await this.notifyCoachAllChannels(ctx, {
         alert: wanted.has('coach_alert'),
+        push: wanted.has('coach_push'),
         email: wanted.has('coach_email'),
         attempt,
       });
@@ -216,12 +227,12 @@ export class DunningV2Dispatcher {
       const quip = rotation.shouldQuip('client');
       body = this.renderer.clientPush(decision.copyKey, ctx.tokens, quip);
     }
-    if (!this.notifications) return { status: 'skipped', error: 'push transport not wired' };
+    if (!this.notifications) return { status: 'skipped', error: 'push_not_wired' };
     const res = await this.notifications.pushToUser(ctx.clientUserId, 'Payment', body);
     // A transport that returns no verdict (legacy stubs) counts as sent.
     if (typeof res === 'object' && res !== null && res.delivered === false) {
-      if (res.code === 'no-token') return { status: 'skipped', error: 'no push token' };
-      return { status: 'failed', error: `push ${res.code}` };
+      if (res.code === 'no-token') return { status: 'skipped', error: 'push_no_token' };
+      return { status: 'failed', error: `push_${res.code}` };
     }
     const day = DUNNING_V2_CADENCE_DAYS[ctx.stepIndex] ?? ctx.stepIndex;
     this.telemetry.notifySent(ctx.clientUserId, day, 'push', 'client');
@@ -254,8 +265,8 @@ export class DunningV2Dispatcher {
     const quip = rotation.shouldQuip('client');
     const body = this.renderer.clientEmail(decision.copyKey, ctx.tokens, quip);
     const day = DUNNING_V2_CADENCE_DAYS[ctx.stepIndex] ?? ctx.stepIndex;
-    if (!this.email) return { status: 'skipped', error: 'email transport not wired' };
-    if (!ctx.clientEmail) return { status: 'skipped', error: 'client has no email' };
+    if (!this.email) return { status: 'skipped', error: 'email_not_wired' };
+    if (!ctx.clientEmail) return { status: 'skipped', error: 'email_no_address' };
     {
       const res = await this.email.send({
         to: ctx.clientEmail,
@@ -268,10 +279,9 @@ export class DunningV2Dispatcher {
         },
         idempotencyKey: `dunning_v2:${ctx.dunningStateId}${this.cyclePart(ctx)}:email:${ctx.stepIndex}${attempt > 0 ? `:r${attempt}` : ''}`,
       });
-      if (res?.status === 'failed') {
-        return { status: 'failed', error: res.error ?? 'email send failed' };
-      }
-      if (res?.status === 'skipped') return { status: 'skipped', error: 'email skipped' };
+      // The provider's error text stays out of the outbox (B-688-4).
+      if (res?.status === 'failed') return { status: 'failed', error: 'email_failed' };
+      if (res?.status === 'skipped') return { status: 'skipped', error: 'email_skipped' };
     }
     this.telemetry.notifySent(ctx.clientUserId, day, 'email', 'client');
     return { status: 'sent' };
@@ -291,7 +301,7 @@ export class DunningV2Dispatcher {
           : decision.blockerVariant;
     const quip = rotation.shouldQuip('client');
     const blocker = this.renderer.blocker(variant as 'day3' | 'day7' | 'lr_day3', ctx.tokens, quip);
-    if (!this.notifications) return { status: 'skipped', error: 'in-app transport not wired' };
+    if (!this.notifications) return { status: 'skipped', error: 'inapp_not_wired' };
     {
       // The blocker flag is a durable in-app notification the client reads on
       // session start; the mobile client renders the modal from it (§8.2).
@@ -318,16 +328,16 @@ export class DunningV2Dispatcher {
 
   private async notifyCoachAllChannels(
     ctx: DispatchContext,
-    want: { alert: boolean; email: boolean; attempt: number },
+    want: { alert: boolean; push: boolean; email: boolean; attempt: number },
   ): Promise<Partial<Record<DunningChannel, ChannelResult>>> {
     const rotation = new QuipRotation();
     // Coach quip rate 0.083; never two in a row across the 3 transports.
     const inappQuip = rotation.shouldQuip('coach');
-    const pushQuip = rotation.shouldQuip('coach');
+    // The push slot of the rotation: the emitter pushes the in-app body.
+    rotation.shouldQuip('coach');
     const emailQuip = rotation.shouldQuip('coach');
 
     const inappBody = this.renderer.coachInApp(ctx.tokens, inappQuip);
-    const pushBody = this.renderer.coachPush(ctx.tokens, pushQuip);
     const emailBody = this.renderer.coachEmail(
       { ...ctx.tokens, dunningDetailDeeplink: ctx.dunningDetailDeeplink },
       emailQuip,
@@ -336,51 +346,57 @@ export class DunningV2Dispatcher {
     // Cycle-scoped (B-628-6): a second cycle on the same row alerts again.
     const alertId = `coach_notify:${ctx.dunningStateId}${this.cyclePart(ctx)}`;
 
-    // In-app + push via the existing CoachAlertEmitter (writes the durable
-    // feed row AND pushes). Idempotency is keyed on the cycle so a retried
-    // trigger does not duplicate (§9.3).
-    if (want.alert) {
-      out.coach_alert = await this.run('coach alert', async () => {
-        if (this.coachAlert) {
-          await this.coachAlert.emit({
+    // In-app feed row and push via the existing CoachAlertEmitter, ONE call
+    // for whichever of the two this attempt still owes. B-688-3 (Sol): each
+    // is its own outbox channel with the emitter's real per-transport result,
+    // so a failed write or push is retried, and a retry of the push alone
+    // never writes a second feed row. Idempotency is keyed on the cycle (§9.3).
+    if (want.alert || want.push) {
+      const coach = await this.run('coach alert', async () => {
+        if (!this.coachAlert) return { status: 'skipped', error: 'coach_not_wired' };
+        const delivery = await this.coachAlert.emit(
+          {
             coachId: ctx.coachUserId,
             alertId,
             alertType: 'dunning_step7',
             message: inappBody,
             severity: 'warning',
             clientUserId: ctx.clientUserId,
-          });
-        } else if (this.notifications) {
-          await this.notifications.pushToCoach(ctx.coachUserId, {
-            alertId,
-            alertType: 'dunning_step7',
-            severity: 'warning',
-            message: pushBody.slice(0, 160),
-          });
-        } else {
-          return { status: 'skipped', error: 'coach transport not wired' };
+          },
+          { inapp: want.alert, push: want.push },
+        );
+        // An emitter that returns no verdict (legacy stubs) counts as sent.
+        const inapp = delivery?.inapp ?? 'sent';
+        const push = delivery?.push ?? 'sent';
+        if (want.alert) out.coach_alert = coachResult(inapp, 'inapp');
+        if (want.push) out.coach_push = coachResult(push, 'push');
+        if (want.alert && inapp === 'sent') {
+          this.telemetry.coachNotified(ctx.coachUserId, { dunning_state_id: ctx.dunningStateId });
+          this.telemetry.notifySent(ctx.coachUserId, 7, 'inapp', 'coach');
         }
-        this.telemetry.coachNotified(ctx.coachUserId, { dunning_state_id: ctx.dunningStateId });
-        this.telemetry.notifySent(ctx.coachUserId, 7, 'inapp', 'coach');
-        this.telemetry.notifySent(ctx.coachUserId, 7, 'push', 'coach');
+        if (want.push && push === 'sent')
+          this.telemetry.notifySent(ctx.coachUserId, 7, 'push', 'coach');
         return { status: 'sent' };
       });
+      // A throw (or no emitter) fails or skips every coach channel asked for.
+      if (coach.status !== 'sent') {
+        if (want.alert) out.coach_alert = coach;
+        if (want.push) out.coach_push = coach;
+      }
     }
 
     if (want.email) {
       out.coach_email = await this.run('coach email', async () => {
-        if (!this.email) return { status: 'skipped', error: 'email transport not wired' };
-        if (!ctx.coachEmail) return { status: 'skipped', error: 'coach has no email' };
+        if (!this.email) return { status: 'skipped', error: 'email_not_wired' };
+        if (!ctx.coachEmail) return { status: 'skipped', error: 'email_no_address' };
         const res = await this.email.send({
           to: ctx.coachEmail,
           template: EmailTemplateKey.DUNNING_V2_COACH,
           data: { roman_body: emailBody, ...ctx.tokens },
           idempotencyKey: `${alertId}:email${want.attempt > 0 ? `:r${want.attempt}` : ''}`,
         });
-        if (res?.status === 'failed') {
-          return { status: 'failed', error: res.error ?? 'email send failed' };
-        }
-        if (res?.status === 'skipped') return { status: 'skipped', error: 'email skipped' };
+        if (res?.status === 'failed') return { status: 'failed', error: 'email_failed' };
+        if (res?.status === 'skipped') return { status: 'skipped', error: 'email_skipped' };
         this.telemetry.notifySent(ctx.coachUserId, 7, 'email', 'coach');
         return { status: 'sent' };
       });
@@ -422,9 +438,15 @@ export class DunningV2Dispatcher {
     try {
       return await fn();
     } catch (err) {
-      const message = (err as Error)?.message ?? String(err);
-      this.logger.warn(`dunning v2 ${label} transport failed: ${message}`);
-      return { status: 'failed', error: message.slice(0, 500) };
+      // B-688-4 (Sol): a code, never the exception text.
+      const code = dunningErrorCode(err);
+      this.logger.warn(`dunning v2 ${label} transport failed: ${code}`);
+      return { status: 'failed', error: code };
     }
   }
+}
+
+function coachResult(status: ChannelStatus, transport: 'inapp' | 'push'): ChannelResult {
+  if (status === 'sent') return { status };
+  return { status, error: `coach_${transport}_${status === 'failed' ? 'failed' : 'muted'}` };
 }

@@ -8,3 +8,4 @@ DROP TABLE IF EXISTS "DunningNoticeDelivery";
 DROP TABLE IF EXISTS "ClientBillingOperation";
 DROP TABLE IF EXISTS "ClientBillingLease";
 ALTER TABLE "DunningState" DROP COLUMN IF EXISTS "client_canceled_at";
+ALTER TABLE "DunningState" DROP COLUMN IF EXISTS "sweep_checked_at";
