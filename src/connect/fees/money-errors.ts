@@ -58,11 +58,11 @@ export class DisputeStateUnavailableError extends Error {
 }
 
 // Round 11 (B-683-1): a converted charge's refunds were unreadable in the settlement
-// currency (closed `reason`). Nothing moves; the delivery and the sweeper retry.
+// currency (`reason`: a closed `kind=` diagnostic). Nothing moves; delivery and sweeper retry.
 export class RefundStateUnavailableError extends Error {
   readonly code = MONEY_RETRY_CODES.refundUnavailable;
   constructor(chargeId: string, reason: string) {
-    super(`${MONEY_RETRY_CODES.refundUnavailable} charge=${chargeId} reason=${reason}`);
+    super(`${MONEY_RETRY_CODES.refundUnavailable} charge=${chargeId} ${reason}`);
     this.name = 'RefundStateUnavailableError';
   }
 }
