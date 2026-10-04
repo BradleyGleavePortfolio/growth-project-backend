@@ -184,6 +184,11 @@ public pages until it is built and audited.
   production lacks the Apple key secrets (operator ruling 2026-10-03). A
   follow-up restores the revocation sentence once the owner sets them
   (`docs/privacy/vendor-deletion-and-backups.md` §0).
+  The removal steps are Apple's own (Apple Support 102571: iPhone
+  Settings > [your name] > Sign in with Apple > app > Delete; the web path
+  is account.apple.com > Sign-In & Security). `/privacy` and
+  `/help/delete-account` render the same `SIGN_IN_WITH_APPLE_DELETION_TEXT`
+  and link the article (`test/privacy-apple-unlink-path.spec.ts`).
 - Section links go through `safeHref()`: site-relative paths, `mailto:`
   and `https:` only; anything else renders as `#`.
 

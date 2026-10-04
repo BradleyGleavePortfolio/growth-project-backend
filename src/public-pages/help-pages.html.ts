@@ -25,12 +25,14 @@
 
 import {
   ANTHROPIC_RETENTION_TEXT,
+  APPLE_SIGN_IN_SUPPORT_LINK,
   CLOSED_ACCOUNT_RECORD_TEXT,
   CONSUMER_HEALTH_POLICY_PATH,
   DEIDENTIFIED_TEXT,
   DELETE_ACCOUNT_HELP_PATH,
   ONE_WAY_CODE_TEXT,
   PRIVACY_POLICY_PATH,
+  SIGN_IN_WITH_APPLE_DELETION_TEXT,
   SUPPORT_EMAIL,
   policyFooterLinks,
   safeHref,
@@ -669,9 +671,9 @@ function deleteAccountContent(): HelpPageContent {
           'Read what will be deleted and what we keep, type DELETE or your account email, then confirm it is you with your password, Sign in with Apple or Google, whichever you use to sign in.',
           'Your deletion is scheduled straight away and the app shows the date it becomes permanent. Until then you can open the same screen and tap Keep my account to cancel it.',
         ],
-        closing: [
-          'If you used Sign in with Apple, you can also remove the app from your Apple ID: on your iPhone open Settings, tap your name, then Sign-In & Security, then Sign in with Apple, choose the app and stop using it with your Apple ID.',
-        ],
+        // Same words as the Privacy Policy (B-611-17 / B-611-12).
+        closing: [SIGN_IN_WITH_APPLE_DELETION_TEXT],
+        links: [APPLE_SIGN_IN_SUPPORT_LINK],
       },
       {
         heading: 'Ask us by email if you do not have the app',

@@ -1,6 +1,6 @@
 /**
  * backend #611 FIX ROUND 8 (B-611-116, agent 116): GPT-6.1 Sol B-611-7 and
- * Claude Opus C-611-10. The public Privacy Policy said crash and performance
+ * Claude Opus C-611-12. The public Privacy Policy said crash and performance
  * reports "include your account ID and email address". The implemented
  * Sentry boundary is account id only:
  *   - mobile src/services/sentry.ts `setSentryUser` calls

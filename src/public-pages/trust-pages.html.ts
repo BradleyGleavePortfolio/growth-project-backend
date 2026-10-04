@@ -74,12 +74,22 @@ export const ONE_WAY_CODE_TEXT =
 // APPLE_SIGNIN_PRIVATE_KEY are set, and production does not have them yet
 // (apple-token-revocation.service.ts returns not_configured). The policy
 // states only what is true today: the deletion run removes the Supabase
-// sign-in identity, which is the app's link to the Apple ID, and the person
-// can remove the app from their Apple ID in iPhone settings. A follow-up
+// sign-in identity, which is the app's link to the Apple Account, and the
+// person can remove the app from their Apple Account themselves. A follow-up
 // restores the revocation sentence once the owner sets the key.
+// The steps are Apple's (B-611-17 / B-611-12): Apple Support 102571
+// (published 2026-09-14) gives iPhone Settings > [your name] > Sign in with
+// Apple > app > Delete > confirm; Sign-In & Security is the account.apple.com
+// web path only. Used word for word by /privacy and /help/delete-account.
+export const APPLE_SIGN_IN_SUPPORT_URL = 'https://support.apple.com/en-us/102571';
+export const APPLE_SIGN_IN_SUPPORT_LINK: Readonly<{ label: string; href: string }> = {
+  label: 'Apple Support: Manage your apps with Sign in with Apple',
+  href: APPLE_SIGN_IN_SUPPORT_URL,
+};
 export const SIGN_IN_WITH_APPLE_DELETION_TEXT =
-  'If you used Sign in with Apple, deleting your account ends the app’s link to your Apple ID. To remove the app from your Apple ID as well, on your iPhone open Settings, tap your name, then Sign-In & Security, then Sign in with Apple, choose the app and stop using it with your Apple ID.';
-
+  'If you used Sign in with Apple, deleting your account ends the app’s link to your Apple Account. ' +
+  'To remove the app from your Apple Account as well, on your iPhone open Settings, tap your name, then Sign in with Apple, choose the app, tap Delete and follow the steps on screen to confirm. ' +
+  'On the web, sign in at account.apple.com, go to Sign-In & Security, select Sign in with Apple, choose the app and stop using Sign in with Apple for it.';
 
 export type TrustPage = 'privacy' | 'consumer-health' | 'terms' | 'security' | 'status';
 
@@ -302,6 +312,7 @@ function privacyContent(): TrustPageContent {
             label: 'How to delete your account, with or without the app',
             href: DELETE_ACCOUNT_HELP_PATH,
           },
+          APPLE_SIGN_IN_SUPPORT_LINK,
         ],
       },
       {
