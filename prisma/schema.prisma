@@ -3991,7 +3991,8 @@ model PackageTrialNotice {
   stripe_event_id String?
   // trial_will_end | trial_start | sweep (B-TRIALS-3, B-656-3)
   source          String    @default("trial_will_end")
-  // pending | delivered | no_token | suppressed | failed
+  // pending | delivered | no_token | suppressed | skipped | failed
+  // (skipped = the purchase was cancelled or is gone before delivery)
   push_status     String    @default("pending")
   push_attempts   Int       @default(0)
   // B-TRIALS-3 (B-656-2) — exclusive per-channel delivery lease. A claim sets
@@ -3999,12 +4000,15 @@ model PackageTrialNotice {
   // outcome, so a stale caller can never overwrite a delivered state.
   push_lease_token  String?
   push_lease_until  DateTime?
-  // pending | sent | no_email | failed
+  // pending | sent | no_email | skipped | failed
   email_status    String    @default("pending")
   email_attempts  Int       @default(0)
   email_lease_token String?
   email_lease_until DateTime?
   last_error      String?
+  // B-T12-116 (C-672-5) — Stripe may add tax at the trial end (automatic tax
+  // on the subscription): the charge line says "plus any tax".
+  tax_may_apply   Boolean   @default(false)
   created_at      DateTime  @default(now())
   updated_at      DateTime  @updatedAt
 

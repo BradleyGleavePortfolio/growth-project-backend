@@ -546,6 +546,9 @@ jobs:
         # And test/onboarding-tenancy-fence.live.spec.ts (#607 A607-3): the
         # completion tenancy fence (User FOR SHARE) blocks a concurrent coach
         # transfer on real Postgres; same gate and bootstrap.
+        # And test/b-trials-usage-concurrency.live.spec.ts (#671 B-671-1,
+        # C-671-2): the one-trial ledger's start/reserve races, each caller in
+        # its own transaction; same gate and bootstrap.
         # The five test/mwb-3-*.spec.ts files run under the DEFAULT jest config
         # (jest.config.js matches them via testRegex). With MWB3_TEST_DATABASE_URL
         # set they execute their live blocks instead of skipping. --runInBand so
@@ -561,6 +564,7 @@ jobs:
             test/mwb-3-revision-prune.cron.spec.ts \
             test/profile-put-concurrency.live.spec.ts \
             test/onboarding-tenancy-fence.live.spec.ts \
+            test/b-trials-usage-concurrency.live.spec.ts \
             --runInBand --testTimeout=120000
         env:
           NODE_OPTIONS: --max-old-space-size=4096
