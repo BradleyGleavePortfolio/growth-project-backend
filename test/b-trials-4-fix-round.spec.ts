@@ -80,6 +80,8 @@ async function conflictWorld(replies: { sub: Reply; invoices?: Reply }) {
     // B-TR5-119 — the open invoice a never-billed cancel voids first, and its void.
     if (method === 'POST') return reply({ body: { id: 'in_renewal', status: 'void' } });
     if (path.includes('status=open')) return reply(page([{ id: 'in_renewal' }]));
+    // B-TR6-119 — the uncollectible list (Sol B-673-1): none here.
+    if (path.includes('status=uncollectible')) return reply(page([]));
     if (path.startsWith('/invoices')) {
       return reply(replies.invoices ?? { status: 500, body: { error: { type: 'api_error' } } });
     }
