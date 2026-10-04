@@ -25,6 +25,7 @@ interface EmailTransport {
     subject: string;
     html: string;
     replyTo?: string;
+    signal?: AbortSignal;
   }): Promise<{ providerMessageId: string }>;
 }
 
@@ -136,6 +137,9 @@ export class EmailService {
       );
     }
 
+    // An aborted caller sends nothing and leaves its key unused.
+    if (input.signal?.aborted) return this.notStarted(input.idempotencyKey);
+
     // Idempotency: try to INSERT a 'sending' row. On unique violation
     // (P2002) the same key was already used — return 'skipped'. The row
     // is updated to 'sent' / 'failed' / 'logged' once the transport
@@ -190,6 +194,12 @@ export class EmailService {
       };
     }
 
+    // Checked again right before the transport: the key is spent ('failed'), nothing is sent.
+    if (input.signal?.aborted) {
+      await this._finalize(logRow.id, 'failed', null, 'aborted before send');
+      return this.notStarted(input.idempotencyKey);
+    }
+
     // 'log' transport: structured log instead of an HTTP call. Used in
     // dev/test only — `_initTransport` enforces that production never
     // accidentally lands here.
@@ -212,6 +222,7 @@ export class EmailService {
         subject,
         html,
         replyTo: input.replyTo,
+        signal: input.signal,
       });
       await this._finalize(logRow.id, 'sent', providerMessageId, null);
       this.logger.log(
@@ -238,6 +249,10 @@ export class EmailService {
   }
 
   // ── internal ────────────────────────────────────────────────────────────
+
+  private notStarted(idempotencyKey: string): SendEmailResult {
+    return { status: 'failed', providerMessageId: null, idempotencyKey, notStarted: true };
+  }
 
   private async _finalize(
     rowId: string,
@@ -337,6 +352,7 @@ class ResendTransport implements EmailTransport {
     subject: string;
     html: string;
     replyTo?: string;
+    signal?: AbortSignal;
   }): Promise<{ providerMessageId: string }> {
     const body: Record<string, unknown> = {
       from: args.from,
@@ -353,6 +369,7 @@ class ResendTransport implements EmailTransport {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
+      signal: args.signal,
     });
     if (!res.ok) {
       const text = await res.text().catch(() => '<no body>');
