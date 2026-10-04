@@ -395,7 +395,7 @@ C-690-5, C-690-2 (Sol). Restack on B-DUNA's D2 top first (#688 2368d5fa, notify/
    m#345+m#346 then #347 + W3 fix round; coach M4 #677; dunning D1-D4 + D5 (#691 + #642).
 10. Remainder: programs #355-#358, N1-N4.
 
-## QUEUE HEADS (operator, after B-FEES16 12:0x) — rewrite F3/F4/F56 lens entries with these
+## QUEUE HEADS (operator, after B-FEES16 11:58) — rewrite F3/F4/F56 lens entries with these
 fees: #682 dual APPROVE (head unchanged); #683 cc183e0ae05158290e5db77ef645578667133e0f; #684 6b13af56bf2d8a36ae5559a537ee565555a6c4c7;
 #697 88c722003c23634df69338e4ee6ceb2dd71068e6; #685 c5e282fbfa3e7fe6a5593949182e17c91a011738; #686 8cb7b2d4bee3bccb65596581f84bccf9227ffc4b (top).
 recurring READY: #680 216489ff5fa707147b50ef0e387aba5b3079e4b1, #696 276610a3a3cc7877b30a3a5f1214e24c7cbb7eae, #701 72eb096b8f20f6ab9d198bf4059250f99ffb53f8.
