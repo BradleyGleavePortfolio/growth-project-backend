@@ -966,21 +966,45 @@ export class StripeConnectApiService {
     return this.get<StripeSetupIntentObject>(`/setup_intents/${encodeURIComponent(setupIntentId)}`);
   }
 
-  // B-RECUR — make the card a trial's SetupIntent saved the subscription's
-  // default, so the first real invoice after the trial charges it.
-  // B-679-8 (Opus) — the same request lifts the trial's create-time end, so
-  // a trial converts only on the attempt's own card. Callers send it only
-  // before the trial was granted (never over a cancel the client chose).
+  // B-RECUR — make a card the subscription's default (a trial's saved card,
+  // or a card update), so the next invoice charges it.
+  // Opus B-678-2 — only `liftTrialEnd` (the trial-card attach, sent before
+  // the trial was granted) also lifts the trial's create-time end
+  // (B-679-8 Opus: a trial converts only on the attempt's own card). A plain
+  // card update never touches cancel_at_period_end, so it never undoes a
+  // cancel the client chose.
   async setSubscriptionDefaultPaymentMethod(args: {
     subscriptionId: string;
     paymentMethodId: string;
     idempotencyKey: string;
+    liftTrialEnd?: boolean;
   }): Promise<StripeSubscriptionObject> {
+    const form: Record<string, string> = { default_payment_method: args.paymentMethodId };
+    if (args.liftTrialEnd) form.cancel_at_period_end = 'false';
     return this.post<StripeSubscriptionObject>(
       `/subscriptions/${encodeURIComponent(args.subscriptionId)}`,
-      { default_payment_method: args.paymentMethodId, cancel_at_period_end: 'false' },
+      form,
       args.idempotencyKey,
     );
+  }
+
+  // Sol/Opus B-679-10 — a trial attempt's own SetupIntent, for when Stripe
+  // made no pending one (it can set a trial up off-session, e.g. on the
+  // customer's default card). The client confirms it in the native sheet;
+  // only its saved card lifts the trial end (setSubscriptionDefaultPaymentMethod).
+  async createSetupIntent(args: {
+    customer: string;
+    onBehalfOf: string;
+    metadata: Record<string, string>;
+    idempotencyKey: string;
+  }): Promise<StripeSetupIntentObject & { client_secret?: string }> {
+    const form: Record<string, string> = {
+      customer: args.customer,
+      usage: 'off_session',
+      on_behalf_of: args.onBehalfOf,
+    };
+    for (const [k, v] of Object.entries(args.metadata)) form[`metadata[${k}]`] = v;
+    return this.post('/setup_intents', form, args.idempotencyKey);
   }
 
   // Phase 5: cancel a subscription (used by the dunning sweeper when
