@@ -6,7 +6,7 @@ import * as Handlebars from 'handlebars';
 import { PrismaService } from '../prisma.service';
 import { NotificationsService } from './notifications.service';
 import { NotificationKind } from './notification-kind';
-import { redactEmailAddresses } from '../observability/log-pii';
+import { ProviderFailure, describeFailure, providerErrorCode } from '../observability/log-pii';
 
 // Handlebars helper: {{gt a b}} — used in templates for conditional plural.
 Handlebars.registerHelper('gt', (a: number, b: number) => a > b);
@@ -161,11 +161,12 @@ export class DigestService {
 
       await this.notifications.markDigestSent(logId);
     } catch (err) {
-      // Any step can fail with text that holds the address (a provider body,
-      // or an ORM error quoting the notification body above): redact once.
-      const msg = redactEmailAddresses((err as Error)?.message);
-      await this.notifications.markDigestFailed(logId, msg);
-      this.logger.error(`client digest failed: user=${client.id} kind=${digestKind}: ${msg}`);
+      // Any step can fail with text that holds the address, the name or the
+      // digest body (a provider body, an ORM error quoting the notification
+      // body above). B-700-1: store and log the class and code only.
+      const failure = describeFailure(err);
+      await this.notifications.markDigestFailed(logId, failure);
+      this.logger.error(`client digest failed: user=${client.id} kind=${digestKind}: ${failure}`);
     }
   }
 
@@ -222,11 +223,12 @@ export class DigestService {
 
       await this.notifications.markDigestSent(logId);
     } catch (err) {
-      // Any step can fail with text that holds the address (a provider body,
-      // or an ORM error quoting the notification body above): redact once.
-      const msg = redactEmailAddresses((err as Error)?.message);
-      await this.notifications.markDigestFailed(logId, msg);
-      this.logger.error(`coach digest failed: user=${coach.id} kind=${digestKind}: ${msg}`);
+      // Any step can fail with text that holds the address, the name or the
+      // digest body (a provider body, an ORM error quoting the notification
+      // body above). B-700-1: store and log the class and code only.
+      const failure = describeFailure(err);
+      await this.notifications.markDigestFailed(logId, failure);
+      this.logger.error(`coach digest failed: user=${coach.id} kind=${digestKind}: ${failure}`);
     }
   }
 
@@ -448,7 +450,7 @@ export class DigestService {
     });
     if (!res.ok) {
       const body = await res.text();
-      throw new Error(`Resend API error ${res.status}: ${redactEmailAddresses(body)}`);
+      throw new ProviderFailure('resend', res.status, providerErrorCode('resend', body));
     }
   }
 
@@ -475,7 +477,7 @@ export class DigestService {
     });
     if (!res.ok) {
       const body = await res.text();
-      throw new Error(`SendGrid API error ${res.status}: ${redactEmailAddresses(body)}`);
+      throw new ProviderFailure('sendgrid', res.status, providerErrorCode('sendgrid', body));
     }
   }
 
@@ -500,7 +502,7 @@ export class DigestService {
     });
     if (!res.ok) {
       const body = await res.text();
-      throw new Error(`Postmark API error ${res.status}: ${redactEmailAddresses(body)}`);
+      throw new ProviderFailure('postmark', res.status, providerErrorCode('postmark', body));
     }
   }
 

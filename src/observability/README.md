@@ -81,16 +81,33 @@ Allowed keys that will never be redacted even if they match a prefix of the
 above names: `request_id`, `user_id`, `method`, `path`, `status`,
 `latency_ms`, `timestamp`, `level`, `message`, `msg`.
 
-### No personal data in log lines (C-611-17)
+### No personal data in log lines (C-611-17, B-700-1, B-700-2)
 
 Log lines carry ids and codes: the user id, the row id, the template key,
-the provider's message id or error code. They never interpolate an email
-address, a person's name or free text (message bodies, notes, alert text,
-request payloads). Text the service does not write itself (a provider's
-error body, an exception message) goes through `redactEmailAddresses`
-(`log-pii.ts`) first, because providers echo addresses back.
-`test/privacy/no-pii-in-logs.spec.ts` checks every log call under `src/`
-and the main email paths.
+the provider's message id. They never interpolate an email address, a
+person's name or free text (message bodies, notes, alert text, request
+payloads, request paths or URLs built from an address or a search).
+
+Failure text the service does not write itself (a provider's error body, an
+exception message, a Supabase Auth or Prisma error message) can echo an
+address, a display name or a message body back, and no pattern can tell a
+name from any other word. So that text never reaches a log line, an error
+column (`EmailSendLog.error`, `notification_digest_log`) or an API result.
+`describeFailure(err)` (`log-pii.ts`) prints only
+`error=<class> status=<http status> code=<code>`, where the code comes from a
+finite list (Supabase Auth, jose, Node network, Prisma `P####`, the module's
+own codes); any other code prints as `other`. Email providers throw
+`ProviderFailure`, whose message is built from the provider, the HTTP status
+and the provider's own error code only.
+
+`test/privacy/no-pii-in-logs.spec.ts` checks every log call under `src/`:
+no address, recipient, person-name, free-text, path/URL or exception-text
+expression. Exception text (`.message`, `.stack`, `String(err)`, a bare
+error argument) is still logged by older code in files this rule has not
+reached yet; the guard lists each such file with its exact count
+(`LEGACY_EXCEPTION_TEXT`). A new site fails the guard, and so does a fixed
+site until its count is lowered, so the list only shrinks. Moving those
+sites to `describeFailure` is a tracked follow-up.
 
 ---
 

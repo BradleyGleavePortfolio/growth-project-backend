@@ -45,6 +45,7 @@ import {
 } from './recent-auth.guard';
 import { roleSatisfies } from './roles.guard';
 import type { AppRole } from '../common/decorators/roles.decorator';
+import { describeFailure } from '../observability/log-pii';
 
 // Self-service promotion to coach is the legacy behavior of POST
 // /auth/become-coach. It is a privilege-escalation hole on a sale-ready
@@ -248,7 +249,7 @@ export class AuthService {
     } catch (err) {
       const code = inviteAttachErrorCode(err);
       this.logger.warn(
-        `${flow} invite_code attach failed for user=${userId} code=${code}: ${(err as Error).message}`,
+        `${flow} invite_code attach failed for user=${userId} code=${code}: ${describeFailure(err)}`,
       );
       return { invite_attached: false, invite_attach_error: code };
     }
@@ -827,7 +828,9 @@ export class AuthService {
     });
     if (error || !data?.session) {
       // R30/R109: never log the refresh token; surface a clear, actionable code.
-      this.logger.warn(`extension refresh rejected: ${error?.message ?? 'no session returned'}`);
+      this.logger.warn(
+        `extension refresh rejected: ${error ? describeFailure(error) : 'no session returned'}`,
+      );
       throw new UnauthorizedException({
         code: 'extension_refresh_invalid',
         message: 'refresh token invalid or expired',
@@ -877,7 +880,7 @@ export class AuthService {
     const hashedToken = linkData?.properties?.hashed_token;
     if (linkError || !hashedToken) {
       this.logger.error(
-        `pair redeem: generateLink failed: ${linkError?.message ?? 'no hashed_token'}`,
+        `pair redeem: generateLink failed: ${linkError ? describeFailure(linkError) : 'no hashed_token'}`,
       );
       throw new InternalServerErrorException('pair_redeem_session_mint_failed');
     }
@@ -895,7 +898,7 @@ export class AuthService {
     });
     if (otpError || !otpData?.session) {
       this.logger.error(
-        `pair redeem: verifyOtp failed: ${otpError?.message ?? 'no session returned'}`,
+        `pair redeem: verifyOtp failed: ${otpError ? describeFailure(otpError) : 'no session returned'}`,
       );
       throw new InternalServerErrorException('pair_redeem_session_mint_failed');
     }
@@ -1156,7 +1159,7 @@ export class AuthService {
     try {
       applePayload = await this.appleVerifier.verify(token);
     } catch (err) {
-      this.logger.warn(`apple token verify failed: ${(err as Error).message}`);
+      this.logger.warn(`apple token verify failed: ${describeFailure(err)}`);
       throw new UnauthorizedException('Apple auth failed — invalid token');
     }
 
@@ -1213,7 +1216,7 @@ export class AuthService {
 
     if (signInError || !signInData.session || !signInData.user) {
       this.logger.warn(
-        `supabase signInWithIdToken(apple) failed: ${signInError?.message ?? 'no session'}`,
+        `supabase signInWithIdToken(apple) failed: ${signInError ? describeFailure(signInError) : 'no session'}`,
       );
       throw new UnauthorizedException('Apple auth failed — Supabase rejected the token');
     }
@@ -1471,7 +1474,9 @@ export class AuthService {
     if (error) {
       // Don't reveal whether the email exists to the client — but do log so ops
       // can see Supabase outages instead of losing the signal. Audit M1.
-      this.logger.warn(`resetPasswordForEmail failed: ${error.message}`);
+      // B-700-2: Supabase echoes the address in some errors
+      // (email_address_invalid); log the status and code only.
+      this.logger.warn(`resetPasswordForEmail failed: ${describeFailure(error)}`);
     }
 
     return { message: 'If an account exists with that email, a reset link has been sent.' };
@@ -1986,7 +1991,7 @@ export class AuthService {
         payload = await this.appleVerifier.verify(providerToken);
       } catch (err) {
         this.logger.warn(
-          `recent-auth apple token verify failed for user=${user.id}: ${(err as Error).message}`,
+          `recent-auth apple token verify failed for user=${user.id}: ${describeFailure(err)}`,
         );
         throw new UnauthorizedException('Provider token is invalid');
       }
@@ -2028,7 +2033,7 @@ export class AuthService {
       }
       if (signInError || !signInData?.user) {
         this.logger.warn(
-          `recent-auth apple supabase verify failed for user=${user.id}: ${signInError?.message ?? 'no session'}`,
+          `recent-auth apple supabase verify failed for user=${user.id}: ${signInError ? describeFailure(signInError) : 'no session'}`,
         );
         throw new UnauthorizedException('Provider token is invalid');
       }
@@ -2065,7 +2070,7 @@ export class AuthService {
       payload = await this.googleVerifier.verify(providerToken);
     } catch (err) {
       this.logger.warn(
-        `recent-auth google token verify failed for user=${user.id}: ${(err as Error).message}`,
+        `recent-auth google token verify failed for user=${user.id}: ${describeFailure(err)}`,
       );
       throw new UnauthorizedException('Provider token is invalid');
     }
@@ -2114,7 +2119,7 @@ export class AuthService {
           throw new ServiceUnavailableException('Authentication service temporarily unavailable');
         }
         this.logger.warn(
-          `recent-auth google sub lookup failed for user=${user.id}: ${(err as Error).message}`,
+          `recent-auth google sub lookup failed for user=${user.id}: ${describeFailure(err)}`,
         );
       }
     }

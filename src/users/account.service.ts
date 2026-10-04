@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { DataExportStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { describeFailure } from '../observability/log-pii';
 import { AuditAction, AuditService } from '../audit/audit.service';
 
 // Window between scheduling deletion and actual PII scrub. Deliberately
@@ -109,8 +110,10 @@ export class AccountService {
         completed_at: fulfilled.completed_at,
       };
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.error(`Data export assembly failed for user=${userId}: ${message}`);
+      // C-700-2: the log line and the audit row hold the class and code
+      // only; a Prisma error can quote the row it failed on.
+      const failure = describeFailure(err);
+      this.logger.error(`Data export assembly failed for user=${userId}: ${failure}`);
       await this.prisma.dataExportRequest.update({
         where: { id: request.id },
         data: { status: DataExportStatus.FAILED },
@@ -121,7 +124,7 @@ export class AccountService {
         targetUserId: userId,
         targetType: 'data_export_request',
         targetId: request.id,
-        metadata: { error: message },
+        metadata: { error: failure },
       });
       throw err;
     }

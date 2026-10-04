@@ -29,8 +29,9 @@ import { Public } from '../common/decorators/public.decorator';
 //   - Accepts and 200s any payload (signature unverified) so smoke
 //     tests can exercise the route shape end-to-end.
 //   - Is gated by @Public() because providers don't carry our JWT.
-//   - Logs the payload's shape (event name, top-level keys) at debug
-//     level, never its values (C-611-17).
+//   - Logs the payload's shape at debug level: a known event name and
+//     known top-level keys, a count of the rest, never a value
+//     (C-611-17, B-700-2).
 //
 // SECURITY: do NOT add any state mutation here without first wiring
 // signature verification. The current handler is read-only / log-only.
@@ -90,20 +91,50 @@ export class SchedulingWebhookController {
 
 // C-611-17: provider payloads carry participant names and email addresses
 // (Zoom's participant.user_name / participant.email), so the stub logs the
-// payload's shape only: the event name when it is a plain dotted token, and
-// the top-level keys. Never a value.
-const EVENT_TOKEN = /^[a-z0-9_.-]{1,64}$/i;
-const KEY_TOKEN = /^[a-z0-9_$-]{1,40}$/i;
+// payload's shape only. B-700-2 / C-700-5: the stubs are public and
+// unauthenticated when SCHEDULING_WEBHOOK_SECRET is unset, so any string in
+// the body (an event name, a key) can be a name someone typed. The line names
+// only labels from these finite lists; anything else is counted, never shown.
+const KNOWN_EVENTS: ReadonlySet<string> = new Set([
+  // Zoom (developers.zoom.us webhook reference): the meeting events a
+  // session mirror would use, plus the endpoint check.
+  'endpoint.url_validation',
+  'meeting.created',
+  'meeting.updated',
+  'meeting.deleted',
+  'meeting.started',
+  'meeting.ended',
+  'meeting.participant_joined',
+  'meeting.participant_left',
+  'recording.completed',
+]);
+const KNOWN_KEYS: ReadonlySet<string> = new Set([
+  // Zoom envelope.
+  'event',
+  'event_ts',
+  'payload',
+  'download_token',
+  // Google Calendar push-notification channel fields.
+  'kind',
+  'id',
+  'resourceId',
+  'resourceUri',
+  'token',
+  'expiration',
+]);
 function payloadShape(v: unknown): string {
   if (v === null || typeof v !== 'object' || Array.isArray(v)) {
     return `type=${Array.isArray(v) ? 'array' : v === null ? 'null' : typeof v}`;
   }
   const record = v as Record<string, unknown>;
   const event =
-    typeof record.event === 'string' && EVENT_TOKEN.test(record.event) ? record.event : 'none';
-  const keys = Object.keys(record)
-    .slice(0, 20)
-    .map((k) => (KEY_TOKEN.test(k) ? k : '?'))
-    .join(',');
-  return `event=${event} keys=${keys}`;
+    typeof record.event !== 'string'
+      ? 'none'
+      : KNOWN_EVENTS.has(record.event)
+        ? record.event
+        : 'other';
+  const allKeys = Object.keys(record);
+  const known = allKeys.filter((k) => KNOWN_KEYS.has(k));
+  const otherKeys = allKeys.length - known.length;
+  return `event=${event} keys=${known.join(',') || 'none'} other_keys=${otherKeys}`;
 }

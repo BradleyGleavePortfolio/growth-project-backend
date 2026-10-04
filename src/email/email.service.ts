@@ -10,7 +10,7 @@ import * as path from 'path';
 import * as Handlebars from 'handlebars';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
-import { redactEmailAddresses } from '../observability/log-pii';
+import { ProviderFailure, describeFailure, providerErrorCode } from '../observability/log-pii';
 import {
   EmailTemplateKey,
   SendEmailInput,
@@ -179,13 +179,15 @@ export class EmailService {
       html = rendered.html;
       subject = rendered.subject;
     } catch (err) {
-      const msg = redactEmailAddresses(err instanceof Error ? err.message : 'unknown');
-      await this._finalize(logRow.id, 'failed', null, `render: ${msg}`);
+      // B-700-1: a render error can quote template data (a first name, a
+      // coach name); keep the class and code only.
+      const failure = `render: ${describeFailure(err)}`;
+      await this._finalize(logRow.id, 'failed', null, failure);
       return {
         status: 'failed',
         providerMessageId: null,
         idempotencyKey: input.idempotencyKey,
-        error: `render: ${msg}`,
+        error: failure,
       };
     }
 
@@ -225,19 +227,20 @@ export class EmailService {
         idempotencyKey: input.idempotencyKey,
       };
     } catch (err) {
-      // A provider error body can echo the address back ("Invalid `to`
-      // field: ..."); redact it once here so the log line, the stored
-      // error and the returned error (callers log it) never carry it.
-      const msg = redactEmailAddresses(err instanceof Error ? err.message : 'unknown');
-      await this._finalize(logRow.id, 'failed', null, msg);
+      // A provider error body can echo the address and display name back
+      // ("Invalid `to` field: ..."). B-700-1: the log line, the stored error
+      // and the returned error (callers log it) hold the provider, HTTP
+      // status and the provider's code only, never the body.
+      const failure = describeFailure(err);
+      await this._finalize(logRow.id, 'failed', null, failure);
       this.logger.error(
-        `email send failed template=${input.template} row=${logRow.id}: ${msg}`,
+        `email send failed template=${input.template} row=${logRow.id}: ${failure}`,
       );
       return {
         status: 'failed',
         providerMessageId: null,
         idempotencyKey: input.idempotencyKey,
-        error: msg,
+        error: failure,
       };
     }
   }
@@ -264,7 +267,7 @@ export class EmailService {
       // Audit-style: never let log-finalize failure mask the real send
       // outcome. Best-effort write; error makes Sentry via global logger.
       this.logger.error(
-        `email send log finalize failed row=${rowId}: ${err instanceof Error ? err.message : 'unknown'}`,
+        `email send log finalize failed row=${rowId}: ${describeFailure(err)}`,
       );
     }
   }
@@ -360,12 +363,13 @@ class ResendTransport implements EmailTransport {
       body: JSON.stringify(body),
     });
     if (!res.ok) {
-      const text = await res.text().catch(() => '<no body>');
-      throw new Error(`Resend ${res.status}: ${text.slice(0, 500)}`);
+      // B-700-1: the body can echo the recipient; keep the provider's code.
+      const text = await res.text().catch(() => '');
+      throw new ProviderFailure('resend', res.status, providerErrorCode('resend', text));
     }
     const json = (await res.json().catch(() => ({}))) as { id?: string };
     if (!json.id) {
-      throw new Error('Resend response missing id field');
+      throw new ProviderFailure('resend', res.status, 'missing_id');
     }
     return { providerMessageId: json.id };
   }

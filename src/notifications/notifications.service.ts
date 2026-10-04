@@ -26,6 +26,7 @@ import { NotificationCategory, DEFAULT_NOTIFICATION_CATEGORY } from './notificat
 import { PushAbortedError, PushDeliveryResult } from './push-delivery.types';
 import { VoicePolicyService } from '../roman/voice/voice-policy.service';
 import { RomanCopyPayload } from '../roman/voice/voice-policy.constants';
+import { describeFailure } from '../observability/log-pii';
 
 // Phase 6B: PushPayload is the minimal envelope CoachAlertsService.tryPush
 // passes through. It intentionally contains no PII — only the alert
@@ -609,7 +610,7 @@ export class NotificationsService {
       await this.pollReceipts(tickets, coachId);
       return true;
     } catch (err) {
-      this.logger.error(`pushToCoach failed for coach=${coachId}: ${(err as Error).message}`, err);
+      this.logger.error(`pushToCoach failed for coach=${coachId}: ${describeFailure(err)}`);
       return false;
     }
   }
@@ -707,10 +708,11 @@ export class NotificationsService {
       await this.pollReceipts(tickets, userId);
       return { delivered: true, code: 'delivered' };
     } catch (err) {
-      // R17: log the raw err for ops, return a scrubbed typed result to
-      // the caller. The `detail` field carries only the Error.name so we
-      // never leak stack traces or query text.
-      this.logger.error(`Push notification failed for user ${userId}`, err);
+      // R17: return a scrubbed typed result to the caller. The `detail`
+      // field carries only the Error.name so we never leak stack traces or
+      // query text. B-700-1: the log line holds the class and code only
+      // (an Expo error message quotes the push token).
+      this.logger.error(`Push notification failed for user ${userId}: ${describeFailure(err)}`);
       if (err instanceof PushAbortedError) {
         return { delivered: false, code: 'aborted', detail: err.name };
       }
@@ -752,7 +754,7 @@ export class NotificationsService {
         }
       }
     } catch (err) {
-      this.logger.warn('Failed to poll push receipts', err);
+      this.logger.warn(`Failed to poll push receipts: ${describeFailure(err)}`);
     }
   }
 
@@ -779,7 +781,7 @@ export class NotificationsService {
         // Unique constraint violation = window already claimed by another process.
         return false;
       }
-      this.logger.error('claimDigestWindow unexpected error', err);
+      this.logger.error(`claimDigestWindow unexpected error: ${describeFailure(err)}`);
       throw err;
     }
   }
