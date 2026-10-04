@@ -12,8 +12,8 @@
 //       rows can hide a later healthy notice;
 //   B-672-1 (Opus)  the trial-end date uses main's recipient time-zone rule
 //       (resolveRecipientTimeZone: a stamped preference, else the coach's
-//       zone); with no usable zone the date is the earliest calendar date
-//       the end falls on anywhere, never a day late;
+//       zone); since fix round 8 (C-672-7 ruling) a zone that is not the
+//       client's own names the time and the zone, never a bare date;
 //   C-672-5 (Opus, operator ruling)  "plus any tax" when Stripe may add tax.
 import { TrialNoticeService } from '../src/packages/trials/trial-notice.service';
 import { makeTable, makeTrialNoticeTable, stub } from './utils/trial-fakes';
@@ -387,12 +387,12 @@ describe('B-672-1 (Opus) — the trial-end date follows the recipient time-zone 
     };
   }
 
-  it("no preference row: the coach's zone names the date (Oct 12, not Oct 13) on every channel", async () => {
+  it("no preference row: the coach's zone names the time and the zone on every channel", async () => {
     const w = build({ prefs: null, coachZone: 'America/New_York' });
     const out = await recordAndDeliver(w, LATE_EVENING_ET);
-    expect(out.inapp).toContain('ends on Oct 12.');
-    expect(out.push).toContain('ends on Oct 12.');
-    expect(out.email.trial_end_date).toBe('Oct 12');
+    expect(out.inapp).toContain('ends on Oct 12 at 9:30 PM EDT.');
+    expect(out.push).toContain('ends on Oct 12 at 9:30 PM EDT.');
+    expect(out.email.trial_end_date).toBe('Oct 12 at 9:30 PM EDT');
   });
 
   it("an unstamped default row is not the client's zone: the coach's zone wins (Oct 11 in Hawaii)", async () => {
@@ -401,9 +401,9 @@ describe('B-672-1 (Opus) — the trial-end date follows the recipient time-zone 
       coachZone: 'Pacific/Honolulu',
     });
     const out = await recordAndDeliver(w, new Date('2026-10-12T08:00:00Z'));
-    expect(out.inapp).toContain('ends on Oct 11.');
-    expect(out.push).toContain('ends on Oct 11.');
-    expect(out.email.trial_end_date).toBe('Oct 11');
+    expect(out.inapp).toContain('ends on Oct 11 at 10:00 PM HST.');
+    expect(out.push).toContain('ends on Oct 11 at 10:00 PM HST.');
+    expect(out.email.trial_end_date).toBe('Oct 11 at 10:00 PM HST');
   });
 
   it("a stamped preference is the client's own zone", async () => {
@@ -416,13 +416,12 @@ describe('B-672-1 (Opus) — the trial-end date follows the recipient time-zone 
     expect(out.email.trial_end_date).toBe('Oct 13');
   });
 
-  it('no usable zone at all: never a date later than the true local end (earliest calendar date)', async () => {
+  it('no usable zone at all: the end is named in UTC with the time, true everywhere', async () => {
     const w = build({ prefs: null, coachZone: null });
     const out = await recordAndDeliver(w, LATE_EVENING_ET);
-    // UTC would say Oct 13, a day late for every client in the Americas.
-    expect(out.inapp).toContain('ends on Oct 12.');
-    expect(out.push).toContain('ends on Oct 12.');
-    expect(out.email.trial_end_date).toBe('Oct 12');
+    expect(out.inapp).toContain('ends on Oct 13 at 1:30 AM UTC.');
+    expect(out.push).toContain('ends on Oct 13 at 1:30 AM UTC.');
+    expect(out.email.trial_end_date).toBe('Oct 13 at 1:30 AM UTC');
   });
 });
 
@@ -457,7 +456,7 @@ describe('C-672-5 — "plus any tax" when Stripe may add tax at the trial end', 
     });
     await w.service.deliver(id as string, NOW);
     expect(String(w.notifications.pushToUser.mock.calls[0][2])).toBe(
-      'Your free trial ends on Oct 12. Your card will be charged $49 then. Cancel anytime before.',
+      'Your free trial ends on Oct 12 at 1:00 PM EDT. Your card will be charged $49 then. Cancel anytime before.',
     );
     expect(w.email.send.mock.calls[0][0].data).toMatchObject({ amount_display: '$49' });
   });

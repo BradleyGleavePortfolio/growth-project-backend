@@ -51,6 +51,13 @@ export interface SendEmailInput {
   from?: string;
   // Optional reply-to header; falls back to provider default if unset.
   replyTo?: string;
+  // B-672-4 (trials) — optional abort, checked before the log row and the
+  // transport and passed to the provider request.
+  signal?: AbortSignal;
+  // B-672-4 (trials) — stable across retries of one message: sent to the
+  // provider (Resend Idempotency-Key, 24 h) with a hash of the rendered
+  // content, so the same message is not delivered twice.
+  providerIdempotencyKey?: string;
 }
 
 export interface SendEmailResult {
