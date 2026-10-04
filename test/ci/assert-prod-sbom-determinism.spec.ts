@@ -164,7 +164,7 @@ describe('assert-prod-sbom.sh gives the same verdict on every run (B-CI2-116)', 
           wrong(
             runs,
             1,
-            new RegExp(`required runtime package '${pkg.replace(/[./]/g, '\\$&')}' missing`),
+            new RegExp(`required runtime package '${pkg.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}' missing`),
           ),
         ).toEqual([]);
       }, 60_000);
