@@ -123,8 +123,21 @@ describe('R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once', ()
         expect.objectContaining({ invoiceId: 'in_open' }),
       );
       const status = await h.svc.getClientStatus('client-1');
-      expect(status).toMatchObject({ state: 'locked', kind: 'dispute', amount_cents: null });
-      expect(status.lockout_at).toBe(status.locked_at);
+      // Mobile contract: a locked dispute state with no lock date and no retry/card path.
+      expect(status).toMatchObject({
+        state: 'locked',
+        kind: 'dispute',
+        reason: 'dispute_paused',
+        access_ended: true,
+        billing_paused: true,
+        restart_by: 'coach',
+        locked_at: T0.toISOString(),
+        lockout_at: null,
+        amount_cents: null,
+        update_payment_route: null,
+        update_card_url: null,
+        cancel_route: null,
+      });
     });
 
     it('during a Day-3 payment cycle: paused at once, no lock date days away', async () => {
@@ -185,6 +198,10 @@ describe('R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once', ()
       expect(h.purchase().entitlement_active).toBe(true);
       expect(h.stripe.pauseSubscriptionCollection).not.toHaveBeenCalled();
       expect(h.dispatcher.dispatchStepDetailed).not.toHaveBeenCalled();
+      expect(await h.svc.getClientStatus('client-1')).toMatchObject({
+        state: 'none',
+        reason: null,
+      });
     });
 
     it('a canceled plan: nothing to pause at Stripe, nothing restarts', async () => {

@@ -258,14 +258,25 @@ export interface ClientDunningStatus {
    * for a SetupIntent, present the in-app PaymentSheet, then POST
    * `/v1/checkout/payment-method/confirm`, which (1A) pays the open invoice.
    */
-  update_payment_route: '/v1/checkout/payment-method/setup-intent';
+  update_payment_route: '/v1/checkout/payment-method/setup-intent' | null;
   /** Universal link (emails, notifications) that opens the in-app card update. */
-  update_card_url: string;
+  update_card_url: string | null;
   /**
    * POST to end the plan now (owner 2A: the unpaid invoice is voided, access
    * ends at once, nothing more is collected). Null when there is no cycle.
    */
   cancel_route: string | null;
+  /**
+   * R-DISPUTE-PAUSE mobile contract. 'dispute_paused': a dispute paused the
+   * plan (state 'locked', kind 'dispute', access_ended and billing_paused
+   * true, restart_by 'coach', lockout_at / update_payment_route /
+   * update_card_url / cancel_route / amount_cents all null: no lock date,
+   * no retry or card path). 'payment_failed': a renewal charge failed.
+   */
+  reason: 'dispute_paused' | 'payment_failed' | null;
+  access_ended: boolean;
+  billing_paused: boolean;
+  restart_by: 'coach' | null;
 }
 
 const PAID_STRIPE_STATUSES = new Set(['active', 'trialing']);
@@ -1451,6 +1462,10 @@ export class DunningV2Service {
       update_payment_route: '/v1/checkout/payment-method/setup-intent',
       update_card_url: DUNNING_UPDATE_CARD_URL,
       cancel_route: null,
+      reason: null,
+      access_ended: false,
+      billing_paused: false,
+      restart_by: null,
     };
     if (!base.enabled) return base;
 
@@ -1491,28 +1506,46 @@ export class DunningV2Service {
     ]);
     const enteredAt = row.entered_at as Date;
     const kind = row.last_failure_reason === DUNNING_V2_REVERSAL_REASON ? 'dispute' : 'payment';
+    const state = row.locked_out_at && !lockWaived ? 'locked' : 'past_due';
+    if (kind === 'dispute') {
+      // R-DISPUTE-PAUSE: access ended at once, billing is paused, the coach
+      // restarts it. No lock date, no retry, no card update, no cancel path.
+      return {
+        ...base,
+        state,
+        kind,
+        lock_waived: lockWaived,
+        purchase_id: row.purchase_id,
+        currency: row.purchase.currency,
+        failed_at: enteredAt.toISOString(),
+        locked_at: row.locked_out_at ? row.locked_out_at.toISOString() : null,
+        coach_name: coach?.name ?? null,
+        update_payment_route: null,
+        update_card_url: null,
+        reason: 'dispute_paused',
+        access_ended: true,
+        billing_paused: true,
+        restart_by: 'coach',
+      };
+    }
     return {
       ...base,
-      state: row.locked_out_at && !lockWaived ? 'locked' : 'past_due',
+      state,
       kind,
       lock_waived: lockWaived,
       purchase_id: row.purchase_id,
-      // B-689-5 rule: the failed renewal's amount is not the disputed charge's.
-      amount_cents:
-        kind === 'dispute' ? null : (row.last_failed_amount_cents ?? row.purchase.amount_cents),
+      amount_cents: row.last_failed_amount_cents ?? row.purchase.amount_cents,
       currency: row.purchase.currency,
       failed_at: enteredAt.toISOString(),
-      // A dispute pause locked at once: its lock instant is the lock date.
-      lockout_at: (kind === 'dispute' && row.locked_out_at
-        ? row.locked_out_at
-        : dunningV2LockoutAt(enteredAt)
-      ).toISOString(),
+      lockout_at: dunningV2LockoutAt(enteredAt).toISOString(),
       locked_at: row.locked_out_at ? row.locked_out_at.toISOString() : null,
       day: Math.max(0, Math.floor((Date.now() - enteredAt.getTime()) / DUNNING_V2_DAY_MS)),
       coach_name: coach?.name ?? null,
       card_last4: customer?.default_card_last4 ?? null,
       card_brand: customer?.default_card_brand ?? null,
       cancel_route: `/v1/checkout/subscriptions/${row.purchase_id}/cancel`,
+      reason: 'payment_failed',
+      access_ended: state === 'locked',
     };
   }
 
