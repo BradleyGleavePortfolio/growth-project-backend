@@ -276,6 +276,29 @@ describe('B-688-4 (Sol): transport failures cross the log / outbox boundary as c
     expect(seen).not.toContain('person@tgp.invalid');
     for (const r of Object.values(results)) expect(r?.error).toMatch(/^[a-z0-9_]+$/);
   });
+
+  it('a coach transport error whose class name is itself a secret is logged as a code', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const secretNamed = () => Object.assign(new Error(SENTINEL), { name: 'SYNTHETIC_SECRET_NAME' });
+    const notifications = {
+      createNotification: jest.fn(async () => {
+        throw secretNamed();
+      }),
+      pushToCoach: jest.fn(async () => {
+        throw secretNamed();
+      }),
+    };
+    const { d } = dispatcher(notifications);
+    await d.dispatchStepDetailed(
+      ctx(),
+      undefined,
+      stub({ channels: ['coach_alert', 'coach_push'] }),
+    );
+    const seen = JSON.stringify(warn.mock.calls);
+    expect(warn).toHaveBeenCalled();
+    expect(seen).not.toContain('SYNTHETIC_SECRET');
+    expect(seen).not.toContain('person@tgp.invalid');
+  });
 });
 
 describe('dunningErrorCode: a closed vocabulary, whatever the error carries', () => {
