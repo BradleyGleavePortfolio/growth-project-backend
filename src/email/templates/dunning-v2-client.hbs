@@ -6,9 +6,15 @@
     <p style="margin: 28px 0 8px;">
       <a href="{{update_card_url}}" style="display: inline-block; background: #1f2a24; color: #ffffff; padding: 12px 22px; border-radius: 8px; text-decoration: none; font-weight: 600;">Update card in the app</a>
     </p>
-    <p style="font-size: 13px; color: #555; margin: 0 0 24px;">Open this on the phone where The Growth Project app is installed. It goes straight to the card screen. Once the new card is saved, the amount owed is paid with it and your access stays on.</p>
+    {{#if dispute}}
+    <p style="font-size: 13px; color: #555; margin: 0 0 24px;">Open this on the phone where The Growth Project app is installed. A new card keeps future payments working. It does not settle the reversed payment: that ends when the bank closes the dispute in your coach's favour, for example after you ask the bank to withdraw it.</p>
+    {{else}}
+    <p style="font-size: 13px; color: #555; margin: 0 0 24px;">Open this on the phone where The Growth Project app is installed. It goes straight to the card screen. Saving a card there charges the amount owed to it, and once that payment goes through, your access stays on.</p>
     {{/if}}
-    <p style="font-size: 13px; color: #555;">If you would rather end your plan, open the app and choose End my plan on the payment screen. The unpaid amount is then canceled and nothing more is charged.</p>
+    {{/if}}
+    {{#unless dispute}}
+    <p style="font-size: 13px; color: #555;">If you would rather end your plan, open the app and choose End my plan on the payment screen. The unpaid amount is then canceled, nothing more is charged, and access ends right away.</p>
+    {{/unless}}
     <hr style="border: 0; border-top: 1px solid #eaeaea; margin: 32px 0;" />
     <p style="font-size: 12px; color: #888;">Questions about this payment? Reply to this email to reach a person who can help.</p>
   </body>

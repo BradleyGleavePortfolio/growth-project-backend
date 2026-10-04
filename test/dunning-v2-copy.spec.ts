@@ -87,7 +87,7 @@ describe('Day-3 copy (push + email + blocker)', () => {
     expect(renderer.clientPush('day3', TOKENS, false)).toContain('at risk');
   });
   it('email renders with tokens', () => {
-    expect(renderer.clientEmail('day3', TOKENS, false)).toContain('three times');
+    expect(renderer.clientEmail('day3', TOKENS, false)).toContain('still unpaid');
   });
   it('blocker headline contains the Day-3 stem', () => {
     const straight = renderer.blocker('day3', TOKENS, false);
@@ -131,7 +131,7 @@ describe('Day-7 coach copy (all three channels)', () => {
   it('email renders coach name + retry history', () => {
     const straight = renderer.coachEmail(TOKENS, false);
     expect(straight).toContain('Coach Vale');
-    expect(straight).toContain('Day 7');
+    expect(straight).toContain('Retry history');
     expect(straight).toContain('— Roman');
   });
 });
@@ -162,9 +162,9 @@ describe('Late-reversal copy (§C.8)', () => {
     const b = renderer.blocker('lr_day3', TOKENS, false);
     expect(b.headline.toLowerCase()).toContain(ROMAN_STEMS.lateReversal);
   });
-  it('LR Day-7 escalation email renders with tokens', () => {
+  it('LR (dispute) email renders with tokens', () => {
     const e = renderer.clientEmail('lr_day7', TOKENS, false);
-    expect(e).toContain('second time');
+    expect(e).toContain(ROMAN_STEMS.lateReversal);
     expect(e).toContain('March 10');
   });
   it('late-reversal lockout reuses the household-ledger screen', () => {

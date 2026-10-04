@@ -285,10 +285,11 @@ export class FakePrisma {
           const av = a[k];
           const bv = b[k];
           if (av == null && bv == null) continue;
-          // `{ sort, nulls }` as Prisma takes it; plain 'asc' / 'desc' sorts
-          // nulls last (Postgres ASC default; callers never rely on DESC).
+          // `{ sort, nulls }` as Prisma takes it; otherwise PostgreSQL's
+          // defaults: ASC sorts nulls last, DESC nulls first (Sol B-688-7).
           const dir = isPlainObject(raw) ? raw.sort : raw;
-          const nullsFirst = isPlainObject(raw) && raw.nulls === 'first';
+          const nullsFirst =
+            isPlainObject(raw) && raw.nulls ? raw.nulls === 'first' : dir === 'desc';
           if (av == null) return nullsFirst ? -1 : 1;
           if (bv == null) return nullsFirst ? 1 : -1;
           const c = cmp(av, bv);
