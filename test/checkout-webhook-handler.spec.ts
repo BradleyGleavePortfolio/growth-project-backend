@@ -1,6 +1,9 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
-import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
+import {
+  StripeConnectApiError,
+  StripeConnectApiService,
+} from '../src/connect/stripe-connect-api.service';
 
 class StripeStub extends StripeConnectApiService {
   retrieveSubscription = jest.fn();
@@ -1025,6 +1028,8 @@ describe('B-661-1 decline, then a successful retry of the same PaymentIntent', (
     prisma._purchases.push({
       id: 'cp-r1',
       package_id: 'pkg-r1',
+      // A PaymentSheet purchase: its session id is the PaymentIntent id.
+      stripe_checkout_session_id: 'pi_r1',
       stripe_payment_intent_id: 'pi_r1',
       status: 'pending',
       entitlement_active: false,
@@ -1101,6 +1106,7 @@ describe('B-661-3 a late-delivered earlier decline never revokes a successful re
     prisma._purchases.push({
       id: 'cp-r3',
       package_id: 'pkg-r3',
+      stripe_checkout_session_id: 'pi_r3',
       stripe_payment_intent_id: 'pi_r3',
       status: 'pending',
       entitlement_active: false,
@@ -1356,7 +1362,129 @@ describe('B-661-3 a late-delivered earlier decline never revokes a successful re
     stripe.retrievePaymentIntent.mockResolvedValue({ id: 'pi_r3', status: 'succeeded' });
     expect(await svc.prefetchForOuterTx(declined('evt_r3_pf_2'))).toEqual({
       paymentIntentStatusById: { pi_r3: 'succeeded' },
+      // Round 4: the purchase version that status was read against.
+      paymentIntentWitnessById: {
+        pi_r3: { purchase_id: 'cp-r3', status: 'paid', updated_at: null },
+      },
     });
     expect(stripe.retrievePaymentIntent).toHaveBeenCalledWith('pi_r3');
+  });
+
+  // Round 4 (Sol B-661-3): Stripe's status, read before the webhook
+  // transaction, applies only to the purchase version it was read against.
+  const SEEDED_AT = new Date('2026-10-03T12:00:00Z');
+  function seedSettledHosted(prisma: ReturnType<typeof makePrisma>) {
+    // A hosted checkout that completed while its payment was processing.
+    prisma._purchases.push({
+      id: 'cp-r3-h',
+      package_id: 'pkg-r3',
+      stripe_checkout_session_id: 'cs_r3',
+      stripe_payment_intent_id: 'pi_r3',
+      status: 'paid',
+      entitlement_active: true,
+      last_error: null,
+      stripe_client_secret: null,
+      stripe_ephemeral_key: null,
+      created_at: SEEDED_AT,
+      updated_at: SEEDED_AT,
+    });
+  }
+  const notCompleted = { id: 'pi_r3', status: 'requires_payment_method' };
+
+  it('round 4: a decline whose Stripe status was read before a failure and a successful retry committed never revokes that retry', async () => {
+    const { svc, prisma, stripe } = makeHandlerWithSplits();
+    seedPending(prisma);
+    Object.assign(prisma._purchases[0], {
+      status: 'paid',
+      entitlement_active: true,
+      stripe_client_secret: null,
+      stripe_ephemeral_key: null,
+      updated_at: SEEDED_AT,
+    });
+    stripe.retrievePaymentIntent.mockResolvedValue(notCompleted);
+    const lateDecline = declined('evt_r3_v_old');
+    const stalePrefetch = await svc.prefetchForOuterTx(lateDecline);
+    expect(stalePrefetch.paymentIntentStatusById).toEqual({ pi_r3: 'requires_payment_method' });
+
+    await deliver(svc, prisma, declined('evt_r3_v_other'));
+    expect(prisma._purchases[0].status).toBe('payment_failed');
+    stripe.retrievePaymentIntent.mockResolvedValue({ id: 'pi_r3', status: 'succeeded' });
+    await deliver(svc, prisma, succeeded);
+    expectPaidAndEntitled(prisma);
+
+    // The old delivery enters its transaction with the stale status: Stripe
+    // redelivers it, and the fresh read says the PaymentIntent succeeded.
+    await expect(svc.handle(lateDecline, txFixture(prisma), stalePrefetch)).rejects.toThrow(
+      ServiceUnavailableException,
+    );
+    expectPaidAndEntitled(prisma);
+    expect((await deliver(svc, prisma, lateDecline)).reason).toBe('stale_failure');
+    expectPaidAndEntitled(prisma);
+  });
+
+  it('round 4: the success of the PaymentIntent on a provisionally paid hosted purchase records the settlement, so a decline read before it never revokes', async () => {
+    const { svc, prisma, stripe } = makeHandlerWithSplits();
+    seedSettledHosted(prisma);
+    stripe.retrievePaymentIntent.mockResolvedValue(notCompleted);
+    const lateDecline = declined('evt_r3_h_old');
+    const stalePrefetch = await svc.prefetchForOuterTx(lateDecline);
+
+    const confirmed = await deliver(svc, prisma, succeeded);
+    expect(confirmed.claimed).toBe(false);
+    expect(prisma._purchases[0].updated_at.getTime()).toBeGreaterThan(SEEDED_AT.getTime());
+
+    await expect(svc.handle(lateDecline, txFixture(prisma), stalePrefetch)).rejects.toThrow(
+      ServiceUnavailableException,
+    );
+    expectPaidAndEntitled(prisma);
+    stripe.retrievePaymentIntent.mockResolvedValue({ id: 'pi_r3', status: 'succeeded' });
+    expect((await deliver(svc, prisma, lateDecline)).reason).toBe('stale_failure');
+    expectPaidAndEntitled(prisma);
+  });
+
+  it('round 4 (no transaction): a success that commits while Stripe is being asked wins over the decline', async () => {
+    const { svc, prisma, stripe } = makeHandlerWithSplits();
+    seedSettledHosted(prisma);
+    // The decline reads the purchase (a snapshot, like Postgres) ...
+    const readPurchase = prisma.clientPurchase.findFirst.getMockImplementation();
+    prisma.clientPurchase.findFirst.mockImplementationOnce(async (args: unknown) => ({
+      ...(await readPurchase(args)),
+    }));
+    // ... then the success commits while Stripe still reports the old status.
+    stripe.retrievePaymentIntent.mockImplementationOnce(async () => {
+      await svc.handle(succeeded, txFixture(prisma), {});
+      return notCompleted;
+    });
+    await expect(svc.handle(declined('evt_r3_nt_race'))).rejects.toThrow(
+      ServiceUnavailableException,
+    );
+    expectPaidAndEntitled(prisma);
+  });
+
+  it('C-661-6: Stripe answers 404 for the PaymentIntent: the decline is not applied and is not redelivered for days', async () => {
+    const { svc, prisma, stripe } = makeHandlerWithSplits();
+    seedSettledHosted(prisma);
+    stripe.retrievePaymentIntent.mockRejectedValue(
+      new StripeConnectApiError('missing', 404, 'resource_missing', 'invalid_request_error'),
+    );
+    const result = await deliver(svc, prisma, declined('evt_r3_404'));
+    expect(result).toEqual({
+      claimed: true,
+      purchase_id: 'cp-r3-h',
+      reason: 'payment_intent_unreadable',
+    });
+    expectPaidAndEntitled(prisma);
+  });
+
+  it('(control) C-661-6: a 429 from Stripe is transient, so Stripe redelivers the decline', async () => {
+    const { svc, prisma, stripe } = makeHandlerWithSplits();
+    seedSettledHosted(prisma);
+    stripe.retrievePaymentIntent.mockRejectedValue(
+      new StripeConnectApiError('slow down', 429, 'rate_limit', 'rate_limit_error'),
+    );
+    await expect(deliver(svc, prisma, declined('evt_r3_429'))).rejects.toThrow(
+      ServiceUnavailableException,
+    );
+    expectPaidAndEntitled(prisma);
   });
 });
