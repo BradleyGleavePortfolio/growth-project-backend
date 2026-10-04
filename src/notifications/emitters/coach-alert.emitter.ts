@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { NotificationsService } from '../notifications.service';
 import { NotificationKind } from '../notification-kind';
+import { dunningErrorCode } from '../../checkout/dunning-v2/dunning-v2.safe-error';
 
 export interface CoachAlertNotificationPayload {
   /** The coach user ID to notify. */
@@ -100,9 +101,10 @@ export class CoachAlertEmitter {
     return out;
   }
 
-  /** Ids and the error class only: a message can carry user text. */
+  /** Ids and a closed error code only: a message or class name can carry user text. */
   private warn(step: string, coachId: string, err: unknown): void {
-    const name = err instanceof Error && /^\w{1,64}$/.test(err.name) ? err.name : 'unknown';
-    this.logger.warn(`CoachAlertEmitter ${step} failed for coach=${coachId} error=${name}`);
+    this.logger.warn(
+      `CoachAlertEmitter ${step} failed for coach=${coachId} error=${dunningErrorCode(err)}`,
+    );
   }
 }
