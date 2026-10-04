@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma.service';
 import { DunningService } from './dunning.service';
 import { DunningV2Service } from './dunning-v2/dunning-v2.service';
 import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
+import { errorLabel } from './error-label';
 import { attachTrialCard } from './trial-card';
 import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
 import { PayoutRoutingService } from '../payouts-v2/payout-routing.service';
@@ -537,7 +538,7 @@ export class CheckoutWebhookHandlerService {
       // answering unclaimed would let BillingService mark the only saved-card
       // event processed with no card attached. Report it as a failed attach
       // so handle() throws, the outer tx rolls back and Stripe redelivers.
-      this.logger.warn(`setup_intent.succeeded lookup failed si=${si.id}: ${(err as Error).message}`);
+      this.logger.warn(`setup_intent.succeeded lookup failed si=${si.id} error=${errorLabel(err)}`);
       return { purchaseId: null, ok: false };
     }
     if (!row || !row.stripe_subscription_id) return null;
@@ -561,7 +562,7 @@ export class CheckoutWebhookHandlerService {
       return { purchaseId: row.id, ok: true };
     } catch (err) {
       this.logger.warn(
-        `setup_intent.succeeded trial card attach failed purchase=${row.id}: ${(err as Error).message}`,
+        `setup_intent.succeeded trial card attach failed purchase=${row.id} error=${errorLabel(err)}`,
       );
       return { purchaseId: row.id, ok: false };
     }
@@ -1079,7 +1080,7 @@ export class CheckoutWebhookHandlerService {
       );
     } catch (err) {
       this.logger.warn(
-        `Fanout seam failed for purchase=${purchase.id} (no-tx subscription path): ${(err as Error).message}`,
+        `Fanout seam failed for purchase=${purchase.id} (no-tx subscription path) error=${errorLabel(err)}`,
       );
     }
   }

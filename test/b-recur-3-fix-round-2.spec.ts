@@ -217,7 +217,7 @@ describe('B-654-5 one attempt, one pinned Stripe request', () => {
     expect(stripe.createSubscription).toHaveBeenCalledTimes(1);
   });
 
-  it('(failed before) the create times out after Stripe made it -> same key resends the identical request and binds it', async () => {
+  it('(failed before) the create times out after Stripe made it -> same key binds that subscription (found by metadata, never re-created)', async () => {
     const { svc, stripe, prisma, createThenTimeout } = setup();
     createThenTimeout();
     const r = await codeOf(buy(svc, KEY1));
@@ -231,9 +231,10 @@ describe('B-654-5 one attempt, one pinned Stripe request', () => {
     expect(out.subscription_id).toBe('sub_1');
     expect(out.client_secret).toBe('pi_1_secret_x');
     expect(stripe._subs.size).toBe(1);
+    // C-654-8 (fix round 3): the retry reads Stripe first and binds; the
+    // identical-resend case is in test/b-recur-116-fix-round-3.spec.ts.
     const calls = stripe.createSubscription.mock.calls.map((c: any[]) => c[0]);
-    expect(calls).toHaveLength(2);
-    expect(calls[1]).toEqual(calls[0]);
+    expect(calls).toHaveLength(1);
     expect(calls[0].metadata.tgp_purchase_id).toBe(prisma._purchases[0].id);
   });
 
