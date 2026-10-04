@@ -3,6 +3,7 @@ import { JwksVerifierService } from '../auth/jwks.service';
 import { ConnectController } from './connect.controller';
 import { ConnectModuleState } from './connect.module-state';
 import { ConnectService } from './connect.service';
+import { ChargeSettlementService } from './fees/charge-settlement.service';
 import { FeePolicyService } from './fees/fee-policy.service';
 import { PayoutReadinessService } from './fees/payout-readiness.service';
 import { ReconciliationService } from './fees/reconciliation.service';
@@ -34,6 +35,7 @@ import {
     FeePolicyService,
     SplitLedgerService,
     TransferOrchestratorService,
+    ChargeSettlementService,
     // Phase 6 — payout readiness cache + Stripe-vs-ledger reconciliation.
     PayoutReadinessService,
     ReconciliationService,
@@ -49,6 +51,7 @@ import {
     FeePolicyService,
     SplitLedgerService,
     TransferOrchestratorService,
+    ChargeSettlementService,
     PayoutReadinessService,
     ReconciliationService,
   ],
