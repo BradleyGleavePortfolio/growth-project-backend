@@ -2,7 +2,9 @@ import { Logger, type NotFoundException } from '@nestjs/common';
 import type { ClientPurchase } from '@prisma/client';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { CronLeaseService } from '../src/checkout/cron-lease.service';
 import { PayoutNoticeService } from '../src/checkout/payout-notice.service';
+import type { PurchaseSplitHandlerService } from '../src/checkout/purchase-split-handler.service';
 import { RefundDisputeHandlerService } from '../src/checkout/refund-dispute-handler.service';
 import { SettlementSweepCron } from '../src/checkout/settlement-sweep.cron';
 import { ChargeSettlementService } from '../src/connect/fees/charge-settlement.service';
@@ -40,13 +42,23 @@ function setup(opts: { currency?: string; amount?: number } = {}) {
   const fee = new FeePolicyService(asPrisma(prisma));
   const transfers = new TransferOrchestratorService(asPrisma(prisma), stripe, ledger);
   const settlements = new ChargeSettlementService(asPrisma(prisma), stripe, fee, ledger, transfers);
+  const fns = {
+    createNotification: jest.fn(async (..._a: unknown[]): Promise<{ id: string } | null> => ({
+      id: 'n_1',
+    })),
+    channelGate: jest.fn(async (..._a: unknown[]) => 'enabled'),
+    pushToUser: jest.fn(async (..._a: unknown[]) => ({ delivered: true, code: 'delivered' })),
+    send: jest.fn(async (..._a: unknown[]): Promise<{ status: string; error?: string }> => ({
+      status: 'sent',
+    })),
+  };
   const notifyStub: object = {
-    createNotification: jest.fn(async () => ({ id: 'n_1' })),
-    channelGate: jest.fn(async () => 'enabled'),
-    pushToUser: jest.fn(async () => ({ delivered: true, code: 'delivered' })),
+    createNotification: fns.createNotification,
+    channelGate: fns.channelGate,
+    pushToUser: fns.pushToUser,
   };
   const notifications = notifyStub as NotificationsService;
-  const emailStub: object = { send: jest.fn(async () => ({ status: 'sent' })) };
+  const emailStub: object = { send: fns.send };
   const email = emailStub as EmailService;
   const notices = new PayoutNoticeService(asPrisma(prisma), notifications, email);
   const readiness = new PayoutReadinessService(asPrisma(prisma), stripe);
@@ -66,8 +78,7 @@ function setup(opts: { currency?: string; amount?: number } = {}) {
   stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount, fee: 172 }));
   const reconciliation = new ReconciliationService(asPrisma(prisma), stripe);
   return {
-    prisma, db, stripe, transfers, settlements, notices, notifications, email, refunds, purchase,
-    reconciliation,
+    prisma, db, stripe, transfers, settlements, notices, fns, refunds, purchase, reconciliation,
   };
 }
 
@@ -178,7 +189,13 @@ describe('B-683-2: reconciliation attests only transfers Stripe executed', () =>
     expect((await ctx.reconciliation.reconcilePurchase('cp_1')).status).toBe('unknown');
     ctx.stripe.failListTransfers = false;
     ctx.db.transfers[0].next_attempt_at = new Date(0);
-    await ctx.settlements.attemptTransferUnderLock(ctx.db.transfers[0] as never);
+    const t = ctx.db.transfers[0];
+    const str = (v: unknown) => (typeof v === 'string' ? v : null);
+    await ctx.settlements.attemptTransferUnderLock({
+      id: String(t.id),
+      source_stripe_charge_id: str(t.source_stripe_charge_id),
+      settlement_id: str(t.settlement_id),
+    });
     expect(ctx.db.transfers[0].status).toBe('succeeded');
     const rec = await ctx.reconciliation.reconcilePurchase('cp_1');
     expect(rec).toMatchObject({ status: 'ok', drift_cents: 0 });
@@ -226,11 +243,9 @@ describe('B-683-3 / B-684-2: logs carry closed codes and ids only', () => {
     await ctx.settlements.settleCharge({ purchase: ctx.purchase, charge_id: 'ch_1' });
     const input = { purchase: ctx.purchase, charge_id: 'ch_1', refunded_cents: 2_000 };
     await ctx.settlements.applyAdjustments(input);
-    jest.spyOn(ctx.notifications, 'createNotification')
-      .mockRejectedValueOnce(new Error(CANARY))
-      .mockResolvedValue({ id: 'n_push' } as never);
-    jest.spyOn(ctx.notifications, 'pushToUser').mockRejectedValueOnce(new Error(CANARY));
-    jest.spyOn(ctx.email, 'send').mockResolvedValueOnce({ status: 'failed', error: CANARY } as never);
+    ctx.fns.createNotification.mockRejectedValueOnce(new Error(CANARY));
+    ctx.fns.pushToUser.mockRejectedValueOnce(new Error(CANARY));
+    ctx.fns.send.mockResolvedValueOnce({ status: 'failed', error: CANARY });
     const warns = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     await ctx.refunds.deliverPayoutNotices('ch_1');
     expect(ctx.db.notices?.[0]).toMatchObject({ inapp_status: 'failed', push_status: 'failed' });
@@ -248,7 +263,10 @@ describe('B-683-3 / B-684-2: logs carry closed codes and ids only', () => {
       release: jest.fn(async () => { throw new Error(CANARY); }),
     };
     const splitsStub: object = { runTransferSweeper: jest.fn(async () => { throw new Error(CANARY); }) };
-    const cron = new SettlementSweepCron(leaseStub as never, splitsStub as never);
+    const cron = new SettlementSweepCron(
+      leaseStub as CronLeaseService,
+      splitsStub as PurchaseSplitHandlerService,
+    );
     const errors = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     const warns = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     await expect(cron.runOnce()).resolves.toEqual({ ran: true, ok: false });
