@@ -54,29 +54,17 @@ import {
  * returns count 1. Duplicate webhooks, overlapping crons on several machines
  * and a webhook racing the cron all collapse to one send per step.
  *
- * DURABLE DELIVERY (S-DUNNING-R3 B-628-6): the claim CAS and one
- * DunningNoticeDelivery outbox row per transport commit in ONE transaction.
- * The claimer then sends and records each transport's real result; a
- * failed (or never-attempted, after a crash) transport is retried by the
- * hourly sweep with backoff 15 min / 1 h / 4 h / 12 h, then marked dead
- * after 6 attempts. Rows and idempotency keys carry the cycle key (the
- * cycle's entered_at in ms) so a second cycle is never deduplicated
- * against the first.
+ * DURABLE DELIVERY (B-628-6): the claim CAS and one DunningNoticeDelivery
+ * row per transport commit in ONE transaction; each transport's real result
+ * is recorded, and a failed or never-attempted one is retried by the sweep
+ * (15 min / 1 h / 4 h / 12 h, dead after 6). Keys carry the cycle key.
  *
- * DELIVERY GUARANTEE (C-628-12, stated per transport): the per-row claim
- * (DUNNING_NOTICE_CLAIM_MS) makes the DATABASE the authority: two live
- * workers never send the same row, and a stale worker never overwrites a
- * newer receipt. That is not exactly-once at a transport. After a claim
- * expires (the worker crashed, or stalled past 10 minutes, possibly after
- * its send reached the provider) the row is taken over and sent again:
- *   - client / coach email: deduplicated at the provider by the stable
- *     idempotency key the takeover reuses (`key_attempt`);
- *   - client push (Expo) and the in-app blocker row: AT-LEAST-ONCE. Expo
- *     takes no idempotency key, so a takeover after a lost reply can show
- *     the same notice twice (at most once more per expired claim). A
- *     duplicate payment reminder is the accepted failure mode; a missed
- *     one is not. Composition with a queued push outbox (#648) is audited
- *     there, not assumed here.
+ * DELIVERY GUARANTEE (C-628-12): the per-row claim makes the DATABASE the
+ * authority (no two live workers send a row; a stale one never overwrites a
+ * newer receipt). After a claim expires the row is sent again: email is
+ * deduplicated by the reused idempotency key; push (Expo, no key) and the
+ * in-app blocker are AT-LEAST-ONCE (a duplicate reminder is the accepted
+ * failure, a missed one is not). A queued push outbox (#648) is audited there.
  *
  * LOCK TIMING: the Day-10 lock is applied by the hourly sweep, so it lands
  * up to 1 hour after the Day-10 instant (never before it).
@@ -203,12 +191,9 @@ export interface DisputeObligation {
 }
 
 /**
- * S-DUNNING-R5 (B-628-8): merge the refund / dispute ledger (ChargeDispute)
- * with the dunning path's own obligation record (DunningDisputeObligation)
- * into one obligation per Stripe dispute. Either record may be behind the
- * other (both webhooks are processed independently), so a final status on
- * either side wins; when both are final and disagree, the one NOT in the
- * client's favour wins (a lock is never lifted on a conflicting record).
+ * B-628-8: one obligation per Stripe dispute from the ledger (ChargeDispute)
+ * and the dunning record. Either may lag, so a final status wins; two
+ * conflicting finals resolve against the client (never lift on a conflict).
  */
 export function mergeDisputeObligations(
   ledger: Array<{ stripe_dispute_id: string; stripe_charge_id: string; status: string }>,
@@ -342,11 +327,9 @@ export class DunningV2Service {
 
   // ── Failure entry (invoice.payment_failed) ────────────────────────────────
   /**
-   * Called after v1 `recordFailure` for every `invoice.payment_failed` on a
-   * package subscription. Claims Day 0 for a fresh cycle (stamping
-   * `entered_at`) or advances an existing cycle to the step its elapsed time
-   * calls for. DB-only; returns the claimed step (if any) so the caller can
-   * send the notices AFTER its own transaction work, outside any DB tx.
+   * After v1 `recordFailure`: claim Day 0 (stamping `entered_at`) or advance
+   * to the step elapsed time calls for. DB-only; the caller sends the
+   * returned claim's notices after its own transaction.
    */
   async recordPaymentFailed(
     purchaseId: string,
@@ -471,16 +454,11 @@ export class DunningV2Service {
   }
 
   /**
-   * Send the notices for a claimed step: client push / email / in-app blocker
-   * and, at Day 7, the coach on all three channels (classifier ladder).
-   * Never throws; a transport failure is logged by the dispatcher.
-   *
-   * S-DUNNING-R4 (B-628-6): every delivery row is CLAIMED before its
-   * transport is called (CAS to 'sending' with a fresh claim token and an
-   * expiry), the cycle is re-checked after the claim, and the receipt is
-   * written only by the claim holder. So two workers never send the same
-   * row, and a stale worker cannot overwrite a newer receipt. `rowIds`
-   * (retry path) limits the dispatch to the rows that are actually due.
+   * Send a claimed step's notices (client push / email / blocker; the coach
+   * on all three at Day 7). Never throws. B-628-6: each row is CLAIMED
+   * (CAS to 'sending', token + expiry) before its transport, the cycle is
+   * re-checked, and only the holder writes the receipt. `rowIds` limits a
+   * retry to the due rows.
    */
   async dispatchClaim(
     claim: DunningV2StepClaim | null,
@@ -544,12 +522,9 @@ export class DunningV2Service {
   }
 
   /**
-   * CAS-claim each eligible delivery: a pending row (first dispatch), a due
-   * pending/failed row (retry path), or a 'sending' row whose claim expired
-   * (its worker died). The CAS matches the row's status, attempt count and
-   * claim token as read, so exactly one worker wins it. A takeover reuses the
-   * expired claim's transport attempt, so an email that did go out is
-   * de-duplicated by its idempotency key.
+   * CAS-claim each eligible delivery (pending, due failed, or 'sending' with
+   * an expired claim) on status + attempt + token as read: one worker wins.
+   * A takeover reuses the attempt, so a sent email dedups by its key.
    */
   private async claimDeliveries(
     rows: Array<{
@@ -691,10 +666,8 @@ export class DunningV2Service {
   }
 
   /**
-   * Retry due outbox rows (failed with backoff elapsed, pending past the
-   * grace after a crash, or 'sending' whose claim expired). A row whose cycle
-   * ended, changed, locked or was ended by the client is closed as
-   * 'canceled' instead of sent. Only the due rows of a group are dispatched.
+   * Retry due outbox rows (failed past backoff, pending past grace, expired
+   * 'sending'); a row whose cycle ended, changed or locked is 'canceled'.
    */
   async retryDueNotices(now: Date = new Date(), limit = 200): Promise<{ retried: number }> {
     if (!this.enabled() || !this.dispatcher) return { retried: 0 };
@@ -913,6 +886,7 @@ export class DunningV2Service {
           locked_out_at: null,
           client_canceled_at: null,
           entered_at: row.entered_at,
+          step_index: row.step_index, // Opus B-688-6: a v1 reopen resets the step
         },
         data: { locked_out_at: now, step_index: Math.max(row.step_index, 3) },
       });
@@ -938,15 +912,10 @@ export class DunningV2Service {
 
   // ── §5 Recovery — immediate clear on payment ──────────────────────────────
   /**
-   * Run right after v1 `recordResolution` on `invoice.paid`. Lifts a Day-10
-   * lockout (and restores the entitlement the sweep turned off), dismisses
-   * this client's open dunning blockers and revokes recovery tokens.
-   *
-   * `db` MUST be the caller's open transaction when one is held: BillingService
-   * runs the webhook inside an interactive transaction that already holds the
-   * ClientPurchase row lock (the renewal resync update). Writing that row on a
-   * second connection would wait on our own lock until the transaction timed
-   * out. With `db` the writes join the caller's transaction instead.
+   * After v1 `recordResolution` on `invoice.paid`: lift a Day-10 lock (and
+   * the entitlement), dismiss open blockers, revoke recovery tokens. `db`
+   * MUST be the caller's open transaction when one is held (it already holds
+   * the ClientPurchase row lock; a second connection would self-deadlock).
    *
    * Idempotent: a second call finds nothing locked and nothing to dismiss.
    */
@@ -1059,13 +1028,10 @@ export class DunningV2Service {
     if (!purchase || !DunningV2Service.isEligiblePurchase(purchase)) {
       return { opened: false, reason: 'not_eligible' };
     }
-    // S-DUNNING-R5 (B-628-8): record this dispute as an open obligation
-    // under the DunningState row lock BEFORE reading the cycle. A won
-    // dispute's resolution takes the same lock, so it either sees this
-    // obligation (and keeps the lock), or it committed first and this
-    // dispute reopens the cycle below. A dispute already closed in the
-    // client's favour (closed webhook first) opens nothing.
-    let newObligation = false;
+    // B-628-8: record the obligation under the row lock BEFORE reading the
+    // cycle (a concurrent won resolution sees it, or this reopens below). A
+    // dispute already won (closed webhook first) opens nothing.
+    let openObligation = false;
     if (input.disputeId) {
       const recorded = await this.recordDisputeObligation({
         purchaseId: input.purchaseId,
@@ -1077,7 +1043,9 @@ export class DunningV2Service {
       if (recorded.priorStatus && DISPUTE_WON_STATUSES.has(recorded.priorStatus)) {
         return { opened: false, reason: 'dispute_already_won' };
       }
-      newObligation = recorded.priorStatus == null;
+      // W4 (Opus D34): new or still open, whatever the webhook order.
+      openObligation =
+        !recorded.priorStatus || !DISPUTE_TERMINAL_STATUSES.has(recorded.priorStatus);
     }
     const state = await this.prisma.dunningState.findUnique({
       where: { purchase_id: input.purchaseId },
@@ -1093,14 +1061,12 @@ export class DunningV2Service {
     if (state.status === 'active') {
       return { opened: false, reason: 'cycle_already_active' };
     }
-    // A new dispute that a concurrent won dispute's resolution did not see
-    // (it was created before that resolution) reopens the reversal cycle.
-    const reopensReversal =
-      newObligation && state.last_failure_reason === DUNNING_V2_REVERSAL_REASON;
+    // An open obligation on a resolved state opens the cycle (W4), as does a
+    // reversal after the resolution (no dispute id).
     const previouslyCleared =
       state.status === 'resolved' &&
       state.resolved_at != null &&
-      (input.reversedChargeAt.getTime() >= state.resolved_at.getTime() || reopensReversal);
+      (openObligation || input.reversedChargeAt.getTime() >= state.resolved_at.getTime());
     if (!previouslyCleared) {
       return { opened: false, reason: 'not_a_cleared_payment_reversal' };
     }
@@ -1183,11 +1149,8 @@ export class DunningV2Service {
   }
 
   /**
-   * True while a dispute cycle is open on this purchase (B-628-8). B-628-13:
-   * also true for an active cycle while any dispute this path recorded is
-   * still open, so a later decline (whose message replaces the marker on
-   * the v1 path) or a dispute that arrived during a payment cycle can never
-   * let a renewal payment settle a disputed payment.
+   * True while a dispute cycle is open (B-628-8), or an active cycle has an
+   * outstanding recorded dispute (B-628-13), so no renewal settles it.
    */
   async isDisputeCycleOpen(purchaseId: string, db?: DunningV2Db): Promise<boolean> {
     if (!this.enabled()) return false;
@@ -1224,12 +1187,9 @@ export class DunningV2Service {
   }
 
   /**
-   * B-628-13: an obligation recorded by the dunning dispute path whose
-   * merged status (ledger + record; a final status wins) is not settled in
-   * the client's favour. Ledger-only disputes do not count, so a stale
-   * ledger row never blocks an unrelated payment cycle. B-688-5 (Sol, Opus
-   * B-688-1): a dispute closed lost or refunded is outstanding too; one that
-   * closed before this cycle began belongs to an earlier cycle.
+   * B-628-13: a recorded obligation (ledger-only rows never count) whose
+   * merged status is not in the client's favour. B-688-5: lost counts too,
+   * unless it closed before this cycle began (an earlier cycle's).
    */
   private async hasOpenDisputeObligation(
     db: DunningV2Db,
@@ -1267,6 +1227,8 @@ export class DunningV2Service {
     status: string | null;
     /** The closing Stripe dispute (`dp_...`); matched before the charge. */
     disputeId?: string | null;
+    /** The closure's own time (event.created); processing time when absent. */
+    closedAt?: Date;
     now?: Date;
   }): Promise<{ resolved: boolean; reason: string }> {
     if (!this.enabled()) return { resolved: false, reason: 'flag_off' };
@@ -1283,7 +1245,7 @@ export class DunningV2Service {
           disputeId: input.disputeId,
           chargeId: input.chargeId ?? null,
           status: input.status,
-          now: input.now ?? new Date(),
+          now: input.closedAt ?? input.now ?? new Date(),
           keepAsDispute: DISPUTE_TERMINAL_STATUSES.has(input.status),
         });
       }
@@ -1341,16 +1303,17 @@ export class DunningV2Service {
     return this.prisma.$transaction(async (tx) => {
       await this.lockDunningState(tx, input.purchaseId);
       const out = await this.upsertDisputeObligation(tx, input);
-      if (input.keepAsDispute) await this.keepAsDisputeCycle(input.purchaseId, tx);
+      // Sol B-688-6: only an obligation outstanding in THIS cycle marks it.
+      if (input.keepAsDispute && (await this.isDisputeCycleOpen(input.purchaseId, tx))) {
+        await this.keepAsDisputeCycle(input.purchaseId, tx);
+      }
       return out;
     });
   }
 
   /**
-   * Insert or advance one obligation. An 'open' write never moves a final
-   * status back (a closed webhook may land before the created one); a final
-   * status overwrites a non-final one, and a not-in-favour final status
-   * overwrites a won one (never the other way round).
+   * Insert or advance one obligation: 'open' never moves a final back; a
+   * final beats a non-final; a not-in-favour final beats won (never reverse).
    */
   private async upsertDisputeObligation(
     tx: Prisma.TransactionClient,
@@ -1399,11 +1362,8 @@ export class DunningV2Service {
   }
 
   /**
-   * Resolve a purchase's dispute cycle. B-628-8: inside the transaction,
-   * aggregate every dispute obligation on the purchase; the closing dispute
-   * (if any) counts with its event status, because the refund/dispute handler
-   * may not have written it yet. Any other dispute that is still open, or
-   * lost, keeps the cycle (and its lock) as it is.
+   * Resolve a dispute cycle (B-628-8) unless another obligation is still
+   * open or lost; the closing dispute counts with its event status.
    */
   private async resolveDisputeCycle(
     purchaseId: string,
@@ -1522,10 +1482,16 @@ export class DunningV2Service {
         client_canceled_at: null,
         step_index: { gte: 0 },
         entered_at: { not: null },
-        purchase: { client_user_id: clientUserId },
+        // Sol B-688-7: eligible rows only, locks first (NULLS LAST on DESC).
+        purchase: {
+          client_user_id: clientUserId,
+          billing_type: 'recurring',
+          amount_cents: { gt: 0 },
+          stripe_subscription_id: { not: null },
+        },
       },
       include: { purchase: true },
-      orderBy: [{ locked_out_at: 'desc' }, { entered_at: 'asc' }],
+      orderBy: [{ locked_out_at: { sort: 'desc', nulls: 'last' } }, { entered_at: 'asc' }],
       take: 10,
     });
     const eligible = rows.filter((r) => DunningV2Service.isEligiblePurchase(r.purchase));
@@ -1546,13 +1512,16 @@ export class DunningV2Service {
       }),
     ]);
     const enteredAt = row.entered_at as Date;
+    const kind = row.last_failure_reason === DUNNING_V2_REVERSAL_REASON ? 'dispute' : 'payment';
     return {
       ...base,
       state: row.locked_out_at && !lockWaived ? 'locked' : 'past_due',
-      kind: row.last_failure_reason === DUNNING_V2_REVERSAL_REASON ? 'dispute' : 'payment',
+      kind,
       lock_waived: lockWaived,
       purchase_id: row.purchase_id,
-      amount_cents: row.last_failed_amount_cents ?? row.purchase.amount_cents,
+      // B-689-5 rule: the failed renewal's amount is not the disputed charge's.
+      amount_cents:
+        kind === 'dispute' ? null : (row.last_failed_amount_cents ?? row.purchase.amount_cents),
       currency: row.purchase.currency,
       failed_at: enteredAt.toISOString(),
       lockout_at: dunningV2LockoutAt(enteredAt).toISOString(),
@@ -1607,8 +1576,9 @@ export class DunningV2Service {
         firstName,
         clientName: clientName || 'Your client',
         coachName: coach?.name ?? 'your coach',
-        amount: formatMoney(amountCents, purchase.currency),
+        amount: claim.isLateReversalCycle ? undefined : formatMoney(amountCents, purchase.currency),
         cardLast4: customer?.default_card_last4 ?? undefined,
+        attempts: state.last_attempt_number ? String(state.last_attempt_number) : undefined,
         lockoutDate: formatLockoutDate(
           dunningV2LockoutAt(state.entered_at),
           prefs?.timezone ?? null,
@@ -1685,7 +1655,11 @@ export class DunningV2Service {
         }
       }
     } catch (err) {
-      this.logger.warn(`dunning v2 dispute purchase resolution failed: ${dunningErrorCode(err)}`);
+      const code = dunningErrorCode(err);
+      this.logger.warn(`dunning v2 dispute purchase resolution failed: ${code}`);
+      // W3 (Opus D34): only a clean miss (Stripe 404) is null; a failed read
+      // throws, so the webhook is redelivered, never acknowledged.
+      if (!code.startsWith('stripe_404')) throw err;
     }
     return null;
   }
