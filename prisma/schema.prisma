@@ -522,6 +522,11 @@ model User {
   onboarding_intake           ClientOnboardingIntake?          @relation("OnboardingIntakeClient")
   onboarding_intake_revisions ClientOnboardingIntakeRevision[] @relation("OnboardingIntakeRevisionClient")
   clinic_program_sets         ClinicProgramSet[]               @relation("ClinicProgramSetCoach")
+  // C05 items 6-7 (engagement): coach welcome message + workout reminders.
+  coach_welcome_setting       CoachWelcomeMessageSetting?      @relation("CoachWelcomeSettingCoach")
+  coach_welcome_jobs_as_coach CoachWelcomeMessageJob[]         @relation("CoachWelcomeJobCoach")
+  coach_welcome_job           CoachWelcomeMessageJob?          @relation("CoachWelcomeJobClient")
+  workout_reminder_deliveries WorkoutReminderDelivery[]        @relation("WorkoutReminderClient")
   roman_messages RomanMessage[] @relation("RomanMessageUser")
 
   // R2a — AI processing consent ledger (box 2 of the onboarding consent
@@ -986,6 +991,15 @@ model NotificationPreferences {
   quiet_hours_start      String  @default("22:00")
   quiet_hours_end        String  @default("06:00")
   timezone               String  @default("America/Los_Angeles")
+  // B-647-1 / B-647-2 (zone provenance): `timezone` above has a schema
+  // default, so a stored row is not proof of the person's zone. These two are
+  // set only when the zone was actually supplied: 'device' (the mobile app
+  // sends the device IANA zone on sign-in, on foreground when it changed, and
+  // at onboarding) or 'settings' (an explicit PATCH). NULL = never supplied:
+  // notification copy and quiet hours ignore `timezone` and fall back to the
+  // coach's zone (recipient-timezone.ts), never silently to Pacific.
+  timezone_source        String?
+  timezone_updated_at    DateTime?
 
   // Phase 9 — Per-kind × per-channel preference flags.
   // muted=true overrides all per-kind settings (master kill switch).
@@ -1023,6 +1037,10 @@ model NotificationPreferences {
   drip_released_email      Boolean @default(false)
   drip_released_push       Boolean @default(true)
   drip_released_inapp      Boolean @default(true)
+  // C05 item 7 — WORKOUT_REMINDER (client push at their preferred training
+  // time on plan days). Default ON; Settings > Notifications toggles both.
+  workout_reminder_push    Boolean @default(true)
+  workout_reminder_inapp   Boolean @default(true)
   // PR-15A — COACH_NEW_PURCHASE (selling coach learns of a new buyer at
   // entitlement). Default ON for push + in-app per decision #9 mirror —
   // a coach who is SELLING packages wants to know. email default OFF
@@ -1252,6 +1270,13 @@ model CoachMessage {
   // produce two CoachMessage rows; the second INSERT trips P2002 and
   // the materialiser falls through to its "already_materialised" branch.
   ai_draft_id String? @unique
+  // C05 item 6 (B-609-3) — set only by the coach welcome scheduler: the id of
+  // the CoachWelcomeMessageJob that produced this row. `@unique` is the
+  // persistence-boundary idempotency key: a stale worker whose lease was
+  // reclaimed cannot insert a second welcome; its INSERT trips P2002 and
+  // MessagingService.sendAsCoach returns the existing row with no side effects.
+  // NULL for every other message.
+  welcome_job_id String? @unique
 
   @@index([coach_id])
   @@index([client_id])
@@ -2128,9 +2153,14 @@ model NotificationDeliveryLog {
   session    CoachingSession @relation("DeliveryLogSession", fields: [session_id], references: [id], onDelete: Cascade)
   // kind matches NotificationKind values, e.g. booking_reminder_24h.
   kind       String
+  // Sol B-647-1: the session start time this claim was made for (the schedule
+  // generation). A reschedule changes start_at, so the new time gets a new
+  // claim without deleting the old one, a stale sweep holding the old time can
+  // never suppress the new reminder, and a no-op reschedule cannot re-send.
+  start_at   DateTime
   created_at DateTime        @default(now())
 
-  @@unique([session_id, user_id, kind], name: "NotificationDeliveryLog_session_user_kind_key")
+  @@unique([session_id, user_id, kind, start_at], name: "NotificationDeliveryLog_session_user_kind_start_key")
   @@index([session_id])
   @@index([user_id, created_at])
 }
@@ -2579,6 +2609,76 @@ model ClinicProgramSet {
 
   @@unique([coach_id, fixture_version])
   @@index([coach_id, active])
+}
+
+// ─── C05 items 6-7: engagement (welcome message + workout reminders) ────
+// Per-coach welcome-message configuration. Default OFF. The operator turns it
+// on for one coach at bootstrap (owner endpoint or
+// scripts/set-coach-welcome-message.ts). template NULL = the generic code
+// default in src/engagement/welcome-template.ts. A coach's real template is
+// runtime data and never lives in the repository.
+model CoachWelcomeMessageSetting {
+  id         String    @id @default(uuid())
+  coach_id   String    @unique
+  coach      User      @relation("CoachWelcomeSettingCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  enabled    Boolean   @default(false)
+  template   String?
+  // Set every time enabled flips false -> true. Only onboarding completions
+  // at or after this instant are scheduled (no retroactive welcome burst).
+  enabled_at DateTime?
+  updated_by String?
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+}
+
+// One row per client, ever (client_id @unique): the durable job that sends
+// the coach welcome message at onboarding completed_at + 13 minutes. The
+// unique key is the idempotency boundary: a replayed /complete, a second
+// scheduler replica, or a restart can never create a second job.
+model CoachWelcomeMessageJob {
+  id            String    @id @default(uuid())
+  client_id     String    @unique
+  client        User      @relation("CoachWelcomeJobClient", fields: [client_id], references: [id], onDelete: Cascade)
+  coach_id      String
+  coach         User      @relation("CoachWelcomeJobCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  completed_at  DateTime
+  fire_at       DateTime
+  // pending | sending | sent | cancelled | skipped | failed
+  status        String    @default("pending")
+  reason        String?
+  rendered_body String?
+  message_id    String?   @unique
+  attempt_count Int       @default(0)
+  next_retry_at DateTime?
+  locked_at     DateTime?
+  // B-609-3 fencing token: a fresh value on every claim. Every later write by
+  // the claiming worker is conditional on it, so a worker whose lease went
+  // stale and was reclaimed can no longer stamp, mark sent, retry or cancel.
+  lease_token   String?
+  sent_at       DateTime?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  @@index([status, fire_at])
+  @@index([coach_id])
+}
+
+// At most one workout reminder per client per client-local calendar day:
+// (client_id, local_date) @unique is claimed BEFORE the push goes out.
+model WorkoutReminderDelivery {
+  id         String    @id @default(uuid())
+  client_id  String
+  client     User      @relation("WorkoutReminderClient", fields: [client_id], references: [id], onDelete: Cascade)
+  local_date DateTime  @db.Date
+  timezone   String
+  slot       String
+  first_day  Boolean   @default(false)
+  // sending | sent | failed
+  status     String    @default("sending")
+  sent_at    DateTime?
+  created_at DateTime  @default(now())
+
+  @@unique([client_id, local_date])
 }
 
 // ─── Sprint B: Real Meal Plans (templates + plans + assignments) ──────────
