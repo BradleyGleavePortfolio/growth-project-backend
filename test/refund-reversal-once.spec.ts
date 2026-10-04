@@ -30,6 +30,7 @@ function store(): StatefulPrisma {
     ledger_reversed: false,
     transfer_reversed: false,
   }));
+  db.model('chargeDispute'); // B-674-5: the sweep also retries lost chargebacks
   db.model('splitLedgerEntry');
   db.model('splitLedgerReversal', [['id'], ['entry_id', 'source_kind', 'source_id']]);
   db.model('connectTransfer');
@@ -265,7 +266,8 @@ describe('B-641-7 — one refund, one reversal', () => {
     expect(headCoach(h.db)).toBe(0);
     expect(refundRow(h.db)).toMatchObject({ transfer_reversed: false });
 
-    await h.svc.retryPendingTransferReversals();
+    // The sweep retries rows last attempted before its `now`: run it 1 s later.
+    await h.svc.retryPendingTransferReversals(new Date(Date.now() + 1000));
     // Stripe saw the same key twice and made one reversal; recorded once.
     expect(h.reverseTransfer).toHaveBeenCalledTimes(2);
     expect(stripeTotal(h)).toBe(122);

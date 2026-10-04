@@ -36,6 +36,8 @@ import {
 // up due rows and re-tries via the same Stripe-Idempotency-Key so
 // double-pays are impossible.
 
+type LedgerSourceRef = { kind: 'refund' | 'dispute'; id: string; at?: Date };
+
 export interface PlanTransferInput {
   purchase_id: string;
   ledger_entry_id: string;
@@ -207,8 +209,10 @@ export class TransferOrchestratorService {
     // B-COACH-5: ids only (e.g. tgp_charge_refund_id), so an operator and the
     // reconcile path can attribute each reversal in Stripe to its refund.
     metadata?: Record<string, string>;
-    // B-676-1: the event the head-coach slice posting belongs to.
-    ledger_source?: { kind: 'refund' | 'dispute'; id: string };
+    // B-676-1: the event the head-coach slice posting belongs to. B-676-3:
+    // `at` dates the posting (the event's own time when it is reversed with
+    // the event; omitted for a later recovery, which posts when it happens).
+    ledger_source?: LedgerSourceRef;
   }): Promise<ConnectTransfer> {
     const row = await this.prisma.connectTransfer.findUniqueOrThrow({
       where: { id: args.transfer_row_id },
@@ -254,7 +258,7 @@ export class TransferOrchestratorService {
     transfer_row_id: string;
     amount_cents: number;
     claim: (tx: Prisma.TransactionClient) => Promise<boolean>;
-    ledger_source?: { kind: 'refund' | 'dispute'; id: string };
+    ledger_source?: LedgerSourceRef;
   }): Promise<ConnectTransfer> {
     if (!Number.isInteger(args.amount_cents) || args.amount_cents <= 0) {
       return this.prisma.connectTransfer.findUniqueOrThrow({ where: { id: args.transfer_row_id } });
@@ -273,7 +277,7 @@ export class TransferOrchestratorService {
     db: Prisma.TransactionClient,
     rowId: string,
     amount: number,
-    ledgerSource?: { kind: 'refund' | 'dispute'; id: string },
+    ledgerSource?: LedgerSourceRef,
   ): Promise<ConnectTransfer> {
     for (let attempt = 0; attempt < LEDGER_REVERSAL_CAS_ATTEMPTS; attempt++) {
       const row = await db.connectTransfer.findUniqueOrThrow({ where: { id: rowId } });
@@ -295,7 +299,7 @@ export class TransferOrchestratorService {
             entry_id: row.ledger_entry_id,
             reversed_cents: newReversed - row.reversed_amount_cents,
             stripe_transfer_id: row.stripe_transfer_id,
-            source: ledgerSource ? { ...ledgerSource, at: new Date() } : undefined,
+            source: ledgerSource && { ...ledgerSource, at: ledgerSource.at ?? new Date() },
           },
           db,
         );

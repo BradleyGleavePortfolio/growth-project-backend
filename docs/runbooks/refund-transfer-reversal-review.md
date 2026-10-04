@@ -35,6 +35,20 @@ Supabase JWT as the bearer (the owner-console service token is refused). Stripe 
 Never reverse a head-coach transfer by hand in the Dashboard for a row in review without recording it here afterwards
 (`stripe_transfer_reversal_id`), or the books and Stripe disagree. Never reverse any other transfer of that coach (OR-111-1).
 
-The `transfer.reversed` webhook never changes the recorded totals. When Stripe's total on a transfer is higher than what
-the backend recorded, it logs `TRANSFER_REVERSAL_NOT_YET_RECORDED` with the transfer id and both totals: a reversal still
-being recorded (the sweep or this runbook settles it) or one made by hand in the Dashboard (record it here).
+## Lost chargebacks
+
+A lost chargeback on a team sale reverses the head coach's share once, under `tgp-tr-rev-dispute-<ChargeDispute.id>`
+(metadata `tgp_charge_dispute_id`), with the amount stamped on the dispute before the first call. A lost answer is
+recovered automatically: the next `charge.dispute.closed` delivery or the 15-minute sweep records the reversal Stripe
+holds for that dispute and resends (same key and amount) only when Stripe holds none, so an expired key cannot make a
+second reversal. Still owed 23 hours after the first attempt: Sentry `code=DISPUTE_TRANSFER_REVERSAL_STUCK` (one issue per
+dispute; extra `charge_dispute_id`, `purchase_id`). Next action: escalate to engineering with both ids and the `code=` of
+the dispute's `head-coach transfer reverse pending` log line. Do not reverse it by hand; the sweep keeps retrying.
+
+## Stripe total above the recorded total
+
+The `transfer.reversed` webhook never changes the recorded totals. While a refund or chargeback of that sale still owes
+its reversal it logs `TRANSFER_REVERSAL_NOT_YET_RECORDED` (its retry or this runbook records it). With nothing owed it
+raises Sentry `code=TRANSFER_REVERSAL_UNATTRIBUTED` (one issue per transfer; extra: transfer id, purchase id, both totals):
+a reversal made by hand in the Dashboard. If it settles a refund in the review list, reconcile that refund with
+`stripe_transfer_reversal_id`; otherwise escalate to engineering with the ids and both totals.
