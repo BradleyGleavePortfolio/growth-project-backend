@@ -1,4 +1,4 @@
-// B-CI2-116 (B-694-1, C-694-2): black-box regression for the type-gate guard.
+// B-CI2-116 (Sol B-694-1, Sol C-694-2, Opus C-694-1, Opus C-694-2): black-box regression for the type-gate guard.
 //
 // Executes test/ci/jest-typecheck-gate.spec.ts UNCHANGED inside a VM, feeding
 // it virtual mutations of its real inputs (.github/workflows/ci.yml,
@@ -165,7 +165,18 @@ const PROBES: Array<[string, Mutation]> = [
     { tsconfig: (c) => void (c.compilerOptions.strictFunctionTypes = false) },
   ],
   [
-    'C-694-2: fractional numeric workerIdleMemoryLimit (0.9 of system RAM)',
+    'Opus C-694-1: tsconfig.json include narrowed to src and test (drops scripts/ imported by specs)',
+    { tsconfig: (c) => void Object.assign(c, { include: ['src', 'test'] }) },
+  ],
+  [
+    'Opus C-694-2: build-and-test job-level if: (a skipped required job reports as passing)',
+    {
+      workflow: (t) =>
+        edit(t, '  build-and-test:\n', "  build-and-test:\n    if: github.event_name == 'push'\n"),
+    },
+  ],
+  [
+    'Sol C-694-2: fractional numeric workerIdleMemoryLimit (0.9 of system RAM)',
     { jest: (c) => void (c.workerIdleMemoryLimit = 0.9) },
   ],
 ];

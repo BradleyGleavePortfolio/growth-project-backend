@@ -378,8 +378,8 @@ function repoFiles(): string[] {
     }
   };
   walk(ROOT);
-  walked = out;
-  return out;
+  walked = out.sort();
+  return walked;
 }
 
 const isTsJest = (path: string) => /[\\/]ts-jest[\\/]/.test(path);
@@ -439,10 +439,8 @@ function checkJest(
       const missing = viaTsJest.map(posix).filter((f) => !program.files.has(f));
       const missingSpecs = missing.filter((f) => f.endsWith('.spec.ts'));
       if (missing.length > 0) {
-        const sample = [...missingSpecs, ...missing.filter((f) => !f.endsWith('.spec.ts'))].slice(
-          0,
-          8,
-        );
+        const others = missing.filter((f) => !f.endsWith('.spec.ts'));
+        const sample = [...missingSpecs, ...others].slice(0, 8);
         v.push(
           `${cfg.file}: ${missing.length} file(s) jest compiles with ts-jest, ${missingSpecs.length} of them specs, are outside the Type-check program ${posix(program.configPath)}: ${sample.join(', ')}`,
         );
@@ -636,7 +634,8 @@ const REJECTS: Case[] = [
     expect: [/build-and-test sets continue-on-error/],
   },
   {
-    name: 'build-and-test job if:',
+    // Claude Opus 5.5 C-694-2: a skipped required job reports as passing.
+    name: 'Opus C-694-2: build-and-test job if:',
     mutate: (i) => void (gateJob(i).if = "github.event_name == 'push'"),
     expect: [/job-level if:/],
   },
@@ -725,11 +724,20 @@ const REJECTS: Case[] = [
     ],
   },
   {
+    // Claude Opus 5.5 C-694-1: specs import sources outside src/ and test/
+    // (scripts/backfill-coach-subscriptions.ts, scripts/admin-federation-smoke.helpers.ts).
+    name: 'Opus C-694-1: tsconfig.json include narrowed to src and test (drops scripts/ and prisma/)',
+    mutate: (i) => editTsconfig(i, (_o, cfg) => void (cfg.include = ['src', 'test'])),
+    expect: [
+      /jest compiles with ts-jest, 0 of them specs, are outside the Type-check program tsconfig\.json: prisma\/.*scripts\/backfill-coach-subscriptions\.ts/,
+    ],
+  },
+  {
     name: 'tsconfig.json include narrowed to src',
     mutate: (i) => editTsconfig(i, (_o, cfg) => void (cfg.include = ['src'])),
     expect: [/[1-9]\d* of them specs, are outside the Type-check program tsconfig\.json: test\//],
   },
-  // Jest transform and worker recycling (C-694-2).
+  // Jest transform and worker recycling (GPT-6.1 Sol C-694-2).
   {
     name: 'ts-jest transform without isolatedModules',
     mutate: (i) =>
@@ -753,17 +761,17 @@ const REJECTS: Case[] = [
     expect: [/ts-jest type-checks files matched by \^\.\+\\\.tsx\?\$/],
   },
   {
-    name: 'C-694-2: numeric workerIdleMemoryLimit 0.9 (90% of system RAM)',
+    name: 'Sol C-694-2: numeric workerIdleMemoryLimit 0.9 (90% of system RAM)',
     mutate: (i) => editJest(i, (c) => void (c.workerIdleMemoryLimit = 0.9)),
     expect: [/workerIdleMemoryLimit 0\.9 is a share of system RAM/],
   },
   {
-    name: 'C-694-2: string workerIdleMemoryLimit "0.5"',
+    name: 'Sol C-694-2: string workerIdleMemoryLimit "0.5"',
     mutate: (i) => editJest(i, (c) => void (c.workerIdleMemoryLimit = '0.5')),
     expect: [/workerIdleMemoryLimit "0\.5" is a share of system RAM/],
   },
   {
-    name: 'C-694-2: percentage workerIdleMemoryLimit "50%"',
+    name: 'Sol C-694-2: percentage workerIdleMemoryLimit "50%"',
     mutate: (i) => editJest(i, (c) => void (c.workerIdleMemoryLimit = '50%')),
     expect: [/workerIdleMemoryLimit "50%" is a share of system RAM/],
   },
