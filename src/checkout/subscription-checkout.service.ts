@@ -1,7 +1,5 @@
 import {
-  BadRequestException,
   ConflictException,
-  HttpException,
   Injectable,
   Logger,
   NotFoundException,
@@ -11,7 +9,6 @@ import type { ClientPurchase, CoachPackage, Prisma } from '@prisma/client';
 import { ConnectModuleState } from '../connect/connect.module-state';
 import { FeePolicyService } from '../connect/fees/fee-policy.service';
 import {
-  StripeConnectApiError,
   StripeConnectApiService,
   type StripeSubscriptionCheckoutObject,
 } from '../connect/stripe-connect-api.service';
@@ -33,6 +30,63 @@ import {
   termsStillOffered,
   type CheckoutTermsSnapshot,
 } from './subscription-terms';
+import {
+  alreadyActive,
+  alreadyIncluded,
+  attemptExpired,
+  coachNotConnected,
+  inProgress,
+  packageIsFree,
+  packageUnavailable,
+  planNotFound,
+  stripeFailure,
+} from './subscription-errors';
+import {
+  ADVISORY_LOCK_NAMESPACE_SUBSCRIPTION_CHECKOUT,
+  ENDED_ATTEMPT_STATUSES,
+  LIVE_SUBSCRIPTION_STATUSES,
+  OPEN_ATTEMPT_MAX_AGE_MS,
+  OPEN_ATTEMPT_STATUSES,
+  PAYABLE_PI_STATUSES,
+  STALE_RESERVATION_MS,
+  STALE_TRIAL_RETIRE_LIMIT,
+  classifyWithoutSheet,
+  codeOfHttp,
+  expandedId,
+  isDefinitiveRefusal,
+  isIdempotencyMismatch,
+  iso,
+  packageTrialDays,
+  planPriceFor,
+  planView,
+  reservedMarker,
+  retryMarker,
+  shareLinkMatches,
+  sheetSecret,
+  subscriptionUnpaid,
+  type CheckoutState,
+  type ClientPlanView,
+  type PlanPrice,
+  type SubscriptionIntentInput,
+  type SubscriptionIntentResult,
+} from './subscription-plan';
+
+// Moved to R1 (subscription-plan.ts); re-exported for existing importers.
+export {
+  ADVISORY_LOCK_NAMESPACE_SUBSCRIPTION_CHECKOUT,
+  MAX_TRIAL_DAYS,
+  packageTrialDays,
+  planPriceFor,
+  shareLinkMatches,
+} from './subscription-plan';
+export type {
+  CheckoutState,
+  ClientPlanView,
+  PlanPrice,
+  PlanState,
+  SubscriptionIntentInput,
+  SubscriptionIntentResult,
+} from './subscription-plan';
 
 // B-RECUR (agent 113; OR-113-1 + OR-113-2) — native subscription checkout.
 //
@@ -65,189 +119,6 @@ import {
 //     new attempt is reserved, so incomplete Subscriptions never pile up.
 //     Stripe itself expires an unpaid `incomplete` Subscription after 23 h.
 
-/** pg_advisory_xact_lock namespace: ASCII 'subc'. */
-export const ADVISORY_LOCK_NAMESPACE_SUBSCRIPTION_CHECKOUT = 0x73_75_62_63;
-
-/** Stripe expires an unpaid `incomplete` subscription after 23 hours. */
-const OPEN_ATTEMPT_MAX_AGE_MS = 23 * 3600 * 1000;
-
-/**
- * Statuses of a row that is an attempt nobody has paid for yet (with
- * entitlement_active=false and trial_started_at=null). 'trialing' is one of
- * them: a trial attempt mirrors Stripe 'trialing' as soon as its $0 trial
- * invoice is paid, before the client saved a card (B-RECUR-BE R1-1).
- */
-const OPEN_ATTEMPT_STATUSES = ['pending', 'incomplete', 'payment_failed', 'trialing'] as const;
-
-/**
- * Statuses that mean the client already has this plan. 'trialing' counts
- * only once the trial started (trial_started_at set, card saved).
- */
-const LIVE_SUBSCRIPTION_STATUSES = ['active', 'past_due', 'unpaid'] as const;
-
-/** Statuses of an attempt that is over; its key can never start a plan again. */
-const ENDED_ATTEMPT_STATUSES = new Set(['expired', 'canceled', 'incomplete_expired']);
-
-/** Most stale trial attempts retired per checkout call (bounded Stripe work). */
-const STALE_TRIAL_RETIRE_LIMIT = 3;
-
-/**
- * B-654-5 — a reservation still marked in flight after this long belongs to
- * a request that died (every Stripe call is bounded by a 10 s client
- * timeout, and one mint makes at most four). A later request may take it
- * over and finish it with the same pinned request.
- */
-const STALE_RESERVATION_MS = 120_000;
-
-/** Marker of a reservation whose request is running right now. */
-function reservedMarker(purchaseKey: string): string {
-  return `sub-reserved-${purchaseKey}`;
-}
-
-/**
- * Marker of a reservation whose Subscription create ended without a clear
- * answer (timeout, 5xx, 429, connection drop): Stripe may or may not have
- * created it. The next request for the attempt resends the pinned request.
- */
-function retryMarker(purchaseKey: string): string {
-  return `sub-retry-${purchaseKey}`;
-}
-
-/**
- * True when Stripe answered a create definitively, so nothing was created and
- * Stripe stored that answer under the Idempotency-Key (4xx other than a key
- * conflict, an in-use key or a rate limit).
- */
-function isDefinitiveRefusal(err: unknown): boolean {
-  return (
-    err instanceof StripeConnectApiError &&
-    err.httpStatus >= 400 &&
-    err.httpStatus < 500 &&
-    err.httpStatus !== 409 &&
-    err.httpStatus !== 429 &&
-    err.stripeType !== 'idempotency_error'
-  );
-}
-
-/** The machine code of a thrown HttpException, else null. */
-function codeOfHttp(err: unknown): string | null {
-  if (!(err instanceof HttpException)) return null;
-  const body: unknown = err.getResponse();
-  if (!body || typeof body !== 'object') return null;
-  const code: unknown = Reflect.get(body, 'code');
-  return typeof code === 'string' ? code : null;
-}
-
-/** Stripe kept this Idempotency-Key for a request with other parameters. */
-function isIdempotencyMismatch(err: unknown): boolean {
-  return (
-    err instanceof StripeConnectApiError &&
-    err.httpStatus === 400 &&
-    err.stripeType === 'idempotency_error'
-  );
-}
-
-/** PaymentIntent statuses a PaymentSheet can still complete. */
-const PAYABLE_PI_STATUSES = new Set([
-  'requires_payment_method',
-  'requires_confirmation',
-  'requires_action',
-]);
-
-/** Longest trial the checkout will start (B-TRIALS validates the package side). */
-export const MAX_TRIAL_DAYS = 730;
-
-export interface SubscriptionIntentInput {
-  package_id: string;
-  idempotency_key: string;
-  /** The renewal price the app showed. */
-  expected_amount_cents?: number;
-  /** A combo's one-time part the app showed (0 or absent for a pure recurring plan). */
-  expected_one_time_cents?: number;
-  /**
-   * The share-link token the client opened, when the purchase starts from a
-   * share link. Used only to say WHY a package of a coach the client is not
-   * connected with cannot be bought here (PACKAGE_COACH_NOT_CONNECTED); it
-   * never widens who can buy.
-   */
-  share_token?: string;
-}
-
-export interface PlanPrice {
-  /** What each renewal charges. */
-  amount_cents: number;
-  currency: string;
-  interval: 'week' | 'month' | 'year';
-  interval_count: number;
-  /** What is charged today (one-time price + first period for a combo; 0 in a trial). */
-  first_charge_cents: number;
-  /** One-time part of a combo package (0 for a pure recurring package). */
-  one_time_cents: number;
-  trial_days: number;
-}
-
-export interface SubscriptionIntentResult {
-  /**
-   * PaymentSheet mode: 'payment' charges now; 'setup' saves a card for a
-   * trial. 'none' (B-654-6): Stripe needs nothing from the client (the first
-   * invoice was paid without a sheet, or its payment is processing); the app
-   * opens no sheet, shows "Confirming your plan" and polls the plan, and the
-   * webhook grants access. client_secret and ephemeral_key are '' then.
-   */
-  mode: 'payment' | 'setup' | 'none';
-  client_secret: string;
-  ephemeral_key: string;
-  customer_id: string;
-  publishable_key: string;
-  purchase_id: string;
-  subscription_id: string;
-  status: string;
-  reused: boolean;
-  plan: PlanPrice & { package_id: string; package_name: string; trial_ends_at: string | null };
-}
-
-export type PlanState =
-  'confirming' | 'payment_failed' | 'trialing' | 'active' | 'past_due' | 'ended';
-
-/**
- * B-334-3 — what Stripe says about a plan that is still confirming, read on
- * GET /subscriptions/:id only. The app claims "nothing was charged" only on
- * awaiting_payment / awaiting_card (Stripe shows no payment and no saved
- * card), and keeps confirming on processing / paid / card_saved.
- * 'unknown' = Stripe could not be read now. null = not applicable (the plan
- * is already entitled or ended, or the list route).
- */
-export type CheckoutState =
-  'awaiting_payment' | 'awaiting_card' | 'processing' | 'paid' | 'card_saved' | 'ended' | 'unknown';
-
-export interface ClientPlanView {
-  purchase_id: string;
-  package_id: string;
-  package_name: string;
-  coach_user_id: string;
-  state: PlanState;
-  status: string;
-  entitlement_active: boolean;
-  amount_cents: number;
-  currency: string;
-  interval: 'week' | 'month' | 'year' | null;
-  interval_count: number;
-  current_period_end: string | null;
-  /** Next charge date; null when no further charge is scheduled. */
-  next_charge_at: string | null;
-  cancel_at_period_end: boolean;
-  /** When access ends (scheduled cancel or ended plan); null while renewing. */
-  access_ends_at: string | null;
-  trial_days: number | null;
-  trial_ends_at: string | null;
-  can_cancel: boolean;
-  can_resume: boolean;
-  can_resubscribe: boolean;
-  /** Last payment problem in plain words, or null. Never a Stripe secret. */
-  last_payment_error: string | null;
-  /** B-334-3 — Stripe's view of a plan still confirming (single-plan read only). */
-  checkout_state: CheckoutState | null;
-}
 
 type Tx = Prisma.TransactionClient;
 
@@ -256,74 +127,6 @@ type Decision =
   | { kind: 'active'; purchase: ClientPurchase }
   | { kind: 'reuse'; purchase: ClientPurchase }
   | { kind: 'reserved'; purchase: ClientPurchase; trialDays: number };
-
-/**
- * Trial length on the package. B-TRIALS adds `CoachPackage.trial_days`
- * (Int @default(0)) in its own PR; read it defensively so this checkout is
- * correct before and after that column exists. Trials apply to pure
- * recurring packages only (a combo would charge its one-time price on the
- * trial's first invoice).
- */
-export function packageTrialDays(pkg: CoachPackage): number {
-  if (pkg.billing_type !== 'recurring') return 0;
-  const raw: unknown = Reflect.get(pkg, 'trial_days');
-  if (typeof raw !== 'number' || !Number.isInteger(raw) || raw <= 0) return 0;
-  return Math.min(raw, MAX_TRIAL_DAYS);
-}
-
-function asInterval(v: string | null | undefined): 'week' | 'month' | 'year' | null {
-  return v === 'week' || v === 'month' || v === 'year' ? v : null;
-}
-
-/** Renewal + first-charge price of a recurring (or combo) package. */
-export function planPriceFor(pkg: CoachPackage, trialDays: number): PlanPrice {
-  const isCombo = pkg.billing_type !== 'recurring';
-  const interval = asInterval(isCombo ? pkg.recurring_interval : pkg.interval);
-  if (!interval) {
-    throw new ConflictException({
-      code: 'PACKAGE_INTERVAL_INVALID',
-      error: 'PACKAGE_INTERVAL_INVALID',
-      message:
-        'This plan has no valid billing period, so it cannot be started. Message your coach to fix the plan.',
-    });
-  }
-  const amount = isCombo ? (pkg.recurring_amount_cents ?? 0) : pkg.amount_cents;
-  const oneTime = isCombo ? pkg.amount_cents : 0;
-  const intervalCount = Math.max(
-    1,
-    (isCombo ? pkg.recurring_interval_count : pkg.interval_count) ?? 1,
-  );
-  return {
-    amount_cents: amount,
-    currency: pkg.currency,
-    interval,
-    interval_count: intervalCount,
-    first_charge_cents: trialDays > 0 ? 0 : amount + oneTime,
-    one_time_cents: oneTime,
-    trial_days: trialDays,
-  };
-}
-
-/**
- * R1-10 — true when `token` is this package's live share-link token (same
- * rules as the public join route: enabled, not revoked, not expired).
- */
-export function shareLinkMatches(pkg: CoachPackage, token: string | undefined): boolean {
-  if (typeof token !== 'string' || token.length === 0) return false;
-  if (!pkg.share_token || pkg.share_token !== token) return false;
-  if (!pkg.share_link_enabled || pkg.share_link_revoked_at) return false;
-  if (pkg.share_link_expires_at && pkg.share_link_expires_at.getTime() <= Date.now()) return false;
-  return true;
-}
-
-function iso(d: Date | null | undefined): string | null {
-  return d ? d.toISOString() : null;
-}
-
-function expandedId(v: { id?: string } | string | null | undefined): string | null {
-  if (!v) return null;
-  return typeof v === 'string' ? v : (v.id ?? null);
-}
 
 @Injectable()
 export class SubscriptionCheckoutService {
@@ -361,7 +164,7 @@ export class SubscriptionCheckoutService {
     // Same visibility rule as the one-time path: unpublished, archived,
     // inactive, or another coach's package is a non-leaking 404.
     if (!pkg || !pkg.is_active || pkg.archived_at || !pkg.published_at) {
-      throw this.packageUnavailable();
+      throw packageUnavailable();
     }
     if (!client.coach_id || pkg.coach_id !== client.coach_id) {
       // R1-10 — the in-app paths (payment-intent and this route) sell only
@@ -372,15 +175,15 @@ export class SubscriptionCheckoutService {
       // working next step. Without a matching live token it stays the
       // non-leaking 404, so no package id is ever confirmed to a stranger.
       if (shareLinkMatches(pkg, input.share_token)) {
-        throw this.coachNotConnected(client.coach_id ? 'other_coach' : 'no_coach');
+        throw coachNotConnected(client.coach_id ? 'other_coach' : 'no_coach');
       }
-      throw this.packageUnavailable();
+      throw packageUnavailable();
     }
     // $0 packages and invite-code grants never create Stripe objects. A
     // recurring package priced $0 is free too (claimable through
     // /v1/packages/:id/claim-free, which keys on amount_cents = 0).
     if (pkg.amount_cents === 0 && (!isRecurringPackage(pkg) || pkg.billing_type === 'recurring')) {
-      throw this.packageIsFree();
+      throw packageIsFree();
     }
     if (!isRecurringPackage(pkg)) {
       throw new ConflictException({
@@ -395,7 +198,7 @@ export class SubscriptionCheckoutService {
     if (!(offeredPrice.amount_cents > 0)) {
       // Unreachable after the two checks above (isRecurringPackage requires a
       // positive recurring part); kept as the backstop against a $0 renewal.
-      throw this.packageIsFree();
+      throw packageIsFree();
     }
     const oneTimeMismatch =
       typeof input.expected_one_time_cents === 'number' &&
@@ -434,13 +237,13 @@ export class SubscriptionCheckoutService {
     // R1-2 — already included (invite grant, free claim, one-time purchase):
     // answered before any Stripe object (customer, subscription) exists.
     const included = await this.findIncluded(this.prisma, client.id, pkg.id);
-    if (included) throw this.alreadyIncluded(included);
+    if (included) throw alreadyIncluded(included);
 
     const coach = await this.prisma.user.findUnique({
       where: { id: pkg.coach_id },
       select: { id: true, email: true, name: true },
     });
-    if (!coach) throw this.packageUnavailable();
+    if (!coach) throw packageUnavailable();
     const connectAccount = await this.prisma.connectAccount.findUnique({
       where: { coach_user_id: pkg.coach_id },
     });
@@ -482,7 +285,7 @@ export class SubscriptionCheckoutService {
     // B-654-1 — a stale trial of THIS package whose card turned out saved is
     // the client's plan (the webhook grants it); never start a second one.
     const savedHere = cardSaved.find((r) => r.package_id === pkg.id);
-    if (savedHere) throw this.alreadyActive(savedHere);
+    if (savedHere) throw alreadyActive(savedHere);
 
     // Decide under the per-(client, coach) lock. At most two passes: the
     // second runs only after a stale open attempt was retired.
@@ -498,8 +301,8 @@ export class SubscriptionCheckoutService {
         renewalCents: offeredPrice.amount_cents,
         contractEnvelopeId: gate.coachEnvelopeId ?? null,
       });
-      if (decision.kind === 'included') throw this.alreadyIncluded(decision.purchase);
-      if (decision.kind === 'active') throw this.alreadyActive(decision.purchase);
+      if (decision.kind === 'included') throw alreadyIncluded(decision.purchase);
+      if (decision.kind === 'active') throw alreadyActive(decision.purchase);
       if (decision.kind === 'reserved') {
         return this.mintSubscription(decision.purchase, pkg, false);
       }
@@ -515,7 +318,7 @@ export class SubscriptionCheckoutService {
       if (reused) return reused;
     }
     // Two stale attempts in a row means Stripe and the database disagree.
-    throw this.inProgress(true);
+    throw inProgress(true);
   }
 
   // ── GET /v1/checkout/subscriptions[/:id] ───────────────────────────────
@@ -540,7 +343,7 @@ export class SubscriptionCheckoutService {
         r.status === 'unpaid',
     );
     const pkgs = await this.packagesById(real.map((r) => r.package_id));
-    return real.map((r) => this.toPlanView(r, pkgs.get(r.package_id) ?? null));
+    return real.map((r) => planView(r, pkgs.get(r.package_id) ?? null));
   }
 
   async getPlan(clientUserId: string, purchaseId: string): Promise<ClientPlanView> {
@@ -548,11 +351,11 @@ export class SubscriptionCheckoutService {
       where: { id: purchaseId, client_user_id: clientUserId },
     });
     if (!row || row.billing_type !== 'recurring' || !row.stripe_subscription_id) {
-      throw this.planNotFound();
+      throw planNotFound();
     }
     const pkg = await this.prisma.coachPackage.findUnique({ where: { id: row.package_id } });
     const checkoutState = await this.readCheckoutState(row);
-    return { ...this.toPlanView(row, pkg), checkout_state: checkoutState };
+    return { ...planView(row, pkg), checkout_state: checkoutState };
   }
 
   /**
@@ -622,10 +425,10 @@ export class SubscriptionCheckoutService {
       where: { id: purchaseId, client_user_id: clientUserId },
     });
     if (!row || row.billing_type !== 'recurring' || !row.stripe_subscription_id) {
-      throw this.planNotFound();
+      throw planNotFound();
     }
     const pkg = await this.prisma.coachPackage.findUnique({ where: { id: row.package_id } });
-    if (!row.cancel_at_period_end) return this.toPlanView(row, pkg);
+    if (!row.cancel_at_period_end) return planView(row, pkg);
     if (row.status === 'canceled' || !row.entitlement_active) {
       throw new ConflictException({
         code: 'PLAN_ALREADY_ENDED',
@@ -641,7 +444,7 @@ export class SubscriptionCheckoutService {
         idempotencyKey: `tgp-resume-${row.stripe_subscription_id}-${idempotencyKey}`,
       });
     } catch (err) {
-      throw this.stripeFailure(err);
+      throw stripeFailure(err);
     }
     const periodEnd =
       typeof sub.current_period_end === 'number'
@@ -652,7 +455,7 @@ export class SubscriptionCheckoutService {
       data: { cancel_at_period_end: !!sub.cancel_at_period_end, current_period_end: periodEnd },
     });
     this.logger.log(`billing.client_plan_resumed purchase=${row.id}`);
-    return this.toPlanView(updated, pkg);
+    return planView(updated, pkg);
   }
 
   // ── internals ──────────────────────────────────────────────────────────
@@ -825,7 +628,7 @@ export class SubscriptionCheckoutService {
       // Nothing reached Stripe under this attempt's key yet.
       if (firstTry) await this.dropReservation(reservation.id);
       else await this.markRetryable(reservation);
-      throw this.stripeFailure(err);
+      throw stripeFailure(err);
     }
 
     const metadata = {
@@ -848,12 +651,12 @@ export class SubscriptionCheckoutService {
       const found = await this.findAttemptSubscription(reservation);
       if (found === 'unreadable') {
         await this.markRetryable(reservation);
-        throw this.inProgress(true);
+        throw inProgress(true);
       }
       sub = found;
       if (!sub && Date.now() - reservation.created_at.getTime() >= OPEN_ATTEMPT_MAX_AGE_MS) {
         await this.expireAttempt(reservation.id);
-        throw this.attemptExpired('timed_out');
+        throw attemptExpired('timed_out');
       }
     }
     if (!sub) {
@@ -871,18 +674,18 @@ export class SubscriptionCheckoutService {
         if (!isIdempotencyMismatch(err)) {
           if (isDefinitiveRefusal(err)) await this.expireAttempt(reservation.id);
           else await this.markRetryable(reservation);
-          throw this.stripeFailure(err);
+          throw stripeFailure(err);
         }
         const found = await this.findAttemptSubscription(reservation);
         if (found === 'unreadable') {
           await this.markRetryable(reservation);
-          throw this.inProgress(true);
+          throw inProgress(true);
         }
         if (!found) {
           // Stripe holds the key for another request and has no
           // subscription for this attempt: nothing was created or charged.
           await this.expireAttempt(reservation.id);
-          throw this.attemptExpired('timed_out');
+          throw attemptExpired('timed_out');
         }
         sub = found;
       }
@@ -919,17 +722,17 @@ export class SubscriptionCheckoutService {
         `subscription ${sub.id} could not be bound to purchase=${reservation.id} error=${errorLabel(err)}`,
       );
       await this.markRetryable(reservation);
-      throw this.inProgress(true);
+      throw inProgress(true);
     }
     if (!bound) {
       const again = await this.prisma.clientPurchase.findUnique({ where: { id: reservation.id } });
       if (again && (again.entitlement_active || again.trial_started_at))
-        throw this.alreadyActive(again);
+        throw alreadyActive(again);
       if (again && again.stripe_subscription_id === sub.id) {
         bound = again;
       } else {
-        if (this.subscriptionUnpaid(sub)) await this.cancelQuietly(sub.id);
-        throw this.attemptExpired('terms_changed');
+        if (subscriptionUnpaid(sub)) await this.cancelQuietly(sub.id);
+        throw attemptExpired('terms_changed');
       }
     }
     return this.finishBound(bound, sub, pkg, stripeKey, reusedFlag);
@@ -953,7 +756,7 @@ export class SubscriptionCheckoutService {
     ephemeralKeyBase: string,
     reusedFlag: boolean,
   ): Promise<SubscriptionIntentResult> {
-    const secret = this.sheetSecret(sub);
+    const secret = sheetSecret(sub);
     if (secret) {
       let ephemeral: { secret: string };
       try {
@@ -962,7 +765,7 @@ export class SubscriptionCheckoutService {
           `${ephemeralKeyBase}-ephkey`,
         );
       } catch (err) {
-        throw this.stripeFailure(err);
+        throw stripeFailure(err);
       }
       const updated = await this.prisma.clientPurchase.update({
         where: { id: row.id },
@@ -973,7 +776,7 @@ export class SubscriptionCheckoutService {
       });
       return this.resultFromRow(updated, pkg, reusedFlag, sub.status);
     }
-    const outcome = this.classifyWithoutSheet(sub);
+    const outcome = classifyWithoutSheet(sub);
     if (outcome === 'complete') {
       this.logger.log(
         `billing.subscription_needs_no_sheet purchase=${row.id} stripe_status=${sub.status}`,
@@ -982,7 +785,7 @@ export class SubscriptionCheckoutService {
     }
     if (outcome === 'ended') {
       await this.expireAttempt(row.id);
-      throw this.attemptExpired('timed_out');
+      throw attemptExpired('timed_out');
     }
     this.logger.error(
       `subscription ${sub.id} has no payable PaymentIntent or SetupIntent and is not paid; canceling it`,
@@ -995,34 +798,6 @@ export class SubscriptionCheckoutService {
       message:
         'The card screen could not be prepared for this plan. Nothing was charged. Try again in a minute.',
     });
-  }
-
-  /** B-654-6 — a subscription with no sheet secret: paid/processing, ended, or stuck. */
-  private classifyWithoutSheet(
-    sub: StripeSubscriptionCheckoutObject,
-  ): 'complete' | 'ended' | 'unavailable' {
-    if (sub.status === 'canceled' || sub.status === 'incomplete_expired') return 'ended';
-    if (sub.status === 'active' || sub.status === 'past_due' || sub.status === 'unpaid') {
-      return 'complete';
-    }
-    if (sub.status === 'trialing') return sub.default_payment_method ? 'complete' : 'unavailable';
-    const inv =
-      sub.latest_invoice && typeof sub.latest_invoice === 'object' ? sub.latest_invoice : null;
-    if (inv?.status === 'paid') return 'complete';
-    const pi = inv && typeof inv.payment_intent === 'object' ? inv.payment_intent : null;
-    if (pi?.status === 'succeeded' || pi?.status === 'processing') return 'complete';
-    if (pi?.status === 'canceled') return 'ended';
-    return 'unavailable';
-  }
-
-  /** True while no payment of this subscription succeeded or is in flight. */
-  private subscriptionUnpaid(sub: StripeSubscriptionCheckoutObject): boolean {
-    if (sub.status !== 'incomplete' && sub.status !== 'trialing') return false;
-    if (sub.status === 'trialing' && sub.default_payment_method) return false;
-    const inv =
-      sub.latest_invoice && typeof sub.latest_invoice === 'object' ? sub.latest_invoice : null;
-    const pi = inv && typeof inv.payment_intent === 'object' ? inv.payment_intent : null;
-    return !(pi?.status === 'succeeded' || pi?.status === 'processing' || inv?.status === 'paid');
   }
 
   /**
@@ -1062,23 +837,23 @@ export class SubscriptionCheckoutService {
         claimed = true;
       } else {
         const winner = await this.waitForSecret(cur.idempotency_key);
-        if (!winner) throw this.inProgress(true);
+        if (!winner) throw inProgress(true);
         cur = winner;
         if (!cur.stripe_subscription_id && !ENDED_ATTEMPT_STATUSES.has(cur.status)) {
           const late = await this.claimUnbound(cur);
-          if (!late) throw this.inProgress(false);
+          if (!late) throw inProgress(false);
           cur = late;
           claimed = true;
         }
       }
     }
-    if (cur.entitlement_active || cur.trial_started_at) throw this.alreadyActive(cur);
-    if (ENDED_ATTEMPT_STATUSES.has(cur.status)) throw this.attemptExpired('timed_out');
+    if (cur.entitlement_active || cur.trial_started_at) throw alreadyActive(cur);
+    if (ENDED_ATTEMPT_STATUSES.has(cur.status)) throw attemptExpired('timed_out');
 
     const terms = parseCheckoutTerms(cur.checkout_terms);
     if (terms && !termsStillOffered(terms, offered, pkgTrial)) {
-      if ((await this.retireAttempt(cur)) === 'settled') throw this.alreadyActive(cur);
-      throw this.attemptExpired('terms_changed');
+      if ((await this.retireAttempt(cur)) === 'settled') throw alreadyActive(cur);
+      throw attemptExpired('terms_changed');
     }
     if (claimed || !cur.stripe_subscription_id) return this.mintSubscription(cur, pkg, true);
 
@@ -1086,10 +861,10 @@ export class SubscriptionCheckoutService {
       // C-654-3 — the secret may be spent: the card was saved or the first
       // invoice paid a moment ago, before the webhook. Never hand it back.
       const state = await this.replaySecretState(cur);
-      if (state === 'settled') throw this.alreadyActive(cur);
+      if (state === 'settled') throw alreadyActive(cur);
       if (state === 'dead') {
         await this.expireAttempt(cur.id);
-        throw this.attemptExpired('timed_out');
+        throw attemptExpired('timed_out');
       }
       return this.resultFromRow(cur, pkg, true);
     }
@@ -1097,7 +872,7 @@ export class SubscriptionCheckoutService {
     try {
       sub = await this.stripe.retrieveSubscriptionForCheckout(cur.stripe_subscription_id);
     } catch (err) {
-      throw this.stripeFailure(err);
+      throw stripeFailure(err);
     }
     return this.finishBound(cur, sub, pkg, `tgp-${cur.idempotency_key}`, true);
   }
@@ -1189,13 +964,13 @@ export class SubscriptionCheckoutService {
       try {
         sub = await this.stripe.retrieveSubscriptionForCheckout(row.stripe_subscription_id);
       } catch (err) {
-        throw this.stripeFailure(err);
+        throw stripeFailure(err);
       }
     } else if (parseCheckoutTerms(row.checkout_terms)) {
       const found = await this.findAttemptSubscription(row);
       if (found === 'unreadable') {
         await this.markRetryable(row);
-        throw this.inProgress(true);
+        throw inProgress(true);
       }
       sub = found;
     }
@@ -1204,7 +979,7 @@ export class SubscriptionCheckoutService {
     const cancelable = sub && (sub.status === 'incomplete' || sub.status === 'trialing');
     if (sub && cancelable && !(await this.cancelConfirmed(sub.id))) {
       await this.markRetryable(row);
-      throw this.inProgress(true);
+      throw inProgress(true);
     }
     await this.expireAttempt(row.id);
     this.logger.log(`billing.subscription_attempt_retired purchase=${row.id} reason=terms_changed`);
@@ -1227,7 +1002,7 @@ export class SubscriptionCheckoutService {
       try {
         setup = await readTrialSetup(this.stripe, row.stripe_client_secret, sub);
       } catch (err) {
-        throw this.stripeFailure(err);
+        throw stripeFailure(err);
       }
       if (trialCardSaved(setup)) {
         await this.attachTrialCardQuietly(sub.id, setup.payment_method, row.id);
@@ -1235,7 +1010,7 @@ export class SubscriptionCheckoutService {
       }
       return setup?.status === 'processing';
     }
-    return !this.subscriptionUnpaid(sub);
+    return !subscriptionUnpaid(sub);
   }
 
   /**
@@ -1259,7 +1034,7 @@ export class SubscriptionCheckoutService {
       if (own) {
         const terms = parseCheckoutTerms(own.checkout_terms);
         if (terms && !termsStillOffered(terms, offered, pkgTrial)) {
-          if ((await this.retireAttempt(own)) === 'settled') throw this.alreadyActive(own);
+          if ((await this.retireAttempt(own)) === 'settled') throw alreadyActive(own);
           return null;
         }
         try {
@@ -1277,26 +1052,26 @@ export class SubscriptionCheckoutService {
       if (winner.stripe_client_secret && winner.stripe_subscription_id) {
         return this.resultFromRow(winner, pkg, true);
       }
-      if (!winner.stripe_subscription_id) throw this.inProgress(false);
+      if (!winner.stripe_subscription_id) throw inProgress(false);
       cur = winner;
     }
     const subscriptionId = cur.stripe_subscription_id;
-    if (!subscriptionId) throw this.inProgress(false);
+    if (!subscriptionId) throw inProgress(false);
     let sub: StripeSubscriptionCheckoutObject;
     try {
       sub = await this.stripe.retrieveSubscriptionForCheckout(subscriptionId);
     } catch (err) {
-      throw this.stripeFailure(err);
+      throw stripeFailure(err);
     }
     // Paid (or card saved) a moment ago; the webhook will grant access.
     // B-654-8 — past_due / unpaid were active and still charge: the plan.
     const live = sub.status === 'active' || sub.status === 'past_due' || sub.status === 'unpaid';
     if (live || (sub.status === 'trialing' && !!sub.default_payment_method)) {
-      throw this.alreadyActive({ ...cur, status: sub.status });
+      throw alreadyActive({ ...cur, status: sub.status });
     }
     // B-654-6 — a first payment already in flight or paid is never canceled.
-    if (sub.status === 'incomplete' && !this.subscriptionUnpaid(sub)) {
-      throw this.alreadyActive({ ...cur, status: sub.status });
+    if (sub.status === 'incomplete' && !subscriptionUnpaid(sub)) {
+      throw alreadyActive({ ...cur, status: sub.status });
     }
     if (sub.status === 'trialing') {
       // B-654-1 — the card may be saved although the subscription has no
@@ -1307,17 +1082,17 @@ export class SubscriptionCheckoutService {
       try {
         setup = await readTrialSetup(this.stripe, cur.stripe_client_secret, sub);
       } catch (err) {
-        throw this.stripeFailure(err);
+        throw stripeFailure(err);
       }
       if (trialCardSaved(setup)) {
         await this.attachTrialCardQuietly(sub.id, setup.payment_method, cur.id);
-        throw this.alreadyActive({ ...cur, status: sub.status });
+        throw alreadyActive({ ...cur, status: sub.status });
       }
       if (setup && setup.status === 'processing') {
-        throw this.alreadyActive({ ...cur, status: sub.status });
+        throw alreadyActive({ ...cur, status: sub.status });
       }
     }
-    const secret = this.sheetSecret(sub);
+    const secret = sheetSecret(sub);
     const terms = parseCheckoutTerms(cur.checkout_terms);
     const expectedPrice =
       terms?.recurring_price_id ??
@@ -1355,7 +1130,7 @@ export class SubscriptionCheckoutService {
           `tgp-sub-${clientId}-${clientKey}-ephkey`,
         );
       } catch (err) {
-        throw this.stripeFailure(err);
+        throw stripeFailure(err);
       }
       const row = await this.prisma.clientPurchase.update({
         where: { id: cur.id },
@@ -1369,32 +1144,8 @@ export class SubscriptionCheckoutService {
     // Stale: retire it so incomplete subscriptions never pile up. B-654-8 —
     // only once Stripe shows it ended; else retryable, never a second one.
     const cancelable = sub.status === 'incomplete' || sub.status === 'trialing';
-    if (cancelable && !(await this.cancelConfirmed(sub.id))) throw this.inProgress(true);
+    if (cancelable && !(await this.cancelConfirmed(sub.id))) throw inProgress(true);
     await this.expireAttempt(cur.id);
-    return null;
-  }
-
-  private sheetSecret(
-    sub: StripeSubscriptionCheckoutObject,
-  ): { mode: 'payment' | 'setup'; client_secret: string } | null {
-    if (sub.status === 'canceled' || sub.status === 'incomplete_expired') return null;
-    const si = sub.pending_setup_intent;
-    if (sub.status === 'trialing') {
-      if (si && typeof si === 'object' && typeof si.client_secret === 'string') {
-        return { mode: 'setup', client_secret: si.client_secret };
-      }
-      return null;
-    }
-    const inv = sub.latest_invoice;
-    const pi = inv && typeof inv === 'object' ? inv.payment_intent : null;
-    if (
-      pi &&
-      typeof pi === 'object' &&
-      typeof pi.client_secret === 'string' &&
-      (!pi.status || PAYABLE_PI_STATUSES.has(pi.status))
-    ) {
-      return { mode: 'payment', client_secret: pi.client_secret };
-    }
     return null;
   }
 
@@ -1434,62 +1185,6 @@ export class SubscriptionCheckoutService {
         package_name: pkg.name,
         trial_ends_at: trialDays > 0 ? iso(row.current_period_end) : null,
       },
-    };
-  }
-
-  toPlanView(row: ClientPurchase, pkg: CoachPackage | null): ClientPlanView {
-    const status = row.status;
-    const ended = status === 'canceled' || status === 'incomplete_expired' || status === 'expired';
-    let state: PlanState;
-    if (ended) state = 'ended';
-    else if (row.entitlement_active && status === 'trialing') state = 'trialing';
-    else if (row.entitlement_active && (status === 'past_due' || status === 'unpaid'))
-      state = 'past_due';
-    else if (row.entitlement_active) state = 'active';
-    else if (status === 'payment_failed') state = 'payment_failed';
-    else state = 'confirming';
-    const live = state === 'active' || state === 'trialing' || state === 'past_due';
-    const interval = pkg
-      ? asInterval(pkg.billing_type === 'recurring' ? pkg.interval : pkg.recurring_interval)
-      : null;
-    const intervalCount = pkg
-      ? Math.max(
-          1,
-          (pkg.billing_type === 'recurring' ? pkg.interval_count : pkg.recurring_interval_count) ??
-            1,
-        )
-      : 1;
-    const periodEnd = row.current_period_end;
-    return {
-      purchase_id: row.id,
-      package_id: row.package_id,
-      package_name: pkg?.name ?? '',
-      coach_user_id: row.coach_user_id,
-      state,
-      status,
-      entitlement_active: row.entitlement_active,
-      amount_cents: row.amount_cents,
-      currency: row.currency,
-      interval,
-      interval_count: intervalCount,
-      current_period_end: iso(periodEnd),
-      next_charge_at: live && !row.cancel_at_period_end ? iso(periodEnd) : null,
-      cancel_at_period_end: row.cancel_at_period_end,
-      access_ends_at: ended
-        ? iso(row.canceled_at ?? row.access_expires_at)
-        : live && row.cancel_at_period_end
-          ? iso(periodEnd)
-          : null,
-      trial_days: row.trial_days ?? null,
-      trial_ends_at: state === 'trialing' ? iso(periodEnd) : null,
-      can_cancel: live && !row.cancel_at_period_end,
-      can_resume: live && row.cancel_at_period_end,
-      can_resubscribe: ended,
-      last_payment_error:
-        state === 'payment_failed' || state === 'past_due'
-          ? 'Your last payment did not go through.'
-          : null,
-      checkout_state: null,
     };
   }
 
@@ -1720,121 +1415,6 @@ export class SubscriptionCheckoutService {
       },
       orderBy: { created_at: 'desc' },
     });
-  }
-
-  private alreadyIncluded(row: ClientPurchase): HttpException {
-    const source = row.source ?? '';
-    const includedBy: 'invite' | 'free_claim' | 'purchase' = source.startsWith('invite_grant')
-      ? 'invite'
-      : source === 'free_package_claim'
-        ? 'free_claim'
-        : 'purchase';
-    return new ConflictException({
-      code: 'PACKAGE_ALREADY_INCLUDED',
-      error: 'PACKAGE_ALREADY_INCLUDED',
-      message:
-        includedBy === 'purchase'
-          ? 'You already have this plan, so nothing was charged. Open Your plan to see it.'
-          : 'This plan is already included for you through your coach, so there is nothing to pay. Open Your plan to see it.',
-      purchase_id: row.id,
-      included_by: includedBy,
-      access_expires_at: iso(row.access_expires_at),
-    });
-  }
-
-  private coachNotConnected(reason: 'no_coach' | 'other_coach'): HttpException {
-    return new ConflictException({
-      code: 'PACKAGE_COACH_NOT_CONNECTED',
-      error: 'PACKAGE_COACH_NOT_CONNECTED',
-      message:
-        reason === 'no_coach'
-          ? 'This plan is from a coach you are not connected with yet, so it cannot be started from this account. Nothing was charged. Ask that coach for their invite code, join with it, then open the link again.'
-          : 'This plan is from a different coach than yours, so it cannot be started from this account. Nothing was charged. Message the coach who shared the link.',
-      reason,
-    });
-  }
-
-  private attemptExpired(reason: 'timed_out' | 'terms_changed'): HttpException {
-    return new ConflictException({
-      code: 'SUBSCRIPTION_ATTEMPT_EXPIRED',
-      error: 'SUBSCRIPTION_ATTEMPT_EXPIRED',
-      message:
-        reason === 'terms_changed'
-          ? 'The terms of this plan changed after this checkout started, so it was closed. Nothing was charged. Start again to see the current terms.'
-          : 'This checkout timed out before it was paid. Nothing was charged. Start again to see the current price.',
-      reason,
-    });
-  }
-
-  private packageIsFree(): HttpException {
-    return new BadRequestException({
-      code: 'PACKAGE_IS_FREE',
-      error: 'PACKAGE_IS_FREE',
-      message: 'This plan is free. Claim it from the plan screen; no card is needed.',
-    });
-  }
-
-  private alreadyActive(row: ClientPurchase): HttpException {
-    return new ConflictException({
-      code: 'SUBSCRIPTION_ALREADY_ACTIVE',
-      error: 'SUBSCRIPTION_ALREADY_ACTIVE',
-      message: row.cancel_at_period_end
-        ? 'You already have this plan, and it is set to end at the close of this period. Keep it from Your plan instead of starting it again.'
-        : 'You already have this plan, so nothing more was charged. Open Your plan to see your next charge date.',
-      purchase_id: row.id,
-      cancel_at_period_end: row.cancel_at_period_end,
-      current_period_end: iso(row.current_period_end),
-    });
-  }
-
-  private packageUnavailable(): HttpException {
-    return new NotFoundException({
-      code: 'PACKAGE_NOT_FOUND',
-      error: 'PACKAGE_NOT_FOUND',
-      message:
-        'This plan is no longer available. Pull down to refresh your coach’s plans, or message your coach.',
-    });
-  }
-
-  private planNotFound(): HttpException {
-    return new NotFoundException({
-      code: 'PURCHASE_NOT_FOUND',
-      error: 'PURCHASE_NOT_FOUND',
-      message: 'That plan was not found on your account. Pull down to refresh your plans.',
-    });
-  }
-
-  private inProgress(retryable: boolean): HttpException {
-    return retryable
-      ? new ServiceUnavailableException({
-          code: 'PAYMENT_RETRY',
-          error: 'PAYMENT_RETRY',
-          message:
-            'The last attempt to start this plan did not finish. Nothing was charged. Try again.',
-        })
-      : new ServiceUnavailableException({
-          code: 'PAYMENT_IN_PROGRESS',
-          error: 'PAYMENT_IN_PROGRESS',
-          message: 'This plan is still being set up. Give it a few seconds, then try again.',
-        });
-  }
-
-  private stripeFailure(err: unknown): HttpException {
-    if (err instanceof HttpException) return err;
-    if (err instanceof StripeConnectApiError) {
-      const status = err.httpStatus >= 400 && err.httpStatus < 600 ? err.httpStatus : 502;
-      return new HttpException(
-        {
-          code: 'STRIPE_CHECKOUT_ERROR',
-          error: 'STRIPE_CHECKOUT_ERROR',
-          message:
-            'The payment service did not answer as expected. Nothing was charged. Try again in a minute.',
-          stripeCode: err.stripeCode,
-        },
-        status === 400 || status === 402 ? 502 : status,
-      );
-    }
-    throw err;
   }
 
   private assertReady(): void {
