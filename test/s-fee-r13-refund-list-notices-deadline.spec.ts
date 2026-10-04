@@ -97,7 +97,8 @@ function setup(opts: { fx?: boolean } = {}) {
       : makeCharge({ id: 'ch_1', amount: 4_900, fee: 172, amount_refunded });
   stripe.charges.set('ch_1', charge());
   const listRefunds = (pages: Array<{ data: RefundFixture[]; has_more: boolean }>) => {
-    const fn = jest.fn(async () => pages[Math.min(fn.mock.calls.length - 1, pages.length - 1)]);
+    let call = 0;
+    const fn = jest.fn(async () => pages[Math.min(call++, pages.length - 1)]);
     Object.assign(stripe, { listChargeRefunds: fn });
     return fn;
   };
