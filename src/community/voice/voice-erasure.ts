@@ -15,7 +15,12 @@ import { VoiceUploadProvider } from './voice-upload.provider';
  * storage are touched:
  *
  *  1. recordVoiceErasures(): upsert one row per exact key (kind 'object') or
- *     owner folder (kind 'owner_folder'). A completed row is re-opened.
+ *     owner folder (kind 'owner_folder'). A completed row is re-opened as a
+ *     new intent: its failure count, last error and reason start fresh
+ *     (C-610-12), so its first failure backs off 1 minute, not from the old
+ *     count. A row that is still open keeps its count (the same work is
+ *     still failing; the >= 10 attempts error log must not be reset by a
+ *     retried request) and is only made due now.
  *  2. attemptVoiceErasures(): try now. A row is completed ONLY after a
  *     verified removal: the exact object reads back missing, or the owner
  *     folder lists empty. Anything else (storage error, object still there,
@@ -94,6 +99,13 @@ export async function recordVoiceErasures(
     const k = `${t.kind}|${t.target}`;
     if (seen.has(k)) continue;
     seen.add(k);
+    // C-610-12: re-opening COMPLETED work is a genuinely new intent, so it
+    // starts with a clean failure count. Conditional on completed_at, so it
+    // never resets work that is still open (and still failing).
+    await db.communityVoiceErasure.updateMany({
+      where: { kind: t.kind, target: t.target, completed_at: { not: null } },
+      data: { completed_at: null, attempts: 0, last_error: null, reason, next_attempt_at: now },
+    });
     const row = await db.communityVoiceErasure.upsert({
       where: { kind_target: { kind: t.kind, target: t.target } },
       create: { kind: t.kind, target: t.target, reason, next_attempt_at: now },

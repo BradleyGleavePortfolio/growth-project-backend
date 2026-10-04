@@ -302,9 +302,45 @@ itLive('CommunityWin RLS as authenticated (live DB, A-610-2)', () => {
     await prisma.$executeRaw`
       INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility)
       VALUES (${forged}, ${id.stranger}, ${id.coach}, 'x', 'y', 'circle')`;
-    const seen = await as(id.bob, async (tx) =>
-      tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM "CommunityWin" WHERE id = ${forged}`,
+    const seen = await as(
+      id.bob,
+      async (tx) =>
+        tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM "CommunityWin" WHERE id = ${forged}`,
     );
     expect(seen).toEqual([]);
+  });
+
+  // ── C-610-11 (B-UGC-5): no coach lookup for API roles ──────────────────
+
+  it('C-610-11: a signed-in role cannot call the coach lookup (no user -> coach resolution)', async () => {
+    await expect(
+      as(
+        id.stranger,
+        (tx) => tx.$queryRaw`SELECT app.community_win_author_coach(${id.alice}) AS c`,
+      ),
+    ).rejects.toThrow(/42501|permission denied/);
+    // Not even for their own id: the lookup is server-only now.
+    await expect(
+      as(id.alice, (tx) => tx.$queryRaw`SELECT app.community_win_author_coach(${id.alice}) AS c`),
+    ).rejects.toThrow(/42501|permission denied/);
+  });
+
+  it('C-610-11: the boolean matcher answers only for the author or their current coach', async () => {
+    const matches = (actor: string, author: string, coach: string | null) =>
+      as(actor, async (tx) => {
+        const rows = await tx.$queryRaw<Array<{ ok: boolean }>>`
+          SELECT app.community_win_coach_matches(${author}, ${coach}) AS ok`;
+        return rows[0]?.ok;
+      });
+    // The author and their current coach get the true answer ...
+    expect(await matches(id.alice, id.alice, id.coach)).toBe(true);
+    expect(await matches(id.alice, id.alice, id.otherCoach)).toBe(false);
+    expect(await matches(id.coach, id.bob, id.coach)).toBe(true);
+    expect(await matches(id.coach, id.coach, id.coach)).toBe(true);
+    // ... nobody else can confirm a pairing, even a correct one.
+    expect(await matches(id.stranger, id.alice, id.coach)).toBe(false);
+    expect(await matches(id.bob, id.alice, id.coach)).toBe(false);
+    expect(await matches(id.otherCoach, id.alice, id.coach)).toBe(false);
+    expect(await matches(id.stranger, id.alice, null)).toBe(false);
   });
 });
