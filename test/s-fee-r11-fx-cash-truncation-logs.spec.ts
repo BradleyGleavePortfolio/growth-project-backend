@@ -1,5 +1,5 @@
 import { Logger, type NotFoundException } from '@nestjs/common';
-import type { ClientPurchase } from '@prisma/client';
+import { Prisma, type ClientPurchase } from '@prisma/client';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { CronLeaseService } from '../src/checkout/cron-lease.service';
@@ -225,7 +225,10 @@ describe('B-683-3 / B-684-2: logs carry closed codes and ids only', () => {
     const errors = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     const warns = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     await ctx.settlements.settleCharge({ purchase: ctx.purchase, charge_id: 'ch_1' });
-    ctx.prisma.payoutAdjustmentNotice.create.mockRejectedValueOnce(new Error(CANARY));
+    // A rejected write whose message carries the attempted input (the notice body).
+    ctx.prisma.payoutAdjustmentNotice.create.mockRejectedValueOnce(
+      new Prisma.PrismaClientValidationError(CANARY, { clientVersion: 'test' }),
+    );
     const input = { purchase: ctx.purchase, charge_id: 'ch_1', refunded_cents: 2_000 };
     await ctx.settlements.applyAdjustments(input);
     expect(ctx.stripe.netTo('acct_1')).toBe(2_630);
@@ -233,7 +236,7 @@ describe('B-683-3 / B-684-2: logs carry closed codes and ids only', () => {
     ctx.stripe.retrieveCharge.mockRejectedValueOnce(new Error(CANARY));
     const p2 = { ...ctx.purchase, id: 'cp_2' };
     await ctx.settlements.settleCharge({ purchase: p2, charge_id: 'ch_2' });
-    expect(logged(errors, warns)).toMatch(/SFEE_NOTICE_FAILED/);
+    expect(logged(errors, warns)).toMatch(/SFEE_NOTICE_FAILED .*kind=db_validation/);
     expect(logged(errors, warns)).not.toContain(CANARY);
     expect(JSON.stringify(ctx.db.settlements)).not.toContain(CANARY);
   });
@@ -255,6 +258,8 @@ describe('B-683-3 / B-684-2: logs carry closed codes and ids only', () => {
     for (const code of ['INAPP', 'PUSH', 'EMAIL']) expect(text).toContain(`SFEE_NOTICE_${code}_FAILED`);
     expect(text).toContain('SFEE_NOTICE_DISPATCH_DEFERRED charge=ch_1: kind=unknown');
     expect(text).not.toContain(CANARY);
+    expect(text).not.toContain('coach@example.invalid');
+    expect(text).not.toContain(String(ctx.db.notices?.[0].body));
   });
 
   it('the sweep cron logs no free text from the lease or the sweep', async () => {
