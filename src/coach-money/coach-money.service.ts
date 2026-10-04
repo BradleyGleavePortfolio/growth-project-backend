@@ -114,8 +114,12 @@ export interface MoneySummaryDto {
   /** Percent change, 1 decimal; null when the previous net was 0. */
   change_pct: number | null;
   recurring: {
+    /** Billing subscriptions only: a free trial is not income yet (AUD-OPUS-CM2-116). */
     mrr_cents: number;
     paying_clients: number;
+    /** Clients in a free trial, and the MRR they add when they convert. */
+    trial_clients: number;
+    trial_mrr_cents: number;
     churned_30d: number;
     new_clients_30d: number;
   };
@@ -358,6 +362,16 @@ export interface ReversalEvent {
   /** What the client got back in this event. */
   amount_cents: number;
   stripe_charge_id: string | null;
+  /** ChargeRefund / ChargeDispute id (matches SplitLedgerReversal.source_id). */
+  source_id?: string;
+}
+
+/** B-676-1: what one event took back from one slice, posted once by the writer. */
+export interface ReversalPosting {
+  source_kind: string;
+  source_id: string;
+  cents: number;
+  posted_at: Date;
 }
 
 /** A ledger slice with its timing, for windowed totals and the tax export. */
@@ -373,6 +387,7 @@ export interface TimedSliceRow extends SliceRow {
 /** A slice with reversed_cents > 0 and the events that reversed it. */
 export interface ReversedSliceRow extends TimedSliceRow {
   events: ReversalEvent[];
+  postings?: ReversalPosting[];
 }
 
 export interface ReversalPortion {
@@ -406,9 +421,19 @@ function inWindow(at: Date, w: MoneyWindow): boolean {
  * to the slice's `reversed_at` (else its posting time).
  */
 export function allocateReversal(slice: ReversedSliceRow): ReversalPortion[] {
-  const total = slice.reversed_cents;
-  if (total <= 0) return [];
+  // B-676-1 (B-CM1-116): an event's posting is exactly what the writer took
+  // back, at the event's own time, and never changes. Only cents with no
+  // posting (legacy rows) are split across the events that have none.
+  const postings = slice.postings ?? [];
+  const posted: ReversalPortion[] = postings.map((p) => {
+    const kind = p.source_kind === 'refund' ? 'refund' : 'chargeback';
+    const e = slice.events.find((x) => x.kind === kind && x.source_id === p.source_id);
+    return { kind, at: p.posted_at, cents: p.cents, event_amount_cents: e?.amount_cents ?? null };
+  });
+  const total = slice.reversed_cents - posted.reduce((acc, p) => acc + p.cents, 0);
+  if (total <= 0) return posted;
   const events = slice.events
+    .filter((e) => !postings.some((p) => p.source_id === e.source_id))
     .filter(
       (e) =>
         !slice.stripe_charge_id ||
@@ -419,6 +444,7 @@ export function allocateReversal(slice: ReversedSliceRow): ReversalPortion[] {
     .sort((a, b) => a.at.getTime() - b.at.getTime());
   if (events.length === 0) {
     return [
+      ...posted,
       {
         kind: 'reversal',
         at: slice.reversed_at ?? slicePostedAt(slice),
@@ -428,7 +454,7 @@ export function allocateReversal(slice: ReversedSliceRow): ReversalPortion[] {
     ];
   }
   const weight = events.reduce((acc, e) => acc + Math.max(0, e.amount_cents), 0);
-  const out: ReversalPortion[] = [];
+  const out: ReversalPortion[] = posted;
   let left = total;
   events.forEach((e, i) => {
     const last = i === events.length - 1;
@@ -635,8 +661,8 @@ export function recurringCadenceOf(p: {
   };
 }
 
-/** Subscription statuses that bill (mirrors the package pricing lock). */
-export const MRR_SUBSCRIPTION_STATUSES: readonly string[] = ['active', 'trialing', 'past_due'];
+/** Subscription statuses that bill now (a free trial is not income yet). */
+export const MRR_SUBSCRIPTION_STATUSES: readonly string[] = ['active', 'past_due'];
 
 export function changePct(current: number, previous: number): number | null {
   if (previous === 0) return null;
@@ -963,6 +989,7 @@ export class CoachMoneyService {
         { reversed_at: range },
         { reversed_at: null, posted_at: range },
         { reversed_at: null, posted_at: null, created_at: range },
+        { reversal_postings: { some: { posted_at: range } } },
         // B-641-6 (S-COACH-3): a refund is booked when it SUCCEEDED
         // (posted_at, stamped by the refund pipeline on the pending ->
         // succeeded transition), not when it was requested. Legacy succeeded
@@ -999,6 +1026,9 @@ export class CoachMoneyService {
       posted_at: true,
       reversed_at: true,
       created_at: true,
+      reversal_postings: {
+        select: { source_kind: true, source_id: true, cents: true, posted_at: true },
+      },
       purchase: {
         select: {
           client: { select: { name: true } },
@@ -1006,6 +1036,7 @@ export class CoachMoneyService {
           refunds: {
             where: { status: 'succeeded' },
             select: {
+              id: true,
               amount_cents: true,
               posted_at: true,
               created_at: true,
@@ -1015,6 +1046,7 @@ export class CoachMoneyService {
           disputes: {
             where: { status: { in: LOST_DISPUTE_STATUS_LIST } },
             select: {
+              id: true,
               amount_cents: true,
               closed_at: true,
               updated_at: true,
@@ -1039,16 +1071,19 @@ export class CoachMoneyService {
       posted_at: Date | null;
       reversed_at: Date | null;
       created_at: Date;
+      reversal_postings?: ReversalPosting[];
       purchase: {
         client: { name: string | null } | null;
         package: { name: string } | null;
         refunds: Array<{
+          id?: string;
           amount_cents: number;
           posted_at?: Date | null;
           created_at: Date;
           stripe_charge_id: string;
         }>;
         disputes: Array<{
+          id?: string;
           amount_cents: number;
           closed_at: Date | null;
           updated_at: Date;
@@ -1065,12 +1100,14 @@ export class CoachMoneyService {
         at: x.posted_at ?? x.created_at,
         amount_cents: x.amount_cents,
         stripe_charge_id: x.stripe_charge_id ?? null,
+        source_id: x.id,
       })),
       ...(r.purchase?.disputes ?? []).map((x): ReversalEvent => ({
         kind: 'chargeback',
         at: x.closed_at ?? x.updated_at,
         amount_cents: x.amount_cents,
         stripe_charge_id: x.stripe_charge_id ?? null,
+        source_id: x.id,
       })),
     ];
     return {
@@ -1090,6 +1127,7 @@ export class CoachMoneyService {
       client_name: withClient ? displayName(r.purchase?.client) : null,
       package_name: r.purchase?.package?.name ?? null,
       events,
+      postings: r.reversal_postings ?? [],
     };
   }
 
@@ -1254,17 +1292,27 @@ export class CoachMoneyService {
     // in the summary currency (B-641-3), at its real cadence (week / month /
     // year x interval count; a combo package's recurring companion price),
     // summed unrounded and rounded once.
+    // A free trial is counted apart (trial_*), never in MRR or paying clients.
     let mrrExact = 0;
+    let trialExact = 0;
+    const trialIds = new Set<string>();
     for (const p of active) {
       if (p.billing_type !== 'recurring') continue;
+      if (p.currency.toLowerCase() !== currency) continue;
+      if (p.status === 'trialing') {
+        trialIds.add(p.client_user_id);
+        trialExact += monthlyEquivalent(recurringCadenceOf(p));
+        continue;
+      }
       // A canceled / expired subscription keeps entitlement to the period
       // end but will not bill again.
       if (!MRR_SUBSCRIPTION_STATUSES.includes(p.status)) continue;
-      if (p.currency.toLowerCase() !== currency) continue;
       mrrExact += monthlyEquivalent(recurringCadenceOf(p));
     }
     const mrr = Math.round(mrrExact);
-    const payingIds = new Set(active.map((p) => p.client_user_id));
+    const payingIds = new Set(
+      active.filter((p) => p.status !== 'trialing').map((p) => p.client_user_id),
+    );
     // A client counts as new when their first paid purchase with this coach
     // is inside the last 30 days.
     const candidateIds = [...new Set(newPurchases.map((p) => p.client_user_id))];
@@ -1292,6 +1340,8 @@ export class CoachMoneyService {
     return {
       mrr_cents: mrr,
       paying_clients: payingIds.size,
+      trial_clients: trialIds.size,
+      trial_mrr_cents: Math.round(trialExact),
       churned_30d: churnedIds.size,
       new_clients_30d: newClients,
     };
