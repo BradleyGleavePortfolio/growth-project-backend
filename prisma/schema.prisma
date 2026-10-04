@@ -4002,12 +4002,32 @@ model SplitLedgerEntry {
   reversed_at               DateTime?
   created_at                DateTime       @default(now())
   updated_at                DateTime       @updatedAt
+  // B-676-1 (B-CM1-116): one immutable row per reversal posted to this slice.
+  reversal_postings         SplitLedgerReversal[]
 
   @@unique([purchase_id, kind, payee_user_id])
   @@index([purchase_id])
   @@index([status])
   @@index([kind, status])
   @@index([payee_user_id, status])
+}
+
+// B-676-1 (B-CM1-116) — what ONE refund or lost chargeback took back from ONE
+// slice, written with the reversed_cents increase and never updated, so coach
+// Money reports each event's cents at posted_at. source_id: ChargeRefund or
+// ChargeDispute id.
+model SplitLedgerReversal {
+  id          String           @id @default(uuid())
+  entry_id    String
+  entry       SplitLedgerEntry @relation(fields: [entry_id], references: [id], onDelete: Cascade)
+  source_kind String // refund | dispute
+  source_id   String
+  cents       Int
+  posted_at   DateTime
+  created_at  DateTime         @default(now())
+
+  @@unique([entry_id, source_kind, source_id])
+  @@index([posted_at])
 }
 
 // Phase 4 Connect — Follow-on Connect transfer record.
@@ -4403,8 +4423,11 @@ model ChargeRefund {
   // never-attempted rows first, then the least recently attempted, so rows
   // that keep failing never hold later refunds back across runs.
   transfer_reversal_last_attempt_at  DateTime?
-  // B-641-9: the Stripe transfer reversal an owner reconcile recorded for
-  // this refund. Unique, so one Stripe reversal settles at most one refund.
+  // B-674-3 (d): the amount sent on the first attempt; every resend under the
+  // same refund-scoped key replays it.
+  transfer_reversal_amount_cents     Int?
+  // B-641-9: the Stripe transfer reversal recorded for this refund (every
+  // path, B-674-3). Unique, so one Stripe reversal settles at most one refund.
   transfer_reversal_stripe_id        String?   @unique
   posted_at            DateTime?
   created_at           DateTime       @default(now())

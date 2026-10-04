@@ -5,7 +5,11 @@ import {
   StripeConnectApiError,
   StripeConnectApiService,
 } from '../stripe-connect-api.service';
-import { SplitLedgerService } from './split-ledger.service';
+import {
+  LEDGER_REVERSAL_CAS_ATTEMPTS,
+  LedgerWriteConflictError,
+  SplitLedgerService,
+} from './split-ledger.service';
 
 // TransferOrchestratorService — mints the head-coach 5%-style follow-on
 // Stripe Transfer from the platform balance, and records the result
@@ -198,10 +202,13 @@ export class TransferOrchestratorService {
     transfer_row_id: string;
     amount_cents?: number; // omit = full reversal
     idempotency_key?: string;
-    claim?: (tx: Prisma.TransactionClient) => Promise<boolean>;
+    // B-674-3: gets Stripe's receipt, so its id is bound to the refund.
+    claim?: (tx: Prisma.TransactionClient, receipt: { id?: string }) => Promise<boolean>;
     // B-COACH-5: ids only (e.g. tgp_charge_refund_id), so an operator and the
     // reconcile path can attribute each reversal in Stripe to its refund.
     metadata?: Record<string, string>;
+    // B-676-1: the event the head-coach slice posting belongs to.
+    ledger_source?: { kind: 'refund' | 'dispute'; id: string };
   }): Promise<ConnectTransfer> {
     const row = await this.prisma.connectTransfer.findUniqueOrThrow({
       where: { id: args.transfer_row_id },
@@ -213,19 +220,30 @@ export class TransferOrchestratorService {
     if (amount <= 0) return row;
     const idempotencyKey =
       args.idempotency_key ?? `tgp-tr-rev-${row.id}-${row.reversed_amount_cents + amount}`;
-    await this.stripe.reverseTransfer({
-      transfer_id: row.stripe_transfer_id,
-      amount,
-      metadata: { ...(args.metadata ?? {}), tgp_purchase_id: row.purchase_id },
-      idempotencyKey,
-    });
+    const receipt: { id?: unknown; amount?: unknown } | undefined =
+      await this.stripe.reverseTransfer({
+        transfer_id: row.stripe_transfer_id,
+        amount,
+        metadata: { ...(args.metadata ?? {}), tgp_purchase_id: row.purchase_id },
+        idempotencyKey,
+      });
+    // B-674-3: record what Stripe says this reversal moved.
+    const moved =
+      typeof receipt?.amount === 'number' && Number.isInteger(receipt.amount) && receipt.amount > 0
+        ? receipt.amount
+        : amount;
+    const receiptId = typeof receipt?.id === 'string' ? receipt.id : undefined;
     const claim = args.claim;
-    if (!claim) return this.recordReversal(this.prisma, row.id, amount);
+    if (!claim) {
+      const source = args.ledger_source;
+      if (!source) return this.recordReversal(this.prisma, row.id, moved);
+      return this.prisma.$transaction((tx) => this.recordReversal(tx, row.id, moved, source));
+    }
     return this.prisma.$transaction(async (tx) => {
-      if (!(await claim(tx))) {
+      if (!(await claim(tx, { id: receiptId }))) {
         return tx.connectTransfer.findUniqueOrThrow({ where: { id: row.id } });
       }
-      return this.recordReversal(tx, row.id, amount);
+      return this.recordReversal(tx, row.id, moved, args.ledger_source);
     });
   }
 
@@ -236,6 +254,7 @@ export class TransferOrchestratorService {
     transfer_row_id: string;
     amount_cents: number;
     claim: (tx: Prisma.TransactionClient) => Promise<boolean>;
+    ledger_source?: { kind: 'refund' | 'dispute'; id: string };
   }): Promise<ConnectTransfer> {
     if (!Number.isInteger(args.amount_cents) || args.amount_cents <= 0) {
       return this.prisma.connectTransfer.findUniqueOrThrow({ where: { id: args.transfer_row_id } });
@@ -244,39 +263,46 @@ export class TransferOrchestratorService {
       if (!(await args.claim(tx))) {
         return tx.connectTransfer.findUniqueOrThrow({ where: { id: args.transfer_row_id } });
       }
-      return this.recordReversal(tx, args.transfer_row_id, args.amount_cents);
+      return this.recordReversal(tx, args.transfer_row_id, args.amount_cents, args.ledger_source);
     });
   }
 
-  // Local half of a reversal. Re-reads the row so a concurrent reversal of a
-  // different refund is added to, never overwritten.
+  // Local half of a reversal (the only writer; the webhook observes, B-674-3).
+  // B-674-1: compare-and-set, as SplitLedgerService.applyReversal.
   private async recordReversal(
     db: Prisma.TransactionClient,
     rowId: string,
     amount: number,
+    ledgerSource?: { kind: 'refund' | 'dispute'; id: string },
   ): Promise<ConnectTransfer> {
-    const row = await db.connectTransfer.findUniqueOrThrow({ where: { id: rowId } });
-    const newReversed = Math.min(row.amount_cents, row.reversed_amount_cents + amount);
-    const fullyReversed = newReversed >= row.amount_cents;
-    const updated = await db.connectTransfer.update({
-      where: { id: row.id },
-      data: {
+    for (let attempt = 0; attempt < LEDGER_REVERSAL_CAS_ATTEMPTS; attempt++) {
+      const row = await db.connectTransfer.findUniqueOrThrow({ where: { id: rowId } });
+      const newReversed = Math.min(row.amount_cents, row.reversed_amount_cents + amount);
+      const fullyReversed = newReversed >= row.amount_cents;
+      const data = {
         status: fullyReversed ? 'reversed' : row.status,
         reversed_amount_cents: newReversed,
-        reversed_at: fullyReversed ? new Date() : row.reversed_at,
-      },
-    });
-    if (row.ledger_entry_id) {
-      await this.ledger.applyReversal(
-        {
-          entry_id: row.ledger_entry_id,
-          reversed_cents: amount,
-          stripe_transfer_id: row.stripe_transfer_id,
-        },
-        db,
-      );
+        reversed_at: fullyReversed ? (row.reversed_at ?? new Date()) : row.reversed_at,
+      };
+      const won = await db.connectTransfer.updateMany({
+        where: { id: row.id, reversed_amount_cents: row.reversed_amount_cents },
+        data,
+      });
+      if (won.count !== 1) continue;
+      if (row.ledger_entry_id && newReversed > row.reversed_amount_cents) {
+        await this.ledger.applyReversal(
+          {
+            entry_id: row.ledger_entry_id,
+            reversed_cents: newReversed - row.reversed_amount_cents,
+            stripe_transfer_id: row.stripe_transfer_id,
+            source: ledgerSource ? { ...ledgerSource, at: new Date() } : undefined,
+          },
+          db,
+        );
+      }
+      return { ...row, ...data };
     }
-    return updated;
+    throw new LedgerWriteConflictError(rowId);
   }
 
   private async markFailed(
