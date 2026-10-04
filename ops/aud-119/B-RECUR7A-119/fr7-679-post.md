@@ -1,0 +1,51 @@
+FIX ROUND 7 (B-RECUR7A-119, agent 119) — growth-project-backend#679 @ 23d2c04c3d05cfc5a6594700152a9cf5336f3111
+
+Closes Sol B-679-10 (narrowed) and B-679-11 (AUD-SOL-R12-119, [verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/679#issuecomment-5983707659)). The B-679-10 fix is on the same lines as Opus C-679-4 (`attemptSettled` :1045), so it closes C-679-4 too ([Opus verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/679#issuecomment-5983747222), APPROVE 0/0/1). The new R1 #678 @ 09e159d8 is merged in (two merge commits, no conflicts). The tests live in tests-only R5 #701 @ 5e8f1ceb (test/b-recur7a-119-r2.spec.ts) because #679 is at its size ceiling.
+
+| Finding | Change | Commit | Test (failing-before -> after) |
+|---|---|---|---|
+| Sol B-679-10 (narrowed) / Opus C-679-4: a customer default with no SetupIntent was treated as a settled trial | `attemptSettled` with no SetupIntent now returns settled only for `processing`, and never for a bare default. A trial with neither a stored secret nor a pending SetupIntent was never handed a sheet, and its enforced end is still set. `retireAttempt` therefore goes through the guarded `endUnpaid` (the cancel is confirmed by reading it back; unconfirmed stays PAYMENT_RETRY), and the key answers SUBSCRIPTION_ATTEMPT_EXPIRED (terms_changed). A lifted end (the own card attached) still answers settled. | eeb23f2e | #701 spec. Before: [run 37230129006](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37230129006) (5 failed / 8 at 8bbf4a41 + spec; 3 controls pass). After: [run 37230205968](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37230205968) (spec 8/8) |
+| Sol B-679-11: `take:50` was applied before abandoned attempts were hidden | `listPlans` now filters in the query. Every live or billable plan (entitled, trial started, past_due, unpaid) is read whole; this is naturally bounded at one per package and coach. Only ended history (canceled, unentitled, no trial) is capped at 50. The results are merged newest first, the two sets are disjoint, and every query is client-scoped. | eeb23f2e | Same runs: 50 newer abandoned attempts plus an older paid plan; 60 ended plans plus older active and past_due plans (52 listed); isolation and order control |
+
+**Probe replay (both lenses),** all in [run 37230205968](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37230205968): 280 tests, 268 pass, 12 fail. Every failure is listed below.
+- Now pass:
+  - Sol 119 trial-authority-final: control, and both B-679-10 retained cases.
+  - Sol 119 B-679-11.
+  - Sol 119 trial-authority and coach-deletion probes.
+  - Opus 119 C-679-4 acceptance.
+  - Opus 119 coach-deletion and client control.
+  - Opus 119 deletion collector (passes on the new R1).
+  - All round-6 acceptances.
+- Fail by design. Each is evidence of old behavior:
+  - Opus 119 C-679-4 "evidence". Its `prepared()` replays first, so the trial is now ended.
+  - Opus B-678-2 evidence.
+  - Opus B-679-10 evidence x2.
+  - Opus r12-117 P2 evidence (the trial create carries `cancel_at_period_end` since round 5).
+  - Sol r12-116 and r12-117 "minimal bodies" x2 (superseded since round 5).
+- Accepted deviation (both lenses, operator default): Sol B-679-8 acceptance. The next key resumes the same, still-payable sub_1; live is [sub_1] and creates is 1.
+- Sol round-4 "invoice paid after the unpaid read": as stated in round 5, this cannot happen on Stripe.
+- Frozen Cs:
+  - C-679-3 acceptance (same-key trial replay after resource absence).
+  - Opus C-678-3 (customer 404).
+- Also, locally on the #701 tree with this head merged in (the restack preview): test/b-recur, test/checkout and test/account-deletion give 42 suites, 525/525 pass.
+
+**Money list**
+- Webhook order and redelivery: no webhook code here. The plan list is a read only.
+- Concurrency: unchanged. Admission takes the advisory lock. Send authority now fences both parties through R1.
+- Terminal states:
+  - An ended or unproven trial is never answered ALREADY_ACTIVE.
+  - Canceled history stays visible (capped).
+  - A voluntary cancel that keeps access to the period end stays live, because it is entitled.
+  - Disputed or paused rows are not touched here.
+- Lists: plan discovery is complete for live plans. The Stripe list fail-closed is unchanged.
+- Currency: untouched.
+- Copy truth: SUBSCRIPTION_ALREADY_ACTIVE is no longer claimed without the attempt's own card.
+
+**Size:** 2,943+0 against the new R1 (grandfathered, 3,000 ceiling, 57 lines of headroom). #701 is 615 lines.
+
+**Follow-ups (C, frozen):**
+- C-679-3, src/checkout/subscription-checkout.service.ts:1475-1525 (replaySecretState / canceledSetupState) @ 23d2c04c. Fix rule: on a missing SetupIntent, read the bound subscription, and expire only on proven absence of both.
+
+**CI at 23d2c04c:** all required checks emitted on this stacked base are green: 10 pass, 1 skipping (deploy-readiness-gate), no reruns. CodeQL, danger, banned casts and build-sbom run after the retarget to main. #701 @ 5e8f1ceb is red by design: its new spec needs this head, and the B-RECUR7B-119 restack #680 -> #696 -> #701 carries it there.
+
+READY FOR AUDIT

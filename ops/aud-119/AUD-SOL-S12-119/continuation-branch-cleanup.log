@@ -1,0 +1,31 @@
+2026-10-04 13:21:48 PDT
+/home/user/workspace/ops/aud-119/AUD-SOL-S12-119/continuation-probe-branches.bundle is okay
+The bundle contains these 4 refs:
+4248c5fcc397f56c0479038caa01af8f0b8ce466 refs/remotes/origin/audit/AUD-SOL-S12-119/342-refusal
+cb7ecba3e49bbe95d4c863256105d0838dd7d51e refs/remotes/origin/audit/AUD-SOL-S12-119/343-native-rejection
+da8d215370e77fd640ee4501b77c17643e279add refs/remotes/origin/audit/AUD-SOL-S12B-119/342-reverify
+91794f95487010417f105d42c91ed7469b923a74 refs/remotes/origin/audit/AUD-SOL-S12B-119/343-reverify
+The bundle requires these 2 refs:
+0b1985f46ae2d4baadfcc6a02f8257c2f504249d 
+19678ce780d497513764a7827447c106fb14205e 
+The bundle uses this hash algorithm: sha1
+4248c5fcc397f56c0479038caa01af8f0b8ce466 refs/remotes/origin/audit/AUD-SOL-S12-119/342-refusal
+cb7ecba3e49bbe95d4c863256105d0838dd7d51e refs/remotes/origin/audit/AUD-SOL-S12-119/343-native-rejection
+da8d215370e77fd640ee4501b77c17643e279add refs/remotes/origin/audit/AUD-SOL-S12B-119/342-reverify
+91794f95487010417f105d42c91ed7469b923a74 refs/remotes/origin/audit/AUD-SOL-S12B-119/343-reverify
+HEAD is now at 5da0f35 test(audit): current refusal is not previous unpaid proof
+HEAD is now at efbb537 test(audit): rejected native initialization account fence
+To https://git-agent-proxy.perplexity.ai/BradleyGleavePortfolio/growth-project-mobile.git
+ - [deleted]         audit/AUD-SOL-S12-119/342-refusal
+ - [deleted]         audit/AUD-SOL-S12-119/343-native-rejection
+ - [deleted]         audit/AUD-SOL-S12B-119/342-reverify
+ - [deleted]         audit/AUD-SOL-S12B-119/343-reverify
+Deleted branch audit/AUD-SOL-S12-119/342-refusal (was 5da0f35).
+Deleted branch audit/AUD-SOL-S12-119/343-native-rejection (was efbb537).
+
+Remaining matching remote branches (must be empty):
+
+
+Remaining matching local refs (must be empty):
+
+2026-10-04 13:21:50 PDT

@@ -1,0 +1,625 @@
+targeted	Set up job	﻿2026-10-04T19:56:53.7924160Z Current runner version: '2.337.0'
+targeted	Set up job	2026-10-04T19:56:53.7947909Z ##[group]Runner Image Provisioner
+targeted	Set up job	2026-10-04T19:56:53.7948773Z Hosted Compute Agent
+targeted	Set up job	2026-10-04T19:56:53.7949480Z Version: 20260901.588
+targeted	Set up job	2026-10-04T19:56:53.7950079Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	Set up job	2026-10-04T19:56:53.7950792Z Build Date: 2026-09-01T19:56:44Z
+targeted	Set up job	2026-10-04T19:56:53.7951449Z Worker ID: {99cd2850-03b5-445f-93bd-ca72ac15f7c7}
+targeted	Set up job	2026-10-04T19:56:53.7952156Z Azure Region: westcentralus
+targeted	Set up job	2026-10-04T19:56:53.7952790Z ##[endgroup]
+targeted	Set up job	2026-10-04T19:56:53.7954317Z ##[group]Operating System
+targeted	Set up job	2026-10-04T19:56:53.7954997Z Ubuntu
+targeted	Set up job	2026-10-04T19:56:53.7955562Z 24.04.5
+targeted	Set up job	2026-10-04T19:56:53.7956103Z LTS
+targeted	Set up job	2026-10-04T19:56:53.7957007Z ##[endgroup]
+targeted	Set up job	2026-10-04T19:56:53.7957541Z ##[group]Runner Image
+targeted	Set up job	2026-10-04T19:56:53.7958175Z Image: ubuntu-24.04
+targeted	Set up job	2026-10-04T19:56:53.7958774Z Version: 20260927.320.1
+targeted	Set up job	2026-10-04T19:56:53.7959790Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	Set up job	2026-10-04T19:56:53.7961406Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	Set up job	2026-10-04T19:56:53.7962265Z ##[endgroup]
+targeted	Set up job	2026-10-04T19:56:53.7963573Z ##[group]GITHUB_TOKEN Permissions
+targeted	Set up job	2026-10-04T19:56:53.7965628Z Contents: read
+targeted	Set up job	2026-10-04T19:56:53.7966190Z Metadata: read
+targeted	Set up job	2026-10-04T19:56:53.7966716Z Packages: read
+targeted	Set up job	2026-10-04T19:56:53.7967259Z ##[endgroup]
+targeted	Set up job	2026-10-04T19:56:53.7969196Z Secret source: Actions
+targeted	Set up job	2026-10-04T19:56:53.7970121Z Cache mode: write
+targeted	Set up job	2026-10-04T19:56:53.7970756Z Prepare workflow directory
+targeted	Set up job	2026-10-04T19:56:53.8374689Z Prepare all required actions
+targeted	Set up job	2026-10-04T19:56:53.8423971Z Getting action download info
+targeted	Set up job	2026-10-04T19:56:54.1109908Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	Set up job	2026-10-04T19:56:54.2046238Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	Set up job	2026-10-04T19:56:54.4107661Z Complete job name: targeted
+targeted	Initialize containers	﻿2026-10-04T19:56:54.4550099Z ##[group]Checking docker version
+targeted	Initialize containers	2026-10-04T19:56:54.4562123Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+targeted	Initialize containers	2026-10-04T19:56:54.5657776Z '1.48'
+targeted	Initialize containers	2026-10-04T19:56:54.5668930Z Docker daemon API version: '1.48'
+targeted	Initialize containers	2026-10-04T19:56:54.5670226Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+targeted	Initialize containers	2026-10-04T19:56:54.5842789Z '1.48'
+targeted	Initialize containers	2026-10-04T19:56:54.5852038Z Docker client API version: '1.48'
+targeted	Initialize containers	2026-10-04T19:56:54.5857601Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T19:56:54.5860196Z ##[group]Clean up resources from previous jobs
+targeted	Initialize containers	2026-10-04T19:56:54.5865841Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=957600"
+targeted	Initialize containers	2026-10-04T19:56:54.6017046Z ##[command]/usr/bin/docker network prune --force --filter "label=957600"
+targeted	Initialize containers	2026-10-04T19:56:54.7431060Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T19:56:54.7431920Z ##[group]Create local container network
+targeted	Initialize containers	2026-10-04T19:56:54.7442093Z ##[command]/usr/bin/docker network create --label 957600 github_network_a5be9f600c7f4f30b1e521dc7970398d
+targeted	Initialize containers	2026-10-04T19:56:54.8037908Z 777d4e8cc2c8b6e109448210b57fab4008899355b883df20bc3812c0da7c2c32
+targeted	Initialize containers	2026-10-04T19:56:54.8047179Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T19:56:54.8074281Z ##[group]Starting redis service container
+targeted	Initialize containers	2026-10-04T19:56:54.8095542Z ##[command]/usr/bin/docker pull redis:7-alpine
+targeted	Initialize containers	2026-10-04T19:56:55.5576609Z 7-alpine: Pulling from library/redis
+targeted	Initialize containers	2026-10-04T19:56:55.7514234Z 16333ee0c00f: Pulling fs layer
+targeted	Initialize containers	2026-10-04T19:56:55.7516499Z 83234986c742: Pulling fs layer
+targeted	Initialize containers	2026-10-04T19:56:55.7518274Z 7eb50503c2b0: Pulling fs layer
+targeted	Initialize containers	2026-10-04T19:56:55.7519709Z 1522f9c6f453: Pulling fs layer
+targeted	Initialize containers	2026-10-04T19:56:55.7520961Z 9928009b15c8: Pulling fs layer
+targeted	Initialize containers	2026-10-04T19:56:55.7522111Z 4f4fb700ef54: Pulling fs layer
+targeted	Initialize containers	2026-10-04T19:56:55.7524328Z 4eb14bae0e1d: Pulling fs layer
+targeted	Initialize containers	2026-10-04T19:56:55.7525494Z 9928009b15c8: Waiting
+targeted	Initialize containers	2026-10-04T19:56:55.7526430Z 4f4fb700ef54: Waiting
+targeted	Initialize containers	2026-10-04T19:56:55.7527409Z 4eb14bae0e1d: Waiting
+targeted	Initialize containers	2026-10-04T19:56:55.7528352Z 1522f9c6f453: Waiting
+targeted	Initialize containers	2026-10-04T19:56:55.9562034Z 83234986c742: Download complete
+targeted	Initialize containers	2026-10-04T19:56:55.9991364Z 7eb50503c2b0: Verifying Checksum
+targeted	Initialize containers	2026-10-04T19:56:55.9995391Z 7eb50503c2b0: Download complete
+targeted	Initialize containers	2026-10-04T19:56:56.1063998Z 16333ee0c00f: Download complete
+targeted	Initialize containers	2026-10-04T19:56:56.1896541Z 9928009b15c8: Verifying Checksum
+targeted	Initialize containers	2026-10-04T19:56:56.1897437Z 9928009b15c8: Download complete
+targeted	Initialize containers	2026-10-04T19:56:56.2082073Z 16333ee0c00f: Pull complete
+targeted	Initialize containers	2026-10-04T19:56:56.3035788Z 4f4fb700ef54: Download complete
+targeted	Initialize containers	2026-10-04T19:56:56.3812509Z 1522f9c6f453: Verifying Checksum
+targeted	Initialize containers	2026-10-04T19:56:56.3813484Z 1522f9c6f453: Download complete
+targeted	Initialize containers	2026-10-04T19:56:56.3909552Z 4eb14bae0e1d: Verifying Checksum
+targeted	Initialize containers	2026-10-04T19:56:56.3910392Z 4eb14bae0e1d: Download complete
+targeted	Initialize containers	2026-10-04T19:57:02.6401768Z 83234986c742: Pull complete
+targeted	Initialize containers	2026-10-04T19:57:02.7703494Z 7eb50503c2b0: Pull complete
+targeted	Initialize containers	2026-10-04T19:57:03.1767204Z 1522f9c6f453: Pull complete
+targeted	Initialize containers	2026-10-04T19:57:03.1897683Z 9928009b15c8: Pull complete
+targeted	Initialize containers	2026-10-04T19:57:03.1984939Z 4f4fb700ef54: Pull complete
+targeted	Initialize containers	2026-10-04T19:57:03.2093894Z 4eb14bae0e1d: Pull complete
+targeted	Initialize containers	2026-10-04T19:57:03.2153105Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+targeted	Initialize containers	2026-10-04T19:57:03.2170937Z Status: Downloaded newer image for redis:7-alpine
+targeted	Initialize containers	2026-10-04T19:57:03.2184354Z docker.io/library/redis:7-alpine
+targeted	Initialize containers	2026-10-04T19:57:03.2214384Z ##[command]/usr/bin/docker create --name a9067ab044334d549e465c8894365a62_redis7alpine_2ce6b5 --label 957600 --network github_network_a5be9f600c7f4f30b1e521dc7970398d --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+targeted	Initialize containers	2026-10-04T19:57:03.2473682Z 4491c79ea56be30f10ba53d5ac54bd99c1bd7229317da8117ceeed2637d032d2
+targeted	Initialize containers	2026-10-04T19:57:03.2492549Z ##[command]/usr/bin/docker start 4491c79ea56be30f10ba53d5ac54bd99c1bd7229317da8117ceeed2637d032d2
+targeted	Initialize containers	2026-10-04T19:57:03.4512845Z 4491c79ea56be30f10ba53d5ac54bd99c1bd7229317da8117ceeed2637d032d2
+targeted	Initialize containers	2026-10-04T19:57:03.4529296Z ##[command]/usr/bin/docker ps --all --filter id=4491c79ea56be30f10ba53d5ac54bd99c1bd7229317da8117ceeed2637d032d2 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+targeted	Initialize containers	2026-10-04T19:57:03.4662187Z 4491c79ea56be30f10ba53d5ac54bd99c1bd7229317da8117ceeed2637d032d2 Up Less than a second (health: starting)
+targeted	Initialize containers	2026-10-04T19:57:03.4677148Z ##[command]/usr/bin/docker port 4491c79ea56be30f10ba53d5ac54bd99c1bd7229317da8117ceeed2637d032d2
+targeted	Initialize containers	2026-10-04T19:57:03.4800545Z 6379/tcp -> 0.0.0.0:6379
+targeted	Initialize containers	2026-10-04T19:57:03.4801559Z 6379/tcp -> [::]:6379
+targeted	Initialize containers	2026-10-04T19:57:03.4840897Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T19:57:03.4849262Z ##[group]Waiting for all services to be ready
+targeted	Initialize containers	2026-10-04T19:57:03.4862682Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 4491c79ea56be30f10ba53d5ac54bd99c1bd7229317da8117ceeed2637d032d2
+targeted	Initialize containers	2026-10-04T19:57:03.4989903Z starting
+targeted	Initialize containers	2026-10-04T19:57:03.5005135Z redis service is starting, waiting 2 seconds before checking again.
+targeted	Initialize containers	2026-10-04T19:57:05.5008768Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 4491c79ea56be30f10ba53d5ac54bd99c1bd7229317da8117ceeed2637d032d2
+targeted	Initialize containers	2026-10-04T19:57:05.5138707Z starting
+targeted	Initialize containers	2026-10-04T19:57:05.5150796Z redis service is starting, waiting 3 seconds before checking again.
+targeted	Initialize containers	2026-10-04T19:57:09.4665553Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 4491c79ea56be30f10ba53d5ac54bd99c1bd7229317da8117ceeed2637d032d2
+targeted	Initialize containers	2026-10-04T19:57:09.4794866Z healthy
+targeted	Initialize containers	2026-10-04T19:57:09.4824330Z redis service is healthy.
+targeted	Initialize containers	2026-10-04T19:57:09.4825382Z ##[endgroup]
+targeted	Run actions/checkout@v6	﻿2026-10-04T19:57:09.5096358Z ##[group]Run actions/checkout@v6
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.5096906Z with:
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.5097334Z   repository: BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.5100080Z   token: ***
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.5100380Z   ssh-strict: true
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.5100682Z   ssh-user: git
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.5100998Z   persist-credentials: true
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.5101353Z   clean: true
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.5101678Z   sparse-checkout-cone-mode: true
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.5102225Z   fetch-depth: 1
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.5102522Z   fetch-tags: false
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.5102856Z   show-progress: true
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.5103394Z   lfs: false
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.5103708Z   submodules: false
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.5104008Z   set-safe-directory: true
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.5104328Z   allow-unsafe-pr-checkout: false
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.5104866Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6053607Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6055416Z ##[group]Getting Git version info
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6056287Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6057249Z [command]/usr/bin/git version
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6106106Z git version 2.55.0
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6124633Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6136477Z Temporarily overriding HOME='/home/runner/work/_temp/80cd97e3-a41b-4fad-bf62-d8f85723b3f6' before making global git config changes
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6137714Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6141109Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6188623Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6192238Z ##[group]Determining repository object format
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6194313Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6195086Z ##[group]Initializing the repository
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6198213Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6397162Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6397925Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6398536Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6398980Z hint: call:
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6399378Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6400062Z hint: 	git config --global init.defaultBranch <name>
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6400620Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6401288Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6402125Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6402706Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6403088Z hint: 	git branch -m <name>
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6403730Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6404350Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6405259Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6409210Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6486960Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6487867Z ##[group]Disabling automatic garbage collection
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6490376Z [command]/usr/bin/git config --local gc.auto 0
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6519019Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6519671Z ##[group]Setting up auth
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6520134Z Removing SSH command configuration
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6525597Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6551082Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6858510Z Removing HTTP extra header
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6863293Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.6888405Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.7059706Z Removing includeIf entries pointing to credentials config files
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.7065405Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.7089931Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.7268925Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-55da9b4a-4dd9-465f-831c-abbe3f4719ab.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.7302304Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-55da9b4a-4dd9-465f-831c-abbe3f4719ab.config
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.7330887Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-55da9b4a-4dd9-465f-831c-abbe3f4719ab.config
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.7363448Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-55da9b4a-4dd9-465f-831c-abbe3f4719ab.config
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.7391727Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-55da9b4a-4dd9-465f-831c-abbe3f4719ab.config
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.7424405Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.7424987Z ##[group]Fetching the repository
+targeted	Run actions/checkout@v6	2026-10-04T19:57:09.7431564Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +e2d82757631864204e9ab628fcb0f9dda943016e:refs/remotes/origin/ci/B-DUNSPLIT-119-d2b-replay
+targeted	Run actions/checkout@v6	2026-10-04T19:57:11.6578892Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T19:57:11.6580109Z  * [new ref]         e2d82757631864204e9ab628fcb0f9dda943016e -> origin/ci/B-DUNSPLIT-119-d2b-replay
+targeted	Run actions/checkout@v6	2026-10-04T19:57:11.6589907Z [command]/usr/bin/git branch --list --remote origin/ci/B-DUNSPLIT-119-d2b-replay
+targeted	Run actions/checkout@v6	2026-10-04T19:57:11.6612301Z   origin/ci/B-DUNSPLIT-119-d2b-replay
+targeted	Run actions/checkout@v6	2026-10-04T19:57:11.6619573Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-DUNSPLIT-119-d2b-replay
+targeted	Run actions/checkout@v6	2026-10-04T19:57:11.6639182Z e2d82757631864204e9ab628fcb0f9dda943016e
+targeted	Run actions/checkout@v6	2026-10-04T19:57:11.6641877Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:57:11.6642414Z ##[group]Determining the checkout info
+targeted	Run actions/checkout@v6	2026-10-04T19:57:11.6643429Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:57:11.6647544Z [command]/usr/bin/git sparse-checkout disable
+targeted	Run actions/checkout@v6	2026-10-04T19:57:11.6697818Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	Run actions/checkout@v6	2026-10-04T19:57:11.6725493Z ##[group]Checking out the ref
+targeted	Run actions/checkout@v6	2026-10-04T19:57:11.6728420Z [command]/usr/bin/git checkout --progress --force -B ci/B-DUNSPLIT-119-d2b-replay refs/remotes/origin/ci/B-DUNSPLIT-119-d2b-replay
+targeted	Run actions/checkout@v6	2026-10-04T19:57:11.8501688Z Switched to a new branch 'ci/B-DUNSPLIT-119-d2b-replay'
+targeted	Run actions/checkout@v6	2026-10-04T19:57:11.8506705Z branch 'ci/B-DUNSPLIT-119-d2b-replay' set up to track 'origin/ci/B-DUNSPLIT-119-d2b-replay'.
+targeted	Run actions/checkout@v6	2026-10-04T19:57:11.8514794Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:57:11.8560230Z [command]/usr/bin/git log -1 --format=%H
+targeted	Run actions/checkout@v6	2026-10-04T19:57:11.8576930Z e2d82757631864204e9ab628fcb0f9dda943016e
+targeted	Run actions/setup-node@v6	﻿2026-10-04T19:57:11.8811784Z ##[group]Run actions/setup-node@v6
+targeted	Run actions/setup-node@v6	2026-10-04T19:57:11.8812182Z with:
+targeted	Run actions/setup-node@v6	2026-10-04T19:57:11.8812487Z   node-version: 20
+targeted	Run actions/setup-node@v6	2026-10-04T19:57:11.8812776Z   cache: npm
+targeted	Run actions/setup-node@v6	2026-10-04T19:57:11.8813071Z   check-latest: false
+targeted	Run actions/setup-node@v6	2026-10-04T19:57:11.8815770Z   token: ***
+targeted	Run actions/setup-node@v6	2026-10-04T19:57:11.8816150Z   package-manager-cache: true
+targeted	Run actions/setup-node@v6	2026-10-04T19:57:11.8816469Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T19:57:12.0166898Z Attempting to download 20...
+targeted	Run actions/setup-node@v6	2026-10-04T19:57:12.8785175Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+targeted	Run actions/setup-node@v6	2026-10-04T19:57:13.4703092Z Extracting ...
+targeted	Run actions/setup-node@v6	2026-10-04T19:57:13.4799626Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/78596315-08d0-4e6c-888c-8d7716e45f04 -f /home/runner/work/_temp/bdcc2072-fd76-493c-86ac-d47448f42c1e
+targeted	Run actions/setup-node@v6	2026-10-04T19:57:14.5442223Z Adding to the cache ...
+targeted	Run actions/setup-node@v6	2026-10-04T19:57:16.3138335Z ##[group]Environment details
+targeted	Run actions/setup-node@v6	2026-10-04T19:57:16.5211119Z node: v20.20.2
+targeted	Run actions/setup-node@v6	2026-10-04T19:57:16.5212145Z npm: 10.8.2
+targeted	Run actions/setup-node@v6	2026-10-04T19:57:16.5212532Z yarn: 1.22.22
+targeted	Run actions/setup-node@v6	2026-10-04T19:57:16.5214178Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T19:57:16.5230424Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+targeted	Run actions/setup-node@v6	2026-10-04T19:57:16.6165620Z /home/runner/.npm
+targeted	Run actions/setup-node@v6	2026-10-04T19:57:16.8025847Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+targeted	Run actions/setup-node@v6	2026-10-04T19:57:18.0278063Z Received 50331648 of 86828135 (58.0%), 48.0 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-04T19:57:18.2417537Z Received 86828135 of 86828135 (100.0%), 68.2 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-04T19:57:18.2418422Z Cache Size: ~83 MB (86828135 B)
+targeted	Run actions/setup-node@v6	2026-10-04T19:57:18.2451845Z [command]/usr/bin/tar -xf /home/runner/work/_temp/5c7ec4d8-c955-4135-9fbb-372a32b93ed3/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+targeted	Run actions/setup-node@v6	2026-10-04T19:57:18.3568724Z Cache restored successfully
+targeted	Run actions/setup-node@v6	2026-10-04T19:57:18.3607510Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+targeted	Run npm ci	﻿2026-10-04T19:57:18.3762168Z ##[group]Run npm ci
+targeted	Run npm ci	2026-10-04T19:57:18.3762565Z ^[[36;1mnpm ci^[[0m
+targeted	Run npm ci	2026-10-04T19:57:18.3920529Z shell: /usr/bin/bash -e {0}
+targeted	Run npm ci	2026-10-04T19:57:18.3920953Z ##[endgroup]
+targeted	Run npm ci	2026-10-04T19:57:23.8513918Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	Run npm ci	2026-10-04T19:57:24.2267006Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+targeted	Run npm ci	2026-10-04T19:57:25.9388675Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T19:57:27.0509976Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T19:57:27.0799541Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T19:57:27.1212325Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T19:57:38.5627662Z 
+targeted	Run npm ci	2026-10-04T19:57:38.5628776Z > growth-project-backend@1.0.0 postinstall
+targeted	Run npm ci	2026-10-04T19:57:38.5629345Z > prisma generate
+targeted	Run npm ci	2026-10-04T19:57:38.5629615Z 
+targeted	Run npm ci	2026-10-04T19:57:39.4024947Z Prisma schema loaded from prisma/schema.prisma
+targeted	Run npm ci	2026-10-04T19:57:43.1132067Z ┌─────────────────────────────────────────────────────────┐
+targeted	Run npm ci	2026-10-04T19:57:43.1133995Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+targeted	Run npm ci	2026-10-04T19:57:43.1134545Z 
+targeted	Run npm ci	2026-10-04T19:57:43.1135518Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.04s
+targeted	Run npm ci	2026-10-04T19:57:43.1136125Z 
+targeted	Run npm ci	2026-10-04T19:57:43.1136750Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	Run npm ci	2026-10-04T19:57:43.1137430Z 
+targeted	Run npm ci	2026-10-04T19:57:43.1138384Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+targeted	Run npm ci	2026-10-04T19:57:43.1139071Z 
+targeted	Run npm ci	2026-10-04T19:57:43.1139856Z │                                                         │
+targeted	Run npm ci	2026-10-04T19:57:43.1141379Z │  This is a major update - please follow the guide at    │
+targeted	Run npm ci	2026-10-04T19:57:43.1142468Z │  https://pris.ly/d/major-version-upgrade                │
+targeted	Run npm ci	2026-10-04T19:57:43.1143612Z │                                                         │
+targeted	Run npm ci	2026-10-04T19:57:43.1144736Z │  Run the following to update                            │
+targeted	Run npm ci	2026-10-04T19:57:43.1145746Z │    npm i --save-dev prisma@latest                       │
+targeted	Run npm ci	2026-10-04T19:57:43.1146762Z │    npm i @prisma/client@latest                          │
+targeted	Run npm ci	2026-10-04T19:57:43.1147816Z └─────────────────────────────────────────────────────────┘
+targeted	Run npm ci	2026-10-04T19:57:43.1501013Z 
+targeted	Run npm ci	2026-10-04T19:57:43.1502203Z > growth-project-backend@1.0.0 prepare
+targeted	Run npm ci	2026-10-04T19:57:43.1951474Z > lefthook install
+targeted	Run npm ci	2026-10-04T19:57:43.1952323Z 
+targeted	Run npm ci	2026-10-04T19:57:43.1952908Z sync hooks: ✔️(pre-commit, commit-msg)
+targeted	Run npm ci	2026-10-04T19:57:43.2085550Z 
+targeted	Run npm ci	2026-10-04T19:57:43.2086899Z added 1115 packages, and audited 1116 packages in 25s
+targeted	Run npm ci	2026-10-04T19:57:43.2087366Z 
+targeted	Run npm ci	2026-10-04T19:57:43.2087866Z 202 packages are looking for funding
+targeted	Run npm ci	2026-10-04T19:57:43.2088355Z   run `npm fund` for details
+targeted	Run npm ci	2026-10-04T19:57:43.2116789Z 
+targeted	Run npm ci	2026-10-04T19:57:43.2116993Z 3 high severity vulnerabilities
+targeted	Run npm ci	2026-10-04T19:57:43.2117388Z 
+targeted	Run npm ci	2026-10-04T19:57:43.2118151Z To address all issues (including breaking changes), run:
+targeted	Run npm ci	2026-10-04T19:57:43.2118722Z   npm audit fix --force
+targeted	Run npm ci	2026-10-04T19:57:43.2118996Z 
+targeted	Run npm ci	2026-10-04T19:57:43.2119189Z Run `npm audit` for details.
+targeted	Run npx prisma generate	﻿2026-10-04T19:57:43.2504249Z ##[group]Run npx prisma generate
+targeted	Run npx prisma generate	2026-10-04T19:57:43.2504673Z ^[[36;1mnpx prisma generate^[[0m
+targeted	Run npx prisma generate	2026-10-04T19:57:43.2546534Z shell: /usr/bin/bash -e {0}
+targeted	Run npx prisma generate	2026-10-04T19:57:43.2546984Z ##[endgroup]
+targeted	Run npx prisma generate	2026-10-04T19:57:44.3361335Z Prisma schema loaded from prisma/schema.prisma
+targeted	Run npx prisma generate	2026-10-04T19:57:47.9814816Z 
+targeted	Run npx prisma generate	2026-10-04T19:57:47.9816507Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.00s
+targeted	Run npx prisma generate	2026-10-04T19:57:47.9817267Z 
+targeted	Run npx prisma generate	2026-10-04T19:57:47.9817894Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	Run npx prisma generate	2026-10-04T19:57:47.9818504Z 
+targeted	Run npx prisma generate	2026-10-04T19:57:47.9819173Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+targeted	Run npx prisma generate	2026-10-04T19:57:47.9819822Z 
+targeted	Targeted jest	﻿2026-10-04T19:57:48.0744798Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T19:57:48.0745220Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T19:57:48.0745692Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T19:57:48.0746269Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T19:57:48.0746696Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T19:57:48.0747074Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T19:57:48.0789622Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T19:57:48.0790050Z env:
+targeted	Targeted jest	2026-10-04T19:57:48.0790439Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T19:57:48.0790875Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T19:57:48.0791319Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T19:57:48.0868689Z specs: test/dunning-v2-service.spec.ts test/dunning.service.spec.ts test/dunning-v2-foundation-fixes.spec.ts test/zz-opus116-688-probe.spec.ts test/zz-sol116-d2-probe.spec.ts test/zz-sol118-688-probe.spec.ts test/zz-sol118-688-probe-v2.spec.ts test/zz-opus118-688-probe.spec.ts test/zz-sol118-687-probe.spec.ts test/zz-opus118-687-probe.spec.ts test/zz-sol116-d1-probe.spec.ts test/dunning-v2-service-fixes.spec.ts
+targeted	Targeted jest	2026-10-04T19:57:50.7541553Z PASS test/dunning.service.spec.ts (137 MB heap size)
+targeted	Targeted jest	2026-10-04T19:57:50.7545995Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-04T19:57:50.699Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7549221Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-07T19:57:50.699Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7552663Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-11T19:57:50.699Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7555661Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-18T19:57:50.699Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7558568Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"inv_1","amount_cents":9900,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7561464Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-04T19:57:50.703Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7564611Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-07T19:57:50.703Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7568390Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-11T19:57:50.703Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7571390Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-18T19:57:50.703Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7574693Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"inv_1","amount_cents":9900,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7577500Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.failure_recorded","purchase_id":"p1","dunning_state_id":"d-1","failure_count":3}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7580160Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-04T19:57:50.705Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7583008Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-07T19:57:50.705Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7586054Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-11T19:57:50.705Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7588907Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-18T19:57:50.705Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7591529Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"inv_1","amount_cents":9900,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7594109Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.recovered","purchase_id":"p1","dunning_state_id":"d-1","step_index_at_recovery":-1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7597067Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-04T19:57:50.706Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7599769Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-07T19:57:50.706Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7602401Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-11T19:57:50.706Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7605576Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-18T19:57:50.706Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7608573Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"inv_2","amount_cents":9900,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7611361Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-04T19:57:50.707Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7615621Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-07T19:57:50.707Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7619334Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-11T19:57:50.707Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7622951Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-18T19:57:50.707Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7626568Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"inv_1","amount_cents":9900,"attempt_number":4}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7629602Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-04T19:57:50.708Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7632413Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-07T19:57:50.708Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7634593Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-11T19:57:50.708Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7636395Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-18T19:57:50.708Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7638298Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"inv_1","amount_cents":9900,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7639926Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_sent","purchase_id":"p1","dunning_state_id":"d-1","attempt_id":"a-2","step_index":0,"kind":"soft","retried":false}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7641574Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_sent","purchase_id":"p1","dunning_state_id":"d-1","attempt_id":"a-3","step_index":1,"kind":"urgent","retried":false}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7643288Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_sent","purchase_id":"p1","dunning_state_id":"d-1","attempt_id":"a-4","step_index":2,"kind":"final","retried":false}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7645011Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_sent","purchase_id":"p1","dunning_state_id":"d-1","attempt_id":"a-5","step_index":3,"kind":"cancelled","retried":false}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7646661Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-04T19:57:50.712Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7648385Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-07T19:57:50.712Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7650116Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-11T19:57:50.712Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7651912Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-18T19:57:50.712Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7653656Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"inv_1","amount_cents":9900,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7655247Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_sent","purchase_id":"p1","dunning_state_id":"d-1","attempt_id":"a-2","step_index":0,"kind":"soft","retried":false}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7656957Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-04T19:57:50.714Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7658628Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-07T19:57:50.714Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7660410Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-11T19:57:50.714Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7662184Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-18T19:57:50.714Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7663921Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"inv_1","amount_cents":9900,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7665381Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.recovered","purchase_id":"p1","dunning_state_id":"d-1","step_index_at_recovery":-1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7667050Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-04T19:57:50.716Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7668740Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-07T19:57:50.716Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7670491Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-11T19:57:50.716Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7672209Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-18T19:57:50.716Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7674058Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"inv_1","amount_cents":9900,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7675583Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.recovered","purchase_id":"p1","dunning_state_id":"d-1","step_index_at_recovery":-1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7678056Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-04T19:57:50.717Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7679818Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-07T19:57:50.717Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7681529Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-11T19:57:50.717Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7683477Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-18T19:57:50.717Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7685144Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"inv_1","amount_cents":9900,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7686618Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.cancelled","purchase_id":"p1","dunning_state_id":"d-1","reason":"subscription_deleted"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7688713Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-04T19:57:50.719Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7690458Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-07T19:57:50.719Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7692141Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-11T19:57:50.719Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7693973Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-18T19:57:50.719Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7695786Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"inv_1","amount_cents":9900,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7697296Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.cancelled","purchase_id":"p1","dunning_state_id":"d-1","reason":"subscription_deleted"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7698935Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-04T19:57:50.720Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7700642Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-07T19:57:50.720Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7702407Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-11T19:57:50.720Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7704224Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-18T19:57:50.720Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7705853Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"inv_1","amount_cents":9900,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7707479Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_sent","purchase_id":"p1","dunning_state_id":"d-1","attempt_id":"a-2","step_index":0,"kind":"soft","retried":false}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7708852Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.admin_advanced","purchase_id":"p1","attempt_id":"a-2"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7710341Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_sent","purchase_id":"p1","dunning_state_id":"d-1","attempt_id":"a-3","step_index":1,"kind":"urgent","retried":false}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7711751Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.admin_advanced","purchase_id":"p1","attempt_id":"a-3"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7713682Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-04T19:57:50.722Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7715441Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-07T19:57:50.722Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7717178Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-11T19:57:50.722Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7718917Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-18T19:57:50.722Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7720552Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"inv_1","amount_cents":9900,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7721909Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.admin_reset","purchase_id":"p1","dunning_state_id":"d-1"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7723599Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-04T19:57:50.723Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7725340Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-07T19:57:50.723Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7727131Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-11T19:57:50.723Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7728968Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-18T19:57:50.723Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7731030Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"inv_1","amount_cents":9900,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7732515Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.cancelled","purchase_id":"p1","dunning_state_id":"d-1","reason":"admin_cancel"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7734183Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-04T19:57:50.725Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7735929Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-07T19:57:50.725Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7737596Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-11T19:57:50.725Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7739453Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-18T19:57:50.725Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7741076Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"inv_1","amount_cents":9900,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7742690Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_sent","purchase_id":"p1","dunning_state_id":"d-1","attempt_id":"a-2","step_index":0,"kind":"soft","retried":false}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7744366Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_sent","purchase_id":"p1","dunning_state_id":"d-1","attempt_id":"a-8","step_index":-1,"kind":"soft","retried":false}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7745846Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.admin_triggered","purchase_id":"p1","step_index":0,"kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7747406Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-04T19:57:50.727Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7749155Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-07T19:57:50.727Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7750869Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-11T19:57:50.727Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7752653Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-18T19:57:50.727Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7754429Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"inv_1","amount_cents":9900,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7756019Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_sent","purchase_id":"p1","dunning_state_id":"d-1","attempt_id":"a-2","step_index":0,"kind":"soft","retried":false}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7757642Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.cancelled","purchase_id":"p1","dunning_state_id":"d-1","reason":"grace_expired","stripe_canceled":true}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7759261Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-04T19:57:50.729Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7761003Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-07T19:57:50.729Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7762707Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-11T19:57:50.729Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7764720Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-18T19:57:50.729Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7766368Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"inv_1","amount_cents":9900,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7767977Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_sent","purchase_id":"p1","dunning_state_id":"d-1","attempt_id":"a-2","step_index":0,"kind":"soft","retried":false}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7769670Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-04T19:57:50.731Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7771394Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-07T19:57:50.731Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7773085Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-11T19:57:50.731Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7774888Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-18T19:57:50.731Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7776487Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"inv_1","amount_cents":9900,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7778256Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-04T19:57:50.733Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7779929Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-07T19:57:50.733Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7781665Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-11T19:57:50.733Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7783488Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-18T19:57:50.733Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7785173Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"inv_1","amount_cents":9900,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7786623Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.recovered","purchase_id":"p1","dunning_state_id":"d-1","step_index_at_recovery":-1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7788259Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_sent","purchase_id":"p1","dunning_state_id":"d-1","attempt_id":"a-2","step_index":0,"kind":"soft","retried":false}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7789934Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-04T19:57:50.741Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7791640Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-07T19:57:50.741Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7793466Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-11T19:57:50.741Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7795285Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-18T19:57:50.741Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7796937Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"inv_1","amount_cents":9900,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7798367Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.recovered","purchase_id":"p1","dunning_state_id":"d-1","step_index_at_recovery":-1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7799941Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_raced","purchase_id":"p1","dunning_state_id":"d-1","attempt_id":"a-2","step_index":0,"from_status":"pending"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7801659Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-04T19:57:50.742Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7803432Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-07T19:57:50.742Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7805177Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-11T19:57:50.742Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7806947Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-18T19:57:50.742Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7808572Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"inv_1","amount_cents":9900,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7810186Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_sent","purchase_id":"p1","dunning_state_id":"d-1","attempt_id":"a-2","step_index":0,"kind":"soft","retried":false}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7811795Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_sent","purchase_id":"p1","dunning_state_id":"d-1","attempt_id":"a-3","step_index":1,"kind":"urgent","retried":false}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7813627Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_sent","purchase_id":"p1","dunning_state_id":"d-1","attempt_id":"a-4","step_index":2,"kind":"final","retried":false}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7815236Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_skipped","purchase_id":"p1","attempt_id":"a-5","step_index":3,"reason":"subscription_no_longer_pending_cancel"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7816957Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-04T19:57:50.743Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7818664Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-07T19:57:50.743Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7820441Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-11T19:57:50.743Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7822147Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-18T19:57:50.743Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7823868Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"inv_1","amount_cents":9900,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7825446Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_sent","purchase_id":"p1","dunning_state_id":"d-1","attempt_id":"a-2","step_index":0,"kind":"soft","retried":false}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7827185Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_sent","purchase_id":"p1","dunning_state_id":"d-1","attempt_id":"a-3","step_index":1,"kind":"urgent","retried":false}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7828902Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_sent","purchase_id":"p1","dunning_state_id":"d-1","attempt_id":"a-4","step_index":2,"kind":"final","retried":false}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7830508Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_sent","purchase_id":"p1","dunning_state_id":"d-1","attempt_id":"a-5","step_index":3,"kind":"cancelled","retried":false}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7832220Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-04T19:57:50.744Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7834155Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-07T19:57:50.744Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7835955Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-11T19:57:50.744Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7837712Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-18T19:57:50.744Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7839366Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"inv_1","amount_cents":9900,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7840949Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_sent","purchase_id":"p1","dunning_state_id":"d-1","attempt_id":"a-2","step_index":0,"kind":"soft","retried":false}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7842338Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.admin_reset","purchase_id":"p1","dunning_state_id":"d-1"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7843957Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-04T19:57:50.745Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7845701Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-07T19:57:50.745Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7847416Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-11T19:57:50.745Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7849139Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-18T19:57:50.745Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7850816Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"inv_2","amount_cents":9900,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7852476Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-04T19:57:50.745Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7854220Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-07T19:57:50.745Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7855982Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-11T19:57:50.745Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7857702Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-18T19:57:50.745Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7859855Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"inv_1","amount_cents":9900,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7862306Z ^[[33m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[33mdunning.attempt_failed attempt=a-2 step=0 retry=1/3 next_at=2026-10-04T20:57:50.746Z: SES temporarily unavailable^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7865128Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_sent","purchase_id":"p1","dunning_state_id":"d-1","attempt_id":"a-2","step_index":0,"kind":"soft","retried":true}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7866950Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-04T19:57:50.747Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7868666Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-07T19:57:50.747Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7870448Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-11T19:57:50.747Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7872159Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-18T19:57:50.747Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7874118Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"inv_1","amount_cents":9900,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7875600Z ^[[33m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[33mdunning.attempt_failed attempt=a-2 step=0 retry=1/3 next_at=2026-10-04T20:57:50.747Z: SES gone for good^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7877078Z ^[[33m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[33mdunning.attempt_failed attempt=a-2 step=0 retry=2/3 next_at=2027-10-04T23:57:50.747Z: SES gone for good^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7878934Z ^[[33m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[33mdunning.attempt_failed attempt=a-2 step=0 retry=3/3 next_at=2028-10-04T11:57:50.747Z: SES gone for good^[[39m
+targeted	Targeted jest	2026-10-04T19:57:50.7880474Z ^[[33m[Nest] 3120  - ^[[39m10/04/2026, 7:57:50 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[33mdunning.attempt_failed_permanent attempt=a-2 step=0 retries=4: SES gone for good^[[39m
+targeted	Targeted jest	2026-10-04T19:57:51.1958210Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:51 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[32m{"event":"dunning_v2.locked","dunning_state_id":"ds1","purchase_id":"p1","entered_at":"2026-10-05T16:00:00.000Z"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:51.1960729Z ^[[33m[Nest] 3120  - ^[[39m10/04/2026, 7:57:51 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[33mdunning v2 lock skipped state=ds1: purchase status active is not past_due^[[39m
+targeted	Targeted jest	2026-10-04T19:57:51.1963056Z ^[[33m[Nest] 3120  - ^[[39m10/04/2026, 7:57:51 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[33mdunning v2 lock skipped state=ds1: Stripe reports subscription active; waiting for invoice.paid^[[39m
+targeted	Targeted jest	2026-10-04T19:57:51.1965181Z ^[[33m[Nest] 3120  - ^[[39m10/04/2026, 7:57:51 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[33mdunning v2 lock deferred state=ds1: Stripe check failed: error^[[39m
+targeted	Targeted jest	2026-10-04T19:57:51.2005539Z PASS test/dunning-v2-service.spec.ts (183 MB heap size)
+targeted	Targeted jest	2026-10-04T19:57:51.5556934Z ^[[31m[Nest] 3120  - ^[[39m10/04/2026, 7:57:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[NotificationsService] ^[[39m^[[31mpushToUser ticket error for user coach-a: unknown^[[39m
+targeted	Targeted jest	2026-10-04T19:57:51.6675616Z FAIL test/dunning-v2-foundation-fixes.spec.ts (132 MB heap size)
+targeted	Targeted jest	2026-10-04T19:57:51.6677690Z   ● B-687-4 (Sol) / B-687-5 (Opus) / C-687-6: copy claims nothing before it is true › dispute cycle step 0: no card or cancel promise
+targeted	Targeted jest	2026-10-04T19:57:51.6678858Z 
+targeted	Targeted jest	2026-10-04T19:57:51.6679191Z     expect(received).toMatch(expected)
+targeted	Targeted jest	2026-10-04T19:57:51.6679608Z 
+targeted	Targeted jest	2026-10-04T19:57:51.6680092Z     Expected pattern: /decides whether to restart it(.|\n)*Restarting is your decision/
+targeted	Targeted jest	2026-10-04T19:57:51.6681108Z     Received string:  "Avery, a recent payment was reversed by the bank after a dispute. Access has ended and billing is paused. Morgan Coach decides whether to restart it."
+targeted	Targeted jest	2026-10-04T19:57:51.6681669Z 
+targeted	Targeted jest	2026-10-04T19:57:51.6682124Z     ^[[0m ^[[90m 389 |^[[39m     ^[[90m// R-DISPUTE-PAUSE: access has ended, billing is paused, the coach decides.^[[39m
+targeted	Targeted jest	2026-10-04T19:57:51.6683093Z      ^[[90m 390 |^[[39m     expect(text)^[[33m.^[[39mtoMatch(^[[35m/Access has ended and billing (for the plan )?is paused/^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:51.6684338Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 391 |^[[39m     expect(text)^[[33m.^[[39mtoMatch(^[[35m/decides whether to restart it(.|\n)*Restarting is your decision/^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:51.6685116Z      ^[[90m     |^[[39m                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:57:51.6685682Z      ^[[90m 392 |^[[39m     expect(text)^[[33m.^[[39mnot^[[33m.^[[39mtoMatch(
+targeted	Targeted jest	2026-10-04T19:57:51.6686527Z      ^[[90m 393 |^[[39m       ^[[35m/stays on|restore|keep everything|will settle it|paid with it|End my plan|Update card|pauses on|locks/i^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:57:51.6687248Z      ^[[90m 394 |^[[39m     )^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:57:51.6687446Z 
+targeted	Targeted jest	2026-10-04T19:57:51.6687700Z       at test/dunning-v2-foundation-fixes.spec.ts:391:18
+targeted	Targeted jest	2026-10-04T19:57:51.6687962Z 
+targeted	Targeted jest	2026-10-04T19:57:51.6688554Z   ● B-687-4 (Sol) / B-687-5 (Opus) / C-687-6: copy claims nothing before it is true › dispute cycle step 1: no card or cancel promise
+targeted	Targeted jest	2026-10-04T19:57:51.6688965Z 
+targeted	Targeted jest	2026-10-04T19:57:51.6689156Z     expect(received).toMatch(expected)
+targeted	Targeted jest	2026-10-04T19:57:51.6689384Z 
+targeted	Targeted jest	2026-10-04T19:57:51.6689648Z     Expected pattern: /decides whether to restart it(.|\n)*Restarting is your decision/
+targeted	Targeted jest	2026-10-04T19:57:51.6690779Z     Received string:  "Avery, a recent payment was reversed by the bank after a dispute. Access has ended and billing is paused. Morgan Coach decides whether to restart it.········
+targeted	Targeted jest	2026-10-04T19:57:51.6691684Z          Good day, Avery.·
+targeted	Targeted jest	2026-10-04T19:57:51.6692725Z     A recent payment was reversed by the bank after a dispute. It was for your plan with Morgan Coach. Access has ended and billing for the plan is paused.·
+targeted	Targeted jest	2026-10-04T19:57:51.6693973Z     Morgan Coach decides whether to restart it. The dispute closing does not restart it on its own.·
+targeted	Targeted jest	2026-10-04T19:57:51.6694825Z     — Roman, on behalf of Morgan Coach············
+targeted	Targeted jest	2026-10-04T19:57:51.6695785Z          Questions about this payment? Reply to this email to reach a person who can help.·······
+targeted	Targeted jest	2026-10-04T19:57:51.6696546Z     "
+targeted	Targeted jest	2026-10-04T19:57:51.6696831Z 
+targeted	Targeted jest	2026-10-04T19:57:51.6697539Z     ^[[0m ^[[90m 389 |^[[39m     ^[[90m// R-DISPUTE-PAUSE: access has ended, billing is paused, the coach decides.^[[39m
+targeted	Targeted jest	2026-10-04T19:57:51.6698873Z      ^[[90m 390 |^[[39m     expect(text)^[[33m.^[[39mtoMatch(^[[35m/Access has ended and billing (for the plan )?is paused/^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:51.6700341Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 391 |^[[39m     expect(text)^[[33m.^[[39mtoMatch(^[[35m/decides whether to restart it(.|\n)*Restarting is your decision/^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:51.6701510Z      ^[[90m     |^[[39m                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:57:51.6702244Z      ^[[90m 392 |^[[39m     expect(text)^[[33m.^[[39mnot^[[33m.^[[39mtoMatch(
+targeted	Targeted jest	2026-10-04T19:57:51.6703674Z      ^[[90m 393 |^[[39m       ^[[35m/stays on|restore|keep everything|will settle it|paid with it|End my plan|Update card|pauses on|locks/i^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:57:51.6704659Z      ^[[90m 394 |^[[39m     )^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:57:51.6705026Z 
+targeted	Targeted jest	2026-10-04T19:57:51.6705321Z       at test/dunning-v2-foundation-fixes.spec.ts:391:18
+targeted	Targeted jest	2026-10-04T19:57:51.6705685Z 
+targeted	Targeted jest	2026-10-04T19:57:51.6706454Z   ● B-687-4 (Sol) / B-687-5 (Opus) / C-687-6: copy claims nothing before it is true › dispute cycle step 2: no card or cancel promise
+targeted	Targeted jest	2026-10-04T19:57:51.6707358Z 
+targeted	Targeted jest	2026-10-04T19:57:51.6707723Z     expect(received).toMatch(expected)
+targeted	Targeted jest	2026-10-04T19:57:51.6708052Z 
+targeted	Targeted jest	2026-10-04T19:57:51.6708526Z     Expected pattern: /decides whether to restart it(.|\n)*Restarting is your decision/
+targeted	Targeted jest	2026-10-04T19:57:51.6709926Z     Received string:  "Avery, a recent payment was reversed by the bank after a dispute. Access has ended and billing is paused. Morgan Coach decides whether to restart it.········
+targeted	Targeted jest	2026-10-04T19:57:51.6710706Z          Good day, Avery.·
+targeted	Targeted jest	2026-10-04T19:57:51.6711477Z     A recent payment was reversed by the bank after a dispute. It was for your plan with Morgan Coach. Access has ended and billing for the plan is paused.·
+targeted	Targeted jest	2026-10-04T19:57:51.6712389Z     Morgan Coach decides whether to restart it. The dispute closing does not restart it on its own.·
+targeted	Targeted jest	2026-10-04T19:57:51.6713036Z     — Roman, on behalf of Morgan Coach············
+targeted	Targeted jest	2026-10-04T19:57:51.6713997Z          Questions about this payment? Reply to this email to reach a person who can help.········
+targeted	Targeted jest	2026-10-04T19:57:51.6715325Z     A recent payment was reversed after a dispute. Access has ended and billing is paused. Morgan Coach decides whether to restart it. {\"headline\":\"A payment was reversed after a dispute.\",\"primaryCta\":\"See details\",\"secondaryCta\":\"Not now\",\"variant\":\"lr_day3\",\"dunningStateId\":\"ds-1\"}"
+targeted	Targeted jest	2026-10-04T19:57:51.6716237Z 
+targeted	Targeted jest	2026-10-04T19:57:51.6717172Z     ^[[0m ^[[90m 389 |^[[39m     ^[[90m// R-DISPUTE-PAUSE: access has ended, billing is paused, the coach decides.^[[39m
+targeted	Targeted jest	2026-10-04T19:57:51.6718095Z      ^[[90m 390 |^[[39m     expect(text)^[[33m.^[[39mtoMatch(^[[35m/Access has ended and billing (for the plan )?is paused/^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:51.6719126Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 391 |^[[39m     expect(text)^[[33m.^[[39mtoMatch(^[[35m/decides whether to restart it(.|\n)*Restarting is your decision/^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:51.6719913Z      ^[[90m     |^[[39m                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:57:51.6720475Z      ^[[90m 392 |^[[39m     expect(text)^[[33m.^[[39mnot^[[33m.^[[39mtoMatch(
+targeted	Targeted jest	2026-10-04T19:57:51.6721299Z      ^[[90m 393 |^[[39m       ^[[35m/stays on|restore|keep everything|will settle it|paid with it|End my plan|Update card|pauses on|locks/i^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:57:51.6722134Z      ^[[90m 394 |^[[39m     )^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:57:51.6722365Z 
+targeted	Targeted jest	2026-10-04T19:57:51.6722614Z       at test/dunning-v2-foundation-fixes.spec.ts:391:18
+targeted	Targeted jest	2026-10-04T19:57:51.6722894Z 
+targeted	Targeted jest	2026-10-04T19:57:53.1975621Z PASS test/dunning-v2-service-fixes.spec.ts (179 MB heap size)
+targeted	Targeted jest	2026-10-04T19:57:53.5342522Z ^[[33m[Nest] 3120  - ^[[39m10/04/2026, 7:57:53 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[33mdunning v2 lock skipped state=ds-s1: purchase status active is not past_due^[[39m
+targeted	Targeted jest	2026-10-04T19:57:53.5344262Z PASS test/zz-opus118-688-probe.spec.ts (224 MB heap size)
+targeted	Targeted jest	2026-10-04T19:57:53.5345587Z ^[[33m[Nest] 3120  - ^[[39m10/04/2026, 7:57:53 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[33mdunning v2 lock skipped state=ds-s2: purchase status active is not past_due^[[39m
+targeted	Targeted jest	2026-10-04T19:57:53.5347047Z ^[[33m[Nest] 3120  - ^[[39m10/04/2026, 7:57:53 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[33mdunning v2 lock skipped state=ds-s1: purchase status active is not past_due^[[39m
+targeted	Targeted jest	2026-10-04T19:57:53.5348296Z ^[[33m[Nest] 3120  - ^[[39m10/04/2026, 7:57:53 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[33mdunning v2 dispute purchase resolution failed: error^[[39m
+targeted	Targeted jest	2026-10-04T19:57:53.5349552Z ^[[33m[Nest] 3120  - ^[[39m10/04/2026, 7:57:53 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[33mdunning v2 dispute purchase resolution failed: stripe_404_resource_missing^[[39m
+targeted	Targeted jest	2026-10-04T19:57:53.5350990Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:53 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[32m{"event":"dunning_v2.locked","dunning_state_id":"ds1","purchase_id":"p1","entered_at":"2026-10-05T16:00:00.000Z"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:53.5352746Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:53 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.recovered","purchase_id":"p1","dunning_state_id":"ds1","step_index_at_recovery":3}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:53.5354481Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:53 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"ds1","step_index":0,"scheduled_for":"2026-10-04T19:57:53.514Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:53.5356439Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:53 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"ds1","step_index":1,"scheduled_for":"2026-10-07T19:57:53.514Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:53.5358235Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:53 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"ds1","step_index":2,"scheduled_for":"2026-10-11T19:57:53.514Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:53.5359952Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:53 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"ds1","step_index":3,"scheduled_for":"2026-10-18T19:57:53.514Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:53.5361626Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:53 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"ds1","invoice_id":"in_new","amount_cents":15000,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:53.5363050Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:53 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.recovered","purchase_id":"p1","dunning_state_id":"ds1","step_index_at_recovery":3}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:53.5364902Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:53 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"ds1","step_index":0,"scheduled_for":"2026-10-04T19:57:53.519Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:53.5366634Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:53 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"ds1","step_index":1,"scheduled_for":"2026-10-07T19:57:53.519Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:53.5368469Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:53 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"ds1","step_index":2,"scheduled_for":"2026-10-11T19:57:53.519Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:53.5370175Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:53 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"ds1","step_index":3,"scheduled_for":"2026-10-18T19:57:53.519Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:53.5371820Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:53 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"ds1","invoice_id":"in_new","amount_cents":15000,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:53.5373376Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:53 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.recovered","purchase_id":"p1","dunning_state_id":"ds1","step_index_at_recovery":3}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:53.5374954Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:53 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"ds1","step_index":0,"scheduled_for":"2026-10-04T19:57:53.522Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:53.5376713Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:53 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"ds1","step_index":1,"scheduled_for":"2026-10-07T19:57:53.522Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:53.5378499Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:53 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"ds1","step_index":2,"scheduled_for":"2026-10-11T19:57:53.522Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:53.5380254Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:53 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"ds1","step_index":3,"scheduled_for":"2026-10-18T19:57:53.522Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:53.5381862Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:53 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"ds1","invoice_id":"in_new","amount_cents":15000,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:57.4993473Z ^[[32m[Nest] 3120  - ^[[39m10/04/2026, 7:57:53 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[32m{"event":"dunning_v2.locked","dunning_state_id":"ds-p1","purchase_id":"p1","entered_at":"2026-10-04T02:30:00.000Z"}^[[39m
+targeted	Targeted jest	2026-10-04T19:57:57.4994874Z PASS test/zz-sol116-d2-probe.spec.ts (388 MB heap size)
+targeted	Targeted jest	2026-10-04T19:57:57.7755387Z PASS test/zz-opus116-688-probe.spec.ts (422 MB heap size)
+targeted	Targeted jest	2026-10-04T19:57:58.0345164Z PASS test/zz-sol118-688-probe-v2.spec.ts (445 MB heap size)
+targeted	Targeted jest	2026-10-04T19:57:58.2938630Z PASS test/zz-sol118-688-probe.spec.ts (471 MB heap size)
+targeted	Targeted jest	2026-10-04T19:57:58.5479308Z PASS test/zz-sol118-687-probe.spec.ts (494 MB heap size)
+targeted	Targeted jest	2026-10-04T19:57:58.7882477Z PASS test/zz-opus118-687-probe.spec.ts (520 MB heap size)
+targeted	Targeted jest	2026-10-04T19:57:58.9194512Z PASS test/zz-sol116-d1-probe.spec.ts (523 MB heap size)
+targeted	Targeted jest	2026-10-04T19:57:58.9216540Z 
+targeted	Targeted jest	2026-10-04T19:57:58.9224815Z Test Suites: 1 failed, 11 passed, 12 total
+targeted	Targeted jest	2026-10-04T19:57:58.9225314Z Tests:       3 failed, 147 passed, 150 total
+targeted	Targeted jest	2026-10-04T19:57:58.9225731Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T19:57:58.9226057Z Time:        10.098 s
+targeted	Targeted jest	2026-10-04T19:57:58.9227978Z Ran all test suites matching test/dunning-v2-service.spec.ts|test/dunning.service.spec.ts|test/dunning-v2-foundation-fixes.spec.ts|test/zz-opus116-688-probe.spec.ts|test/zz-sol116-d2-probe.spec.ts|test/zz-sol118-688-probe.spec.ts|test/zz-sol118-688-probe-v2.spec.ts|test/zz-opus118-688-probe.spec.ts|test/zz-sol118-687-probe.spec.ts|test/zz-opus118-687-probe.spec.ts|test/zz-sol116-d1-probe.spec.ts|test/dunning-v2-service-fixes.spec.ts.
+targeted	Targeted jest	2026-10-04T19:57:59.0751319Z ##[error]Process completed with exit code 1.
+targeted	Post Run actions/checkout@v6	﻿2026-10-04T19:57:59.0873065Z Post job cleanup.
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.1666740Z [command]/usr/bin/git version
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.1698810Z git version 2.55.0
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.1731592Z Temporarily overriding HOME='/home/runner/work/_temp/39a5e111-36d6-4acb-a177-c2fb31383e8b' before making global git config changes
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.1732455Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.1738008Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.1766242Z Removing SSH command configuration
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.1772822Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.1802503Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.1988147Z Removing HTTP extra header
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.1993579Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.2022168Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.2200892Z Removing includeIf entries pointing to credentials config files
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.2207541Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.2231534Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.2232973Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.2234046Z includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.2234759Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.2240107Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.2259350Z /home/runner/work/_temp/git-credentials-55da9b4a-4dd9-465f-831c-abbe3f4719ab.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.2267854Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-55da9b4a-4dd9-465f-831c-abbe3f4719ab.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.2301784Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.2320111Z /home/runner/work/_temp/git-credentials-55da9b4a-4dd9-465f-831c-abbe3f4719ab.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.2328190Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-55da9b4a-4dd9-465f-831c-abbe3f4719ab.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.2357673Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.2375450Z /github/runner_temp/git-credentials-55da9b4a-4dd9-465f-831c-abbe3f4719ab.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.2381109Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-55da9b4a-4dd9-465f-831c-abbe3f4719ab.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.2411160Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.2428563Z /github/runner_temp/git-credentials-55da9b4a-4dd9-465f-831c-abbe3f4719ab.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.2435794Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-55da9b4a-4dd9-465f-831c-abbe3f4719ab.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.2469530Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Post Run actions/checkout@v6	2026-10-04T19:57:59.2649829Z Removing credentials config '/home/runner/work/_temp/git-credentials-55da9b4a-4dd9-465f-831c-abbe3f4719ab.config'
+targeted	Stop containers	﻿2026-10-04T19:57:59.2761441Z Print service container logs: a9067ab044334d549e465c8894365a62_redis7alpine_2ce6b5
+targeted	Stop containers	2026-10-04T19:57:59.2766157Z ##[command]/usr/bin/docker logs --details 4491c79ea56be30f10ba53d5ac54bd99c1bd7229317da8117ceeed2637d032d2
+targeted	Stop containers	2026-10-04T19:57:59.2893648Z  1:C 04 Oct 2026 19:57:03.457 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+targeted	Stop containers	2026-10-04T19:57:59.2895723Z  1:C 04 Oct 2026 19:57:03.457 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+targeted	Stop containers	2026-10-04T19:57:59.2896512Z  1:C 04 Oct 2026 19:57:03.457 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+targeted	Stop containers	2026-10-04T19:57:59.2897419Z  1:C 04 Oct 2026 19:57:03.457 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+targeted	Stop containers	2026-10-04T19:57:59.2898781Z  1:M 04 Oct 2026 19:57:03.458 * monotonic clock: POSIX clock_gettime
+targeted	Stop containers	2026-10-04T19:57:59.2899350Z  1:M 04 Oct 2026 19:57:03.458 * Running mode=standalone, port=6379.
+targeted	Stop containers	2026-10-04T19:57:59.2899973Z  1:M 04 Oct 2026 19:57:03.459 * Server initialized
+targeted	Stop containers	2026-10-04T19:57:59.2900417Z  1:M 04 Oct 2026 19:57:03.459 * Ready to accept connections tcp
+targeted	Stop containers	2026-10-04T19:57:59.2906637Z Stop and remove container: a9067ab044334d549e465c8894365a62_redis7alpine_2ce6b5
+targeted	Stop containers	2026-10-04T19:57:59.2910952Z ##[command]/usr/bin/docker rm --force 4491c79ea56be30f10ba53d5ac54bd99c1bd7229317da8117ceeed2637d032d2
+targeted	Stop containers	2026-10-04T19:58:01.3578626Z 4491c79ea56be30f10ba53d5ac54bd99c1bd7229317da8117ceeed2637d032d2
+targeted	Stop containers	2026-10-04T19:58:01.3600676Z Remove container network: github_network_a5be9f600c7f4f30b1e521dc7970398d
+targeted	Stop containers	2026-10-04T19:58:01.3604985Z ##[command]/usr/bin/docker network rm github_network_a5be9f600c7f4f30b1e521dc7970398d
+targeted	Stop containers	2026-10-04T19:58:01.4498907Z github_network_a5be9f600c7f4f30b1e521dc7970398d
+targeted	Complete job	﻿2026-10-04T19:58:01.4571790Z Cleaning up orphan processes

@@ -1,0 +1,1166 @@
+﻿2026-10-04T19:58:58.2575622Z Current runner version: '2.337.0'
+2026-10-04T19:58:58.2600227Z ##[group]Runner Image Provisioner
+2026-10-04T19:58:58.2601109Z Hosted Compute Agent
+2026-10-04T19:58:58.2601846Z Version: 20260901.588
+2026-10-04T19:58:58.2602503Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-04T19:58:58.2603244Z Build Date: 2026-09-01T19:56:44Z
+2026-10-04T19:58:58.2604530Z Worker ID: {223427f1-c60a-49ec-b3d5-696eeafc1c95}
+2026-10-04T19:58:58.2605289Z Azure Region: eastus
+2026-10-04T19:58:58.2606201Z ##[endgroup]
+2026-10-04T19:58:58.2607942Z ##[group]Operating System
+2026-10-04T19:58:58.2608586Z Ubuntu
+2026-10-04T19:58:58.2609175Z 24.04.5
+2026-10-04T19:58:58.2609703Z LTS
+2026-10-04T19:58:58.2610270Z ##[endgroup]
+2026-10-04T19:58:58.2610880Z ##[group]Runner Image
+2026-10-04T19:58:58.2611491Z Image: ubuntu-24.04
+2026-10-04T19:58:58.2612086Z Version: 20260927.320.1
+2026-10-04T19:58:58.2613599Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-04T19:58:58.2615267Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-04T19:58:58.2616241Z ##[endgroup]
+2026-10-04T19:58:58.2617438Z ##[group]GITHUB_TOKEN Permissions
+2026-10-04T19:58:58.2619644Z Contents: read
+2026-10-04T19:58:58.2620303Z Metadata: read
+2026-10-04T19:58:58.2620893Z Packages: read
+2026-10-04T19:58:58.2621453Z ##[endgroup]
+2026-10-04T19:58:58.2623763Z Secret source: Actions
+2026-10-04T19:58:58.2624774Z Cache mode: write
+2026-10-04T19:58:58.2625545Z Prepare workflow directory
+2026-10-04T19:58:58.3155203Z Prepare all required actions
+2026-10-04T19:58:58.3228319Z Getting action download info
+2026-10-04T19:58:58.5620167Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-04T19:58:58.6670654Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-04T19:58:58.8969835Z Complete job name: targeted
+2026-10-04T19:58:58.9491200Z ##[group]Checking docker version
+2026-10-04T19:58:58.9504378Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-04T19:58:59.0489849Z '1.48'
+2026-10-04T19:58:59.0505070Z Docker daemon API version: '1.48'
+2026-10-04T19:58:59.0505885Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-04T19:58:59.0668753Z '1.48'
+2026-10-04T19:58:59.0681959Z Docker client API version: '1.48'
+2026-10-04T19:58:59.0687710Z ##[endgroup]
+2026-10-04T19:58:59.0690983Z ##[group]Clean up resources from previous jobs
+2026-10-04T19:58:59.0697390Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=d9eb0b"
+2026-10-04T19:58:59.0841687Z ##[command]/usr/bin/docker network prune --force --filter "label=d9eb0b"
+2026-10-04T19:58:59.0966697Z ##[endgroup]
+2026-10-04T19:58:59.0967248Z ##[group]Create local container network
+2026-10-04T19:58:59.0977614Z ##[command]/usr/bin/docker network create --label d9eb0b github_network_de0698daec75485eb0f8c9ed909e54bf
+2026-10-04T19:58:59.1486454Z 5d8fddba0cd58c184e0df34a8c553aa9b0ce57a0f28f4927349b9373d8a336e4
+2026-10-04T19:58:59.1504997Z ##[endgroup]
+2026-10-04T19:58:59.1529540Z ##[group]Starting redis service container
+2026-10-04T19:58:59.1551643Z ##[command]/usr/bin/docker pull redis:7-alpine
+2026-10-04T19:58:59.3834312Z 7-alpine: Pulling from library/redis
+2026-10-04T19:58:59.4511079Z 16333ee0c00f: Pulling fs layer
+2026-10-04T19:58:59.4512161Z 83234986c742: Pulling fs layer
+2026-10-04T19:58:59.4512789Z 7eb50503c2b0: Pulling fs layer
+2026-10-04T19:58:59.4513611Z 1522f9c6f453: Pulling fs layer
+2026-10-04T19:58:59.4514408Z 9928009b15c8: Pulling fs layer
+2026-10-04T19:58:59.4515345Z 4f4fb700ef54: Pulling fs layer
+2026-10-04T19:58:59.4516238Z 4eb14bae0e1d: Pulling fs layer
+2026-10-04T19:58:59.4517119Z 9928009b15c8: Waiting
+2026-10-04T19:58:59.4517919Z 4f4fb700ef54: Waiting
+2026-10-04T19:58:59.4518724Z 4eb14bae0e1d: Waiting
+2026-10-04T19:58:59.4519342Z 1522f9c6f453: Waiting
+2026-10-04T19:58:59.4822411Z 83234986c742: Verifying Checksum
+2026-10-04T19:58:59.4824812Z 83234986c742: Download complete
+2026-10-04T19:58:59.4867355Z 7eb50503c2b0: Verifying Checksum
+2026-10-04T19:58:59.4868393Z 7eb50503c2b0: Download complete
+2026-10-04T19:58:59.5080076Z 16333ee0c00f: Verifying Checksum
+2026-10-04T19:58:59.5080784Z 16333ee0c00f: Download complete
+2026-10-04T19:58:59.5117890Z 9928009b15c8: Verifying Checksum
+2026-10-04T19:58:59.5118953Z 9928009b15c8: Download complete
+2026-10-04T19:58:59.5341885Z 4f4fb700ef54: Verifying Checksum
+2026-10-04T19:58:59.5342715Z 4f4fb700ef54: Download complete
+2026-10-04T19:58:59.5414365Z 4eb14bae0e1d: Download complete
+2026-10-04T19:58:59.5647181Z 1522f9c6f453: Verifying Checksum
+2026-10-04T19:58:59.5648092Z 1522f9c6f453: Download complete
+2026-10-04T19:58:59.6254493Z 16333ee0c00f: Pull complete
+2026-10-04T19:59:01.9462129Z 83234986c742: Pull complete
+2026-10-04T19:59:02.0850587Z 7eb50503c2b0: Pull complete
+2026-10-04T19:59:02.2764547Z 1522f9c6f453: Pull complete
+2026-10-04T19:59:02.2855838Z 9928009b15c8: Pull complete
+2026-10-04T19:59:02.2927611Z 4f4fb700ef54: Pull complete
+2026-10-04T19:59:02.3025612Z 4eb14bae0e1d: Pull complete
+2026-10-04T19:59:02.3063193Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+2026-10-04T19:59:02.3074320Z Status: Downloaded newer image for redis:7-alpine
+2026-10-04T19:59:02.3081722Z docker.io/library/redis:7-alpine
+2026-10-04T19:59:02.3118424Z ##[command]/usr/bin/docker create --name a9e5dc6928574265901d5cfe4f4055d8_redis7alpine_637521 --label d9eb0b --network github_network_de0698daec75485eb0f8c9ed909e54bf --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+2026-10-04T19:59:02.3385409Z cc11876da2359f2d59dba0819f7e4915a879c40f2c726850d11a7dd8dc9957d4
+2026-10-04T19:59:02.3412580Z ##[command]/usr/bin/docker start cc11876da2359f2d59dba0819f7e4915a879c40f2c726850d11a7dd8dc9957d4
+2026-10-04T19:59:02.5606306Z cc11876da2359f2d59dba0819f7e4915a879c40f2c726850d11a7dd8dc9957d4
+2026-10-04T19:59:02.5626938Z ##[command]/usr/bin/docker ps --all --filter id=cc11876da2359f2d59dba0819f7e4915a879c40f2c726850d11a7dd8dc9957d4 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-04T19:59:02.5763136Z cc11876da2359f2d59dba0819f7e4915a879c40f2c726850d11a7dd8dc9957d4 Up Less than a second (health: starting)
+2026-10-04T19:59:02.5784627Z ##[command]/usr/bin/docker port cc11876da2359f2d59dba0819f7e4915a879c40f2c726850d11a7dd8dc9957d4
+2026-10-04T19:59:02.5913029Z 6379/tcp -> 0.0.0.0:6379
+2026-10-04T19:59:02.5913856Z 6379/tcp -> [::]:6379
+2026-10-04T19:59:02.5960436Z ##[endgroup]
+2026-10-04T19:59:02.5968956Z ##[group]Waiting for all services to be ready
+2026-10-04T19:59:02.5982693Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" cc11876da2359f2d59dba0819f7e4915a879c40f2c726850d11a7dd8dc9957d4
+2026-10-04T19:59:02.6103500Z starting
+2026-10-04T19:59:02.6125989Z redis service is starting, waiting 2 seconds before checking again.
+2026-10-04T19:59:04.6130912Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" cc11876da2359f2d59dba0819f7e4915a879c40f2c726850d11a7dd8dc9957d4
+2026-10-04T19:59:04.6253667Z starting
+2026-10-04T19:59:04.6267140Z redis service is starting, waiting 3 seconds before checking again.
+2026-10-04T19:59:08.4232788Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" cc11876da2359f2d59dba0819f7e4915a879c40f2c726850d11a7dd8dc9957d4
+2026-10-04T19:59:08.4367298Z healthy
+2026-10-04T19:59:08.4419016Z redis service is healthy.
+2026-10-04T19:59:08.4419731Z ##[endgroup]
+2026-10-04T19:59:08.4708998Z ##[group]Run actions/checkout@v6
+2026-10-04T19:59:08.4709598Z with:
+2026-10-04T19:59:08.4709902Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T19:59:08.4712854Z   token: ***
+2026-10-04T19:59:08.4713066Z   ssh-strict: true
+2026-10-04T19:59:08.4713271Z   ssh-user: git
+2026-10-04T19:59:08.4713736Z   persist-credentials: true
+2026-10-04T19:59:08.4714219Z   clean: true
+2026-10-04T19:59:08.4714451Z   sparse-checkout-cone-mode: true
+2026-10-04T19:59:08.4714706Z   fetch-depth: 1
+2026-10-04T19:59:08.4714903Z   fetch-tags: false
+2026-10-04T19:59:08.4715118Z   show-progress: true
+2026-10-04T19:59:08.4715327Z   lfs: false
+2026-10-04T19:59:08.4715513Z   submodules: false
+2026-10-04T19:59:08.4715722Z   set-safe-directory: true
+2026-10-04T19:59:08.4715964Z   allow-unsafe-pr-checkout: false
+2026-10-04T19:59:08.4716521Z ##[endgroup]
+2026-10-04T19:59:08.5812872Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T19:59:08.5814640Z ##[group]Getting Git version info
+2026-10-04T19:59:08.5815579Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T19:59:08.5816315Z [command]/usr/bin/git version
+2026-10-04T19:59:08.5863527Z git version 2.55.0
+2026-10-04T19:59:08.5887627Z ##[endgroup]
+2026-10-04T19:59:08.5904829Z Temporarily overriding HOME='/home/runner/work/_temp/2978047e-6ee4-4182-9fa6-960dbbc99d5f' before making global git config changes
+2026-10-04T19:59:08.5906309Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T19:59:08.5911302Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T19:59:08.5963941Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T19:59:08.5968097Z ##[group]Determining repository object format
+2026-10-04T19:59:08.5970800Z ##[endgroup]
+2026-10-04T19:59:08.5971435Z ##[group]Initializing the repository
+2026-10-04T19:59:08.5977437Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T19:59:08.6097182Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-04T19:59:08.6098224Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-04T19:59:08.6098925Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-04T19:59:08.6099406Z hint: call:
+2026-10-04T19:59:08.6099609Z hint:
+2026-10-04T19:59:08.6099952Z hint: 	git config --global init.defaultBranch <name>
+2026-10-04T19:59:08.6100299Z hint:
+2026-10-04T19:59:08.6100733Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-04T19:59:08.6101688Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-04T19:59:08.6102404Z hint:
+2026-10-04T19:59:08.6102651Z hint: 	git branch -m <name>
+2026-10-04T19:59:08.6103020Z hint:
+2026-10-04T19:59:08.6103877Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-04T19:59:08.6105211Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-04T19:59:08.6115815Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T19:59:08.6165062Z ##[endgroup]
+2026-10-04T19:59:08.6165830Z ##[group]Disabling automatic garbage collection
+2026-10-04T19:59:08.6170620Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-04T19:59:08.6200563Z ##[endgroup]
+2026-10-04T19:59:08.6201173Z ##[group]Setting up auth
+2026-10-04T19:59:08.6202053Z Removing SSH command configuration
+2026-10-04T19:59:08.6208953Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T19:59:08.6239556Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T19:59:08.6608048Z Removing HTTP extra header
+2026-10-04T19:59:08.6613236Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T19:59:08.6647047Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T19:59:08.6864650Z Removing includeIf entries pointing to credentials config files
+2026-10-04T19:59:08.6871371Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T19:59:08.6904261Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T19:59:08.7127953Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-22dca5f0-9aad-462a-8147-45e6ef120566.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-04T19:59:08.7165184Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-22dca5f0-9aad-462a-8147-45e6ef120566.config
+2026-10-04T19:59:08.7196397Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-22dca5f0-9aad-462a-8147-45e6ef120566.config
+2026-10-04T19:59:08.7230166Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-22dca5f0-9aad-462a-8147-45e6ef120566.config
+2026-10-04T19:59:08.7269042Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-22dca5f0-9aad-462a-8147-45e6ef120566.config
+2026-10-04T19:59:08.7296962Z ##[endgroup]
+2026-10-04T19:59:08.7297370Z ##[group]Fetching the repository
+2026-10-04T19:59:08.7305816Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +92b9fabcb919f095a1aef4ff9b141f93b36532c0:refs/remotes/origin/ci/B-CM5-119-674-after2
+2026-10-04T19:59:10.0762514Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T19:59:10.0764024Z  * [new ref]         92b9fabcb919f095a1aef4ff9b141f93b36532c0 -> origin/ci/B-CM5-119-674-after2
+2026-10-04T19:59:10.0773032Z [command]/usr/bin/git branch --list --remote origin/ci/B-CM5-119-674-after2
+2026-10-04T19:59:10.0797772Z   origin/ci/B-CM5-119-674-after2
+2026-10-04T19:59:10.0808310Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-CM5-119-674-after2
+2026-10-04T19:59:10.0829326Z 92b9fabcb919f095a1aef4ff9b141f93b36532c0
+2026-10-04T19:59:10.0834091Z ##[endgroup]
+2026-10-04T19:59:10.0834819Z ##[group]Determining the checkout info
+2026-10-04T19:59:10.0835716Z ##[endgroup]
+2026-10-04T19:59:10.0840736Z [command]/usr/bin/git sparse-checkout disable
+2026-10-04T19:59:10.0893307Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-04T19:59:10.0920440Z ##[group]Checking out the ref
+2026-10-04T19:59:10.0925274Z [command]/usr/bin/git checkout --progress --force -B ci/B-CM5-119-674-after2 refs/remotes/origin/ci/B-CM5-119-674-after2
+2026-10-04T19:59:10.3122721Z Switched to a new branch 'ci/B-CM5-119-674-after2'
+2026-10-04T19:59:10.3129171Z branch 'ci/B-CM5-119-674-after2' set up to track 'origin/ci/B-CM5-119-674-after2'.
+2026-10-04T19:59:10.3144454Z ##[endgroup]
+2026-10-04T19:59:10.3214464Z [command]/usr/bin/git log -1 --format=%H
+2026-10-04T19:59:10.3223562Z 92b9fabcb919f095a1aef4ff9b141f93b36532c0
+2026-10-04T19:59:10.3489220Z ##[group]Run actions/setup-node@v6
+2026-10-04T19:59:10.3489532Z with:
+2026-10-04T19:59:10.3489729Z   node-version: 20
+2026-10-04T19:59:10.3489935Z   cache: npm
+2026-10-04T19:59:10.3490135Z   check-latest: false
+2026-10-04T19:59:10.3492888Z   token: ***
+2026-10-04T19:59:10.3493112Z   package-manager-cache: true
+2026-10-04T19:59:10.3493570Z ##[endgroup]
+2026-10-04T19:59:10.4919266Z Attempting to download 20...
+2026-10-04T19:59:10.9999187Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-04T19:59:11.2887079Z Extracting ...
+2026-10-04T19:59:11.3002455Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/d6d3fffb-f023-44c1-bd27-cafd1b597406 -f /home/runner/work/_temp/dc7cff15-684c-4476-b64c-87eda0262c80
+2026-10-04T19:59:12.2925322Z Adding to the cache ...
+2026-10-04T19:59:14.1715571Z ##[group]Environment details
+2026-10-04T19:59:14.4231990Z node: v20.20.2
+2026-10-04T19:59:14.4232478Z npm: 10.8.2
+2026-10-04T19:59:14.4232807Z yarn: 1.22.22
+2026-10-04T19:59:14.4234351Z ##[endgroup]
+2026-10-04T19:59:14.4256694Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+2026-10-04T19:59:14.5346754Z /home/runner/.npm
+2026-10-04T19:59:14.5957529Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T19:59:15.1460279Z Received 86828135 of 86828135 (100.0%), 174.3 MBs/sec
+2026-10-04T19:59:15.1461494Z Cache Size: ~83 MB (86828135 B)
+2026-10-04T19:59:15.1594844Z [command]/usr/bin/tar -xf /home/runner/work/_temp/9cb15ba1-72b8-4122-a4e7-5bfcce384547/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+2026-10-04T19:59:15.3702823Z Cache restored successfully
+2026-10-04T19:59:15.3752678Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T19:59:15.3997580Z ##[group]Run npm ci
+2026-10-04T19:59:15.3997925Z npm ci
+2026-10-04T19:59:15.4233069Z shell: /usr/bin/bash -e {0}
+2026-10-04T19:59:15.4233648Z ##[endgroup]
+2026-10-04T19:59:21.5356701Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-04T19:59:22.7616930Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-04T19:59:23.5766858Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T19:59:24.9602550Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T19:59:24.9709583Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T19:59:25.0224809Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T19:59:38.2208869Z 
+2026-10-04T19:59:38.2209588Z > growth-project-backend@1.0.0 postinstall
+2026-10-04T19:59:38.2210054Z > prisma generate
+2026-10-04T19:59:38.2210208Z 
+2026-10-04T19:59:39.1674571Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T19:59:42.8965599Z ┌─────────────────────────────────────────────────────────┐
+2026-10-04T19:59:42.8967058Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+2026-10-04T19:59:42.8967445Z 
+2026-10-04T19:59:42.8968157Z │                                                         │
+2026-10-04T19:59:42.8968917Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.05s
+2026-10-04T19:59:42.8972429Z │  This is a major update - please follow the guide at    │
+2026-10-04T19:59:42.8973058Z │  https://pris.ly/d/major-version-upgrade                │
+2026-10-04T19:59:42.8973985Z │                                                         │
+2026-10-04T19:59:42.8974859Z │  Run the following to update                            │
+2026-10-04T19:59:42.8976263Z │    npm i --save-dev prisma@latest                       │
+2026-10-04T19:59:42.8977283Z │    npm i @prisma/client@latest                          │
+2026-10-04T19:59:42.8978247Z └─────────────────────────────────────────────────────────┘
+2026-10-04T19:59:42.8978562Z 
+2026-10-04T19:59:42.8978959Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T19:59:42.8979310Z 
+2026-10-04T19:59:42.8979631Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+2026-10-04T19:59:42.8979938Z 
+2026-10-04T19:59:42.9532480Z 
+2026-10-04T19:59:42.9534130Z > growth-project-backend@1.0.0 prepare
+2026-10-04T19:59:42.9534926Z > lefthook install
+2026-10-04T19:59:42.9535370Z 
+2026-10-04T19:59:43.0048568Z sync hooks: ✔️(pre-commit, commit-msg)
+2026-10-04T19:59:43.0209240Z 
+2026-10-04T19:59:43.0209962Z added 1115 packages, and audited 1116 packages in 28s
+2026-10-04T19:59:43.0210290Z 
+2026-10-04T19:59:43.0210485Z 202 packages are looking for funding
+2026-10-04T19:59:43.0210865Z   run `npm fund` for details
+2026-10-04T19:59:43.0243928Z 
+2026-10-04T19:59:43.0244412Z 3 high severity vulnerabilities
+2026-10-04T19:59:43.0244629Z 
+2026-10-04T19:59:43.0245524Z To address all issues (including breaking changes), run:
+2026-10-04T19:59:43.0246363Z   npm audit fix --force
+2026-10-04T19:59:43.0246673Z 
+2026-10-04T19:59:43.0246935Z Run `npm audit` for details.
+2026-10-04T19:59:43.0876388Z ##[group]Run npx prisma generate
+2026-10-04T19:59:43.0876749Z npx prisma generate
+2026-10-04T19:59:43.0939938Z shell: /usr/bin/bash -e {0}
+2026-10-04T19:59:43.0940210Z ##[endgroup]
+2026-10-04T19:59:44.4690645Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T19:59:48.2872159Z 
+2026-10-04T19:59:48.2873902Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.06s
+2026-10-04T19:59:48.2874553Z 
+2026-10-04T19:59:48.2874987Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T19:59:48.2875388Z 
+2026-10-04T19:59:48.2875765Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+2026-10-04T19:59:48.2876120Z 
+2026-10-04T19:59:48.4011521Z ##[group]Run set -euo pipefail
+2026-10-04T19:59:48.4011872Z set -euo pipefail
+2026-10-04T19:59:48.4012265Z test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+2026-10-04T19:59:48.4012774Z mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+2026-10-04T19:59:48.4013142Z echo "specs: ${SPECS[*]}"
+2026-10-04T19:59:48.4013782Z npx jest --ci --runInBand "${SPECS[@]}"
+2026-10-04T19:59:48.4077543Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T19:59:48.4077895Z env:
+2026-10-04T19:59:48.4078130Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-04T19:59:48.4078500Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-04T19:59:48.4078825Z ##[endgroup]
+2026-10-04T19:59:48.4180282Z specs: test/audit-cm1-674-reversal-mirror.spec.ts test/audit-opcm1-117-674.spec.ts test/audit-opus-cm-118-674-send.spec.ts test/audit-opus-cm-118-674.spec.ts test/audit-sol-cm-118-send-admission.spec.ts test/audit-sol-cm1-116-boundaries.spec.ts test/audit-sol-cm1-117-dispute-posting.spec.ts test/audit-sol-cm1r2-117-boundaries.spec.ts test/refund-reversal-boundaries.spec.ts test/refund-reversal-first-pass.spec.ts test/refund-reversal-reconcile.spec.ts test/refund-reversal-review.spec.ts test/refund-reversal-send-time.spec.ts test/refund-reversal-once.spec.ts test/dispute-transfer-reversal-once.spec.ts test/refund-dispute-handler.service.spec.ts test/cancel-pending-on-refund.spec.ts test/split-ledger.service.spec.ts test/transfer-orchestrator.service.spec.ts test/payment-ops.controller.spec.ts test/privacy/no-pii-in-logs.spec.ts src/notifications/__tests__/first-payment-refund-retention.spec.ts
+2026-10-04T19:59:51.4951630Z PASS test/refund-dispute-handler.service.spec.ts (146 MB heap size)
+2026-10-04T19:59:51.4955727Z [Nest] 3080  - 10/04/2026, 7:59:51 PM    WARN [RefundDisputeHandlerService] coach refund notification failed refund=rf_n charge=ch_alert coach=coach-1 code=COACH_REFUND_ALERT_FAILED
+2026-10-04T19:59:52.7354685Z PASS test/payment-ops.controller.spec.ts (142 MB heap size)
+2026-10-04T19:59:53.4836203Z PASS test/privacy/no-pii-in-logs.spec.ts (181 MB heap size)
+2026-10-04T19:59:54.2073731Z PASS test/cancel-pending-on-refund.spec.ts (228 MB heap size)
+2026-10-04T19:59:54.8400174Z [Nest] 3080  - 10/04/2026, 7:59:54 PM     LOG [PurchaseFanoutService] cancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-1 reason=refund
+2026-10-04T19:59:54.8403350Z [Nest] 3080  - 10/04/2026, 7:59:54 PM     LOG [PurchaseFanoutService] cancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-1 reason=dispute
+2026-10-04T19:59:54.8406828Z [Nest] 3080  - 10/04/2026, 7:59:54 PM   DEBUG [PurchaseFanoutService] cancelPendingForPurchase: no pending/due drops for purchase=pur-1 (replay or never-entitled) reason=dispute
+2026-10-04T19:59:54.8409901Z [Nest] 3080  - 10/04/2026, 7:59:54 PM     LOG [PurchaseFanoutService] cancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=refund
+2026-10-04T19:59:54.8413057Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [PurchaseFanoutService] cancelPendingForPurchase: no scheduledDrop client available (purchase=pur-1, reason=refund) — skipping
+2026-10-04T19:59:54.8416276Z [Nest] 3080  - 10/04/2026, 7:59:54 PM     LOG [PurchaseFanoutService] cancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-1 reason=refund
+2026-10-04T19:59:54.8419390Z [Nest] 3080  - 10/04/2026, 7:59:54 PM     LOG [PurchaseFanoutService] cancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-target reason=subscription_canceled
+2026-10-04T19:59:54.8423139Z [Nest] 3080  - 10/04/2026, 7:59:54 PM     LOG [PurchaseFanoutService] cancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=subscription_canceled
+2026-10-04T19:59:54.8426537Z [Nest] 3080  - 10/04/2026, 7:59:54 PM     LOG [PurchaseFanoutService] cancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=payment_failed
+2026-10-04T19:59:54.8429654Z [Nest] 3080  - 10/04/2026, 7:59:54 PM     LOG [PurchaseFanoutService] cancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-target reason=dispute
+2026-10-04T19:59:54.8432577Z [Nest] 3080  - 10/04/2026, 7:59:54 PM     LOG [PurchaseFanoutService] cancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=refund
+2026-10-04T19:59:54.8435738Z [Nest] 3080  - 10/04/2026, 7:59:54 PM     LOG [PurchaseFanoutService] cancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=refund
+2026-10-04T19:59:54.8438965Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-d dispute=cd-1 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8442210Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-d dispute=cd-1 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8445675Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-d dispute=cd-1 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8448961Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-d dispute=cd-1 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8452345Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-000 dispute=d-000 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8455840Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-002 dispute=d-002 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8459085Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-004 dispute=d-004 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8462582Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-006 dispute=d-006 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8466219Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-008 dispute=d-008 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8469638Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-010 dispute=d-010 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8472838Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-012 dispute=d-012 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8476330Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-014 dispute=d-014 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8479831Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-016 dispute=d-016 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8483103Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-018 dispute=d-018 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8486636Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-020 dispute=d-020 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8490048Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-022 dispute=d-022 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8493648Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-024 dispute=d-024 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8497118Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-026 dispute=d-026 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8500513Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-028 dispute=d-028 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8504147Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-030 dispute=d-030 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8507587Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-032 dispute=d-032 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8511256Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-034 dispute=d-034 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8514957Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-036 dispute=d-036 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8518307Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-038 dispute=d-038 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8521696Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-040 dispute=d-040 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8525227Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-042 dispute=d-042 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8528647Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-044 dispute=d-044 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8532113Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-000 dispute=d-000 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8535759Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-002 dispute=d-002 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8539395Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-004 dispute=d-004 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8542810Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-006 dispute=d-006 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8546514Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-008 dispute=d-008 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8549781Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-010 dispute=d-010 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8553227Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-012 dispute=d-012 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8556898Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-014 dispute=d-014 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8560286Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-016 dispute=d-016 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8563955Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-018 dispute=d-018 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8566017Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-020 dispute=d-020 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8567773Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-022 dispute=d-022 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8569477Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-024 dispute=d-024 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8571169Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-026 dispute=d-026 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8572843Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-028 dispute=d-028 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8574989Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-000 dispute=d-000 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8576690Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-002 dispute=d-002 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8578400Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-004 dispute=d-004 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8580254Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-006 dispute=d-006 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8581958Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-008 dispute=d-008 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8584171Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] transfer reversal not yet recorded transfer=tr-p-o purchase=p-o stripe_cents=122 recorded_cents=0 code=TRANSFER_REVERSAL_NOT_YET_RECORDED
+2026-10-04T19:59:54.8586238Z [Nest] 3080  - 10/04/2026, 7:59:54 PM    WARN [RefundDisputeHandlerService] transfer reversal not yet recorded transfer=tr-p-o purchase=p-o stripe_cents=100 recorded_cents=0 code=TRANSFER_REVERSAL_UNATTRIBUTED
+2026-10-04T19:59:54.8588251Z [Nest] 3080  - 03/20/2027, 10:00:00 AM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-r refund=348704f7-aaf0-42d8-9569-5d4c117ad485 code=stripe_503_request_timeout
+2026-10-04T19:59:54.8589448Z PASS test/dispute-transfer-reversal-once.spec.ts (266 MB heap size)
+2026-10-04T19:59:55.3039583Z [Nest] 3080  - 10/04/2026, 7:59:55 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=refund-1 purchase=p-1 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:55.3125457Z PASS test/refund-reversal-once.spec.ts (292 MB heap size)
+2026-10-04T19:59:57.1665829Z [Nest] 3080  - 10/04/2026, 7:59:55 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-1 refund=refund-1 code=error
+2026-10-04T19:59:57.1668938Z [Nest] 3080  - 10/04/2026, 7:59:55 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-1 refund=refund-1 code=error
+2026-10-04T19:59:57.1673227Z [Nest] 3080  - 10/04/2026, 7:59:55 PM    WARN [RefundDisputeHandlerService] transfer reversal not yet recorded transfer=tr-1 purchase=p-1 stripe_cents=122 recorded_cents=0 code=TRANSFER_REVERSAL_NOT_YET_RECORDED
+2026-10-04T19:59:57.1677510Z [Nest] 3080  - 10/04/2026, 7:59:55 PM    WARN [RefundDisputeHandlerService] transfer reversal not yet recorded transfer=tr-1 purchase=p-1 stripe_cents=122 recorded_cents=0 code=TRANSFER_REVERSAL_NOT_YET_RECORDED
+2026-10-04T19:59:57.1680967Z [Nest] 3080  - 10/04/2026, 7:59:55 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-1 refund=refund-1 code=error
+2026-10-04T19:59:57.2515233Z PASS test/refund-reversal-boundaries.spec.ts (424 MB heap size)
+2026-10-04T19:59:57.6238032Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-late purchase=p-late code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6269601Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-late purchase=p-late code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6285034Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-late purchase=p-late code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6358104Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-00 purchase=p-old-00 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6362998Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-01 purchase=p-old-01 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6366653Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-02 purchase=p-old-02 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6413546Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-03 purchase=p-old-03 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6416018Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-04 purchase=p-old-04 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6419275Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-05 purchase=p-old-05 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6421823Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-06 purchase=p-old-06 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6424787Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-07 purchase=p-old-07 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6441949Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-08 purchase=p-old-08 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6444731Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-09 purchase=p-old-09 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6446656Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-10 purchase=p-old-10 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6448493Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-11 purchase=p-old-11 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6450368Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-12 purchase=p-old-12 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6452201Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-13 purchase=p-old-13 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6454830Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-14 purchase=p-old-14 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6456759Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-15 purchase=p-old-15 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6458621Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-16 purchase=p-old-16 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6466108Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-17 purchase=p-old-17 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6468485Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-18 purchase=p-old-18 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6470777Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-19 purchase=p-old-19 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6472993Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-20 purchase=p-old-20 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6476479Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-21 purchase=p-old-21 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6479908Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-22 purchase=p-old-22 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6483327Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-23 purchase=p-old-23 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6486975Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-24 purchase=p-old-24 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6490604Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-25 purchase=p-old-25 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6494172Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-26 purchase=p-old-26 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6497602Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-27 purchase=p-old-27 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6500995Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-28 purchase=p-old-28 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6504595Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-29 purchase=p-old-29 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6508031Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-30 purchase=p-old-30 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6511444Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-31 purchase=p-old-31 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6515171Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-32 purchase=p-old-32 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6518612Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-33 purchase=p-old-33 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6522013Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-34 purchase=p-old-34 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6525594Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-35 purchase=p-old-35 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6528163Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-36 purchase=p-old-36 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6529988Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-37 purchase=p-old-37 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6532278Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-38 purchase=p-old-38 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6534801Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-39 purchase=p-old-39 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6537274Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-40 purchase=p-old-40 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6540021Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-41 purchase=p-old-41 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6542327Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-42 purchase=p-old-42 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6544769Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-43 purchase=p-old-43 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6547207Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-44 purchase=p-old-44 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6549637Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-45 purchase=p-old-45 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6551519Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-46 purchase=p-old-46 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6553552Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-47 purchase=p-old-47 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6555541Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-48 purchase=p-old-48 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6557367Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-49 purchase=p-old-49 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6559175Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-50 purchase=p-old-50 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6560981Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-51 purchase=p-old-51 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6562787Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-52 purchase=p-old-52 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6564834Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-53 purchase=p-old-53 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6566653Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-54 purchase=p-old-54 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6568465Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-55 purchase=p-old-55 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6570420Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-56 purchase=p-old-56 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6572224Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-57 purchase=p-old-57 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6574304Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-58 purchase=p-old-58 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:57.6576126Z [Nest] 3080  - 10/04/2026, 7:59:57 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-old-59 purchase=p-old-59 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:59.1327972Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-002 refund=r-m-002 code=error
+2026-10-04T19:59:59.1331289Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-005 refund=r-m-005 code=error
+2026-10-04T19:59:59.1334614Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-008 refund=r-m-008 code=error
+2026-10-04T19:59:59.1337648Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-011 refund=r-m-011 code=error
+2026-10-04T19:59:59.1341065Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-014 refund=r-m-014 code=error
+2026-10-04T19:59:59.1344517Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-017 refund=r-m-017 code=error
+2026-10-04T19:59:59.1347051Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-020 refund=r-m-020 code=error
+2026-10-04T19:59:59.1349318Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-023 refund=r-m-023 code=error
+2026-10-04T19:59:59.1351545Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-026 refund=r-m-026 code=error
+2026-10-04T19:59:59.1354584Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-029 refund=r-m-029 code=error
+2026-10-04T19:59:59.1357315Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-032 refund=r-m-032 code=error
+2026-10-04T19:59:59.1359244Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-035 refund=r-m-035 code=error
+2026-10-04T19:59:59.1361880Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-038 refund=r-m-038 code=error
+2026-10-04T19:59:59.1364731Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-041 refund=r-m-041 code=error
+2026-10-04T19:59:59.1368157Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-044 refund=r-m-044 code=error
+2026-10-04T19:59:59.1371137Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-047 refund=r-m-047 code=error
+2026-10-04T19:59:59.1374331Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-050 refund=r-m-050 code=error
+2026-10-04T19:59:59.1377311Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-053 refund=r-m-053 code=error
+2026-10-04T19:59:59.1380217Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-056 refund=r-m-056 code=error
+2026-10-04T19:59:59.1383099Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-059 refund=r-m-059 code=error
+2026-10-04T19:59:59.1386405Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-062 refund=r-m-062 code=error
+2026-10-04T19:59:59.1389396Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-065 refund=r-m-065 code=error
+2026-10-04T19:59:59.1392556Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-068 refund=r-m-068 code=error
+2026-10-04T19:59:59.1395820Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-071 refund=r-m-071 code=error
+2026-10-04T19:59:59.1398718Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-074 refund=r-m-074 code=error
+2026-10-04T19:59:59.1401796Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-077 refund=r-m-077 code=error
+2026-10-04T19:59:59.1405128Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-080 refund=r-m-080 code=error
+2026-10-04T19:59:59.1408133Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-083 refund=r-m-083 code=error
+2026-10-04T19:59:59.1411059Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-086 refund=r-m-086 code=error
+2026-10-04T19:59:59.1414308Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-089 refund=r-m-089 code=error
+2026-10-04T19:59:59.1417406Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-092 refund=r-m-092 code=error
+2026-10-04T19:59:59.1420532Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-095 refund=r-m-095 code=error
+2026-10-04T19:59:59.1424016Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-098 refund=r-m-098 code=error
+2026-10-04T19:59:59.1427019Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-101 refund=r-m-101 code=error
+2026-10-04T19:59:59.1430283Z [Nest] 3080  - 10/04/2026, 7:59:58 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-104 refund=r-m-104 code=error
+2026-10-04T19:59:59.1433647Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-107 refund=r-m-107 code=error
+2026-10-04T19:59:59.1436639Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-110 refund=r-m-110 code=error
+2026-10-04T19:59:59.1439555Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-113 refund=r-m-113 code=error
+2026-10-04T19:59:59.1442515Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-116 refund=r-m-116 code=error
+2026-10-04T19:59:59.1445824Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-m-119 refund=r-m-119 code=error
+2026-10-04T19:59:59.1449113Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-00 refund=r-a-00 code=error
+2026-10-04T19:59:59.1452270Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-01 refund=r-a-01 code=error
+2026-10-04T19:59:59.1455383Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-02 refund=r-a-02 code=error
+2026-10-04T19:59:59.1457498Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-03 refund=r-a-03 code=error
+2026-10-04T19:59:59.1459394Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-04 refund=r-a-04 code=error
+2026-10-04T19:59:59.1461236Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-05 refund=r-a-05 code=error
+2026-10-04T19:59:59.1463043Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-06 refund=r-a-06 code=error
+2026-10-04T19:59:59.1465095Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-07 refund=r-a-07 code=error
+2026-10-04T19:59:59.1466900Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-08 refund=r-a-08 code=error
+2026-10-04T19:59:59.1468497Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-09 refund=r-a-09 code=error
+2026-10-04T19:59:59.1470237Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-10 refund=r-a-10 code=error
+2026-10-04T19:59:59.1471759Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-11 refund=r-a-11 code=error
+2026-10-04T19:59:59.1473265Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-12 refund=r-a-12 code=error
+2026-10-04T19:59:59.1475106Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-13 refund=r-a-13 code=error
+2026-10-04T19:59:59.1476643Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-14 refund=r-a-14 code=error
+2026-10-04T19:59:59.1478156Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-15 refund=r-a-15 code=error
+2026-10-04T19:59:59.1479666Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-16 refund=r-a-16 code=error
+2026-10-04T19:59:59.1481166Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-17 refund=r-a-17 code=error
+2026-10-04T19:59:59.1482891Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-18 refund=r-a-18 code=error
+2026-10-04T19:59:59.1484568Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-19 refund=r-a-19 code=error
+2026-10-04T19:59:59.1486075Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-00 refund=r-a-00 code=error
+2026-10-04T19:59:59.1487568Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-01 refund=r-a-01 code=error
+2026-10-04T19:59:59.1489062Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-02 refund=r-a-02 code=error
+2026-10-04T19:59:59.1490613Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-03 refund=r-a-03 code=error
+2026-10-04T19:59:59.1492171Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-04 refund=r-a-04 code=error
+2026-10-04T19:59:59.1494095Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-05 refund=r-a-05 code=error
+2026-10-04T19:59:59.1495699Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-06 refund=r-a-06 code=error
+2026-10-04T19:59:59.1497230Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-07 refund=r-a-07 code=error
+2026-10-04T19:59:59.1498923Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-08 refund=r-a-08 code=error
+2026-10-04T19:59:59.1500436Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-09 refund=r-a-09 code=error
+2026-10-04T19:59:59.1501942Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-10 refund=r-a-10 code=error
+2026-10-04T19:59:59.1503586Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-11 refund=r-a-11 code=error
+2026-10-04T19:59:59.1505116Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-12 refund=r-a-12 code=error
+2026-10-04T19:59:59.1506625Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-13 refund=r-a-13 code=error
+2026-10-04T19:59:59.1508129Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-14 refund=r-a-14 code=error
+2026-10-04T19:59:59.1509639Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-15 refund=r-a-15 code=error
+2026-10-04T19:59:59.1511271Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-16 refund=r-a-16 code=error
+2026-10-04T19:59:59.1512789Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-17 refund=r-a-17 code=error
+2026-10-04T19:59:59.1514534Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-18 refund=r-a-18 code=error
+2026-10-04T19:59:59.1516057Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-00 refund=r-a-00 code=error
+2026-10-04T19:59:59.1517588Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-01 refund=r-a-01 code=error
+2026-10-04T19:59:59.1519111Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-02 refund=r-a-02 code=error
+2026-10-04T19:59:59.1520615Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-03 refund=r-a-03 code=error
+2026-10-04T19:59:59.1522116Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-04 refund=r-a-04 code=error
+2026-10-04T19:59:59.1523739Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-05 refund=r-a-05 code=error
+2026-10-04T19:59:59.1525296Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-06 refund=r-a-06 code=error
+2026-10-04T19:59:59.1527009Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-07 refund=r-a-07 code=error
+2026-10-04T19:59:59.1528548Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-08 refund=r-a-08 code=error
+2026-10-04T19:59:59.1530077Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-09 refund=r-a-09 code=error
+2026-10-04T19:59:59.1531589Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-10 refund=r-a-10 code=error
+2026-10-04T19:59:59.1533116Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-11 refund=r-a-11 code=error
+2026-10-04T19:59:59.1534872Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-12 refund=r-a-12 code=error
+2026-10-04T19:59:59.1536388Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-13 refund=r-a-13 code=error
+2026-10-04T19:59:59.1537923Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-14 refund=r-a-14 code=error
+2026-10-04T19:59:59.1539434Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-15 refund=r-a-15 code=error
+2026-10-04T19:59:59.1541096Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-16 refund=r-a-16 code=error
+2026-10-04T19:59:59.1542613Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-17 refund=r-a-17 code=error
+2026-10-04T19:59:59.1544279Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-18 refund=r-a-18 code=error
+2026-10-04T19:59:59.1545795Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-19 refund=r-a-19 code=error
+2026-10-04T19:59:59.1547312Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-20 refund=r-a-20 code=error
+2026-10-04T19:59:59.1548826Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-21 refund=r-a-21 code=error
+2026-10-04T19:59:59.1550339Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-22 refund=r-a-22 code=error
+2026-10-04T19:59:59.1551860Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-23 refund=r-a-23 code=error
+2026-10-04T19:59:59.1553465Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-24 refund=r-a-24 code=error
+2026-10-04T19:59:59.1555265Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-25 refund=r-a-25 code=error
+2026-10-04T19:59:59.1556816Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-26 refund=r-a-26 code=error
+2026-10-04T19:59:59.1558395Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-27 refund=r-a-27 code=error
+2026-10-04T19:59:59.1559920Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-28 refund=r-a-28 code=error
+2026-10-04T19:59:59.1561446Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-29 refund=r-a-29 code=error
+2026-10-04T19:59:59.1562964Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-30 refund=r-a-30 code=error
+2026-10-04T19:59:59.1564610Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-31 refund=r-a-31 code=error
+2026-10-04T19:59:59.1566118Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-32 refund=r-a-32 code=error
+2026-10-04T19:59:59.1567628Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-33 refund=r-a-33 code=error
+2026-10-04T19:59:59.1569267Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-34 refund=r-a-34 code=error
+2026-10-04T19:59:59.1570791Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-35 refund=r-a-35 code=error
+2026-10-04T19:59:59.1572298Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-36 refund=r-a-36 code=error
+2026-10-04T19:59:59.1574031Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-37 refund=r-a-37 code=error
+2026-10-04T19:59:59.1575577Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-38 refund=r-a-38 code=error
+2026-10-04T19:59:59.1577100Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-39 refund=r-a-39 code=error
+2026-10-04T19:59:59.1578614Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-40 refund=r-a-40 code=error
+2026-10-04T19:59:59.1580124Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-41 refund=r-a-41 code=error
+2026-10-04T19:59:59.1581645Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-42 refund=r-a-42 code=error
+2026-10-04T19:59:59.1583295Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-43 refund=r-a-43 code=error
+2026-10-04T19:59:59.1584933Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-44 refund=r-a-44 code=error
+2026-10-04T19:59:59.1586452Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-00 refund=r-a-00 code=error
+2026-10-04T19:59:59.1587961Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-01 refund=r-a-01 code=error
+2026-10-04T19:59:59.1589479Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-02 refund=r-a-02 code=error
+2026-10-04T19:59:59.1590994Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-03 refund=r-a-03 code=error
+2026-10-04T19:59:59.1592506Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-04 refund=r-a-04 code=error
+2026-10-04T19:59:59.1594265Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-05 refund=r-a-05 code=error
+2026-10-04T19:59:59.1595799Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-06 refund=r-a-06 code=error
+2026-10-04T19:59:59.1597876Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-07 refund=r-a-07 code=error
+2026-10-04T19:59:59.1599421Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-08 refund=r-a-08 code=error
+2026-10-04T19:59:59.1600944Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-09 refund=r-a-09 code=error
+2026-10-04T19:59:59.1602453Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-10 refund=r-a-10 code=error
+2026-10-04T19:59:59.1604421Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-11 refund=r-a-11 code=error
+2026-10-04T19:59:59.1606349Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-12 refund=r-a-12 code=error
+2026-10-04T19:59:59.1608262Z [Nest] 3080  - 10/04/2026, 7:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-13 refund=r-a-13 code=error
+2026-10-04T19:59:59.1609408Z PASS test/refund-reversal-review.spec.ts (465 MB heap size)
+2026-10-04T19:59:59.6452848Z [Nest] 3080  - 10/04/2026, 7:59:59 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-late purchase=p-late code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:59.6506016Z [Nest] 3080  - 10/04/2026, 7:59:59 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-x purchase=p-x code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:59.6531859Z [Nest] 3080  - 10/04/2026, 7:59:59 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-u purchase=p-u code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:59.6554804Z [Nest] 3080  - 10/04/2026, 7:59:59 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-late purchase=p-late code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:59.6571856Z [Nest] 3080  - 10/04/2026, 7:59:59 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-late purchase=p-late code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T19:59:59.6766551Z PASS test/refund-reversal-reconcile.spec.ts (211 MB heap size)
+2026-10-04T20:00:00.0531489Z [Nest] 3080  - 04/10/2027, 1:01:00 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=rf-b purchase=p-b code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:00.0576088Z [Nest] 3080  - 04/10/2027, 12:00:02 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=rf-b purchase=p-b code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:00.0774103Z PASS test/refund-reversal-send-time.spec.ts (245 MB heap size)
+2026-10-04T20:00:00.4249977Z [Nest] 3080  - 10/04/2026, 8:00:00 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=r-late purchase=p-late code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:00.4657473Z [Nest] 3080  - 04/10/2027, 1:01:00 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a refund=rf-a code=stripe_503_request_timeout
+2026-10-04T20:00:00.4661234Z [Nest] 3080  - 04/10/2027, 12:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a refund=rf-a code=stripe_503_request_timeout
+2026-10-04T20:00:00.4664792Z [Nest] 3080  - 04/10/2027, 12:30:00 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a refund=rf-a code=stripe_503_request_timeout
+2026-10-04T20:00:00.4668126Z [Nest] 3080  - 04/10/2027, 12:00:10 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-r1 refund=r1 code=stripe_503_request_timeout
+2026-10-04T20:00:00.4671296Z [Nest] 3080  - 04/10/2027, 12:00:20 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-r2 refund=r2 code=stripe_503_request_timeout
+2026-10-04T20:00:00.4674703Z [Nest] 3080  - 04/10/2027, 12:00:30 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-r3 refund=r3 code=stripe_503_request_timeout
+2026-10-04T20:00:00.4678104Z [Nest] 3080  - 10/04/2026, 8:00:00 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-d dispute=cd-1 code=TRANSFER_REVERSALS_LIST_INCOMPLETE
+2026-10-04T20:00:00.4681943Z [Nest] 3080  - 10/04/2026, 8:00:00 PM    WARN [RefundDisputeHandlerService] transfer reversal not yet recorded transfer=tr-p-late purchase=p-late stripe_cents=122 recorded_cents=0 code=TRANSFER_REVERSAL_NOT_YET_RECORDED
+2026-10-04T20:00:00.4686190Z [Nest] 3080  - 10/04/2026, 8:00:00 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-t refund=a535306e-07f1-4e46-9bc3-85d42e70e42a code=stripe_503_request_timeout
+2026-10-04T20:00:00.4690777Z [Nest] 3080  - 10/04/2026, 8:00:00 PM    WARN [RefundDisputeHandlerService] transfer reversal not yet recorded transfer=tr-p-t purchase=p-t stripe_cents=122 recorded_cents=0 code=TRANSFER_REVERSAL_NOT_YET_RECORDED
+2026-10-04T20:00:00.4693017Z FAIL test/audit-cm1-674-reversal-mirror.spec.ts (269 MB heap size)
+2026-10-04T20:00:00.4695450Z   ● B-674-1 — webhook mirror plus local record count one Stripe reversal twice › owner reconcile recorded_from_stripe after the transfer.reversed webhook records the reversal once
+2026-10-04T20:00:00.4698862Z [Nest] 3080  - 10/04/2026, 8:00:00 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-f refund=b885017a-61d3-42fe-8ef2-6b25186b5f74 code=stripe_503_request_timeout
+2026-10-04T20:00:00.4702661Z [Nest] 3080  - 10/04/2026, 8:00:00 PM    WARN [RefundDisputeHandlerService] transfer reversal not yet recorded transfer=tr-p-f purchase=p-f stripe_cents=245 recorded_cents=0 code=TRANSFER_REVERSAL_NOT_YET_RECORDED
+2026-10-04T20:00:00.4706675Z [Nest] 3080  - 10/04/2026, 8:00:00 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-c refund=94057a94-7bdc-4f83-8c94-d529832e2eba code=stripe_503_request_timeout
+2026-10-04T20:00:00.4708574Z 
+2026-10-04T20:00:00.4709172Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T20:00:00.4709612Z 
+2026-10-04T20:00:00.4709771Z     - Expected  - 1
+2026-10-04T20:00:00.4710016Z     + Received  + 1
+2026-10-04T20:00:00.4710153Z 
+2026-10-04T20:00:00.4710238Z       Object {
+2026-10-04T20:00:00.4710493Z         "local_reversed": 122,
+2026-10-04T20:00:00.4710799Z     -   "mirror_before_reconcile": 122,
+2026-10-04T20:00:00.4711113Z     +   "mirror_before_reconcile": 0,
+2026-10-04T20:00:00.4711432Z         "outcome": "recorded_from_stripe",
+2026-10-04T20:00:00.4711726Z         "stripe_total": 122,
+2026-10-04T20:00:00.4712150Z       }
+2026-10-04T20:00:00.4712268Z 
+2026-10-04T20:00:00.4712779Z       56 |       stripe_total: h.stripeTotal('tr_p-late'),
+2026-10-04T20:00:00.4713871Z       57 |       local_reversed: h.headCoach('p-late'),
+2026-10-04T20:00:00.4714625Z     > 58 |     }).toEqual({
+2026-10-04T20:00:00.4715064Z          |        ^
+2026-10-04T20:00:00.4715569Z       59 |       mirror_before_reconcile: 122,
+2026-10-04T20:00:00.4716166Z       60 |       outcome: 'recorded_from_stripe',
+2026-10-04T20:00:00.4716739Z       61 |       stripe_total: 122,
+2026-10-04T20:00:00.4717009Z 
+2026-10-04T20:00:00.4717294Z       at Object.<anonymous> (test/audit-cm1-674-reversal-mirror.spec.ts:58:8)
+2026-10-04T20:00:00.4717615Z 
+2026-10-04T20:00:00.9897557Z PASS test/audit-sol-cm1-116-boundaries.spec.ts (307 MB heap size)
+2026-10-04T20:00:01.1714953Z PASS test/transfer-orchestrator.service.spec.ts (319 MB heap size)
+2026-10-04T20:00:01.5085432Z [Nest] 3080  - 04/10/2027, 1:01:00 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=rf-b purchase=p-b code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:01.5354807Z PASS test/audit-opus-cm-118-674-send.spec.ts (339 MB heap size)
+2026-10-04T20:00:01.5357124Z [Nest] 3080  - 10/04/2026, 8:00:01 PM    WARN [TransferOrchestratorService] transfer attempt failed purchase=p1 attempt=1: balance not available
+2026-10-04T20:00:01.5415059Z [Nest] 3080  - 10/04/2026, 8:00:01 PM    WARN [TransferOrchestratorService] transfer attempt failed purchase=p1 attempt=1: boom
+2026-10-04T20:00:01.5418287Z [Nest] 3080  - 04/10/2027, 1:01:00 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a refund=rf-a code=stripe_503_request_timeout
+2026-10-04T20:00:01.5475422Z [Nest] 3080  - 10/04/2026, 8:00:01 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-d dispute=cd-1 code=stripe_503_request_timeout
+2026-10-04T20:00:01.5478570Z [Nest] 3080  - 10/04/2026, 8:00:01 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-d dispute=cd-1 code=TRANSFER_REVERSALS_LIST_INCOMPLETE
+2026-10-04T20:00:01.5566220Z [Nest] 3080  - 10/04/2026, 8:00:01 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-d dispute=cd-1 code=stripe_503_request_timeout
+2026-10-04T20:00:01.7894030Z PASS test/split-ledger.service.spec.ts (222 MB heap size)
+2026-10-04T20:00:02.1903760Z PASS test/audit-sol-cm1r2-117-boundaries.spec.ts (252 MB heap size)
+2026-10-04T20:00:02.1999738Z   ● Console
+2026-10-04T20:00:02.2000025Z 
+2026-10-04T20:00:02.2000177Z     console.log
+2026-10-04T20:00:02.2004243Z       AUDIT_R2_DISPUTE_FAIRNESS {"first":{"retried":20,"reversed":0,"needs_review":0,"in_review":0},"second":{"retried":20,"reversed":1,"needs_review":0,"in_review":0},"reached":["tr_p-000","tr_p-001","tr_p-002","tr_p-003","tr_p-004","tr_p-005","tr_p-006","tr_p-007","tr_p-008","tr_p-009","tr_p-010","tr_p-011","tr_p-012","tr_p-013","tr_p-014","tr_p-015","tr_p-016","tr_p-017","tr_p-018","tr_p-019","tr_p-020","tr_p-000","tr_p-001","tr_p-002","tr_p-003","tr_p-004","tr_p-005","tr_p-006","tr_p-007","tr_p-008","tr_p-009","tr_p-010","tr_p-011","tr_p-012","tr_p-013","tr_p-014","tr_p-015","tr_p-016","tr_p-017","tr_p-018"],"recoverableStripe":122,"recoverableLocal":122}
+2026-10-04T20:00:02.2006833Z 
+2026-10-04T20:00:02.2007233Z       at Object.<anonymous> (test/audit-sol-cm1r2-117-boundaries.spec.ts:57:13)
+2026-10-04T20:00:02.2007976Z 
+2026-10-04T20:00:02.2008107Z     console.log
+2026-10-04T20:00:02.2009117Z       AUDIT_R2_DISPUTE_CLOSE_CLOCK {"closed_at":"2027-03-20T23:59:59.999Z","posting_times":["2027-03-20T23:59:59.999Z","2027-03-20T23:59:59.999Z","2027-03-20T23:59:59.999Z"],"stripe":122}
+2026-10-04T20:00:02.2009943Z 
+2026-10-04T20:00:02.2010311Z       at Object.<anonymous> (test/audit-sol-cm1r2-117-boundaries.spec.ts:96:13)
+2026-10-04T20:00:02.2010745Z 
+2026-10-04T20:00:02.5544251Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-000 dispute=d-000 code=error
+2026-10-04T20:00:02.5546047Z PASS test/audit-opus-cm-118-674.spec.ts (281 MB heap size)
+2026-10-04T20:00:02.5548267Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-001 dispute=d-001 code=error
+2026-10-04T20:00:02.5551198Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-002 dispute=d-002 code=error
+2026-10-04T20:00:02.5554410Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-003 dispute=d-003 code=error
+2026-10-04T20:00:02.5557269Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-004 dispute=d-004 code=error
+2026-10-04T20:00:02.5560317Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-005 dispute=d-005 code=error
+2026-10-04T20:00:02.5563311Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-006 dispute=d-006 code=error
+2026-10-04T20:00:02.5567064Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-007 dispute=d-007 code=error
+2026-10-04T20:00:02.5569942Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-008 dispute=d-008 code=error
+2026-10-04T20:00:02.5572804Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-009 dispute=d-009 code=error
+2026-10-04T20:00:02.5575936Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-010 dispute=d-010 code=error
+2026-10-04T20:00:02.5578940Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-011 dispute=d-011 code=error
+2026-10-04T20:00:02.5581891Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-012 dispute=d-012 code=error
+2026-10-04T20:00:02.5585185Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-013 dispute=d-013 code=error
+2026-10-04T20:00:02.5588277Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-014 dispute=d-014 code=error
+2026-10-04T20:00:02.5591666Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-015 dispute=d-015 code=error
+2026-10-04T20:00:02.5594889Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-016 dispute=d-016 code=error
+2026-10-04T20:00:02.5597887Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-017 dispute=d-017 code=error
+2026-10-04T20:00:02.5600894Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-018 dispute=d-018 code=error
+2026-10-04T20:00:02.5604203Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-019 dispute=d-019 code=error
+2026-10-04T20:00:02.5607115Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-000 dispute=d-000 code=error
+2026-10-04T20:00:02.5609914Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-001 dispute=d-001 code=error
+2026-10-04T20:00:02.5612820Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-002 dispute=d-002 code=error
+2026-10-04T20:00:02.5615950Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-003 dispute=d-003 code=error
+2026-10-04T20:00:02.5618995Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-004 dispute=d-004 code=error
+2026-10-04T20:00:02.5622309Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-005 dispute=d-005 code=error
+2026-10-04T20:00:02.5625629Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-006 dispute=d-006 code=error
+2026-10-04T20:00:02.5628695Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-007 dispute=d-007 code=error
+2026-10-04T20:00:02.5631609Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-008 dispute=d-008 code=error
+2026-10-04T20:00:02.5634939Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-009 dispute=d-009 code=error
+2026-10-04T20:00:02.5638004Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-010 dispute=d-010 code=error
+2026-10-04T20:00:02.5641108Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-011 dispute=d-011 code=error
+2026-10-04T20:00:02.5644382Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-012 dispute=d-012 code=error
+2026-10-04T20:00:02.5646037Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-013 dispute=d-013 code=error
+2026-10-04T20:00:02.5647791Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-014 dispute=d-014 code=error
+2026-10-04T20:00:02.5649327Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-015 dispute=d-015 code=error
+2026-10-04T20:00:02.5650845Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-016 dispute=d-016 code=error
+2026-10-04T20:00:02.5652351Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-017 dispute=d-017 code=error
+2026-10-04T20:00:02.5654556Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-018 dispute=d-018 code=error
+2026-10-04T20:00:02.5656211Z [Nest] 3080  - 10/04/2026, 8:00:02 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-commit dispute=d-commit code=error
+2026-10-04T20:00:02.9234985Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-007 purchase=p-a-007 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9256857Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-008 purchase=p-a-008 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9273588Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-009 purchase=p-a-009 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9286995Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-010 purchase=p-a-010 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9301556Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-011 purchase=p-a-011 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9315321Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-012 purchase=p-a-012 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9329979Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-013 purchase=p-a-013 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9344478Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-014 purchase=p-a-014 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9358950Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-015 purchase=p-a-015 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9380231Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-016 purchase=p-a-016 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9435151Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-017 purchase=p-a-017 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9448809Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-018 purchase=p-a-018 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9461728Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-019 purchase=p-a-019 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9474766Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-020 purchase=p-a-020 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9487839Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-021 purchase=p-a-021 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9501256Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-022 purchase=p-a-022 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9514398Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-023 purchase=p-a-023 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9527301Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-024 purchase=p-a-024 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9540376Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-025 purchase=p-a-025 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9553305Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-026 purchase=p-a-026 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9566311Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-027 purchase=p-a-027 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9579275Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-028 purchase=p-a-028 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9592348Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-029 purchase=p-a-029 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9605416Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-030 purchase=p-a-030 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9619755Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-031 purchase=p-a-031 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9633109Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-032 purchase=p-a-032 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9646660Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-033 purchase=p-a-033 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9659740Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-034 purchase=p-a-034 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9672768Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-035 purchase=p-a-035 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9686008Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-036 purchase=p-a-036 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9699491Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-037 purchase=p-a-037 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9712667Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-038 purchase=p-a-038 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9725945Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-039 purchase=p-a-039 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9739122Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-040 purchase=p-a-040 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9752276Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-041 purchase=p-a-041 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9765860Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-042 purchase=p-a-042 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9779142Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-043 purchase=p-a-043 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9792372Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-044 purchase=p-a-044 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9805873Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-045 purchase=p-a-045 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9819482Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-046 purchase=p-a-046 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9832860Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-047 purchase=p-a-047 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9846444Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-048 purchase=p-a-048 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9860113Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-049 purchase=p-a-049 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9918066Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-050 purchase=p-a-050 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9934048Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-051 purchase=p-a-051 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9953668Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-052 purchase=p-a-052 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9969470Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-053 purchase=p-a-053 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:02.9985217Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-054 purchase=p-a-054 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0000636Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-055 purchase=p-a-055 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0017670Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-056 purchase=p-a-056 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0042821Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-057 purchase=p-a-057 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0059260Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-058 purchase=p-a-058 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0084349Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-059 purchase=p-a-059 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0094689Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-060 purchase=p-a-060 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0117691Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-061 purchase=p-a-061 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0135113Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-062 purchase=p-a-062 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0153067Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-063 purchase=p-a-063 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0170603Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-064 purchase=p-a-064 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0188476Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-065 purchase=p-a-065 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0205804Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-066 purchase=p-a-066 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0223086Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-067 purchase=p-a-067 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0240680Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-068 purchase=p-a-068 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0258266Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-069 purchase=p-a-069 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0275775Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-070 purchase=p-a-070 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0293080Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-071 purchase=p-a-071 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0310564Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-072 purchase=p-a-072 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0328882Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-073 purchase=p-a-073 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0365937Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-074 purchase=p-a-074 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0380111Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-075 purchase=p-a-075 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0401320Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-076 purchase=p-a-076 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0416087Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-077 purchase=p-a-077 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0430211Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-078 purchase=p-a-078 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0444669Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-079 purchase=p-a-079 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0470891Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-080 purchase=p-a-080 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0485232Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-081 purchase=p-a-081 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0499373Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-082 purchase=p-a-082 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0513947Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-083 purchase=p-a-083 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0528196Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-084 purchase=p-a-084 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0542415Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-085 purchase=p-a-085 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0556685Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-086 purchase=p-a-086 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0571115Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-087 purchase=p-a-087 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0585534Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-088 purchase=p-a-088 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0599882Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-089 purchase=p-a-089 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0614271Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-090 purchase=p-a-090 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0628597Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-091 purchase=p-a-091 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0643064Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-092 purchase=p-a-092 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0657646Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-093 purchase=p-a-093 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0672039Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-094 purchase=p-a-094 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0686596Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-095 purchase=p-a-095 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0701093Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-096 purchase=p-a-096 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0715569Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-097 purchase=p-a-097 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0730173Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-098 purchase=p-a-098 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0744848Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-099 purchase=p-a-099 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0781132Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-100 purchase=p-a-100 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0795727Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-101 purchase=p-a-101 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0810402Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-102 purchase=p-a-102 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0825735Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-103 purchase=p-a-103 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0840202Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-104 purchase=p-a-104 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0854796Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-105 purchase=p-a-105 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0869502Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-106 purchase=p-a-106 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0886702Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-107 purchase=p-a-107 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0901609Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-108 purchase=p-a-108 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0916477Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-109 purchase=p-a-109 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0944991Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-110 purchase=p-a-110 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0960116Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-111 purchase=p-a-111 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0975140Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-112 purchase=p-a-112 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.0989843Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-113 purchase=p-a-113 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1004781Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-114 purchase=p-a-114 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1019573Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-115 purchase=p-a-115 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1034701Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-116 purchase=p-a-116 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1049586Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-117 purchase=p-a-117 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1064840Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-118 purchase=p-a-118 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1079684Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-119 purchase=p-a-119 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1096564Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-120 purchase=p-a-120 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1112277Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-121 purchase=p-a-121 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1127542Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-122 purchase=p-a-122 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1142396Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-123 purchase=p-a-123 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1157566Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-124 purchase=p-a-124 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1172786Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-125 purchase=p-a-125 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1188477Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-126 purchase=p-a-126 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1205076Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-127 purchase=p-a-127 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1223253Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-128 purchase=p-a-128 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1240354Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-129 purchase=p-a-129 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1257557Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-130 purchase=p-a-130 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1274774Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-131 purchase=p-a-131 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1291701Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-132 purchase=p-a-132 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1308953Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-133 purchase=p-a-133 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1325941Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-134 purchase=p-a-134 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1343257Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-135 purchase=p-a-135 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1360808Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-136 purchase=p-a-136 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1378054Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-137 purchase=p-a-137 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1395442Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-138 purchase=p-a-138 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1412785Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-139 purchase=p-a-139 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1442691Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-140 purchase=p-a-140 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1460219Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-141 purchase=p-a-141 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1477618Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-142 purchase=p-a-142 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1494971Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-143 purchase=p-a-143 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1512532Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-144 purchase=p-a-144 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1529913Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-145 purchase=p-a-145 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1547379Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-146 purchase=p-a-146 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1564891Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-147 purchase=p-a-147 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1582289Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-148 purchase=p-a-148 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1599775Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-149 purchase=p-a-149 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1636785Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-150 purchase=p-a-150 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1654387Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-151 purchase=p-a-151 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1672079Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-152 purchase=p-a-152 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1689739Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-153 purchase=p-a-153 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1707291Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-154 purchase=p-a-154 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1725069Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-155 purchase=p-a-155 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1742751Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-156 purchase=p-a-156 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1760688Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-157 purchase=p-a-157 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1778357Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-158 purchase=p-a-158 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1796252Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-159 purchase=p-a-159 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1814061Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-160 purchase=p-a-160 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1831802Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-161 purchase=p-a-161 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1849618Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-162 purchase=p-a-162 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1867389Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-163 purchase=p-a-163 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1885386Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-164 purchase=p-a-164 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1903175Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-165 purchase=p-a-165 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1921220Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-166 purchase=p-a-166 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1939196Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-167 purchase=p-a-167 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1965971Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-168 purchase=p-a-168 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.1984203Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-169 purchase=p-a-169 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2002115Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-170 purchase=p-a-170 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2020192Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-171 purchase=p-a-171 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2038190Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-172 purchase=p-a-172 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2056211Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-173 purchase=p-a-173 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2074496Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-174 purchase=p-a-174 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2092673Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-175 purchase=p-a-175 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2110849Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-176 purchase=p-a-176 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2129137Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-177 purchase=p-a-177 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2147338Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-178 purchase=p-a-178 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2165581Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-179 purchase=p-a-179 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2183939Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-180 purchase=p-a-180 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2202319Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-181 purchase=p-a-181 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2220482Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-182 purchase=p-a-182 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2238801Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-183 purchase=p-a-183 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2257369Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-184 purchase=p-a-184 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2275806Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-185 purchase=p-a-185 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2294450Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-186 purchase=p-a-186 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2312682Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-187 purchase=p-a-187 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2331224Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-188 purchase=p-a-188 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2349711Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-189 purchase=p-a-189 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2368222Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-190 purchase=p-a-190 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2386989Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-191 purchase=p-a-191 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2405437Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-192 purchase=p-a-192 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2424066Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-193 purchase=p-a-193 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2441585Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-194 purchase=p-a-194 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2458404Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-195 purchase=p-a-195 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2474927Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-196 purchase=p-a-196 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2499759Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-197 purchase=p-a-197 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2516728Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-198 purchase=p-a-198 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2533782Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-199 purchase=p-a-199 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2566698Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-200 purchase=p-a-200 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2583839Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-201 purchase=p-a-201 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2600394Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-202 purchase=p-a-202 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2617255Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-203 purchase=p-a-203 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2634236Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-204 purchase=p-a-204 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2651006Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-205 purchase=p-a-205 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2668012Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-206 purchase=p-a-206 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2685449Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-207 purchase=p-a-207 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2702151Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-208 purchase=p-a-208 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2719192Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-209 purchase=p-a-209 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2736193Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-210 purchase=p-a-210 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2753194Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-211 purchase=p-a-211 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2770411Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-212 purchase=p-a-212 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2787501Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-213 purchase=p-a-213 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2804863Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-214 purchase=p-a-214 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2822163Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-215 purchase=p-a-215 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2839647Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-216 purchase=p-a-216 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2857054Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-217 purchase=p-a-217 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2874439Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-218 purchase=p-a-218 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2891474Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-219 purchase=p-a-219 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2908889Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-220 purchase=p-a-220 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2926298Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-221 purchase=p-a-221 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2943770Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-222 purchase=p-a-222 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2961340Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-223 purchase=p-a-223 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.2987400Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-224 purchase=p-a-224 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3004980Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-225 purchase=p-a-225 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3022049Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-226 purchase=p-a-226 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3039556Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-227 purchase=p-a-227 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3057029Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-228 purchase=p-a-228 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3074788Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-229 purchase=p-a-229 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3092116Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-230 purchase=p-a-230 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3109683Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-231 purchase=p-a-231 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3127092Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-232 purchase=p-a-232 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3144687Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-233 purchase=p-a-233 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3162229Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-234 purchase=p-a-234 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3179887Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-235 purchase=p-a-235 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3197494Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-236 purchase=p-a-236 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3214874Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-237 purchase=p-a-237 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3232736Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-238 purchase=p-a-238 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3250682Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-239 purchase=p-a-239 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3268261Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-240 purchase=p-a-240 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3286124Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-241 purchase=p-a-241 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3303917Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-242 purchase=p-a-242 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3321576Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-243 purchase=p-a-243 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3339634Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-244 purchase=p-a-244 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3357393Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-245 purchase=p-a-245 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3375521Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-246 purchase=p-a-246 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3393198Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-247 purchase=p-a-247 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3411215Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-248 purchase=p-a-248 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3429072Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-249 purchase=p-a-249 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3460448Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-250 purchase=p-a-250 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3486621Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-251 purchase=p-a-251 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3504755Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-252 purchase=p-a-252 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3522588Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-253 purchase=p-a-253 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3541226Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-254 purchase=p-a-254 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3559199Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-255 purchase=p-a-255 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3577547Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-256 purchase=p-a-256 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3595542Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-257 purchase=p-a-257 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3613721Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-258 purchase=p-a-258 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3631673Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-259 purchase=p-a-259 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3650089Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-260 purchase=p-a-260 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3668933Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-261 purchase=p-a-261 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3687422Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-262 purchase=p-a-262 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3705772Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-263 purchase=p-a-263 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3724242Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-264 purchase=p-a-264 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3742504Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-265 purchase=p-a-265 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3761038Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-266 purchase=p-a-266 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3779605Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-267 purchase=p-a-267 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3798412Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-268 purchase=p-a-268 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3817546Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-269 purchase=p-a-269 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3836320Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-270 purchase=p-a-270 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3854793Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-271 purchase=p-a-271 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3873043Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-272 purchase=p-a-272 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3891577Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-273 purchase=p-a-273 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3910006Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-274 purchase=p-a-274 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3928485Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-275 purchase=p-a-275 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3947222Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-276 purchase=p-a-276 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3974846Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-277 purchase=p-a-277 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.3993005Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-278 purchase=p-a-278 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4011707Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-279 purchase=p-a-279 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4030530Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-280 purchase=p-a-280 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4049114Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-281 purchase=p-a-281 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4067917Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-282 purchase=p-a-282 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4086517Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-283 purchase=p-a-283 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4105117Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-284 purchase=p-a-284 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4124012Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-285 purchase=p-a-285 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4142705Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-286 purchase=p-a-286 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4161550Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-287 purchase=p-a-287 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4180339Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-288 purchase=p-a-288 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4199408Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-289 purchase=p-a-289 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4218330Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-290 purchase=p-a-290 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4237088Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-291 purchase=p-a-291 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4255785Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-292 purchase=p-a-292 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4274877Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-293 purchase=p-a-293 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4294010Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-294 purchase=p-a-294 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4312573Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-295 purchase=p-a-295 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4331634Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-296 purchase=p-a-296 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4350572Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-297 purchase=p-a-297 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4371710Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-298 purchase=p-a-298 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4396137Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-299 purchase=p-a-299 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4429798Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-300 purchase=p-a-300 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4450646Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-301 purchase=p-a-301 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4471769Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-302 purchase=p-a-302 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4501314Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-303 purchase=p-a-303 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4522352Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-304 purchase=p-a-304 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4543682Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-305 purchase=p-a-305 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4564819Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-306 purchase=p-a-306 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4585880Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-307 purchase=p-a-307 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4607073Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-308 purchase=p-a-308 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4629009Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-309 purchase=p-a-309 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4650312Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-310 purchase=p-a-310 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4671557Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-311 purchase=p-a-311 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4691844Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-312 purchase=p-a-312 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4711421Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-313 purchase=p-a-313 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4731082Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-314 purchase=p-a-314 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4750619Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-315 purchase=p-a-315 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4770211Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-316 purchase=p-a-316 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4789759Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-317 purchase=p-a-317 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4809529Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-318 purchase=p-a-318 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4829057Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-319 purchase=p-a-319 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4848607Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-320 purchase=p-a-320 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4868356Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-321 purchase=p-a-321 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4887892Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-322 purchase=p-a-322 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4907445Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-323 purchase=p-a-323 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4927115Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-324 purchase=p-a-324 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4947221Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-325 purchase=p-a-325 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4967224Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-326 purchase=p-a-326 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.4986939Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-327 purchase=p-a-327 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5006662Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-328 purchase=p-a-328 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5037750Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-329 purchase=p-a-329 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5057802Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-330 purchase=p-a-330 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5077766Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-331 purchase=p-a-331 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5097927Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-332 purchase=p-a-332 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5118077Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-333 purchase=p-a-333 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5137715Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-334 purchase=p-a-334 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5157490Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-335 purchase=p-a-335 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5177475Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-336 purchase=p-a-336 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5197506Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-337 purchase=p-a-337 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5217572Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-338 purchase=p-a-338 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5237465Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-339 purchase=p-a-339 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5257617Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-340 purchase=p-a-340 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5277809Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-341 purchase=p-a-341 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5298136Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-342 purchase=p-a-342 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5318039Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-343 purchase=p-a-343 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5338099Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-344 purchase=p-a-344 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5358251Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-345 purchase=p-a-345 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5378679Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-346 purchase=p-a-346 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5398821Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-347 purchase=p-a-347 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5419157Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-348 purchase=p-a-348 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5439799Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-349 purchase=p-a-349 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5468525Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-350 purchase=p-a-350 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5488681Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-351 purchase=p-a-351 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5508922Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-352 purchase=p-a-352 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5529397Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-353 purchase=p-a-353 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5559414Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-354 purchase=p-a-354 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5580199Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-355 purchase=p-a-355 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5600898Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-356 purchase=p-a-356 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5621260Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-357 purchase=p-a-357 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5641819Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-358 purchase=p-a-358 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5662192Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-359 purchase=p-a-359 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5682819Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-360 purchase=p-a-360 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5703628Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-361 purchase=p-a-361 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5724140Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-362 purchase=p-a-362 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5744786Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-363 purchase=p-a-363 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5765066Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-364 purchase=p-a-364 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5786031Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-365 purchase=p-a-365 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5806736Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-366 purchase=p-a-366 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5827336Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-367 purchase=p-a-367 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5848047Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-368 purchase=p-a-368 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5868741Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=a-369 purchase=p-a-369 code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5889326Z [Nest] 3080  - 03/21/2027, 12:01:10 PM   ERROR [RefundDisputeHandlerService] head-coach transfer reversal needs review refund=z-target purchase=p-target code=REFUND_TRANSFER_REVERSAL_REVIEW
+2026-10-04T20:00:03.5975706Z [Nest] 3080  - 03/21/2027, 12:00:10 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-000 refund=a-000 code=stripe_503_request_timeout
+2026-10-04T20:00:03.5977264Z PASS test/audit-sol-cm-118-send-admission.spec.ts (314 MB heap size)
+2026-10-04T20:00:03.5979775Z [Nest] 3080  - 03/21/2027, 12:00:20 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-001 refund=a-001 code=stripe_503_request_timeout
+2026-10-04T20:00:03.5982113Z [Nest] 3080  - 03/21/2027, 12:00:30 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-002 refund=a-002 code=stripe_503_request_timeout
+2026-10-04T20:00:03.5984505Z [Nest] 3080  - 03/21/2027, 12:00:40 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-003 refund=a-003 code=stripe_503_request_timeout
+2026-10-04T20:00:03.5986579Z [Nest] 3080  - 03/21/2027, 12:00:50 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-004 refund=a-004 code=stripe_503_request_timeout
+2026-10-04T20:00:03.5988604Z [Nest] 3080  - 03/21/2027, 12:01:00 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-005 refund=a-005 code=stripe_503_request_timeout
+2026-10-04T20:00:03.5990608Z [Nest] 3080  - 03/21/2027, 12:01:10 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-a-006 refund=a-006 code=stripe_503_request_timeout
+2026-10-04T20:00:03.5992418Z [Nest] 3080  - 10/04/2026, 8:00:03 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-incomplete dispute=d-incomplete code=TRANSFER_REVERSALS_LIST_INCOMPLETE
+2026-10-04T20:00:03.5993485Z   ● Console
+2026-10-04T20:00:03.5993607Z 
+2026-10-04T20:00:03.5993706Z     console.log
+2026-10-04T20:00:03.5994483Z       AUDIT_118_REFUND_SEND_TIME {"result":{"retried":371,"reversed":0,"needs_review":364,"in_review":364},"elapsed_ms":70000,"age_at_send_ms":82810000,"stripe":122,"local":0,"in_review":true}
+2026-10-04T20:00:03.5995114Z 
+2026-10-04T20:00:03.5995393Z       at Object.<anonymous> (test/audit-sol-cm-118-send-admission.spec.ts:46:13)
+2026-10-04T20:00:03.5995729Z 
+2026-10-04T20:00:03.5995811Z     console.log
+2026-10-04T20:00:03.5996570Z       AUDIT_118_INCOMPLETE_DISPUTE_LIST {"result":{"retried":1,"reversed":0,"needs_review":0,"in_review":0},"sent_again":0,"stripe":122,"local":0}
+2026-10-04T20:00:03.5997080Z 
+2026-10-04T20:00:03.5997356Z       at Object.<anonymous> (test/audit-sol-cm-118-send-admission.spec.ts:82:13)
+2026-10-04T20:00:03.5997681Z 
+2026-10-04T20:00:03.9429571Z PASS test/refund-reversal-first-pass.spec.ts (336 MB heap size)
+2026-10-04T20:00:04.2795637Z [Nest] 3080  - 03/31/2027, 11:59:59 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-r refund=rf-1 code=stripe_503_request_timeout
+2026-10-04T20:00:04.2798137Z [Nest] 3080  - 10/04/2026, 8:00:04 PM    WARN [RefundDisputeHandlerService] head-coach transfer reverse pending purchase=p-d dispute=cd-1 code=stripe_503_request_timeout
+2026-10-04T20:00:04.2799499Z PASS test/audit-opcm1-117-674.spec.ts (352 MB heap size)
+2026-10-04T20:00:04.6362785Z PASS test/audit-sol-cm1-117-dispute-posting.spec.ts (379 MB heap size)
+2026-10-04T20:00:04.6364143Z   ● Console
+2026-10-04T20:00:04.6364357Z 
+2026-10-04T20:00:04.6364520Z     console.log
+2026-10-04T20:00:04.6365748Z       AUDIT_DISPUTE_REDELIVERY {"stripe":122,"transfer":122,"headSlice":122,"headPostings":[122],"stripeKeys":["tgp-tr-rev-dispute-d-one"]}
+2026-10-04T20:00:04.6366674Z 
+2026-10-04T20:00:04.6367204Z       at Object.<anonymous> (test/audit-sol-cm1-117-dispute-posting.spec.ts:46:13)
+2026-10-04T20:00:04.6367833Z 
+2026-10-04T20:00:04.7044861Z PASS src/notifications/__tests__/first-payment-refund-retention.spec.ts (381 MB heap size)
+2026-10-04T20:00:04.7063868Z 
+2026-10-04T20:00:04.7064756Z Summary of all failing tests
+2026-10-04T20:00:04.7068488Z FAIL test/audit-cm1-674-reversal-mirror.spec.ts (269 MB heap size)
+2026-10-04T20:00:04.7075699Z   ● B-674-1 — webhook mirror plus local record count one Stripe reversal twice › owner reconcile recorded_from_stripe after the transfer.reversed webhook records the reversal once
+2026-10-04T20:00:04.7077395Z 
+2026-10-04T20:00:04.7077769Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T20:00:04.7078214Z 
+2026-10-04T20:00:04.7078401Z     - Expected  - 1
+2026-10-04T20:00:04.7078834Z     + Received  + 1
+2026-10-04T20:00:04.7079069Z 
+2026-10-04T20:00:04.7079240Z       Object {
+2026-10-04T20:00:04.7080266Z         "local_reversed": 122,
+2026-10-04T20:00:04.7082237Z     -   "mirror_before_reconcile": 122,
+2026-10-04T20:00:04.7083673Z     +   "mirror_before_reconcile": 0,
+2026-10-04T20:00:04.7085719Z         "outcome": "recorded_from_stripe",
+2026-10-04T20:00:04.7086564Z         "stripe_total": 122,
+2026-10-04T20:00:04.7087039Z       }
+2026-10-04T20:00:04.7094347Z 
+2026-10-04T20:00:04.7095368Z       56 |       stripe_total: h.stripeTotal('tr_p-late'),
+2026-10-04T20:00:04.7096805Z       57 |       local_reversed: h.headCoach('p-late'),
+2026-10-04T20:00:04.7097968Z     > 58 |     }).toEqual({
+2026-10-04T20:00:04.7100661Z          |        ^
+2026-10-04T20:00:04.7114704Z       59 |       mirror_before_reconcile: 122,
+2026-10-04T20:00:04.7125057Z       60 |       outcome: 'recorded_from_stripe',
+2026-10-04T20:00:04.7126222Z       61 |       stripe_total: 122,
+2026-10-04T20:00:04.7126811Z 
+2026-10-04T20:00:04.7127583Z       at Object.<anonymous> (test/audit-cm1-674-reversal-mirror.spec.ts:58:8)
+2026-10-04T20:00:04.7128144Z 
+2026-10-04T20:00:04.7128154Z 
+2026-10-04T20:00:04.7128457Z Test Suites: 1 failed, 21 passed, 22 total
+2026-10-04T20:00:04.7129102Z Tests:       1 failed, 221 passed, 222 total
+2026-10-04T20:00:04.7129636Z Snapshots:   0 total
+2026-10-04T20:00:04.7130051Z Time:        15.456 s
+2026-10-04T20:00:04.7139098Z Ran all test suites matching test/audit-cm1-674-reversal-mirror.spec.ts|test/audit-opcm1-117-674.spec.ts|test/audit-opus-cm-118-674-send.spec.ts|test/audit-opus-cm-118-674.spec.ts|test/audit-sol-cm-118-send-admission.spec.ts|test/audit-sol-cm1-116-boundaries.spec.ts|test/audit-sol-cm1-117-dispute-posting.spec.ts|test/audit-sol-cm1r2-117-boundaries.spec.ts|test/refund-reversal-boundaries.spec.ts|test/refund-reversal-first-pass.spec.ts|test/refund-reversal-reconcile.spec.ts|test/refund-reversal-review.spec.ts|test/refund-reversal-send-time.spec.ts|test/refund-reversal-once.spec.ts|test/dispute-transfer-reversal-once.spec.ts|test/refund-dispute-handler.service.spec.ts|test/cancel-pending-on-refund.spec.ts|test/split-ledger.service.spec.ts|test/transfer-orchestrator.service.spec.ts|test/payment-ops.controller.spec.ts|test/privacy/no-pii-in-logs.spec.ts|src/notifications/__tests__/first-payment-refund-retention.spec.ts.
+2026-10-04T20:00:04.8073070Z ##[error]Process completed with exit code 1.
+2026-10-04T20:00:04.8188933Z Post job cleanup.
+2026-10-04T20:00:04.9040420Z [command]/usr/bin/git version
+2026-10-04T20:00:04.9076418Z git version 2.55.0
+2026-10-04T20:00:04.9117158Z Temporarily overriding HOME='/home/runner/work/_temp/57fd1581-ceb8-4166-99dc-cb4475629d04' before making global git config changes
+2026-10-04T20:00:04.9118792Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T20:00:04.9123654Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T20:00:04.9152922Z Removing SSH command configuration
+2026-10-04T20:00:04.9160490Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T20:00:04.9194493Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T20:00:04.9417664Z Removing HTTP extra header
+2026-10-04T20:00:04.9424185Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T20:00:04.9458293Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T20:00:04.9674780Z Removing includeIf entries pointing to credentials config files
+2026-10-04T20:00:04.9680704Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T20:00:04.9707860Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T20:00:04.9728767Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T20:00:04.9729866Z includeif.gitdir:/github/workspace/.git.path
+2026-10-04T20:00:04.9730817Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T20:00:04.9732954Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T20:00:04.9742871Z /home/runner/work/_temp/git-credentials-22dca5f0-9aad-462a-8147-45e6ef120566.config
+2026-10-04T20:00:04.9754043Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-22dca5f0-9aad-462a-8147-45e6ef120566.config
+2026-10-04T20:00:04.9788142Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T20:00:04.9808614Z /home/runner/work/_temp/git-credentials-22dca5f0-9aad-462a-8147-45e6ef120566.config
+2026-10-04T20:00:04.9818384Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-22dca5f0-9aad-462a-8147-45e6ef120566.config
+2026-10-04T20:00:04.9849663Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-04T20:00:04.9870872Z /github/runner_temp/git-credentials-22dca5f0-9aad-462a-8147-45e6ef120566.config
+2026-10-04T20:00:04.9878775Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-22dca5f0-9aad-462a-8147-45e6ef120566.config
+2026-10-04T20:00:04.9911949Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T20:00:04.9932502Z /github/runner_temp/git-credentials-22dca5f0-9aad-462a-8147-45e6ef120566.config
+2026-10-04T20:00:04.9943025Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-22dca5f0-9aad-462a-8147-45e6ef120566.config
+2026-10-04T20:00:04.9975697Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T20:00:05.0194685Z Removing credentials config '/home/runner/work/_temp/git-credentials-22dca5f0-9aad-462a-8147-45e6ef120566.config'
+2026-10-04T20:00:05.0306366Z Print service container logs: a9e5dc6928574265901d5cfe4f4055d8_redis7alpine_637521
+2026-10-04T20:00:05.0310752Z ##[command]/usr/bin/docker logs --details cc11876da2359f2d59dba0819f7e4915a879c40f2c726850d11a7dd8dc9957d4
+2026-10-04T20:00:05.0437775Z  1:C 04 Oct 2026 19:59:02.566 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+2026-10-04T20:00:05.0439638Z  1:C 04 Oct 2026 19:59:02.566 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+2026-10-04T20:00:05.0440450Z  1:C 04 Oct 2026 19:59:02.566 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+2026-10-04T20:00:05.0441348Z  1:C 04 Oct 2026 19:59:02.566 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+2026-10-04T20:00:05.0442079Z  1:M 04 Oct 2026 19:59:02.566 * monotonic clock: POSIX clock_gettime
+2026-10-04T20:00:05.0442487Z  1:M 04 Oct 2026 19:59:02.566 * Running mode=standalone, port=6379.
+2026-10-04T20:00:05.0442851Z  1:M 04 Oct 2026 19:59:02.567 * Server initialized
+2026-10-04T20:00:05.0443202Z  1:M 04 Oct 2026 19:59:02.567 * Ready to accept connections tcp
+2026-10-04T20:00:05.0460284Z Stop and remove container: a9e5dc6928574265901d5cfe4f4055d8_redis7alpine_637521
+2026-10-04T20:00:05.0465017Z ##[command]/usr/bin/docker rm --force cc11876da2359f2d59dba0819f7e4915a879c40f2c726850d11a7dd8dc9957d4
+2026-10-04T20:00:05.2065779Z cc11876da2359f2d59dba0819f7e4915a879c40f2c726850d11a7dd8dc9957d4
+2026-10-04T20:00:05.2082241Z Remove container network: github_network_de0698daec75485eb0f8c9ed909e54bf
+2026-10-04T20:00:05.2087236Z ##[command]/usr/bin/docker network rm github_network_de0698daec75485eb0f8c9ed909e54bf
+2026-10-04T20:00:05.3108620Z github_network_de0698daec75485eb0f8c9ed909e54bf
+2026-10-04T20:00:05.3194057Z Cleaning up orphan processes

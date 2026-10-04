@@ -326,6 +326,21 @@ Must work against TODAY's production backend (the plan list route may be absent:
 lenses' prior probes. Keep #344 under 3,000 (grandfathered). FIX ROUND + READY on #344 at a green head; write notify/sheet.txt; release
 the lock. Report: ops/reports/B-SHEET3-119.md.
 
+## AUD-OPUS-R12D-119 (Claude Opus 5.5) / AUD-SOL-R12D-119 (GPT-6.1 Sol) — recurring R1 #678 + R2 #679 FIX ROUND 7 (MOST CRITICAL OF ALL)
+Heads: #678 09e159d83e192e9718bef7a493aa18944022eb0b (2,594 lines), #679 23d2c04c3d05cfc5a6594700152a9cf5336f3111 (2,943; 57 headroom).
+B-RECUR7A-119 FIX ROUND 7 + READY (#678 5983942447, #679 5983962316); report ops/reports/B-RECUR7A-119.md (verify every claim). Your
+lens's verdicts at the previous heads 77bce450 / 8bbf4a41: Opus APPROVE #678 0/0/2 (5983746979), #679 0/0/1 (5983747222); Sol RC #678
+0/2/2 (5983682649: B-678-3 deletion misses uncertain unbound subscriptions incl. coach-owned; B-678-4 send authority does not fence coach
+finalization), #679 0/2/1 (5983707659: B-679-10 default card counted as a settled trial; B-679-11 abandoned history hides an older billable
+plan). Your own previous report is ops/reports/AUD-<LENS>-R12-119.md (probes ops/aud-119/AUD-<LENS>-R12-119/): replay your probes at
+the new heads. Audit the FIX ROUND 7 delta deeply (git diff old..new, every changed line), confirm each B closed with failing-before
+evidence, that nothing regressed (money list: webhook order and redelivery, concurrency incl. the real-PostgreSQL two-session lock
+proof, terminal states, list pagination and completeness: the plan list shows every live plan, ended history capped at 50; currency;
+copy truth), and judge the builder's two decisions (coach deleted mid-checkout shows "attempt expired (timed out)"; ended-history cap 50:
+operator default accept both as Cs). #701 @ 5e8f1ceb holds #679's 5 new tests and is red until B-RECUR7B-119 restacks it: read those
+tests as part of #679's proof (they passed 525/525 merged locally), but post verdicts only on #678 and #679. Reports:
+ops/reports/AUD-OPUS-R12D-119.md, AUD-SOL-R12D-119.md.
+
 ## QUEUE (operator launches as slots free; cap 15 concurrent, owner 12:28 PDT 10-04)
 1. R5 pair #701 72eb096b. 2. HC pair m#362 b3bc0ce4 + m#364 529ba345 (then m#363 2858bac5 delta). 3. Lockout pair m#352 ac244d22 +
 m#353 05d84f27 (then m#354 f084cc0f). 4. Wizard pair m#345 97c9005e + m#346 2baea5b8 (then #347 W3 fix round). 5. B-SHEET3-119 (m#344:

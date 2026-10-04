@@ -1,0 +1,899 @@
+targeted	Set up job	﻿2026-10-04T19:54:42.2302348Z Current runner version: '2.337.0'
+targeted	Set up job	2026-10-04T19:54:42.2330332Z ##[group]Runner Image Provisioner
+targeted	Set up job	2026-10-04T19:54:42.2331269Z Hosted Compute Agent
+targeted	Set up job	2026-10-04T19:54:42.2331877Z Version: 20260901.588
+targeted	Set up job	2026-10-04T19:54:42.2332543Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	Set up job	2026-10-04T19:54:42.2333333Z Build Date: 2026-09-01T19:56:44Z
+targeted	Set up job	2026-10-04T19:54:42.2334010Z Worker ID: {df65ded4-0f9f-403f-9469-bbf153be54fb}
+targeted	Set up job	2026-10-04T19:54:42.2334707Z Azure Region: westus
+targeted	Set up job	2026-10-04T19:54:42.2335330Z ##[endgroup]
+targeted	Set up job	2026-10-04T19:54:42.2336935Z ##[group]Operating System
+targeted	Set up job	2026-10-04T19:54:42.2337706Z Ubuntu
+targeted	Set up job	2026-10-04T19:54:42.2338545Z 24.04.5
+targeted	Set up job	2026-10-04T19:54:42.2339068Z LTS
+targeted	Set up job	2026-10-04T19:54:42.2339656Z ##[endgroup]
+targeted	Set up job	2026-10-04T19:54:42.2340234Z ##[group]Runner Image
+targeted	Set up job	2026-10-04T19:54:42.2340874Z Image: ubuntu-24.04
+targeted	Set up job	2026-10-04T19:54:42.2341444Z Version: 20260927.320.1
+targeted	Set up job	2026-10-04T19:54:42.2342510Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	Set up job	2026-10-04T19:54:42.2344350Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	Set up job	2026-10-04T19:54:42.2345372Z ##[endgroup]
+targeted	Set up job	2026-10-04T19:54:42.2346581Z ##[group]GITHUB_TOKEN Permissions
+targeted	Set up job	2026-10-04T19:54:42.2348748Z Contents: read
+targeted	Set up job	2026-10-04T19:54:42.2349395Z Metadata: read
+targeted	Set up job	2026-10-04T19:54:42.2349986Z Packages: read
+targeted	Set up job	2026-10-04T19:54:42.2350618Z ##[endgroup]
+targeted	Set up job	2026-10-04T19:54:42.2352688Z Secret source: Actions
+targeted	Set up job	2026-10-04T19:54:42.2353749Z Cache mode: write
+targeted	Set up job	2026-10-04T19:54:42.2354464Z Prepare workflow directory
+targeted	Set up job	2026-10-04T19:54:42.2844645Z Prepare all required actions
+targeted	Set up job	2026-10-04T19:54:42.2893421Z Getting action download info
+targeted	Set up job	2026-10-04T19:54:42.6335963Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	Set up job	2026-10-04T19:54:42.7471868Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	Set up job	2026-10-04T19:54:42.9821861Z Complete job name: targeted
+targeted	Initialize containers	﻿2026-10-04T19:54:43.0345657Z ##[group]Checking docker version
+targeted	Initialize containers	2026-10-04T19:54:43.0359577Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+targeted	Initialize containers	2026-10-04T19:54:43.1440373Z '1.48'
+targeted	Initialize containers	2026-10-04T19:54:43.1451364Z Docker daemon API version: '1.48'
+targeted	Initialize containers	2026-10-04T19:54:43.1452208Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+targeted	Initialize containers	2026-10-04T19:54:43.1612558Z '1.48'
+targeted	Initialize containers	2026-10-04T19:54:43.1625822Z Docker client API version: '1.48'
+targeted	Initialize containers	2026-10-04T19:54:43.1631489Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T19:54:43.1634898Z ##[group]Clean up resources from previous jobs
+targeted	Initialize containers	2026-10-04T19:54:43.1641031Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=5dcbef"
+targeted	Initialize containers	2026-10-04T19:54:43.1789267Z ##[command]/usr/bin/docker network prune --force --filter "label=5dcbef"
+targeted	Initialize containers	2026-10-04T19:54:43.1929048Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T19:54:43.1929625Z ##[group]Create local container network
+targeted	Initialize containers	2026-10-04T19:54:43.1939536Z ##[command]/usr/bin/docker network create --label 5dcbef github_network_a25fee791d744f4c835c6bddc11ee4ed
+targeted	Initialize containers	2026-10-04T19:54:43.2470619Z 5a7690fd6a7f65d15f2b23e22bfa0999bc2daa7ce5b6e7e144dedab4912c5d4f
+targeted	Initialize containers	2026-10-04T19:54:43.2491834Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T19:54:43.2517770Z ##[group]Starting redis service container
+targeted	Initialize containers	2026-10-04T19:54:43.2540834Z ##[command]/usr/bin/docker pull redis:7-alpine
+targeted	Initialize containers	2026-10-04T19:54:44.1231888Z 7-alpine: Pulling from library/redis
+targeted	Initialize containers	2026-10-04T19:54:44.3838923Z 16333ee0c00f: Pulling fs layer
+targeted	Initialize containers	2026-10-04T19:54:44.3839744Z 83234986c742: Pulling fs layer
+targeted	Initialize containers	2026-10-04T19:54:44.3840318Z 7eb50503c2b0: Pulling fs layer
+targeted	Initialize containers	2026-10-04T19:54:44.3840900Z 1522f9c6f453: Pulling fs layer
+targeted	Initialize containers	2026-10-04T19:54:44.3841454Z 9928009b15c8: Pulling fs layer
+targeted	Initialize containers	2026-10-04T19:54:44.3842032Z 4f4fb700ef54: Pulling fs layer
+targeted	Initialize containers	2026-10-04T19:54:44.3842589Z 4eb14bae0e1d: Pulling fs layer
+targeted	Initialize containers	2026-10-04T19:54:44.3843119Z 9928009b15c8: Waiting
+targeted	Initialize containers	2026-10-04T19:54:44.3843563Z 1522f9c6f453: Waiting
+targeted	Initialize containers	2026-10-04T19:54:44.3844022Z 4f4fb700ef54: Waiting
+targeted	Initialize containers	2026-10-04T19:54:44.3844549Z 4eb14bae0e1d: Waiting
+targeted	Initialize containers	2026-10-04T19:54:44.5968261Z 83234986c742: Verifying Checksum
+targeted	Initialize containers	2026-10-04T19:54:44.5972644Z 83234986c742: Download complete
+targeted	Initialize containers	2026-10-04T19:54:44.5999689Z 7eb50503c2b0: Verifying Checksum
+targeted	Initialize containers	2026-10-04T19:54:44.6000438Z 7eb50503c2b0: Download complete
+targeted	Initialize containers	2026-10-04T19:54:44.6187008Z 16333ee0c00f: Download complete
+targeted	Initialize containers	2026-10-04T19:54:44.7244068Z 16333ee0c00f: Pull complete
+targeted	Initialize containers	2026-10-04T19:54:44.7479490Z 83234986c742: Pull complete
+targeted	Initialize containers	2026-10-04T19:54:44.8103866Z 9928009b15c8: Verifying Checksum
+targeted	Initialize containers	2026-10-04T19:54:44.8105533Z 9928009b15c8: Download complete
+targeted	Initialize containers	2026-10-04T19:54:44.8205625Z 4f4fb700ef54: Verifying Checksum
+targeted	Initialize containers	2026-10-04T19:54:44.8206470Z 4f4fb700ef54: Download complete
+targeted	Initialize containers	2026-10-04T19:54:44.8588398Z 1522f9c6f453: Verifying Checksum
+targeted	Initialize containers	2026-10-04T19:54:44.8589286Z 1522f9c6f453: Download complete
+targeted	Initialize containers	2026-10-04T19:54:44.9067552Z 7eb50503c2b0: Pull complete
+targeted	Initialize containers	2026-10-04T19:54:45.0256241Z 4eb14bae0e1d: Verifying Checksum
+targeted	Initialize containers	2026-10-04T19:54:45.0257589Z 4eb14bae0e1d: Download complete
+targeted	Initialize containers	2026-10-04T19:54:45.1013268Z 1522f9c6f453: Pull complete
+targeted	Initialize containers	2026-10-04T19:54:45.1097336Z 9928009b15c8: Pull complete
+targeted	Initialize containers	2026-10-04T19:54:45.1174621Z 4f4fb700ef54: Pull complete
+targeted	Initialize containers	2026-10-04T19:54:45.1288833Z 4eb14bae0e1d: Pull complete
+targeted	Initialize containers	2026-10-04T19:54:45.1324445Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+targeted	Initialize containers	2026-10-04T19:54:45.1336472Z Status: Downloaded newer image for redis:7-alpine
+targeted	Initialize containers	2026-10-04T19:54:45.1345323Z docker.io/library/redis:7-alpine
+targeted	Initialize containers	2026-10-04T19:54:45.1380192Z ##[command]/usr/bin/docker create --name f6b72bca645241de9f659c448e799852_redis7alpine_5bb638 --label 5dcbef --network github_network_a25fee791d744f4c835c6bddc11ee4ed --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+targeted	Initialize containers	2026-10-04T19:54:45.1636742Z 8da10194678bb5993e74f1703f592ea6d901da4beaf8e7e302714109039224fc
+targeted	Initialize containers	2026-10-04T19:54:45.1661676Z ##[command]/usr/bin/docker start 8da10194678bb5993e74f1703f592ea6d901da4beaf8e7e302714109039224fc
+targeted	Initialize containers	2026-10-04T19:54:45.3746886Z 8da10194678bb5993e74f1703f592ea6d901da4beaf8e7e302714109039224fc
+targeted	Initialize containers	2026-10-04T19:54:45.3782846Z ##[command]/usr/bin/docker ps --all --filter id=8da10194678bb5993e74f1703f592ea6d901da4beaf8e7e302714109039224fc --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+targeted	Initialize containers	2026-10-04T19:54:45.3912160Z 8da10194678bb5993e74f1703f592ea6d901da4beaf8e7e302714109039224fc Up Less than a second (health: starting)
+targeted	Initialize containers	2026-10-04T19:54:45.3931772Z ##[command]/usr/bin/docker port 8da10194678bb5993e74f1703f592ea6d901da4beaf8e7e302714109039224fc
+targeted	Initialize containers	2026-10-04T19:54:45.4057731Z 6379/tcp -> 0.0.0.0:6379
+targeted	Initialize containers	2026-10-04T19:54:45.4058555Z 6379/tcp -> [::]:6379
+targeted	Initialize containers	2026-10-04T19:54:45.4103474Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T19:54:45.4112188Z ##[group]Waiting for all services to be ready
+targeted	Initialize containers	2026-10-04T19:54:45.4125883Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 8da10194678bb5993e74f1703f592ea6d901da4beaf8e7e302714109039224fc
+targeted	Initialize containers	2026-10-04T19:54:45.4244789Z starting
+targeted	Initialize containers	2026-10-04T19:54:45.4264957Z redis service is starting, waiting 2 seconds before checking again.
+targeted	Initialize containers	2026-10-04T19:54:47.4264972Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 8da10194678bb5993e74f1703f592ea6d901da4beaf8e7e302714109039224fc
+targeted	Initialize containers	2026-10-04T19:54:47.4394839Z starting
+targeted	Initialize containers	2026-10-04T19:54:47.4408843Z redis service is starting, waiting 4 seconds before checking again.
+targeted	Initialize containers	2026-10-04T19:54:51.5443993Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 8da10194678bb5993e74f1703f592ea6d901da4beaf8e7e302714109039224fc
+targeted	Initialize containers	2026-10-04T19:54:51.5575366Z healthy
+targeted	Initialize containers	2026-10-04T19:54:51.5593166Z redis service is healthy.
+targeted	Initialize containers	2026-10-04T19:54:51.5593949Z ##[endgroup]
+targeted	Run actions/checkout@v6	﻿2026-10-04T19:54:51.5880821Z ##[group]Run actions/checkout@v6
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.5881423Z with:
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.5881740Z   repository: BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.5884147Z   token: ***
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.5884351Z   ssh-strict: true
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.5884554Z   ssh-user: git
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.5884766Z   persist-credentials: true
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.5885236Z   clean: true
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.5885457Z   sparse-checkout-cone-mode: true
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.5885713Z   fetch-depth: 1
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.5885906Z   fetch-tags: false
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.5886122Z   show-progress: true
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.5886346Z   lfs: false
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.5886532Z   submodules: false
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.5886736Z   set-safe-directory: true
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.5886977Z   allow-unsafe-pr-checkout: false
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.5887579Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.6881927Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.6883640Z ##[group]Getting Git version info
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.6884254Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.6884956Z [command]/usr/bin/git version
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.6987736Z git version 2.55.0
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7012546Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7026914Z Temporarily overriding HOME='/home/runner/work/_temp/e09f2b61-8915-4e3f-b457-85f736542c1f' before making global git config changes
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7028550Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7033322Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7083835Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7088727Z ##[group]Determining repository object format
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7091485Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7096125Z ##[group]Initializing the repository
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7096959Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7200800Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7201897Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7202771Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7203460Z hint: call:
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7203782Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7204305Z hint: 	git config --global init.defaultBranch <name>
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7204948Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7205492Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7206391Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7207092Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7207455Z hint: 	git branch -m <name>
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7207866Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7208600Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7209435Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7216163Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7267691Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7268386Z ##[group]Disabling automatic garbage collection
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7273404Z [command]/usr/bin/git config --local gc.auto 0
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7303703Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7304603Z ##[group]Setting up auth
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7305329Z Removing SSH command configuration
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7312399Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7344468Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7742687Z Removing HTTP extra header
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7750806Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.7783372Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.8006152Z Removing includeIf entries pointing to credentials config files
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.8006821Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.8037156Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.8261926Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-8f911937-42d0-445a-9907-2057efcbb449.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.8298989Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-8f911937-42d0-445a-9907-2057efcbb449.config
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.8329856Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-8f911937-42d0-445a-9907-2057efcbb449.config
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.8363683Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-8f911937-42d0-445a-9907-2057efcbb449.config
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.8397119Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-8f911937-42d0-445a-9907-2057efcbb449.config
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.8455703Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.8456356Z ##[group]Fetching the repository
+targeted	Run actions/checkout@v6	2026-10-04T19:54:51.8464626Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +13e07049d1921afc60d11e605dee99812844ceb2:refs/remotes/origin/ci/B-DUNSPLIT-119-d2c-before
+targeted	Run actions/checkout@v6	2026-10-04T19:54:53.2586088Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T19:54:53.2587395Z  * [new ref]         13e07049d1921afc60d11e605dee99812844ceb2 -> origin/ci/B-DUNSPLIT-119-d2c-before
+targeted	Run actions/checkout@v6	2026-10-04T19:54:53.2598439Z [command]/usr/bin/git branch --list --remote origin/ci/B-DUNSPLIT-119-d2c-before
+targeted	Run actions/checkout@v6	2026-10-04T19:54:53.2624022Z   origin/ci/B-DUNSPLIT-119-d2c-before
+targeted	Run actions/checkout@v6	2026-10-04T19:54:53.2632782Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-DUNSPLIT-119-d2c-before
+targeted	Run actions/checkout@v6	2026-10-04T19:54:53.2656024Z 13e07049d1921afc60d11e605dee99812844ceb2
+targeted	Run actions/checkout@v6	2026-10-04T19:54:53.2661133Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:54:53.2661805Z ##[group]Determining the checkout info
+targeted	Run actions/checkout@v6	2026-10-04T19:54:53.2662543Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:54:53.2669275Z [command]/usr/bin/git sparse-checkout disable
+targeted	Run actions/checkout@v6	2026-10-04T19:54:53.2717844Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	Run actions/checkout@v6	2026-10-04T19:54:53.2744895Z ##[group]Checking out the ref
+targeted	Run actions/checkout@v6	2026-10-04T19:54:53.2750582Z [command]/usr/bin/git checkout --progress --force -B ci/B-DUNSPLIT-119-d2c-before refs/remotes/origin/ci/B-DUNSPLIT-119-d2c-before
+targeted	Run actions/checkout@v6	2026-10-04T19:54:53.4924514Z Switched to a new branch 'ci/B-DUNSPLIT-119-d2c-before'
+targeted	Run actions/checkout@v6	2026-10-04T19:54:53.4930089Z branch 'ci/B-DUNSPLIT-119-d2c-before' set up to track 'origin/ci/B-DUNSPLIT-119-d2c-before'.
+targeted	Run actions/checkout@v6	2026-10-04T19:54:53.4939963Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:54:53.4985784Z [command]/usr/bin/git log -1 --format=%H
+targeted	Run actions/checkout@v6	2026-10-04T19:54:53.5012429Z 13e07049d1921afc60d11e605dee99812844ceb2
+targeted	Run actions/setup-node@v6	﻿2026-10-04T19:54:53.5265849Z ##[group]Run actions/setup-node@v6
+targeted	Run actions/setup-node@v6	2026-10-04T19:54:53.5266163Z with:
+targeted	Run actions/setup-node@v6	2026-10-04T19:54:53.5266354Z   node-version: 20
+targeted	Run actions/setup-node@v6	2026-10-04T19:54:53.5266557Z   cache: npm
+targeted	Run actions/setup-node@v6	2026-10-04T19:54:53.5266748Z   check-latest: false
+targeted	Run actions/setup-node@v6	2026-10-04T19:54:53.5269301Z   token: ***
+targeted	Run actions/setup-node@v6	2026-10-04T19:54:53.5269531Z   package-manager-cache: true
+targeted	Run actions/setup-node@v6	2026-10-04T19:54:53.5269780Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T19:54:53.6657521Z Attempting to download 20...
+targeted	Run actions/setup-node@v6	2026-10-04T19:54:54.2449424Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+targeted	Run actions/setup-node@v6	2026-10-04T19:54:54.6433773Z Extracting ...
+targeted	Run actions/setup-node@v6	2026-10-04T19:54:54.6544211Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/2c401362-c6bd-4e72-8709-ab0f005d98b2 -f /home/runner/work/_temp/a75defd8-1c61-43d1-92c0-82217de704c5
+targeted	Run actions/setup-node@v6	2026-10-04T19:54:55.6862134Z Adding to the cache ...
+targeted	Run actions/setup-node@v6	2026-10-04T19:54:57.5374493Z ##[group]Environment details
+targeted	Run actions/setup-node@v6	2026-10-04T19:54:57.7661601Z node: v20.20.2
+targeted	Run actions/setup-node@v6	2026-10-04T19:54:57.7662169Z npm: 10.8.2
+targeted	Run actions/setup-node@v6	2026-10-04T19:54:57.7662484Z yarn: 1.22.22
+targeted	Run actions/setup-node@v6	2026-10-04T19:54:57.7663031Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T19:54:57.7683079Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+targeted	Run actions/setup-node@v6	2026-10-04T19:54:57.8751619Z /home/runner/.npm
+targeted	Run actions/setup-node@v6	2026-10-04T19:54:58.1306600Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+targeted	Run actions/setup-node@v6	2026-10-04T19:54:59.4128704Z Received 0 of 86828135 (0.0%), 0.0 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-04T19:55:00.1583934Z Received 86828135 of 86828135 (100.0%), 47.4 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-04T19:55:00.1584844Z Cache Size: ~83 MB (86828135 B)
+targeted	Run actions/setup-node@v6	2026-10-04T19:55:00.1618642Z [command]/usr/bin/tar -xf /home/runner/work/_temp/10359021-450f-4ebc-abc5-caf1e781c691/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+targeted	Run actions/setup-node@v6	2026-10-04T19:55:00.3400269Z Cache restored successfully
+targeted	Run actions/setup-node@v6	2026-10-04T19:55:00.3446999Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+targeted	Run npm ci	﻿2026-10-04T19:55:00.3636905Z ##[group]Run npm ci
+targeted	Run npm ci	2026-10-04T19:55:00.3637211Z ^[[36;1mnpm ci^[[0m
+targeted	Run npm ci	2026-10-04T19:55:00.3851660Z shell: /usr/bin/bash -e {0}
+targeted	Run npm ci	2026-10-04T19:55:00.3852026Z ##[endgroup]
+targeted	Run npm ci	2026-10-04T19:55:06.1656012Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	Run npm ci	2026-10-04T19:55:07.2603681Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+targeted	Run npm ci	2026-10-04T19:55:08.3110130Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T19:55:09.6320811Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T19:55:09.6598908Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T19:55:09.7138764Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T19:55:23.2831887Z 
+targeted	Run npm ci	2026-10-04T19:55:23.2833243Z > growth-project-backend@1.0.0 postinstall
+targeted	Run npm ci	2026-10-04T19:55:23.2833774Z > prisma generate
+targeted	Run npm ci	2026-10-04T19:55:23.2833923Z 
+targeted	Run npm ci	2026-10-04T19:55:24.2394289Z Prisma schema loaded from prisma/schema.prisma
+targeted	Run npm ci	2026-10-04T19:55:28.0206907Z ┌─────────────────────────────────────────────────────────┐
+targeted	Run npm ci	2026-10-04T19:55:28.0208596Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+targeted	Run npm ci	2026-10-04T19:55:28.0208936Z 
+targeted	Run npm ci	2026-10-04T19:55:28.0209672Z │                                                         │
+targeted	Run npm ci	2026-10-04T19:55:28.0210502Z │  This is a major update - please follow the guide at    │
+targeted	Run npm ci	2026-10-04T19:55:28.0211434Z │  https://pris.ly/d/major-version-upgrade                │
+targeted	Run npm ci	2026-10-04T19:55:28.0212292Z │                                                         │
+targeted	Run npm ci	2026-10-04T19:55:28.0213072Z │  Run the following to update                            │
+targeted	Run npm ci	2026-10-04T19:55:28.0214475Z │    npm i --save-dev prisma@latest                       │
+targeted	Run npm ci	2026-10-04T19:55:28.0215390Z │    npm i @prisma/client@latest                          │
+targeted	Run npm ci	2026-10-04T19:55:28.0216321Z └─────────────────────────────────────────────────────────┘
+targeted	Run npm ci	2026-10-04T19:55:28.0217425Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.07s
+targeted	Run npm ci	2026-10-04T19:55:28.0218496Z 
+targeted	Run npm ci	2026-10-04T19:55:28.0221733Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	Run npm ci	2026-10-04T19:55:28.0222406Z 
+targeted	Run npm ci	2026-10-04T19:55:28.0223067Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+targeted	Run npm ci	2026-10-04T19:55:28.0223623Z 
+targeted	Run npm ci	2026-10-04T19:55:28.0771131Z 
+targeted	Run npm ci	2026-10-04T19:55:28.0771865Z > growth-project-backend@1.0.0 prepare
+targeted	Run npm ci	2026-10-04T19:55:28.0772419Z > lefthook install
+targeted	Run npm ci	2026-10-04T19:55:28.0772566Z 
+targeted	Run npm ci	2026-10-04T19:55:28.1274137Z sync hooks: ✔️(commit-msg, pre-commit)
+targeted	Run npm ci	2026-10-04T19:55:28.1460615Z 
+targeted	Run npm ci	2026-10-04T19:55:28.1461414Z added 1115 packages, and audited 1116 packages in 28s
+targeted	Run npm ci	2026-10-04T19:55:28.1461917Z 
+targeted	Run npm ci	2026-10-04T19:55:28.1462193Z 202 packages are looking for funding
+targeted	Run npm ci	2026-10-04T19:55:28.1462716Z   run `npm fund` for details
+targeted	Run npm ci	2026-10-04T19:55:28.1494940Z 
+targeted	Run npm ci	2026-10-04T19:55:28.1495270Z 3 high severity vulnerabilities
+targeted	Run npm ci	2026-10-04T19:55:28.1495571Z 
+targeted	Run npm ci	2026-10-04T19:55:28.1496061Z To address all issues (including breaking changes), run:
+targeted	Run npm ci	2026-10-04T19:55:28.1496858Z   npm audit fix --force
+targeted	Run npm ci	2026-10-04T19:55:28.1497014Z 
+targeted	Run npm ci	2026-10-04T19:55:28.1497139Z Run `npm audit` for details.
+targeted	Run npx prisma generate	﻿2026-10-04T19:55:28.2135233Z ##[group]Run npx prisma generate
+targeted	Run npx prisma generate	2026-10-04T19:55:28.2135600Z ^[[36;1mnpx prisma generate^[[0m
+targeted	Run npx prisma generate	2026-10-04T19:55:28.2207287Z shell: /usr/bin/bash -e {0}
+targeted	Run npx prisma generate	2026-10-04T19:55:28.2207561Z ##[endgroup]
+targeted	Run npx prisma generate	2026-10-04T19:55:29.4449748Z Prisma schema loaded from prisma/schema.prisma
+targeted	Run npx prisma generate	2026-10-04T19:55:33.2245318Z 
+targeted	Run npx prisma generate	2026-10-04T19:55:33.2246827Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.09s
+targeted	Run npx prisma generate	2026-10-04T19:55:33.2247401Z 
+targeted	Run npx prisma generate	2026-10-04T19:55:33.2248223Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	Run npx prisma generate	2026-10-04T19:55:33.2248799Z 
+targeted	Run npx prisma generate	2026-10-04T19:55:33.2249283Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+targeted	Run npx prisma generate	2026-10-04T19:55:33.2249768Z 
+targeted	Targeted jest	﻿2026-10-04T19:55:33.3423184Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T19:55:33.3423536Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T19:55:33.3423930Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T19:55:33.3424426Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T19:55:33.3424795Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T19:55:33.3425082Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T19:55:33.3488419Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T19:55:33.3488784Z env:
+targeted	Targeted jest	2026-10-04T19:55:33.3489006Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T19:55:33.3489366Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T19:55:33.3489702Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T19:55:33.3585420Z specs: test/dunning-v2-dispute-pause.spec.ts test/dunning-v2-service-fixes.spec.ts test/dunning-v2-service.spec.ts
+targeted	Targeted jest	2026-10-04T19:55:37.0349574Z FAIL test/dunning-v2-dispute-pause.spec.ts (197 MB heap size)
+targeted	Targeted jest	2026-10-04T19:55:37.0370489Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › entry: any charge of a recurring plan, whatever its dunning history › a plan that never failed a renewal: locked now, entitlement off, Stripe paused
+targeted	Targeted jest	2026-10-04T19:55:37.0418317Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0448767Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T19:55:37.0478312Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0509259Z     - Expected  - 2
+targeted	Targeted jest	2026-10-04T19:55:37.0538553Z     + Received  + 2
+targeted	Targeted jest	2026-10-04T19:55:37.0568272Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0591596Z       Object {
+targeted	Targeted jest	2026-10-04T19:55:37.0618767Z     -   "opened": true,
+targeted	Targeted jest	2026-10-04T19:55:37.0619237Z     -   "reason": "paused",
+targeted	Targeted jest	2026-10-04T19:55:37.0619662Z     +   "opened": false,
+targeted	Targeted jest	2026-10-04T19:55:37.0620044Z     +   "reason": "no_state",
+targeted	Targeted jest	2026-10-04T19:55:37.0620903Z       }
+targeted	Targeted jest	2026-10-04T19:55:37.0621077Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0622398Z     ^[[0m ^[[90m 113 |^[[39m     it(^[[32m'a plan that never failed a renewal: locked now, entitlement off, Stripe paused'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T19:55:37.0623738Z      ^[[90m 114 |^[[39m       ^[[36mconst^[[39m h ^[[33m=^[[39m harness()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0625502Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 115 |^[[39m       expect(^[[36mawait^[[39m h^[[33m.^[[39mcreated())^[[33m.^[[39mtoEqual({ opened^[[33m:^[[39m ^[[36mtrue^[[39m^[[33m,^[[39m reason^[[33m:^[[39m ^[[32m'paused'^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0627172Z      ^[[90m     |^[[39m                                 ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0628613Z      ^[[90m 116 |^[[39m       expect(h^[[33m.^[[39mpaused())^[[33m.^[[39mtoBe(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0630192Z      ^[[90m 117 |^[[39m       expect(h^[[33m.^[[39mds())^[[33m.^[[39mtoMatchObject({ locked_out_at^[[33m:^[[39m ^[[33mT0^[[39m^[[33m,^[[39m entered_at^[[33m:^[[39m ^[[33mT0^[[39m^[[33m,^[[39m step_index^[[33m:^[[39m ^[[35m3^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0631449Z      ^[[90m 118 |^[[39m       expect(h^[[33m.^[[39mstripe^[[33m.^[[39mpauseSubscriptionCollection)^[[33m.^[[39mtoHaveBeenCalledWith({^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0631923Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0632248Z       at Object.<anonymous> (test/dunning-v2-dispute-pause.spec.ts:115:33)
+targeted	Targeted jest	2026-10-04T19:55:37.0632559Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0633500Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › entry: any charge of a recurring plan, whatever its dunning history › during a Day-3 payment cycle: paused at once, no lock date days away
+targeted	Targeted jest	2026-10-04T19:55:37.0634265Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0634465Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T19:55:37.0634707Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0634819Z     Expected: "paused"
+targeted	Targeted jest	2026-10-04T19:55:37.0635095Z     Received: "cycle_already_active"
+targeted	Targeted jest	2026-10-04T19:55:37.0635280Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0635886Z     ^[[0m ^[[90m 130 |^[[39m     it(^[[32m'during a Day-3 payment cycle: paused at once, no lock date days away'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T19:55:37.0636974Z      ^[[90m 131 |^[[39m       ^[[36mconst^[[39m h ^[[33m=^[[39m harness({ status^[[33m:^[[39m ^[[32m'past_due'^[[39m }^[[33m,^[[39m {})^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0638754Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 132 |^[[39m       expect((^[[36mawait^[[39m h^[[33m.^[[39mcreated())^[[33m.^[[39mreason)^[[33m.^[[39mtoBe(^[[32m'paused'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0639689Z      ^[[90m     |^[[39m                                          ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0640486Z      ^[[90m 133 |^[[39m       expect(h^[[33m.^[[39mpaused())^[[33m.^[[39mtoBe(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0641904Z      ^[[90m 134 |^[[39m       expect(h^[[33m.^[[39mds()^[[33m?^[[39m^[[33m.^[[39mlocked_out_at)^[[33m.^[[39mtoEqual(^[[33mT0^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0642605Z      ^[[90m 135 |^[[39m     })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0642807Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0643076Z       at Object.<anonymous> (test/dunning-v2-dispute-pause.spec.ts:132:42)
+targeted	Targeted jest	2026-10-04T19:55:37.0643399Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0644143Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › entry: any charge of a recurring plan, whatever its dunning history › after a resolved cycle: paused
+targeted	Targeted jest	2026-10-04T19:55:37.0644775Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0644981Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T19:55:37.0645235Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0645345Z     Expected: "paused"
+targeted	Targeted jest	2026-10-04T19:55:37.0645619Z     Received: "compressed_cycle_opened"
+targeted	Targeted jest	2026-10-04T19:55:37.0645816Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0646271Z     ^[[0m ^[[90m 137 |^[[39m     it(^[[32m'after a resolved cycle: paused'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T19:55:37.0647534Z      ^[[90m 138 |^[[39m       ^[[36mconst^[[39m h ^[[33m=^[[39m harness({}^[[33m,^[[39m { status^[[33m:^[[39m ^[[32m'resolved'^[[39m^[[33m,^[[39m resolved_at^[[33m:^[[39m at(^[[33m-^[[39m^[[35m1^[[39m)^[[33m,^[[39m step_index^[[33m:^[[39m ^[[35m3^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0649682Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 139 |^[[39m       expect((^[[36mawait^[[39m h^[[33m.^[[39mcreated())^[[33m.^[[39mreason)^[[33m.^[[39mtoBe(^[[32m'paused'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0651247Z      ^[[90m     |^[[39m                                          ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0652280Z      ^[[90m 140 |^[[39m       expect(h^[[33m.^[[39mpaused())^[[33m.^[[39mtoBe(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0653102Z      ^[[90m 141 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0653597Z      ^[[90m 142 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0653839Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0654251Z       at Object.<anonymous> (test/dunning-v2-dispute-pause.spec.ts:139:42)
+targeted	Targeted jest	2026-10-04T19:55:37.0654756Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0656346Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › entry: any charge of a recurring plan, whatever its dunning history › client and coach are told once, after the Stripe pause, on every channel
+targeted	Targeted jest	2026-10-04T19:55:37.0657616Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0657918Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T19:55:37.0658540Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0658715Z     - Expected  - 4
+targeted	Targeted jest	2026-10-04T19:55:37.0659081Z     + Received  + 1
+targeted	Targeted jest	2026-10-04T19:55:37.0659292Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0659432Z     - Array [
+targeted	Targeted jest	2026-10-04T19:55:37.0659779Z     -   "stripe",
+targeted	Targeted jest	2026-10-04T19:55:37.0660131Z     -   "notice",
+targeted	Targeted jest	2026-10-04T19:55:37.0660458Z     - ]
+targeted	Targeted jest	2026-10-04T19:55:37.0660762Z     + Array []
+targeted	Targeted jest	2026-10-04T19:55:37.0660956Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0661258Z     ^[[0m ^[[90m 157 |^[[39m       })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0662030Z      ^[[90m 158 |^[[39m       ^[[36mawait^[[39m h^[[33m.^[[39mcreated()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0663349Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 159 |^[[39m       expect(order)^[[33m.^[[39mtoEqual([^[[32m'stripe'^[[39m^[[33m,^[[39m ^[[32m'notice'^[[39m])^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0664450Z      ^[[90m     |^[[39m                     ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0668653Z      ^[[90m 160 |^[[39m       ^[[36mconst^[[39m rows ^[[33m=^[[39m h^[[33m.^[[39mfake^[[33m.^[[39mrows(^[[32m'dunningNoticeDelivery'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0670003Z      ^[[90m 161 |^[[39m       expect(rows^[[33m.^[[39mmap((r) ^[[33m=>^[[39m r^[[33m.^[[39mchannel)^[[33m.^[[39msort())^[[33m.^[[39mtoEqual([^[[33m...^[[39m^[[33mPAUSE_CHANNELS^[[39m]^[[33m.^[[39msort())^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0671193Z      ^[[90m 162 |^[[39m       expect(rows^[[33m.^[[39mevery((r) ^[[33m=>^[[39m r^[[33m.^[[39mstatus ^[[33m===^[[39m ^[[32m'sent'^[[39m))^[[33m.^[[39mtoBe(^[[36mtrue^[[39m)^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0671896Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0672153Z       at Object.<anonymous> (test/dunning-v2-dispute-pause.spec.ts:159:21)
+targeted	Targeted jest	2026-10-04T19:55:37.0672466Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0673362Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › entry: any charge of a recurring plan, whatever its dunning history › a refund (no dispute id) is never non-payment: nothing pauses
+targeted	Targeted jest	2026-10-04T19:55:37.0674091Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0674275Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T19:55:37.0674519Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0674624Z     Expected: "no_dispute_id"
+targeted	Targeted jest	2026-10-04T19:55:37.0674886Z     Received: "no_state"
+targeted	Targeted jest	2026-10-04T19:55:37.0675034Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0675320Z     ^[[0m ^[[90m 166 |^[[39m       ^[[36mconst^[[39m h ^[[33m=^[[39m harness()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0676535Z      ^[[90m 167 |^[[39m       ^[[36mconst^[[39m out ^[[33m=^[[39m ^[[36mawait^[[39m h^[[33m.^[[39msvc^[[33m.^[[39mhandleLateReversal({ purchaseId^[[33m:^[[39m ^[[32m'p1'^[[39m^[[33m,^[[39m reversedChargeAt^[[33m:^[[39m ^[[33mT0^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0677710Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 168 |^[[39m       expect(out^[[33m.^[[39mreason)^[[33m.^[[39mtoBe(^[[32m'no_dispute_id'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0678646Z      ^[[90m     |^[[39m                          ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0679188Z      ^[[90m 169 |^[[39m       expect(h^[[33m.^[[39mds())^[[33m.^[[39mtoBeUndefined()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0680063Z      ^[[90m 170 |^[[39m       expect(h^[[33m.^[[39mstripe^[[33m.^[[39mpauseSubscriptionCollection)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0680936Z      ^[[90m 171 |^[[39m     })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0681128Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0681375Z       at Object.<anonymous> (test/dunning-v2-dispute-pause.spec.ts:168:26)
+targeted	Targeted jest	2026-10-04T19:55:37.0681669Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0682534Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › one-time purchases, grants, canceled plans and deleted accounts › a canceled plan: nothing to pause at Stripe, nothing restarts
+targeted	Targeted jest	2026-10-04T19:55:37.0683267Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0683450Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T19:55:37.0683691Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0683794Z     Expected: "plan_ended"
+targeted	Targeted jest	2026-10-04T19:55:37.0684033Z     Received: "no_state"
+targeted	Targeted jest	2026-10-04T19:55:37.0684176Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0684772Z     ^[[0m ^[[90m 190 |^[[39m     it(^[[32m'a canceled plan: nothing to pause at Stripe, nothing restarts'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T19:55:37.0685931Z      ^[[90m 191 |^[[39m       ^[[36mconst^[[39m h ^[[33m=^[[39m harness({ status^[[33m:^[[39m ^[[32m'canceled'^[[39m^[[33m,^[[39m entitlement_active^[[33m:^[[39m ^[[36mfalse^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0687071Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 192 |^[[39m       expect((^[[36mawait^[[39m h^[[33m.^[[39mcreated())^[[33m.^[[39mreason)^[[33m.^[[39mtoBe(^[[32m'plan_ended'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0687830Z      ^[[90m     |^[[39m                                          ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0688932Z      ^[[90m 193 |^[[39m       expect(h^[[33m.^[[39mstripe^[[33m.^[[39mpauseSubscriptionCollection)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0689601Z      ^[[90m 194 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0689895Z      ^[[90m 195 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0690037Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0690279Z       at Object.<anonymous> (test/dunning-v2-dispute-pause.spec.ts:192:42)
+targeted	Targeted jest	2026-10-04T19:55:37.0690580Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0691429Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › one-time purchases, grants, canceled plans and deleted accounts › a deleted account (purchase and transfer gone): a clean no-op
+targeted	Targeted jest	2026-10-04T19:55:37.0692151Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0692505Z     TypeError: h.svc.restartAfterDisputePause is not a function
+targeted	Targeted jest	2026-10-04T19:55:37.0692943Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0693925Z     ^[[0m ^[[90m 202 |^[[39m       expect((^[[36mawait^[[39m h^[[33m.^[[39mcreated())^[[33m.^[[39mreason)^[[33m.^[[39mtoBe(^[[32m'purchase_unresolved'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0695197Z      ^[[90m 203 |^[[39m       expect(
+targeted	Targeted jest	2026-10-04T19:55:37.0696953Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 204 |^[[39m         ^[[36mawait^[[39m h^[[33m.^[[39msvc^[[33m.^[[39mrestartAfterDisputePause({ coachUserId^[[33m:^[[39m ^[[32m'coach-1'^[[39m^[[33m,^[[39m purchaseId^[[33m:^[[39m ^[[32m'p1'^[[39m })^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0698698Z      ^[[90m     |^[[39m                     ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0700050Z      ^[[90m 205 |^[[39m       )^[[33m.^[[39mtoEqual({ restarted^[[33m:^[[39m ^[[36mfalse^[[39m^[[33m,^[[39m reason^[[33m:^[[39m ^[[32m'not_found'^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0701140Z      ^[[90m 206 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0701709Z      ^[[90m 207 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0702018Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0702431Z       at Object.<anonymous> (test/dunning-v2-dispute-pause.spec.ts:204:21)
+targeted	Targeted jest	2026-10-04T19:55:37.0702956Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0704355Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › webhook order and redelivery › a redelivered dispute.created re-asserts the Stripe pause and sends nothing twice
+targeted	Targeted jest	2026-10-04T19:55:37.0705521Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0705822Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T19:55:37.0706222Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0706387Z     - Expected  - 1
+targeted	Targeted jest	2026-10-04T19:55:37.0706755Z     + Received  + 1
+targeted	Targeted jest	2026-10-04T19:55:37.0706979Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0707103Z       Object {
+targeted	Targeted jest	2026-10-04T19:55:37.0707320Z         "opened": false,
+targeted	Targeted jest	2026-10-04T19:55:37.0707599Z     -   "reason": "already_paused",
+targeted	Targeted jest	2026-10-04T19:55:37.0707876Z     +   "reason": "no_state",
+targeted	Targeted jest	2026-10-04T19:55:37.0708562Z       }
+targeted	Targeted jest	2026-10-04T19:55:37.0708679Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0709011Z     ^[[0m ^[[90m 211 |^[[39m       ^[[36mconst^[[39m h ^[[33m=^[[39m harness()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0709562Z      ^[[90m 212 |^[[39m       ^[[36mawait^[[39m h^[[33m.^[[39mcreated()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0710649Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 213 |^[[39m       expect(^[[36mawait^[[39m h^[[33m.^[[39mcreated())^[[33m.^[[39mtoEqual({ opened^[[33m:^[[39m ^[[36mfalse^[[39m^[[33m,^[[39m reason^[[33m:^[[39m ^[[32m'already_paused'^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0711532Z      ^[[90m     |^[[39m                                 ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0712363Z      ^[[90m 214 |^[[39m       expect(h^[[33m.^[[39mstripe^[[33m.^[[39mpauseSubscriptionCollection)^[[33m.^[[39mtoHaveBeenCalledTimes(^[[35m2^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0713491Z      ^[[90m 215 |^[[39m       ^[[36mconst^[[39m keys ^[[33m=^[[39m h^[[33m.^[[39mstripe^[[33m.^[[39mpauseSubscriptionCollection^[[33m.^[[39mmock^[[33m.^[[39mcalls^[[33m.^[[39mmap(
+targeted	Targeted jest	2026-10-04T19:55:37.0714767Z      ^[[90m 216 |^[[39m         (c) ^[[33m=>^[[39m stub(c[^[[35m0^[[39m])^[[33m.^[[39midempotencyKey^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0715366Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0715788Z       at Object.<anonymous> (test/dunning-v2-dispute-pause.spec.ts:213:33)
+targeted	Targeted jest	2026-10-04T19:55:37.0716303Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0717601Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › webhook order and redelivery › closed won after the pause: nothing restores access or billing
+targeted	Targeted jest	2026-10-04T19:55:37.0718878Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0719103Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T19:55:37.0719362Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0719474Z     Expected: true
+targeted	Targeted jest	2026-10-04T19:55:37.0719699Z     Received: false
+targeted	Targeted jest	2026-10-04T19:55:37.0719830Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0720152Z     ^[[0m ^[[90m 227 |^[[39m         ^[[36mawait^[[39m h^[[33m.^[[39mcreated()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0720956Z      ^[[90m 228 |^[[39m         expect((^[[36mawait^[[39m h^[[33m.^[[39mclosed(status))^[[33m.^[[39mresolved)^[[33m.^[[39mtoBe(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0721841Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 229 |^[[39m         expect(h^[[33m.^[[39mpaused())^[[33m.^[[39mtoBe(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0722441Z      ^[[90m     |^[[39m                            ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0723240Z      ^[[90m 230 |^[[39m         expect(h^[[33m.^[[39mstripe^[[33m.^[[39mresumeSubscriptionCollection)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0724092Z      ^[[90m 231 |^[[39m         expect(
+targeted	Targeted jest	2026-10-04T19:55:37.0724927Z      ^[[90m 232 |^[[39m           h^[[33m.^[[39mfake^[[33m.^[[39mfind(^[[32m'dunningDisputeObligation'^[[39m^[[33m,^[[39m { stripe_dispute_id^[[33m:^[[39m ^[[32m'dp_1'^[[39m })^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0725482Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0725656Z       at test/dunning-v2-dispute-pause.spec.ts:229:28
+targeted	Targeted jest	2026-10-04T19:55:37.0725895Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0726606Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › webhook order and redelivery › closed lost after the pause: nothing restores access or billing
+targeted	Targeted jest	2026-10-04T19:55:37.0727220Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0727400Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T19:55:37.0727638Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0727728Z     Expected: true
+targeted	Targeted jest	2026-10-04T19:55:37.0727936Z     Received: false
+targeted	Targeted jest	2026-10-04T19:55:37.0728256Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0728548Z     ^[[0m ^[[90m 227 |^[[39m         ^[[36mawait^[[39m h^[[33m.^[[39mcreated()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0729369Z      ^[[90m 228 |^[[39m         expect((^[[36mawait^[[39m h^[[33m.^[[39mclosed(status))^[[33m.^[[39mresolved)^[[33m.^[[39mtoBe(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0730237Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 229 |^[[39m         expect(h^[[33m.^[[39mpaused())^[[33m.^[[39mtoBe(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0730819Z      ^[[90m     |^[[39m                            ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0731621Z      ^[[90m 230 |^[[39m         expect(h^[[33m.^[[39mstripe^[[33m.^[[39mresumeSubscriptionCollection)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0732425Z      ^[[90m 231 |^[[39m         expect(
+targeted	Targeted jest	2026-10-04T19:55:37.0733765Z      ^[[90m 232 |^[[39m           h^[[33m.^[[39mfake^[[33m.^[[39mfind(^[[32m'dunningDisputeObligation'^[[39m^[[33m,^[[39m { stripe_dispute_id^[[33m:^[[39m ^[[32m'dp_1'^[[39m })^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0734437Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0734635Z       at test/dunning-v2-dispute-pause.spec.ts:229:28
+targeted	Targeted jest	2026-10-04T19:55:37.0735046Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0736279Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › webhook order and redelivery › closed warning_closed after the pause: nothing restores access or billing
+targeted	Targeted jest	2026-10-04T19:55:37.0737373Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0737678Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T19:55:37.0738254Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0738403Z     Expected: true
+targeted	Targeted jest	2026-10-04T19:55:37.0738752Z     Received: false
+targeted	Targeted jest	2026-10-04T19:55:37.0738954Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0739443Z     ^[[0m ^[[90m 227 |^[[39m         ^[[36mawait^[[39m h^[[33m.^[[39mcreated()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0740778Z      ^[[90m 228 |^[[39m         expect((^[[36mawait^[[39m h^[[33m.^[[39mclosed(status))^[[33m.^[[39mresolved)^[[33m.^[[39mtoBe(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0742181Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 229 |^[[39m         expect(h^[[33m.^[[39mpaused())^[[33m.^[[39mtoBe(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0743250Z      ^[[90m     |^[[39m                            ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0744646Z      ^[[90m 230 |^[[39m         expect(h^[[33m.^[[39mstripe^[[33m.^[[39mresumeSubscriptionCollection)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0745783Z      ^[[90m 231 |^[[39m         expect(
+targeted	Targeted jest	2026-10-04T19:55:37.0747216Z      ^[[90m 232 |^[[39m           h^[[33m.^[[39mfake^[[33m.^[[39mfind(^[[32m'dunningDisputeObligation'^[[39m^[[33m,^[[39m { stripe_dispute_id^[[33m:^[[39m ^[[32m'dp_1'^[[39m })^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0748333Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0748627Z       at test/dunning-v2-dispute-pause.spec.ts:229:28
+targeted	Targeted jest	2026-10-04T19:55:37.0749016Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0750323Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › webhook order and redelivery › closed charge_refunded after the pause: nothing restores access or billing
+targeted	Targeted jest	2026-10-04T19:55:37.0751431Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0751730Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T19:55:37.0752379Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0752534Z     Expected: true
+targeted	Targeted jest	2026-10-04T19:55:37.0752877Z     Received: false
+targeted	Targeted jest	2026-10-04T19:55:37.0753099Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0753590Z     ^[[0m ^[[90m 227 |^[[39m         ^[[36mawait^[[39m h^[[33m.^[[39mcreated()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0754958Z      ^[[90m 228 |^[[39m         expect((^[[36mawait^[[39m h^[[33m.^[[39mclosed(status))^[[33m.^[[39mresolved)^[[33m.^[[39mtoBe(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0756446Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 229 |^[[39m         expect(h^[[33m.^[[39mpaused())^[[33m.^[[39mtoBe(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0757424Z      ^[[90m     |^[[39m                            ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0758932Z      ^[[90m 230 |^[[39m         expect(h^[[33m.^[[39mstripe^[[33m.^[[39mresumeSubscriptionCollection)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0760042Z      ^[[90m 231 |^[[39m         expect(
+targeted	Targeted jest	2026-10-04T19:55:37.0761470Z      ^[[90m 232 |^[[39m           h^[[33m.^[[39mfake^[[33m.^[[39mfind(^[[32m'dunningDisputeObligation'^[[39m^[[33m,^[[39m { stripe_dispute_id^[[33m:^[[39m ^[[32m'dp_1'^[[39m })^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0762451Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0762731Z       at test/dunning-v2-dispute-pause.spec.ts:229:28
+targeted	Targeted jest	2026-10-04T19:55:37.0763117Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0764477Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › webhook order and redelivery › closed (won) delivered before created: the closure pauses; created changes nothing
+targeted	Targeted jest	2026-10-04T19:55:37.0765643Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0765929Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T19:55:37.0766321Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0766473Z     - Expected  - 1
+targeted	Targeted jest	2026-10-04T19:55:37.0766826Z     + Received  + 1
+targeted	Targeted jest	2026-10-04T19:55:37.0767241Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0767374Z       Object {
+targeted	Targeted jest	2026-10-04T19:55:37.0767774Z     -   "reason": "paused_on_closure",
+targeted	Targeted jest	2026-10-04T19:55:37.0768483Z     +   "reason": "no_open_dispute_cycle",
+targeted	Targeted jest	2026-10-04T19:55:37.0768947Z         "resolved": false,
+targeted	Targeted jest	2026-10-04T19:55:37.0769337Z       }
+targeted	Targeted jest	2026-10-04T19:55:37.0769516Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0770698Z     ^[[0m ^[[90m 240 |^[[39m     it(^[[32m'closed (won) delivered before created: the closure pauses; created changes nothing'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {
+targeted	Targeted jest	2026-10-04T19:55:37.0772109Z      ^[[90m 241 |^[[39m       ^[[36mconst^[[39m h ^[[33m=^[[39m harness()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0773669Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 242 |^[[39m       expect(^[[36mawait^[[39m h^[[33m.^[[39mclosed(^[[32m'won'^[[39m^[[33m,^[[39m ^[[32m'dp_1'^[[39m^[[33m,^[[39m at(^[[35m1^[[39m)))^[[33m.^[[39mtoEqual({
+targeted	Targeted jest	2026-10-04T19:55:37.0775064Z      ^[[90m     |^[[39m                                                    ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0775956Z      ^[[90m 243 |^[[39m         resolved^[[33m:^[[39m ^[[36mfalse^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0776924Z      ^[[90m 244 |^[[39m         reason^[[33m:^[[39m ^[[32m'paused_on_closure'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0777678Z      ^[[90m 245 |^[[39m       })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0778164Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0778608Z       at Object.<anonymous> (test/dunning-v2-dispute-pause.spec.ts:242:52)
+targeted	Targeted jest	2026-10-04T19:55:37.0779127Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0780505Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › webhook order and redelivery › invoice events after the pause never lift it (paid, card update, failed, sweep)
+targeted	Targeted jest	2026-10-04T19:55:37.0781665Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0781862Z     expect(received).toBeNull()
+targeted	Targeted jest	2026-10-04T19:55:37.0782132Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0782936Z     Received: {"cycleKey": "1791226800000", "dunningStateId": "ds1", "isLateReversalCycle": false, "purchaseId": "p1", "stepIndex": 0}
+targeted	Targeted jest	2026-10-04T19:55:37.0783792Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0784308Z     ^[[0m ^[[90m 265 |^[[39m         reason^[[33m:^[[39m ^[[32m'card_declined'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0785092Z      ^[[90m 266 |^[[39m       })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0786611Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 267 |^[[39m       expect(^[[36mawait^[[39m h^[[33m.^[[39msvc^[[33m.^[[39mrecordPaymentFailed(^[[32m'p1'^[[39m^[[33m,^[[39m at(^[[35m1^[[39m)))^[[33m.^[[39mtoBeNull()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0788820Z      ^[[90m     |^[[39m                                                            ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0789982Z      ^[[90m 268 |^[[39m       ^[[36mawait^[[39m h^[[33m.^[[39msvc^[[33m.^[[39mrunSweep(at(^[[35m12^[[39m))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0791188Z      ^[[90m 269 |^[[39m       expect(h^[[33m.^[[39mpaused())^[[33m.^[[39mtoBe(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0792747Z      ^[[90m 270 |^[[39m       expect(^[[36mawait^[[39m h^[[33m.^[[39msvc^[[33m.^[[39misDisputePaused(^[[32m'p1'^[[39m))^[[33m.^[[39mtoBe(^[[36mtrue^[[39m)^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0793605Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0794030Z       at Object.<anonymous> (test/dunning-v2-dispute-pause.spec.ts:267:60)
+targeted	Targeted jest	2026-10-04T19:55:37.0794694Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0796062Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › webhook order and redelivery › invoice.paid processed before the dispute: the dispute still pauses
+targeted	Targeted jest	2026-10-04T19:55:37.0797265Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0797684Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T19:55:37.0798339Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0798848Z     Expected: "paused"
+targeted	Targeted jest	2026-10-04T19:55:37.0799435Z     Received: "compressed_cycle_opened"
+targeted	Targeted jest	2026-10-04T19:55:37.0799847Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0801186Z     ^[[0m ^[[90m 276 |^[[39m       ^[[36mawait^[[39m ^[[36mnew^[[39m ^[[33mDunningService^[[39m(h^[[33m.^[[39mdb^[[33m,^[[39m stub({}))^[[33m.^[[39mrecordResolution(^[[32m'p1'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0803128Z      ^[[90m 277 |^[[39m       expect(h^[[33m.^[[39mds()^[[33m?^[[39m^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(^[[32m'resolved'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0805028Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 278 |^[[39m       expect((^[[36mawait^[[39m h^[[33m.^[[39mcreated())^[[33m.^[[39mreason)^[[33m.^[[39mtoBe(^[[32m'paused'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0806765Z      ^[[90m     |^[[39m                                          ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0807960Z      ^[[90m 279 |^[[39m       expect(h^[[33m.^[[39mpaused())^[[33m.^[[39mtoBe(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0812418Z      ^[[90m 280 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0813117Z      ^[[90m 281 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0813448Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0814016Z       at Object.<anonymous> (test/dunning-v2-dispute-pause.spec.ts:278:42)
+targeted	Targeted jest	2026-10-04T19:55:37.0814621Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0816075Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › webhook order and redelivery › a failed Stripe pause throws (redelivered); access has ended; no notice before the pause
+targeted	Targeted jest	2026-10-04T19:55:37.0817329Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0817624Z     expect(received).rejects.toThrow()
+targeted	Targeted jest	2026-10-04T19:55:37.0818388Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0818726Z     Received promise resolved instead of rejected
+targeted	Targeted jest	2026-10-04T19:55:37.0819674Z     Resolved to value: {"opened": false, "reason": "no_state"}
+targeted	Targeted jest	2026-10-04T19:55:37.0820130Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0820783Z     ^[[0m ^[[90m 283 |^[[39m       ^[[36mconst^[[39m h ^[[33m=^[[39m harness()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0822636Z      ^[[90m 284 |^[[39m       h^[[33m.^[[39mstripe^[[33m.^[[39mpauseSubscriptionCollection^[[33m.^[[39mmockRejectedValueOnce(^[[36mnew^[[39m ^[[33mError^[[39m(^[[32m'stripe down'^[[39m))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0824986Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 285 |^[[39m       ^[[36mawait^[[39m expect(h^[[33m.^[[39mcreated())^[[33m.^[[39mrejects^[[33m.^[[39mtoThrow(^[[32m'stripe down'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0826319Z      ^[[90m     |^[[39m             ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0827450Z      ^[[90m 286 |^[[39m       expect(h^[[33m.^[[39mpaused())^[[33m.^[[39mtoBe(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0829478Z      ^[[90m 287 |^[[39m       expect(h^[[33m.^[[39mfake^[[33m.^[[39mrows(^[[32m'dunningNoticeDelivery'^[[39m))^[[33m.^[[39mtoHaveLength(^[[35m0^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0831484Z      ^[[90m 288 |^[[39m       expect(h^[[33m.^[[39mdispatcher^[[33m.^[[39mdispatchStepDetailed)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0832381Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0832863Z       at expect (node_modules/expect/build/index.js:2116:15)
+targeted	Targeted jest	2026-10-04T19:55:37.0834347Z       at Object.<anonymous> (test/dunning-v2-dispute-pause.spec.ts:285:13)
+targeted	Targeted jest	2026-10-04T19:55:37.0834947Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0836403Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › webhook order and redelivery › an incomplete open-invoice list fails closed (redelivered, no notice)
+targeted	Targeted jest	2026-10-04T19:55:37.0837634Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0837909Z     expect(received).rejects.toThrow()
+targeted	Targeted jest	2026-10-04T19:55:37.0838726Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0839053Z     Received promise resolved instead of rejected
+targeted	Targeted jest	2026-10-04T19:55:37.0839948Z     Resolved to value: {"opened": false, "reason": "no_state"}
+targeted	Targeted jest	2026-10-04T19:55:37.0840516Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0841972Z     ^[[0m ^[[90m 296 |^[[39m         ^[[36mnew^[[39m ^[[33mStripeConnectApiError^[[39m(^[[32m'x'^[[39m^[[33m,^[[39m ^[[35m502^[[39m^[[33m,^[[39m ^[[32m'invoice_list_incomplete'^[[39m^[[33m,^[[39m ^[[32m'api_error'^[[39m)^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0843698Z      ^[[90m 297 |^[[39m       )^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0845047Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 298 |^[[39m       ^[[36mawait^[[39m expect(h^[[33m.^[[39mcreated())^[[33m.^[[39mrejects^[[33m.^[[39mtoThrow()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0846390Z      ^[[90m     |^[[39m             ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0847955Z      ^[[90m 299 |^[[39m       expect(h^[[33m.^[[39mdispatcher^[[33m.^[[39mdispatchStepDetailed)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0849738Z      ^[[90m 300 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0850650Z      ^[[90m 301 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0851048Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0851518Z       at expect (node_modules/expect/build/index.js:2116:15)
+targeted	Targeted jest	2026-10-04T19:55:37.0852588Z       at Object.<anonymous> (test/dunning-v2-dispute-pause.spec.ts:298:13)
+targeted	Targeted jest	2026-10-04T19:55:37.0853587Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0854860Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › concurrency › two workers on the same dispute: one pause, one notice set
+targeted	Targeted jest	2026-10-04T19:55:37.0855928Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0856296Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T19:55:37.0856948Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0857231Z     - Expected  - 2
+targeted	Targeted jest	2026-10-04T19:55:37.0857751Z     + Received  + 2
+targeted	Targeted jest	2026-10-04T19:55:37.0858373Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0858640Z       Array [
+targeted	Targeted jest	2026-10-04T19:55:37.0859178Z     -   "already_paused",
+targeted	Targeted jest	2026-10-04T19:55:37.0859765Z     -   "paused",
+targeted	Targeted jest	2026-10-04T19:55:37.0860260Z     +   "no_state",
+targeted	Targeted jest	2026-10-04T19:55:37.0860746Z     +   "no_state",
+targeted	Targeted jest	2026-10-04T19:55:37.0861316Z       ]
+targeted	Targeted jest	2026-10-04T19:55:37.0861574Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0861948Z     ^[[0m ^[[90m 314 |^[[39m       }^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0863676Z      ^[[90m 315 |^[[39m       ^[[36mconst^[[39m out ^[[33m=^[[39m ^[[36mawait^[[39m ^[[33mPromise^[[39m^[[33m.^[[39mall([h^[[33m.^[[39mcreated()^[[33m,^[[39m h^[[33m.^[[39mcreated()])^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0866413Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 316 |^[[39m       expect(out^[[33m.^[[39mmap((o) ^[[33m=>^[[39m o^[[33m.^[[39mreason)^[[33m.^[[39msort())^[[33m.^[[39mtoEqual([^[[32m'already_paused'^[[39m^[[33m,^[[39m ^[[32m'paused'^[[39m])^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0868648Z      ^[[90m     |^[[39m                                               ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0870332Z      ^[[90m 317 |^[[39m       expect(h^[[33m.^[[39mfake^[[33m.^[[39mrows(^[[32m'dunningState'^[[39m))^[[33m.^[[39mtoHaveLength(^[[35m1^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0872598Z      ^[[90m 318 |^[[39m       expect(h^[[33m.^[[39mfake^[[33m.^[[39mrows(^[[32m'dunningNoticeDelivery'^[[39m))^[[33m.^[[39mtoHaveLength(^[[33mPAUSE_CHANNELS^[[39m^[[33m.^[[39mlength)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0874263Z      ^[[90m 319 |^[[39m     })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0874714Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0876536Z       at Object.<anonymous> (test/dunning-v2-dispute-pause.spec.ts:316:47)
+targeted	Targeted jest	2026-10-04T19:55:37.0877229Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0878914Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › concurrency › lock order: DunningState, then ClientPurchase (the dunning order)
+targeted	Targeted jest	2026-10-04T19:55:37.0880084Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0880479Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T19:55:37.0881290Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0881634Z     - Expected  - 1
+targeted	Targeted jest	2026-10-04T19:55:37.0882200Z     + Received  + 0
+targeted	Targeted jest	2026-10-04T19:55:37.0882605Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0882816Z       Array [
+targeted	Targeted jest	2026-10-04T19:55:37.0883561Z         "DunningState",
+targeted	Targeted jest	2026-10-04T19:55:37.0884244Z     -   "ClientPurchase",
+targeted	Targeted jest	2026-10-04T19:55:37.0884887Z       ]
+targeted	Targeted jest	2026-10-04T19:55:37.0885380Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0886044Z     ^[[0m ^[[90m 332 |^[[39m         })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0887207Z      ^[[90m 333 |^[[39m       ^[[36mawait^[[39m h^[[33m.^[[39mcreated()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0889767Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 334 |^[[39m       expect(locks^[[33m.^[[39mslice(^[[35m0^[[39m^[[33m,^[[39m ^[[35m2^[[39m))^[[33m.^[[39mtoEqual([^[[32m'DunningState'^[[39m^[[33m,^[[39m ^[[32m'ClientPurchase'^[[39m])^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0891030Z      ^[[90m     |^[[39m                                 ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0891821Z      ^[[90m 335 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0892291Z      ^[[90m 336 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0892932Z      ^[[90m 337 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0893200Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0893744Z       at Object.<anonymous> (test/dunning-v2-dispute-pause.spec.ts:334:33)
+targeted	Targeted jest	2026-10-04T19:55:37.0894405Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0895349Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › coach restart (the only way back) › the plan coach restarts: billing resumes at Stripe, then access returns
+targeted	Targeted jest	2026-10-04T19:55:37.0896210Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0896542Z     TypeError: h.svc.restartAfterDisputePause is not a function
+targeted	Targeted jest	2026-10-04T19:55:37.0896922Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0897272Z     ^[[0m ^[[90m 346 |^[[39m         read_at^[[33m:^[[39m ^[[36mnull^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0898319Z      ^[[90m 347 |^[[39m       })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0899263Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 348 |^[[39m       ^[[36mconst^[[39m out ^[[33m=^[[39m ^[[36mawait^[[39m h^[[33m.^[[39msvc^[[33m.^[[39mrestartAfterDisputePause({
+targeted	Targeted jest	2026-10-04T19:55:37.0900144Z      ^[[90m     |^[[39m                               ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0900849Z      ^[[90m 349 |^[[39m         coachUserId^[[33m:^[[39m ^[[32m'coach-1'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0901508Z      ^[[90m 350 |^[[39m         purchaseId^[[33m:^[[39m ^[[32m'p1'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0902202Z      ^[[90m 351 |^[[39m         now^[[33m:^[[39m at(^[[35m2^[[39m)^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0902486Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0902804Z       at Object.<anonymous> (test/dunning-v2-dispute-pause.spec.ts:348:31)
+targeted	Targeted jest	2026-10-04T19:55:37.0903151Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0904030Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › coach restart (the only way back) › another coach or the client: not_found, nothing changes (tenant check)
+targeted	Targeted jest	2026-10-04T19:55:37.0904737Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0905024Z     TypeError: h.svc.restartAfterDisputePause is not a function
+targeted	Targeted jest	2026-10-04T19:55:37.0905362Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0905743Z     ^[[0m ^[[90m 365 |^[[39m       ^[[36mawait^[[39m h^[[33m.^[[39mcreated()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0906655Z      ^[[90m 366 |^[[39m       ^[[36mfor^[[39m (^[[36mconst^[[39m coachUserId ^[[36mof^[[39m [^[[32m'coach-2'^[[39m^[[33m,^[[39m ^[[32m'client-1'^[[39m]) {
+targeted	Targeted jest	2026-10-04T19:55:37.0908220Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 367 |^[[39m         expect(^[[36mawait^[[39m h^[[33m.^[[39msvc^[[33m.^[[39mrestartAfterDisputePause({ coachUserId^[[33m,^[[39m purchaseId^[[33m:^[[39m ^[[32m'p1'^[[39m }))^[[33m.^[[39mtoEqual({
+targeted	Targeted jest	2026-10-04T19:55:37.0909426Z      ^[[90m     |^[[39m                            ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0910030Z      ^[[90m 368 |^[[39m           restarted^[[33m:^[[39m ^[[36mfalse^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0910755Z      ^[[90m 369 |^[[39m           reason^[[33m:^[[39m ^[[32m'not_found'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0911291Z      ^[[90m 370 |^[[39m         })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0911553Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0911824Z       at Object.<anonymous> (test/dunning-v2-dispute-pause.spec.ts:367:28)
+targeted	Targeted jest	2026-10-04T19:55:37.0912288Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0913085Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › coach restart (the only way back) › not paused, or a canceled plan: refused before any Stripe call
+targeted	Targeted jest	2026-10-04T19:55:37.0913931Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0914179Z     TypeError: a.svc.restartAfterDisputePause is not a function
+targeted	Targeted jest	2026-10-04T19:55:37.0914553Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0914988Z     ^[[0m ^[[90m 377 |^[[39m       ^[[36mconst^[[39m a ^[[33m=^[[39m harness({}^[[33m,^[[39m {})^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0915553Z      ^[[90m 378 |^[[39m       expect(
+targeted	Targeted jest	2026-10-04T19:55:37.0916794Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 379 |^[[39m         (^[[36mawait^[[39m a^[[33m.^[[39msvc^[[33m.^[[39mrestartAfterDisputePause({ coachUserId^[[33m:^[[39m ^[[32m'coach-1'^[[39m^[[33m,^[[39m purchaseId^[[33m:^[[39m ^[[32m'p1'^[[39m }))^[[33m.^[[39mreason^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0917925Z      ^[[90m     |^[[39m                      ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0918958Z      ^[[90m 380 |^[[39m       )^[[33m.^[[39mtoBe(^[[32m'not_paused'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0919713Z      ^[[90m 381 |^[[39m       ^[[36mconst^[[39m b ^[[33m=^[[39m harness()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0920352Z      ^[[90m 382 |^[[39m       ^[[36mawait^[[39m b^[[33m.^[[39mcreated()^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0920745Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0921036Z       at Object.<anonymous> (test/dunning-v2-dispute-pause.spec.ts:379:22)
+targeted	Targeted jest	2026-10-04T19:55:37.0921398Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0922184Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › coach restart (the only way back) › a failed Stripe resume keeps the plan paused with a coded reason
+targeted	Targeted jest	2026-10-04T19:55:37.0922849Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0923130Z     TypeError: h.svc.restartAfterDisputePause is not a function
+targeted	Targeted jest	2026-10-04T19:55:37.0923478Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0924299Z     ^[[0m ^[[90m 394 |^[[39m       h^[[33m.^[[39mstripe^[[33m.^[[39mresumeSubscriptionCollection^[[33m.^[[39mmockRejectedValueOnce(^[[36mnew^[[39m ^[[33mError^[[39m(^[[32m'stripe down'^[[39m))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0925361Z      ^[[90m 395 |^[[39m       expect(
+targeted	Targeted jest	2026-10-04T19:55:37.0926569Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 396 |^[[39m         ^[[36mawait^[[39m h^[[33m.^[[39msvc^[[33m.^[[39mrestartAfterDisputePause({ coachUserId^[[33m:^[[39m ^[[32m'coach-1'^[[39m^[[33m,^[[39m purchaseId^[[33m:^[[39m ^[[32m'p1'^[[39m })^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0927573Z      ^[[90m     |^[[39m                     ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0928853Z      ^[[90m 397 |^[[39m       )^[[33m.^[[39mtoEqual({ restarted^[[33m:^[[39m ^[[36mfalse^[[39m^[[33m,^[[39m reason^[[33m:^[[39m ^[[32m'billing_resume_failed'^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0929926Z      ^[[90m 398 |^[[39m       expect(h^[[33m.^[[39mpaused())^[[33m.^[[39mtoBe(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0930567Z      ^[[90m 399 |^[[39m     })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0930844Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0931161Z       at Object.<anonymous> (test/dunning-v2-dispute-pause.spec.ts:396:21)
+targeted	Targeted jest	2026-10-04T19:55:37.0931501Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0932370Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › coach restart (the only way back) › a new dispute recorded during the restart keeps the plan paused and re-pauses Stripe
+targeted	Targeted jest	2026-10-04T19:55:37.0933186Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0933469Z     TypeError: h.svc.restartAfterDisputePause is not a function
+targeted	Targeted jest	2026-10-04T19:55:37.0933800Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0934040Z     ^[[0m ^[[90m 407 |^[[39m       })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0934521Z      ^[[90m 408 |^[[39m       expect(
+targeted	Targeted jest	2026-10-04T19:55:37.0935671Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 409 |^[[39m         ^[[36mawait^[[39m h^[[33m.^[[39msvc^[[33m.^[[39mrestartAfterDisputePause({ coachUserId^[[33m:^[[39m ^[[32m'coach-1'^[[39m^[[33m,^[[39m purchaseId^[[33m:^[[39m ^[[32m'p1'^[[39m })^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0936694Z      ^[[90m     |^[[39m                     ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0937652Z      ^[[90m 410 |^[[39m       )^[[33m.^[[39mtoEqual({ restarted^[[33m:^[[39m ^[[36mfalse^[[39m^[[33m,^[[39m reason^[[33m:^[[39m ^[[32m'new_dispute'^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0939158Z      ^[[90m 411 |^[[39m       expect(h^[[33m.^[[39mpaused())^[[33m.^[[39mtoBe(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0940562Z      ^[[90m 412 |^[[39m       ^[[36mconst^[[39m last ^[[33m=^[[39m ^[[33mMath^[[39m^[[33m.^[[39mmax(^[[33m...^[[39mh^[[33m.^[[39mstripe^[[33m.^[[39mpauseSubscriptionCollection^[[33m.^[[39mmock^[[33m.^[[39minvocationCallOrder)^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0941501Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0941817Z       at Object.<anonymous> (test/dunning-v2-dispute-pause.spec.ts:409:21)
+targeted	Targeted jest	2026-10-04T19:55:37.0942222Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0943167Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › coach restart (the only way back) › after a restart: the old dispute redelivered changes nothing; a new dispute pauses again
+targeted	Targeted jest	2026-10-04T19:55:37.0943973Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0944247Z     TypeError: h.svc.restartAfterDisputePause is not a function
+targeted	Targeted jest	2026-10-04T19:55:37.0944567Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0944946Z     ^[[0m ^[[90m 418 |^[[39m       ^[[36mconst^[[39m h ^[[33m=^[[39m harness()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0945636Z      ^[[90m 419 |^[[39m       ^[[36mawait^[[39m h^[[33m.^[[39mcreated()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0946395Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 420 |^[[39m       ^[[36mawait^[[39m h^[[33m.^[[39msvc^[[33m.^[[39mrestartAfterDisputePause({
+targeted	Targeted jest	2026-10-04T19:55:37.0947171Z      ^[[90m     |^[[39m                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0947808Z      ^[[90m 421 |^[[39m         coachUserId^[[33m:^[[39m ^[[32m'coach-1'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0948735Z      ^[[90m 422 |^[[39m         purchaseId^[[33m:^[[39m ^[[32m'p1'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0949398Z      ^[[90m 423 |^[[39m         now^[[33m:^[[39m at(^[[35m2^[[39m)^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0949680Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0950022Z       at Object.<anonymous> (test/dunning-v2-dispute-pause.spec.ts:420:19)
+targeted	Targeted jest	2026-10-04T19:55:37.0950433Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0951432Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › the pause is never read back by a webhook as a reason to restore access › customer.subscription.updated (active, pause_collection set) keeps access ended
+targeted	Targeted jest	2026-10-04T19:55:37.0952457Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0952659Z     expect(received).toMatchObject(expected)
+targeted	Targeted jest	2026-10-04T19:55:37.0953000Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0953131Z     - Expected  - 1
+targeted	Targeted jest	2026-10-04T19:55:37.0953478Z     + Received  + 1
+targeted	Targeted jest	2026-10-04T19:55:37.0953613Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0953850Z       Object {
+targeted	Targeted jest	2026-10-04T19:55:37.0954186Z     -   "entitlement_active": false,
+targeted	Targeted jest	2026-10-04T19:55:37.0954641Z     +   "entitlement_active": true,
+targeted	Targeted jest	2026-10-04T19:55:37.0955017Z         "status": "active",
+targeted	Targeted jest	2026-10-04T19:55:37.0955343Z       }
+targeted	Targeted jest	2026-10-04T19:55:37.0955581Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0955959Z     ^[[0m ^[[90m 457 |^[[39m         ^[[36mawait^[[39m h^[[33m.^[[39mcreated()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0956722Z      ^[[90m 458 |^[[39m         ^[[36mawait^[[39m handlerFor(h)^[[33m.^[[39mhandle(stub(updated(status)))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0957907Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 459 |^[[39m         expect(h^[[33m.^[[39mpurchase())^[[33m.^[[39mtoMatchObject({ status^[[33m,^[[39m entitlement_active^[[33m:^[[39m ^[[36mfalse^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0959146Z      ^[[90m     |^[[39m                              ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0959863Z      ^[[90m 460 |^[[39m         expect(h^[[33m.^[[39mpaused())^[[33m.^[[39mtoBe(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0960553Z      ^[[90m 461 |^[[39m       }^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0960985Z      ^[[90m 462 |^[[39m     )^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0961261Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0961483Z       at test/dunning-v2-dispute-pause.spec.ts:459:30
+targeted	Targeted jest	2026-10-04T19:55:37.0961781Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0962820Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › the pause is never read back by a webhook as a reason to restore access › customer.subscription.updated (past_due, pause_collection set) keeps access ended
+targeted	Targeted jest	2026-10-04T19:55:37.0963700Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0963869Z     expect(received).toMatchObject(expected)
+targeted	Targeted jest	2026-10-04T19:55:37.0964084Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0964185Z     - Expected  - 1
+targeted	Targeted jest	2026-10-04T19:55:37.0964400Z     + Received  + 1
+targeted	Targeted jest	2026-10-04T19:55:37.0964523Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0964609Z       Object {
+targeted	Targeted jest	2026-10-04T19:55:37.0964845Z     -   "entitlement_active": false,
+targeted	Targeted jest	2026-10-04T19:55:37.0965294Z     +   "entitlement_active": true,
+targeted	Targeted jest	2026-10-04T19:55:37.0965565Z         "status": "past_due",
+targeted	Targeted jest	2026-10-04T19:55:37.0965801Z       }
+targeted	Targeted jest	2026-10-04T19:55:37.0965908Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0966190Z     ^[[0m ^[[90m 457 |^[[39m         ^[[36mawait^[[39m h^[[33m.^[[39mcreated()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0966866Z      ^[[90m 458 |^[[39m         ^[[36mawait^[[39m handlerFor(h)^[[33m.^[[39mhandle(stub(updated(status)))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0967925Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 459 |^[[39m         expect(h^[[33m.^[[39mpurchase())^[[33m.^[[39mtoMatchObject({ status^[[33m,^[[39m entitlement_active^[[33m:^[[39m ^[[36mfalse^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0968883Z      ^[[90m     |^[[39m                              ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0969472Z      ^[[90m 460 |^[[39m         expect(h^[[33m.^[[39mpaused())^[[33m.^[[39mtoBe(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0969948Z      ^[[90m 461 |^[[39m       }^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0970295Z      ^[[90m 462 |^[[39m     )^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0970478Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0970661Z       at test/dunning-v2-dispute-pause.spec.ts:459:30
+targeted	Targeted jest	2026-10-04T19:55:37.0970895Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0971790Z   ● R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once › the pause is never read back by a webhook as a reason to restore access › control: the same update re-entitles once the coach has restarted
+targeted	Targeted jest	2026-10-04T19:55:37.0972530Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0972748Z     TypeError: h.svc.restartAfterDisputePause is not a function
+targeted	Targeted jest	2026-10-04T19:55:37.0973022Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0973301Z     ^[[0m ^[[90m 464 |^[[39m       ^[[36mconst^[[39m h ^[[33m=^[[39m harness()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0973841Z      ^[[90m 465 |^[[39m       ^[[36mawait^[[39m h^[[33m.^[[39mcreated()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0975075Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 466 |^[[39m       ^[[36mawait^[[39m h^[[33m.^[[39msvc^[[33m.^[[39mrestartAfterDisputePause({ coachUserId^[[33m:^[[39m ^[[32m'coach-1'^[[39m^[[33m,^[[39m purchaseId^[[33m:^[[39m ^[[32m'p1'^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0975975Z      ^[[90m     |^[[39m                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0976622Z      ^[[90m 467 |^[[39m       ^[[36mawait^[[39m handlerFor(h)^[[33m.^[[39mhandle(stub(updated(^[[32m'active'^[[39m)))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0977489Z      ^[[90m 468 |^[[39m       expect(h^[[33m.^[[39mpurchase()^[[33m.^[[39mentitlement_active)^[[33m.^[[39mtoBe(^[[36mtrue^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:37.0978262Z      ^[[90m 469 |^[[39m     })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:37.0978454Z 
+targeted	Targeted jest	2026-10-04T19:55:37.0978708Z       at Object.<anonymous> (test/dunning-v2-dispute-pause.spec.ts:466:19)
+targeted	Targeted jest	2026-10-04T19:55:37.0979011Z 
+targeted	Targeted jest	2026-10-04T19:55:38.9278831Z ^[[33m[Nest] 3095  - ^[[39m10/04/2026, 7:55:38 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[33mdunning v2 lock skipped state=ds-s1: purchase status active is not past_due^[[39m
+targeted	Targeted jest	2026-10-04T19:55:38.9281694Z ^[[33m[Nest] 3095  - ^[[39m10/04/2026, 7:55:38 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[33mdunning v2 lock skipped state=ds-s2: purchase status active is not past_due^[[39m
+targeted	Targeted jest	2026-10-04T19:55:38.9284323Z ^[[33m[Nest] 3095  - ^[[39m10/04/2026, 7:55:38 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[33mdunning v2 lock skipped state=ds-s1: purchase status active is not past_due^[[39m
+targeted	Targeted jest	2026-10-04T19:55:38.9286718Z ^[[33m[Nest] 3095  - ^[[39m10/04/2026, 7:55:38 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[33mdunning v2 dispute purchase resolution failed: error^[[39m
+targeted	Targeted jest	2026-10-04T19:55:38.9289391Z ^[[33m[Nest] 3095  - ^[[39m10/04/2026, 7:55:38 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[33mdunning v2 dispute purchase resolution failed: stripe_404_resource_missing^[[39m
+targeted	Targeted jest	2026-10-04T19:55:38.9290932Z FAIL test/dunning-v2-service-fixes.spec.ts (136 MB heap size)
+targeted	Targeted jest	2026-10-04T19:55:38.9292989Z   ● dunning v2 service fix round (B-D12-116) › B-688-5 (Sol) / B-688-1 (Opus): a dispute closed lost keeps protecting the cycle › isDisputeCycleOpen stays true and the cycle becomes the dispute cycle
+targeted	Targeted jest	2026-10-04T19:55:38.9294201Z 
+targeted	Targeted jest	2026-10-04T19:55:38.9294949Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T19:55:38.9295367Z 
+targeted	Targeted jest	2026-10-04T19:55:38.9295530Z     Expected: "paused"
+targeted	Targeted jest	2026-10-04T19:55:38.9295966Z     Received: "cycle_already_active"
+targeted	Targeted jest	2026-10-04T19:55:38.9296284Z 
+targeted	Targeted jest	2026-10-04T19:55:38.9296617Z     ^[[0m ^[[90m 234 |^[[39m       })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:38.9297652Z      ^[[90m 235 |^[[39m       ^[[90m// R-DISPUTE-PAUSE: the dispute pauses the payment cycle at once.^[[39m
+targeted	Targeted jest	2026-10-04T19:55:38.9299426Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 236 |^[[39m       expect(opening^[[33m.^[[39mreason)^[[33m.^[[39mtoBe(^[[32m'paused'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:38.9300600Z      ^[[90m     |^[[39m                              ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:38.9301599Z      ^[[90m 237 |^[[39m       fake^[[33m.^[[39mseed(^[[32m'connectTransfer'^[[39m^[[33m,^[[39m {
+targeted	Targeted jest	2026-10-04T19:55:38.9302619Z      ^[[90m 238 |^[[39m         id^[[33m:^[[39m ^[[32m'tr1'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:55:38.9303713Z      ^[[90m 239 |^[[39m         source_stripe_charge_id^[[33m:^[[39m ^[[32m'ch-lost'^[[39m^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:38.9304313Z 
+targeted	Targeted jest	2026-10-04T19:55:38.9304805Z       at lostDuringPaymentCycle (test/dunning-v2-service-fixes.spec.ts:236:30)
+targeted	Targeted jest	2026-10-04T19:55:38.9305807Z       at Object.<anonymous> (test/dunning-v2-service-fixes.spec.ts:252:29)
+targeted	Targeted jest	2026-10-04T19:55:38.9306330Z 
+targeted	Targeted jest	2026-10-04T19:55:38.9307829Z   ● dunning v2 service fix round (B-D12-116) › B-688-5 (Sol) / B-688-1 (Opus): a dispute closed lost keeps protecting the cycle › a renewal payment does not lift the Day-10 lock after the loss
+targeted	Targeted jest	2026-10-04T19:55:38.9309211Z 
+targeted	Targeted jest	2026-10-04T19:55:38.9309559Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T19:55:38.9309988Z 
+targeted	Targeted jest	2026-10-04T19:55:38.9310157Z     Expected: "paused"
+targeted	Targeted jest	2026-10-04T19:55:38.9310904Z     Received: "cycle_already_active"
+targeted	Targeted jest	2026-10-04T19:55:38.9311224Z 
+targeted	Targeted jest	2026-10-04T19:55:38.9311575Z     ^[[0m ^[[90m 234 |^[[39m       })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:38.9312603Z      ^[[90m 235 |^[[39m       ^[[90m// R-DISPUTE-PAUSE: the dispute pauses the payment cycle at once.^[[39m
+targeted	Targeted jest	2026-10-04T19:55:38.9314047Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 236 |^[[39m       expect(opening^[[33m.^[[39mreason)^[[33m.^[[39mtoBe(^[[32m'paused'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:55:38.9315171Z      ^[[90m     |^[[39m                              ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:55:38.9316113Z      ^[[90m 237 |^[[39m       fake^[[33m.^[[39mseed(^[[32m'connectTransfer'^[[39m^[[33m,^[[39m {
+targeted	Targeted jest	2026-10-04T19:55:38.9317066Z      ^[[90m 238 |^[[39m         id^[[33m:^[[39m ^[[32m'tr1'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:55:38.9318368Z      ^[[90m 239 |^[[39m         source_stripe_charge_id^[[33m:^[[39m ^[[32m'ch-lost'^[[39m^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:55:38.9318952Z 
+targeted	Targeted jest	2026-10-04T19:55:38.9319435Z       at lostDuringPaymentCycle (test/dunning-v2-service-fixes.spec.ts:236:30)
+targeted	Targeted jest	2026-10-04T19:55:38.9320417Z       at Object.<anonymous> (test/dunning-v2-service-fixes.spec.ts:260:29)
+targeted	Targeted jest	2026-10-04T19:55:38.9320931Z 
+targeted	Targeted jest	2026-10-04T19:55:39.3493871Z PASS test/dunning-v2-service.spec.ts (181 MB heap size)
+targeted	Targeted jest	2026-10-04T19:55:39.3512164Z 
+targeted	Targeted jest	2026-10-04T19:55:39.3520903Z Test Suites: 2 failed, 1 passed, 3 total
+targeted	Targeted jest	2026-10-04T19:55:39.3521688Z Tests:       30 failed, 42 passed, 72 total
+targeted	Targeted jest	2026-10-04T19:55:39.3522281Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T19:55:39.3522755Z Time:        5.146 s
+targeted	Targeted jest	2026-10-04T19:55:39.3524048Z Ran all test suites matching test/dunning-v2-dispute-pause.spec.ts|test/dunning-v2-service-fixes.spec.ts|test/dunning-v2-service.spec.ts.
+targeted	Targeted jest	2026-10-04T19:55:39.4224203Z ^[[32m[Nest] 3095  - ^[[39m10/04/2026, 7:55:39 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[32m{"event":"dunning_v2.locked","dunning_state_id":"ds1","purchase_id":"p1","entered_at":"2026-10-05T16:00:00.000Z"}^[[39m
+targeted	Targeted jest	2026-10-04T19:55:39.4226644Z ^[[33m[Nest] 3095  - ^[[39m10/04/2026, 7:55:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[33mdunning v2 lock skipped state=ds1: purchase status active is not past_due^[[39m
+targeted	Targeted jest	2026-10-04T19:55:39.4229281Z ^[[33m[Nest] 3095  - ^[[39m10/04/2026, 7:55:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[33mdunning v2 lock skipped state=ds1: Stripe reports subscription active; waiting for invoice.paid^[[39m
+targeted	Targeted jest	2026-10-04T19:55:39.4231970Z ^[[33m[Nest] 3095  - ^[[39m10/04/2026, 7:55:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DunningV2Service] ^[[39m^[[33mdunning v2 lock deferred state=ds1: Stripe check failed: error^[[39m
+targeted	Targeted jest	2026-10-04T19:55:39.5097603Z ##[error]Process completed with exit code 1.
+targeted	Post Run actions/checkout@v6	﻿2026-10-04T19:55:39.5229001Z Post job cleanup.
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6057083Z [command]/usr/bin/git version
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6093083Z git version 2.55.0
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6133227Z Temporarily overriding HOME='/home/runner/work/_temp/8d8beeb1-d90a-4930-91a3-7cf9fcc01b3d' before making global git config changes
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6134413Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6138901Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6169081Z Removing SSH command configuration
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6176388Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6210990Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6438841Z Removing HTTP extra header
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6444245Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6479383Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6706966Z Removing includeIf entries pointing to credentials config files
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6714459Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6743938Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6744978Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6745633Z includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6746086Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6754940Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6777506Z /home/runner/work/_temp/git-credentials-8f911937-42d0-445a-9907-2057efcbb449.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6790162Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-8f911937-42d0-445a-9907-2057efcbb449.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6826504Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6849151Z /home/runner/work/_temp/git-credentials-8f911937-42d0-445a-9907-2057efcbb449.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6861297Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-8f911937-42d0-445a-9907-2057efcbb449.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6896144Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6918456Z /github/runner_temp/git-credentials-8f911937-42d0-445a-9907-2057efcbb449.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6926682Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-8f911937-42d0-445a-9907-2057efcbb449.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6958889Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6979781Z /github/runner_temp/git-credentials-8f911937-42d0-445a-9907-2057efcbb449.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.6988856Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-8f911937-42d0-445a-9907-2057efcbb449.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.7025014Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Post Run actions/checkout@v6	2026-10-04T19:55:39.7263738Z Removing credentials config '/home/runner/work/_temp/git-credentials-8f911937-42d0-445a-9907-2057efcbb449.config'
+targeted	Stop containers	﻿2026-10-04T19:55:39.7388622Z Print service container logs: f6b72bca645241de9f659c448e799852_redis7alpine_5bb638
+targeted	Stop containers	2026-10-04T19:55:39.7393277Z ##[command]/usr/bin/docker logs --details 8da10194678bb5993e74f1703f592ea6d901da4beaf8e7e302714109039224fc
+targeted	Stop containers	2026-10-04T19:55:39.7526406Z  1:C 04 Oct 2026 19:54:45.380 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+targeted	Stop containers	2026-10-04T19:55:39.7528563Z  1:C 04 Oct 2026 19:54:45.380 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+targeted	Stop containers	2026-10-04T19:55:39.7529520Z  1:C 04 Oct 2026 19:54:45.380 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+targeted	Stop containers	2026-10-04T19:55:39.7530936Z  1:C 04 Oct 2026 19:54:45.380 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+targeted	Stop containers	2026-10-04T19:55:39.7532220Z  1:M 04 Oct 2026 19:54:45.380 * monotonic clock: POSIX clock_gettime
+targeted	Stop containers	2026-10-04T19:55:39.7533209Z  1:M 04 Oct 2026 19:54:45.381 * Running mode=standalone, port=6379.
+targeted	Stop containers	2026-10-04T19:55:39.7533795Z  1:M 04 Oct 2026 19:54:45.381 * Server initialized
+targeted	Stop containers	2026-10-04T19:55:39.7534354Z  1:M 04 Oct 2026 19:54:45.381 * Ready to accept connections tcp
+targeted	Stop containers	2026-10-04T19:55:39.7546953Z Stop and remove container: f6b72bca645241de9f659c448e799852_redis7alpine_5bb638
+targeted	Stop containers	2026-10-04T19:55:39.7552178Z ##[command]/usr/bin/docker rm --force 8da10194678bb5993e74f1703f592ea6d901da4beaf8e7e302714109039224fc
+targeted	Stop containers	2026-10-04T19:55:39.8984998Z 8da10194678bb5993e74f1703f592ea6d901da4beaf8e7e302714109039224fc
+targeted	Stop containers	2026-10-04T19:55:39.9014805Z Remove container network: github_network_a25fee791d744f4c835c6bddc11ee4ed
+targeted	Stop containers	2026-10-04T19:55:39.9019713Z ##[command]/usr/bin/docker network rm github_network_a25fee791d744f4c835c6bddc11ee4ed
+targeted	Stop containers	2026-10-04T19:55:40.0103331Z github_network_a25fee791d744f4c835c6bddc11ee4ed
+targeted	Complete job	﻿2026-10-04T19:55:40.0176935Z Cleaning up orphan processes

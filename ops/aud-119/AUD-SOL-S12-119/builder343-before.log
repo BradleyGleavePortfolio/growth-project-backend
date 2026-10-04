@@ -1,0 +1,754 @@
+targeted	Set up job	﻿2026-10-04T19:44:06.3412788Z Current runner version: '2.337.0'
+targeted	Set up job	2026-10-04T19:44:06.3430959Z ##[group]Runner Image Provisioner
+targeted	Set up job	2026-10-04T19:44:06.3431740Z Hosted Compute Agent
+targeted	Set up job	2026-10-04T19:44:06.3432146Z Version: 20260901.588
+targeted	Set up job	2026-10-04T19:44:06.3432619Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	Set up job	2026-10-04T19:44:06.3433127Z Build Date: 2026-09-01T19:56:44Z
+targeted	Set up job	2026-10-04T19:44:06.3433625Z Worker ID: {987b3dcf-45b0-4eec-9167-ca48f7fd9fc6}
+targeted	Set up job	2026-10-04T19:44:06.3434126Z Azure Region: centralus
+targeted	Set up job	2026-10-04T19:44:06.3434527Z ##[endgroup]
+targeted	Set up job	2026-10-04T19:44:06.3435405Z ##[group]Operating System
+targeted	Set up job	2026-10-04T19:44:06.3435841Z Ubuntu
+targeted	Set up job	2026-10-04T19:44:06.3436194Z 24.04.5
+targeted	Set up job	2026-10-04T19:44:06.3436564Z LTS
+targeted	Set up job	2026-10-04T19:44:06.3436926Z ##[endgroup]
+targeted	Set up job	2026-10-04T19:44:06.3437298Z ##[group]Runner Image
+targeted	Set up job	2026-10-04T19:44:06.3437733Z Image: ubuntu-24.04
+targeted	Set up job	2026-10-04T19:44:06.3438364Z Version: 20260927.320.1
+targeted	Set up job	2026-10-04T19:44:06.3439327Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	Set up job	2026-10-04T19:44:06.3440542Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	Set up job	2026-10-04T19:44:06.3441211Z ##[endgroup]
+targeted	Set up job	2026-10-04T19:44:06.3442079Z ##[group]GITHUB_TOKEN Permissions
+targeted	Set up job	2026-10-04T19:44:06.3443778Z Contents: read
+targeted	Set up job	2026-10-04T19:44:06.3444192Z Metadata: read
+targeted	Set up job	2026-10-04T19:44:06.3444582Z Packages: read
+targeted	Set up job	2026-10-04T19:44:06.3444979Z ##[endgroup]
+targeted	Set up job	2026-10-04T19:44:06.3446503Z Secret source: Actions
+targeted	Set up job	2026-10-04T19:44:06.3447163Z Cache mode: write
+targeted	Set up job	2026-10-04T19:44:06.3447762Z Prepare workflow directory
+targeted	Set up job	2026-10-04T19:44:06.3673867Z Prepare all required actions
+targeted	Set up job	2026-10-04T19:44:06.3721543Z Getting action download info
+targeted	Set up job	2026-10-04T19:44:06.6182677Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	Set up job	2026-10-04T19:44:06.9768969Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	Set up job	2026-10-04T19:44:07.7526318Z Complete job name: targeted
+targeted	Run actions/checkout@v6	﻿2026-10-04T19:44:07.8255815Z ##[group]Run actions/checkout@v6
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.8256815Z with:
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.8257469Z   repository: BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.8261892Z   token: ***
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.8262651Z   ssh-strict: true
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.8263338Z   ssh-user: git
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.8263892Z   persist-credentials: true
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.8264474Z   clean: true
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.8264999Z   sparse-checkout-cone-mode: true
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.8265612Z   fetch-depth: 1
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.8266141Z   fetch-tags: false
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.8266656Z   show-progress: true
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.8267205Z   lfs: false
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.8267697Z   submodules: false
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.8268556Z   set-safe-directory: true
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.8269221Z   allow-unsafe-pr-checkout: false
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.8270291Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9050755Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9052643Z ##[group]Getting Git version info
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9053651Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9054801Z [command]/usr/bin/git version
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9100101Z git version 2.55.0
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9115261Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9125500Z Temporarily overriding HOME='/home/runner/work/_temp/61245ca5-5a9f-4761-8a75-59aaed4f94c4' before making global git config changes
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9126905Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9129860Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9168355Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9171601Z ##[group]Determining repository object format
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9172918Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9173766Z ##[group]Initializing the repository
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9176379Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9520140Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9521399Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9522868Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9523746Z hint: call:
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9524155Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9524778Z hint: 	git config --global init.defaultBranch <name>
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9525501Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9526081Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9526917Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9527725Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9528526Z hint: 	git branch -m <name>
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9529095Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9529723Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9530802Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9532991Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9566941Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9567708Z ##[group]Disabling automatic garbage collection
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9569670Z [command]/usr/bin/git config --local gc.auto 0
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9593487Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9594337Z ##[group]Setting up auth
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9595028Z Removing SSH command configuration
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9598616Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9619281Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9874900Z Removing HTTP extra header
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9878207Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Run actions/checkout@v6	2026-10-04T19:44:07.9901152Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Run actions/checkout@v6	2026-10-04T19:44:08.0036192Z Removing includeIf entries pointing to credentials config files
+targeted	Run actions/checkout@v6	2026-10-04T19:44:08.0040632Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Run actions/checkout@v6	2026-10-04T19:44:08.0061595Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Run actions/checkout@v6	2026-10-04T19:44:08.0204173Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-310c6b78-f5e0-43e4-b5e2-9efe01eae98a.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	Run actions/checkout@v6	2026-10-04T19:44:08.0229033Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-310c6b78-f5e0-43e4-b5e2-9efe01eae98a.config
+targeted	Run actions/checkout@v6	2026-10-04T19:44:08.0250596Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-310c6b78-f5e0-43e4-b5e2-9efe01eae98a.config
+targeted	Run actions/checkout@v6	2026-10-04T19:44:08.0275026Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-310c6b78-f5e0-43e4-b5e2-9efe01eae98a.config
+targeted	Run actions/checkout@v6	2026-10-04T19:44:08.0333496Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-310c6b78-f5e0-43e4-b5e2-9efe01eae98a.config
+targeted	Run actions/checkout@v6	2026-10-04T19:44:08.0357863Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:44:08.0358953Z ##[group]Fetching the repository
+targeted	Run actions/checkout@v6	2026-10-04T19:44:08.0363100Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +84260b67392e2c97c3600ec60f2765b0a35c5fb4:refs/remotes/origin/ci/B-SHEET2-119-343-before
+targeted	Run actions/checkout@v6	2026-10-04T19:44:09.2175647Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T19:44:09.2177421Z  * [new ref]         84260b67392e2c97c3600ec60f2765b0a35c5fb4 -> origin/ci/B-SHEET2-119-343-before
+targeted	Run actions/checkout@v6	2026-10-04T19:44:09.2185627Z [command]/usr/bin/git branch --list --remote origin/ci/B-SHEET2-119-343-before
+targeted	Run actions/checkout@v6	2026-10-04T19:44:09.2206411Z   origin/ci/B-SHEET2-119-343-before
+targeted	Run actions/checkout@v6	2026-10-04T19:44:09.2213166Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-SHEET2-119-343-before
+targeted	Run actions/checkout@v6	2026-10-04T19:44:09.2229620Z 84260b67392e2c97c3600ec60f2765b0a35c5fb4
+targeted	Run actions/checkout@v6	2026-10-04T19:44:09.2235269Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:44:09.2236041Z ##[group]Determining the checkout info
+targeted	Run actions/checkout@v6	2026-10-04T19:44:09.2236532Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:44:09.2236866Z [command]/usr/bin/git sparse-checkout disable
+targeted	Run actions/checkout@v6	2026-10-04T19:44:09.2278876Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	Run actions/checkout@v6	2026-10-04T19:44:09.2299854Z ##[group]Checking out the ref
+targeted	Run actions/checkout@v6	2026-10-04T19:44:09.2302985Z [command]/usr/bin/git checkout --progress --force -B ci/B-SHEET2-119-343-before refs/remotes/origin/ci/B-SHEET2-119-343-before
+targeted	Run actions/checkout@v6	2026-10-04T19:44:09.2943960Z Switched to a new branch 'ci/B-SHEET2-119-343-before'
+targeted	Run actions/checkout@v6	2026-10-04T19:44:09.2946689Z branch 'ci/B-SHEET2-119-343-before' set up to track 'origin/ci/B-SHEET2-119-343-before'.
+targeted	Run actions/checkout@v6	2026-10-04T19:44:09.2951767Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T19:44:09.2977883Z [command]/usr/bin/git log -1 --format=%H
+targeted	Run actions/checkout@v6	2026-10-04T19:44:09.2994399Z 84260b67392e2c97c3600ec60f2765b0a35c5fb4
+targeted	Run actions/setup-node@v6	﻿2026-10-04T19:44:09.3200038Z ##[group]Run actions/setup-node@v6
+targeted	Run actions/setup-node@v6	2026-10-04T19:44:09.3200392Z with:
+targeted	Run actions/setup-node@v6	2026-10-04T19:44:09.3200728Z   node-version: 22.13
+targeted	Run actions/setup-node@v6	2026-10-04T19:44:09.3200995Z   cache: npm
+targeted	Run actions/setup-node@v6	2026-10-04T19:44:09.3201307Z   check-latest: false
+targeted	Run actions/setup-node@v6	2026-10-04T19:44:09.3203111Z   token: ***
+targeted	Run actions/setup-node@v6	2026-10-04T19:44:09.3203367Z   package-manager-cache: true
+targeted	Run actions/setup-node@v6	2026-10-04T19:44:09.3203700Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T19:44:09.4203956Z Attempting to download 22.13...
+targeted	Run actions/setup-node@v6	2026-10-04T19:44:10.1356946Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+targeted	Run actions/setup-node@v6	2026-10-04T19:44:10.6510375Z Extracting ...
+targeted	Run actions/setup-node@v6	2026-10-04T19:44:10.6616974Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/81ec6a58-3ab8-4d67-a78a-3441a9548cb6 -f /home/runner/work/_temp/96a5a0f0-6891-47e7-8bd1-179d89531317
+targeted	Run actions/setup-node@v6	2026-10-04T19:44:11.5848561Z Adding to the cache ...
+targeted	Run actions/setup-node@v6	2026-10-04T19:44:13.8906002Z ##[group]Environment details
+targeted	Run actions/setup-node@v6	2026-10-04T19:44:14.0514636Z node: v22.13.1
+targeted	Run actions/setup-node@v6	2026-10-04T19:44:14.0515830Z npm: 10.9.2
+targeted	Run actions/setup-node@v6	2026-10-04T19:44:14.0516263Z yarn: 1.22.22
+targeted	Run actions/setup-node@v6	2026-10-04T19:44:14.0517480Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T19:44:14.0531145Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+targeted	Run actions/setup-node@v6	2026-10-04T19:44:14.1174350Z /home/runner/.npm
+targeted	Run actions/setup-node@v6	2026-10-04T19:44:14.2584895Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+targeted	Run actions/setup-node@v6	2026-10-04T19:44:15.4038419Z Received 121634816 of 241027159 (50.5%), 115.9 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-04T19:44:15.9199753Z Received 241027159 of 241027159 (100.0%), 151.5 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-04T19:44:15.9200622Z Cache Size: ~230 MB (241027159 B)
+targeted	Run actions/setup-node@v6	2026-10-04T19:44:15.9307143Z [command]/usr/bin/tar -xf /home/runner/work/_temp/de222127-1032-406f-9580-d2134e7dd5b7/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+targeted	Run actions/setup-node@v6	2026-10-04T19:44:16.6166513Z Cache restored successfully
+targeted	Run actions/setup-node@v6	2026-10-04T19:44:16.6253459Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+targeted	Run npm ci	﻿2026-10-04T19:44:16.6396653Z ##[group]Run npm ci
+targeted	Run npm ci	2026-10-04T19:44:16.6397000Z ^[[36;1mnpm ci^[[0m
+targeted	Run npm ci	2026-10-04T19:44:16.7048269Z shell: /usr/bin/bash -e {0}
+targeted	Run npm ci	2026-10-04T19:44:16.7048707Z ##[endgroup]
+targeted	Run npm ci	2026-10-04T19:44:20.3422217Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	Run npm ci	2026-10-04T19:44:20.4690225Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+targeted	Run npm ci	2026-10-04T19:44:20.4783463Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+targeted	Run npm ci	2026-10-04T19:44:20.4817348Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+targeted	Run npm ci	2026-10-04T19:44:20.4943909Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+targeted	Run npm ci	2026-10-04T19:44:20.5721096Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+targeted	Run npm ci	2026-10-04T19:44:20.5751336Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T19:44:20.5754314Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T19:44:20.5768258Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T19:44:20.5770363Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T19:44:20.5783463Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T19:44:20.6000923Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T19:44:20.6231847Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+targeted	Run npm ci	2026-10-04T19:44:21.0205769Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+targeted	Run npm ci	2026-10-04T19:44:21.5351170Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+targeted	Run npm ci	2026-10-04T19:44:24.1212923Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+targeted	Run npm ci	2026-10-04T19:44:59.2983828Z 
+targeted	Run npm ci	2026-10-04T19:44:59.2986604Z added 1108 packages, and audited 1109 packages in 43s
+targeted	Run npm ci	2026-10-04T19:44:59.2986969Z 
+targeted	Run npm ci	2026-10-04T19:44:59.2987115Z 187 packages are looking for funding
+targeted	Run npm ci	2026-10-04T19:44:59.2987455Z   run `npm fund` for details
+targeted	Run npm ci	2026-10-04T19:44:59.5296619Z 
+targeted	Run npm ci	2026-10-04T19:44:59.5297971Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+targeted	Run npm ci	2026-10-04T19:44:59.5298647Z 
+targeted	Run npm ci	2026-10-04T19:44:59.5298912Z To address issues that do not require attention, run:
+targeted	Run npm ci	2026-10-04T19:44:59.5299526Z   npm audit fix
+targeted	Run npm ci	2026-10-04T19:44:59.5300279Z 
+targeted	Run npm ci	2026-10-04T19:44:59.5300469Z To address all issues (including breaking changes), run:
+targeted	Run npm ci	2026-10-04T19:44:59.5300841Z   npm audit fix --force
+targeted	Run npm ci	2026-10-04T19:44:59.5300977Z 
+targeted	Run npm ci	2026-10-04T19:44:59.5301116Z Run `npm audit` for details.
+targeted	Targeted jest	﻿2026-10-04T19:44:59.6257715Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T19:44:59.6258342Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T19:44:59.6258890Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T19:44:59.6259288Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T19:44:59.6259632Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T19:44:59.6259902Z ^[[36;1mnpx jest --ci "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T19:44:59.6294327Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T19:44:59.6294668Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T19:44:59.6357375Z specs: src/hooks/__tests__/usePackagePurchase.sheet2.test.tsx src/components/__tests__/PackageSelectionSheet.payment.test.tsx src/hooks/__tests__/audSolSh118.remainingBoundary.test.tsx src/hooks/__tests__/audSolSh118.endedIsNotUnpaid.test.tsx src/components/__tests__/audSolSh118.openPlanAction.test.tsx src/components/__tests__/audOpusSh118.probe343.test.tsx src/components/__tests__/audOpusP12117.probe343.test.tsx src/hooks/__tests__/audSolP12117.purchaseBoundary.test.tsx src/components/__tests__/audSolP12117.paymentTheme.test.tsx src/hooks/__tests__/usePackagePurchase.boundary.test.tsx src/components/__tests__/PackageSelectionSheet.contrast.test.tsx
+targeted	Targeted jest	2026-10-04T19:45:03.5940851Z FAIL src/hooks/__tests__/audSolSh118.remainingBoundary.test.tsx
+targeted	Targeted jest	2026-10-04T19:45:03.6031464Z   ● AUD-SOL-SH-118 residual uncertainty and account fences › logout during a held plan read that later rejects cannot publish old-account slow progress
+targeted	Targeted jest	2026-10-04T19:45:03.6033727Z 
+targeted	Targeted jest	2026-10-04T19:45:03.6037496Z     expect(jest.fn()).not.toHaveBeenCalled()
+targeted	Targeted jest	2026-10-04T19:45:03.6038710Z 
+targeted	Targeted jest	2026-10-04T19:45:03.6049028Z     Expected number of calls: 0
+targeted	Targeted jest	2026-10-04T19:45:03.6049861Z     Received number of calls: 1
+targeted	Targeted jest	2026-10-04T19:45:03.6056095Z 
+targeted	Targeted jest	2026-10-04T19:45:03.6057088Z     1: called with 0 arguments
+targeted	Targeted jest	2026-10-04T19:45:03.6057482Z 
+targeted	Targeted jest	2026-10-04T19:45:03.6058700Z     ^[[0m ^[[90m 231 |^[[39m       ^[[36mawait^[[39m running^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:03.6059451Z      ^[[90m 232 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:03.6061443Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 233 |^[[39m     expect(h^[[33m.^[[39monEntitled)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:03.6062900Z      ^[[90m     |^[[39m                              ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:45:03.6071395Z      ^[[90m 234 |^[[39m     expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate^[[33m.^[[39mphase)^[[33m.^[[39mtoBe(^[[32m'idle'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:03.6073667Z      ^[[90m 235 |^[[39m     expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate^[[33m.^[[39mpackageId)^[[33m.^[[39mtoBeNull()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:03.6074597Z      ^[[90m 236 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:45:03.6074967Z 
+targeted	Targeted jest	2026-10-04T19:45:03.6075590Z       at toHaveBeenCalled (src/hooks/__tests__/audSolSh118.remainingBoundary.test.tsx:233:30)
+targeted	Targeted jest	2026-10-04T19:45:03.6076946Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T19:45:03.6078331Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T19:45:03.6079331Z 
+targeted	Targeted jest	2026-10-04T19:45:03.6080297Z   ● AUD-SOL-SH-118 residual uncertainty and account fences › login during a held plan read that later rejects cannot publish old-account slow progress
+targeted	Targeted jest	2026-10-04T19:45:03.6088844Z 
+targeted	Targeted jest	2026-10-04T19:45:03.6089546Z     expect(jest.fn()).not.toHaveBeenCalled()
+targeted	Targeted jest	2026-10-04T19:45:03.6090679Z 
+targeted	Targeted jest	2026-10-04T19:45:03.6091027Z     Expected number of calls: 0
+targeted	Targeted jest	2026-10-04T19:45:03.6091936Z     Received number of calls: 1
+targeted	Targeted jest	2026-10-04T19:45:03.6092291Z 
+targeted	Targeted jest	2026-10-04T19:45:03.6092676Z     1: called with 0 arguments
+targeted	Targeted jest	2026-10-04T19:45:03.6093376Z 
+targeted	Targeted jest	2026-10-04T19:45:03.6093915Z     ^[[0m ^[[90m 231 |^[[39m       ^[[36mawait^[[39m running^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:03.6094958Z      ^[[90m 232 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:03.6095937Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 233 |^[[39m     expect(h^[[33m.^[[39monEntitled)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:03.6097240Z      ^[[90m     |^[[39m                              ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:45:03.6099811Z      ^[[90m 234 |^[[39m     expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate^[[33m.^[[39mphase)^[[33m.^[[39mtoBe(^[[32m'idle'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:03.6101625Z      ^[[90m 235 |^[[39m     expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate^[[33m.^[[39mpackageId)^[[33m.^[[39mtoBeNull()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:03.6102607Z      ^[[90m 236 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:45:03.6102991Z 
+targeted	Targeted jest	2026-10-04T19:45:03.6103864Z       at toHaveBeenCalled (src/hooks/__tests__/audSolSh118.remainingBoundary.test.tsx:233:30)
+targeted	Targeted jest	2026-10-04T19:45:03.6104914Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T19:45:03.6106332Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T19:45:03.6107281Z 
+targeted	Targeted jest	2026-10-04T19:45:03.6150198Z   ● AUD-SOL-SH-118 residual uncertainty and account fences › account change during the first failed poll cannot issue another old-account plan read
+targeted	Targeted jest	2026-10-04T19:45:03.6178781Z 
+targeted	Targeted jest	2026-10-04T19:45:03.6208902Z     expect(jest.fn()).toHaveBeenCalledTimes(expected)
+targeted	Targeted jest	2026-10-04T19:45:03.6209895Z 
+targeted	Targeted jest	2026-10-04T19:45:03.6214408Z     Expected number of calls: 1
+targeted	Targeted jest	2026-10-04T19:45:03.6215157Z     Received number of calls: 2
+targeted	Targeted jest	2026-10-04T19:45:03.6215994Z 
+targeted	Targeted jest	2026-10-04T19:45:03.6216567Z     ^[[0m ^[[90m 252 |^[[39m       ^[[36mawait^[[39m running^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:03.6217323Z      ^[[90m 253 |^[[39m     })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:03.6219073Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 254 |^[[39m     expect(mockGet)^[[33m.^[[39mtoHaveBeenCalledTimes(^[[35m1^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:03.6220417Z      ^[[90m     |^[[39m                     ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:45:03.6221274Z      ^[[90m 255 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:03.6222236Z      ^[[90m 256 |^[[39m
+targeted	Targeted jest	2026-10-04T19:45:03.6242300Z      ^[[90m 257 |^[[39m   it(^[[32m'control: account change during a successful plan read drops the old entitlement'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T19:45:03.6243252Z 
+targeted	Targeted jest	2026-10-04T19:45:03.6243885Z       at Object.toHaveBeenCalledTimes (src/hooks/__tests__/audSolSh118.remainingBoundary.test.tsx:254:21)
+targeted	Targeted jest	2026-10-04T19:45:03.6245109Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T19:45:03.6246040Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T19:45:03.6246568Z 
+targeted	Targeted jest	2026-10-04T19:45:03.8570309Z PASS src/hooks/__tests__/usePackagePurchase.boundary.test.tsx
+targeted	Targeted jest	2026-10-04T19:45:08.8170187Z FAIL src/components/__tests__/audOpusSh118.probe343.test.tsx
+targeted	Targeted jest	2026-10-04T19:45:08.8240186Z   ● P1 one-time plan made free since the list loaded (reroute to claim-free) › never says "Payment received" while the free claim runs
+targeted	Targeted jest	2026-10-04T19:45:08.8240978Z 
+targeted	Targeted jest	2026-10-04T19:45:08.8279332Z     expect(received).not.toMatch(expected)
+targeted	Targeted jest	2026-10-04T19:45:08.8308994Z 
+targeted	Targeted jest	2026-10-04T19:45:08.8319417Z     Expected pattern: not /payment received/i
+targeted	Targeted jest	2026-10-04T19:45:08.8320129Z     Received string:      "Payment received. Setting up your plan."
+targeted	Targeted jest	2026-10-04T19:45:08.8320659Z 
+targeted	Targeted jest	2026-10-04T19:45:08.8321679Z     ^[[0m ^[[90m 107 |^[[39m     ^[[36mconst^[[39m progress ^[[33m=^[[39m r^[[33m.^[[39mgetByTestId(^[[32m'payment-confirming'^[[39m)^[[33m.^[[39mprops^[[33m.^[[39mchildren ^[[36mas^[[39m string^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:08.8322839Z      ^[[90m 108 |^[[39m     expect(mockPresent)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:08.8323734Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 109 |^[[39m     expect(progress)^[[33m.^[[39mnot^[[33m.^[[39mtoMatch(^[[35m/payment received/i^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:08.8324566Z      ^[[90m     |^[[39m                          ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:45:08.8325328Z      ^[[90m 110 |^[[39m     expect(progress)^[[33m.^[[39mtoBe(^[[32m'Adding your free plan.'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:08.8326216Z      ^[[90m 111 |^[[39m     held^[[33m.^[[39mresolve({ data^[[33m:^[[39m { active^[[33m:^[[39m ^[[36mtrue^[[39m } })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:08.8327296Z      ^[[90m 112 |^[[39m     ^[[36mawait^[[39m waitFor(() ^[[33m=>^[[39m expect(r^[[33m.^[[39mgetByTestId(^[[32m'payment-success'^[[39m))^[[33m.^[[39mtoBeTruthy())^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:45:08.8328786Z 
+targeted	Targeted jest	2026-10-04T19:45:08.8329252Z       at Object.toMatch (src/components/__tests__/audOpusSh118.probe343.test.tsx:109:26)
+targeted	Targeted jest	2026-10-04T19:45:08.8359204Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T19:45:08.8380098Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T19:45:08.8400984Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0473357Z FAIL src/hooks/__tests__/usePackagePurchase.sheet2.test.tsx
+targeted	Targeted jest	2026-10-04T19:45:09.0490740Z   ● B-343-1 (Sol) a rejected plan read is fenced › logout, then the held read rejects: no old-account progress or callback
+targeted	Targeted jest	2026-10-04T19:45:09.0518538Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0549278Z     expect(jest.fn()).not.toHaveBeenCalled()
+targeted	Targeted jest	2026-10-04T19:45:09.0576471Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0599038Z     Expected number of calls: 0
+targeted	Targeted jest	2026-10-04T19:45:09.0649138Z     Received number of calls: 1
+targeted	Targeted jest	2026-10-04T19:45:09.0649785Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0650125Z     1: called with 0 arguments
+targeted	Targeted jest	2026-10-04T19:45:09.0650454Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0651332Z     ^[[0m ^[[90m 79 |^[[39m     ^[[36mawait^[[39m waitFor(() ^[[33m=>^[[39m expect(mockGet)^[[33m.^[[39mtoHaveBeenCalledTimes(^[[35m1^[[39m))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0652996Z      ^[[90m 80 |^[[39m     ^[[36mawait^[[39m act(^[[36masync^[[39m () ^[[33m=>^[[39m { authEvents^[[33m.^[[39memit(event)^[[33m;^[[39m held^[[33m.^[[39mreject(^[[36mnew^[[39m ^[[33mError^[[39m(^[[32m'lost'^[[39m))^[[33m;^[[39m ^[[36mawait^[[39m running^[[33m;^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0654443Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 81 |^[[39m     expect(h^[[33m.^[[39monEntitled)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0655308Z      ^[[90m    |^[[39m                              ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0656831Z      ^[[90m 82 |^[[39m     expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate)^[[33m.^[[39mtoEqual(expect^[[33m.^[[39mobjectContaining({ phase^[[33m:^[[39m ^[[32m'idle'^[[39m^[[33m,^[[39m packageId^[[33m:^[[39m ^[[36mnull^[[39m^[[33m,^[[39m notice^[[33m:^[[39m ^[[36mnull^[[39m }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0658019Z      ^[[90m 83 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0658694Z      ^[[90m 84 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.0658984Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0659371Z       at toHaveBeenCalled (src/hooks/__tests__/usePackagePurchase.sheet2.test.tsx:81:30)
+targeted	Targeted jest	2026-10-04T19:45:09.0660281Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T19:45:09.0661021Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T19:45:09.0661460Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0662174Z   ● B-343-1 (Sol) a rejected plan read is fenced › login, then the held read rejects: no old-account progress or callback
+targeted	Targeted jest	2026-10-04T19:45:09.0662776Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0663031Z     expect(jest.fn()).not.toHaveBeenCalled()
+targeted	Targeted jest	2026-10-04T19:45:09.0663389Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0663635Z     Expected number of calls: 0
+targeted	Targeted jest	2026-10-04T19:45:09.0664187Z     Received number of calls: 1
+targeted	Targeted jest	2026-10-04T19:45:09.0664487Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0664746Z     1: called with 0 arguments
+targeted	Targeted jest	2026-10-04T19:45:09.0665046Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0665860Z     ^[[0m ^[[90m 79 |^[[39m     ^[[36mawait^[[39m waitFor(() ^[[33m=>^[[39m expect(mockGet)^[[33m.^[[39mtoHaveBeenCalledTimes(^[[35m1^[[39m))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0667420Z      ^[[90m 80 |^[[39m     ^[[36mawait^[[39m act(^[[36masync^[[39m () ^[[33m=>^[[39m { authEvents^[[33m.^[[39memit(event)^[[33m;^[[39m held^[[33m.^[[39mreject(^[[36mnew^[[39m ^[[33mError^[[39m(^[[32m'lost'^[[39m))^[[33m;^[[39m ^[[36mawait^[[39m running^[[33m;^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0669337Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 81 |^[[39m     expect(h^[[33m.^[[39monEntitled)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0670175Z      ^[[90m    |^[[39m                              ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0671605Z      ^[[90m 82 |^[[39m     expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate)^[[33m.^[[39mtoEqual(expect^[[33m.^[[39mobjectContaining({ phase^[[33m:^[[39m ^[[32m'idle'^[[39m^[[33m,^[[39m packageId^[[33m:^[[39m ^[[36mnull^[[39m^[[33m,^[[39m notice^[[33m:^[[39m ^[[36mnull^[[39m }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0673446Z      ^[[90m 83 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0674056Z      ^[[90m 84 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.0674415Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0674803Z       at toHaveBeenCalled (src/hooks/__tests__/usePackagePurchase.sheet2.test.tsx:81:30)
+targeted	Targeted jest	2026-10-04T19:45:09.0675894Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T19:45:09.0699748Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T19:45:09.0700455Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0701314Z   ● B-343-1 (Sol) a rejected plan read is fenced › account change during a failed first poll: no second old-account read
+targeted	Targeted jest	2026-10-04T19:45:09.0701889Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0702248Z     expect(jest.fn()).toHaveBeenCalledTimes(expected)
+targeted	Targeted jest	2026-10-04T19:45:09.0702646Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0702917Z     Expected number of calls: 1
+targeted	Targeted jest	2026-10-04T19:45:09.0703393Z     Received number of calls: 2
+targeted	Targeted jest	2026-10-04T19:45:09.0703753Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0704391Z     ^[[0m ^[[90m 91 |^[[39m     ^[[36mawait^[[39m waitFor(() ^[[33m=>^[[39m expect(mockGet)^[[33m.^[[39mtoHaveBeenCalledTimes(^[[35m1^[[39m))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0706047Z      ^[[90m 92 |^[[39m     ^[[36mawait^[[39m act(^[[36masync^[[39m () ^[[33m=>^[[39m { authEvents^[[33m.^[[39memit(^[[32m'logout'^[[39m)^[[33m;^[[39m held^[[33m.^[[39mreject(^[[36mnew^[[39m ^[[33mError^[[39m(^[[32m'lost'^[[39m))^[[33m;^[[39m ^[[36mawait^[[39m running^[[33m;^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0707449Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 93 |^[[39m     expect(mockGet)^[[33m.^[[39mtoHaveBeenCalledTimes(^[[35m1^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0708409Z      ^[[90m    |^[[39m                     ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0708970Z      ^[[90m 94 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0709484Z      ^[[90m 95 |^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0710370Z      ^[[90m 96 |^[[39m   it(^[[32m'control: rejected reads on the same account still end in the slow state'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.0711064Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0711575Z       at Object.toHaveBeenCalledTimes (src/hooks/__tests__/usePackagePurchase.sheet2.test.tsx:93:21)
+targeted	Targeted jest	2026-10-04T19:45:09.0712528Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T19:45:09.0713302Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T19:45:09.0713763Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0714543Z   ● B-343-6 (Sol) an ended plan is not proof of no charge › state ended / checkout null after an unclear card step: support, reference, no no-charge claim
+targeted	Targeted jest	2026-10-04T19:45:09.0715203Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0715508Z     expect(received).not.toMatch(expected)
+targeted	Targeted jest	2026-10-04T19:45:09.0715826Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0716229Z     Expected pattern: not /nothing was charged|not charged|did not go through/i
+targeted	Targeted jest	2026-10-04T19:45:09.0717190Z     Received string:      "This checkout closed before the payment finished, so nothing was charged. Choose the plan again to start a new checkout."
+targeted	Targeted jest	2026-10-04T19:45:09.0717941Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0718831Z     ^[[0m ^[[90m 114 |^[[39m     ^[[36mawait^[[39m act(^[[36masync^[[39m () ^[[33m=>^[[39m { ^[[36mawait^[[39m h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstart(renewing)^[[33m;^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0720021Z      ^[[90m 115 |^[[39m     ^[[36mconst^[[39m n ^[[33m=^[[39m h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate^[[33m.^[[39mnotice^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0721214Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 116 |^[[39m     expect(n^[[33m?^[[39m^[[33m.^[[39mmessage)^[[33m.^[[39mnot^[[33m.^[[39mtoMatch(^[[33mNO_CHARGE^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0722073Z      ^[[90m     |^[[39m                            ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0722915Z      ^[[90m 117 |^[[39m     expect(n)^[[33m.^[[39mtoEqual(expect^[[33m.^[[39mobjectContaining({
+targeted	Targeted jest	2026-10-04T19:45:09.0724111Z      ^[[90m 118 |^[[39m       cause^[[33m:^[[39m ^[[32m'plan_ended_while_confirming'^[[39m^[[33m,^[[39m support^[[33m:^[[39m ^[[36mtrue^[[39m^[[33m,^[[39m reference^[[33m:^[[39m ^[[32m'aaaaaaaa'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0725892Z      ^[[90m 119 |^[[39m       message^[[33m:^[[39m ^[[33mPACKAGE_PAYMENT_COPY^[[39m^[[33m.^[[39mendedWhileConfirming(^[[32m'aaaaaaaa'^[[39m)^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.0726960Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0727336Z       at toMatch (src/hooks/__tests__/usePackagePurchase.sheet2.test.tsx:116:28)
+targeted	Targeted jest	2026-10-04T19:45:09.0728619Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T19:45:09.0729445Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T19:45:09.0729886Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0730745Z   ● B-343-6 (Sol) an ended plan is not proof of no charge › state confirming / checkout ended after an unclear card step: support, reference, no no-charge claim
+targeted	Targeted jest	2026-10-04T19:45:09.0731454Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0731766Z     expect(received).not.toMatch(expected)
+targeted	Targeted jest	2026-10-04T19:45:09.0732125Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0732540Z     Expected pattern: not /nothing was charged|not charged|did not go through/i
+targeted	Targeted jest	2026-10-04T19:45:09.0733598Z     Received string:      "This checkout closed before the payment finished, so nothing was charged. Choose the plan again to start a new checkout."
+targeted	Targeted jest	2026-10-04T19:45:09.0734232Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0735057Z     ^[[0m ^[[90m 114 |^[[39m     ^[[36mawait^[[39m act(^[[36masync^[[39m () ^[[33m=>^[[39m { ^[[36mawait^[[39m h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstart(renewing)^[[33m;^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0736272Z      ^[[90m 115 |^[[39m     ^[[36mconst^[[39m n ^[[33m=^[[39m h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate^[[33m.^[[39mnotice^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0737588Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 116 |^[[39m     expect(n^[[33m?^[[39m^[[33m.^[[39mmessage)^[[33m.^[[39mnot^[[33m.^[[39mtoMatch(^[[33mNO_CHARGE^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0738705Z      ^[[90m     |^[[39m                            ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0739504Z      ^[[90m 117 |^[[39m     expect(n)^[[33m.^[[39mtoEqual(expect^[[33m.^[[39mobjectContaining({
+targeted	Targeted jest	2026-10-04T19:45:09.0740632Z      ^[[90m 118 |^[[39m       cause^[[33m:^[[39m ^[[32m'plan_ended_while_confirming'^[[39m^[[33m,^[[39m support^[[33m:^[[39m ^[[36mtrue^[[39m^[[33m,^[[39m reference^[[33m:^[[39m ^[[32m'aaaaaaaa'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0741972Z      ^[[90m 119 |^[[39m       message^[[33m:^[[39m ^[[33mPACKAGE_PAYMENT_COPY^[[39m^[[33m.^[[39mendedWhileConfirming(^[[32m'aaaaaaaa'^[[39m)^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.0742573Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0742946Z       at toMatch (src/hooks/__tests__/usePackagePurchase.sheet2.test.tsx:116:28)
+targeted	Targeted jest	2026-10-04T19:45:09.0743812Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T19:45:09.0744506Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T19:45:09.0744927Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0745711Z   ● B-343-6 (Opus) a reroute to claim-free is a free claim › one-time plan made free since the list loaded: saleKind free while claiming
+targeted	Targeted jest	2026-10-04T19:45:09.0746311Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0746675Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T19:45:09.0747104Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0747342Z     - Expected  - 2
+targeted	Targeted jest	2026-10-04T19:45:09.0747868Z     + Received  + 9
+targeted	Targeted jest	2026-10-04T19:45:09.0748395Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0748617Z     - ObjectContaining {
+targeted	Targeted jest	2026-10-04T19:45:09.0749074Z     + Object {
+targeted	Targeted jest	2026-10-04T19:45:09.0749507Z     +   "alreadyActive": null,
+targeted	Targeted jest	2026-10-04T19:45:09.0750119Z     +   "checking": false,
+targeted	Targeted jest	2026-10-04T19:45:09.0753335Z     +   "notice": null,
+targeted	Targeted jest	2026-10-04T19:45:09.0753826Z     +   "packageId": "11111111-2222-4333-8444-555555555555",
+targeted	Targeted jest	2026-10-04T19:45:09.0754408Z         "phase": "confirming",
+targeted	Targeted jest	2026-10-04T19:45:09.0754866Z     -   "saleKind": "free",
+targeted	Targeted jest	2026-10-04T19:45:09.0755293Z     +   "priceChange": null,
+targeted	Targeted jest	2026-10-04T19:45:09.0755771Z     +   "saleKind": "one_time",
+targeted	Targeted jest	2026-10-04T19:45:09.0756727Z     +   "slowMessage": null,
+targeted	Targeted jest	2026-10-04T19:45:09.0757183Z     +   "success": null,
+targeted	Targeted jest	2026-10-04T19:45:09.0757609Z       }
+targeted	Targeted jest	2026-10-04T19:45:09.0757842Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0759328Z     ^[[0m ^[[90m 148 |^[[39m     ^[[36mawait^[[39m act(^[[36masync^[[39m () ^[[33m=>^[[39m { running ^[[33m=^[[39m h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstart(pkg)^[[33m;^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0760733Z      ^[[90m 149 |^[[39m     ^[[36mawait^[[39m waitFor(() ^[[33m=>^[[39m expect(mockPost)^[[33m.^[[39mtoHaveBeenCalledTimes(^[[35m2^[[39m))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0762445Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 150 |^[[39m     expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate)^[[33m.^[[39mtoEqual(expect^[[33m.^[[39mobjectContaining({ phase^[[33m:^[[39m ^[[32m'confirming'^[[39m^[[33m,^[[39m saleKind^[[33m:^[[39m ^[[32m'free'^[[39m }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0763756Z      ^[[90m     |^[[39m                                    ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0765183Z      ^[[90m 151 |^[[39m     ^[[36mawait^[[39m act(^[[36masync^[[39m () ^[[33m=>^[[39m { claim^[[33m.^[[39mresolve({ data^[[33m:^[[39m { active^[[33m:^[[39m ^[[36mtrue^[[39m^[[33m,^[[39m status^[[33m:^[[39m ^[[32m'created'^[[39m } })^[[33m;^[[39m ^[[36mawait^[[39m running^[[33m;^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0766852Z      ^[[90m 152 |^[[39m     expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate^[[33m.^[[39msuccess^[[33m?^[[39m^[[33m.^[[39mkind)^[[33m.^[[39mtoBe(^[[32m'free'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0767723Z      ^[[90m 153 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.0768288Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0768757Z       at toEqual (src/hooks/__tests__/usePackagePurchase.sheet2.test.tsx:150:36)
+targeted	Targeted jest	2026-10-04T19:45:09.0769629Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T19:45:09.0770446Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T19:45:09.0770905Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0771641Z   ● B-343-6 (Opus) a reroute to claim-free is a free claim › renewing plan made free since the list loaded: saleKind free while claiming
+targeted	Targeted jest	2026-10-04T19:45:09.0772234Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0772552Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T19:45:09.0772984Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0773234Z     - Expected  - 2
+targeted	Targeted jest	2026-10-04T19:45:09.0773670Z     + Received  + 9
+targeted	Targeted jest	2026-10-04T19:45:09.0773993Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0774270Z     - ObjectContaining {
+targeted	Targeted jest	2026-10-04T19:45:09.0774686Z     + Object {
+targeted	Targeted jest	2026-10-04T19:45:09.0775155Z     +   "alreadyActive": null,
+targeted	Targeted jest	2026-10-04T19:45:09.0775623Z     +   "checking": false,
+targeted	Targeted jest	2026-10-04T19:45:09.0776014Z     +   "notice": null,
+targeted	Targeted jest	2026-10-04T19:45:09.0776539Z     +   "packageId": "11111111-2222-4333-8444-555555555555",
+targeted	Targeted jest	2026-10-04T19:45:09.0777131Z         "phase": "confirming",
+targeted	Targeted jest	2026-10-04T19:45:09.0777603Z     -   "saleKind": "free",
+targeted	Targeted jest	2026-10-04T19:45:09.0778317Z     +   "priceChange": null,
+targeted	Targeted jest	2026-10-04T19:45:09.0778796Z     +   "saleKind": "subscription",
+targeted	Targeted jest	2026-10-04T19:45:09.0779222Z     +   "slowMessage": null,
+targeted	Targeted jest	2026-10-04T19:45:09.0779682Z     +   "success": null,
+targeted	Targeted jest	2026-10-04T19:45:09.0780106Z       }
+targeted	Targeted jest	2026-10-04T19:45:09.0780366Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0781268Z     ^[[0m ^[[90m 148 |^[[39m     ^[[36mawait^[[39m act(^[[36masync^[[39m () ^[[33m=>^[[39m { running ^[[33m=^[[39m h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstart(pkg)^[[33m;^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0782536Z      ^[[90m 149 |^[[39m     ^[[36mawait^[[39m waitFor(() ^[[33m=>^[[39m expect(mockPost)^[[33m.^[[39mtoHaveBeenCalledTimes(^[[35m2^[[39m))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0784172Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 150 |^[[39m     expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate)^[[33m.^[[39mtoEqual(expect^[[33m.^[[39mobjectContaining({ phase^[[33m:^[[39m ^[[32m'confirming'^[[39m^[[33m,^[[39m saleKind^[[33m:^[[39m ^[[32m'free'^[[39m }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0785439Z      ^[[90m     |^[[39m                                    ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0786832Z      ^[[90m 151 |^[[39m     ^[[36mawait^[[39m act(^[[36masync^[[39m () ^[[33m=>^[[39m { claim^[[33m.^[[39mresolve({ data^[[33m:^[[39m { active^[[33m:^[[39m ^[[36mtrue^[[39m^[[33m,^[[39m status^[[33m:^[[39m ^[[32m'created'^[[39m } })^[[33m;^[[39m ^[[36mawait^[[39m running^[[33m;^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0788772Z      ^[[90m 152 |^[[39m     expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate^[[33m.^[[39msuccess^[[33m?^[[39m^[[33m.^[[39mkind)^[[33m.^[[39mtoBe(^[[32m'free'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.0790095Z      ^[[90m 153 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.0790447Z 
+targeted	Targeted jest	2026-10-04T19:45:09.0790887Z       at toEqual (src/hooks/__tests__/usePackagePurchase.sheet2.test.tsx:150:36)
+targeted	Targeted jest	2026-10-04T19:45:09.0791695Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T19:45:09.0792648Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T19:45:09.0793141Z 
+targeted	Targeted jest	2026-10-04T19:45:09.2139896Z FAIL src/components/__tests__/PackageSelectionSheet.payment.test.tsx (8.378 s)
+targeted	Targeted jest	2026-10-04T19:45:09.2171003Z   ● specific copy per cause › B-343-3 the plan action without a plan destination is labelled for what it does, never payment success
+targeted	Targeted jest	2026-10-04T19:45:09.2188579Z 
+targeted	Targeted jest	2026-10-04T19:45:09.2198991Z     Unable to find an element with text: Continue to the app
+targeted	Targeted jest	2026-10-04T19:45:09.2229668Z 
+targeted	Targeted jest	2026-10-04T19:45:09.2234454Z     ^[[36m<Modal>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2235128Z       ^[[36m<View>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2235648Z         ^[[36m<RCTScrollView>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2236106Z           ^[[36m<View>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2236573Z             ^[[36m<View />^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2236973Z             ^[[36m<Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2237479Z               ^[[0mChoose your plan^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.2237899Z             ^[[36m</Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2238707Z             ^[[36m<Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2239300Z               ^[[0mStart with a plan that fits your goals.^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.2239776Z             ^[[36m</Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2240275Z             ^[[36m<View^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2240828Z               ^[[33maccessibilityLabel^[[39m=^[[32m"Strength 12 weeks, $149.00 once"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2241538Z               ^[[33maccessibilityRole^[[39m=^[[32m"radio"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2242089Z               ^[[33maccessibilityState^[[39m=^[[32m{
+targeted	Targeted jest	2026-10-04T19:45:09.2242538Z                 {
+targeted	Targeted jest	2026-10-04T19:45:09.2242942Z                   "disabled": false,
+targeted	Targeted jest	2026-10-04T19:45:09.2243355Z                   "selected": true,
+targeted	Targeted jest	2026-10-04T19:45:09.2243755Z                 }
+targeted	Targeted jest	2026-10-04T19:45:09.2244121Z               }^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2244621Z               ^[[33maccessible^[[39m=^[[32m{true}^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2245310Z               ^[[33mtestID^[[39m=^[[32m"package-card-3f2b8c1e-5d4a-4e6b-9c7d-1a2b3c4d5e6f"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2245904Z             ^[[36m>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2246310Z               ^[[36m<Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2246726Z                 ^[[0mStrength 12 weeks^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.2247223Z               ^[[36m</Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2247621Z               ^[[36m<Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2248292Z                 ^[[0m$149.00 once^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.2248793Z               ^[[36m</Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2249191Z               ^[[36m<View^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2249757Z                 ^[[33maccessibilityRole^[[39m=^[[32m"summary"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2250417Z                 ^[[33mtestID^[[39m=^[[32m"plan-terms"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2250986Z               ^[[36m>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2251444Z                 ^[[36m<Text^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2251983Z                   ^[[33mtestID^[[39m=^[[32m"plan-terms-price"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2252462Z                 ^[[36m>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2252920Z                   ^[[0m$149.00, paid once^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.2253403Z                 ^[[36m</Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2253830Z                 ^[[36m<Text^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2254423Z                   ^[[33mtestID^[[39m=^[[32m"plan-terms-first-charge"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2254897Z                 ^[[36m>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2255442Z                   ^[[0mYou pay $149.00 today. It does not renew.^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.2255944Z                 ^[[36m</Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2256390Z               ^[[36m</View>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2256851Z             ^[[36m</View>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2263016Z             ^[[36m<View^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2264312Z               ^[[33maccessibilityLabel^[[39m=^[[32m"Starter 4 weeks, $49.00 once"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2265018Z               ^[[33maccessibilityRole^[[39m=^[[32m"radio"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2265575Z               ^[[33maccessibilityState^[[39m=^[[32m{
+targeted	Targeted jest	2026-10-04T19:45:09.2266035Z                 {
+targeted	Targeted jest	2026-10-04T19:45:09.2266444Z                   "disabled": false,
+targeted	Targeted jest	2026-10-04T19:45:09.2266880Z                   "selected": false,
+targeted	Targeted jest	2026-10-04T19:45:09.2267328Z                 }
+targeted	Targeted jest	2026-10-04T19:45:09.2267707Z               }^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2268474Z               ^[[33maccessible^[[39m=^[[32m{true}^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2269223Z               ^[[33mtestID^[[39m=^[[32m"package-card-7a6b5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c5d"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2269846Z             ^[[36m>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2270249Z               ^[[36m<Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2270728Z                 ^[[0mStarter 4 weeks^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.2271232Z               ^[[36m</Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2271647Z               ^[[36m<Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2272141Z                 ^[[0m$49.00 once^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.2272553Z               ^[[36m</Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2273111Z             ^[[36m</View>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2273508Z             ^[[36m<View^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2274102Z               ^[[33maccessibilityLabel^[[39m=^[[32m"Free taster, Free"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2274723Z               ^[[33maccessibilityRole^[[39m=^[[32m"radio"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2275310Z               ^[[33maccessibilityState^[[39m=^[[32m{
+targeted	Targeted jest	2026-10-04T19:45:09.2275724Z                 {
+targeted	Targeted jest	2026-10-04T19:45:09.2276073Z                   "disabled": false,
+targeted	Targeted jest	2026-10-04T19:45:09.2276558Z                   "selected": false,
+targeted	Targeted jest	2026-10-04T19:45:09.2276933Z                 }
+targeted	Targeted jest	2026-10-04T19:45:09.2277296Z               }^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2277753Z               ^[[33maccessible^[[39m=^[[32m{true}^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2278708Z               ^[[33mtestID^[[39m=^[[32m"package-card-11111111-2222-4333-8444-555555555555"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2279304Z             ^[[36m>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2279726Z               ^[[36m<Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2280188Z                 ^[[0mFree taster^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.2280649Z               ^[[36m</Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2281097Z               ^[[36m<Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2281513Z                 ^[[0mFree^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.2281995Z               ^[[36m</Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2282411Z             ^[[36m</View>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2282794Z             ^[[36m<View^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2283462Z               ^[[33maccessibilityLabel^[[39m=^[[32m"Monthly coaching, $99.00 a month"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2284106Z               ^[[33maccessibilityRole^[[39m=^[[32m"radio"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2284656Z               ^[[33maccessibilityState^[[39m=^[[32m{
+targeted	Targeted jest	2026-10-04T19:45:09.2285111Z                 {
+targeted	Targeted jest	2026-10-04T19:45:09.2285480Z                   "disabled": false,
+targeted	Targeted jest	2026-10-04T19:45:09.2285991Z                   "selected": false,
+targeted	Targeted jest	2026-10-04T19:45:09.2286343Z                 }
+targeted	Targeted jest	2026-10-04T19:45:09.2286722Z               }^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2287181Z               ^[[33maccessible^[[39m=^[[32m{true}^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2287872Z               ^[[33mtestID^[[39m=^[[32m"package-card-99999999-8888-4777-8666-555555555555"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2288674Z             ^[[36m>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2289084Z               ^[[36m<Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2289553Z                 ^[[0mMonthly coaching^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.2290002Z               ^[[36m</Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2290537Z               ^[[36m<Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2290974Z                 ^[[0m$99.00 a month^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.2291490Z               ^[[36m</Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2291900Z             ^[[36m</View>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2292327Z             ^[[36m<View>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2293072Z               ^[[36m<View>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2293471Z                 ^[[36m<Text^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2294185Z                   ^[[33maccessibilityRole^[[39m=^[[32m"alert"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2294957Z                   ^[[33mtestID^[[39m=^[[32m"payment-error"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2295557Z                 ^[[36m>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2296695Z                   ^[[0mThis step did not finish, and its result is not confirmed yet. Open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference f00dbabe.^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.2297688Z                 ^[[36m</Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2298594Z                 ^[[36m<View^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2299201Z                   ^[[33maccessibilityLabel^[[39m=^[[32m"Open your plan"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2299845Z                   ^[[33maccessibilityRole^[[39m=^[[32m"button"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2300403Z                   ^[[33maccessible^[[39m=^[[32m{true}^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2301028Z                   ^[[33mtestID^[[39m=^[[32m"payment-open-plan"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2301552Z                 ^[[36m>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2302035Z                   ^[[36m<Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2302568Z                     ^[[0mOpen your plan^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.2303045Z                   ^[[36m</Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2303572Z                 ^[[36m</View>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2304003Z                 ^[[36m<Text^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2304517Z                   ^[[33mtestID^[[39m=^[[32m"payment-error-reference"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2305095Z                 ^[[36m>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2305526Z                   ^[[0mReference f00dbabe^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.2306111Z                 ^[[36m</Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2306558Z                 ^[[36m<View^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2307121Z                   ^[[33maccessibilityLabel^[[39m=^[[32m"Email support"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2307803Z                   ^[[33maccessibilityRole^[[39m=^[[32m"button"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2308734Z                   ^[[33maccessible^[[39m=^[[32m{true}^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2309356Z                   ^[[33mtestID^[[39m=^[[32m"payment-support"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2309915Z                 ^[[36m>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2310371Z                   ^[[36m<Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2310883Z                     ^[[0mEmail support^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.2311393Z                   ^[[36m</Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2311859Z                 ^[[36m</View>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2312299Z               ^[[36m</View>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2312749Z             ^[[36m</View>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2313146Z             ^[[36m<View^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2314274Z               ^[[33maccessibilityLabel^[[39m=^[[32m"Pay $149.00"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2314871Z               ^[[33maccessibilityRole^[[39m=^[[32m"button"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2315416Z               ^[[33maccessibilityState^[[39m=^[[32m{
+targeted	Targeted jest	2026-10-04T19:45:09.2315948Z                 {
+targeted	Targeted jest	2026-10-04T19:45:09.2316360Z                   "busy": false,
+targeted	Targeted jest	2026-10-04T19:45:09.2316825Z                   "disabled": false,
+targeted	Targeted jest	2026-10-04T19:45:09.2317210Z                 }
+targeted	Targeted jest	2026-10-04T19:45:09.2317632Z               }^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2318387Z               ^[[33maccessible^[[39m=^[[32m{true}^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2319030Z               ^[[33mtestID^[[39m=^[[32m"select-plan-btn"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2319563Z             ^[[36m>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2320057Z               ^[[36m<Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2320562Z                 ^[[0mPay $149.00^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.2321046Z               ^[[36m</Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2321534Z             ^[[36m</View>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2321950Z             ^[[36m<View^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2322482Z               ^[[33maccessibilityLabel^[[39m=^[[32m"Skip for now"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2323119Z               ^[[33maccessibilityRole^[[39m=^[[32m"button"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2323686Z               ^[[33maccessibilityState^[[39m=^[[32m{
+targeted	Targeted jest	2026-10-04T19:45:09.2324179Z                 {
+targeted	Targeted jest	2026-10-04T19:45:09.2324573Z                   "disabled": false,
+targeted	Targeted jest	2026-10-04T19:45:09.2324979Z                 }
+targeted	Targeted jest	2026-10-04T19:45:09.2325675Z               }^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2326141Z               ^[[33maccessible^[[39m=^[[32m{true}^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2326868Z               ^[[33mtestID^[[39m=^[[32m"skip-package-btn"^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2327369Z             ^[[36m>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2327841Z               ^[[36m<Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2328676Z                 ^[[0mSkip for now^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.2329208Z               ^[[36m</Text>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2329655Z             ^[[36m</View>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2330098Z           ^[[36m</View>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2330612Z         ^[[36m</RCTScrollView>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2331038Z       ^[[36m</View>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2331486Z     ^[[36m</Modal>^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2331706Z 
+targeted	Targeted jest	2026-10-04T19:45:09.2332099Z     ^[[0m ^[[90m 413 |^[[39m     ^[[36mawait^[[39m pressSelect(r)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2333097Z      ^[[90m 414 |^[[39m     ^[[36mawait^[[39m waitFor(() ^[[33m=>^[[39m expect(r^[[33m.^[[39mgetByTestId(^[[32m'payment-open-plan'^[[39m))^[[33m.^[[39mtoBeTruthy())^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2334294Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 415 |^[[39m     expect(r^[[33m.^[[39mgetByText(label))^[[33m.^[[39mtoBeTruthy()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2335020Z      ^[[90m     |^[[39m              ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2335943Z      ^[[90m 416 |^[[39m     ^[[36mawait^[[39m fireEvent^[[33m.^[[39mpress(r^[[33m.^[[39mgetByTestId(^[[32m'payment-open-plan'^[[39m))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2336923Z      ^[[90m 417 |^[[39m     expect(r^[[33m.^[[39monPaymentSuccess)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2338023Z      ^[[90m 418 |^[[39m     ^[[36mif^[[39m (onOpenPlan) expect(onOpenPlan)^[[33m.^[[39mtoHaveBeenCalledWith(^[[36mnull^[[39m)^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.2338968Z 
+targeted	Targeted jest	2026-10-04T19:45:09.2339380Z       at getByText (src/components/__tests__/PackageSelectionSheet.payment.test.tsx:415:14)
+targeted	Targeted jest	2026-10-04T19:45:09.2340242Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T19:45:09.2341078Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T19:45:09.2341489Z 
+targeted	Targeted jest	2026-10-04T19:45:09.2341929Z FAIL src/components/__tests__/audSolSh118.openPlanAction.test.tsx (8.374 s)
+targeted	Targeted jest	2026-10-04T19:45:09.2342909Z   ● specific copy per cause › offline (no response): connection copy, nothing charged, no Stripe call
+targeted	Targeted jest	2026-10-04T19:45:09.2343405Z 
+targeted	Targeted jest	2026-10-04T19:45:09.2343682Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T19:45:09.2344034Z 
+targeted	Targeted jest	2026-10-04T19:45:09.2344650Z     Expected: "This phone is offline, so the payment did not start and nothing was charged. Check your connection, then start again."
+targeted	Targeted jest	2026-10-04T19:45:09.2351278Z     Received: "The app could not reach the server, so this step is not confirmed. Check your connection, then open your plan in Membership to see where it stands before you start again. If it is still unclear, email support and quote reference 217a76ac."
+targeted	Targeted jest	2026-10-04T19:45:09.2352393Z 
+targeted	Targeted jest	2026-10-04T19:45:09.2353479Z     ^[[0m ^[[90m 307 |^[[39m       mockPost^[[33m.^[[39mmockRejectedValueOnce(^[[33mObject^[[39m^[[33m.^[[39massign(^[[36mnew^[[39m ^[[33mError^[[39m(^[[32m'Network Error'^[[39m)^[[33m,^[[39m { config^[[33m:^[[39m {} }))^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2354447Z      ^[[90m 308 |^[[39m     )^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2355019Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 309 |^[[39m     expect(text)^[[33m.^[[39mtoBe(
+targeted	Targeted jest	2026-10-04T19:45:09.2355639Z      ^[[90m     |^[[39m                  ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2356632Z      ^[[90m 310 |^[[39m       ^[[32m'This phone is offline, so the payment did not start and nothing was charged. Check your connection, then start again.'^[[39m^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2357512Z      ^[[90m 311 |^[[39m     )^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2358559Z      ^[[90m 312 |^[[39m     expect(mockInitPaymentSheet)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.2359231Z 
+targeted	Targeted jest	2026-10-04T19:45:09.2360019Z       at Object.toBe (src/components/__tests__/audSolSh118.openPlanAction.test.tsx:309:18)
+targeted	Targeted jest	2026-10-04T19:45:09.2361006Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T19:45:09.2361897Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T19:45:09.2362195Z 
+targeted	Targeted jest	2026-10-04T19:45:09.2363084Z   ● AUD-SOL-SH-118 B-343-3 actual Day 1 callback configuration › an uncertain Open your plan action cannot silently use the payment-success/leave-onboarding callback
+targeted	Targeted jest	2026-10-04T19:45:09.2363722Z 
+targeted	Targeted jest	2026-10-04T19:45:09.2363879Z     expect(jest.fn()).not.toHaveBeenCalled()
+targeted	Targeted jest	2026-10-04T19:45:09.2364211Z 
+targeted	Targeted jest	2026-10-04T19:45:09.2364431Z     Expected number of calls: 0
+targeted	Targeted jest	2026-10-04T19:45:09.2364797Z     Received number of calls: 1
+targeted	Targeted jest	2026-10-04T19:45:09.2365034Z 
+targeted	Targeted jest	2026-10-04T19:45:09.2365225Z     1: called with 0 arguments
+targeted	Targeted jest	2026-10-04T19:45:09.2365410Z 
+targeted	Targeted jest	2026-10-04T19:45:09.2365958Z     ^[[0m ^[[90m 479 |^[[39m     expect(r^[[33m.^[[39mqueryByTestId(^[[32m'payment-success'^[[39m))^[[33m.^[[39mtoBeNull()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2367015Z      ^[[90m 480 |^[[39m     ^[[36mawait^[[39m fireEvent^[[33m.^[[39mpress(r^[[33m.^[[39mgetByTestId(^[[32m'payment-open-plan'^[[39m))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2368391Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 481 |^[[39m     expect(r^[[33m.^[[39monPaymentSuccess)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2369116Z      ^[[90m     |^[[39m                                    ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2369663Z      ^[[90m 482 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2369996Z      ^[[90m 483 |^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.2370876Z      ^[[90m 484 |^[[39m   it(^[[32m'control: an explicit plan-navigation callback receives the unknown plan id without payment success'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.2371498Z 
+targeted	Targeted jest	2026-10-04T19:45:09.2371920Z       at Object.toHaveBeenCalled (src/components/__tests__/audSolSh118.openPlanAction.test.tsx:481:36)
+targeted	Targeted jest	2026-10-04T19:45:09.2372658Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T19:45:09.2373365Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T19:45:09.2373664Z 
+targeted	Targeted jest	2026-10-04T19:45:09.2543863Z PASS src/hooks/__tests__/audSolP12117.purchaseBoundary.test.tsx
+targeted	Targeted jest	2026-10-04T19:45:09.4140608Z FAIL src/hooks/__tests__/audSolSh118.endedIsNotUnpaid.test.tsx
+targeted	Targeted jest	2026-10-04T19:45:09.4170567Z   ● AUD-SOL-SH-118 an ended subscription is not proof that no payment ever succeeded › canonical state ended / checkout null never asserts an unpaid result
+targeted	Targeted jest	2026-10-04T19:45:09.4211791Z 
+targeted	Targeted jest	2026-10-04T19:45:09.4219197Z     expect(received).not.toMatch(expected)
+targeted	Targeted jest	2026-10-04T19:45:09.4219892Z 
+targeted	Targeted jest	2026-10-04T19:45:09.4220412Z     Expected pattern: not /nothing was charged|not charged|did not go through/i
+targeted	Targeted jest	2026-10-04T19:45:09.4221643Z     Received string:      "This checkout closed before the payment finished, so nothing was charged. Choose the plan again to start a new checkout."
+targeted	Targeted jest	2026-10-04T19:45:09.4222392Z 
+targeted	Targeted jest	2026-10-04T19:45:09.4223427Z     ^[[0m ^[[90m 53 |^[[39m     ^[[36mawait^[[39m act(^[[36masync^[[39m () ^[[33m=>^[[39m { ^[[36mawait^[[39m h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstart(pkg)^[[33m;^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.4224915Z      ^[[90m 54 |^[[39m     expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate^[[33m.^[[39mnotice)^[[33m.^[[39mnot^[[33m.^[[39mtoBeNull()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.4226777Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 55 |^[[39m     expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate^[[33m.^[[39mnotice^[[33m?^[[39m^[[33m.^[[39mmessage)^[[33m.^[[39mnot^[[33m.^[[39mtoMatch(^[[35m/nothing was charged|not charged|did not go through/i^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.4228360Z      ^[[90m    |^[[39m                                                        ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.4229125Z      ^[[90m 56 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.4229628Z      ^[[90m 57 |^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.4230667Z      ^[[90m 58 |^[[39m   it(^[[32m'control: an authoritative awaiting-payment read can retain the no-charge disposition'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.4231982Z 
+targeted	Targeted jest	2026-10-04T19:45:09.4232502Z       at toMatch (src/hooks/__tests__/audSolSh118.endedIsNotUnpaid.test.tsx:55:56)
+targeted	Targeted jest	2026-10-04T19:45:09.4233558Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T19:45:09.4234619Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T19:45:09.4235179Z 
+targeted	Targeted jest	2026-10-04T19:45:09.4236251Z   ● AUD-SOL-SH-118 an ended subscription is not proof that no payment ever succeeded › canonical state confirming / checkout ended never asserts an unpaid result
+targeted	Targeted jest	2026-10-04T19:45:09.4237205Z 
+targeted	Targeted jest	2026-10-04T19:45:09.4237612Z     expect(received).not.toMatch(expected)
+targeted	Targeted jest	2026-10-04T19:45:09.4238315Z 
+targeted	Targeted jest	2026-10-04T19:45:09.4238828Z     Expected pattern: not /nothing was charged|not charged|did not go through/i
+targeted	Targeted jest	2026-10-04T19:45:09.4240140Z     Received string:      "This checkout closed before the payment finished, so nothing was charged. Choose the plan again to start a new checkout."
+targeted	Targeted jest	2026-10-04T19:45:09.4240986Z 
+targeted	Targeted jest	2026-10-04T19:45:09.4241983Z     ^[[0m ^[[90m 53 |^[[39m     ^[[36mawait^[[39m act(^[[36masync^[[39m () ^[[33m=>^[[39m { ^[[36mawait^[[39m h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstart(pkg)^[[33m;^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.4243673Z      ^[[90m 54 |^[[39m     expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate^[[33m.^[[39mnotice)^[[33m.^[[39mnot^[[33m.^[[39mtoBeNull()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.4245801Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 55 |^[[39m     expect(h^[[33m.^[[39mresult^[[33m.^[[39mcurrent^[[33m.^[[39mstate^[[33m.^[[39mnotice^[[33m?^[[39m^[[33m.^[[39mmessage)^[[33m.^[[39mnot^[[33m.^[[39mtoMatch(^[[35m/nothing was charged|not charged|did not go through/i^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.4247427Z      ^[[90m    |^[[39m                                                        ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.4248305Z      ^[[90m 56 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.4248939Z      ^[[90m 57 |^[[39m
+targeted	Targeted jest	2026-10-04T19:45:09.4250247Z      ^[[90m 58 |^[[39m   it(^[[32m'control: an authoritative awaiting-payment read can retain the no-charge disposition'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T19:45:09.4251295Z 
+targeted	Targeted jest	2026-10-04T19:45:09.4251869Z       at toMatch (src/hooks/__tests__/audSolSh118.endedIsNotUnpaid.test.tsx:55:56)
+targeted	Targeted jest	2026-10-04T19:45:09.4252884Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T19:45:09.4292064Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T19:45:09.4292741Z 
+targeted	Targeted jest	2026-10-04T19:45:09.5376306Z PASS src/components/__tests__/audOpusP12117.probe343.test.tsx
+targeted	Targeted jest	2026-10-04T19:45:11.0413334Z PASS src/components/__tests__/audSolP12117.paymentTheme.test.tsx
+targeted	Targeted jest	2026-10-04T19:45:11.0597778Z PASS src/components/__tests__/PackageSelectionSheet.contrast.test.tsx
+targeted	Targeted jest	2026-10-04T19:45:11.5834046Z A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+targeted	Targeted jest	2026-10-04T19:45:11.5847984Z 
+targeted	Targeted jest	2026-10-04T19:45:11.5853191Z Test Suites: 6 failed, 5 passed, 11 total
+targeted	Targeted jest	2026-10-04T19:45:11.5853785Z Tests:       16 failed, 86 passed, 102 total
+targeted	Targeted jest	2026-10-04T19:45:11.5854137Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T19:45:11.5854390Z Time:        11.24 s
+targeted	Targeted jest	2026-10-04T19:45:11.5856540Z Ran all test suites matching /src\/hooks\/__tests__\/usePackagePurchase.sheet2.test.tsx|src\/components\/__tests__\/PackageSelectionSheet.payment.test.tsx|src\/hooks\/__tests__\/audSolSh118.remainingBoundary.test.tsx|src\/hooks\/__tests__\/audSolSh118.endedIsNotUnpaid.test.tsx|src\/components\/__tests__\/audSolSh118.openPlanAction.test.tsx|src\/components\/__tests__\/audOpusSh118.probe343.test.tsx|src\/components\/__tests__\/audOpusP12117.probe343.test.tsx|src\/hooks\/__tests__\/audSolP12117.purchaseBoundary.test.tsx|src\/components\/__tests__\/audSolP12117.paymentTheme.test.tsx|src\/hooks\/__tests__\/usePackagePurchase.boundary.test.tsx|src\/components\/__tests__\/PackageSelectionSheet.contrast.test.tsx/i.
+targeted	Targeted jest	2026-10-04T19:45:11.5978775Z ##[error]Process completed with exit code 1.
+targeted	Post Run actions/checkout@v6	﻿2026-10-04T19:45:11.6091463Z Post job cleanup.
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.6715016Z [command]/usr/bin/git version
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.6741233Z git version 2.55.0
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.6766233Z Temporarily overriding HOME='/home/runner/work/_temp/077a6536-5a31-4060-afeb-2b803768f788' before making global git config changes
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.6766845Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.6771257Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.6793154Z Removing SSH command configuration
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.6797655Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.6821153Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.6966335Z Removing HTTP extra header
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.6969829Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.6992176Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.7133038Z Removing includeIf entries pointing to credentials config files
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.7137547Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.7155859Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.7156488Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.7157094Z includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.7157531Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.7161887Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.7175678Z /home/runner/work/_temp/git-credentials-310c6b78-f5e0-43e4-b5e2-9efe01eae98a.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.7182410Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-310c6b78-f5e0-43e4-b5e2-9efe01eae98a.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.7206074Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.7220292Z /home/runner/work/_temp/git-credentials-310c6b78-f5e0-43e4-b5e2-9efe01eae98a.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.7225998Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-310c6b78-f5e0-43e4-b5e2-9efe01eae98a.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.7249257Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.7263215Z /github/runner_temp/git-credentials-310c6b78-f5e0-43e4-b5e2-9efe01eae98a.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.7267579Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-310c6b78-f5e0-43e4-b5e2-9efe01eae98a.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.7290822Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.7305506Z /github/runner_temp/git-credentials-310c6b78-f5e0-43e4-b5e2-9efe01eae98a.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.7309937Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-310c6b78-f5e0-43e4-b5e2-9efe01eae98a.config
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.7335095Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Post Run actions/checkout@v6	2026-10-04T19:45:11.7475758Z Removing credentials config '/home/runner/work/_temp/git-credentials-310c6b78-f5e0-43e4-b5e2-9efe01eae98a.config'
+targeted	Complete job	﻿2026-10-04T19:45:11.7595473Z Cleaning up orphan processes

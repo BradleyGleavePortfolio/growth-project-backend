@@ -66,3 +66,8 @@
 - C-680-7/11/13/14/15 (Opus R34-119) follow-ups. Integration: trials #673 grants a trial on any default card and keeps its own ledger; whichever of trials/recurring lands second (trials) must keep the own-card rule and one ledger (#680 integration list, with C-673-3/C-673-4).
 - C-686-2 (fake tx in #682 test helpers never rolls back), C-686-4 (UGX coach notice amounts 100x, display only; copy follow-up after fees lands), C-686-5 -> B-DUNSPLIT D2c (coach dispute notice for recurring plans).
 - Sheet Cs (B-SHEET2-119): coach price entry x100 for every currency; paywall price display same flaw; Day 1 callers should send 'Open your plan' to Membership.
+- HC Cs (Opus H46-119): C-362-6/7/8, C-364-5; device pass before the clinic Android build (privacy link Android 13/14+, Samsung flow, Disconnect from Samsung row). Sol H46 Cs: RHR-only state, Samsung-native docs, consent/read-only copy, refresh cancellation.
+- Wizard Cs (Opus W12-119): C-345-4/5/6, C-346-4/5/6, C-346-1 rest; default one T4 follow-up after #345-#351 land.
+- Sheet Cs (Opus S12-119): C-342-7 'could not reach the server' on timeouts; C-343-7 'the team will put it right' promise; C-343-8 'Open your plan' with only 'Continue to the app' (pair with C-SH2-3); C-343-9 unused checkoutEnded string.
+- Coach Cs (B-CM5-119): C-674-6/7/8/9/11/13, C-641 float arithmetic, C-676-1/6, C-677-2 (file:line in ops/reports/B-CM5-119.md).
+- Sheet #344 Cs (B-SHEET3-119): C-344-1/5/6/8/9/10/11, C-SH3-1, one backend item (ops/reports/B-SHEET3-119.md). Land rule: #344 also needs dunning D4 #690 (cancel route).

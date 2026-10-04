@@ -32,6 +32,18 @@ Push gate: wait for B-RECUR7A-119 R2 line in lanes119/notify/recurring.txt (abse
 - C-680-15 decline `invoice_superseded` (~L1905): superseded only when the declined invoice is no longer collectible or the newer one
   is paid.
 
+## Local commits (not pushed)
+- #680 wt-1 (wip/B-RECUR7B-119-680): bef96175 merge #679 @ 23d2c04c (clean, merge-only), f267417a fix (+34/-21 incl. 5b control).
+  Size vs #679 @ 23d2c04c: +2,685/-94 = 2,779.
+- #696 wt-3 (wip/B-RECUR7B-119-696): 7392761f merge f267417a (clean), 13c9a6c8 new test file (287 lines). Size vs #680: +2,197.
+- #701 wt-4 (wip/B-RECUR7B-119-701): d624144c merge 13c9a6c8 into #701 @ 5e8f1ceb (B-RECUR7A tests kept), clean.
+- Local targeted jest on composed top d624144c: 30 suites / 418 tests pass. Failing-before local (wt-2 85f539ac): 24 fail / 20 pass.
+- Probe replay (wt-5, d624144c + all prior probes, local non-PG): 7 fail / 131 pass, all by design/known:
+  sol-r3-116 unshimmed x2 (legacy fixture; shim passes), opus-r34-117 observation (paid invoice re-grants canceled row: now kept
+  revoked, B-680-1), sol-r34r5-117 B-680-5 exact call shape (known), opus-r34-119 paired-update no-redelivery control (B-680-2
+  rule change: one redelivery), opus C-680-13 (follow-up), sol-r34-117 concurrency B-680-2 narrowed (handle now throws redeliver
+  instead of resolving; no dunning, row unchanged).
+
 ## Log
 - 12:46 rules read; lock taken. 12:50 operator message received. 12:55 fix + tests written locally.
 

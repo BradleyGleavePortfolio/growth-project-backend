@@ -1,0 +1,121 @@
+targeted	Targeted jest	﻿2026-10-04T19:57:18.2740944Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T19:57:18.2741305Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T19:57:18.2741694Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T19:57:18.2742206Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T19:57:18.2742580Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T19:57:18.2742880Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T19:57:18.2806275Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T19:57:18.2806640Z env:
+targeted	Targeted jest	2026-10-04T19:57:18.2806870Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T19:57:18.2807244Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T19:57:18.2807586Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T19:57:18.2906506Z specs: test/b-recur7a-119-r2.spec.ts
+targeted	Targeted jest	2026-10-04T19:57:20.7931682Z FAIL test/b-recur7a-119-r2.spec.ts (94 MB heap size)
+targeted	Targeted jest	2026-10-04T19:57:20.7935005Z   Sol B-679-10 a customer default is never a settled trial
+targeted	Targeted jest	2026-10-04T19:57:20.7937991Z     ✓ control: a failed own SetupIntent create recovers on unchanged terms (own sheet, end kept) (9 ms)
+targeted	Targeted jest	2026-10-04T19:57:20.7939722Z     ✕ (failed before) trial removed after a failed own SetupIntent: attempt expired, trial ended, no active claim (5 ms)
+targeted	Targeted jest	2026-10-04T19:57:20.7941424Z     ✕ (failed before) price changed after a failed own SetupIntent: attempt expired, trial ended, no active claim (2 ms)
+targeted	Targeted jest	2026-10-04T19:57:20.7942985Z     ✕ (failed before) Opus C-679-4: ephemeral key failed, price changed, same key: never ALREADY_ACTIVE (2 ms)
+targeted	Targeted jest	2026-10-04T19:57:20.7944596Z     ✓ control: the own saved card (end lifted) still answers settled, nothing canceled (2 ms)
+targeted	Targeted jest	2026-10-04T19:57:20.7946102Z   Sol B-679-11 the plan list is complete for live plans
+targeted	Targeted jest	2026-10-04T19:57:20.7947255Z     ✕ (failed before) fifty newer abandoned attempts never hide an older paid plan (5 ms)
+targeted	Targeted jest	2026-10-04T19:57:20.7948788Z     ✕ (failed before) sixty ended plans: history capped at fifty, the older live plans all listed (2 ms)
+targeted	Targeted jest	2026-10-04T19:57:20.7950267Z     ✓ control: newest first, unpaid abandoned hidden, another client never listed (1 ms)
+targeted	Targeted jest	2026-10-04T19:57:20.7950935Z 
+targeted	Targeted jest	2026-10-04T19:57:20.7952321Z   ● Sol B-679-10 a customer default is never a settled trial › (failed before) trial removed after a failed own SetupIntent: attempt expired, trial ended, no active claim
+targeted	Targeted jest	2026-10-04T19:57:20.7953427Z 
+targeted	Targeted jest	2026-10-04T19:57:20.7953799Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T19:57:20.7954498Z 
+targeted	Targeted jest	2026-10-04T19:57:20.7954769Z     Expected: "SUBSCRIPTION_ATTEMPT_EXPIRED"
+targeted	Targeted jest	2026-10-04T19:57:20.7955532Z     Received: "SUBSCRIPTION_ALREADY_ACTIVE"
+targeted	Targeted jest	2026-10-04T19:57:20.7955898Z 
+targeted	Targeted jest	2026-10-04T19:57:20.7957715Z     ^[[0m ^[[90m  96 |^[[39m       ^[[36melse^[[39m ^[[33mObject^[[39m^[[33m.^[[39massign(f^[[33m.^[[39mdb^[[33m.^[[39m_packages[^[[35m0^[[39m]^[[33m,^[[39m { amount_cents^[[33m:^[[39m ^[[35m5900^[[39m^[[33m,^[[39m stripe_price_id^[[33m:^[[39m ^[[32m'price_5900'^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.7959822Z      ^[[90m  97 |^[[39m       ^[[36mconst^[[39m out ^[[33m=^[[39m ^[[36mawait^[[39m result(intent(f))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.7961595Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m  98 |^[[39m       expect(out^[[33m.^[[39mbody^[[33m?^[[39m^[[33m.^[[39mcode)^[[33m.^[[39mtoBe(^[[32m'SUBSCRIPTION_ATTEMPT_EXPIRED'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.7962956Z      ^[[90m     |^[[39m                              ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.7964927Z      ^[[90m  99 |^[[39m       expect(f^[[33m.^[[39mstripe^[[33m.^[[39m_subs^[[33m.^[[39m^[[36mget^[[39m(^[[32m'sub_1'^[[39m)^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(^[[32m'canceled'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.7967508Z      ^[[90m 100 |^[[39m       expect(f^[[33m.^[[39mdb^[[33m.^[[39m_purchases[^[[35m0^[[39m])^[[33m.^[[39mtoMatchObject({ entitlement_active^[[33m:^[[39m ^[[36mfalse^[[39m^[[33m,^[[39m status^[[33m:^[[39m ^[[32m'expired'^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.7969068Z      ^[[90m 101 |^[[39m     }^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:57:20.7969406Z 
+targeted	Targeted jest	2026-10-04T19:57:20.7969664Z       at test/b-recur7a-119-r2.spec.ts:98:30
+targeted	Targeted jest	2026-10-04T19:57:20.7970036Z 
+targeted	Targeted jest	2026-10-04T19:57:20.7971753Z   ● Sol B-679-10 a customer default is never a settled trial › (failed before) price changed after a failed own SetupIntent: attempt expired, trial ended, no active claim
+targeted	Targeted jest	2026-10-04T19:57:20.7972860Z 
+targeted	Targeted jest	2026-10-04T19:57:20.7973284Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T19:57:20.7973722Z 
+targeted	Targeted jest	2026-10-04T19:57:20.7974238Z     Expected: "SUBSCRIPTION_ATTEMPT_EXPIRED"
+targeted	Targeted jest	2026-10-04T19:57:20.7974820Z     Received: "SUBSCRIPTION_ALREADY_ACTIVE"
+targeted	Targeted jest	2026-10-04T19:57:20.7975163Z 
+targeted	Targeted jest	2026-10-04T19:57:20.7976970Z     ^[[0m ^[[90m  96 |^[[39m       ^[[36melse^[[39m ^[[33mObject^[[39m^[[33m.^[[39massign(f^[[33m.^[[39mdb^[[33m.^[[39m_packages[^[[35m0^[[39m]^[[33m,^[[39m { amount_cents^[[33m:^[[39m ^[[35m5900^[[39m^[[33m,^[[39m stripe_price_id^[[33m:^[[39m ^[[32m'price_5900'^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.7979083Z      ^[[90m  97 |^[[39m       ^[[36mconst^[[39m out ^[[33m=^[[39m ^[[36mawait^[[39m result(intent(f))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.7980816Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m  98 |^[[39m       expect(out^[[33m.^[[39mbody^[[33m?^[[39m^[[33m.^[[39mcode)^[[33m.^[[39mtoBe(^[[32m'SUBSCRIPTION_ATTEMPT_EXPIRED'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.7982217Z      ^[[90m     |^[[39m                              ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.7983850Z      ^[[90m  99 |^[[39m       expect(f^[[33m.^[[39mstripe^[[33m.^[[39m_subs^[[33m.^[[39m^[[36mget^[[39m(^[[32m'sub_1'^[[39m)^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(^[[32m'canceled'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.7986623Z      ^[[90m 100 |^[[39m       expect(f^[[33m.^[[39mdb^[[33m.^[[39m_purchases[^[[35m0^[[39m])^[[33m.^[[39mtoMatchObject({ entitlement_active^[[33m:^[[39m ^[[36mfalse^[[39m^[[33m,^[[39m status^[[33m:^[[39m ^[[32m'expired'^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.7988449Z      ^[[90m 101 |^[[39m     }^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:57:20.7988794Z 
+targeted	Targeted jest	2026-10-04T19:57:20.7989048Z       at test/b-recur7a-119-r2.spec.ts:98:30
+targeted	Targeted jest	2026-10-04T19:57:20.7989489Z 
+targeted	Targeted jest	2026-10-04T19:57:20.7990583Z   ● Sol B-679-10 a customer default is never a settled trial › (failed before) Opus C-679-4: ephemeral key failed, price changed, same key: never ALREADY_ACTIVE
+targeted	Targeted jest	2026-10-04T19:57:20.7991517Z 
+targeted	Targeted jest	2026-10-04T19:57:20.7991834Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T19:57:20.7992230Z 
+targeted	Targeted jest	2026-10-04T19:57:20.7992472Z     Expected: "SUBSCRIPTION_ATTEMPT_EXPIRED"
+targeted	Targeted jest	2026-10-04T19:57:20.7993036Z     Received: "SUBSCRIPTION_ALREADY_ACTIVE"
+targeted	Targeted jest	2026-10-04T19:57:20.7993346Z 
+targeted	Targeted jest	2026-10-04T19:57:20.7994508Z     ^[[0m ^[[90m 109 |^[[39m     f^[[33m.^[[39mdb^[[33m.^[[39m_packages[^[[35m0^[[39m]^[[33m.^[[39mamount_cents ^[[33m=^[[39m ^[[35m5900^[[39m^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.7995959Z      ^[[90m 110 |^[[39m     ^[[36mconst^[[39m out ^[[33m=^[[39m ^[[36mawait^[[39m result(intent(f))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.7997734Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 111 |^[[39m     expect(out^[[33m.^[[39mbody^[[33m?^[[39m^[[33m.^[[39mcode)^[[33m.^[[39mtoBe(^[[32m'SUBSCRIPTION_ATTEMPT_EXPIRED'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.7999102Z      ^[[90m     |^[[39m                            ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.8000715Z      ^[[90m 112 |^[[39m     expect(f^[[33m.^[[39mstripe^[[33m.^[[39m_subs^[[33m.^[[39m^[[36mget^[[39m(^[[32m'sub_1'^[[39m)^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(^[[32m'canceled'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.8001986Z      ^[[90m 113 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.8002517Z      ^[[90m 114 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:57:20.8002783Z 
+targeted	Targeted jest	2026-10-04T19:57:20.8003197Z       at Object.<anonymous> (test/b-recur7a-119-r2.spec.ts:111:28)
+targeted	Targeted jest	2026-10-04T19:57:20.8003668Z 
+targeted	Targeted jest	2026-10-04T19:57:20.8005010Z   ● Sol B-679-11 the plan list is complete for live plans › (failed before) fifty newer abandoned attempts never hide an older paid plan
+targeted	Targeted jest	2026-10-04T19:57:20.8005905Z 
+targeted	Targeted jest	2026-10-04T19:57:20.8006254Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T19:57:20.8006700Z 
+targeted	Targeted jest	2026-10-04T19:57:20.8006887Z     - Expected  - 3
+targeted	Targeted jest	2026-10-04T19:57:20.8007296Z     + Received  + 1
+targeted	Targeted jest	2026-10-04T19:57:20.8007538Z 
+targeted	Targeted jest	2026-10-04T19:57:20.8007696Z     - Array [
+targeted	Targeted jest	2026-10-04T19:57:20.8008088Z     -   "pur_live_old",
+targeted	Targeted jest	2026-10-04T19:57:20.8008492Z     - ]
+targeted	Targeted jest	2026-10-04T19:57:20.8008921Z     + Array []
+targeted	Targeted jest	2026-10-04T19:57:20.8009452Z 
+targeted	Targeted jest	2026-10-04T19:57:20.8010338Z     ^[[0m ^[[90m 167 |^[[39m     push(f^[[33m,^[[39m ^[[35m50^[[39m^[[33m,^[[39m { status^[[33m:^[[39m ^[[32m'expired'^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.8012657Z      ^[[90m 168 |^[[39m     ^[[36mconst^[[39m ids ^[[33m=^[[39m (^[[36mawait^[[39m f^[[33m.^[[39mservice^[[33m.^[[39mlistPlans(^[[33mCLIENT^[[39m))^[[33m.^[[39mmap((p) ^[[33m=>^[[39m p^[[33m.^[[39mpurchase_id)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.8015067Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 169 |^[[39m     expect(ids)^[[33m.^[[39mtoEqual([^[[32m'pur_live_old'^[[39m])^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.8016276Z      ^[[90m     |^[[39m                 ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.8017051Z      ^[[90m 170 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.8017642Z      ^[[90m 171 |^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.8019277Z      ^[[90m 172 |^[[39m   it(^[[32m'(failed before) sixty ended plans: history capped at fifty, the older live plans all listed'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T19:57:20.8020492Z 
+targeted	Targeted jest	2026-10-04T19:57:20.8020935Z       at Object.<anonymous> (test/b-recur7a-119-r2.spec.ts:169:17)
+targeted	Targeted jest	2026-10-04T19:57:20.8021433Z 
+targeted	Targeted jest	2026-10-04T19:57:20.8022733Z   ● Sol B-679-11 the plan list is complete for live plans › (failed before) sixty ended plans: history capped at fifty, the older live plans all listed
+targeted	Targeted jest	2026-10-04T19:57:20.8023879Z 
+targeted	Targeted jest	2026-10-04T19:57:20.8024415Z     expect(received).toHaveLength(expected)
+targeted	Targeted jest	2026-10-04T19:57:20.8024964Z 
+targeted	Targeted jest	2026-10-04T19:57:20.8025169Z     Expected length: 52
+targeted	Targeted jest	2026-10-04T19:57:20.8025646Z     Received length: 50
+targeted	Targeted jest	2026-10-04T19:57:20.8027737Z     Received array:  ["pur_canceled_59", "pur_canceled_58", "pur_canceled_57", "pur_canceled_56", "pur_canceled_55", "pur_canceled_54", "pur_canceled_53", "pur_canceled_52", "pur_canceled_51", "pur_canceled_50", …]
+targeted	Targeted jest	2026-10-04T19:57:20.8029481Z 
+targeted	Targeted jest	2026-10-04T19:57:20.8030511Z     ^[[0m ^[[90m 179 |^[[39m     push(f^[[33m,^[[39m ^[[35m60^[[39m^[[33m,^[[39m { status^[[33m:^[[39m ^[[32m'canceled'^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.8032931Z      ^[[90m 180 |^[[39m     ^[[36mconst^[[39m ids ^[[33m=^[[39m (^[[36mawait^[[39m f^[[33m.^[[39mservice^[[33m.^[[39mlistPlans(^[[33mCLIENT^[[39m))^[[33m.^[[39mmap((p) ^[[33m=>^[[39m p^[[33m.^[[39mpurchase_id)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.8034510Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 181 |^[[39m     expect(ids)^[[33m.^[[39mtoHaveLength(^[[35m52^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.8035139Z      ^[[90m     |^[[39m                 ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.8036117Z      ^[[90m 182 |^[[39m     expect(ids^[[33m.^[[39mslice(^[[33m-^[[39m^[[35m2^[[39m)^[[33m.^[[39msort())^[[33m.^[[39mtoEqual([^[[32m'pur_live_old'^[[39m^[[33m,^[[39m ^[[32m'pur_past_due'^[[39m])^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.8037162Z      ^[[90m 183 |^[[39m     expect(ids[^[[35m0^[[39m])^[[33m.^[[39mtoBe(^[[32m'pur_canceled_59'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T19:57:20.8038003Z      ^[[90m 184 |^[[39m     expect(ids)^[[33m.^[[39mnot^[[33m.^[[39mtoContain(^[[32m'pur_canceled_9'^[[39m)^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T19:57:20.8038422Z 
+targeted	Targeted jest	2026-10-04T19:57:20.8038667Z       at Object.<anonymous> (test/b-recur7a-119-r2.spec.ts:181:17)
+targeted	Targeted jest	2026-10-04T19:57:20.8038962Z 
+targeted	Targeted jest	2026-10-04T19:57:20.8039154Z Test Suites: 1 failed, 1 total
+targeted	Targeted jest	2026-10-04T19:57:20.8039515Z Tests:       5 failed, 3 passed, 8 total
+targeted	Targeted jest	2026-10-04T19:57:20.8039832Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T19:57:20.8040103Z Time:        1.686 s
+targeted	Targeted jest	2026-10-04T19:57:20.8040520Z Ran all test suites matching test/b-recur7a-119-r2.spec.ts.
+targeted	Targeted jest	2026-10-04T19:57:20.8307526Z ##[error]Process completed with exit code 1.
