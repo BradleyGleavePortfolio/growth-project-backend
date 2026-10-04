@@ -4,7 +4,8 @@
 // the 15-minute sweep) from what Stripe holds. B-676-3 (writer half): every
 // posting of one event carries the event's own time. Real handler, ledger and
 // orchestrator over the stateful double; only Stripe is synthetic (it keeps
-// keys until expireKeys(), as Stripe does for 24 hours).
+// keys until expireKeys(), as Stripe does for 24 hours). B-CM3-117: B-674-11
+// fair sweep claims, B-674-12 one database-elected first close.
 import 'reflect-metadata';
 import * as Sentry from '@sentry/node';
 import { StripeConnectApiError } from '../src/connect/stripe-connect-api.service';
@@ -23,10 +24,11 @@ const timeout = () =>
   new StripeConnectApiError('Stripe API timed out', 503, 'request_timeout', 'api_connection_error');
 
 // A team sale: the 245-cent head-coach transfer is linked to its slice.
-function teamSale(id: string, at: Date) {
-  const h = harness();
+function addTeamSale(h: ReturnType<typeof harness>, id: string, at: Date) {
   seedPurchase(h.db, id, at);
-  const fee = (h.db.state.splitLedgerEntry as Row[]).find((s) => s.kind === 'application_fee')!;
+  const fee = (h.db.state.splitLedgerEntry as Row[]).find(
+    (s) => s.purchase_id === id && s.kind === 'application_fee',
+  )!;
   h.db.state.splitLedgerEntry.push({
     ...fee,
     id: `${id}-head`,
@@ -34,7 +36,12 @@ function teamSale(id: string, at: Date) {
     payee_user_id: 'head-1',
     amount_cents: 245,
   });
-  h.db.state.connectTransfer[0].ledger_entry_id = `${id}-head`;
+  (h.db.state.connectTransfer as Row[]).find((t) => t.purchase_id === id)!.ledger_entry_id =
+    `${id}-head`;
+}
+function teamSale(id: string, at: Date) {
+  const h = harness();
+  addTeamSale(h, id, at);
   const postings = (source?: string) =>
     (h.db.state.splitLedgerReversal as Row[]).filter(
       (r) => r.entry_id === `${id}-head` && (!source || r.source_id === source),
@@ -153,6 +160,82 @@ describe('B-674-5 / B-674-10 — a lost chargeback reverses the head-coach share
   });
 });
 
+describe('B-674-11 — the chargeback sweep reaches every owed reversal across bounded runs', () => {
+  // `n` lost chargebacks on team sales, first attempted 24 hours ago (amount
+  // stamped, Stripe holds nothing), never claimed by the sweep yet.
+  function owed(n: number) {
+    const h = harness();
+    const at = new Date(Date.now() - 24 * HOUR);
+    const ids = Array.from({ length: n }, (_, i) => String(i).padStart(3, '0'));
+    for (const i of ids) {
+      addTeamSale(h, `p-${i}`, at);
+      h.db.state.chargeDispute.push({
+        id: `d-${i}`,
+        stripe_dispute_id: `dp_${i}`,
+        purchase_id: `p-${i}`,
+        stripe_charge_id: `ch_p-${i}`,
+        amount_cents: 2450,
+        status: 'lost',
+        ledger_reversed: true,
+        closed_at: at,
+        transfer_reversal_amount_cents: 122,
+        transfer_reversal_first_attempt_at: at,
+        transfer_reversal_last_attempt_at: null,
+        transfer_reversed_at: null,
+        transfer_reversal_stripe_id: null,
+        created_at: at,
+        updated_at: at,
+      });
+    }
+    const made = h.reverseTransfer.getMockImplementation()!;
+    // Even-numbered chargebacks fail at Stripe on every attempt.
+    h.reverseTransfer.mockImplementation(async (a) => {
+      if (Number(a.transfer_id.slice(-3)) % 2 === 0) throw timeout();
+      return made(a);
+    });
+    const tried = () =>
+      h.reverseTransfer.mock.calls.map(([a]) => a.metadata!.tgp_charge_dispute_id);
+    return { ...h, ids, tried };
+  }
+  const stuck = () =>
+    captureMessage.mock.calls
+      .filter(([m]) => m === 'head-coach transfer reversal for a lost chargeback still owed')
+      .map(([, ctx]) => (ctx as { extra: { charge_dispute_id: string } }).extra.charge_dispute_id);
+
+  it('45 owed, 20 claims a run: three restarted runs reach all, reverse the recoverable, alert the stuck', async () => {
+    const h = owed(45);
+    const t = Date.now();
+    const perRun: string[][] = [];
+    for (let k = 0; k < 3; k++) {
+      const before = h.tried().length;
+      const svc = k === 0 ? h.svc : h.restart();
+      const out = await svc.retryPendingTransferReversals(new Date(t + k * 15 * 60_000), 1);
+      expect(out.retried).toBe(20);
+      perRun.push(h.tried().slice(before));
+    }
+    for (const run of perRun) expect(new Set(run).size).toBe(20);
+    expect(new Set(perRun.flat())).toEqual(new Set(h.ids.map((i) => `d-${i}`)));
+    const odd = h.ids.filter((i) => Number(i) % 2 === 1);
+    expect(odd.map((i) => h.headCoach(`p-${i}`))).toEqual(odd.map(() => 122));
+    expect(odd.map((i) => h.stripeTotal(`tr_p-${i}`))).toEqual(odd.map(() => 122));
+    const even = h.ids.filter((i) => Number(i) % 2 === 0);
+    expect(new Set(stuck())).toEqual(new Set(even.map((i) => `d-${i}`)));
+  });
+
+  it('two overlapping sweeps claim each chargeback once; a run inside the cooldown claims none', async () => {
+    const h = owed(10);
+    const now = new Date();
+    const runs = await Promise.all([
+      h.svc.retryPendingTransferReversals(now, 1),
+      h.restart().retryPendingTransferReversals(now, 1),
+    ]);
+    expect(runs[0].retried + runs[1].retried).toBe(10);
+    expect([...h.tried()].sort()).toEqual(h.ids.map((i) => `d-${i}`));
+    const soon = await h.svc.retryPendingTransferReversals(new Date(now.getTime() + 5 * 60_000));
+    expect(soon.retried).toBe(0);
+  });
+});
+
 describe('B-674-5 — transfer.reversed alerts on a reversal no refund or chargeback owes', () => {
   const reversed = (cents: number) => ({
     id: 'evt_tr',
@@ -250,6 +333,48 @@ describe('B-676-3 (writer) — every posting of one event carries the event time
       inline: [t1.toISOString()],
     });
     expect(h.state()).toMatchObject({ stripe: 98, transfer: 98, slice: 98 });
+  });
+});
+
+describe('B-674-12 — overlapping first closes keep one canonical closed_at', () => {
+  it('a delivery that read closed_at=null before another wrote it moves neither closed_at nor a posting', async () => {
+    const t0 = new Date('2027-03-20T23:59:59.999Z');
+    jest.useFakeTimers({
+      doNotFake: ['nextTick', 'setImmediate', 'setTimeout', 'setInterval', 'queueMicrotask'],
+    });
+    jest.setSystemTime(t0);
+    const h = lostDispute(2450);
+    const gate = () => {
+      let open!: () => void;
+      const at = new Promise<void>((r) => (open = r));
+      return { at, open: () => open() };
+    };
+    const [enterA, enterB, goA, goB] = [gate(), gate(), gate(), gate()];
+    const update = h.db.chargeDispute.update.bind(h.db.chargeDispute);
+    let closes = 0;
+    // Each close write waits after its delivery read closed_at=null.
+    h.db.chargeDispute.update = jest.fn(async (args: Row) => {
+      if (args.data.closed_at && closes < 2) {
+        const first = closes++ === 0;
+        (first ? enterA : enterB).open();
+        await (first ? goA : goB).at;
+      }
+      return update(args);
+    });
+    const a = h.svc.handle(h.closed('evt_a'));
+    await enterA.at;
+    jest.setSystemTime(t0.getTime() + 1);
+    const b = h.svc.handle(h.closed('evt_b'));
+    await enterB.at;
+    goA.open();
+    await a;
+    goB.open();
+    await b;
+    await h.svc.handle(h.closed('evt_c'));
+    expect(h.dispute()).toMatchObject({ closed_at: t0, status: 'lost', ledger_reversed: true });
+    const times = (h.db.state.splitLedgerReversal as Row[]).map((r) => r.posted_at);
+    expect(times).toEqual(Array(3).fill(t0));
+    expect(h.state()).toMatchObject({ stripe: 122, transfer: 122, slice: 122 });
   });
 });
 
