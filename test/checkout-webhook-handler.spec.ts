@@ -1,3 +1,4 @@
+import { ServiceUnavailableException } from '@nestjs/common';
 import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
 import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
 
@@ -19,6 +20,18 @@ function makeSplitsStub() {
       transfer_enqueued: false,
     })),
   };
+}
+
+// Where-clause match of the in-memory stub: equality, `null`, and the
+// `{ in: [...] }` status match the handler uses (B-661-1, B-661-3).
+function matchesWhere(row: Record<string, unknown>, where: Record<string, unknown>): boolean {
+  return Object.entries(where).every(([k, v]) => {
+    if (v === null) return row[k] === null;
+    if (v && typeof v === 'object' && 'in' in v) {
+      return (v as { in: unknown[] }).in.includes(row[k]);
+    }
+    return row[k] === v;
+  });
 }
 
 function makePrisma() {
@@ -59,22 +72,21 @@ function makePrisma() {
         }) ?? null,
       ),
       findFirst: jest.fn(async ({ where }: any) =>
-        purchases.find((p) =>
-          Object.entries(where).every(([k, v]) => {
-            if (v === null) return p[k] === null;
-            // B-661-1: `{ in: [...] }` is the status match payment_intent.succeeded uses.
-            if (v && typeof v === 'object' && 'in' in v) {
-              return (v as { in: unknown[] }).in.includes(p[k]);
-            }
-            return p[k] === v;
-          }),
-        ) ?? null,
+        purchases.find((p) => matchesWhere(p, where)) ?? null,
       ),
       update: jest.fn(async ({ where, data }: any) => {
         const row = purchases.find((p) => p.id === where.id);
         if (!row) throw new Error('not found');
         Object.assign(row, data, { updated_at: new Date() });
         return { ...row };
+      }),
+      // B-661-3: a compare-and-set write. Like Postgres, it re-checks the
+      // whole predicate (status included) at write time and reports how many
+      // rows it changed.
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        const rows = purchases.filter((p) => matchesWhere(p, where));
+        for (const row of rows) Object.assign(row, data, { updated_at: new Date() });
+        return { count: rows.length };
       }),
     },
     connectCustomer: {
@@ -1059,5 +1071,290 @@ describe('B-661-1 decline, then a successful retry of the same PaymentIntent', (
     });
     const result = await svc.handle(succeeded, txFixture(prisma), {});
     expect(result.claimed).toBe(false);
+  });
+});
+
+// B-661-3 (Sol, round 3): payment_intent.payment_failed matched its purchase by
+// PaymentIntent id with no status fence, so a decline delivered late (after a
+// successful retry of the same PaymentIntent) flipped the paid purchase to
+// payment_failed and dropped access. A decline now only writes a purchase that
+// may still fail; a settled purchase ends access only when Stripe says the
+// PaymentIntent did not complete.
+describe('B-661-3 a late-delivered earlier decline never revokes a successful retry', () => {
+  const secrets = {
+    stripe_client_secret: 'pi_r3_secret_canary',
+    stripe_ephemeral_key: 'ek_test_canary',
+  };
+  const declined = (eventId: string, piId = 'pi_r3') => ({
+    id: eventId,
+    type: 'payment_intent.payment_failed',
+    data: { object: { id: piId, last_payment_error: { message: 'card_declined' } } },
+  });
+  const succeeded = {
+    id: 'evt_r3_ok',
+    type: 'payment_intent.succeeded',
+    data: { object: { id: 'pi_r3', latest_charge: 'ch_r3' } },
+  };
+
+  function seedPending(prisma: ReturnType<typeof makePrisma>) {
+    prisma._packages.push({ id: 'pkg-r3', billing_type: 'one_time' });
+    prisma._purchases.push({
+      id: 'cp-r3',
+      package_id: 'pkg-r3',
+      stripe_payment_intent_id: 'pi_r3',
+      status: 'pending',
+      entitlement_active: false,
+      last_error: null,
+      created_at: new Date(),
+      ...secrets,
+    });
+  }
+
+  // BillingService.handleEvent order: prefetch out of the tx, then handle
+  // inside the webhook tx.
+  async function deliver(
+    svc: CheckoutWebhookHandlerService,
+    prisma: ReturnType<typeof makePrisma>,
+    event: { id: string; type: string; data: { object: Record<string, unknown> } },
+  ) {
+    const prefetched = await svc.prefetchForOuterTx(event);
+    return svc.handle(event, txFixture(prisma), prefetched);
+  }
+
+  function expectPaidAndEntitled(prisma: ReturnType<typeof makePrisma>) {
+    expect(prisma._purchases[0].status).toBe('paid');
+    expect(prisma._purchases[0].entitlement_active).toBe(true);
+    expect(prisma._purchases[0].last_error).toBeNull();
+    expect(prisma._purchases[0].stripe_client_secret).toBeNull();
+    expect(prisma._purchases[0].stripe_ephemeral_key).toBeNull();
+  }
+
+  it('failed, then succeeded, then an earlier decline arrives late: the purchase stays paid and entitled', async () => {
+    const { svc, prisma, stripe } = makeHandlerWithSplits();
+    seedPending(prisma);
+
+    await deliver(svc, prisma, declined('evt_r3_decline_1'));
+    expect(prisma._purchases[0].status).toBe('payment_failed');
+    // A purchase that may still fail never needs Stripe to decide.
+    expect(stripe.retrievePaymentIntent).not.toHaveBeenCalled();
+
+    await deliver(svc, prisma, succeeded);
+    expectPaidAndEntitled(prisma);
+
+    stripe.retrievePaymentIntent.mockResolvedValue({ id: 'pi_r3', status: 'succeeded' });
+    const late = await deliver(svc, prisma, declined('evt_r3_decline_2'));
+
+    expectPaidAndEntitled(prisma);
+    expect(late.claimed).toBe(true);
+    expect(late.reason).toBe('stale_failure');
+    expect(stripe.retrievePaymentIntent).toHaveBeenCalledWith('pi_r3');
+  });
+
+  it('the same late decline on the no-transaction path asks Stripe inline and stays paid', async () => {
+    const { svc, prisma, stripe } = makeHandlerWithSplits();
+    seedPending(prisma);
+    await svc.handle(succeeded, txFixture(prisma), { chargeIdByPurchaseId: { 'cp-r3': 'ch_r3' } });
+    expectPaidAndEntitled(prisma);
+
+    stripe.retrievePaymentIntent.mockResolvedValue({ id: 'pi_r3', status: 'succeeded' });
+    const late = await svc.handle(declined('evt_r3_decline_nt'));
+
+    expectPaidAndEntitled(prisma);
+    expect(late.reason).toBe('stale_failure');
+  });
+
+  it('Stripe cannot confirm the PaymentIntent status: the webhook transaction throws (Stripe redelivers) and the paid purchase is untouched', async () => {
+    const { svc, prisma, stripe } = makeHandlerWithSplits();
+    seedPending(prisma);
+    await svc.handle(succeeded, txFixture(prisma), { chargeIdByPurchaseId: { 'cp-r3': 'ch_r3' } });
+
+    stripe.retrievePaymentIntent.mockRejectedValue(new Error('stripe_unavailable'));
+    const event = declined('evt_r3_decline_unknown');
+    const prefetched = await svc.prefetchForOuterTx(event);
+    const callsBeforeTx = stripe.retrievePaymentIntent.mock.calls.length;
+
+    await expect(svc.handle(event, txFixture(prisma), prefetched)).rejects.toThrow(
+      ServiceUnavailableException,
+    );
+    // No Stripe HTTP inside the webhook transaction.
+    expect(stripe.retrievePaymentIntent.mock.calls.length).toBe(callsBeforeTx);
+    expectPaidAndEntitled(prisma);
+  });
+
+  it('a success that commits between the decline reading the purchase and writing it wins; the redelivered decline is a no-op', async () => {
+    const { svc, prisma, stripe } = makeHandlerWithSplits();
+    seedPending(prisma);
+    const event = declined('evt_r3_decline_race');
+    // The decline's out-of-tx prefetch sees a purchase that may still fail.
+    const prefetched = await svc.prefetchForOuterTx(event);
+
+    const readPurchase = prisma.clientPurchase.findFirst.getMockImplementation();
+    prisma.clientPurchase.findFirst.mockImplementationOnce(async (args: unknown) => {
+      // The decline's in-tx read sees `pending` ...
+      const snapshot = { ...(await readPurchase(args)) };
+      // ... then the success of the same PaymentIntent commits before the
+      // decline writes.
+      await svc.handle(succeeded, txFixture(prisma), { chargeIdByPurchaseId: { 'cp-r3': 'ch_r3' } });
+      return snapshot;
+    });
+
+    await expect(svc.handle(event, txFixture(prisma), prefetched)).rejects.toThrow(
+      ServiceUnavailableException,
+    );
+    expectPaidAndEntitled(prisma);
+
+    // Stripe redelivers the decline; the PaymentIntent succeeded.
+    stripe.retrievePaymentIntent.mockResolvedValue({ id: 'pi_r3', status: 'succeeded' });
+    const redelivered = await deliver(svc, prisma, event);
+    expect(redelivered.reason).toBe('stale_failure');
+    expectPaidAndEntitled(prisma);
+  });
+
+  it('(control) an ordinary decline of a pending purchase is applied and keeps the credentials for the retry', async () => {
+    const { svc, prisma, stripe } = makeHandlerWithSplits();
+    seedPending(prisma);
+    const result = await deliver(svc, prisma, declined('evt_r3_decline_plain'));
+    expect(result.claimed).toBe(true);
+    expect(prisma._purchases[0].status).toBe('payment_failed');
+    expect(prisma._purchases[0].entitlement_active).toBe(false);
+    expect(prisma._purchases[0].last_error).toBe('card_declined');
+    expect(prisma._purchases[0].stripe_client_secret).toBe(secrets.stripe_client_secret);
+    expect(stripe.retrievePaymentIntent).not.toHaveBeenCalled();
+  });
+
+  it.each(['requires_payment_method', 'canceled'])(
+    '(control) a real failure after the purchase settled (Stripe says the PaymentIntent is %s) still ends access',
+    async (piStatus) => {
+      // e.g. a hosted checkout completed while an asynchronous payment was
+      // processing, and that payment then failed.
+      const { svc, prisma, stripe } = makeHandlerWithSplits();
+      prisma._purchases.push({
+        id: 'cp-r3-async',
+        package_id: 'pkg-r3',
+        stripe_payment_intent_id: 'pi_r3',
+        status: 'paid',
+        entitlement_active: true,
+        last_error: null,
+        created_at: new Date(),
+      });
+      stripe.retrievePaymentIntent.mockResolvedValue({ id: 'pi_r3', status: piStatus });
+      const result = await deliver(svc, prisma, declined('evt_r3_async'));
+      expect(result.claimed).toBe(true);
+      expect(prisma._purchases[0].status).toBe('payment_failed');
+      expect(prisma._purchases[0].entitlement_active).toBe(false);
+      expect(prisma._purchases[0].last_error).toBe('card_declined');
+    },
+  );
+
+  it.each([
+    ['refunded', false],
+    ['disputed', true],
+    ['chargeback_lost', false],
+    ['canceled', false],
+    ['expired', false],
+  ])(
+    'a decline never rewrites a purchase in status %s (its own events own that state)',
+    async (status, entitled) => {
+      const { svc, prisma, stripe } = makeHandlerWithSplits();
+      prisma._purchases.push({
+        id: 'cp-r3-final',
+        package_id: 'pkg-r3',
+        stripe_payment_intent_id: 'pi_r3',
+        status,
+        entitlement_active: entitled,
+        last_error: null,
+        created_at: new Date(),
+      });
+      const result = await deliver(svc, prisma, declined('evt_r3_final'));
+      expect(result.claimed).toBe(true);
+      expect(prisma._purchases[0].status).toBe(status);
+      expect(prisma._purchases[0].entitlement_active).toBe(entitled);
+      expect(prisma._purchases[0].last_error).toBeNull();
+      expect(stripe.retrievePaymentIntent).not.toHaveBeenCalled();
+    },
+  );
+
+  it('a decline of another PaymentIntent never adopts a pending purchase that holds its own PaymentIntent', async () => {
+    const { svc, prisma } = makeHandlerWithSplits();
+    prisma._purchases.push({
+      id: 'cp-sheet',
+      client_user_id: 'c1',
+      package_id: 'pkg-1',
+      stripe_payment_intent_id: 'pi_sheet',
+      status: 'pending',
+      entitlement_active: false,
+      last_error: null,
+      created_at: new Date(),
+      ...secrets,
+    });
+    const result = await deliver(svc, prisma, {
+      id: 'evt_r3_foreign',
+      type: 'payment_intent.payment_failed',
+      data: {
+        object: {
+          id: 'pi_hosted',
+          metadata: { tgp_package_id: 'pkg-1', tgp_client_user_id: 'c1' },
+          last_payment_error: { message: 'card_declined' },
+        },
+      },
+    });
+    expect(result.claimed).toBe(false);
+    expect(prisma._purchases[0].status).toBe('pending');
+    // Its own PaymentIntent's success can still find it.
+    expect(prisma._purchases[0].stripe_payment_intent_id).toBe('pi_sheet');
+  });
+
+  it('the metadata fallback adopts the pending purchase without a PaymentIntent, never a newer one that holds its own', async () => {
+    const { svc, prisma } = makeHandlerWithSplits();
+    prisma._purchases.push(
+      {
+        id: 'cp-sheet',
+        client_user_id: 'c1',
+        package_id: 'pkg-1',
+        stripe_payment_intent_id: 'pi_sheet',
+        status: 'pending',
+        entitlement_active: false,
+        created_at: new Date('2026-10-03T12:05:00Z'),
+      },
+      {
+        id: 'cp-hosted',
+        client_user_id: 'c1',
+        package_id: 'pkg-1',
+        stripe_payment_intent_id: null,
+        status: 'pending',
+        entitlement_active: false,
+        created_at: new Date('2026-10-03T12:00:00Z'),
+      },
+    );
+    const result = await deliver(svc, prisma, {
+      id: 'evt_r3_hosted',
+      type: 'payment_intent.payment_failed',
+      data: {
+        object: {
+          id: 'pi_hosted',
+          metadata: { tgp_package_id: 'pkg-1', tgp_client_user_id: 'c1' },
+          last_payment_error: { message: 'card_declined' },
+        },
+      },
+    });
+    expect(result).toMatchObject({ claimed: true, purchase_id: 'cp-hosted' });
+    expect(prisma._purchases[1].status).toBe('payment_failed');
+    expect(prisma._purchases[1].stripe_payment_intent_id).toBe('pi_hosted');
+    expect(prisma._purchases[0].status).toBe('pending');
+    expect(prisma._purchases[0].stripe_payment_intent_id).toBe('pi_sheet');
+  });
+
+  it('prefetchForOuterTx asks Stripe for the PaymentIntent status only when the purchase already settled', async () => {
+    const { svc, prisma, stripe } = makeHandlerWithSplits();
+    seedPending(prisma);
+    expect(await svc.prefetchForOuterTx(declined('evt_r3_pf_1'))).toEqual({});
+    expect(stripe.retrievePaymentIntent).not.toHaveBeenCalled();
+
+    prisma._purchases[0].status = 'paid';
+    stripe.retrievePaymentIntent.mockResolvedValue({ id: 'pi_r3', status: 'succeeded' });
+    expect(await svc.prefetchForOuterTx(declined('evt_r3_pf_2'))).toEqual({
+      paymentIntentStatusById: { pi_r3: 'succeeded' },
+    });
+    expect(stripe.retrievePaymentIntent).toHaveBeenCalledWith('pi_r3');
   });
 });
