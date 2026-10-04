@@ -404,9 +404,11 @@ describe('CM2 disposable PostgreSQL and HTTP acceptance', () => {
   it('pre-trial persistent keys replay after the trial default is added, but non-default terms do not collide', async () => {
     const first = await post('audit-key-default-added');
     const service = app.get(PackagesService);
-    const original = Reflect.get(service, 'createData');
+    const original = Reflect.get(service, 'createData') as (
+      coach: string, input: Record<string, unknown>
+    ) => Record<string, unknown>;
     Reflect.set(service, 'createData', (coach: string, input: Record<string, unknown>) => ({
-      ...Reflect.apply(original, service, [coach, input]),
+      ...original.call(service, coach, input),
       trial_days: input.trial_days ?? 0,
     }));
     try {
