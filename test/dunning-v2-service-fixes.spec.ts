@@ -259,7 +259,7 @@ describe('dunning v2 service fix round (B-D12-116)', () => {
     it('a renewal payment does not lift the Day-10 lock after the loss', async () => {
       const { fake, svc } = await lostDuringPaymentCycle(true);
       expect(await svc.applyImmediateClear('p1', 'retry')).toEqual({ liftedLockout: false });
-      expect(fake.find('dunningState', { id: 'ds-p1' })?.locked_out_at).toEqual(at(1));
+      expect(fake.find('dunningState', { id: 'ds-p1' })?.locked_out_at).toEqual(at(10));
       expect(fake.find('clientPurchase', { id: 'p1' })?.entitlement_active).toBe(false);
     });
 
