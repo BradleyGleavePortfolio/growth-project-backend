@@ -1,6 +1,18 @@
 import { PurchaseFanoutService } from '../src/packages/purchase-fanout.service';
 import { AssignableAssetResolverRegistry } from '../src/packages/asset-resolvers/assignable-asset-resolver.registry';
 import { WorkoutAssetResolver } from '../src/packages/asset-resolvers/workout.resolver';
+
+/** S-MWB (C-640-7): the program-delivery dependency is required; these legacy
+ * plan-id cases see no master program, so the single-plan path runs. */
+function noPrograms<T = ConstructorParameters<typeof WorkoutAssetResolver>[2]>(): T {
+  const stub: unknown = {
+    findDeliverableMaster: jest.fn(async () => null),
+    isProgramMaster: jest.fn(async () => false),
+    deliver: jest.fn(),
+    deliverInTx: jest.fn(),
+  };
+  return stub as T;
+}
 import { AutoMessageAssetResolver } from '../src/packages/asset-resolvers/auto-message.resolver';
 import { ResolverSubCoachScope } from '../src/packages/asset-resolvers/sub-coach-scope.helper';
 
@@ -315,7 +327,7 @@ describe('PR-9 R1 audit-fix — rollback+retry idempotency for workout & auto_me
       return { ...row };
     });
 
-    const workoutResolver = new WorkoutAssetResolver(wb as any, makeScopeAllowing());
+    const workoutResolver = new WorkoutAssetResolver(wb as any, makeScopeAllowing(), noPrograms());
     const autoResolver = new AutoMessageAssetResolver(msg as any, makeScopeAllowing(), prisma as any);
     const registry = new TwoResolverRegistry(workoutResolver, autoResolver);
     const fanout = new PurchaseFanoutService(registry);
@@ -417,6 +429,7 @@ describe('PR-9 R1 audit-fix — rollback+retry idempotency for workout & auto_me
       new WorkoutAssetResolver(
         { assignPlan: jest.fn() } as any,
         makeScopeAllowing(),
+        noPrograms(),
       ),
       autoResolver,
     );
@@ -492,7 +505,7 @@ describe('PR-9 R1 audit-fix — rollback+retry idempotency for workout & auto_me
     };
     const autoResolver = new AutoMessageAssetResolver(msg as any, makeScopeAllowing(), prisma as any);
     const registry = new TwoResolverRegistry(
-      new WorkoutAssetResolver({ assignPlan: jest.fn() } as any, makeScopeAllowing()),
+      new WorkoutAssetResolver({ assignPlan: jest.fn() } as any, makeScopeAllowing(), noPrograms()),
       autoResolver,
     );
     const fanout = new PurchaseFanoutService(registry);

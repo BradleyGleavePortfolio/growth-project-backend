@@ -1121,6 +1121,7 @@ export class OnboardingService {
       goalTag: master.goal_tag,
       isTemplate: false,
       clonedFromId: master.id,
+      clientId,
       plans,
       revisionMeta: {
         materialised: {
