@@ -1,0 +1,251 @@
+diff --git a/prisma/migrations/20270313000000_package_trial_truth/migration.sql b/prisma/migrations/20270313000000_package_trial_truth/migration.sql
+index 40bd56e2..8a9fd4d0 100644
+--- a/prisma/migrations/20270313000000_package_trial_truth/migration.sql
++++ b/prisma/migrations/20270313000000_package_trial_truth/migration.sql
+@@ -26,7 +26,10 @@
+ -- 3. PackageTrialConflict — durable obligation to cancel a subscription that
+ --    tried to start a second free trial with the same coach (B-656-1). Written
+ --    in the webhook transaction, settled after commit and by a sweep until
+---    Stripe confirms the cancel. Holds no user id (purchase + subscription
++--    Stripe confirms the cancel. alerted_at is the receipt of the "cancel
++--    still failing" alert; billed_alerted_at the separate receipt of the
++--    "billed before cancel" alert (one never suppresses the other). Holds no
++--    user id (purchase + subscription
+ --    ids only), so it needs no erasure-manifest entry; it is server-only:
+ --    service_role all, anon restrictive deny + REVOKE, no other policy.
+ 
+@@ -71,6 +74,7 @@ CREATE TABLE "PackageTrialConflict" (
+     "lease_until" TIMESTAMP(3),
+     "last_error" TEXT,
+     "alerted_at" TIMESTAMP(3),
++    "billed_alerted_at" TIMESTAMP(3),
+     "settled_at" TIMESTAMP(3),
+     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     "updated_at" TIMESTAMP(3) NOT NULL,
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+index 3c122d7d..bfc66017 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -522,6 +522,11 @@ model User {
+   onboarding_intake           ClientOnboardingIntake?          @relation("OnboardingIntakeClient")
+   onboarding_intake_revisions ClientOnboardingIntakeRevision[] @relation("OnboardingIntakeRevisionClient")
+   clinic_program_sets         ClinicProgramSet[]               @relation("ClinicProgramSetCoach")
++  // C05 items 6-7 (engagement): coach welcome message + workout reminders.
++  coach_welcome_setting       CoachWelcomeMessageSetting?      @relation("CoachWelcomeSettingCoach")
++  coach_welcome_jobs_as_coach CoachWelcomeMessageJob[]         @relation("CoachWelcomeJobCoach")
++  coach_welcome_job           CoachWelcomeMessageJob?          @relation("CoachWelcomeJobClient")
++  workout_reminder_deliveries WorkoutReminderDelivery[]        @relation("WorkoutReminderClient")
+   roman_messages RomanMessage[] @relation("RomanMessageUser")
+ 
+   // R2a — AI processing consent ledger (box 2 of the onboarding consent
+@@ -990,6 +995,15 @@ model NotificationPreferences {
+   quiet_hours_start      String  @default("22:00")
+   quiet_hours_end        String  @default("06:00")
+   timezone               String  @default("America/Los_Angeles")
++  // B-647-1 / B-647-2 (zone provenance): `timezone` above has a schema
++  // default, so a stored row is not proof of the person's zone. These two are
++  // set only when the zone was actually supplied: 'device' (the mobile app
++  // sends the device IANA zone on sign-in, on foreground when it changed, and
++  // at onboarding) or 'settings' (an explicit PATCH). NULL = never supplied:
++  // notification copy and quiet hours ignore `timezone` and fall back to the
++  // coach's zone (recipient-timezone.ts), never silently to Pacific.
++  timezone_source        String?
++  timezone_updated_at    DateTime?
+ 
+   // Phase 9 — Per-kind × per-channel preference flags.
+   // muted=true overrides all per-kind settings (master kill switch).
+@@ -1027,6 +1041,10 @@ model NotificationPreferences {
+   drip_released_email      Boolean @default(false)
+   drip_released_push       Boolean @default(true)
+   drip_released_inapp      Boolean @default(true)
++  // C05 item 7 — WORKOUT_REMINDER (client push at their preferred training
++  // time on plan days). Default ON; Settings > Notifications toggles both.
++  workout_reminder_push    Boolean @default(true)
++  workout_reminder_inapp   Boolean @default(true)
+   // PR-15A — COACH_NEW_PURCHASE (selling coach learns of a new buyer at
+   // entitlement). Default ON for push + in-app per decision #9 mirror —
+   // a coach who is SELLING packages wants to know. email default OFF
+@@ -1256,6 +1274,13 @@ model CoachMessage {
+   // produce two CoachMessage rows; the second INSERT trips P2002 and
+   // the materialiser falls through to its "already_materialised" branch.
+   ai_draft_id String? @unique
++  // C05 item 6 (B-609-3) — set only by the coach welcome scheduler: the id of
++  // the CoachWelcomeMessageJob that produced this row. `@unique` is the
++  // persistence-boundary idempotency key: a stale worker whose lease was
++  // reclaimed cannot insert a second welcome; its INSERT trips P2002 and
++  // MessagingService.sendAsCoach returns the existing row with no side effects.
++  // NULL for every other message.
++  welcome_job_id String? @unique
+ 
+   @@index([coach_id])
+   @@index([client_id])
+@@ -2132,9 +2157,14 @@ model NotificationDeliveryLog {
+   session    CoachingSession @relation("DeliveryLogSession", fields: [session_id], references: [id], onDelete: Cascade)
+   // kind matches NotificationKind values, e.g. booking_reminder_24h.
+   kind       String
++  // Sol B-647-1: the session start time this claim was made for (the schedule
++  // generation). A reschedule changes start_at, so the new time gets a new
++  // claim without deleting the old one, a stale sweep holding the old time can
++  // never suppress the new reminder, and a no-op reschedule cannot re-send.
++  start_at   DateTime
+   created_at DateTime        @default(now())
+ 
+-  @@unique([session_id, user_id, kind], name: "NotificationDeliveryLog_session_user_kind_key")
++  @@unique([session_id, user_id, kind, start_at], name: "NotificationDeliveryLog_session_user_kind_start_key")
+   @@index([session_id])
+   @@index([user_id, created_at])
+ }
+@@ -2585,6 +2615,76 @@ model ClinicProgramSet {
+   @@index([coach_id, active])
+ }
+ 
++// ─── C05 items 6-7: engagement (welcome message + workout reminders) ────
++// Per-coach welcome-message configuration. Default OFF. The operator turns it
++// on for one coach at bootstrap (owner endpoint or
++// scripts/set-coach-welcome-message.ts). template NULL = the generic code
++// default in src/engagement/welcome-template.ts. A coach's real template is
++// runtime data and never lives in the repository.
++model CoachWelcomeMessageSetting {
++  id         String    @id @default(uuid())
++  coach_id   String    @unique
++  coach      User      @relation("CoachWelcomeSettingCoach", fields: [coach_id], references: [id], onDelete: Cascade)
++  enabled    Boolean   @default(false)
++  template   String?
++  // Set every time enabled flips false -> true. Only onboarding completions
++  // at or after this instant are scheduled (no retroactive welcome burst).
++  enabled_at DateTime?
++  updated_by String?
++  created_at DateTime  @default(now())
++  updated_at DateTime  @updatedAt
++}
++
++// One row per client, ever (client_id @unique): the durable job that sends
++// the coach welcome message at onboarding completed_at + 13 minutes. The
++// unique key is the idempotency boundary: a replayed /complete, a second
++// scheduler replica, or a restart can never create a second job.
++model CoachWelcomeMessageJob {
++  id            String    @id @default(uuid())
++  client_id     String    @unique
++  client        User      @relation("CoachWelcomeJobClient", fields: [client_id], references: [id], onDelete: Cascade)
++  coach_id      String
++  coach         User      @relation("CoachWelcomeJobCoach", fields: [coach_id], references: [id], onDelete: Cascade)
++  completed_at  DateTime
++  fire_at       DateTime
++  // pending | sending | sent | cancelled | skipped | failed
++  status        String    @default("pending")
++  reason        String?
++  rendered_body String?
++  message_id    String?   @unique
++  attempt_count Int       @default(0)
++  next_retry_at DateTime?
++  locked_at     DateTime?
++  // B-609-3 fencing token: a fresh value on every claim. Every later write by
++  // the claiming worker is conditional on it, so a worker whose lease went
++  // stale and was reclaimed can no longer stamp, mark sent, retry or cancel.
++  lease_token   String?
++  sent_at       DateTime?
++  created_at    DateTime  @default(now())
++  updated_at    DateTime  @updatedAt
++
++  @@index([status, fire_at])
++  @@index([coach_id])
++}
++
++// At most one workout reminder per client per client-local calendar day:
++// (client_id, local_date) @unique is claimed BEFORE the push goes out.
++model WorkoutReminderDelivery {
++  id         String    @id @default(uuid())
++  client_id  String
++  client     User      @relation("WorkoutReminderClient", fields: [client_id], references: [id], onDelete: Cascade)
++  local_date DateTime  @db.Date
++  timezone   String
++  slot       String
++  first_day  Boolean   @default(false)
++  // sending | sent | failed
++  status     String    @default("sending")
++  sent_at    DateTime?
++  created_at DateTime  @default(now())
++
++  @@unique([client_id, local_date])
++}
++
+ // ─── Sprint B: Real Meal Plans (templates + plans + assignments) ──────────
+ model MealTemplate {
+   id            String    @id @default(uuid())
+@@ -3932,7 +4032,10 @@ model PackageTrialConflict {
+   lease_token            String?
+   lease_until            DateTime?
+   last_error             String?
++  // receipt of the "cancel still failing" alert (3 failed attempts)
+   alerted_at             DateTime?
++  // B-656-6 — separate receipt of the "billed before cancel" alert
++  billed_alerted_at      DateTime?
+   settled_at             DateTime?
+   created_at             DateTime  @default(now())
+   updated_at             DateTime  @updatedAt
+diff --git a/src/packages/trials/trial-diagnostics.ts b/src/packages/trials/trial-diagnostics.ts
+new file mode 100644
+index 00000000..0c8c793e
+--- /dev/null
++++ b/src/packages/trials/trial-diagnostics.ts
+@@ -0,0 +1,45 @@
++// B-TRIALS-3 (B-656-7) — closed diagnostics for the trial workers. Logs, row
++// last_error values and Sentry tags carry only a value from these lists; an
++// arbitrary Error.name, Stripe code or transport code maps to a fixed
++// fallback, so free text can never reach a log line through them.
++
++const ERROR_CLASSES = new Set([
++  'Error',
++  'TypeError',
++  'RangeError',
++  'AbortError',
++  'TimeoutError',
++  'StripeConnectApiError',
++  'TrialConflictTimeoutError',
++  'PrismaClientKnownRequestError',
++  'PrismaClientUnknownRequestError',
++  'PrismaClientInitializationError',
++  'PrismaClientValidationError',
++  'PrismaClientRustPanicError',
++]);
++
++const PUSH_CODES = new Set([
++  'no-token',
++  'invalid-token',
++  'aborted',
++  'transport-error',
++  'ticket-error',
++]);
++
++/** The error's class from a closed list, else 'unclassified'. */
++export function trialErrorClass(err: unknown): string {
++  const name = err instanceof Error ? err.name : null;
++  return name && ERROR_CLASSES.has(name) ? name : 'unclassified';
++}
++
++/** A push transport code from a closed list, else 'unclassified'. */
++export function trialPushCode(code: unknown): string {
++  return typeof code === 'string' && PUSH_CODES.has(code) ? code : 'unclassified';
++}
++
++/** `http_<status>` for a real HTTP status, else 'http_unknown'. */
++export function trialHttpCode(status: unknown): string {
++  return typeof status === 'number' && Number.isInteger(status) && status >= 100 && status <= 599
++    ? `http_${status}`
++    : 'http_unknown';
++}
+diff --git a/src/packages/trials/trial-view.ts b/src/packages/trials/trial-view.ts
+index 060aecf4..410b8d2d 100644
+--- a/src/packages/trials/trial-view.ts
++++ b/src/packages/trials/trial-view.ts
+@@ -86,7 +86,9 @@ export function purchaseTrialView(
+     if (!row.entitlement_active) return { ...base, state: 'setup_incomplete', ...none };
+     const reason = trialNoChargeReason({
+       cancelAtPeriodEnd: row.cancel_at_period_end,
+-      cardOnFile: willChargeCard(row.card_on_file, !!ctx.customerDefaultCard),
++      // customerDefaultCard is a completed read here (the list fails loudly
++      // otherwise), so the answer is never unknown.
++      cardOnFile: willChargeCard(row.card_on_file, !!ctx.customerDefaultCard) !== false,
+     });
+     return { ...base, state: 'trialing', will_charge: reason === null, no_charge_reason: reason };
+   }

@@ -1,0 +1,44 @@
+---- 5972763467 github-actions[bot] 2026-10-03T19:35:03Z
+<!-- h4-deploy-readiness-board -->
+## Deploy readiness board (R100, informational)
+
+This check is informational on pull requests during the pre-launch
+burn-down. It gates only the codebase-invariant sections (stub values
+and prod-switch coherence). The environment-dependent sections (wiring,
+env discovery, operator keys) are surfaced below but do not block the
+PR because the runner carries no production secrets. The prod-deploy
+gate (deploy-readiness-gate) enforces every section under strict mode.
+
+```
+================ DEPLOY READINESS BOARD (R100) ================
+    mode: INFORMATIONAL (PR / pre-launch)
+    
+    --- STUB VALUES [RED=0] ---
+      BLOCK_SHIP=0  WARN=7  INFO=5
+      [warn] src/coach/command-center/ltv-metrics.dto.ts:153  STUB (tracked debt or low-signal)
+      [warn] src/contracts/contracts.module.ts:47  STUB (tracked debt or low-signal)
+      [warn] src/contracts/contracts.module.ts:53  STUB (tracked debt or low-signal)
+      [warn] src/contracts/providers/docusign.provider.ts:11  STUB (tracked debt or low-signal)
+      [warn] src/contracts/providers/native-canvas.provider.ts:11  STUB (tracked debt or low-signal)
+      [warn] src/gym/gym-distribution.service.ts:4  STUB (tracked debt or low-signal)
+      [warn] src/scheduling/scheduling.controller.ts:83  Coming soon (tracked debt or low-signal)
+      no blocking stub/placeholder tokens in production-bound src/
+    
+    ---------------------------------------------------------------
+    GATING RED LINES (this run): 0
+    PROD-DEPLOY RED LINES (strict): 0
+    EXIT: ALL CLEAR → SAFE TO DEPLOY
+    ===============================================================
+```
+---- 5975772938 BradleyGleavePortfolio 2026-10-04T02:26:46Z
+READY FOR AUDIT (operator 116) — growth-project-backend#673 @ 5743e51fb0ee13e7fe95a865a809f05b6108abc2
+
+Piece T3 of the trials split of #656 (3 pieces: #671 -> #672 -> #673). Base `agent115/trials-split-2-editor-notices`. T4 (max-tier rule).
+Checks at this head (latest run per check, 11 checks): all green. CodeQL, danger, banned casts and build-sbom run only when the stack lands on main.
+Land rule: Land as one (rule 11); inert until T3; deploy after T3, then mobile #338. #672 and #675 both change packages.service/controller: the second to land refreshes.
+
+SIZE ASSESSMENT (operator 116, MODEL_ROUTING 8.2) — growth-project-backend#673 @ 5743e51fb0ee13e7fe95a865a809f05b6108abc2
+- Lines: 2556 changed (source 700 / tests 1839 / migrations 0 / docs 17; excluded 0); 11 files. Under the 3,000 hard limit.
+- Seams (largest areas): `test/b-trials-3-fix-round.spec.ts` 1055, `test/b-trials-notice-and-webhook.spec.ts` 716, `src/packages/trials` 332, `src/checkout/checkout-webhook-handler.service.ts` 280, `test/b-trials-idempotent-create-compose.spec.ts` 68, `src/checkout/checkout.service.ts` 43.
+- Coupling: code piece with its own tests; the piece boundaries, dependency direction (no piece imports a later piece) and per-piece tests are stated in the PR body.
+- Decision: KEEP. This is already one logical piece of the owner-ordered split of #656. Cutting it further would separate code from the tests that prove it, and would add a restack round to every later piece without making any line easier to audit. Fix rounds must keep it under 3,000.

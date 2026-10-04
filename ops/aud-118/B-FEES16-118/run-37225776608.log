@@ -1,0 +1,1733 @@
+﻿2026-10-04T18:47:25.4940021Z Current runner version: '2.337.0'
+2026-10-04T18:47:25.4964272Z ##[group]Runner Image Provisioner
+2026-10-04T18:47:25.4965192Z Hosted Compute Agent
+2026-10-04T18:47:25.4965903Z Version: 20260901.588
+2026-10-04T18:47:25.4966547Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-04T18:47:25.4967352Z Build Date: 2026-09-01T19:56:44Z
+2026-10-04T18:47:25.4968295Z Worker ID: {4ecdb72d-c0d6-422c-8266-b4182672bc18}
+2026-10-04T18:47:25.4969067Z Azure Region: westus3
+2026-10-04T18:47:25.4969703Z ##[endgroup]
+2026-10-04T18:47:25.4971308Z ##[group]Operating System
+2026-10-04T18:47:25.4971953Z Ubuntu
+2026-10-04T18:47:25.4972576Z 24.04.5
+2026-10-04T18:47:25.4973134Z LTS
+2026-10-04T18:47:25.4974034Z ##[endgroup]
+2026-10-04T18:47:25.4974628Z ##[group]Runner Image
+2026-10-04T18:47:25.4975249Z Image: ubuntu-24.04
+2026-10-04T18:47:25.4975876Z Version: 20260927.320.1
+2026-10-04T18:47:25.4977139Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-04T18:47:25.4979004Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-04T18:47:25.4979972Z ##[endgroup]
+2026-10-04T18:47:25.4981332Z ##[group]GITHUB_TOKEN Permissions
+2026-10-04T18:47:25.4983206Z Contents: read
+2026-10-04T18:47:25.4983916Z Metadata: read
+2026-10-04T18:47:25.4984470Z Packages: read
+2026-10-04T18:47:25.4985062Z ##[endgroup]
+2026-10-04T18:47:25.4987142Z Secret source: Actions
+2026-10-04T18:47:25.4988398Z Cache mode: write
+2026-10-04T18:47:25.4989133Z Prepare workflow directory
+2026-10-04T18:47:25.5429636Z Prepare all required actions
+2026-10-04T18:47:25.5478605Z Getting action download info
+2026-10-04T18:47:25.8505736Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-04T18:47:25.9382838Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-04T18:47:26.1667194Z Complete job name: targeted
+2026-10-04T18:47:26.2189476Z ##[group]Checking docker version
+2026-10-04T18:47:26.2202691Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-04T18:47:26.3108242Z '1.48'
+2026-10-04T18:47:26.3124300Z Docker daemon API version: '1.48'
+2026-10-04T18:47:26.3125085Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-04T18:47:26.3285402Z '1.48'
+2026-10-04T18:47:26.3298379Z Docker client API version: '1.48'
+2026-10-04T18:47:26.3303445Z ##[endgroup]
+2026-10-04T18:47:26.3306657Z ##[group]Clean up resources from previous jobs
+2026-10-04T18:47:26.3312623Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=3e6e0e"
+2026-10-04T18:47:26.3451075Z ##[command]/usr/bin/docker network prune --force --filter "label=3e6e0e"
+2026-10-04T18:47:26.3578619Z ##[endgroup]
+2026-10-04T18:47:26.3579244Z ##[group]Create local container network
+2026-10-04T18:47:26.3589134Z ##[command]/usr/bin/docker network create --label 3e6e0e github_network_b2c66b3fd2e24568b569370b711cf554
+2026-10-04T18:47:26.4045468Z 50c39d827531557b9f1535f82056cfb34cd7427fb4c262ed8cb2bd709d530d52
+2026-10-04T18:47:26.4065075Z ##[endgroup]
+2026-10-04T18:47:26.4089736Z ##[group]Starting redis service container
+2026-10-04T18:47:26.4111741Z ##[command]/usr/bin/docker pull redis:7-alpine
+2026-10-04T18:47:27.1849753Z 7-alpine: Pulling from library/redis
+2026-10-04T18:47:27.4163567Z 16333ee0c00f: Pulling fs layer
+2026-10-04T18:47:27.4164888Z 83234986c742: Pulling fs layer
+2026-10-04T18:47:27.4165827Z 7eb50503c2b0: Pulling fs layer
+2026-10-04T18:47:27.4166972Z 1522f9c6f453: Pulling fs layer
+2026-10-04T18:47:27.4167910Z 9928009b15c8: Pulling fs layer
+2026-10-04T18:47:27.4169149Z 4f4fb700ef54: Pulling fs layer
+2026-10-04T18:47:27.4170312Z 4eb14bae0e1d: Pulling fs layer
+2026-10-04T18:47:27.4171580Z 1522f9c6f453: Waiting
+2026-10-04T18:47:27.4172473Z 4f4fb700ef54: Waiting
+2026-10-04T18:47:27.4173208Z 9928009b15c8: Waiting
+2026-10-04T18:47:27.4174057Z 4eb14bae0e1d: Waiting
+2026-10-04T18:47:27.6086692Z 83234986c742: Download complete
+2026-10-04T18:47:27.6110948Z 7eb50503c2b0: Verifying Checksum
+2026-10-04T18:47:27.6113450Z 7eb50503c2b0: Download complete
+2026-10-04T18:47:27.6253557Z 16333ee0c00f: Download complete
+2026-10-04T18:47:27.7314186Z 16333ee0c00f: Pull complete
+2026-10-04T18:47:27.7539794Z 83234986c742: Pull complete
+2026-10-04T18:47:27.7774182Z 9928009b15c8: Verifying Checksum
+2026-10-04T18:47:27.7775183Z 9928009b15c8: Download complete
+2026-10-04T18:47:27.7922611Z 4f4fb700ef54: Verifying Checksum
+2026-10-04T18:47:27.7923739Z 4f4fb700ef54: Download complete
+2026-10-04T18:47:27.8332643Z 1522f9c6f453: Verifying Checksum
+2026-10-04T18:47:27.8333630Z 1522f9c6f453: Download complete
+2026-10-04T18:47:27.9085455Z 7eb50503c2b0: Pull complete
+2026-10-04T18:47:27.9437090Z 4eb14bae0e1d: Verifying Checksum
+2026-10-04T18:47:27.9438494Z 4eb14bae0e1d: Download complete
+2026-10-04T18:47:28.0968193Z 1522f9c6f453: Pull complete
+2026-10-04T18:47:28.1043654Z 9928009b15c8: Pull complete
+2026-10-04T18:47:28.1131303Z 4f4fb700ef54: Pull complete
+2026-10-04T18:47:28.1226980Z 4eb14bae0e1d: Pull complete
+2026-10-04T18:47:28.1266943Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+2026-10-04T18:47:28.1280292Z Status: Downloaded newer image for redis:7-alpine
+2026-10-04T18:47:28.1288441Z docker.io/library/redis:7-alpine
+2026-10-04T18:47:28.1329230Z ##[command]/usr/bin/docker create --name 4f1a457628b34f798e1a6d4b483d0b5f_redis7alpine_beb273 --label 3e6e0e --network github_network_b2c66b3fd2e24568b569370b711cf554 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+2026-10-04T18:47:28.1599441Z 0f3cf68030a6c47c213aab54d4f364eb09caae922f0ffbd31b64aa86817c3f03
+2026-10-04T18:47:28.1621113Z ##[command]/usr/bin/docker start 0f3cf68030a6c47c213aab54d4f364eb09caae922f0ffbd31b64aa86817c3f03
+2026-10-04T18:47:28.3671674Z 0f3cf68030a6c47c213aab54d4f364eb09caae922f0ffbd31b64aa86817c3f03
+2026-10-04T18:47:28.3707139Z ##[command]/usr/bin/docker ps --all --filter id=0f3cf68030a6c47c213aab54d4f364eb09caae922f0ffbd31b64aa86817c3f03 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-04T18:47:28.3823945Z 0f3cf68030a6c47c213aab54d4f364eb09caae922f0ffbd31b64aa86817c3f03 Up Less than a second (health: starting)
+2026-10-04T18:47:28.3841882Z ##[command]/usr/bin/docker port 0f3cf68030a6c47c213aab54d4f364eb09caae922f0ffbd31b64aa86817c3f03
+2026-10-04T18:47:28.3956552Z 6379/tcp -> 0.0.0.0:6379
+2026-10-04T18:47:28.3956997Z 6379/tcp -> [::]:6379
+2026-10-04T18:47:28.4000991Z ##[endgroup]
+2026-10-04T18:47:28.4010060Z ##[group]Waiting for all services to be ready
+2026-10-04T18:47:28.4023040Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 0f3cf68030a6c47c213aab54d4f364eb09caae922f0ffbd31b64aa86817c3f03
+2026-10-04T18:47:28.4133583Z starting
+2026-10-04T18:47:28.4152969Z redis service is starting, waiting 2 seconds before checking again.
+2026-10-04T18:47:30.4154539Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 0f3cf68030a6c47c213aab54d4f364eb09caae922f0ffbd31b64aa86817c3f03
+2026-10-04T18:47:30.4269770Z starting
+2026-10-04T18:47:30.4281757Z redis service is starting, waiting 4 seconds before checking again.
+2026-10-04T18:47:34.6926824Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 0f3cf68030a6c47c213aab54d4f364eb09caae922f0ffbd31b64aa86817c3f03
+2026-10-04T18:47:34.7048941Z healthy
+2026-10-04T18:47:34.7064730Z redis service is healthy.
+2026-10-04T18:47:34.7065407Z ##[endgroup]
+2026-10-04T18:47:34.7349338Z ##[group]Run actions/checkout@v6
+2026-10-04T18:47:34.7349927Z with:
+2026-10-04T18:47:34.7350222Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T18:47:34.7352634Z   token: ***
+2026-10-04T18:47:34.7352841Z   ssh-strict: true
+2026-10-04T18:47:34.7353046Z   ssh-user: git
+2026-10-04T18:47:34.7353251Z   persist-credentials: true
+2026-10-04T18:47:34.7353484Z   clean: true
+2026-10-04T18:47:34.7353915Z   sparse-checkout-cone-mode: true
+2026-10-04T18:47:34.7354163Z   fetch-depth: 1
+2026-10-04T18:47:34.7354352Z   fetch-tags: false
+2026-10-04T18:47:34.7354571Z   show-progress: true
+2026-10-04T18:47:34.7354801Z   lfs: false
+2026-10-04T18:47:34.7354982Z   submodules: false
+2026-10-04T18:47:34.7355187Z   set-safe-directory: true
+2026-10-04T18:47:34.7355425Z   allow-unsafe-pr-checkout: false
+2026-10-04T18:47:34.7355919Z ##[endgroup]
+2026-10-04T18:47:34.8320068Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T18:47:34.8385137Z ##[group]Getting Git version info
+2026-10-04T18:47:34.8385671Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T18:47:34.8386440Z [command]/usr/bin/git version
+2026-10-04T18:47:34.8400330Z git version 2.55.0
+2026-10-04T18:47:34.8423636Z ##[endgroup]
+2026-10-04T18:47:34.8441119Z Temporarily overriding HOME='/home/runner/work/_temp/0c41b76b-e5b7-40f4-a33f-85fcd845e62e' before making global git config changes
+2026-10-04T18:47:34.8442034Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T18:47:34.8447457Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T18:47:34.8494729Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T18:47:34.8499586Z ##[group]Determining repository object format
+2026-10-04T18:47:34.8501797Z ##[endgroup]
+2026-10-04T18:47:34.8502477Z ##[group]Initializing the repository
+2026-10-04T18:47:34.8506577Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T18:47:34.8608433Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-04T18:47:34.8609817Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-04T18:47:34.8610680Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-04T18:47:34.8611336Z hint: call:
+2026-10-04T18:47:34.8611702Z hint:
+2026-10-04T18:47:34.8612229Z hint: 	git config --global init.defaultBranch <name>
+2026-10-04T18:47:34.8612650Z hint:
+2026-10-04T18:47:34.8613153Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-04T18:47:34.8614096Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-04T18:47:34.8614845Z hint:
+2026-10-04T18:47:34.8615229Z hint: 	git branch -m <name>
+2026-10-04T18:47:34.8615667Z hint:
+2026-10-04T18:47:34.8616292Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-04T18:47:34.8617533Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-04T18:47:34.8624969Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T18:47:34.8669799Z ##[endgroup]
+2026-10-04T18:47:34.8670471Z ##[group]Disabling automatic garbage collection
+2026-10-04T18:47:34.8674652Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-04T18:47:34.8703894Z ##[endgroup]
+2026-10-04T18:47:34.8704544Z ##[group]Setting up auth
+2026-10-04T18:47:34.8705427Z Removing SSH command configuration
+2026-10-04T18:47:34.8712019Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T18:47:34.8742423Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T18:47:34.9065527Z Removing HTTP extra header
+2026-10-04T18:47:34.9071287Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T18:47:34.9101779Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T18:47:34.9312242Z Removing includeIf entries pointing to credentials config files
+2026-10-04T18:47:34.9319798Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T18:47:34.9350735Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T18:47:34.9572547Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-04T18:47:34.9609270Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config
+2026-10-04T18:47:34.9638755Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config
+2026-10-04T18:47:34.9670597Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config
+2026-10-04T18:47:34.9705610Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config
+2026-10-04T18:47:34.9732526Z ##[endgroup]
+2026-10-04T18:47:34.9733035Z ##[group]Fetching the repository
+2026-10-04T18:47:34.9740935Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +70fe7f0577753e826d5c84252a614209a2517525:refs/remotes/origin/ci/B-FEES16-118-686-probes
+2026-10-04T18:47:37.1067714Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T18:47:37.1068708Z  * [new ref]         70fe7f0577753e826d5c84252a614209a2517525 -> origin/ci/B-FEES16-118-686-probes
+2026-10-04T18:47:37.1080129Z [command]/usr/bin/git branch --list --remote origin/ci/B-FEES16-118-686-probes
+2026-10-04T18:47:37.1104501Z   origin/ci/B-FEES16-118-686-probes
+2026-10-04T18:47:37.1113015Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-FEES16-118-686-probes
+2026-10-04T18:47:37.1133842Z 70fe7f0577753e826d5c84252a614209a2517525
+2026-10-04T18:47:37.1137904Z ##[endgroup]
+2026-10-04T18:47:37.1138917Z ##[group]Determining the checkout info
+2026-10-04T18:47:37.1139720Z ##[endgroup]
+2026-10-04T18:47:37.1144121Z [command]/usr/bin/git sparse-checkout disable
+2026-10-04T18:47:37.1196502Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-04T18:47:37.1226107Z ##[group]Checking out the ref
+2026-10-04T18:47:37.1231121Z [command]/usr/bin/git checkout --progress --force -B ci/B-FEES16-118-686-probes refs/remotes/origin/ci/B-FEES16-118-686-probes
+2026-10-04T18:47:37.3437519Z Switched to a new branch 'ci/B-FEES16-118-686-probes'
+2026-10-04T18:47:37.3442785Z branch 'ci/B-FEES16-118-686-probes' set up to track 'origin/ci/B-FEES16-118-686-probes'.
+2026-10-04T18:47:37.3452205Z ##[endgroup]
+2026-10-04T18:47:37.3496975Z [command]/usr/bin/git log -1 --format=%H
+2026-10-04T18:47:37.3520538Z 70fe7f0577753e826d5c84252a614209a2517525
+2026-10-04T18:47:37.3766906Z ##[group]Run actions/setup-node@v6
+2026-10-04T18:47:37.3767185Z with:
+2026-10-04T18:47:37.3767372Z   node-version: 20
+2026-10-04T18:47:37.3767564Z   cache: npm
+2026-10-04T18:47:37.3767752Z   check-latest: false
+2026-10-04T18:47:37.3770327Z   token: ***
+2026-10-04T18:47:37.3770549Z   package-manager-cache: true
+2026-10-04T18:47:37.3770793Z ##[endgroup]
+2026-10-04T18:47:37.5125297Z Attempting to download 20...
+2026-10-04T18:47:38.5301787Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-04T18:47:39.0159251Z Extracting ...
+2026-10-04T18:47:39.0274894Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/ca8453b5-33c1-4965-8d54-e4117e09b7dc -f /home/runner/work/_temp/3ce9ba37-5c9f-48e7-a7cd-e0d788b14c72
+2026-10-04T18:47:40.0409790Z Adding to the cache ...
+2026-10-04T18:47:41.8862289Z ##[group]Environment details
+2026-10-04T18:47:42.1063062Z node: v20.20.2
+2026-10-04T18:47:42.1063698Z npm: 10.8.2
+2026-10-04T18:47:42.1064059Z yarn: 1.22.22
+2026-10-04T18:47:42.1064769Z ##[endgroup]
+2026-10-04T18:47:42.1084418Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+2026-10-04T18:47:42.2135866Z /home/runner/.npm
+2026-10-04T18:47:42.4284468Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T18:47:43.6620127Z Received 33554432 of 86828135 (38.6%), 32.0 MBs/sec
+2026-10-04T18:47:44.0348707Z Received 86828135 of 86828135 (100.0%), 60.3 MBs/sec
+2026-10-04T18:47:44.0349512Z Cache Size: ~83 MB (86828135 B)
+2026-10-04T18:47:44.0456838Z [command]/usr/bin/tar -xf /home/runner/work/_temp/50b8da5d-e835-4a10-89fd-34d10d3af988/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+2026-10-04T18:47:44.2337646Z Cache restored successfully
+2026-10-04T18:47:44.2383643Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T18:47:44.2579090Z ##[group]Run npm ci
+2026-10-04T18:47:44.2579405Z [36;1mnpm ci[0m
+2026-10-04T18:47:44.2788640Z shell: /usr/bin/bash -e {0}
+2026-10-04T18:47:44.2788930Z ##[endgroup]
+2026-10-04T18:47:50.0421462Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-04T18:47:50.9150432Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-04T18:47:52.4314853Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T18:47:53.8192298Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T18:47:53.8515884Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T18:47:53.9160295Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T18:48:06.8046759Z 
+2026-10-04T18:48:06.8047651Z > growth-project-backend@1.0.0 postinstall
+2026-10-04T18:48:06.8048583Z > prisma generate
+2026-10-04T18:48:06.8048809Z 
+2026-10-04T18:48:07.7363927Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T18:48:11.5373299Z ┌─────────────────────────────────────────────────────────┐
+2026-10-04T18:48:11.5374332Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+2026-10-04T18:48:11.5375173Z │                                                         │
+2026-10-04T18:48:11.5376006Z │  This is a major update - please follow the guide at    │
+2026-10-04T18:48:11.5376960Z │  https://pris.ly/d/major-version-upgrade                │
+2026-10-04T18:48:11.5377829Z │                                                         │
+2026-10-04T18:48:11.5378913Z │  Run the following to update                            │
+2026-10-04T18:48:11.5379792Z │    npm i --save-dev prisma@latest                       │
+2026-10-04T18:48:11.5381066Z │    npm i @prisma/client@latest                          │
+2026-10-04T18:48:11.5381962Z └─────────────────────────────────────────────────────────┘
+2026-10-04T18:48:11.5382618Z 
+2026-10-04T18:48:11.5383507Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.07s
+2026-10-04T18:48:11.5384269Z 
+2026-10-04T18:48:11.5387367Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T18:48:11.5388378Z 
+2026-10-04T18:48:11.5389816Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+2026-10-04T18:48:11.5390806Z 
+2026-10-04T18:48:11.5911192Z 
+2026-10-04T18:48:11.5911887Z > growth-project-backend@1.0.0 prepare
+2026-10-04T18:48:11.5912476Z > lefthook install
+2026-10-04T18:48:11.5912700Z 
+2026-10-04T18:48:11.6406935Z sync hooks: ✔️(commit-msg, pre-commit)
+2026-10-04T18:48:11.6581610Z 
+2026-10-04T18:48:11.6582419Z added 1115 packages, and audited 1116 packages in 27s
+2026-10-04T18:48:11.6582910Z 
+2026-10-04T18:48:11.6583192Z 202 packages are looking for funding
+2026-10-04T18:48:11.6583604Z   run `npm fund` for details
+2026-10-04T18:48:11.6615450Z 
+2026-10-04T18:48:11.6615764Z 3 high severity vulnerabilities
+2026-10-04T18:48:11.6616403Z 
+2026-10-04T18:48:11.6616913Z To address all issues (including breaking changes), run:
+2026-10-04T18:48:11.6617539Z   npm audit fix --force
+2026-10-04T18:48:11.6617822Z 
+2026-10-04T18:48:11.6618283Z Run `npm audit` for details.
+2026-10-04T18:48:11.7216555Z ##[group]Run npx prisma generate
+2026-10-04T18:48:11.7217024Z [36;1mnpx prisma generate[0m
+2026-10-04T18:48:11.7282116Z shell: /usr/bin/bash -e {0}
+2026-10-04T18:48:11.7282391Z ##[endgroup]
+2026-10-04T18:48:12.9471495Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T18:48:16.7480229Z 
+2026-10-04T18:48:16.7481536Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.08s
+2026-10-04T18:48:16.7482187Z 
+2026-10-04T18:48:16.7482796Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T18:48:16.7483361Z 
+2026-10-04T18:48:16.7484187Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+2026-10-04T18:48:16.7484915Z 
+2026-10-04T18:48:16.8635185Z ##[group]Run set -euo pipefail
+2026-10-04T18:48:16.8635512Z [36;1mset -euo pipefail[0m
+2026-10-04T18:48:16.8635889Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-04T18:48:16.8636386Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-04T18:48:16.8636740Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-04T18:48:16.8637027Z [36;1mnpx jest --ci --runInBand "${SPECS[@]}"[0m
+2026-10-04T18:48:16.8700326Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T18:48:16.8700678Z env:
+2026-10-04T18:48:16.8700903Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-04T18:48:16.8701252Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-04T18:48:16.8701572Z ##[endgroup]
+2026-10-04T18:48:16.8798224Z specs: test/probe-aud-opus-f56-116.spec.ts test/s-fee-r15-deferred-fx-notice-flag.spec.ts test/aud-sol-f23-117-settlement-boundaries.spec.ts test/audit-sol-f34-683.spec.ts test/aud-sol-f12-117-reversal.spec.ts test/audit-opus-f12r-682-probe.spec.ts test/audit-opus-f12-117-682-extra.spec.ts test/audit-opus-f12r-livedb-probe.spec.ts test/aud-sol-f12r13-117-transfer.spec.ts test/aud-sol-f12r13-117-listing.spec.ts test/b-fees15-118-r75-probe.spec.ts test/aud-sol-f23-118-notice-recovery.spec.ts test/audit-opus-f23-118-683.spec.ts
+2026-10-04T18:48:19.2674268Z PASS test/audit-opus-f12r-682-probe.spec.ts (106 MB heap size)
+2026-10-04T18:48:19.2778569Z   ● Console
+2026-10-04T18:48:19.2779088Z 
+2026-10-04T18:48:19.2779275Z     console.log
+2026-10-04T18:48:19.2779822Z       D3 stripe=800 books=400 duplicate_alerts=0
+2026-10-04T18:48:19.2780227Z 
+2026-10-04T18:48:19.2780754Z       at Object.<anonymous> (test/audit-opus-f12r-682-probe.spec.ts:291:13)
+2026-10-04T18:48:19.2781807Z 
+2026-10-04T18:48:19.2781991Z     console.log
+2026-10-04T18:48:19.2784161Z       P1 checked=960 truncated=12 first=eur:999999:all:dispute_won:coach | eur:999999:all:dispute_won:head_coach | eur:999999:reversed_cents:dispute_won:coach | eur:999999:reversed_cents:dispute_won:head_coach | eur:9999999:all:dispute_won:coach | eur:9999999:all:dispute_won:head_coach
+2026-10-04T18:48:19.2785907Z 
+2026-10-04T18:48:19.2786389Z       at Object.<anonymous> (test/audit-opus-f12r-682-probe.spec.ts:434:13)
+2026-10-04T18:48:19.2786925Z 
+2026-10-04T18:48:19.8562875Z PASS test/s-fee-r15-deferred-fx-notice-flag.spec.ts (146 MB heap size)
+2026-10-04T18:48:35.4620579Z PASS test/audit-opus-f12r-livedb-probe.spec.ts (15.601 s, 102 MB heap size)
+2026-10-04T18:48:35.4625407Z   ● Console
+2026-10-04T18:48:35.4625659Z 
+2026-10-04T18:48:35.4625822Z     console.log
+2026-10-04T18:48:35.4627142Z       migrate deploy: 188 migrations found in prisma/migrations | The following migration(s) have been applied: | All migrations have been successfully applied.
+2026-10-04T18:48:35.4628474Z 
+2026-10-04T18:48:35.4628989Z       at Object.<anonymous> (test/audit-opus-f12r-livedb-probe.spec.ts:57:11)
+2026-10-04T18:48:35.4629567Z 
+2026-10-04T18:48:35.4629927Z     console.log
+2026-10-04T18:48:35.4630650Z       DB-L0 purchases with duplicate legacy rows under the old algorithm: 30/30
+2026-10-04T18:48:35.4631207Z 
+2026-10-04T18:48:35.4631697Z       at Object.<anonymous> (test/audit-opus-f12r-livedb-probe.spec.ts:110:13)
+2026-10-04T18:48:35.4632272Z 
+2026-10-04T18:48:35.4632433Z     console.log
+2026-10-04T18:48:35.4632910Z       DB-R1 sends=20 losers=20 wrongLoser=0 bad=0
+2026-10-04T18:48:35.4633289Z 
+2026-10-04T18:48:35.4633767Z       at Object.<anonymous> (test/audit-opus-f12r-livedb-probe.spec.ts:251:13)
+2026-10-04T18:48:35.4634306Z 
+2026-10-04T18:48:35.7603424Z PASS test/audit-opus-f23-118-683.spec.ts (115 MB heap size)
+2026-10-04T18:48:36.0214328Z PASS test/aud-sol-f23-118-notice-recovery.spec.ts (139 MB heap size)
+2026-10-04T18:48:36.0216693Z   ● Console
+2026-10-04T18:48:36.0216912Z 
+2026-10-04T18:48:36.0217073Z     console.log
+2026-10-04T18:48:36.0217691Z       AUD118_NOTICE_RECOVERY {
+2026-10-04T18:48:36.0218463Z         failure: 'notice insert',
+2026-10-04T18:48:36.0218930Z         result: '',
+2026-10-04T18:48:36.0219981Z         failedDelivery: true,
+2026-10-04T18:48:36.0229104Z         durableRetry: true,
+2026-10-04T18:48:36.0229726Z         noticeCount: 1,
+2026-10-04T18:48:36.0230410Z         reconciled: [ 1, 0 ],
+2026-10-04T18:48:36.0231211Z         paid: 6980,
+2026-10-04T18:48:36.0231680Z         reversals: 1
+2026-10-04T18:48:36.0232048Z       }
+2026-10-04T18:48:36.0232290Z 
+2026-10-04T18:48:36.0232641Z       at test/aud-sol-f23-118-notice-recovery.spec.ts:93:13
+2026-10-04T18:48:36.0233048Z 
+2026-10-04T18:48:36.0233273Z     console.log
+2026-10-04T18:48:36.0233655Z       AUD118_NOTICE_RECOVERY {
+2026-10-04T18:48:36.0234095Z         failure: 'notice history read',
+2026-10-04T18:48:36.0234511Z         result: '',
+2026-10-04T18:48:36.0234888Z         failedDelivery: true,
+2026-10-04T18:48:36.0235280Z         durableRetry: true,
+2026-10-04T18:48:36.0235660Z         noticeCount: 1,
+2026-10-04T18:48:36.0236030Z         reconciled: [ 1, 0 ],
+2026-10-04T18:48:36.0236403Z         paid: 6980,
+2026-10-04T18:48:36.0236763Z         reversals: 1
+2026-10-04T18:48:36.0237110Z       }
+2026-10-04T18:48:36.0237356Z 
+2026-10-04T18:48:36.0237681Z       at test/aud-sol-f23-118-notice-recovery.spec.ts:93:13
+2026-10-04T18:48:36.0238348Z 
+2026-10-04T18:48:36.0238593Z     console.log
+2026-10-04T18:48:36.0238999Z       AUD118_TERMINAL_NOTICE_RETRY {
+2026-10-04T18:48:36.0239495Z         events: [ 'chargeback', 'dispute_lost' ],
+2026-10-04T18:48:36.0239936Z         flag: null,
+2026-10-04T18:48:36.0240324Z         disputeId: 'dp_notice',
+2026-10-04T18:48:36.0240710Z         paid: 0,
+2026-10-04T18:48:36.0241054Z         reversals: 1
+2026-10-04T18:48:36.0241398Z       }
+2026-10-04T18:48:36.0241639Z 
+2026-10-04T18:48:36.0242067Z       at Object.<anonymous> (test/aud-sol-f23-118-notice-recovery.spec.ts:157:11)
+2026-10-04T18:48:36.0242801Z 
+2026-10-04T18:48:36.2671834Z PASS test/audit-opus-f12-117-682-extra.spec.ts (160 MB heap size)
+2026-10-04T18:48:36.2676193Z   ● Console
+2026-10-04T18:48:36.2676477Z 
+2026-10-04T18:48:36.2676817Z     console.log
+2026-10-04T18:48:36.2679951Z       X3 message=SFEE_REVERSAL_UNCERTAIN transfer=tr-5 op=tgp-tr-rev-tr-5-op1: the reversal outcome is unknown (send_abandoned: the operation is still pending under another attempt; nothing sent by this worker); it is retried with the same idempotency key and nothing else moves on this transfer until it resolves.
+2026-10-04T18:48:36.2681865Z 
+2026-10-04T18:48:36.2682166Z       at Object.<anonymous> (test/audit-opus-f12-117-682-extra.spec.ts:153:13)
+2026-10-04T18:48:36.2682519Z 
+2026-10-04T18:48:36.2682618Z     console.log
+2026-10-04T18:48:36.2682880Z       X4 truncated=24 amount_cut=0
+2026-10-04T18:48:36.2683322Z       eur:999999:dispute_won:coach=9,999.99 EUR is held from your next s...
+2026-10-04T18:48:36.2683911Z       eur:999999:dispute_won:head_coach=9,999.99 EUR is held from your next s...
+2026-10-04T18:48:36.2684471Z       eur:9999999:dispute_won:coach=d. 99,999.99 EUR is held from your ne...
+2026-10-04T18:48:36.2685044Z       eur:9999999:dispute_won:head_coach=d. 99,999.99 EUR is held from your ne...
+2026-10-04T18:48:36.2685609Z       eur:99999999:dispute_won:coach=ased. 999,999.99 EUR is held from you...
+2026-10-04T18:48:36.2686166Z       eur:99999999:dispute_won:head_coach=ased. 999,999.99 EUR is held from you...
+2026-10-04T18:48:36.2686728Z       gbp:999999:dispute_won:coach=9,999.99 GBP is held from your next s...
+2026-10-04T18:48:36.2687276Z       gbp:999999:dispute_won:head_coach=9,999.99 GBP is held from your next s...
+2026-10-04T18:48:36.2687828Z       gbp:9999999:dispute_won:coach=d. 99,999.99 GBP is held from your ne...
+2026-10-04T18:48:36.2688544Z       gbp:9999999:dispute_won:head_coach=d. 99,999.99 GBP is held from your ne...
+2026-10-04T18:48:36.2689112Z       gbp:99999999:dispute_won:coach=ased. 999,999.99 GBP is held from you...
+2026-10-04T18:48:36.2689683Z       gbp:99999999:dispute_won:head_coach=ased. 999,999.99 GBP is held from you...
+2026-10-04T18:48:36.2690238Z       aud:999999:dispute_won:coach=9,999.99 AUD is held from your next s...
+2026-10-04T18:48:36.2691174Z       aud:999999:dispute_won:head_coach=9,999.99 AUD is held from your next s...
+2026-10-04T18:48:36.2691722Z       aud:9999999:dispute_won:coach=d. 99,999.99 AUD is held from your ne...
+2026-10-04T18:48:36.2692231Z       aud:9999999:dispute_won:head_coach=d. 99,999.99 AUD is held from your ne...
+2026-10-04T18:48:36.2692746Z       aud:99999999:dispute_won:coach=ased. 999,999.99 AUD is held from you...
+2026-10-04T18:48:36.2693257Z       aud:99999999:dispute_won:head_coach=ased. 999,999.99 AUD is held from you...
+2026-10-04T18:48:36.2693764Z       cad:999999:dispute_won:coach=9,999.99 CAD is held from your next s...
+2026-10-04T18:48:36.2694270Z       cad:999999:dispute_won:head_coach=9,999.99 CAD is held from your next s...
+2026-10-04T18:48:36.2694780Z       cad:9999999:dispute_won:coach=d. 99,999.99 CAD is held from your ne...
+2026-10-04T18:48:36.2695289Z       cad:9999999:dispute_won:head_coach=d. 99,999.99 CAD is held from your ne...
+2026-10-04T18:48:36.2695801Z       cad:99999999:dispute_won:coach=ased. 999,999.99 CAD is held from you...
+2026-10-04T18:48:36.2696309Z       cad:99999999:dispute_won:head_coach=ased. 999,999.99 CAD is held from you...
+2026-10-04T18:48:36.2696601Z 
+2026-10-04T18:48:36.2696859Z       at Object.<anonymous> (test/audit-opus-f12-117-682-extra.spec.ts:200:13)
+2026-10-04T18:48:36.2697165Z 
+2026-10-04T18:48:36.4754077Z [31m[Nest] 3183  - [39m10/04/2026, 6:48:36 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-6 op=tgp-tr-rev-tr-6-op1 amount=400: kind=stripe http=503 type=api_connection_error code=request_timeout[39m
+2026-10-04T18:48:36.4759438Z [31m[Nest] 3183  - [39m10/04/2026, 6:48:36 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-6 op=tgp-tr-rev-tr-6-op1 amount=400: reversal lookup unavailable: listing failed: kind=stripe http=500 type=api_error code=none; not re-sent[39m
+2026-10-04T18:48:36.4764673Z [31m[Nest] 3183  - [39m10/04/2026, 6:48:36 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-6 op=tgp-tr-rev-tr-6-op1 amount=400: reversal lookup unavailable: Stripe reported more reversals but sent an empty page; not re-sent[39m
+2026-10-04T18:48:36.5083931Z PASS test/aud-sol-f12r13-117-transfer.spec.ts (173 MB heap size)
+2026-10-04T18:48:36.7286206Z [31m[Nest] 3183  - [39m10/04/2026, 6:48:36 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-6 op=tgp-tr-rev-tr-6-op1 amount=400: kind=stripe http=503 type=api_connection_error code=request_timeout[39m
+2026-10-04T18:48:36.7290276Z [31m[Nest] 3183  - [39m10/04/2026, 6:48:36 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-6 op=tgp-tr-rev-tr-6-op1 amount=400: reversal lookup unavailable: listing failed: kind=stripe http=500 type=api_error code=none; not re-sent[39m
+2026-10-04T18:48:36.7294072Z [31m[Nest] 3183  - [39m10/04/2026, 6:48:36 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-6 op=tgp-tr-rev-tr-6-op1 amount=400: reversal lookup unavailable: Stripe reported more reversals but sent an empty page; not re-sent[39m
+2026-10-04T18:48:36.7521483Z [33m[Nest] 3183  - [39m10/04/2026, 6:48:36 PM [33m   WARN[39m [38;5;3m[TransferOrchestratorService] [39m[33mSFEE_REVERSAL_SEND_ABANDONED transfer=tr-4 op=tgp-tr-rev-tr-4-op1 attempt=1 age_ms=90000001 budget_ms=30000: nothing sent; the op stays pending and the next driver lists Stripe before any re-send[39m
+2026-10-04T18:48:36.7525647Z [33m[Nest] 3183  - [39m10/04/2026, 6:48:36 PM [33m   WARN[39m [38;5;3m[TransferOrchestratorService] [39m[33mlisting reversals of tr_1 failed while reconciling op=tgp-tr-rev-tr-6-op1: kind=stripe http=500 type=api_error code=none[39m
+2026-10-04T18:48:36.7530668Z [33m[Nest] 3183  - [39m10/04/2026, 6:48:36 PM [33m   WARN[39m [38;5;3m[TransferOrchestratorService] [39m[33mSFEE_REVERSAL_SEND_ABANDONED transfer=tr-4 op=tgp-tr-rev-tr-4-op1 attempt=1 age_ms=90000001 budget_ms=30000: nothing sent; the op stays pending and the next driver lists Stripe before any re-send[39m
+2026-10-04T18:48:36.7534818Z [33m[Nest] 3183  - [39m10/04/2026, 6:48:36 PM [33m   WARN[39m [38;5;3m[TransferOrchestratorService] [39m[33mlisting reversals of tr_1 failed while reconciling op=tgp-tr-rev-tr-6-op1: kind=stripe http=500 type=api_error code=none[39m
+2026-10-04T18:48:36.7536732Z PASS test/aud-sol-f12-117-reversal.spec.ts (123 MB heap size)
+2026-10-04T18:48:37.0162769Z PASS test/aud-sol-f23-117-settlement-boundaries.spec.ts (142 MB heap size)
+2026-10-04T18:48:37.0168224Z   ● Console
+2026-10-04T18:48:37.0168780Z 
+2026-10-04T18:48:37.0169152Z     console.log
+2026-10-04T18:48:37.0169658Z       AUD117_PROVISIONAL_FX {
+2026-10-04T18:48:37.0170168Z         failure: 'no balance transaction',
+2026-10-04T18:48:37.0170642Z         row: {
+2026-10-04T18:48:37.0171068Z           id: 'cs-2',
+2026-10-04T18:48:37.0171532Z           created_at: 2026-10-04T18:48:36.942Z,
+2026-10-04T18:48:37.0172087Z           updated_at: 2026-10-04T18:48:36.950Z,
+2026-10-04T18:48:37.0172610Z           head_coach_user_id: null,
+2026-10-04T18:48:37.0173172Z           stripe_balance_transaction_id: 'txn_probe',
+2026-10-04T18:48:37.0173742Z           stripe_invoice_id: null,
+2026-10-04T18:48:37.0174119Z           currency: 'usd',
+2026-10-04T18:48:37.0174406Z           rail: 'card',
+2026-10-04T18:48:37.0174706Z           mechanism: 'separate_charge_transfer',
+2026-10-04T18:48:37.0175019Z           status: 'settled',
+2026-10-04T18:48:37.0175261Z           head_coach_bps: 0,
+2026-10-04T18:48:37.0175544Z           stripe_fee_cents: 200,
+2026-10-04T18:48:37.0176218Z           platform_fee_cents: 160,
+2026-10-04T18:48:37.0176509Z           head_coach_split_cents: 0,
+2026-10-04T18:48:37.0176793Z           coach_net_cents: 7640,
+2026-10-04T18:48:37.0177060Z           refunded_cents: 2000,
+2026-10-04T18:48:37.0177343Z           dispute_withdrawn_cents: 0,
+2026-10-04T18:48:37.0177625Z           dispute_fee_cents: 0,
+2026-10-04T18:48:37.0177903Z           target_platform_fee_cents: 160,
+2026-10-04T18:48:37.0178734Z           target_head_coach_cents: 0,
+2026-10-04T18:48:37.0179281Z           target_coach_net_cents: 5640,
+2026-10-04T18:48:37.0179849Z           settled_at: 2026-10-04T18:48:36.946Z,
+2026-10-04T18:48:37.0180453Z           adjusted_at: 2026-10-04T18:48:36.943Z,
+2026-10-04T18:48:37.0180959Z           last_error: null,
+2026-10-04T18:48:37.0181445Z           reconcile_requested_at: null,
+2026-10-04T18:48:37.0181984Z           reconcile_dispute_id: null,
+2026-10-04T18:48:37.0182520Z           reconcile_reason: null,
+2026-10-04T18:48:37.0183050Z           purchase_id: 'cp_probe',
+2026-10-04T18:48:37.0183548Z           coach_user_id: 'coach_1',
+2026-10-04T18:48:37.0184055Z           stripe_charge_id: 'ch_probe',
+2026-10-04T18:48:37.0184526Z           platform_bps: 200,
+2026-10-04T18:48:37.0184971Z           gross_cents: 8000
+2026-10-04T18:48:37.0185365Z         },
+2026-10-04T18:48:37.0185693Z         external: 5640,
+2026-10-04T18:48:37.0186061Z         rec: {
+2026-10-04T18:48:37.0186466Z           purchase_id: 'cp_probe',
+2026-10-04T18:48:37.0186897Z           status: 'ok',
+2026-10-04T18:48:37.0187272Z           drift_cents: 0,
+2026-10-04T18:48:37.0187661Z           stripe: {
+2026-10-04T18:48:37.0188289Z             amount_cents: 8000,
+2026-10-04T18:48:37.0188783Z             refunded_cents: 2000,
+2026-10-04T18:48:37.0189285Z             application_fee_cents: 0,
+2026-10-04T18:48:37.0189806Z             transfers_cents: 5640
+2026-10-04T18:48:37.0190228Z           },
+2026-10-04T18:48:37.0190560Z           ledger: {
+2026-10-04T18:48:37.0191003Z             destination_cents: 7640,
+2026-10-04T18:48:37.0191530Z             application_fee_cents: 160,
+2026-10-04T18:48:37.0192037Z             head_coach_cents: 0,
+2026-10-04T18:48:37.0192506Z             reversed_cents: 2000
+2026-10-04T18:48:37.0193154Z           },
+2026-10-04T18:48:37.0193505Z           notes: null
+2026-10-04T18:48:37.0193939Z         }
+2026-10-04T18:48:37.0194257Z       }
+2026-10-04T18:48:37.0194707Z 
+2026-10-04T18:48:37.0195149Z       at test/aud-sol-f23-117-settlement-boundaries.spec.ts:104:13
+2026-10-04T18:48:37.0195638Z 
+2026-10-04T18:48:37.0195790Z     console.log
+2026-10-04T18:48:37.0196167Z       AUD117_PROVISIONAL_FX {
+2026-10-04T18:48:37.0196706Z         failure: 'first Stripe read unavailable',
+2026-10-04T18:48:37.0197220Z         row: {
+2026-10-04T18:48:37.0197562Z           id: 'cs-13',
+2026-10-04T18:48:37.0198263Z           created_at: 2026-10-04T18:48:36.969Z,
+2026-10-04T18:48:37.0198849Z           updated_at: 2026-10-04T18:48:36.963Z,
+2026-10-04T18:48:37.0199402Z           head_coach_user_id: null,
+2026-10-04T18:48:37.0199989Z           stripe_balance_transaction_id: 'txn_probe',
+2026-10-04T18:48:37.0200583Z           stripe_invoice_id: null,
+2026-10-04T18:48:37.0201027Z           currency: 'usd',
+2026-10-04T18:48:37.0201421Z           rail: 'card',
+2026-10-04T18:48:37.0201889Z           mechanism: 'separate_charge_transfer',
+2026-10-04T18:48:37.0202402Z           status: 'settled',
+2026-10-04T18:48:37.0202813Z           head_coach_bps: 0,
+2026-10-04T18:48:37.0203289Z           stripe_fee_cents: 200,
+2026-10-04T18:48:37.0203792Z           platform_fee_cents: 160,
+2026-10-04T18:48:37.0204296Z           head_coach_split_cents: 0,
+2026-10-04T18:48:37.0204800Z           coach_net_cents: 7640,
+2026-10-04T18:48:37.0205284Z           refunded_cents: 2000,
+2026-10-04T18:48:37.0205782Z           dispute_withdrawn_cents: 0,
+2026-10-04T18:48:37.0206297Z           dispute_fee_cents: 0,
+2026-10-04T18:48:37.0206801Z           target_platform_fee_cents: 160,
+2026-10-04T18:48:37.0207620Z           target_head_coach_cents: 0,
+2026-10-04T18:48:37.0208362Z           target_coach_net_cents: 5640,
+2026-10-04T18:48:37.0208921Z           settled_at: 2026-10-04T18:48:36.961Z,
+2026-10-04T18:48:37.0209493Z           adjusted_at: 2026-10-04T18:48:36.957Z,
+2026-10-04T18:48:37.0209986Z           last_error: null,
+2026-10-04T18:48:37.0210463Z           reconcile_requested_at: null,
+2026-10-04T18:48:37.0210998Z           reconcile_dispute_id: null,
+2026-10-04T18:48:37.0211501Z           reconcile_reason: null,
+2026-10-04T18:48:37.0211993Z           purchase_id: 'cp_probe',
+2026-10-04T18:48:37.0212489Z           coach_user_id: 'coach_1',
+2026-10-04T18:48:37.0212987Z           stripe_charge_id: 'ch_probe',
+2026-10-04T18:48:37.0213443Z           platform_bps: 200,
+2026-10-04T18:48:37.0213863Z           gross_cents: 8000
+2026-10-04T18:48:37.0214243Z         },
+2026-10-04T18:48:37.0214562Z         external: 5640,
+2026-10-04T18:48:37.0214937Z         rec: {
+2026-10-04T18:48:37.0215345Z           purchase_id: 'cp_probe',
+2026-10-04T18:48:37.0215809Z           status: 'ok',
+2026-10-04T18:48:37.0216186Z           drift_cents: 0,
+2026-10-04T18:48:37.0216576Z           stripe: {
+2026-10-04T18:48:37.0216974Z             amount_cents: 8000,
+2026-10-04T18:48:37.0217448Z             refunded_cents: 2000,
+2026-10-04T18:48:37.0217948Z             application_fee_cents: 0,
+2026-10-04T18:48:37.0223909Z             transfers_cents: 5640
+2026-10-04T18:48:37.0224360Z           },
+2026-10-04T18:48:37.0224700Z           ledger: {
+2026-10-04T18:48:37.0225112Z             destination_cents: 7640,
+2026-10-04T18:48:37.0225638Z             application_fee_cents: 160,
+2026-10-04T18:48:37.0226162Z             head_coach_cents: 0,
+2026-10-04T18:48:37.0226645Z             reversed_cents: 2000
+2026-10-04T18:48:37.0227043Z           },
+2026-10-04T18:48:37.0227382Z           notes: null
+2026-10-04T18:48:37.0227750Z         }
+2026-10-04T18:48:37.0228324Z       }
+2026-10-04T18:48:37.0228510Z 
+2026-10-04T18:48:37.0228759Z       at test/aud-sol-f23-117-settlement-boundaries.spec.ts:104:13
+2026-10-04T18:48:37.0229062Z 
+2026-10-04T18:48:37.0229154Z     console.log
+2026-10-04T18:48:37.0229608Z       AUD117_NOTICE_RETRY_FLAG { noticeCount: 0, flag: 2026-10-04T18:48:37.003Z, external: 5640 }
+2026-10-04T18:48:37.0230519Z 
+2026-10-04T18:48:37.0231092Z       at Object.<anonymous> (test/aud-sol-f23-117-settlement-boundaries.spec.ts:179:13)
+2026-10-04T18:48:37.0231719Z 
+2026-10-04T18:48:40.3747376Z [95m[Nest] 3183  - [39m10/04/2026, 6:48:39 PM [95m  DEBUG[39m [38;5;3m[NotificationsService] [39m[95mpush rate-limited: user=coach-limiter kind=coach_alert[39m
+2026-10-04T18:48:42.8363799Z [95m[Nest] 3183  - [39m10/04/2026, 6:48:42 PM [95m  DEBUG[39m [38;5;3m[NotificationsService] [39m[95mpush rate-limited: user=coach-limiter kind=coach_alert[39m
+2026-10-04T18:48:47.2714190Z [95m[Nest] 3183  - [39m10/04/2026, 6:48:46 PM [95m  DEBUG[39m [38;5;3m[NotificationsService] [39m[95mpush rate-limited: user=coach-limiter kind=coach_alert[39m
+2026-10-04T18:48:47.2721727Z FAIL test/probe-aud-opus-f56-116.spec.ts (10.246 s, 601 MB heap size)
+2026-10-04T18:48:47.2726747Z   ● MUTANT fee-190bps › [r4] › B-627-2 fencing: a lease that expires under a live holder › a stale holder cannot move money: its adjustment is refused before Stripe, no op, no recovery
+2026-10-04T18:48:47.2727947Z 
+2026-10-04T18:48:47.2728600Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.2729059Z 
+2026-10-04T18:48:47.2729240Z     Expected: 2630
+2026-10-04T18:48:47.2729695Z     Received: 2635
+2026-10-04T18:48:47.2729922Z 
+2026-10-04T18:48:47.2730786Z     [0m [90m 240 |[39m     [36mawait[39m expect(b)[33m.[39mresolves[33m.[39mtoBe([32m'adjusted'[39m)[33m;[39m
+2026-10-04T18:48:47.2732086Z      [90m 241 |[39m     [90m// B, the only owner, moved the money once: 4630 -> 2630.[39m
+2026-10-04T18:48:47.2733687Z     [31m[1m>[22m[39m[90m 242 |[39m     expect(ctx[33m.[39mstripe[33m.[39mnetTo([32m'acct_coach'[39m))[33m.[39mtoBe([35m2[39m_630)[33m;[39m
+2026-10-04T18:48:47.2735294Z      [90m     |[39m                                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.2736228Z      [90m 243 |[39m     expect(ctx[33m.[39mreversalKeysSent())[33m.[39mtoEqual([[32m`tgp-tr-rev-${ctx.db.transfers[0].id}-op1`[39m])[33m;[39m
+2026-10-04T18:48:47.2736923Z      [90m 244 |[39m   })[33m;[39m
+2026-10-04T18:48:47.2737222Z      [90m 245 |[39m[0m
+2026-10-04T18:48:47.2737369Z 
+2026-10-04T18:48:47.2737625Z       at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:242:44)
+2026-10-04T18:48:47.2737936Z 
+2026-10-04T18:48:47.2739476Z   ● MUTANT fee-190bps › [r4] › B-627-2 fencing: a lease that expires under a live holder › a holder paused inside its Stripe call, a takeover and a resume reverse the same cents once
+2026-10-04T18:48:47.2740146Z 
+2026-10-04T18:48:47.2740355Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.2740603Z 
+2026-10-04T18:48:47.2740690Z     Expected: 1630
+2026-10-04T18:48:47.2740914Z     Received: 1635
+2026-10-04T18:48:47.2741031Z 
+2026-10-04T18:48:47.2741202Z     [0m [90m 280 |[39m     })[33m;[39m
+2026-10-04T18:48:47.2741852Z      [90m 281 |[39m     [90m// Target for $30 refunded (OR-111-1: TGP keeps its 98): coach 1900 - 172 - 98 = 1630.[39m
+2026-10-04T18:48:47.2742823Z     [31m[1m>[22m[39m[90m 282 |[39m     expect(ctx[33m.[39mstripe[33m.[39mnetTo([32m'acct_coach'[39m))[33m.[39mtoBe([35m1[39m_630)[33m;[39m
+2026-10-04T18:48:47.2743554Z      [90m     |[39m                                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.2744686Z      [90m 283 |[39m     expect([[33m...[39mctx[33m.[39mstripe[33m.[39mreversalsByKey[33m.[39mvalues()][33m.[39mmap((r) [33m=>[39m r[33m.[39mamount))[33m.[39mtoEqual([[35m2[39m_000[33m,[39m [35m1[39m_000])[33m;[39m
+2026-10-04T18:48:47.2745796Z      [90m 284 |[39m     [90m// A's op1 and B's re-drive of op1 share one key and one amount; op2 once.[39m
+2026-10-04T18:48:47.2746722Z      [90m 285 |[39m     [36mconst[39m sent [33m=[39m ctx[33m.[39mstripe[33m.[39mreverseTransfer[33m.[39mmock[33m.[39mcalls[33m.[39mmap([0m
+2026-10-04T18:48:47.2747214Z 
+2026-10-04T18:48:47.2747627Z       at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:282:44)
+2026-10-04T18:48:47.2747928Z 
+2026-10-04T18:48:47.2749195Z   ● MUTANT fee-190bps › [r4] › B-627-5 an uncertain reversal never becomes a second recovery › Stripe committed, response lost: reconciled by the Stripe reversal object; no recovery; redelivery and a new sale move nothing extra
+2026-10-04T18:48:47.2749985Z 
+2026-10-04T18:48:47.2750173Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.2750405Z 
+2026-10-04T18:48:47.2750494Z     Expected: 2630
+2026-10-04T18:48:47.2750699Z     Received: 2635
+2026-10-04T18:48:47.2750822Z 
+2026-10-04T18:48:47.2751114Z     [0m [90m 316 |[39m       refunded_cents[33m:[39m [35m2[39m_000[33m,[39m
+2026-10-04T18:48:47.2751538Z      [90m 317 |[39m     })[33m;[39m
+2026-10-04T18:48:47.2752284Z     [31m[1m>[22m[39m[90m 318 |[39m     expect(ctx[33m.[39mstripe[33m.[39mnetTo([32m'acct_coach'[39m))[33m.[39mtoBe([35m2[39m_630)[33m;[39m
+2026-10-04T18:48:47.2753021Z      [90m     |[39m                                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.2753629Z      [90m 319 |[39m     expect(ctx[33m.[39mopenRecoveries())[33m.[39mtoBe([35m0[39m)[33m;[39m
+2026-10-04T18:48:47.2754393Z      [90m 320 |[39m     expect(ctx[33m.[39mdb[33m.[39mrecoveries)[33m.[39mtoHaveLength([35m0[39m)[33m;[39m
+2026-10-04T18:48:47.2755257Z      [90m 321 |[39m     [36mconst[39m op [33m=[39m ctx[33m.[39mdb[33m.[39mreversalOps[33m![39m[[35m0[39m][33m;[39m[0m
+2026-10-04T18:48:47.2755667Z 
+2026-10-04T18:48:47.2755902Z       at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:318:44)
+2026-10-04T18:48:47.2756194Z 
+2026-10-04T18:48:47.2757019Z   ● MUTANT fee-190bps › [r4] › B-627-5 an uncertain reversal never becomes a second recovery › Stripe succeeded but the DB receipt failed: the retry finds the reversal at Stripe and does not re-send
+2026-10-04T18:48:47.2757856Z 
+2026-10-04T18:48:47.2758259Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.2758504Z 
+2026-10-04T18:48:47.2758609Z     Expected: 2630
+2026-10-04T18:48:47.2758819Z     Received: 2635
+2026-10-04T18:48:47.2758939Z 
+2026-10-04T18:48:47.2759125Z     [0m [90m 368 |[39m       })[33m,[39m
+2026-10-04T18:48:47.2759706Z      [90m 369 |[39m     )[33m.[39mrejects[33m.[39mtoThrow([32m'connection terminated'[39m)[33m;[39m
+2026-10-04T18:48:47.2760626Z     [31m[1m>[22m[39m[90m 370 |[39m     expect(ctx[33m.[39mstripe[33m.[39mnetTo([32m'acct_coach'[39m))[33m.[39mtoBe([35m2[39m_630)[33m;[39m
+2026-10-04T18:48:47.2761352Z      [90m     |[39m                                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.2762009Z      [90m 371 |[39m     expect(ctx[33m.[39mdb[33m.[39mrecoveries)[33m.[39mtoHaveLength([35m0[39m)[33m;[39m
+2026-10-04T18:48:47.2763223Z      [90m 372 |[39m     expect(ctx[33m.[39mdb[33m.[39mreversalOps[33m![39m[[35m0[39m])[33m.[39mtoMatchObject({ status[33m:[39m [32m'pending'[39m[33m,[39m attempts[33m:[39m [35m1[39m })[33m;[39m
+2026-10-04T18:48:47.2764159Z      [90m 373 |[39m     [90m// Durable retry flag for the sweeper.[39m[0m
+2026-10-04T18:48:47.2764430Z 
+2026-10-04T18:48:47.2764667Z       at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:370:44)
+2026-10-04T18:48:47.2764964Z 
+2026-10-04T18:48:47.2765864Z   ● MUTANT fee-190bps › [r4] › B-627-5 an uncertain reversal never becomes a second recovery › outcome unknown and not visible at Stripe: retryable error, op pending, no recovery; the sweeper re-drives the same key
+2026-10-04T18:48:47.2766605Z 
+2026-10-04T18:48:47.2766782Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.2767017Z 
+2026-10-04T18:48:47.2767106Z     Expected: 4630
+2026-10-04T18:48:47.2767308Z     Received: 4635
+2026-10-04T18:48:47.2767434Z 
+2026-10-04T18:48:47.2767880Z     [0m [90m 402 |[39m     expect(ctx[33m.[39mdb[33m.[39mrecoveries)[33m.[39mtoHaveLength([35m0[39m)[33m;[39m
+2026-10-04T18:48:47.2769518Z      [90m 403 |[39m     expect(ctx[33m.[39mdb[33m.[39mreversalOps[33m![39m[[35m0[39m])[33m.[39mtoMatchObject({ status[33m:[39m [32m'pending'[39m[33m,[39m amount_cents[33m:[39m [35m2[39m_000 })[33m;[39m
+2026-10-04T18:48:47.2770770Z     [31m[1m>[22m[39m[90m 404 |[39m     expect(ctx[33m.[39mstripe[33m.[39mnetTo([32m'acct_coach'[39m))[33m.[39mtoBe([35m4[39m_630)[33m;[39m
+2026-10-04T18:48:47.2771499Z      [90m     |[39m                                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.2772531Z      [90m 405 |[39m     [36mawait[39m ctx[33m.[39msvc[33m.[39mrunSettlementSweep([36mnew[39m [33mDate[39m([33mDate[39m[33m.[39mnow() [33m+[39m [35m5[39m [33m*[39m [35m60[39m_000))[33m;[39m
+2026-10-04T18:48:47.2773597Z      [90m 406 |[39m     [36mconst[39m key [33m=[39m [32m`tgp-tr-rev-${ctx.db.transfers[0].id}-op1`[39m[33m;[39m
+2026-10-04T18:48:47.2774421Z      [90m 407 |[39m     expect(ctx[33m.[39mreversalKeysSent())[33m.[39mtoEqual([key[33m,[39m key])[33m;[39m[0m
+2026-10-04T18:48:47.2774830Z 
+2026-10-04T18:48:47.2775064Z       at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:404:44)
+2026-10-04T18:48:47.2775358Z 
+2026-10-04T18:48:47.2776246Z   ● MUTANT fee-190bps › [r4] › B-627-5 an uncertain reversal never becomes a second recovery › through the refund webhook: an unknown outcome fails the delivery (Stripe redelivers) and the refund is applied once
+2026-10-04T18:48:47.2776981Z 
+2026-10-04T18:48:47.2777164Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.2777394Z 
+2026-10-04T18:48:47.2777484Z     Expected: 2630
+2026-10-04T18:48:47.2777684Z     Received: 2635
+2026-10-04T18:48:47.2777804Z 
+2026-10-04T18:48:47.2778678Z     [0m [90m 429 |[39m     [36mconst[39m redelivered [33m=[39m [36mawait[39m ctx[33m.[39mhandler[33m.[39mupsertAndApplyRefund(refund)[33m;[39m
+2026-10-04T18:48:47.2779816Z      [90m 430 |[39m     expect(redelivered[33m.[39mledger_just_reversed)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+2026-10-04T18:48:47.2780777Z     [31m[1m>[22m[39m[90m 431 |[39m     expect(ctx[33m.[39mstripe[33m.[39mnetTo([32m'acct_coach'[39m))[33m.[39mtoBe([35m2[39m_630)[33m;[39m
+2026-10-04T18:48:47.2781504Z      [90m     |[39m                                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.2782163Z      [90m 432 |[39m     expect(ctx[33m.[39mdb[33m.[39mrecoveries)[33m.[39mtoHaveLength([35m0[39m)[33m;[39m
+2026-10-04T18:48:47.2782681Z      [90m 433 |[39m   })[33m;[39m
+2026-10-04T18:48:47.2782964Z      [90m 434 |[39m[0m
+2026-10-04T18:48:47.2783098Z 
+2026-10-04T18:48:47.2783340Z       at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:431:44)
+2026-10-04T18:48:47.2783629Z 
+2026-10-04T18:48:47.2784450Z   ● MUTANT fee-190bps › [r4] › B-627-5 an uncertain reversal never becomes a second recovery › a transfer.reversed event re-converges the charge (receipt lost, Stripe listing down at the time)
+2026-10-04T18:48:47.2785124Z 
+2026-10-04T18:48:47.2785305Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.2785538Z 
+2026-10-04T18:48:47.2785621Z     Expected: 2630
+2026-10-04T18:48:47.2785828Z     Received: 2635
+2026-10-04T18:48:47.2785948Z 
+2026-10-04T18:48:47.2786624Z     [0m [90m 454 |[39m     expect(ctx[33m.[39mdb[33m.[39mreversalOps[33m![39m[[35m0[39m])[33m.[39mtoMatchObject({ status[33m:[39m [32m'succeeded'[39m })[33m;[39m
+2026-10-04T18:48:47.2787754Z      [90m 455 |[39m     expect(ctx[33m.[39mdb[33m.[39mtransfers[[35m0[39m][33m.[39mreversed_amount_cents)[33m.[39mtoBe([35m2[39m_000)[33m;[39m
+2026-10-04T18:48:47.2789102Z     [31m[1m>[22m[39m[90m 456 |[39m     expect(ctx[33m.[39mstripe[33m.[39mnetTo([32m'acct_coach'[39m))[33m.[39mtoBe([35m2[39m_630)[33m;[39m
+2026-10-04T18:48:47.2789833Z      [90m     |[39m                                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.2790448Z      [90m 457 |[39m     expect(ctx[33m.[39mopenRecoveries())[33m.[39mtoBe([35m0[39m)[33m;[39m
+2026-10-04T18:48:47.2791068Z      [90m 458 |[39m   })[33m;[39m
+2026-10-04T18:48:47.2791361Z      [90m 459 |[39m[0m
+2026-10-04T18:48:47.2791504Z 
+2026-10-04T18:48:47.2791742Z       at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:456:44)
+2026-10-04T18:48:47.2792028Z 
+2026-10-04T18:48:47.2792899Z   ● MUTANT fee-190bps › [r4] › B-627-4 a stale dispute event after a failed canonical read moves nothing › won -> late created + Stripe read failure: refused, flagged, coach stays at 3130; the sweeper converges
+2026-10-04T18:48:47.2793613Z 
+2026-10-04T18:48:47.2793791Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.2794020Z 
+2026-10-04T18:48:47.2794110Z     Expected: 3130
+2026-10-04T18:48:47.2794319Z     Received: 3135
+2026-10-04T18:48:47.2794438Z 
+2026-10-04T18:48:47.2794715Z     [0m [90m 492 |[39m       dispute_id[33m:[39m [32m'dp_1'[39m[33m,[39m
+2026-10-04T18:48:47.2795126Z      [90m 493 |[39m     })[33m;[39m
+2026-10-04T18:48:47.2795913Z     [31m[1m>[22m[39m[90m 494 |[39m     expect(ctx[33m.[39mstripe[33m.[39mnetTo([32m'acct_coach'[39m))[33m.[39mtoBe([35m3[39m_130)[33m;[39m
+2026-10-04T18:48:47.2796640Z      [90m     |[39m                                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.2796999Z      [90m 495 |[39m   }
+2026-10-04T18:48:47.2797243Z      [90m 496 |[39m
+2026-10-04T18:48:47.2798386Z      [90m 497 |[39m   it([32m'won -> late created + Stripe read failure: refused, flagged, coach stays at 3130; the sweeper converges'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-04T18:48:47.2799010Z 
+2026-10-04T18:48:47.2799225Z       at wonDispute (test/s-fee-r4-money-protocol.spec.ts:494:44)
+2026-10-04T18:48:47.2799715Z       at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:499:5)
+2026-10-04T18:48:47.2800140Z 
+2026-10-04T18:48:47.2800949Z   ● MUTANT fee-190bps › [r4] › B-627-4 a stale dispute event after a failed canonical read moves nothing › a malformed canonical response (no balance_transactions) is refused, not trusted
+2026-10-04T18:48:47.2801606Z 
+2026-10-04T18:48:47.2801777Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.2802013Z 
+2026-10-04T18:48:47.2802100Z     Expected: 3130
+2026-10-04T18:48:47.2802300Z     Received: 3135
+2026-10-04T18:48:47.2802418Z 
+2026-10-04T18:48:47.2802689Z     [0m [90m 492 |[39m       dispute_id[33m:[39m [32m'dp_1'[39m[33m,[39m
+2026-10-04T18:48:47.2803102Z      [90m 493 |[39m     })[33m;[39m
+2026-10-04T18:48:47.2803837Z     [31m[1m>[22m[39m[90m 494 |[39m     expect(ctx[33m.[39mstripe[33m.[39mnetTo([32m'acct_coach'[39m))[33m.[39mtoBe([35m3[39m_130)[33m;[39m
+2026-10-04T18:48:47.2804560Z      [90m     |[39m                                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.2804922Z      [90m 495 |[39m   }
+2026-10-04T18:48:47.2805159Z      [90m 496 |[39m
+2026-10-04T18:48:47.2806022Z      [90m 497 |[39m   it([32m'won -> late created + Stripe read failure: refused, flagged, coach stays at 3130; the sweeper converges'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-04T18:48:47.2806626Z 
+2026-10-04T18:48:47.2806838Z       at wonDispute (test/s-fee-r4-money-protocol.spec.ts:494:44)
+2026-10-04T18:48:47.2807317Z       at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:522:5)
+2026-10-04T18:48:47.2807595Z 
+2026-10-04T18:48:47.2808681Z   ● MUTANT fee-190bps › [r4] › B-627-4 a stale dispute event after a failed canonical read moves nothing › reverse order (won event processed before created): both read Stripe, final state is won
+2026-10-04T18:48:47.2809361Z 
+2026-10-04T18:48:47.2809538Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.2809772Z 
+2026-10-04T18:48:47.2809860Z     Expected: 3130
+2026-10-04T18:48:47.2810067Z     Received: 3135
+2026-10-04T18:48:47.2810185Z 
+2026-10-04T18:48:47.2810365Z     [0m [90m 555 |[39m       })[33m;[39m
+2026-10-04T18:48:47.2810667Z      [90m 556 |[39m     }
+2026-10-04T18:48:47.2811508Z     [31m[1m>[22m[39m[90m 557 |[39m     expect(ctx[33m.[39mstripe[33m.[39mnetTo([32m'acct_coach'[39m))[33m.[39mtoBe([35m3[39m_130)[33m;[39m
+2026-10-04T18:48:47.2812247Z      [90m     |[39m                                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.2812641Z      [90m 558 |[39m   })[33m;[39m
+2026-10-04T18:48:47.2812907Z      [90m 559 |[39m
+2026-10-04T18:48:47.2813862Z      [90m 560 |[39m   it([32m'through the webhook: the read failure fails the delivery (non-2xx) instead of being swallowed; the coach alert still goes out'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-04T18:48:47.2814545Z 
+2026-10-04T18:48:47.2814781Z       at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:557:44)
+2026-10-04T18:48:47.2815073Z 
+2026-10-04T18:48:47.2816043Z   ● MUTANT fee-190bps › [r4] › B-627-4 a stale dispute event after a failed canonical read moves nothing › through the webhook: the read failure fails the delivery (non-2xx) instead of being swallowed; the coach alert still goes out
+2026-10-04T18:48:47.2816831Z 
+2026-10-04T18:48:47.2817005Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.2817234Z 
+2026-10-04T18:48:47.2817317Z     Expected: 4630
+2026-10-04T18:48:47.2817522Z     Received: 4635
+2026-10-04T18:48:47.2817638Z 
+2026-10-04T18:48:47.2818392Z     [0m [90m 579 |[39m     )[33m.[39mrejects[33m.[39mtoBeInstanceOf([33mDisputeStateUnavailableError[39m)[33m;[39m
+2026-10-04T18:48:47.2819426Z      [90m 580 |[39m     expect(ctx[33m.[39mnotifications[33m.[39mcreateNotification)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)[33m;[39m
+2026-10-04T18:48:47.2820470Z     [31m[1m>[22m[39m[90m 581 |[39m     expect(ctx[33m.[39mstripe[33m.[39mnetTo([32m'acct_coach'[39m))[33m.[39mtoBe([35m4[39m_630)[33m;[39m
+2026-10-04T18:48:47.2821354Z      [90m     |[39m                                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.2821738Z      [90m 582 |[39m   })[33m;[39m
+2026-10-04T18:48:47.2822057Z      [90m 583 |[39m })[33m;[39m
+2026-10-04T18:48:47.2822331Z      [90m 584 |[39m[0m
+2026-10-04T18:48:47.2822463Z 
+2026-10-04T18:48:47.2822696Z       at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:581:44)
+2026-10-04T18:48:47.2822984Z 
+2026-10-04T18:48:47.2824008Z   ● MUTANT fee-190bps › [r4] › B-627-3 / OR-111-1 recoveries: forward netting only; cash vs receivable reported honestly › full refund: the coach's OTHER past transfer is never reversed; the 270 held (2% 98 + fee 172) is netted from the next sale
+2026-10-04T18:48:47.2824831Z 
+2026-10-04T18:48:47.2825007Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.2825238Z 
+2026-10-04T18:48:47.2825319Z     Expected: 270
+2026-10-04T18:48:47.2825522Z     Received: 265
+2026-10-04T18:48:47.2825642Z 
+2026-10-04T18:48:47.2825929Z     [0m [90m 597 |[39m       refunded_cents[33m:[39m [35m4[39m_900[33m,[39m
+2026-10-04T18:48:47.2826347Z      [90m 598 |[39m     })[33m;[39m
+2026-10-04T18:48:47.2826976Z     [31m[1m>[22m[39m[90m 599 |[39m     expect(ctx[33m.[39mopenRecoveries())[33m.[39mtoBe([35m270[39m)[33m;[39m
+2026-10-04T18:48:47.2827597Z      [90m     |[39m                                  [31m[1m^[22m[39m
+2026-10-04T18:48:47.2828465Z      [90m 600 |[39m     expect(ctx[33m.[39midentity([32m'ch_1'[39m))[33m.[39mtoMatchObject({
+2026-10-04T18:48:47.2829114Z      [90m 601 |[39m       platform_net_cents[33m:[39m [35m98[39m[33m,[39m
+2026-10-04T18:48:47.2829735Z      [90m 602 |[39m       platform_cash_cents[33m:[39m [33m-[39m[35m172[39m[33m,[39m[0m
+2026-10-04T18:48:47.2830055Z 
+2026-10-04T18:48:47.2830297Z       at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:599:34)
+2026-10-04T18:48:47.2830582Z 
+2026-10-04T18:48:47.2831601Z   ● MUTANT fee-190bps › [r4] › B-627-3 / OR-111-1 recoveries: forward netting only; cash vs receivable reported honestly › no other sale and a refused reversal: the residual is reported as negative cash and alerted per coach (owner decision)
+2026-10-04T18:48:47.2832584Z 
+2026-10-04T18:48:47.2832739Z     expect(received).toMatchObject(expected)
+2026-10-04T18:48:47.2832936Z 
+2026-10-04T18:48:47.2833033Z     - Expected  - 3
+2026-10-04T18:48:47.2833247Z     + Received  + 3
+2026-10-04T18:48:47.2833367Z 
+2026-10-04T18:48:47.2833450Z       Object {
+2026-10-04T18:48:47.2833649Z         "drift_cents": 0,
+2026-10-04T18:48:47.2833873Z         "notes": Array [
+2026-10-04T18:48:47.2834212Z     -     "platform_cash_negative: -6302 (receivable_open 6400)",
+2026-10-04T18:48:47.2834648Z     +     "platform_cash_negative: -6307 (receivable_open 6400)",
+2026-10-04T18:48:47.2834974Z         ],
+2026-10-04T18:48:47.2835232Z     -   "platform_cash_cents": -6302,
+2026-10-04T18:48:47.2835519Z     -   "platform_net_cents": 98,
+2026-10-04T18:48:47.2835802Z     +   "platform_cash_cents": -6307,
+2026-10-04T18:48:47.2836081Z     +   "platform_net_cents": 93,
+2026-10-04T18:48:47.2836361Z         "receivable_open_cents": 6400,
+2026-10-04T18:48:47.2836609Z       }
+2026-10-04T18:48:47.2836717Z 
+2026-10-04T18:48:47.2837178Z     [0m [90m 655 |[39m     [90m// Coach target -1770 (2% 98 + fee 172 + dispute fee 1500); TGP has paid 4630 out.[39m
+2026-10-04T18:48:47.2838226Z      [90m 656 |[39m     expect(ctx[33m.[39mopenRecoveries())[33m.[39mtoBe([35m4[39m_630 [33m+[39m [35m1[39m_770)[33m;[39m
+2026-10-04T18:48:47.2839081Z     [31m[1m>[22m[39m[90m 657 |[39m     expect(ctx[33m.[39midentity([32m'ch_1'[39m))[33m.[39mtoMatchObject({
+2026-10-04T18:48:47.2839687Z      [90m     |[39m                                  [31m[1m^[22m[39m
+2026-10-04T18:48:47.2840158Z      [90m 658 |[39m       drift_cents[33m:[39m [35m0[39m[33m,[39m
+2026-10-04T18:48:47.2840668Z      [90m 659 |[39m       platform_net_cents[33m:[39m [35m98[39m[33m,[39m
+2026-10-04T18:48:47.2841438Z      [90m 660 |[39m       platform_cash_cents[33m:[39m [33m-[39m[35m6[39m_302[33m,[39m[0m
+2026-10-04T18:48:47.2841758Z 
+2026-10-04T18:48:47.2842004Z       at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:657:34)
+2026-10-04T18:48:47.2842289Z 
+2026-10-04T18:48:47.2843160Z   ● MUTANT fee-190bps › [r4] › B-627-3 / OR-111-1 recoveries: forward netting only; cash vs receivable reported honestly › a won-dispute reinstatement is netted against what the coach owes on another charge
+2026-10-04T18:48:47.2843882Z 
+2026-10-04T18:48:47.2844023Z     expect(received).toMatchObject(expected)
+2026-10-04T18:48:47.2844223Z 
+2026-10-04T18:48:47.2844310Z     - Expected  - 1
+2026-10-04T18:48:47.2844524Z     + Received  + 1
+2026-10-04T18:48:47.2844641Z 
+2026-10-04T18:48:47.2844723Z       Object {
+2026-10-04T18:48:47.2844919Z         "amount_cents": 0,
+2026-10-04T18:48:47.2845183Z     -   "netted_recovery_cents": 3130,
+2026-10-04T18:48:47.2845480Z     +   "netted_recovery_cents": 3135,
+2026-10-04T18:48:47.2845735Z         "status": "netted",
+2026-10-04T18:48:47.2845959Z       }
+2026-10-04T18:48:47.2846055Z 
+2026-10-04T18:48:47.2846475Z     [0m [90m 707 |[39m     [90m// the 3130 paid back is netted in full against the 4900 owed on ch_1, so[39m
+2026-10-04T18:48:47.2847180Z      [90m 708 |[39m     [90m// nothing leaves TGP while the coach owes it more than that.[39m
+2026-10-04T18:48:47.2847811Z     [31m[1m>[22m[39m[90m 709 |[39m     expect(reinstate)[33m.[39mtoMatchObject({
+2026-10-04T18:48:47.2848590Z      [90m     |[39m                       [31m[1m^[22m[39m
+2026-10-04T18:48:47.2849055Z      [90m 710 |[39m       amount_cents[33m:[39m [35m0[39m[33m,[39m
+2026-10-04T18:48:47.2849603Z      [90m 711 |[39m       netted_recovery_cents[33m:[39m [35m3[39m_130[33m,[39m
+2026-10-04T18:48:47.2850142Z      [90m 712 |[39m       status[33m:[39m [32m'netted'[39m[33m,[39m[0m
+2026-10-04T18:48:47.2850403Z 
+2026-10-04T18:48:47.2850642Z       at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:709:23)
+2026-10-04T18:48:47.2850924Z 
+2026-10-04T18:48:47.2851763Z   ● MUTANT fee-190bps › [r4] › B-627-5 round 6: an unknown reversal lookup never re-sends › listing outage after key expiry: stays uncertain, sends nothing, reverses once
+2026-10-04T18:48:47.2852369Z 
+2026-10-04T18:48:47.2852546Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.2852783Z 
+2026-10-04T18:48:47.2852871Z     Expected: 2630
+2026-10-04T18:48:47.2853076Z     Received: 2635
+2026-10-04T18:48:47.2853197Z 
+2026-10-04T18:48:47.2853841Z     [0m [90m 762 |[39m     expect(ctx[33m.[39mstripe[33m.[39mreverseTransfer[33m.[39mmock[33m.[39mcalls[33m.[39mlength)[33m.[39mtoBe(sentBefore)[33m;[39m
+2026-10-04T18:48:47.2854815Z      [90m 763 |[39m     expect(ctx[33m.[39mstripe[33m.[39mreversals)[33m.[39mtoHaveLength([35m1[39m)[33m;[39m
+2026-10-04T18:48:47.2855763Z     [31m[1m>[22m[39m[90m 764 |[39m     expect(ctx[33m.[39mstripe[33m.[39mnetTo([32m'acct_coach'[39m))[33m.[39mtoBe([35m2[39m_630)[33m;[39m
+2026-10-04T18:48:47.2856491Z      [90m     |[39m                                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.2857161Z      [90m 765 |[39m     expect(ctx[33m.[39mdb[33m.[39mrecoveries)[33m.[39mtoHaveLength([35m0[39m)[33m;[39m
+2026-10-04T18:48:47.2858488Z      [90m 766 |[39m     expect(ctx[33m.[39mdb[33m.[39mreversalOps[33m![39m[[35m0[39m])[33m.[39mtoMatchObject({ status[33m:[39m [32m'pending'[39m })[33m;[39m
+2026-10-04T18:48:47.2859858Z      [90m 767 |[39m     expect([33mString[39m(ctx[33m.[39mdb[33m.[39mreversalOps[33m![39m[[35m0[39m][33m.[39mlast_error))[33m.[39mtoMatch([35m/reversal lookup unavailable/[39m)[33m;[39m[0m
+2026-10-04T18:48:47.2860509Z 
+2026-10-04T18:48:47.2860743Z       at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:764:44)
+2026-10-04T18:48:47.2861029Z 
+2026-10-04T18:48:47.2861803Z   ● MUTANT fee-190bps › [r4] › B-627-5 round 6: an unknown reversal lookup never re-sends › listing recovers: the existing reversal is found on a later page, recorded once, nothing re-sent
+2026-10-04T18:48:47.2862654Z 
+2026-10-04T18:48:47.2862835Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.2863067Z 
+2026-10-04T18:48:47.2863155Z     Expected: 2630
+2026-10-04T18:48:47.2863356Z     Received: 2635
+2026-10-04T18:48:47.2863475Z 
+2026-10-04T18:48:47.2863635Z     [0m [90m 804 |[39m     })[33m;[39m
+2026-10-04T18:48:47.2864407Z      [90m 805 |[39m     expect(ctx[33m.[39mdb[33m.[39mtransfers[[35m0[39m][33m.[39mreversed_amount_cents)[33m.[39mtoBe([35m2[39m_000)[33m;[39m
+2026-10-04T18:48:47.2865457Z     [31m[1m>[22m[39m[90m 806 |[39m     expect(ctx[33m.[39mstripe[33m.[39mnetTo([32m'acct_coach'[39m))[33m.[39mtoBe([35m2[39m_630)[33m;[39m
+2026-10-04T18:48:47.2866173Z      [90m     |[39m                                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.2866784Z      [90m 807 |[39m     expect(ctx[33m.[39mopenRecoveries())[33m.[39mtoBe([35m0[39m)[33m;[39m
+2026-10-04T18:48:47.2867265Z      [90m 808 |[39m   })[33m;[39m
+2026-10-04T18:48:47.2867545Z      [90m 809 |[39m[0m
+2026-10-04T18:48:47.2867677Z 
+2026-10-04T18:48:47.2867916Z       at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:806:44)
+2026-10-04T18:48:47.2868495Z 
+2026-10-04T18:48:47.2869281Z   ● MUTANT fee-190bps › [r4] › B-627-5 round 6: an unknown reversal lookup never re-sends › proven absent (request never reached Stripe, full listing read): re-sent once after key expiry
+2026-10-04T18:48:47.2869922Z 
+2026-10-04T18:48:47.2870097Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.2870327Z 
+2026-10-04T18:48:47.2870409Z     Expected: 2630
+2026-10-04T18:48:47.2870612Z     Received: 2635
+2026-10-04T18:48:47.2870725Z 
+2026-10-04T18:48:47.2870882Z     [0m [90m 831 |[39m     })[33m;[39m
+2026-10-04T18:48:47.2871499Z      [90m 832 |[39m     expect(ctx[33m.[39mstripe[33m.[39mreversals)[33m.[39mtoHaveLength([35m1[39m)[33m;[39m
+2026-10-04T18:48:47.2872458Z     [31m[1m>[22m[39m[90m 833 |[39m     expect(ctx[33m.[39mstripe[33m.[39mnetTo([32m'acct_coach'[39m))[33m.[39mtoBe([35m2[39m_630)[33m;[39m
+2026-10-04T18:48:47.2873327Z      [90m     |[39m                                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.2874233Z      [90m 834 |[39m     expect(ctx[33m.[39mdb[33m.[39mreversalOps[33m![39m[[35m0[39m])[33m.[39mtoMatchObject({ status[33m:[39m [32m'succeeded'[39m })[33m;[39m
+2026-10-04T18:48:47.2874923Z      [90m 835 |[39m   })[33m;[39m
+2026-10-04T18:48:47.2875233Z      [90m 836 |[39m })[33m;[39m[0m
+2026-10-04T18:48:47.2875405Z 
+2026-10-04T18:48:47.2875640Z       at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:833:44)
+2026-10-04T18:48:47.2875922Z 
+2026-10-04T18:48:47.2876728Z   ● MUTANT fee-190bps › [r5] › OR-111-1 worked example 1: $100 full refund › reverses that sale's own transfer (94.80), holds 5.20 = TGP 2.00 + Stripe 3.20 from the next sale, and tells the coach exactly
+2026-10-04T18:48:47.2877393Z 
+2026-10-04T18:48:47.2877535Z     expect(received).toMatchObject(expected)
+2026-10-04T18:48:47.2877732Z 
+2026-10-04T18:48:47.2877830Z     - Expected  - 1
+2026-10-04T18:48:47.2878193Z     + Received  + 1
+2026-10-04T18:48:47.2878314Z 
+2026-10-04T18:48:47.2878396Z       Object {
+2026-10-04T18:48:47.2878598Z     -   "amount_cents": 9480,
+2026-10-04T18:48:47.2878838Z     +   "amount_cents": 9490,
+2026-10-04T18:48:47.2879099Z         "status": "succeeded",
+2026-10-04T18:48:47.2879321Z       }
+2026-10-04T18:48:47.2879423Z 
+2026-10-04T18:48:47.2879697Z     [0m [90m 275 |[39m     [36mconst[39m ctx [33m=[39m setup()[33m;[39m
+2026-10-04T18:48:47.2880574Z      [90m 276 |[39m     [36mawait[39m ctx[33m.[39msell(ctx[33m.[39mp100[33m,[39m [32m'ch_100'[39m[33m,[39m [35m10[39m_000[33m,[39m [35m320[39m)[33m;[39m
+2026-10-04T18:48:47.2881918Z     [31m[1m>[22m[39m[90m 277 |[39m     expect(ctx[33m.[39mtransferFor([32m'ch_100'[39m))[33m.[39mtoMatchObject({ amount_cents[33m:[39m [35m9[39m_480[33m,[39m status[33m:[39m [32m'succeeded'[39m })[33m;[39m
+2026-10-04T18:48:47.2883022Z      [90m     |[39m                                       [31m[1m^[22m[39m
+2026-10-04T18:48:47.2883366Z      [90m 278 |[39m
+2026-10-04T18:48:47.2884064Z      [90m 279 |[39m     [36mawait[39m ctx[33m.[39mrefundViaWebhook([32m'ch_100'[39m[33m,[39m [35m10[39m_000[33m,[39m [35m10[39m_000)[33m;[39m
+2026-10-04T18:48:47.2884656Z      [90m 280 |[39m[0m
+2026-10-04T18:48:47.2884790Z 
+2026-10-04T18:48:47.2884995Z       at Object.<anonymous> (test/s-fee-r5-or-111-1.spec.ts:277:39)
+2026-10-04T18:48:47.2885257Z 
+2026-10-04T18:48:47.2886071Z   ● MUTANT fee-190bps › [r5] › OR-111-1 worked example 2: $100 lost dispute with a $15 fee › reverses 94.80 and holds 20.20 = TGP 2.00 + Stripe 3.20 + dispute fee 15.00; the lost outcome says the hold stands
+2026-10-04T18:48:47.2886733Z 
+2026-10-04T18:48:47.2886909Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.2887144Z 
+2026-10-04T18:48:47.2887227Z     Expected: 9480
+2026-10-04T18:48:47.2887430Z     Received: 9490
+2026-10-04T18:48:47.2887544Z 
+2026-10-04T18:48:47.2888400Z     [0m [90m 387 |[39m       data[33m:[39m { object[33m:[39m { [33m...[39mdispute[33m,[39m status[33m:[39m [32m'needs_response'[39m } }[33m,[39m
+2026-10-04T18:48:47.2889037Z      [90m 388 |[39m     })[33m;[39m
+2026-10-04T18:48:47.2890016Z     [31m[1m>[22m[39m[90m 389 |[39m     expect(ctx[33m.[39mstripe[33m.[39mreversedOn(ctx[33m.[39mtransferFor([32m'ch_100'[39m)[33m.[39mstripe_transfer_id))[33m.[39mtoBe([35m9[39m_480)[33m;[39m
+2026-10-04T18:48:47.2890992Z      [90m     |[39m                                                                                 [31m[1m^[22m[39m
+2026-10-04T18:48:47.2891638Z      [90m 390 |[39m     expect(ctx[33m.[39mopenHeld())[33m.[39mtoBe([35m2[39m_020)[33m;[39m
+2026-10-04T18:48:47.2892754Z      [90m 391 |[39m     [36mconst[39m chargeback [33m=[39m ctx[33m.[39mdb[33m.[39mnotices[33m![39m[33m.[39mfind((n) [33m=>[39m n[33m.[39mevent [33m===[39m [32m'chargeback'[39m)[33m![39m[33m;[39m
+2026-10-04T18:48:47.2893778Z      [90m 392 |[39m     expect(chargeback)[33m.[39mtoMatchObject({[0m
+2026-10-04T18:48:47.2894053Z 
+2026-10-04T18:48:47.2894258Z       at Object.<anonymous> (test/s-fee-r5-or-111-1.spec.ts:389:81)
+2026-10-04T18:48:47.2894514Z 
+2026-10-04T18:48:47.2895558Z   ● MUTANT fee-190bps › [r5] › OR-111-1 worked example 3: refused reversal after payout, then a $49 sale and a $100 sale › holds 100.00 (2.00 + 3.20 + 94.80 not reversed); the $49 sale nets 46.30 in full; the $100 sale nets the last 53.70 and pays 41.10
+2026-10-04T18:48:47.2896343Z 
+2026-10-04T18:48:47.2896486Z     expect(received).toMatchObject(expected)
+2026-10-04T18:48:47.2896691Z 
+2026-10-04T18:48:47.2896777Z     - Expected  - 2
+2026-10-04T18:48:47.2896982Z     + Received  + 2
+2026-10-04T18:48:47.2897115Z 
+2026-10-04T18:48:47.2897209Z     @@ -2,10 +2,10 @@
+2026-10-04T18:48:47.2897577Z         "body": "A client got $100.00 back. $100.00 is held from your next sale.",
+2026-10-04T18:48:47.2898303Z         "customer_refunded_cents": 10000,
+2026-10-04T18:48:47.2898687Z         "event": "refund",
+2026-10-04T18:48:47.2898923Z         "held_cents": 10000,
+2026-10-04T18:48:47.2899192Z         "held_dispute_fee_cents": 0,
+2026-10-04T18:48:47.2899496Z     -   "held_not_reversed_cents": 9480,
+2026-10-04T18:48:47.2899795Z     +   "held_not_reversed_cents": 9490,
+2026-10-04T18:48:47.2900084Z         "held_stripe_fee_cents": 320,
+2026-10-04T18:48:47.2900372Z     -   "held_tgp_fee_cents": 200,
+2026-10-04T18:48:47.2900644Z     +   "held_tgp_fee_cents": 190,
+2026-10-04T18:48:47.2900886Z         "reversed_cents": 0,
+2026-10-04T18:48:47.2901116Z       }
+2026-10-04T18:48:47.2901219Z 
+2026-10-04T18:48:47.2901984Z     [0m [90m 449 |[39m     expect(ctx[33m.[39mstripe[33m.[39mreversedOn(ctx[33m.[39mtransferFor([32m'ch_100'[39m)[33m.[39mstripe_transfer_id))[33m.[39mtoBe([35m0[39m)[33m;[39m
+2026-10-04T18:48:47.2903109Z      [90m 450 |[39m     expect(ctx[33m.[39mopenHeld())[33m.[39mtoBe([35m10[39m_000)[33m;[39m
+2026-10-04T18:48:47.2903930Z     [31m[1m>[22m[39m[90m 451 |[39m     expect(ctx[33m.[39mdb[33m.[39mnotices[33m![39m[[35m0[39m])[33m.[39mtoMatchObject({
+2026-10-04T18:48:47.2904574Z      [90m     |[39m                                [31m[1m^[22m[39m
+2026-10-04T18:48:47.2905058Z      [90m 452 |[39m       event[33m:[39m [32m'refund'[39m[33m,[39m
+2026-10-04T18:48:47.2905618Z      [90m 453 |[39m       customer_refunded_cents[33m:[39m [35m10[39m_000[33m,[39m
+2026-10-04T18:48:47.2906180Z      [90m 454 |[39m       reversed_cents[33m:[39m [35m0[39m[33m,[39m[0m
+2026-10-04T18:48:47.2906446Z 
+2026-10-04T18:48:47.2906654Z       at Object.<anonymous> (test/s-fee-r5-or-111-1.spec.ts:451:32)
+2026-10-04T18:48:47.2906906Z 
+2026-10-04T18:48:47.2907594Z   ● MUTANT fee-190bps › [r5] › OR-111-1 won dispute, Money API and delivery › a won dispute releases the hold and pays the coach back; the notice says both amounts
+2026-10-04T18:48:47.2908542Z 
+2026-10-04T18:48:47.2908753Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.2908990Z 
+2026-10-04T18:48:47.2909080Z     Expected: 2020
+2026-10-04T18:48:47.2909286Z     Received: 2010
+2026-10-04T18:48:47.2918855Z 
+2026-10-04T18:48:47.2919915Z     [0m [90m 512 |[39m     ctx[33m.[39mstripe[33m.[39mdisputes[33m.[39m[36mset[39m([32m'dp_1'[39m[33m,[39m { id[33m:[39m [32m'dp_1'[39m[33m,[39m balance_transactions[33m:[39m created })[33m;[39m
+2026-10-04T18:48:47.2921490Z      [90m 513 |[39m     [36mawait[39m ctx[33m.[39msvc[33m.[39mapplyAdjustments({ purchase[33m:[39m ctx[33m.[39mp100[33m,[39m charge_id[33m:[39m [32m'ch_100'[39m[33m,[39m dispute_id[33m:[39m [32m'dp_1'[39m })[33m;[39m
+2026-10-04T18:48:47.2922652Z     [31m[1m>[22m[39m[90m 514 |[39m     expect(ctx[33m.[39mopenHeld())[33m.[39mtoBe([35m2[39m_020)[33m;[39m
+2026-10-04T18:48:47.2923279Z      [90m     |[39m                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.2924114Z      [90m 515 |[39m     ctx[33m.[39mstripe[33m.[39mdisputes[33m.[39m[36mset[39m([32m'dp_1'[39m[33m,[39m {
+2026-10-04T18:48:47.2924751Z      [90m 516 |[39m       id[33m:[39m [32m'dp_1'[39m[33m,[39m
+2026-10-04T18:48:47.2925808Z      [90m 517 |[39m       balance_transactions[33m:[39m [[33m...[39mcreated[33m,[39m { id[33m:[39m [32m'txn_dp_2'[39m[33m,[39m amount[33m:[39m [35m10[39m_000[33m,[39m fee[33m:[39m [35m0[39m }][33m,[39m[0m
+2026-10-04T18:48:47.2926466Z 
+2026-10-04T18:48:47.2926678Z       at Object.<anonymous> (test/s-fee-r5-or-111-1.spec.ts:514:28)
+2026-10-04T18:48:47.2926939Z 
+2026-10-04T18:48:47.2927865Z   ● MUTANT fee-190bps › [r5] › OR-111-1 won dispute, Money API and delivery › GET /v1/coach/payments/adjustments data: open balance per currency, newest notice first, scoped to the caller; acknowledge is scoped too
+2026-10-04T18:48:47.2928923Z 
+2026-10-04T18:48:47.2929114Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T18:48:47.2929344Z 
+2026-10-04T18:48:47.2929457Z     - Expected  - 2
+2026-10-04T18:48:47.2929673Z     + Received  + 2
+2026-10-04T18:48:47.2929798Z 
+2026-10-04T18:48:47.2929888Z       Array [
+2026-10-04T18:48:47.2930080Z         Array [
+2026-10-04T18:48:47.2930278Z           "tgp_fee",
+2026-10-04T18:48:47.2930484Z     -     200,
+2026-10-04T18:48:47.2930682Z     +     190,
+2026-10-04T18:48:47.2930866Z         ],
+2026-10-04T18:48:47.2931045Z         Array [
+2026-10-04T18:48:47.2931247Z           "stripe_fee",
+2026-10-04T18:48:47.2931463Z           320,
+2026-10-04T18:48:47.2931650Z         ],
+2026-10-04T18:48:47.2931831Z         Array [
+2026-10-04T18:48:47.2932032Z           "not_reversed",
+2026-10-04T18:48:47.2932259Z     -     5480,
+2026-10-04T18:48:47.2932447Z     +     5490,
+2026-10-04T18:48:47.2932797Z         ],
+2026-10-04T18:48:47.2932974Z       ]
+2026-10-04T18:48:47.2933083Z 
+2026-10-04T18:48:47.2933402Z     [0m [90m 559 |[39m       needs_attention[33m:[39m [36mtrue[39m[33m,[39m
+2026-10-04T18:48:47.2933839Z      [90m 560 |[39m     })[33m;[39m
+2026-10-04T18:48:47.2934786Z     [31m[1m>[22m[39m[90m 561 |[39m     expect(view[33m.[39mnotices[[35m0[39m][33m.[39mheld_breakdown[33m.[39mmap((l) [33m=>[39m [l[33m.[39mcode[33m,[39m l[33m.[39mcents]))[33m.[39mtoEqual([
+2026-10-04T18:48:47.2935722Z      [90m     |[39m                                                                          [31m[1m^[22m[39m
+2026-10-04T18:48:47.2936274Z      [90m 562 |[39m       [[32m'tgp_fee'[39m[33m,[39m [35m200[39m][33m,[39m
+2026-10-04T18:48:47.2936821Z      [90m 563 |[39m       [[32m'stripe_fee'[39m[33m,[39m [35m320[39m][33m,[39m
+2026-10-04T18:48:47.2937408Z      [90m 564 |[39m       [[32m'not_reversed'[39m[33m,[39m [35m5[39m_480][33m,[39m[0m
+2026-10-04T18:48:47.2937714Z 
+2026-10-04T18:48:47.2937920Z       at Object.<anonymous> (test/s-fee-r5-or-111-1.spec.ts:561:74)
+2026-10-04T18:48:47.2938334Z 
+2026-10-04T18:48:47.2939136Z   ● MUTANT fee-190bps › [r5] › OR-111-1 netting race (CAS lease fence + per-recovery CAS) › a netting that loses its CAS to a concurrent collection re-reads and nets only what is still owed
+2026-10-04T18:48:47.2939780Z 
+2026-10-04T18:48:47.2939922Z     expect(received).toMatchObject(expected)
+2026-10-04T18:48:47.2940122Z 
+2026-10-04T18:48:47.2940216Z     - Expected  - 1
+2026-10-04T18:48:47.2940424Z     + Received  + 1
+2026-10-04T18:48:47.2940543Z 
+2026-10-04T18:48:47.2940621Z       Object {
+2026-10-04T18:48:47.2940830Z     -   "amount_cents": 480,
+2026-10-04T18:48:47.2941069Z     +   "amount_cents": 490,
+2026-10-04T18:48:47.2941333Z         "netted_recovery_cents": 9000,
+2026-10-04T18:48:47.2941589Z       }
+2026-10-04T18:48:47.2941686Z 
+2026-10-04T18:48:47.2942279Z     [0m [90m 639 |[39m     ctx[33m.[39mprisma[33m.[39mpayeeRecovery[33m.[39mupdateMany[33m.[39mmockImplementation(realUpdateMany)[33m;[39m
+2026-10-04T18:48:47.2943522Z      [90m 640 |[39m     [36mawait[39m ctx[33m.[39msell(ctx[33m.[39mp100b[33m,[39m [32m'ch_100b'[39m[33m,[39m [35m10[39m_000[33m,[39m [35m320[39m)[33m;[39m
+2026-10-04T18:48:47.2944491Z     [31m[1m>[22m[39m[90m 641 |[39m     expect(ctx[33m.[39mtransferFor([32m'ch_100b'[39m))[33m.[39mtoMatchObject({
+2026-10-04T18:48:47.2945131Z      [90m     |[39m                                        [31m[1m^[22m[39m
+2026-10-04T18:48:47.2945625Z      [90m 642 |[39m       amount_cents[33m:[39m [35m480[39m[33m,[39m
+2026-10-04T18:48:47.2946167Z      [90m 643 |[39m       netted_recovery_cents[33m:[39m [35m9[39m_000[33m,[39m
+2026-10-04T18:48:47.2946604Z      [90m 644 |[39m     })[33m;[39m[0m
+2026-10-04T18:48:47.2946788Z 
+2026-10-04T18:48:47.2946992Z       at Object.<anonymous> (test/s-fee-r5-or-111-1.spec.ts:641:40)
+2026-10-04T18:48:47.2947242Z 
+2026-10-04T18:48:47.2948454Z   ● MUTANT fee-190bps › [r5] › round 6 B-627-7 / C-627-5: the forward-looking sentence uses the amount still open › $99 refund holds 4.20; a later sale nets it; a $1 refund tells the coach $1.00, not $5.20
+2026-10-04T18:48:47.2949156Z 
+2026-10-04T18:48:47.2949365Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.2949602Z 
+2026-10-04T18:48:47.2949695Z     Expected: 420
+2026-10-04T18:48:47.2949900Z     Received: 410
+2026-10-04T18:48:47.2950019Z 
+2026-10-04T18:48:47.2950508Z     [0m [90m 924 |[39m     [90m// $99 of $100 refunded: 94.80 reversed, 4.20 held (TGP 2.00 + Stripe 3.20 - 1.00 kept).[39m
+2026-10-04T18:48:47.2951478Z      [90m 925 |[39m     [36mawait[39m ctx[33m.[39mrefundViaWebhook([32m'ch_100'[39m[33m,[39m [35m10[39m_000[33m,[39m [35m9[39m_900)[33m;[39m
+2026-10-04T18:48:47.2952909Z     [31m[1m>[22m[39m[90m 926 |[39m     expect(ctx[33m.[39mopenHeld())[33m.[39mtoBe([35m420[39m)[33m;[39m
+2026-10-04T18:48:47.2953519Z      [90m     |[39m                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.2954661Z      [90m 927 |[39m     expect(ctx[33m.[39mdb[33m.[39mnotices[33m![39m[[35m0[39m][33m.[39mbody)[33m.[39mtoContain([32m'$4.20 is held from your next sale.'[39m)[33m;[39m
+2026-10-04T18:48:47.2955472Z      [90m 928 |[39m     [90m// The next sale nets the 4.20.[39m
+2026-10-04T18:48:47.2956345Z      [90m 929 |[39m     [36mawait[39m ctx[33m.[39msell(ctx[33m.[39mp100b[33m,[39m [32m'ch_100b'[39m[33m,[39m [35m10[39m_000[33m,[39m [35m320[39m)[33m;[39m[0m
+2026-10-04T18:48:47.2956867Z 
+2026-10-04T18:48:47.2957068Z       at Object.<anonymous> (test/s-fee-r5-or-111-1.spec.ts:926:28)
+2026-10-04T18:48:47.2957324Z 
+2026-10-04T18:48:47.2958560Z   ● MUTANT fee-190bps › [r7] › B-627-8 a lost reinstatement result is looked up, never paid twice › coach only › receipt lost after Stripe moved the money; retry 25 h later (key expired=true) records it, sends nothing
+2026-10-04T18:48:47.2959587Z 
+2026-10-04T18:48:47.2959810Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.2960057Z 
+2026-10-04T18:48:47.2960149Z     Expected: 9480
+2026-10-04T18:48:47.2960359Z     Received: 9490
+2026-10-04T18:48:47.2960480Z 
+2026-10-04T18:48:47.2960629Z     [0m [90m 202 |[39m
+2026-10-04T18:48:47.2961269Z      [90m 203 |[39m         expect(c[33m.[39mstripeReinstatements())[33m.[39mtoHaveLength(kinds[33m.[39mlength)[33m;[39m
+2026-10-04T18:48:47.2962512Z     [31m[1m>[22m[39m[90m 204 |[39m         expect(c[33m.[39mstripeReinstatements()[33m.[39mreduce((n[33m,[39m t) [33m=>[39m n [33m+[39m t[33m.[39mamount[33m,[39m [35m0[39m))[33m.[39mtoBe(total)[33m;[39m
+2026-10-04T18:48:47.2963494Z      [90m     |[39m                                                                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.2964138Z      [90m 205 |[39m         [36mfor[39m ([36mconst[39m r [36mof[39m c[33m.[39mreinstateRows()) {
+2026-10-04T18:48:47.2964924Z      [90m 206 |[39m           expect(c[33m.[39mcreatesFor(r[33m.[39midempotency_key))[33m.[39mtoBe([35m1[39m)[33m;[39m
+2026-10-04T18:48:47.2965719Z      [90m 207 |[39m           expect(r[33m.[39mstatus)[33m.[39mtoBe([32m'succeeded'[39m)[33m;[39m[0m
+2026-10-04T18:48:47.2966217Z 
+2026-10-04T18:48:47.2966431Z       at test/s-fee-r7-transfer-create-recovery.spec.ts:204:76
+2026-10-04T18:48:47.2966691Z 
+2026-10-04T18:48:47.2967597Z   ● MUTANT fee-190bps › [r7] › B-627-8 a lost reinstatement result is looked up, never paid twice › coach only › receipt lost after Stripe moved the money; retry 25 h later (key expired=false) records it, sends nothing
+2026-10-04T18:48:47.2968616Z 
+2026-10-04T18:48:47.2968800Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.2969044Z 
+2026-10-04T18:48:47.2969134Z     Expected: 9480
+2026-10-04T18:48:47.2969343Z     Received: 9490
+2026-10-04T18:48:47.2969464Z 
+2026-10-04T18:48:47.2969587Z     [0m [90m 202 |[39m
+2026-10-04T18:48:47.2970212Z      [90m 203 |[39m         expect(c[33m.[39mstripeReinstatements())[33m.[39mtoHaveLength(kinds[33m.[39mlength)[33m;[39m
+2026-10-04T18:48:47.2971462Z     [31m[1m>[22m[39m[90m 204 |[39m         expect(c[33m.[39mstripeReinstatements()[33m.[39mreduce((n[33m,[39m t) [33m=>[39m n [33m+[39m t[33m.[39mamount[33m,[39m [35m0[39m))[33m.[39mtoBe(total)[33m;[39m
+2026-10-04T18:48:47.2972432Z      [90m     |[39m                                                                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.2973082Z      [90m 205 |[39m         [36mfor[39m ([36mconst[39m r [36mof[39m c[33m.[39mreinstateRows()) {
+2026-10-04T18:48:47.2973870Z      [90m 206 |[39m           expect(c[33m.[39mcreatesFor(r[33m.[39midempotency_key))[33m.[39mtoBe([35m1[39m)[33m;[39m
+2026-10-04T18:48:47.2974679Z      [90m 207 |[39m           expect(r[33m.[39mstatus)[33m.[39mtoBe([32m'succeeded'[39m)[33m;[39m[0m
+2026-10-04T18:48:47.2975028Z 
+2026-10-04T18:48:47.2975400Z       at test/s-fee-r7-transfer-create-recovery.spec.ts:204:76
+2026-10-04T18:48:47.2975660Z 
+2026-10-04T18:48:47.2976587Z   ● MUTANT fee-190bps › [r7] › B-627-8 a lost reinstatement result is looked up, never paid twice › coach only › response lost and Stripe listing down at the time; retry 25 h later (key expired=true) finds it, sends nothing
+2026-10-04T18:48:47.2977329Z 
+2026-10-04T18:48:47.2977511Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.2977745Z 
+2026-10-04T18:48:47.2977831Z     Expected: 9480
+2026-10-04T18:48:47.2978336Z     Received: 9490
+2026-10-04T18:48:47.2978461Z 
+2026-10-04T18:48:47.2978594Z     [0m [90m 235 |[39m
+2026-10-04T18:48:47.2979213Z      [90m 236 |[39m         expect(c[33m.[39mstripeReinstatements())[33m.[39mtoHaveLength(kinds[33m.[39mlength)[33m;[39m
+2026-10-04T18:48:47.2980458Z     [31m[1m>[22m[39m[90m 237 |[39m         expect(c[33m.[39mstripeReinstatements()[33m.[39mreduce((n[33m,[39m t) [33m=>[39m n [33m+[39m t[33m.[39mamount[33m,[39m [35m0[39m))[33m.[39mtoBe(total)[33m;[39m
+2026-10-04T18:48:47.2981444Z      [90m     |[39m                                                                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.2982097Z      [90m 238 |[39m         [36mfor[39m ([36mconst[39m r [36mof[39m c[33m.[39mreinstateRows()) {
+2026-10-04T18:48:47.2982880Z      [90m 239 |[39m           expect(c[33m.[39mcreatesFor(r[33m.[39midempotency_key))[33m.[39mtoBe([35m1[39m)[33m;[39m
+2026-10-04T18:48:47.2983661Z      [90m 240 |[39m           expect(r[33m.[39mstatus)[33m.[39mtoBe([32m'succeeded'[39m)[33m;[39m[0m
+2026-10-04T18:48:47.2984008Z 
+2026-10-04T18:48:47.2984212Z       at test/s-fee-r7-transfer-create-recovery.spec.ts:237:76
+2026-10-04T18:48:47.2984496Z 
+2026-10-04T18:48:47.2985398Z   ● MUTANT fee-190bps › [r7] › B-627-8 a lost reinstatement result is looked up, never paid twice › coach only › response lost and Stripe listing down at the time; retry 25 h later (key expired=false) finds it, sends nothing
+2026-10-04T18:48:47.2986151Z 
+2026-10-04T18:48:47.2986331Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.2986565Z 
+2026-10-04T18:48:47.2986650Z     Expected: 9480
+2026-10-04T18:48:47.2986993Z     Received: 9490
+2026-10-04T18:48:47.2987117Z 
+2026-10-04T18:48:47.2987242Z     [0m [90m 235 |[39m
+2026-10-04T18:48:47.2987859Z      [90m 236 |[39m         expect(c[33m.[39mstripeReinstatements())[33m.[39mtoHaveLength(kinds[33m.[39mlength)[33m;[39m
+2026-10-04T18:48:47.2989585Z     [31m[1m>[22m[39m[90m 237 |[39m         expect(c[33m.[39mstripeReinstatements()[33m.[39mreduce((n[33m,[39m t) [33m=>[39m n [33m+[39m t[33m.[39mamount[33m,[39m [35m0[39m))[33m.[39mtoBe(total)[33m;[39m
+2026-10-04T18:48:47.2990575Z      [90m     |[39m                                                                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.2991225Z      [90m 238 |[39m         [36mfor[39m ([36mconst[39m r [36mof[39m c[33m.[39mreinstateRows()) {
+2026-10-04T18:48:47.2992021Z      [90m 239 |[39m           expect(c[33m.[39mcreatesFor(r[33m.[39midempotency_key))[33m.[39mtoBe([35m1[39m)[33m;[39m
+2026-10-04T18:48:47.2992811Z      [90m 240 |[39m           expect(r[33m.[39mstatus)[33m.[39mtoBe([32m'succeeded'[39m)[33m;[39m[0m
+2026-10-04T18:48:47.2993160Z 
+2026-10-04T18:48:47.2993365Z       at test/s-fee-r7-transfer-create-recovery.spec.ts:237:76
+2026-10-04T18:48:47.2993618Z 
+2026-10-04T18:48:47.2994542Z   ● MUTANT fee-190bps › [r7] › B-627-8 a lost reinstatement result is looked up, never paid twice › coach + head coach › receipt lost after Stripe moved the money; retry 25 h later (key expired=true) records it, sends nothing
+2026-10-04T18:48:47.2995341Z 
+2026-10-04T18:48:47.2995519Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.2995747Z 
+2026-10-04T18:48:47.2995837Z     Expected: 9480
+2026-10-04T18:48:47.2996039Z     Received: 9490
+2026-10-04T18:48:47.2996161Z 
+2026-10-04T18:48:47.2996460Z     [0m [90m 202 |[39m
+2026-10-04T18:48:47.2997083Z      [90m 203 |[39m         expect(c[33m.[39mstripeReinstatements())[33m.[39mtoHaveLength(kinds[33m.[39mlength)[33m;[39m
+2026-10-04T18:48:47.2998658Z     [31m[1m>[22m[39m[90m 204 |[39m         expect(c[33m.[39mstripeReinstatements()[33m.[39mreduce((n[33m,[39m t) [33m=>[39m n [33m+[39m t[33m.[39mamount[33m,[39m [35m0[39m))[33m.[39mtoBe(total)[33m;[39m
+2026-10-04T18:48:47.2999671Z      [90m     |[39m                                                                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.3000315Z      [90m 205 |[39m         [36mfor[39m ([36mconst[39m r [36mof[39m c[33m.[39mreinstateRows()) {
+2026-10-04T18:48:47.3001107Z      [90m 206 |[39m           expect(c[33m.[39mcreatesFor(r[33m.[39midempotency_key))[33m.[39mtoBe([35m1[39m)[33m;[39m
+2026-10-04T18:48:47.3001888Z      [90m 207 |[39m           expect(r[33m.[39mstatus)[33m.[39mtoBe([32m'succeeded'[39m)[33m;[39m[0m
+2026-10-04T18:48:47.3002243Z 
+2026-10-04T18:48:47.3002451Z       at test/s-fee-r7-transfer-create-recovery.spec.ts:204:76
+2026-10-04T18:48:47.3002700Z 
+2026-10-04T18:48:47.3003628Z   ● MUTANT fee-190bps › [r7] › B-627-8 a lost reinstatement result is looked up, never paid twice › coach + head coach › receipt lost after Stripe moved the money; retry 25 h later (key expired=false) records it, sends nothing
+2026-10-04T18:48:47.3004396Z 
+2026-10-04T18:48:47.3004574Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.3004804Z 
+2026-10-04T18:48:47.3004892Z     Expected: 9480
+2026-10-04T18:48:47.3005094Z     Received: 9490
+2026-10-04T18:48:47.3005213Z 
+2026-10-04T18:48:47.3005331Z     [0m [90m 202 |[39m
+2026-10-04T18:48:47.3005946Z      [90m 203 |[39m         expect(c[33m.[39mstripeReinstatements())[33m.[39mtoHaveLength(kinds[33m.[39mlength)[33m;[39m
+2026-10-04T18:48:47.3007183Z     [31m[1m>[22m[39m[90m 204 |[39m         expect(c[33m.[39mstripeReinstatements()[33m.[39mreduce((n[33m,[39m t) [33m=>[39m n [33m+[39m t[33m.[39mamount[33m,[39m [35m0[39m))[33m.[39mtoBe(total)[33m;[39m
+2026-10-04T18:48:47.3008452Z      [90m     |[39m                                                                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.3009123Z      [90m 205 |[39m         [36mfor[39m ([36mconst[39m r [36mof[39m c[33m.[39mreinstateRows()) {
+2026-10-04T18:48:47.3009919Z      [90m 206 |[39m           expect(c[33m.[39mcreatesFor(r[33m.[39midempotency_key))[33m.[39mtoBe([35m1[39m)[33m;[39m
+2026-10-04T18:48:47.3010703Z      [90m 207 |[39m           expect(r[33m.[39mstatus)[33m.[39mtoBe([32m'succeeded'[39m)[33m;[39m[0m
+2026-10-04T18:48:47.3011057Z 
+2026-10-04T18:48:47.3011254Z       at test/s-fee-r7-transfer-create-recovery.spec.ts:204:76
+2026-10-04T18:48:47.3011517Z 
+2026-10-04T18:48:47.3012454Z   ● MUTANT fee-190bps › [r7] › B-627-8 a lost reinstatement result is looked up, never paid twice › coach + head coach › response lost and Stripe listing down at the time; retry 25 h later (key expired=true) finds it, sends nothing
+2026-10-04T18:48:47.3013232Z 
+2026-10-04T18:48:47.3013410Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.3013650Z 
+2026-10-04T18:48:47.3013735Z     Expected: 9480
+2026-10-04T18:48:47.3013943Z     Received: 9490
+2026-10-04T18:48:47.3014059Z 
+2026-10-04T18:48:47.3014178Z     [0m [90m 235 |[39m
+2026-10-04T18:48:47.3014793Z      [90m 236 |[39m         expect(c[33m.[39mstripeReinstatements())[33m.[39mtoHaveLength(kinds[33m.[39mlength)[33m;[39m
+2026-10-04T18:48:47.3016030Z     [31m[1m>[22m[39m[90m 237 |[39m         expect(c[33m.[39mstripeReinstatements()[33m.[39mreduce((n[33m,[39m t) [33m=>[39m n [33m+[39m t[33m.[39mamount[33m,[39m [35m0[39m))[33m.[39mtoBe(total)[33m;[39m
+2026-10-04T18:48:47.3017010Z      [90m     |[39m                                                                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.3017807Z      [90m 238 |[39m         [36mfor[39m ([36mconst[39m r [36mof[39m c[33m.[39mreinstateRows()) {
+2026-10-04T18:48:47.3018757Z      [90m 239 |[39m           expect(c[33m.[39mcreatesFor(r[33m.[39midempotency_key))[33m.[39mtoBe([35m1[39m)[33m;[39m
+2026-10-04T18:48:47.3019549Z      [90m 240 |[39m           expect(r[33m.[39mstatus)[33m.[39mtoBe([32m'succeeded'[39m)[33m;[39m[0m
+2026-10-04T18:48:47.3019898Z 
+2026-10-04T18:48:47.3020101Z       at test/s-fee-r7-transfer-create-recovery.spec.ts:237:76
+2026-10-04T18:48:47.3020352Z 
+2026-10-04T18:48:47.3021295Z   ● MUTANT fee-190bps › [r7] › B-627-8 a lost reinstatement result is looked up, never paid twice › coach + head coach › response lost and Stripe listing down at the time; retry 25 h later (key expired=false) finds it, sends nothing
+2026-10-04T18:48:47.3022066Z 
+2026-10-04T18:48:47.3022242Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.3022475Z 
+2026-10-04T18:48:47.3022572Z     Expected: 9480
+2026-10-04T18:48:47.3022780Z     Received: 9490
+2026-10-04T18:48:47.3022901Z 
+2026-10-04T18:48:47.3023019Z     [0m [90m 235 |[39m
+2026-10-04T18:48:47.3023652Z      [90m 236 |[39m         expect(c[33m.[39mstripeReinstatements())[33m.[39mtoHaveLength(kinds[33m.[39mlength)[33m;[39m
+2026-10-04T18:48:47.3024899Z     [31m[1m>[22m[39m[90m 237 |[39m         expect(c[33m.[39mstripeReinstatements()[33m.[39mreduce((n[33m,[39m t) [33m=>[39m n [33m+[39m t[33m.[39mamount[33m,[39m [35m0[39m))[33m.[39mtoBe(total)[33m;[39m
+2026-10-04T18:48:47.3025876Z      [90m     |[39m                                                                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.3026518Z      [90m 238 |[39m         [36mfor[39m ([36mconst[39m r [36mof[39m c[33m.[39mreinstateRows()) {
+2026-10-04T18:48:47.3027308Z      [90m 239 |[39m           expect(c[33m.[39mcreatesFor(r[33m.[39midempotency_key))[33m.[39mtoBe([35m1[39m)[33m;[39m
+2026-10-04T18:48:47.3028358Z      [90m 240 |[39m           expect(r[33m.[39mstatus)[33m.[39mtoBe([32m'succeeded'[39m)[33m;[39m[0m
+2026-10-04T18:48:47.3028716Z 
+2026-10-04T18:48:47.3028924Z       at test/s-fee-r7-transfer-create-recovery.spec.ts:237:76
+2026-10-04T18:48:47.3029351Z 
+2026-10-04T18:48:47.3030248Z   ● MUTANT fee-190bps › [r7] › B-627-8 a lost reinstatement result is looked up, never paid twice › listing still unavailable or incomplete: nothing is sent, the row stays pending and alerts, then recovers once
+2026-10-04T18:48:47.3030972Z 
+2026-10-04T18:48:47.3031113Z     expect(received).toHaveLength(expected)
+2026-10-04T18:48:47.3031310Z 
+2026-10-04T18:48:47.3031404Z     Expected length: 2
+2026-10-04T18:48:47.3031623Z     Received length: 0
+2026-10-04T18:48:47.3031835Z     Received array:  []
+2026-10-04T18:48:47.3031974Z 
+2026-10-04T18:48:47.3032549Z     [0m [90m 287 |[39m       [35m/^SFEE_TRANSFER_UNCERTAIN alert=true transfer=.* op=.* amount=9480 .*not re-sent/[39m[33m.[39mtest(l)[33m,[39m
+2026-10-04T18:48:47.3033180Z      [90m 288 |[39m     )[33m;[39m
+2026-10-04T18:48:47.3033740Z     [31m[1m>[22m[39m[90m 289 |[39m     expect(uncertain)[33m.[39mtoHaveLength([35m2[39m)[33m;[39m
+2026-10-04T18:48:47.3034297Z      [90m     |[39m                       [31m[1m^[22m[39m
+2026-10-04T18:48:47.3035174Z      [90m 290 |[39m     expect(lines(errorLog)[33m.[39msome((l) [33m=>[39m [35m/SFEE_TRANSFER_FAILED/[39m[33m.[39mtest(l)))[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+2026-10-04T18:48:47.3035834Z      [90m 291 |[39m
+2026-10-04T18:48:47.3036350Z      [90m 292 |[39m     [90m// Stripe can be read in full again: the existing transfer is recorded.[39m[0m
+2026-10-04T18:48:47.3036708Z 
+2026-10-04T18:48:47.3036985Z       at Object.<anonymous> (test/s-fee-r7-transfer-create-recovery.spec.ts:289:23)
+2026-10-04T18:48:47.3037307Z 
+2026-10-04T18:48:47.3038411Z   ● MUTANT fee-190bps › [r7] › B-627-8 a lost reinstatement result is looked up, never paid twice › control: proven absent (request never reached Stripe) is re-sent once, even after key expiry
+2026-10-04T18:48:47.3039289Z 
+2026-10-04T18:48:47.3039485Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.3039723Z 
+2026-10-04T18:48:47.3039814Z     Expected: 9480
+2026-10-04T18:48:47.3040026Z     Received: 9490
+2026-10-04T18:48:47.3040147Z 
+2026-10-04T18:48:47.3040655Z     [0m [90m 338 |[39m     expect(c[33m.[39mcreatesFor(row[33m.[39midempotency_key))[33m.[39mtoBe([35m2[39m)[33m;[39m
+2026-10-04T18:48:47.3041490Z      [90m 339 |[39m     expect(c[33m.[39mstripeReinstatements())[33m.[39mtoHaveLength([35m1[39m)[33m;[39m
+2026-10-04T18:48:47.3042450Z     [31m[1m>[22m[39m[90m 340 |[39m     expect(c[33m.[39mstripeReinstatements()[[35m0[39m][33m.[39mamount)[33m.[39mtoBe([35m9[39m_480)[33m;[39m
+2026-10-04T18:48:47.3043201Z      [90m     |[39m                                                [31m[1m^[22m[39m
+2026-10-04T18:48:47.3043599Z      [90m 341 |[39m   })[33m;[39m
+2026-10-04T18:48:47.3043879Z      [90m 342 |[39m
+2026-10-04T18:48:47.3044636Z      [90m 343 |[39m   it([32m'control: within the key lifetime a re-send collapses on the same key (cached)'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-04T18:48:47.3045160Z 
+2026-10-04T18:48:47.3045438Z       at Object.<anonymous> (test/s-fee-r7-transfer-create-recovery.spec.ts:340:48)
+2026-10-04T18:48:47.3045761Z 
+2026-10-04T18:48:47.3046619Z   ● MUTANT fee-190bps › [r7] › B-627-8 a lost reinstatement result is looked up, never paid twice › control (round 9): a definitive refusal of the adopted send is the proven final failure (repay alert is safe)
+2026-10-04T18:48:47.3047322Z 
+2026-10-04T18:48:47.3047453Z     expect(received).toMatch(expected)
+2026-10-04T18:48:47.3047640Z 
+2026-10-04T18:48:47.3048377Z     Expected pattern: /owed_cents_at_failure=9480 .*re-read the coach_position gap of GET \/api\/v1\/admin\/payments\/reconciliation\/purchase-1 and repay that gap only/
+2026-10-04T18:48:47.3050621Z     Received string:  "SFEE_TRANSFER_FAILED alert=true transfer=tr-622 settlement=cs-612 purchase=purchase-1 payee=coach-1 owed_cents_at_failure=9490 netted_cents=0 currency=usd: before repaying, re-read the coach_position gap of GET /api/v1/admin/payments/reconciliation/purchase-1 and repay that gap only (a later refund or dispute on this charge changes it); the netted cents already settled an earlier hold"
+2026-10-04T18:48:47.3052032Z 
+2026-10-04T18:48:47.3052368Z     [0m [90m 385 |[39m     expect(repay)[33m.[39mtoHaveLength([35m1[39m)[33m;[39m
+2026-10-04T18:48:47.3053035Z      [90m 386 |[39m     [90m// C-627-8 (Opus): the alert names the live gap, not a fixed amount.[39m
+2026-10-04T18:48:47.3053670Z     [31m[1m>[22m[39m[90m 387 |[39m     expect(repay[[35m0[39m])[33m.[39mtoMatch(
+2026-10-04T18:48:47.3054169Z      [90m     |[39m                      [31m[1m^[22m[39m
+2026-10-04T18:48:47.3055144Z      [90m 388 |[39m       [35m/owed_cents_at_failure=9480 .*re-read the coach_position gap of GET \/api\/v1\/admin\/payments\/reconciliation\/purchase-1 and repay that gap only/[39m[33m,[39m
+2026-10-04T18:48:47.3055934Z      [90m 389 |[39m     )[33m;[39m
+2026-10-04T18:48:47.3056255Z      [90m 390 |[39m   })[33m;[39m[0m
+2026-10-04T18:48:47.3056433Z 
+2026-10-04T18:48:47.3056711Z       at Object.<anonymous> (test/s-fee-r7-transfer-create-recovery.spec.ts:387:22)
+2026-10-04T18:48:47.3057043Z 
+2026-10-04T18:48:47.3057710Z   ● MUTANT fee-190bps › [renew] › B-627-1: missed renewals are matched by charge id › a renewal on a purchase that already has a settlement is found and paid once
+2026-10-04T18:48:47.3058546Z 
+2026-10-04T18:48:47.3058701Z     expect(received).toMatchObject(expected)
+2026-10-04T18:48:47.3058917Z 
+2026-10-04T18:48:47.3059016Z     - Expected  - 1
+2026-10-04T18:48:47.3059228Z     + Received  + 1
+2026-10-04T18:48:47.3059352Z 
+2026-10-04T18:48:47.3059433Z       Object {
+2026-10-04T18:48:47.3059659Z         "purchase_id": "cp-1",
+2026-10-04T18:48:47.3059919Z         "status": "settled",
+2026-10-04T18:48:47.3060352Z         "stripe_invoice_id": "in_2",
+2026-10-04T18:48:47.3060645Z     -   "target_coach_net_cents": 4630,
+2026-10-04T18:48:47.3060949Z     +   "target_coach_net_cents": 4635,
+2026-10-04T18:48:47.3061201Z       }
+2026-10-04T18:48:47.3061309Z 
+2026-10-04T18:48:47.3062171Z     [0m [90m 100 |[39m     expect(summary)[33m.[39mtoMatchObject({ invoices_scanned[33m:[39m [35m2[39m[33m,[39m invoices_backfilled[33m:[39m [35m1[39m[33m,[39m settled[33m:[39m [35m1[39m })[33m;[39m
+2026-10-04T18:48:47.3063610Z      [90m 101 |[39m     [36mconst[39m renewal [33m=[39m ctx[33m.[39mdb[33m.[39msettlements[33m.[39mfind((s) [33m=>[39m s[33m.[39mstripe_charge_id [33m===[39m [32m'ch_renew'[39m)[33m;[39m
+2026-10-04T18:48:47.3064523Z     [31m[1m>[22m[39m[90m 102 |[39m     expect(renewal)[33m.[39mtoMatchObject({
+2026-10-04T18:48:47.3065021Z      [90m     |[39m                     [31m[1m^[22m[39m
+2026-10-04T18:48:47.3065493Z      [90m 103 |[39m       status[33m:[39m [32m'settled'[39m[33m,[39m
+2026-10-04T18:48:47.3066033Z      [90m 104 |[39m       stripe_invoice_id[33m:[39m [32m'in_2'[39m[33m,[39m
+2026-10-04T18:48:47.3066594Z      [90m 105 |[39m       purchase_id[33m:[39m [32m'cp-1'[39m[33m,[39m[0m
+2026-10-04T18:48:47.3066865Z 
+2026-10-04T18:48:47.3067095Z       at Object.<anonymous> (test/s-fee-renewal-backfill.spec.ts:102:21)
+2026-10-04T18:48:47.3067379Z 
+2026-10-04T18:48:47.3068303Z   ● MUTANT fee-190bps › [renew] › B-627-1: missed renewals are matched by charge id › a window larger than one run is covered across runs through the saved cursor
+2026-10-04T18:48:47.3068880Z 
+2026-10-04T18:48:47.3069070Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.3069307Z 
+2026-10-04T18:48:47.3069393Z     Expected: 9260
+2026-10-04T18:48:47.3069608Z     Received: 9270
+2026-10-04T18:48:47.3069725Z 
+2026-10-04T18:48:47.3070311Z     [0m [90m 155 |[39m     [36mconst[39m second [33m=[39m [36mawait[39m ctx[33m.[39msvc[33m.[39mrunSettlementSweep([33mNOW[39m)[33m;[39m
+2026-10-04T18:48:47.3071744Z      [90m 156 |[39m     expect(second)[33m.[39mtoMatchObject({ invoices_scanned[33m:[39m [35m51[39m[33m,[39m invoices_backfilled[33m:[39m [35m1[39m[33m,[39m settled[33m:[39m [35m1[39m })[33m;[39m
+2026-10-04T18:48:47.3072981Z     [31m[1m>[22m[39m[90m 157 |[39m     expect(ctx[33m.[39mstripe[33m.[39mnetTo([32m'acct_coach'[39m))[33m.[39mtoBe([35m9[39m_260)[33m;[39m
+2026-10-04T18:48:47.3073708Z      [90m     |[39m                                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.3074250Z      [90m 158 |[39m     expect(ctx[33m.[39mcursor())[33m.[39mtoBeNull()[33m;[39m
+2026-10-04T18:48:47.3074969Z      [90m 159 |[39m     [90m// Stripe's paid-invoice list was never asked to retrieve unrelated charges.[39m
+2026-10-04T18:48:47.3076255Z      [90m 160 |[39m     expect(ctx[33m.[39mstripe[33m.[39mretrieveCharge[33m.[39mmock[33m.[39mcalls[33m.[39mmap((c) [33m=>[39m c[[35m0[39m]))[33m.[39mtoEqual([[32m'ch_first'[39m[33m,[39m [32m'ch_renew'[39m])[33m;[39m[0m
+2026-10-04T18:48:47.3076990Z 
+2026-10-04T18:48:47.3077222Z       at Object.<anonymous> (test/s-fee-renewal-backfill.spec.ts:157:44)
+2026-10-04T18:48:47.3077516Z 
+2026-10-04T18:48:47.3078315Z   ● MUTANT fee-190bps › [renew] › B-627-1: missed renewals are matched by charge id › bounded: at most `limit` backfills per run; the rest resume from the cursor
+2026-10-04T18:48:47.3078875Z 
+2026-10-04T18:48:47.3079055Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.3079288Z 
+2026-10-04T18:48:47.3079373Z     Expected: 18520
+2026-10-04T18:48:47.3079584Z     Received: 18540
+2026-10-04T18:48:47.3079704Z 
+2026-10-04T18:48:47.3080120Z     [0m [90m 178 |[39m     expect(second[33m.[39minvoices_backfilled)[33m.[39mtoBe([35m1[39m)[33m;[39m
+2026-10-04T18:48:47.3081244Z      [90m 179 |[39m     expect(ctx[33m.[39mdb[33m.[39msettlements[33m.[39mfilter((s) [33m=>[39m s[33m.[39mstatus [33m===[39m [32m'settled'[39m))[33m.[39mtoHaveLength([35m4[39m)[33m;[39m
+2026-10-04T18:48:47.3082648Z     [31m[1m>[22m[39m[90m 180 |[39m     expect(ctx[33m.[39mstripe[33m.[39mnetTo([32m'acct_coach'[39m))[33m.[39mtoBe([35m4[39m [33m*[39m [35m4[39m_630)[33m;[39m
+2026-10-04T18:48:47.3083421Z      [90m     |[39m                                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.3083818Z      [90m 181 |[39m   })[33m;[39m
+2026-10-04T18:48:47.3084089Z      [90m 182 |[39m
+2026-10-04T18:48:47.3084890Z      [90m 183 |[39m   it([32m'legacy destination subscriptions (ledger rows, no settlement) are left to the legacy flow'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-04T18:48:47.3085460Z 
+2026-10-04T18:48:47.3085687Z       at Object.<anonymous> (test/s-fee-renewal-backfill.spec.ts:180:44)
+2026-10-04T18:48:47.3085970Z 
+2026-10-04T18:48:47.3086681Z   ● MUTANT fee-190bps › [renew] › B-627-1: missed renewals are matched by charge id › a subscription with no settlement yet (first invoice lost too) is backfilled by charge id
+2026-10-04T18:48:47.3087296Z 
+2026-10-04T18:48:47.3087471Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.3087704Z 
+2026-10-04T18:48:47.3087792Z     Expected: 4630
+2026-10-04T18:48:47.3088120Z     Received: 4635
+2026-10-04T18:48:47.3088242Z 
+2026-10-04T18:48:47.3089064Z     [0m [90m 208 |[39m     expect(ctx[33m.[39mdb[33m.[39msettlements[33m.[39mfilter((s) [33m=>[39m s[33m.[39mstripe_charge_id [33m===[39m [32m'ch_first'[39m))[33m.[39mtoHaveLength([35m1[39m)[33m;[39m
+2026-10-04T18:48:47.3090137Z      [90m 209 |[39m     expect(summary[33m.[39msettled)[33m.[39mtoBeGreaterThanOrEqual([35m1[39m)[33m;[39m
+2026-10-04T18:48:47.3091089Z     [31m[1m>[22m[39m[90m 210 |[39m     expect(ctx[33m.[39mstripe[33m.[39mnetTo([32m'acct_coach'[39m))[33m.[39mtoBe([35m4[39m_630)[33m;[39m
+2026-10-04T18:48:47.3091807Z      [90m     |[39m                                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.3092204Z      [90m 211 |[39m   })[33m;[39m
+2026-10-04T18:48:47.3092478Z      [90m 212 |[39m
+2026-10-04T18:48:47.3093340Z      [90m 213 |[39m   it([32m'a Stripe failure listing invoices keeps the cursor and logs a specific code'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-04T18:48:47.3093875Z 
+2026-10-04T18:48:47.3094103Z       at Object.<anonymous> (test/s-fee-renewal-backfill.spec.ts:210:44)
+2026-10-04T18:48:47.3094383Z 
+2026-10-04T18:48:47.3095104Z   ● MUTANT fee-190bps › [renew] › B-627-1: a charge we were told about is never lost › first Stripe read fails: a provisional awaiting_fee row is kept and the sweeper settles it
+2026-10-04T18:48:47.3095749Z 
+2026-10-04T18:48:47.3095925Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.3096153Z 
+2026-10-04T18:48:47.3096239Z     Expected: 4630
+2026-10-04T18:48:47.3096438Z     Received: 4635
+2026-10-04T18:48:47.3096558Z 
+2026-10-04T18:48:47.3097130Z     [0m [90m 243 |[39m     [36mconst[39m summary [33m=[39m [36mawait[39m ctx[33m.[39msvc[33m.[39mrunSettlementSweep([33mNOW[39m)[33m;[39m
+2026-10-04T18:48:47.3098400Z      [90m 244 |[39m     expect(summary)[33m.[39mtoMatchObject({ retried[33m:[39m [35m1[39m[33m,[39m settled[33m:[39m [35m1[39m })[33m;[39m
+2026-10-04T18:48:47.3099507Z     [31m[1m>[22m[39m[90m 245 |[39m     expect(ctx[33m.[39mstripe[33m.[39mnetTo([32m'acct_coach'[39m))[33m.[39mtoBe([35m4[39m_630)[33m;[39m
+2026-10-04T18:48:47.3100234Z      [90m     |[39m                                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.3100621Z      [90m 246 |[39m   })[33m;[39m
+2026-10-04T18:48:47.3100895Z      [90m 247 |[39m
+2026-10-04T18:48:47.3101703Z      [90m 248 |[39m   it([32m'settling while another worker holds the charge lock leaves an awaiting row for the sweeper'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-04T18:48:47.3102279Z 
+2026-10-04T18:48:47.3102659Z       at Object.<anonymous> (test/s-fee-renewal-backfill.spec.ts:245:44)
+2026-10-04T18:48:47.3102938Z 
+2026-10-04T18:48:47.3103663Z   ● MUTANT fee-190bps › [renew] › B-627-1: a charge we were told about is never lost › settling while another worker holds the charge lock leaves an awaiting row for the sweeper
+2026-10-04T18:48:47.3104270Z 
+2026-10-04T18:48:47.3104441Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.3104676Z 
+2026-10-04T18:48:47.3104762Z     Expected: 4630
+2026-10-04T18:48:47.3104965Z     Received: 4635
+2026-10-04T18:48:47.3105085Z 
+2026-10-04T18:48:47.3105881Z     [0m [90m 260 |[39m     ctx[33m.[39mdb[33m.[39msettlements[[35m0[39m][33m.[39mupdated_at [33m=[39m [36mnew[39m [33mDate[39m([33mNOW[39m[33m.[39mgetTime() [33m-[39m [35m120[39m_000)[33m;[39m
+2026-10-04T18:48:47.3106929Z      [90m 261 |[39m     [36mawait[39m ctx[33m.[39msvc[33m.[39mrunSettlementSweep([33mNOW[39m)[33m;[39m
+2026-10-04T18:48:47.3107856Z     [31m[1m>[22m[39m[90m 262 |[39m     expect(ctx[33m.[39mstripe[33m.[39mnetTo([32m'acct_coach'[39m))[33m.[39mtoBe([35m4[39m_630)[33m;[39m
+2026-10-04T18:48:47.3108886Z      [90m     |[39m                                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.3109291Z      [90m 263 |[39m   })[33m;[39m
+2026-10-04T18:48:47.3109563Z      [90m 264 |[39m
+2026-10-04T18:48:47.3110252Z      [90m 265 |[39m   it([32m'a provisional row for a charge that turns out to be $0 is removed'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-04T18:48:47.3110726Z 
+2026-10-04T18:48:47.3110957Z       at Object.<anonymous> (test/s-fee-renewal-backfill.spec.ts:262:44)
+2026-10-04T18:48:47.3111244Z 
+2026-10-04T18:48:47.3112080Z   ● MUTANT fence-always-passes › [r4] › B-627-2 fencing: a lease that expires under a live holder › after a takeover only the new holder passes the fence (Sol probe: 2 live holders -> 1 can move money)
+2026-10-04T18:48:47.3112771Z 
+2026-10-04T18:48:47.3112917Z     expect(received).rejects.toMatchObject()
+2026-10-04T18:48:47.3113131Z 
+2026-10-04T18:48:47.3113281Z     Received promise resolved instead of rejected
+2026-10-04T18:48:47.3113614Z     Resolved to value: undefined
+2026-10-04T18:48:47.3113777Z 
+2026-10-04T18:48:47.3114145Z     [0m [90m 185 |[39m       bStart[33m.[39mopen()[33m;[39m
+2026-10-04T18:48:47.3114956Z      [90m 186 |[39m       [36mawait[39m bAcquired[33m.[39mopened[33m;[39m [90m// B took the expired lease: two live callbacks[39m
+2026-10-04T18:48:47.3116183Z     [31m[1m>[22m[39m[90m 187 |[39m       [36mawait[39m expect(lock[33m.[39mfence([32m'ch_a'[39m))[33m.[39mrejects[33m.[39mtoMatchObject({ why[33m:[39m [32m'taken_over'[39m })[33m;[39m
+2026-10-04T18:48:47.3116973Z      [90m     |[39m             [31m[1m^[22m[39m
+2026-10-04T18:48:47.3117320Z      [90m 188 |[39m     })[33m;[39m
+2026-10-04T18:48:47.3117702Z      [90m 189 |[39m     bFinish[33m.[39mopen()[33m;[39m
+2026-10-04T18:48:47.3118274Z      [90m 190 |[39m     [36mawait[39m b[33m;[39m[0m
+2026-10-04T18:48:47.3118497Z 
+2026-10-04T18:48:47.3118681Z       at expect (node_modules/expect/build/index.js:2116:15)
+2026-10-04T18:48:47.3119074Z       at test/s-fee-r4-money-protocol.spec.ts:187:13
+2026-10-04T18:48:47.3119489Z       at ChargeLock.run (src/connect/fees/charge-lock.ts:173:14)
+2026-10-04T18:48:47.3119977Z       at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:182:5)
+2026-10-04T18:48:47.3120256Z 
+2026-10-04T18:48:47.3120935Z   ● MUTANT fence-always-passes › [r4] › B-627-2 fencing: a lease that expires under a live holder › a holder past its wall-clock budget is refused at its next fence
+2026-10-04T18:48:47.3121509Z 
+2026-10-04T18:48:47.3121654Z     expect(received).rejects.toMatchObject()
+2026-10-04T18:48:47.3121856Z 
+2026-10-04T18:48:47.3122011Z     Received promise resolved instead of rejected
+2026-10-04T18:48:47.3122337Z     Resolved to value: undefined
+2026-10-04T18:48:47.3122498Z 
+2026-10-04T18:48:47.3122835Z     [0m [90m 198 |[39m       [36mawait[39m lock[33m.[39mfence([32m'ch_a'[39m)[33m;[39m
+2026-10-04T18:48:47.3123532Z      [90m 199 |[39m       clock [33m+=[39m [35m60[39m_001[33m;[39m
+2026-10-04T18:48:47.3124552Z     [31m[1m>[22m[39m[90m 200 |[39m       [36mawait[39m expect(lock[33m.[39mfence([32m'ch_a'[39m))[33m.[39mrejects[33m.[39mtoMatchObject({ why[33m:[39m [32m'budget_exceeded'[39m })[33m;[39m
+2026-10-04T18:48:47.3125354Z      [90m     |[39m             [31m[1m^[22m[39m
+2026-10-04T18:48:47.3125692Z      [90m 201 |[39m     })[33m;[39m
+2026-10-04T18:48:47.3126010Z      [90m 202 |[39m   })[33m;[39m
+2026-10-04T18:48:47.3126284Z      [90m 203 |[39m[0m
+2026-10-04T18:48:47.3126423Z 
+2026-10-04T18:48:47.3126595Z       at expect (node_modules/expect/build/index.js:2116:15)
+2026-10-04T18:48:47.3126985Z       at test/s-fee-r4-money-protocol.spec.ts:200:13
+2026-10-04T18:48:47.3127388Z       at ChargeLock.run (src/connect/fees/charge-lock.ts:173:14)
+2026-10-04T18:48:47.3127861Z       at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:197:5)
+2026-10-04T18:48:47.3128309Z 
+2026-10-04T18:48:47.3129186Z   ● MUTANT fence-always-passes › [r4] › B-627-2 fencing: a lease that expires under a live holder › a stale holder cannot move money: its adjustment is refused before Stripe, no op, no recovery
+2026-10-04T18:48:47.3129874Z 
+2026-10-04T18:48:47.3130031Z     expect(received).rejects.toBeInstanceOf()
+2026-10-04T18:48:47.3130246Z 
+2026-10-04T18:48:47.3130395Z     Received promise resolved instead of rejected
+2026-10-04T18:48:47.3130733Z     Resolved to value: "adjusted"
+2026-10-04T18:48:47.3130905Z 
+2026-10-04T18:48:47.3131189Z     [0m [90m 225 |[39m       [36mawait[39m bAcquired[33m.[39mopened[33m;[39m
+2026-10-04T18:48:47.3131755Z      [90m 226 |[39m       [90m// A resumes and tries to apply the $20 refund.[39m
+2026-10-04T18:48:47.3132271Z     [31m[1m>[22m[39m[90m 227 |[39m       [36mawait[39m expect(
+2026-10-04T18:48:47.3132692Z      [90m     |[39m             [31m[1m^[22m[39m
+2026-10-04T18:48:47.3133158Z      [90m 228 |[39m         ctx[33m.[39msvc[33m.[39mapplyAdjustments({
+2026-10-04T18:48:47.3133690Z      [90m 229 |[39m           purchase[33m:[39m ctx[33m.[39mpurchase[33m,[39m
+2026-10-04T18:48:47.3134350Z      [90m 230 |[39m           charge_id[33m:[39m [32m'ch_1'[39m[33m,[39m[0m
+2026-10-04T18:48:47.3134621Z 
+2026-10-04T18:48:47.3134804Z       at expect (node_modules/expect/build/index.js:2116:15)
+2026-10-04T18:48:47.3135197Z       at test/s-fee-r4-money-protocol.spec.ts:227:13
+2026-10-04T18:48:47.3135606Z       at ChargeLock.run (src/connect/fees/charge-lock.ts:173:14)
+2026-10-04T18:48:47.3136084Z       at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:222:5)
+2026-10-04T18:48:47.3136361Z 
+2026-10-04T18:48:47.3137293Z   ● MUTANT no-send-start-budget › [r9] › B-627-9 narrowed: a sender paused after its claim never pays after a takeover › paused between the re-proof and the request (no charge lock): the HTTP-boundary check sends nothing
+2026-10-04T18:48:47.3138429Z 
+2026-10-04T18:48:47.3138632Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.3138874Z 
+2026-10-04T18:48:47.3138966Z     Expected: true
+2026-10-04T18:48:47.3139174Z     Received: false
+2026-10-04T18:48:47.3139316Z 
+2026-10-04T18:48:47.3139510Z     [0m [90m 297 |[39m         )[33m,[39m
+2026-10-04T18:48:47.3139852Z      [90m 298 |[39m       )[33m,[39m
+2026-10-04T18:48:47.3140325Z     [31m[1m>[22m[39m[90m 299 |[39m     )[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+2026-10-04T18:48:47.3140780Z      [90m     |[39m       [31m[1m^[22m[39m
+2026-10-04T18:48:47.3141119Z      [90m 300 |[39m   })[33m;[39m
+2026-10-04T18:48:47.3141395Z      [90m 301 |[39m
+2026-10-04T18:48:47.3142237Z      [90m 302 |[39m   it([32m'a request already past the boundary (in transit) collapses on the same key with the adopted send'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-04T18:48:47.3142829Z 
+2026-10-04T18:48:47.3143061Z       at Object.<anonymous> (test/s-fee-r9-paused-sender.spec.ts:299:7)
+2026-10-04T18:48:47.3143520Z 
+2026-10-04T18:48:47.3144453Z   ● MUTANT no-send-start-budget › [r9] › B-627-9 narrowed: the send-start budget › a sender that resumes after its 30 s start budget sends nothing and parks the claim until its window ends; the next worker sends it once
+2026-10-04T18:48:47.3145201Z 
+2026-10-04T18:48:47.3145383Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.3145624Z 
+2026-10-04T18:48:47.3145720Z     Expected: "pending"
+2026-10-04T18:48:47.3145954Z     Received: "succeeded"
+2026-10-04T18:48:47.3146094Z 
+2026-10-04T18:48:47.3146416Z     [0m [90m 396 |[39m     [36mconst[39m aRes [33m=[39m [36mawait[39m a[33m;[39m
+2026-10-04T18:48:47.3146830Z      [90m 397 |[39m
+2026-10-04T18:48:47.3147381Z     [31m[1m>[22m[39m[90m 398 |[39m     expect(aRes[33m.[39mstatus)[33m.[39mtoBe([32m'pending'[39m)[33m;[39m
+2026-10-04T18:48:47.3148240Z      [90m     |[39m                         [31m[1m^[22m[39m
+2026-10-04T18:48:47.3148950Z      [90m 399 |[39m     expect(c[33m.[39mreinstatements())[33m.[39mtoHaveLength([35m0[39m)[33m;[39m
+2026-10-04T18:48:47.3149621Z      [90m 400 |[39m     [36mconst[39m parked [33m=[39m c[33m.[39mrow()[33m;[39m
+2026-10-04T18:48:47.3150513Z      [90m 401 |[39m     expect(parked[33m.[39mstripe_send_unresolved_at[33m.[39mgetTime())[33m.[39mtoBe(claimedAt[33m.[39mgetTime())[33m;[39m[0m
+2026-10-04T18:48:47.3151025Z 
+2026-10-04T18:48:47.3151260Z       at Object.<anonymous> (test/s-fee-r9-paused-sender.spec.ts:398:25)
+2026-10-04T18:48:47.3151717Z 
+2026-10-04T18:48:47.3153030Z   ● MUTANT no-send-start-budget › [r9] › B-627-9 narrowed: the send-start budget › a wall-clock step backward during the pause does not extend the start budget (monotonic age)
+2026-10-04T18:48:47.3154166Z 
+2026-10-04T18:48:47.3154482Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.3154900Z 
+2026-10-04T18:48:47.3155061Z     Expected: "pending"
+2026-10-04T18:48:47.3155469Z     Received: "succeeded"
+2026-10-04T18:48:47.3155719Z 
+2026-10-04T18:48:47.3156280Z     [0m [90m 430 |[39m     [36mconst[39m aRes [33m=[39m [36mawait[39m a[33m;[39m
+2026-10-04T18:48:47.3156784Z      [90m 431 |[39m
+2026-10-04T18:48:47.3157522Z     [31m[1m>[22m[39m[90m 432 |[39m     expect(aRes[33m.[39mstatus)[33m.[39mtoBe([32m'pending'[39m)[33m;[39m
+2026-10-04T18:48:47.3158335Z      [90m     |[39m                         [31m[1m^[22m[39m
+2026-10-04T18:48:47.3158959Z      [90m 433 |[39m     expect(c[33m.[39mreinstatements())[33m.[39mtoHaveLength([35m0[39m)[33m;[39m
+2026-10-04T18:48:47.3159931Z      [90m 434 |[39m     expect([33mString[39m(c[33m.[39mrow()[33m.[39mlast_error))[33m.[39mtoMatch([35m/^SFEE_TRANSFER_SEND_ABANDONED: /[39m)[33m;[39m
+2026-10-04T18:48:47.3160787Z      [90m 435 |[39m     expect(repayAlerts())[33m.[39mtoHaveLength([35m0[39m)[33m;[39m[0m
+2026-10-04T18:48:47.3161119Z 
+2026-10-04T18:48:47.3161356Z       at Object.<anonymous> (test/s-fee-r9-paused-sender.spec.ts:432:25)
+2026-10-04T18:48:47.3161646Z 
+2026-10-04T18:48:47.3162718Z   ● MUTANT no-forward-netting › [r4] › B-627-3 / OR-111-1 recoveries: forward netting only; cash vs receivable reported honestly › full refund: the coach's OTHER past transfer is never reversed; the 270 held (2% 98 + fee 172) is netted from the next sale
+2026-10-04T18:48:47.3163585Z 
+2026-10-04T18:48:47.3163727Z     expect(received).toMatchObject(expected)
+2026-10-04T18:48:47.3163931Z 
+2026-10-04T18:48:47.3164025Z     - Expected  - 2
+2026-10-04T18:48:47.3164235Z     + Received  + 2
+2026-10-04T18:48:47.3164361Z 
+2026-10-04T18:48:47.3164442Z       Object {
+2026-10-04T18:48:47.3164654Z     -   "amount_cents": 4360,
+2026-10-04T18:48:47.3164935Z     -   "netted_recovery_cents": 270,
+2026-10-04T18:48:47.3165201Z     +   "amount_cents": 4630,
+2026-10-04T18:48:47.3165471Z     +   "netted_recovery_cents": 0,
+2026-10-04T18:48:47.3165718Z       }
+2026-10-04T18:48:47.3165969Z 
+2026-10-04T18:48:47.3166536Z     [0m [90m 617 |[39m       (t) [33m=>[39m t[33m.[39msettlement_id [33m===[39m ctx[33m.[39msettlementFor([32m'ch_3'[39m)[33m.[39mid[33m,[39m
+2026-10-04T18:48:47.3167179Z      [90m 618 |[39m     )[33m![39m[33m;[39m
+2026-10-04T18:48:47.3168272Z     [31m[1m>[22m[39m[90m 619 |[39m     expect(ch3Transfer)[33m.[39mtoMatchObject({ amount_cents[33m:[39m [35m4[39m_360[33m,[39m netted_recovery_cents[33m:[39m [35m270[39m })[33m;[39m
+2026-10-04T18:48:47.3169121Z      [90m     |[39m                         [31m[1m^[22m[39m
+2026-10-04T18:48:47.3169708Z      [90m 620 |[39m     expect(ctx[33m.[39mopenRecoveries())[33m.[39mtoBe([35m0[39m)[33m;[39m
+2026-10-04T18:48:47.3170371Z      [90m 621 |[39m     expect(ctx[33m.[39midentity([32m'ch_1'[39m))[33m.[39mtoEqual({
+2026-10-04T18:48:47.3170940Z      [90m 622 |[39m       drift_cents[33m:[39m [35m0[39m[33m,[39m[0m
+2026-10-04T18:48:47.3171196Z 
+2026-10-04T18:48:47.3171437Z       at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:619:25)
+2026-10-04T18:48:47.3171735Z 
+2026-10-04T18:48:47.3172641Z   ● MUTANT no-forward-netting › [r4] › B-627-3 / OR-111-1 recoveries: forward netting only; cash vs receivable reported honestly › a won-dispute reinstatement is netted against what the coach owes on another charge
+2026-10-04T18:48:47.3173383Z 
+2026-10-04T18:48:47.3173526Z     expect(received).toMatchObject(expected)
+2026-10-04T18:48:47.3173727Z 
+2026-10-04T18:48:47.3173815Z     - Expected  - 3
+2026-10-04T18:48:47.3174027Z     + Received  + 3
+2026-10-04T18:48:47.3174146Z 
+2026-10-04T18:48:47.3174230Z       Object {
+2026-10-04T18:48:47.3174432Z     -   "amount_cents": 0,
+2026-10-04T18:48:47.3174704Z     -   "netted_recovery_cents": 3130,
+2026-10-04T18:48:47.3174971Z     -   "status": "netted",
+2026-10-04T18:48:47.3175205Z     +   "amount_cents": 3130,
+2026-10-04T18:48:47.3175479Z     +   "netted_recovery_cents": 0,
+2026-10-04T18:48:47.3175756Z     +   "status": "succeeded",
+2026-10-04T18:48:47.3175993Z       }
+2026-10-04T18:48:47.3176098Z 
+2026-10-04T18:48:47.3176511Z     [0m [90m 707 |[39m     [90m// the 3130 paid back is netted in full against the 4900 owed on ch_1, so[39m
+2026-10-04T18:48:47.3177339Z      [90m 708 |[39m     [90m// nothing leaves TGP while the coach owes it more than that.[39m
+2026-10-04T18:48:47.3178236Z     [31m[1m>[22m[39m[90m 709 |[39m     expect(reinstate)[33m.[39mtoMatchObject({
+2026-10-04T18:48:47.3178881Z      [90m     |[39m                       [31m[1m^[22m[39m
+2026-10-04T18:48:47.3179355Z      [90m 710 |[39m       amount_cents[33m:[39m [35m0[39m[33m,[39m
+2026-10-04T18:48:47.3179898Z      [90m 711 |[39m       netted_recovery_cents[33m:[39m [35m3[39m_130[33m,[39m
+2026-10-04T18:48:47.3180445Z      [90m 712 |[39m       status[33m:[39m [32m'netted'[39m[33m,[39m[0m
+2026-10-04T18:48:47.3180703Z 
+2026-10-04T18:48:47.3180942Z       at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:709:23)
+2026-10-04T18:48:47.3181239Z 
+2026-10-04T18:48:47.3182096Z   ● MUTANT no-forward-netting › [r5] › OR-111-1 worked example 1: $100 full refund › reverses that sale's own transfer (94.80), holds 5.20 = TGP 2.00 + Stripe 3.20 from the next sale, and tells the coach exactly
+2026-10-04T18:48:47.3182801Z 
+2026-10-04T18:48:47.3182949Z     expect(received).toMatchObject(expected)
+2026-10-04T18:48:47.3183157Z 
+2026-10-04T18:48:47.3183244Z     - Expected  - 2
+2026-10-04T18:48:47.3183460Z     + Received  + 2
+2026-10-04T18:48:47.3183578Z 
+2026-10-04T18:48:47.3183662Z       Object {
+2026-10-04T18:48:47.3183867Z     -   "amount_cents": 8960,
+2026-10-04T18:48:47.3184151Z     -   "netted_recovery_cents": 520,
+2026-10-04T18:48:47.3184418Z     +   "amount_cents": 9480,
+2026-10-04T18:48:47.3184686Z     +   "netted_recovery_cents": 0,
+2026-10-04T18:48:47.3184937Z       }
+2026-10-04T18:48:47.3185036Z 
+2026-10-04T18:48:47.3185425Z     [0m [90m 353 |[39m     [90m// Next $100 sale: its standard fees (320 + 200) plus the 520 held.[39m
+2026-10-04T18:48:47.3186567Z      [90m 354 |[39m     [36mawait[39m ctx[33m.[39msell(ctx[33m.[39mp100b[33m,[39m [32m'ch_next'[39m[33m,[39m [35m10[39m_000[33m,[39m [35m320[39m)[33m;[39m
+2026-10-04T18:48:47.3187541Z     [31m[1m>[22m[39m[90m 355 |[39m     expect(ctx[33m.[39mtransferFor([32m'ch_next'[39m))[33m.[39mtoMatchObject({
+2026-10-04T18:48:47.3188488Z      [90m     |[39m                                        [31m[1m^[22m[39m
+2026-10-04T18:48:47.3189004Z      [90m 356 |[39m       amount_cents[33m:[39m [35m8[39m_960[33m,[39m
+2026-10-04T18:48:47.3189551Z      [90m 357 |[39m       netted_recovery_cents[33m:[39m [35m520[39m[33m,[39m
+2026-10-04T18:48:47.3190001Z      [90m 358 |[39m     })[33m;[39m[0m
+2026-10-04T18:48:47.3190187Z 
+2026-10-04T18:48:47.3190397Z       at Object.<anonymous> (test/s-fee-r5-or-111-1.spec.ts:355:40)
+2026-10-04T18:48:47.3190655Z 
+2026-10-04T18:48:47.3191518Z   ● MUTANT no-forward-netting › [r5] › OR-111-1 worked example 2: $100 lost dispute with a $15 fee › reverses 94.80 and holds 20.20 = TGP 2.00 + Stripe 3.20 + dispute fee 15.00; the lost outcome says the hold stands
+2026-10-04T18:48:47.3192215Z 
+2026-10-04T18:48:47.3192358Z     expect(received).toMatchObject(expected)
+2026-10-04T18:48:47.3192554Z 
+2026-10-04T18:48:47.3192653Z     - Expected  - 2
+2026-10-04T18:48:47.3192862Z     + Received  + 2
+2026-10-04T18:48:47.3192986Z 
+2026-10-04T18:48:47.3193071Z       Object {
+2026-10-04T18:48:47.3193275Z     -   "amount_cents": 7460,
+2026-10-04T18:48:47.3193553Z     -   "netted_recovery_cents": 2020,
+2026-10-04T18:48:47.3193821Z     +   "amount_cents": 9480,
+2026-10-04T18:48:47.3194093Z     +   "netted_recovery_cents": 0,
+2026-10-04T18:48:47.3194340Z       }
+2026-10-04T18:48:47.3194446Z 
+2026-10-04T18:48:47.3194904Z     [0m [90m 426 |[39m     [90m// Netted from the next sale; TGP ends at exactly its 2.00 on the disputed charge.[39m
+2026-10-04T18:48:47.3195965Z      [90m 427 |[39m     [36mawait[39m ctx[33m.[39msell(ctx[33m.[39mp100b[33m,[39m [32m'ch_next'[39m[33m,[39m [35m10[39m_000[33m,[39m [35m320[39m)[33m;[39m
+2026-10-04T18:48:47.3196936Z     [31m[1m>[22m[39m[90m 428 |[39m     expect(ctx[33m.[39mtransferFor([32m'ch_next'[39m))[33m.[39mtoMatchObject({
+2026-10-04T18:48:47.3197750Z      [90m     |[39m                                        [31m[1m^[22m[39m
+2026-10-04T18:48:47.3198523Z      [90m 429 |[39m       amount_cents[33m:[39m [35m9[39m_480 [33m-[39m [35m2[39m_020[33m,[39m
+2026-10-04T18:48:47.3199148Z      [90m 430 |[39m       netted_recovery_cents[33m:[39m [35m2[39m_020[33m,[39m
+2026-10-04T18:48:47.3199596Z      [90m 431 |[39m     })[33m;[39m[0m
+2026-10-04T18:48:47.3199778Z 
+2026-10-04T18:48:47.3199998Z       at Object.<anonymous> (test/s-fee-r5-or-111-1.spec.ts:428:40)
+2026-10-04T18:48:47.3200260Z 
+2026-10-04T18:48:47.3201301Z   ● MUTANT no-forward-netting › [r5] › OR-111-1 worked example 3: refused reversal after payout, then a $49 sale and a $100 sale › holds 100.00 (2.00 + 3.20 + 94.80 not reversed); the $49 sale nets 46.30 in full; the $100 sale nets the last 53.70 and pays 41.10
+2026-10-04T18:48:47.3202130Z 
+2026-10-04T18:48:47.3202276Z     expect(received).toMatchObject(expected)
+2026-10-04T18:48:47.3202481Z 
+2026-10-04T18:48:47.3202582Z     - Expected  - 3
+2026-10-04T18:48:47.3202792Z     + Received  + 3
+2026-10-04T18:48:47.3202916Z 
+2026-10-04T18:48:47.3202996Z       Object {
+2026-10-04T18:48:47.3203198Z     -   "amount_cents": 0,
+2026-10-04T18:48:47.3203472Z     -   "netted_recovery_cents": 4630,
+2026-10-04T18:48:47.3203753Z     -   "status": "netted",
+2026-10-04T18:48:47.3203994Z     +   "amount_cents": 4630,
+2026-10-04T18:48:47.3204273Z     +   "netted_recovery_cents": 0,
+2026-10-04T18:48:47.3204555Z     +   "status": "succeeded",
+2026-10-04T18:48:47.3204781Z       }
+2026-10-04T18:48:47.3204884Z 
+2026-10-04T18:48:47.3205273Z     [0m [90m 463 |[39m     [90m// $49 sale: fee 172, TGP 98, coach net 4630 — all of it is netted.[39m
+2026-10-04T18:48:47.3206213Z      [90m 464 |[39m     [36mawait[39m ctx[33m.[39msell(ctx[33m.[39mp49[33m,[39m [32m'ch_49'[39m[33m,[39m [35m4[39m_900[33m,[39m [35m172[39m)[33m;[39m
+2026-10-04T18:48:47.3207313Z     [31m[1m>[22m[39m[90m 465 |[39m     expect(ctx[33m.[39mtransferFor([32m'ch_49'[39m))[33m.[39mtoMatchObject({
+2026-10-04T18:48:47.3208077Z      [90m     |[39m                                      [31m[1m^[22m[39m
+2026-10-04T18:48:47.3208579Z      [90m 466 |[39m       amount_cents[33m:[39m [35m0[39m[33m,[39m
+2026-10-04T18:48:47.3209131Z      [90m 467 |[39m       netted_recovery_cents[33m:[39m [35m4[39m_630[33m,[39m
+2026-10-04T18:48:47.3209700Z      [90m 468 |[39m       status[33m:[39m [32m'netted'[39m[33m,[39m[0m
+2026-10-04T18:48:47.3209962Z 
+2026-10-04T18:48:47.3210160Z       at Object.<anonymous> (test/s-fee-r5-or-111-1.spec.ts:465:38)
+2026-10-04T18:48:47.3210425Z 
+2026-10-04T18:48:47.3211238Z   ● MUTANT no-forward-netting › [r5] › OR-111-1 netting race (CAS lease fence + per-recovery CAS) › a netting that loses its CAS to a concurrent collection re-reads and nets only what is still owed
+2026-10-04T18:48:47.3211922Z 
+2026-10-04T18:48:47.3212061Z     expect(received).toMatchObject(expected)
+2026-10-04T18:48:47.3212265Z 
+2026-10-04T18:48:47.3212363Z     - Expected  - 2
+2026-10-04T18:48:47.3212571Z     + Received  + 2
+2026-10-04T18:48:47.3212696Z 
+2026-10-04T18:48:47.3212774Z       Object {
+2026-10-04T18:48:47.3212986Z     -   "amount_cents": 480,
+2026-10-04T18:48:47.3213260Z     -   "netted_recovery_cents": 9000,
+2026-10-04T18:48:47.3213528Z     +   "amount_cents": 9480,
+2026-10-04T18:48:47.3213800Z     +   "netted_recovery_cents": 0,
+2026-10-04T18:48:47.3214043Z       }
+2026-10-04T18:48:47.3214149Z 
+2026-10-04T18:48:47.3214735Z     [0m [90m 639 |[39m     ctx[33m.[39mprisma[33m.[39mpayeeRecovery[33m.[39mupdateMany[33m.[39mmockImplementation(realUpdateMany)[33m;[39m
+2026-10-04T18:48:47.3215861Z      [90m 640 |[39m     [36mawait[39m ctx[33m.[39msell(ctx[33m.[39mp100b[33m,[39m [32m'ch_100b'[39m[33m,[39m [35m10[39m_000[33m,[39m [35m320[39m)[33m;[39m
+2026-10-04T18:48:47.3216827Z     [31m[1m>[22m[39m[90m 641 |[39m     expect(ctx[33m.[39mtransferFor([32m'ch_100b'[39m))[33m.[39mtoMatchObject({
+2026-10-04T18:48:47.3217598Z      [90m     |[39m                                        [31m[1m^[22m[39m
+2026-10-04T18:48:47.3218501Z      [90m 642 |[39m       amount_cents[33m:[39m [35m480[39m[33m,[39m
+2026-10-04T18:48:47.3219091Z      [90m 643 |[39m       netted_recovery_cents[33m:[39m [35m9[39m_000[33m,[39m
+2026-10-04T18:48:47.3219542Z      [90m 644 |[39m     })[33m;[39m[0m
+2026-10-04T18:48:47.3219725Z 
+2026-10-04T18:48:47.3219935Z       at Object.<anonymous> (test/s-fee-r5-or-111-1.spec.ts:641:40)
+2026-10-04T18:48:47.3220205Z 
+2026-10-04T18:48:47.3221082Z   ● MUTANT no-forward-netting › [r5] › round 6 B-627-7 / C-627-5: the forward-looking sentence uses the amount still open › $99 refund holds 4.20; a later sale nets it; a $1 refund tells the coach $1.00, not $5.20
+2026-10-04T18:48:47.3221803Z 
+2026-10-04T18:48:47.3221985Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T18:48:47.3222222Z 
+2026-10-04T18:48:47.3222304Z     Expected: 0
+2026-10-04T18:48:47.3222512Z     Received: 420
+2026-10-04T18:48:47.3222637Z 
+2026-10-04T18:48:47.3222885Z     [0m [90m 928 |[39m     [90m// The next sale nets the 4.20.[39m
+2026-10-04T18:48:47.3223755Z      [90m 929 |[39m     [36mawait[39m ctx[33m.[39msell(ctx[33m.[39mp100b[33m,[39m [32m'ch_100b'[39m[33m,[39m [35m10[39m_000[33m,[39m [35m320[39m)[33m;[39m
+2026-10-04T18:48:47.3224670Z     [31m[1m>[22m[39m[90m 930 |[39m     expect(ctx[33m.[39mopenHeld())[33m.[39mtoBe([35m0[39m)[33m;[39m
+2026-10-04T18:48:47.3225254Z      [90m     |[39m                            [31m[1m^[22m[39m
+2026-10-04T18:48:47.3225776Z      [90m 931 |[39m     [90m// The last $1 is refunded: only 1.00 is newly held.[39m
+2026-10-04T18:48:47.3226641Z      [90m 932 |[39m     [36mawait[39m ctx[33m.[39mrefundViaWebhook([32m'ch_100'[39m[33m,[39m [35m10[39m_000[33m,[39m [35m10[39m_000)[33m;[39m
+2026-10-04T18:48:47.3227657Z      [90m 933 |[39m     expect(ctx[33m.[39mopenHeld())[33m.[39mtoBe([35m100[39m)[33m;[39m[0m
+2026-10-04T18:48:47.3228278Z 
+2026-10-04T18:48:47.3228503Z       at Object.<anonymous> (test/s-fee-r5-or-111-1.spec.ts:930:28)
+2026-10-04T18:48:47.3228763Z 
+2026-10-04T18:48:47.6070743Z PASS test/aud-sol-f12r13-117-listing.spec.ts (632 MB heap size)
+2026-10-04T18:48:47.6074001Z   ● Console
+2026-10-04T18:48:47.6074245Z 
+2026-10-04T18:48:47.6074392Z     console.log
+2026-10-04T18:48:47.6074817Z       AUD117_BAD_TRANSFER_LIST {
+2026-10-04T18:48:47.6075328Z         envelope: { has_more: false },
+2026-10-04T18:48:47.6075834Z         kind: 'coach_reinstate',
+2026-10-04T18:48:47.6076259Z         external: 1000,
+2026-10-04T18:48:47.6076636Z         booked: 1000,
+2026-10-04T18:48:47.6077000Z         status: 'pending'
+2026-10-04T18:48:47.6077365Z       }
+2026-10-04T18:48:47.6077579Z 
+2026-10-04T18:48:47.6077887Z       at test/aud-sol-f12r13-117-listing.spec.ts:69:15
+2026-10-04T18:48:47.6078528Z 
+2026-10-04T18:48:47.6078681Z     console.log
+2026-10-04T18:48:47.6079142Z       AUD117_BAD_TRANSFER_LIST {
+2026-10-04T18:48:47.6079623Z         envelope: { data: [] },
+2026-10-04T18:48:47.6080084Z         kind: 'coach_reinstate',
+2026-10-04T18:48:47.6080498Z         external: 1000,
+2026-10-04T18:48:47.6080869Z         booked: 1000,
+2026-10-04T18:48:47.6081235Z         status: 'pending'
+2026-10-04T18:48:47.6081603Z       }
+2026-10-04T18:48:47.6081778Z 
+2026-10-04T18:48:47.6082140Z       at test/aud-sol-f12r13-117-listing.spec.ts:69:15
+2026-10-04T18:48:47.6082537Z 
+2026-10-04T18:48:47.6082688Z     console.log
+2026-10-04T18:48:47.6083082Z       AUD117_BAD_TRANSFER_LIST {
+2026-10-04T18:48:47.6083573Z         envelope: { has_more: false },
+2026-10-04T18:48:47.6084074Z         kind: 'head_coach_reinstate',
+2026-10-04T18:48:47.6084528Z         external: 1000,
+2026-10-04T18:48:47.6084900Z         booked: 1000,
+2026-10-04T18:48:47.6085265Z         status: 'pending'
+2026-10-04T18:48:47.6085637Z       }
+2026-10-04T18:48:47.6085811Z 
+2026-10-04T18:48:47.6086090Z       at test/aud-sol-f12r13-117-listing.spec.ts:69:15
+2026-10-04T18:48:47.6086476Z 
+2026-10-04T18:48:47.6087028Z     console.log
+2026-10-04T18:48:47.6087439Z       AUD117_BAD_TRANSFER_LIST {
+2026-10-04T18:48:47.6087904Z         envelope: { data: [] },
+2026-10-04T18:48:47.6088618Z         kind: 'head_coach_reinstate',
+2026-10-04T18:48:47.6089114Z         external: 1000,
+2026-10-04T18:48:47.6089480Z         booked: 1000,
+2026-10-04T18:48:47.6089849Z         status: 'pending'
+2026-10-04T18:48:47.6090217Z       }
+2026-10-04T18:48:47.6090392Z 
+2026-10-04T18:48:47.6090673Z       at test/aud-sol-f12r13-117-listing.spec.ts:69:15
+2026-10-04T18:48:47.6091056Z 
+2026-10-04T18:48:47.6091196Z     console.log
+2026-10-04T18:48:47.6091586Z       AUD117_BAD_REVERSAL_LIST {
+2026-10-04T18:48:47.6092068Z         envelope: { has_more: false },
+2026-10-04T18:48:47.6092531Z         external: 400,
+2026-10-04T18:48:47.6092883Z         booked: 0,
+2026-10-04T18:48:47.6093237Z         opStatus: 'pending'
+2026-10-04T18:48:47.6093610Z       }
+2026-10-04T18:48:47.6093788Z 
+2026-10-04T18:48:47.6094104Z       at test/aud-sol-f12r13-117-listing.spec.ts:97:13
+2026-10-04T18:48:47.6094493Z 
+2026-10-04T18:48:47.6094648Z     console.log
+2026-10-04T18:48:47.6095075Z       AUD117_BAD_REVERSAL_LIST {
+2026-10-04T18:48:47.6095542Z         envelope: { data: [] },
+2026-10-04T18:48:47.6095965Z         external: 400,
+2026-10-04T18:48:47.6096339Z         booked: 0,
+2026-10-04T18:48:47.6096712Z         opStatus: 'pending'
+2026-10-04T18:48:47.6097092Z       }
+2026-10-04T18:48:47.6097260Z 
+2026-10-04T18:48:47.6097539Z       at test/aud-sol-f12r13-117-listing.spec.ts:97:13
+2026-10-04T18:48:47.6097914Z 
+2026-10-04T18:48:47.9009281Z PASS test/audit-sol-f34-683.spec.ts (655 MB heap size)
+2026-10-04T18:48:48.3058214Z [33m[Nest] 3183  - [39m10/04/2026, 6:48:47 PM [33m   WARN[39m [38;5;3m[TransferOrchestratorService] [39m[33mSFEE_TRANSFER_FAILED transfer=tr-21 kind=coach_net purchase=cp_audit settlement=cs-17 attempt=1/6 alert=false: kind=stripe http=503 type=api_error code=none; not visible at Stripe yet, re-checked before any re-send[39m
+2026-10-04T18:48:48.3060189Z B-FEES15-118 R75 test/s-fee-r11-reversal-admission-diagnostics.spec.ts status=0
+2026-10-04T18:48:48.3061231Z R75 77c2f50710edf087647d61d018925045b6741311 dff4feab6c121696c2a507d997ab8868c9b19202; policy=dff4feab6c121696c2a507d997ab8868c9b19202:.github/r75-policy.json
+2026-10-04T18:48:48.3062148Z Counts are whole-file after (+) and before (-); net is the per-class change.
+2026-10-04T18:48:48.3062642Z OK — no positive token change
+2026-10-04T18:48:48.3062824Z 
+2026-10-04T18:48:48.3063109Z B-FEES15-118 R75 test/transfer-orchestrator.service.spec.ts status=1
+2026-10-04T18:48:48.3064062Z R75 77c2f50710edf087647d61d018925045b6741311 686e9b140be2300c1d7f54c3eb1215137d3a89f8; policy=686e9b140be2300c1d7f54c3eb1215137d3a89f8:.github/r75-policy.json
+2026-10-04T18:48:48.3064946Z Counts are whole-file after (+) and before (-); net is the per-class change.
+2026-10-04T18:48:48.3065351Z as any: +1 -0 net +1
+2026-10-04T18:48:48.3065645Z   test/transfer-orchestrator.service.spec.ts
+2026-10-04T18:48:48.3066010Z FAIL: positive per-class token change
+2026-10-04T18:48:48.3066197Z 
+2026-10-04T18:48:48.3088596Z PASS test/b-fees15-118-r75-probe.spec.ts (175 MB heap size)
+2026-10-04T18:48:48.3141148Z 
+2026-10-04T18:48:48.3150079Z Test Suites: 1 failed, 12 passed, 13 total
+2026-10-04T18:48:48.3150722Z Tests:       54 failed, 373 passed, 427 total
+2026-10-04T18:48:48.3151079Z Snapshots:   0 total
+2026-10-04T18:48:48.3151312Z Time:        30.589 s
+2026-10-04T18:48:48.3153964Z Ran all test suites matching test/probe-aud-opus-f56-116.spec.ts|test/s-fee-r15-deferred-fx-notice-flag.spec.ts|test/aud-sol-f23-117-settlement-boundaries.spec.ts|test/audit-sol-f34-683.spec.ts|test/aud-sol-f12-117-reversal.spec.ts|test/audit-opus-f12r-682-probe.spec.ts|test/audit-opus-f12-117-682-extra.spec.ts|test/audit-opus-f12r-livedb-probe.spec.ts|test/aud-sol-f12r13-117-transfer.spec.ts|test/aud-sol-f12r13-117-listing.spec.ts|test/b-fees15-118-r75-probe.spec.ts|test/aud-sol-f23-118-notice-recovery.spec.ts|test/audit-opus-f23-118-683.spec.ts.
+2026-10-04T18:48:48.4840784Z ##[error]Process completed with exit code 1.
+2026-10-04T18:48:48.5009671Z Post job cleanup.
+2026-10-04T18:48:48.5841970Z [command]/usr/bin/git version
+2026-10-04T18:48:48.5878565Z git version 2.55.0
+2026-10-04T18:48:48.5917329Z Temporarily overriding HOME='/home/runner/work/_temp/6724d0e3-8b3f-42dd-bcc3-25eacfa6f5b1' before making global git config changes
+2026-10-04T18:48:48.5919063Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T18:48:48.5922597Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T18:48:48.5952183Z Removing SSH command configuration
+2026-10-04T18:48:48.5959109Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T18:48:48.5996287Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T18:48:48.6219695Z Removing HTTP extra header
+2026-10-04T18:48:48.6224585Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T18:48:48.6259000Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T18:48:48.6477507Z Removing includeIf entries pointing to credentials config files
+2026-10-04T18:48:48.6484027Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T18:48:48.6506720Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T18:48:48.6509080Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T18:48:48.6510275Z includeif.gitdir:/github/workspace/.git.path
+2026-10-04T18:48:48.6511124Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T18:48:48.6517663Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T18:48:48.6540438Z /home/runner/work/_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config
+2026-10-04T18:48:48.6551075Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config
+2026-10-04T18:48:48.6586096Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T18:48:48.6606753Z /home/runner/work/_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config
+2026-10-04T18:48:48.6615950Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config
+2026-10-04T18:48:48.6646038Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-04T18:48:48.6666091Z /github/runner_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config
+2026-10-04T18:48:48.6675383Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config
+2026-10-04T18:48:48.6706656Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T18:48:48.6727528Z /github/runner_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config
+2026-10-04T18:48:48.6736427Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config
+2026-10-04T18:48:48.6780266Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T18:48:48.7004033Z Removing credentials config '/home/runner/work/_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config'
+2026-10-04T18:48:48.7116995Z Print service container logs: 4f1a457628b34f798e1a6d4b483d0b5f_redis7alpine_beb273
+2026-10-04T18:48:48.7122386Z ##[command]/usr/bin/docker logs --details 0f3cf68030a6c47c213aab54d4f364eb09caae922f0ffbd31b64aa86817c3f03
+2026-10-04T18:48:48.7246890Z  1:C 04 Oct 2026 18:47:28.372 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+2026-10-04T18:48:48.7249499Z  1:C 04 Oct 2026 18:47:28.372 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+2026-10-04T18:48:48.7250086Z  1:C 04 Oct 2026 18:47:28.372 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+2026-10-04T18:48:48.7250998Z  1:C 04 Oct 2026 18:47:28.372 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+2026-10-04T18:48:48.7251757Z  1:M 04 Oct 2026 18:47:28.372 * monotonic clock: POSIX clock_gettime
+2026-10-04T18:48:48.7252165Z  1:M 04 Oct 2026 18:47:28.373 * Running mode=standalone, port=6379.
+2026-10-04T18:48:48.7252531Z  1:M 04 Oct 2026 18:47:28.373 * Server initialized
+2026-10-04T18:48:48.7252880Z  1:M 04 Oct 2026 18:47:28.373 * Ready to accept connections tcp
+2026-10-04T18:48:48.7260800Z Stop and remove container: 4f1a457628b34f798e1a6d4b483d0b5f_redis7alpine_beb273
+2026-10-04T18:48:48.7265328Z ##[command]/usr/bin/docker rm --force 0f3cf68030a6c47c213aab54d4f364eb09caae922f0ffbd31b64aa86817c3f03
+2026-10-04T18:48:48.8413943Z 0f3cf68030a6c47c213aab54d4f364eb09caae922f0ffbd31b64aa86817c3f03
+2026-10-04T18:48:48.8440353Z Remove container network: github_network_b2c66b3fd2e24568b569370b711cf554
+2026-10-04T18:48:48.8444830Z ##[command]/usr/bin/docker network rm github_network_b2c66b3fd2e24568b569370b711cf554
+2026-10-04T18:48:48.9393383Z github_network_b2c66b3fd2e24568b569370b711cf554
+2026-10-04T18:48:48.9469962Z Cleaning up orphan processes

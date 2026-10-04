@@ -1,0 +1,43 @@
+AUDIT GPT-6.1 Sol — growth-project-backend#689 @ bb992fedf0095446f916f3261742bd262c3d94da — VERDICT: REQUEST CHANGES
+
+A/B/C = 0/4/0
+
+Job AUD-SOL-D34-118, agent 118. Independent T4 review of the complete D3 source, journal/reconciler, split boundary and fix-round tests; 2,913 changed lines, below the hard cap, but only 87 lines of remaining budget. D3 remains inert until D4; retain the D1→D5 composition/deploy boundary. [Current D3 round and composition](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/689#issuecomment-5976887001)
+
+### Prior Sol findings first
+
+- **B-689-2 closes** with `670967886`: billing/reconciler catches use restricted diagnostics and all prior synthetic no-leak controls pass. [Builder change and failing-before evidence](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/689#issuecomment-5976301258) [Independent exact-source execution](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37219411254)
+- **B-689-3 closes** with `670967886`: initial lost reply requires same-key attribution; independent other-collector/own-pay controls and the older unreplayed-400, 429 and 409 controls pass. [Builder change](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/689#issuecomment-5976301258) [Independent execution](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37219411254)
+- **B-689-1 and B-689-4 remain partially open:** `670967886`/`2edc9826` repair every originally exercised snapshot, mid-pay and lost-dispute case, but the authority/decision gaps below remain. The builder's complete closure suite passes; new adversarial assertions fail. [Verified failing-before run: 12 failures/3 controls](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37174160085) [Current independent run](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37219411254)
+
+No approved-code evidence is reused: the prior Sol verdict was REQUEST CHANGES. The merge-only delta from FIX ROUND 1 is the carried D1 diagnostic change/test, with no D3-owned file changes; that restack is not a main-only Rule-12 exemption. [Prior verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/689#issuecomment-5975999246) [Restack record](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/689#issuecomment-5976887001)
+
+### B-689-1 — Locked dispute authority expires before the actual resolution
+
+`src/checkout/client-billing.service.ts:1129–1140,1164–1198,1732`: `settleCycleOnPaid` checks under a row lock, but its transaction commits before D3 invokes unconditional v1 resolution. The new probe records an actual v2 dispute obligation in that gap, confirms `isDisputeCycleOpen=true`, then resumes D3's v1 call: the cycle becomes **resolved**, defeating active-cycle protection. Existing mid-provider-await controls pass; the post-lock case fails. [Executed counterexample](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37219411254)
+
+**Minimal fix:** the final cycle-resolution write and current obligation check must share the same serialization/generation boundary; do not authorize a post-commit unqualified v1 write from the earlier answer. Keep recovery-email/provider delivery outside that transaction. Apply the same rule to card, background and paid-period fallback callers. The D2 method's general lack of a transaction is an upstream ownership note, not a separate finding against this PR; D3's newly added unlocked invocation is the unsafe boundary here. [Executed D3 caller](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37219411254)
+
+### B-689-4 — A dispute arriving during cancellation still selects period-end option A
+
+Same service `:1551–1554,1635–1636,1709–1737`: the `dispute` answer is captured before provider awaits and never controls the final decision again. The probe starts with no open invoice and a paid period, records an open obligation during `retrieveSubscription`, and receives **scheduled**, not immediate **ended**. The later locked check notices the dispute but merely keeps its marker; it does not undo option A or end the subscription. [Executed counterexample](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37219411254)
+
+**Minimal fix:** re-decide current dispute/cancel authority at the final option-A boundary and continue durable 2A when disputed; never complete the operation or promise a kept paid period on that branch. Preserve the passing genuine-paid-meanwhile and voluntary cancellation controls, and never mark the dispute settled. [Counterexample and controls](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37219411254)
+
+### B-689-5 — Out-of-band 2A skips an active-status dispute cycle
+
+Same service `:1915–1919`: reconciliation restricts purchases to `past_due/unpaid`, although a still-active disputed cycle can have purchase status `active` after subscription synchronization. The probe gives an unresolved dispute cycle an active provider/local status and `cancel_at_period_end=true`; reconciliation does nothing and Stripe remains **active** instead of ending immediately. [Executed counterexample](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37219411254)
+
+**Minimal fix:** select eligible active dunning cycles using current cycle/obligation authority, not only the subscription-status projection; route active-status disputed cancellations through immediate 2A while preserving terminal, free/code and legitimate voluntary-period-end exclusions. [Executed affected selector](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37219411254)
+
+### B-689-6 — New cycle lock is taken in the reverse order from favorable closure
+
+Same service `:1117–1129,1170,1709–1724,1779–1790`: restoration writes/locks `ClientPurchase` before locking `DunningState`, whereas D2 favorable closure locks `DunningState` before updating `ClientPurchase`. The executed lock-trace assertion observes **purchase write → cycle lock**, not the required inverse. Two concurrent transactions can therefore each hold one row and wait for the other; a victim's restore/clear is caught and the journal may still be completed. [Executed acquisition-order proof](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37219411254)
+
+**Minimal fix:** take the shared cycle lock before purchase writes in every D3 transaction touching both, consistently with D2 and D4; test restore/cancel versus favorable closure with two workers and retain durable retry on transaction failure. This is an acquisition-order proof plus concrete two-transaction counterexample, not a claim that a live PostgreSQL deadlock was executed. [Executed trace and stated evidence boundary](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37219411254)
+
+### Execution and gates
+
+Audit-only source `9368ff294a4f2a4d49f985cefb81c076db1d36e9` differs from the candidate only by its probe spec; CI adds only lane plumbing. **4 failed / 25 passed** across two suites; the builder closure suite and all prior Sol probes pass, while the four new assertions above fail. The initial three-case run independently reproduced the first three failures. These are real services with stateful Prisma/Stripe-shaped doubles, not live provider/PostgreSQL/device acceptance. [Final probe job](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37219411254/job/111486521895) [Initial probe](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37219218438)
+
+Latest applicable stacked-base required checks are 7/7 green, ignoring canceled superseded duplicates; four main-only security/build checks remain mandatory on the landing composition, and the production deploy-readiness gate is skipped, not executed. No candidate edits, local heavy work, production/provider mutation or deployment occurred. [Exact-head build](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37178688039/job/111366602778) [Exact-head schema parity](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37178687995/job/111366604629)

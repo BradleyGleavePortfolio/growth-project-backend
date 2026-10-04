@@ -1,0 +1,1733 @@
+﻿2026-10-04T18:47:25.4940021Z Current runner version: '2.337.0'
+##[group]Runner Image Provisioner
+Hosted Compute Agent
+Version: 20260901.588
+Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+Build Date: 2026-09-01T19:56:44Z
+Worker ID: {4ecdb72d-c0d6-422c-8266-b4182672bc18}
+Azure Region: westus3
+##[endgroup]
+##[group]Operating System
+Ubuntu
+24.04.5
+LTS
+##[endgroup]
+##[group]Runner Image
+Image: ubuntu-24.04
+Version: 20260927.320.1
+Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+##[endgroup]
+##[group]GITHUB_TOKEN Permissions
+Contents: read
+Metadata: read
+Packages: read
+##[endgroup]
+Secret source: Actions
+Cache mode: write
+Prepare workflow directory
+Prepare all required actions
+Getting action download info
+Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+Complete job name: targeted
+##[group]Checking docker version
+##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+'1.48'
+Docker daemon API version: '1.48'
+##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+'1.48'
+Docker client API version: '1.48'
+##[endgroup]
+##[group]Clean up resources from previous jobs
+##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=3e6e0e"
+##[command]/usr/bin/docker network prune --force --filter "label=3e6e0e"
+##[endgroup]
+##[group]Create local container network
+##[command]/usr/bin/docker network create --label 3e6e0e github_network_b2c66b3fd2e24568b569370b711cf554
+50c39d827531557b9f1535f82056cfb34cd7427fb4c262ed8cb2bd709d530d52
+##[endgroup]
+##[group]Starting redis service container
+##[command]/usr/bin/docker pull redis:7-alpine
+7-alpine: Pulling from library/redis
+16333ee0c00f: Pulling fs layer
+83234986c742: Pulling fs layer
+7eb50503c2b0: Pulling fs layer
+1522f9c6f453: Pulling fs layer
+9928009b15c8: Pulling fs layer
+4f4fb700ef54: Pulling fs layer
+4eb14bae0e1d: Pulling fs layer
+1522f9c6f453: Waiting
+4f4fb700ef54: Waiting
+9928009b15c8: Waiting
+4eb14bae0e1d: Waiting
+83234986c742: Download complete
+7eb50503c2b0: Verifying Checksum
+7eb50503c2b0: Download complete
+16333ee0c00f: Download complete
+16333ee0c00f: Pull complete
+83234986c742: Pull complete
+9928009b15c8: Verifying Checksum
+9928009b15c8: Download complete
+4f4fb700ef54: Verifying Checksum
+4f4fb700ef54: Download complete
+1522f9c6f453: Verifying Checksum
+1522f9c6f453: Download complete
+7eb50503c2b0: Pull complete
+4eb14bae0e1d: Verifying Checksum
+4eb14bae0e1d: Download complete
+1522f9c6f453: Pull complete
+9928009b15c8: Pull complete
+4f4fb700ef54: Pull complete
+4eb14bae0e1d: Pull complete
+Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+Status: Downloaded newer image for redis:7-alpine
+docker.io/library/redis:7-alpine
+##[command]/usr/bin/docker create --name 4f1a457628b34f798e1a6d4b483d0b5f_redis7alpine_beb273 --label 3e6e0e --network github_network_b2c66b3fd2e24568b569370b711cf554 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+0f3cf68030a6c47c213aab54d4f364eb09caae922f0ffbd31b64aa86817c3f03
+##[command]/usr/bin/docker start 0f3cf68030a6c47c213aab54d4f364eb09caae922f0ffbd31b64aa86817c3f03
+0f3cf68030a6c47c213aab54d4f364eb09caae922f0ffbd31b64aa86817c3f03
+##[command]/usr/bin/docker ps --all --filter id=0f3cf68030a6c47c213aab54d4f364eb09caae922f0ffbd31b64aa86817c3f03 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+0f3cf68030a6c47c213aab54d4f364eb09caae922f0ffbd31b64aa86817c3f03 Up Less than a second (health: starting)
+##[command]/usr/bin/docker port 0f3cf68030a6c47c213aab54d4f364eb09caae922f0ffbd31b64aa86817c3f03
+6379/tcp -> 0.0.0.0:6379
+6379/tcp -> [::]:6379
+##[endgroup]
+##[group]Waiting for all services to be ready
+##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 0f3cf68030a6c47c213aab54d4f364eb09caae922f0ffbd31b64aa86817c3f03
+starting
+redis service is starting, waiting 2 seconds before checking again.
+##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 0f3cf68030a6c47c213aab54d4f364eb09caae922f0ffbd31b64aa86817c3f03
+starting
+redis service is starting, waiting 4 seconds before checking again.
+##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 0f3cf68030a6c47c213aab54d4f364eb09caae922f0ffbd31b64aa86817c3f03
+healthy
+redis service is healthy.
+##[endgroup]
+##[group]Run actions/checkout@v6
+with:
+  repository: BradleyGleavePortfolio/growth-project-backend
+  token: ***
+  ssh-strict: true
+  ssh-user: git
+  persist-credentials: true
+  clean: true
+  sparse-checkout-cone-mode: true
+  fetch-depth: 1
+  fetch-tags: false
+  show-progress: true
+  lfs: false
+  submodules: false
+  set-safe-directory: true
+  allow-unsafe-pr-checkout: false
+##[endgroup]
+Syncing repository: BradleyGleavePortfolio/growth-project-backend
+##[group]Getting Git version info
+Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+[command]/usr/bin/git version
+git version 2.55.0
+##[endgroup]
+Temporarily overriding HOME='/home/runner/work/_temp/0c41b76b-e5b7-40f4-a33f-85fcd845e62e' before making global git config changes
+Adding repository directory to the temporary git global config as a safe directory
+[command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+##[group]Determining repository object format
+##[endgroup]
+##[group]Initializing the repository
+[command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+[command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+##[endgroup]
+##[group]Disabling automatic garbage collection
+[command]/usr/bin/git config --local gc.auto 0
+##[endgroup]
+##[group]Setting up auth
+Removing SSH command configuration
+[command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Removing HTTP extra header
+[command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Removing includeIf entries pointing to credentials config files
+[command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+[command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+[command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+[command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config
+[command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config
+[command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config
+[command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config
+##[endgroup]
+##[group]Fetching the repository
+[command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +70fe7f0577753e826d5c84252a614209a2517525:refs/remotes/origin/ci/B-FEES16-118-686-probes
+From https://github.com/BradleyGleavePortfolio/growth-project-backend
+ * [new ref]         70fe7f0577753e826d5c84252a614209a2517525 -> origin/ci/B-FEES16-118-686-probes
+[command]/usr/bin/git branch --list --remote origin/ci/B-FEES16-118-686-probes
+  origin/ci/B-FEES16-118-686-probes
+[command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-FEES16-118-686-probes
+70fe7f0577753e826d5c84252a614209a2517525
+##[endgroup]
+##[group]Determining the checkout info
+##[endgroup]
+[command]/usr/bin/git sparse-checkout disable
+[command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+##[group]Checking out the ref
+[command]/usr/bin/git checkout --progress --force -B ci/B-FEES16-118-686-probes refs/remotes/origin/ci/B-FEES16-118-686-probes
+Switched to a new branch 'ci/B-FEES16-118-686-probes'
+branch 'ci/B-FEES16-118-686-probes' set up to track 'origin/ci/B-FEES16-118-686-probes'.
+##[endgroup]
+[command]/usr/bin/git log -1 --format=%H
+70fe7f0577753e826d5c84252a614209a2517525
+##[group]Run actions/setup-node@v6
+with:
+  node-version: 20
+  cache: npm
+  check-latest: false
+  token: ***
+  package-manager-cache: true
+##[endgroup]
+Attempting to download 20...
+Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+Extracting ...
+[command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/ca8453b5-33c1-4965-8d54-e4117e09b7dc -f /home/runner/work/_temp/3ce9ba37-5c9f-48e7-a7cd-e0d788b14c72
+Adding to the cache ...
+##[group]Environment details
+node: v20.20.2
+npm: 10.8.2
+yarn: 1.22.22
+##[endgroup]
+[command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+/home/runner/.npm
+Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+Received 33554432 of 86828135 (38.6%), 32.0 MBs/sec
+Received 86828135 of 86828135 (100.0%), 60.3 MBs/sec
+Cache Size: ~83 MB (86828135 B)
+[command]/usr/bin/tar -xf /home/runner/work/_temp/50b8da5d-e835-4a10-89fd-34d10d3af988/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+Cache restored successfully
+Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+##[group]Run npm ci
+npm ci
+shell: /usr/bin/bash -e {0}
+##[endgroup]
+npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+
+> growth-project-backend@1.0.0 postinstall
+> prisma generate
+
+Prisma schema loaded from prisma/schema.prisma
+┌─────────────────────────────────────────────────────────┐
+│  Update available 6.19.3 -> 8.0.0-rc.19                 │
+│                                                         │
+│  This is a major update - please follow the guide at    │
+│  https://pris.ly/d/major-version-upgrade                │
+│                                                         │
+│  Run the following to update                            │
+│    npm i --save-dev prisma@latest                       │
+│    npm i @prisma/client@latest                          │
+└─────────────────────────────────────────────────────────┘
+
+✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.07s
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+
+
+> growth-project-backend@1.0.0 prepare
+> lefthook install
+
+sync hooks: ✔️(commit-msg, pre-commit)
+
+added 1115 packages, and audited 1116 packages in 27s
+
+202 packages are looking for funding
+  run `npm fund` for details
+
+3 high severity vulnerabilities
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+##[group]Run npx prisma generate
+npx prisma generate
+shell: /usr/bin/bash -e {0}
+##[endgroup]
+Prisma schema loaded from prisma/schema.prisma
+
+✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.08s
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+
+##[group]Run set -euo pipefail
+set -euo pipefail
+test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+echo "specs: ${SPECS[*]}"
+npx jest --ci --runInBand "${SPECS[@]}"
+shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+env:
+  NODE_OPTIONS: --max-old-space-size=4096
+  THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+##[endgroup]
+specs: test/probe-aud-opus-f56-116.spec.ts test/s-fee-r15-deferred-fx-notice-flag.spec.ts test/aud-sol-f23-117-settlement-boundaries.spec.ts test/audit-sol-f34-683.spec.ts test/aud-sol-f12-117-reversal.spec.ts test/audit-opus-f12r-682-probe.spec.ts test/audit-opus-f12-117-682-extra.spec.ts test/audit-opus-f12r-livedb-probe.spec.ts test/aud-sol-f12r13-117-transfer.spec.ts test/aud-sol-f12r13-117-listing.spec.ts test/b-fees15-118-r75-probe.spec.ts test/aud-sol-f23-118-notice-recovery.spec.ts test/audit-opus-f23-118-683.spec.ts
+PASS test/audit-opus-f12r-682-probe.spec.ts (106 MB heap size)
+  ● Console
+
+    console.log
+      D3 stripe=800 books=400 duplicate_alerts=0
+
+      at Object.<anonymous> (test/audit-opus-f12r-682-probe.spec.ts:291:13)
+
+    console.log
+      P1 checked=960 truncated=12 first=eur:999999:all:dispute_won:coach | eur:999999:all:dispute_won:head_coach | eur:999999:reversed_cents:dispute_won:coach | eur:999999:reversed_cents:dispute_won:head_coach | eur:9999999:all:dispute_won:coach | eur:9999999:all:dispute_won:head_coach
+
+      at Object.<anonymous> (test/audit-opus-f12r-682-probe.spec.ts:434:13)
+
+PASS test/s-fee-r15-deferred-fx-notice-flag.spec.ts (146 MB heap size)
+PASS test/audit-opus-f12r-livedb-probe.spec.ts (15.601 s, 102 MB heap size)
+  ● Console
+
+    console.log
+      migrate deploy: 188 migrations found in prisma/migrations | The following migration(s) have been applied: | All migrations have been successfully applied.
+
+      at Object.<anonymous> (test/audit-opus-f12r-livedb-probe.spec.ts:57:11)
+
+    console.log
+      DB-L0 purchases with duplicate legacy rows under the old algorithm: 30/30
+
+      at Object.<anonymous> (test/audit-opus-f12r-livedb-probe.spec.ts:110:13)
+
+    console.log
+      DB-R1 sends=20 losers=20 wrongLoser=0 bad=0
+
+      at Object.<anonymous> (test/audit-opus-f12r-livedb-probe.spec.ts:251:13)
+
+PASS test/audit-opus-f23-118-683.spec.ts (115 MB heap size)
+PASS test/aud-sol-f23-118-notice-recovery.spec.ts (139 MB heap size)
+  ● Console
+
+    console.log
+      AUD118_NOTICE_RECOVERY {
+        failure: 'notice insert',
+        result: '',
+        failedDelivery: true,
+        durableRetry: true,
+        noticeCount: 1,
+        reconciled: [ 1, 0 ],
+        paid: 6980,
+        reversals: 1
+      }
+
+      at test/aud-sol-f23-118-notice-recovery.spec.ts:93:13
+
+    console.log
+      AUD118_NOTICE_RECOVERY {
+        failure: 'notice history read',
+        result: '',
+        failedDelivery: true,
+        durableRetry: true,
+        noticeCount: 1,
+        reconciled: [ 1, 0 ],
+        paid: 6980,
+        reversals: 1
+      }
+
+      at test/aud-sol-f23-118-notice-recovery.spec.ts:93:13
+
+    console.log
+      AUD118_TERMINAL_NOTICE_RETRY {
+        events: [ 'chargeback', 'dispute_lost' ],
+        flag: null,
+        disputeId: 'dp_notice',
+        paid: 0,
+        reversals: 1
+      }
+
+      at Object.<anonymous> (test/aud-sol-f23-118-notice-recovery.spec.ts:157:11)
+
+PASS test/audit-opus-f12-117-682-extra.spec.ts (160 MB heap size)
+  ● Console
+
+    console.log
+      X3 message=SFEE_REVERSAL_UNCERTAIN transfer=tr-5 op=tgp-tr-rev-tr-5-op1: the reversal outcome is unknown (send_abandoned: the operation is still pending under another attempt; nothing sent by this worker); it is retried with the same idempotency key and nothing else moves on this transfer until it resolves.
+
+      at Object.<anonymous> (test/audit-opus-f12-117-682-extra.spec.ts:153:13)
+
+    console.log
+      X4 truncated=24 amount_cut=0
+      eur:999999:dispute_won:coach=9,999.99 EUR is held from your next s...
+      eur:999999:dispute_won:head_coach=9,999.99 EUR is held from your next s...
+      eur:9999999:dispute_won:coach=d. 99,999.99 EUR is held from your ne...
+      eur:9999999:dispute_won:head_coach=d. 99,999.99 EUR is held from your ne...
+      eur:99999999:dispute_won:coach=ased. 999,999.99 EUR is held from you...
+      eur:99999999:dispute_won:head_coach=ased. 999,999.99 EUR is held from you...
+      gbp:999999:dispute_won:coach=9,999.99 GBP is held from your next s...
+      gbp:999999:dispute_won:head_coach=9,999.99 GBP is held from your next s...
+      gbp:9999999:dispute_won:coach=d. 99,999.99 GBP is held from your ne...
+      gbp:9999999:dispute_won:head_coach=d. 99,999.99 GBP is held from your ne...
+      gbp:99999999:dispute_won:coach=ased. 999,999.99 GBP is held from you...
+      gbp:99999999:dispute_won:head_coach=ased. 999,999.99 GBP is held from you...
+      aud:999999:dispute_won:coach=9,999.99 AUD is held from your next s...
+      aud:999999:dispute_won:head_coach=9,999.99 AUD is held from your next s...
+      aud:9999999:dispute_won:coach=d. 99,999.99 AUD is held from your ne...
+      aud:9999999:dispute_won:head_coach=d. 99,999.99 AUD is held from your ne...
+      aud:99999999:dispute_won:coach=ased. 999,999.99 AUD is held from you...
+      aud:99999999:dispute_won:head_coach=ased. 999,999.99 AUD is held from you...
+      cad:999999:dispute_won:coach=9,999.99 CAD is held from your next s...
+      cad:999999:dispute_won:head_coach=9,999.99 CAD is held from your next s...
+      cad:9999999:dispute_won:coach=d. 99,999.99 CAD is held from your ne...
+      cad:9999999:dispute_won:head_coach=d. 99,999.99 CAD is held from your ne...
+      cad:99999999:dispute_won:coach=ased. 999,999.99 CAD is held from you...
+      cad:99999999:dispute_won:head_coach=ased. 999,999.99 CAD is held from you...
+
+      at Object.<anonymous> (test/audit-opus-f12-117-682-extra.spec.ts:200:13)
+
+[Nest] 3183  - 10/04/2026, 6:48:36 PM   ERROR [TransferOrchestratorService] SFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-6 op=tgp-tr-rev-tr-6-op1 amount=400: kind=stripe http=503 type=api_connection_error code=request_timeout
+[Nest] 3183  - 10/04/2026, 6:48:36 PM   ERROR [TransferOrchestratorService] SFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-6 op=tgp-tr-rev-tr-6-op1 amount=400: reversal lookup unavailable: listing failed: kind=stripe http=500 type=api_error code=none; not re-sent
+[Nest] 3183  - 10/04/2026, 6:48:36 PM   ERROR [TransferOrchestratorService] SFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-6 op=tgp-tr-rev-tr-6-op1 amount=400: reversal lookup unavailable: Stripe reported more reversals but sent an empty page; not re-sent
+PASS test/aud-sol-f12r13-117-transfer.spec.ts (173 MB heap size)
+[Nest] 3183  - 10/04/2026, 6:48:36 PM   ERROR [TransferOrchestratorService] SFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-6 op=tgp-tr-rev-tr-6-op1 amount=400: kind=stripe http=503 type=api_connection_error code=request_timeout
+[Nest] 3183  - 10/04/2026, 6:48:36 PM   ERROR [TransferOrchestratorService] SFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-6 op=tgp-tr-rev-tr-6-op1 amount=400: reversal lookup unavailable: listing failed: kind=stripe http=500 type=api_error code=none; not re-sent
+[Nest] 3183  - 10/04/2026, 6:48:36 PM   ERROR [TransferOrchestratorService] SFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-6 op=tgp-tr-rev-tr-6-op1 amount=400: reversal lookup unavailable: Stripe reported more reversals but sent an empty page; not re-sent
+[Nest] 3183  - 10/04/2026, 6:48:36 PM    WARN [TransferOrchestratorService] SFEE_REVERSAL_SEND_ABANDONED transfer=tr-4 op=tgp-tr-rev-tr-4-op1 attempt=1 age_ms=90000001 budget_ms=30000: nothing sent; the op stays pending and the next driver lists Stripe before any re-send
+[Nest] 3183  - 10/04/2026, 6:48:36 PM    WARN [TransferOrchestratorService] listing reversals of tr_1 failed while reconciling op=tgp-tr-rev-tr-6-op1: kind=stripe http=500 type=api_error code=none
+[Nest] 3183  - 10/04/2026, 6:48:36 PM    WARN [TransferOrchestratorService] SFEE_REVERSAL_SEND_ABANDONED transfer=tr-4 op=tgp-tr-rev-tr-4-op1 attempt=1 age_ms=90000001 budget_ms=30000: nothing sent; the op stays pending and the next driver lists Stripe before any re-send
+[Nest] 3183  - 10/04/2026, 6:48:36 PM    WARN [TransferOrchestratorService] listing reversals of tr_1 failed while reconciling op=tgp-tr-rev-tr-6-op1: kind=stripe http=500 type=api_error code=none
+PASS test/aud-sol-f12-117-reversal.spec.ts (123 MB heap size)
+PASS test/aud-sol-f23-117-settlement-boundaries.spec.ts (142 MB heap size)
+  ● Console
+
+    console.log
+      AUD117_PROVISIONAL_FX {
+        failure: 'no balance transaction',
+        row: {
+          id: 'cs-2',
+          created_at: 2026-10-04T18:48:36.942Z,
+          updated_at: 2026-10-04T18:48:36.950Z,
+          head_coach_user_id: null,
+          stripe_balance_transaction_id: 'txn_probe',
+          stripe_invoice_id: null,
+          currency: 'usd',
+          rail: 'card',
+          mechanism: 'separate_charge_transfer',
+          status: 'settled',
+          head_coach_bps: 0,
+          stripe_fee_cents: 200,
+          platform_fee_cents: 160,
+          head_coach_split_cents: 0,
+          coach_net_cents: 7640,
+          refunded_cents: 2000,
+          dispute_withdrawn_cents: 0,
+          dispute_fee_cents: 0,
+          target_platform_fee_cents: 160,
+          target_head_coach_cents: 0,
+          target_coach_net_cents: 5640,
+          settled_at: 2026-10-04T18:48:36.946Z,
+          adjusted_at: 2026-10-04T18:48:36.943Z,
+          last_error: null,
+          reconcile_requested_at: null,
+          reconcile_dispute_id: null,
+          reconcile_reason: null,
+          purchase_id: 'cp_probe',
+          coach_user_id: 'coach_1',
+          stripe_charge_id: 'ch_probe',
+          platform_bps: 200,
+          gross_cents: 8000
+        },
+        external: 5640,
+        rec: {
+          purchase_id: 'cp_probe',
+          status: 'ok',
+          drift_cents: 0,
+          stripe: {
+            amount_cents: 8000,
+            refunded_cents: 2000,
+            application_fee_cents: 0,
+            transfers_cents: 5640
+          },
+          ledger: {
+            destination_cents: 7640,
+            application_fee_cents: 160,
+            head_coach_cents: 0,
+            reversed_cents: 2000
+          },
+          notes: null
+        }
+      }
+
+      at test/aud-sol-f23-117-settlement-boundaries.spec.ts:104:13
+
+    console.log
+      AUD117_PROVISIONAL_FX {
+        failure: 'first Stripe read unavailable',
+        row: {
+          id: 'cs-13',
+          created_at: 2026-10-04T18:48:36.969Z,
+          updated_at: 2026-10-04T18:48:36.963Z,
+          head_coach_user_id: null,
+          stripe_balance_transaction_id: 'txn_probe',
+          stripe_invoice_id: null,
+          currency: 'usd',
+          rail: 'card',
+          mechanism: 'separate_charge_transfer',
+          status: 'settled',
+          head_coach_bps: 0,
+          stripe_fee_cents: 200,
+          platform_fee_cents: 160,
+          head_coach_split_cents: 0,
+          coach_net_cents: 7640,
+          refunded_cents: 2000,
+          dispute_withdrawn_cents: 0,
+          dispute_fee_cents: 0,
+          target_platform_fee_cents: 160,
+          target_head_coach_cents: 0,
+          target_coach_net_cents: 5640,
+          settled_at: 2026-10-04T18:48:36.961Z,
+          adjusted_at: 2026-10-04T18:48:36.957Z,
+          last_error: null,
+          reconcile_requested_at: null,
+          reconcile_dispute_id: null,
+          reconcile_reason: null,
+          purchase_id: 'cp_probe',
+          coach_user_id: 'coach_1',
+          stripe_charge_id: 'ch_probe',
+          platform_bps: 200,
+          gross_cents: 8000
+        },
+        external: 5640,
+        rec: {
+          purchase_id: 'cp_probe',
+          status: 'ok',
+          drift_cents: 0,
+          stripe: {
+            amount_cents: 8000,
+            refunded_cents: 2000,
+            application_fee_cents: 0,
+            transfers_cents: 5640
+          },
+          ledger: {
+            destination_cents: 7640,
+            application_fee_cents: 160,
+            head_coach_cents: 0,
+            reversed_cents: 2000
+          },
+          notes: null
+        }
+      }
+
+      at test/aud-sol-f23-117-settlement-boundaries.spec.ts:104:13
+
+    console.log
+      AUD117_NOTICE_RETRY_FLAG { noticeCount: 0, flag: 2026-10-04T18:48:37.003Z, external: 5640 }
+
+      at Object.<anonymous> (test/aud-sol-f23-117-settlement-boundaries.spec.ts:179:13)
+
+[Nest] 3183  - 10/04/2026, 6:48:39 PM   DEBUG [NotificationsService] push rate-limited: user=coach-limiter kind=coach_alert
+[Nest] 3183  - 10/04/2026, 6:48:42 PM   DEBUG [NotificationsService] push rate-limited: user=coach-limiter kind=coach_alert
+[Nest] 3183  - 10/04/2026, 6:48:46 PM   DEBUG [NotificationsService] push rate-limited: user=coach-limiter kind=coach_alert
+FAIL test/probe-aud-opus-f56-116.spec.ts (10.246 s, 601 MB heap size)
+  ● MUTANT fee-190bps › [r4] › B-627-2 fencing: a lease that expires under a live holder › a stale holder cannot move money: its adjustment is refused before Stripe, no op, no recovery
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 2630
+    Received: 2635
+
+      240 |     await expect(b).resolves.toBe('adjusted');
+      241 |     // B, the only owner, moved the money once: 4630 -> 2630.
+    > 242 |     expect(ctx.stripe.netTo('acct_coach')).toBe(2_630);
+          |                                            ^
+      243 |     expect(ctx.reversalKeysSent()).toEqual([`tgp-tr-rev-${ctx.db.transfers[0].id}-op1`]);
+      244 |   });
+      245 |
+
+      at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:242:44)
+
+  ● MUTANT fee-190bps › [r4] › B-627-2 fencing: a lease that expires under a live holder › a holder paused inside its Stripe call, a takeover and a resume reverse the same cents once
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 1630
+    Received: 1635
+
+      280 |     });
+      281 |     // Target for $30 refunded (OR-111-1: TGP keeps its 98): coach 1900 - 172 - 98 = 1630.
+    > 282 |     expect(ctx.stripe.netTo('acct_coach')).toBe(1_630);
+          |                                            ^
+      283 |     expect([...ctx.stripe.reversalsByKey.values()].map((r) => r.amount)).toEqual([2_000, 1_000]);
+      284 |     // A's op1 and B's re-drive of op1 share one key and one amount; op2 once.
+      285 |     const sent = ctx.stripe.reverseTransfer.mock.calls.map(
+
+      at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:282:44)
+
+  ● MUTANT fee-190bps › [r4] › B-627-5 an uncertain reversal never becomes a second recovery › Stripe committed, response lost: reconciled by the Stripe reversal object; no recovery; redelivery and a new sale move nothing extra
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 2630
+    Received: 2635
+
+      316 |       refunded_cents: 2_000,
+      317 |     });
+    > 318 |     expect(ctx.stripe.netTo('acct_coach')).toBe(2_630);
+          |                                            ^
+      319 |     expect(ctx.openRecoveries()).toBe(0);
+      320 |     expect(ctx.db.recoveries).toHaveLength(0);
+      321 |     const op = ctx.db.reversalOps![0];
+
+      at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:318:44)
+
+  ● MUTANT fee-190bps › [r4] › B-627-5 an uncertain reversal never becomes a second recovery › Stripe succeeded but the DB receipt failed: the retry finds the reversal at Stripe and does not re-send
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 2630
+    Received: 2635
+
+      368 |       }),
+      369 |     ).rejects.toThrow('connection terminated');
+    > 370 |     expect(ctx.stripe.netTo('acct_coach')).toBe(2_630);
+          |                                            ^
+      371 |     expect(ctx.db.recoveries).toHaveLength(0);
+      372 |     expect(ctx.db.reversalOps![0]).toMatchObject({ status: 'pending', attempts: 1 });
+      373 |     // Durable retry flag for the sweeper.
+
+      at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:370:44)
+
+  ● MUTANT fee-190bps › [r4] › B-627-5 an uncertain reversal never becomes a second recovery › outcome unknown and not visible at Stripe: retryable error, op pending, no recovery; the sweeper re-drives the same key
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 4630
+    Received: 4635
+
+      402 |     expect(ctx.db.recoveries).toHaveLength(0);
+      403 |     expect(ctx.db.reversalOps![0]).toMatchObject({ status: 'pending', amount_cents: 2_000 });
+    > 404 |     expect(ctx.stripe.netTo('acct_coach')).toBe(4_630);
+          |                                            ^
+      405 |     await ctx.svc.runSettlementSweep(new Date(Date.now() + 5 * 60_000));
+      406 |     const key = `tgp-tr-rev-${ctx.db.transfers[0].id}-op1`;
+      407 |     expect(ctx.reversalKeysSent()).toEqual([key, key]);
+
+      at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:404:44)
+
+  ● MUTANT fee-190bps › [r4] › B-627-5 an uncertain reversal never becomes a second recovery › through the refund webhook: an unknown outcome fails the delivery (Stripe redelivers) and the refund is applied once
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 2630
+    Received: 2635
+
+      429 |     const redelivered = await ctx.handler.upsertAndApplyRefund(refund);
+      430 |     expect(redelivered.ledger_just_reversed).toBe(true);
+    > 431 |     expect(ctx.stripe.netTo('acct_coach')).toBe(2_630);
+          |                                            ^
+      432 |     expect(ctx.db.recoveries).toHaveLength(0);
+      433 |   });
+      434 |
+
+      at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:431:44)
+
+  ● MUTANT fee-190bps › [r4] › B-627-5 an uncertain reversal never becomes a second recovery › a transfer.reversed event re-converges the charge (receipt lost, Stripe listing down at the time)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 2630
+    Received: 2635
+
+      454 |     expect(ctx.db.reversalOps![0]).toMatchObject({ status: 'succeeded' });
+      455 |     expect(ctx.db.transfers[0].reversed_amount_cents).toBe(2_000);
+    > 456 |     expect(ctx.stripe.netTo('acct_coach')).toBe(2_630);
+          |                                            ^
+      457 |     expect(ctx.openRecoveries()).toBe(0);
+      458 |   });
+      459 |
+
+      at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:456:44)
+
+  ● MUTANT fee-190bps › [r4] › B-627-4 a stale dispute event after a failed canonical read moves nothing › won -> late created + Stripe read failure: refused, flagged, coach stays at 3130; the sweeper converges
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 3130
+    Received: 3135
+
+      492 |       dispute_id: 'dp_1',
+      493 |     });
+    > 494 |     expect(ctx.stripe.netTo('acct_coach')).toBe(3_130);
+          |                                            ^
+      495 |   }
+      496 |
+      497 |   it('won -> late created + Stripe read failure: refused, flagged, coach stays at 3130; the sweeper converges', async () => {
+
+      at wonDispute (test/s-fee-r4-money-protocol.spec.ts:494:44)
+      at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:499:5)
+
+  ● MUTANT fee-190bps › [r4] › B-627-4 a stale dispute event after a failed canonical read moves nothing › a malformed canonical response (no balance_transactions) is refused, not trusted
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 3130
+    Received: 3135
+
+      492 |       dispute_id: 'dp_1',
+      493 |     });
+    > 494 |     expect(ctx.stripe.netTo('acct_coach')).toBe(3_130);
+          |                                            ^
+      495 |   }
+      496 |
+      497 |   it('won -> late created + Stripe read failure: refused, flagged, coach stays at 3130; the sweeper converges', async () => {
+
+      at wonDispute (test/s-fee-r4-money-protocol.spec.ts:494:44)
+      at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:522:5)
+
+  ● MUTANT fee-190bps › [r4] › B-627-4 a stale dispute event after a failed canonical read moves nothing › reverse order (won event processed before created): both read Stripe, final state is won
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 3130
+    Received: 3135
+
+      555 |       });
+      556 |     }
+    > 557 |     expect(ctx.stripe.netTo('acct_coach')).toBe(3_130);
+          |                                            ^
+      558 |   });
+      559 |
+      560 |   it('through the webhook: the read failure fails the delivery (non-2xx) instead of being swallowed; the coach alert still goes out', async () => {
+
+      at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:557:44)
+
+  ● MUTANT fee-190bps › [r4] › B-627-4 a stale dispute event after a failed canonical read moves nothing › through the webhook: the read failure fails the delivery (non-2xx) instead of being swallowed; the coach alert still goes out
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 4630
+    Received: 4635
+
+      579 |     ).rejects.toBeInstanceOf(DisputeStateUnavailableError);
+      580 |     expect(ctx.notifications.createNotification).toHaveBeenCalledTimes(1);
+    > 581 |     expect(ctx.stripe.netTo('acct_coach')).toBe(4_630);
+          |                                            ^
+      582 |   });
+      583 | });
+      584 |
+
+      at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:581:44)
+
+  ● MUTANT fee-190bps › [r4] › B-627-3 / OR-111-1 recoveries: forward netting only; cash vs receivable reported honestly › full refund: the coach's OTHER past transfer is never reversed; the 270 held (2% 98 + fee 172) is netted from the next sale
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 270
+    Received: 265
+
+      597 |       refunded_cents: 4_900,
+      598 |     });
+    > 599 |     expect(ctx.openRecoveries()).toBe(270);
+          |                                  ^
+      600 |     expect(ctx.identity('ch_1')).toMatchObject({
+      601 |       platform_net_cents: 98,
+      602 |       platform_cash_cents: -172,
+
+      at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:599:34)
+
+  ● MUTANT fee-190bps › [r4] › B-627-3 / OR-111-1 recoveries: forward netting only; cash vs receivable reported honestly › no other sale and a refused reversal: the residual is reported as negative cash and alerted per coach (owner decision)
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 3
+
+      Object {
+        "drift_cents": 0,
+        "notes": Array [
+    -     "platform_cash_negative: -6302 (receivable_open 6400)",
+    +     "platform_cash_negative: -6307 (receivable_open 6400)",
+        ],
+    -   "platform_cash_cents": -6302,
+    -   "platform_net_cents": 98,
+    +   "platform_cash_cents": -6307,
+    +   "platform_net_cents": 93,
+        "receivable_open_cents": 6400,
+      }
+
+      655 |     // Coach target -1770 (2% 98 + fee 172 + dispute fee 1500); TGP has paid 4630 out.
+      656 |     expect(ctx.openRecoveries()).toBe(4_630 + 1_770);
+    > 657 |     expect(ctx.identity('ch_1')).toMatchObject({
+          |                                  ^
+      658 |       drift_cents: 0,
+      659 |       platform_net_cents: 98,
+      660 |       platform_cash_cents: -6_302,
+
+      at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:657:34)
+
+  ● MUTANT fee-190bps › [r4] › B-627-3 / OR-111-1 recoveries: forward netting only; cash vs receivable reported honestly › a won-dispute reinstatement is netted against what the coach owes on another charge
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "amount_cents": 0,
+    -   "netted_recovery_cents": 3130,
+    +   "netted_recovery_cents": 3135,
+        "status": "netted",
+      }
+
+      707 |     // the 3130 paid back is netted in full against the 4900 owed on ch_1, so
+      708 |     // nothing leaves TGP while the coach owes it more than that.
+    > 709 |     expect(reinstate).toMatchObject({
+          |                       ^
+      710 |       amount_cents: 0,
+      711 |       netted_recovery_cents: 3_130,
+      712 |       status: 'netted',
+
+      at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:709:23)
+
+  ● MUTANT fee-190bps › [r4] › B-627-5 round 6: an unknown reversal lookup never re-sends › listing outage after key expiry: stays uncertain, sends nothing, reverses once
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 2630
+    Received: 2635
+
+      762 |     expect(ctx.stripe.reverseTransfer.mock.calls.length).toBe(sentBefore);
+      763 |     expect(ctx.stripe.reversals).toHaveLength(1);
+    > 764 |     expect(ctx.stripe.netTo('acct_coach')).toBe(2_630);
+          |                                            ^
+      765 |     expect(ctx.db.recoveries).toHaveLength(0);
+      766 |     expect(ctx.db.reversalOps![0]).toMatchObject({ status: 'pending' });
+      767 |     expect(String(ctx.db.reversalOps![0].last_error)).toMatch(/reversal lookup unavailable/);
+
+      at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:764:44)
+
+  ● MUTANT fee-190bps › [r4] › B-627-5 round 6: an unknown reversal lookup never re-sends › listing recovers: the existing reversal is found on a later page, recorded once, nothing re-sent
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 2630
+    Received: 2635
+
+      804 |     });
+      805 |     expect(ctx.db.transfers[0].reversed_amount_cents).toBe(2_000);
+    > 806 |     expect(ctx.stripe.netTo('acct_coach')).toBe(2_630);
+          |                                            ^
+      807 |     expect(ctx.openRecoveries()).toBe(0);
+      808 |   });
+      809 |
+
+      at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:806:44)
+
+  ● MUTANT fee-190bps › [r4] › B-627-5 round 6: an unknown reversal lookup never re-sends › proven absent (request never reached Stripe, full listing read): re-sent once after key expiry
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 2630
+    Received: 2635
+
+      831 |     });
+      832 |     expect(ctx.stripe.reversals).toHaveLength(1);
+    > 833 |     expect(ctx.stripe.netTo('acct_coach')).toBe(2_630);
+          |                                            ^
+      834 |     expect(ctx.db.reversalOps![0]).toMatchObject({ status: 'succeeded' });
+      835 |   });
+      836 | });
+
+      at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:833:44)
+
+  ● MUTANT fee-190bps › [r5] › OR-111-1 worked example 1: $100 full refund › reverses that sale's own transfer (94.80), holds 5.20 = TGP 2.00 + Stripe 3.20 from the next sale, and tells the coach exactly
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+    -   "amount_cents": 9480,
+    +   "amount_cents": 9490,
+        "status": "succeeded",
+      }
+
+      275 |     const ctx = setup();
+      276 |     await ctx.sell(ctx.p100, 'ch_100', 10_000, 320);
+    > 277 |     expect(ctx.transferFor('ch_100')).toMatchObject({ amount_cents: 9_480, status: 'succeeded' });
+          |                                       ^
+      278 |
+      279 |     await ctx.refundViaWebhook('ch_100', 10_000, 10_000);
+      280 |
+
+      at Object.<anonymous> (test/s-fee-r5-or-111-1.spec.ts:277:39)
+
+  ● MUTANT fee-190bps › [r5] › OR-111-1 worked example 2: $100 lost dispute with a $15 fee › reverses 94.80 and holds 20.20 = TGP 2.00 + Stripe 3.20 + dispute fee 15.00; the lost outcome says the hold stands
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 9480
+    Received: 9490
+
+      387 |       data: { object: { ...dispute, status: 'needs_response' } },
+      388 |     });
+    > 389 |     expect(ctx.stripe.reversedOn(ctx.transferFor('ch_100').stripe_transfer_id)).toBe(9_480);
+          |                                                                                 ^
+      390 |     expect(ctx.openHeld()).toBe(2_020);
+      391 |     const chargeback = ctx.db.notices!.find((n) => n.event === 'chargeback')!;
+      392 |     expect(chargeback).toMatchObject({
+
+      at Object.<anonymous> (test/s-fee-r5-or-111-1.spec.ts:389:81)
+
+  ● MUTANT fee-190bps › [r5] › OR-111-1 worked example 3: refused reversal after payout, then a $49 sale and a $100 sale › holds 100.00 (2.00 + 3.20 + 94.80 not reversed); the $49 sale nets 46.30 in full; the $100 sale nets the last 53.70 and pays 41.10
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 2
+    + Received  + 2
+
+    @@ -2,10 +2,10 @@
+        "body": "A client got $100.00 back. $100.00 is held from your next sale.",
+        "customer_refunded_cents": 10000,
+        "event": "refund",
+        "held_cents": 10000,
+        "held_dispute_fee_cents": 0,
+    -   "held_not_reversed_cents": 9480,
+    +   "held_not_reversed_cents": 9490,
+        "held_stripe_fee_cents": 320,
+    -   "held_tgp_fee_cents": 200,
+    +   "held_tgp_fee_cents": 190,
+        "reversed_cents": 0,
+      }
+
+      449 |     expect(ctx.stripe.reversedOn(ctx.transferFor('ch_100').stripe_transfer_id)).toBe(0);
+      450 |     expect(ctx.openHeld()).toBe(10_000);
+    > 451 |     expect(ctx.db.notices![0]).toMatchObject({
+          |                                ^
+      452 |       event: 'refund',
+      453 |       customer_refunded_cents: 10_000,
+      454 |       reversed_cents: 0,
+
+      at Object.<anonymous> (test/s-fee-r5-or-111-1.spec.ts:451:32)
+
+  ● MUTANT fee-190bps › [r5] › OR-111-1 won dispute, Money API and delivery › a won dispute releases the hold and pays the coach back; the notice says both amounts
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 2020
+    Received: 2010
+
+      512 |     ctx.stripe.disputes.set('dp_1', { id: 'dp_1', balance_transactions: created });
+      513 |     await ctx.svc.applyAdjustments({ purchase: ctx.p100, charge_id: 'ch_100', dispute_id: 'dp_1' });
+    > 514 |     expect(ctx.openHeld()).toBe(2_020);
+          |                            ^
+      515 |     ctx.stripe.disputes.set('dp_1', {
+      516 |       id: 'dp_1',
+      517 |       balance_transactions: [...created, { id: 'txn_dp_2', amount: 10_000, fee: 0 }],
+
+      at Object.<anonymous> (test/s-fee-r5-or-111-1.spec.ts:514:28)
+
+  ● MUTANT fee-190bps › [r5] › OR-111-1 won dispute, Money API and delivery › GET /v1/coach/payments/adjustments data: open balance per currency, newest notice first, scoped to the caller; acknowledge is scoped too
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 2
+    + Received  + 2
+
+      Array [
+        Array [
+          "tgp_fee",
+    -     200,
+    +     190,
+        ],
+        Array [
+          "stripe_fee",
+          320,
+        ],
+        Array [
+          "not_reversed",
+    -     5480,
+    +     5490,
+        ],
+      ]
+
+      559 |       needs_attention: true,
+      560 |     });
+    > 561 |     expect(view.notices[0].held_breakdown.map((l) => [l.code, l.cents])).toEqual([
+          |                                                                          ^
+      562 |       ['tgp_fee', 200],
+      563 |       ['stripe_fee', 320],
+      564 |       ['not_reversed', 5_480],
+
+      at Object.<anonymous> (test/s-fee-r5-or-111-1.spec.ts:561:74)
+
+  ● MUTANT fee-190bps › [r5] › OR-111-1 netting race (CAS lease fence + per-recovery CAS) › a netting that loses its CAS to a concurrent collection re-reads and nets only what is still owed
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+    -   "amount_cents": 480,
+    +   "amount_cents": 490,
+        "netted_recovery_cents": 9000,
+      }
+
+      639 |     ctx.prisma.payeeRecovery.updateMany.mockImplementation(realUpdateMany);
+      640 |     await ctx.sell(ctx.p100b, 'ch_100b', 10_000, 320);
+    > 641 |     expect(ctx.transferFor('ch_100b')).toMatchObject({
+          |                                        ^
+      642 |       amount_cents: 480,
+      643 |       netted_recovery_cents: 9_000,
+      644 |     });
+
+      at Object.<anonymous> (test/s-fee-r5-or-111-1.spec.ts:641:40)
+
+  ● MUTANT fee-190bps › [r5] › round 6 B-627-7 / C-627-5: the forward-looking sentence uses the amount still open › $99 refund holds 4.20; a later sale nets it; a $1 refund tells the coach $1.00, not $5.20
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 420
+    Received: 410
+
+      924 |     // $99 of $100 refunded: 94.80 reversed, 4.20 held (TGP 2.00 + Stripe 3.20 - 1.00 kept).
+      925 |     await ctx.refundViaWebhook('ch_100', 10_000, 9_900);
+    > 926 |     expect(ctx.openHeld()).toBe(420);
+          |                            ^
+      927 |     expect(ctx.db.notices![0].body).toContain('$4.20 is held from your next sale.');
+      928 |     // The next sale nets the 4.20.
+      929 |     await ctx.sell(ctx.p100b, 'ch_100b', 10_000, 320);
+
+      at Object.<anonymous> (test/s-fee-r5-or-111-1.spec.ts:926:28)
+
+  ● MUTANT fee-190bps › [r7] › B-627-8 a lost reinstatement result is looked up, never paid twice › coach only › receipt lost after Stripe moved the money; retry 25 h later (key expired=true) records it, sends nothing
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 9480
+    Received: 9490
+
+      202 |
+      203 |         expect(c.stripeReinstatements()).toHaveLength(kinds.length);
+    > 204 |         expect(c.stripeReinstatements().reduce((n, t) => n + t.amount, 0)).toBe(total);
+          |                                                                            ^
+      205 |         for (const r of c.reinstateRows()) {
+      206 |           expect(c.createsFor(r.idempotency_key)).toBe(1);
+      207 |           expect(r.status).toBe('succeeded');
+
+      at test/s-fee-r7-transfer-create-recovery.spec.ts:204:76
+
+  ● MUTANT fee-190bps › [r7] › B-627-8 a lost reinstatement result is looked up, never paid twice › coach only › receipt lost after Stripe moved the money; retry 25 h later (key expired=false) records it, sends nothing
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 9480
+    Received: 9490
+
+      202 |
+      203 |         expect(c.stripeReinstatements()).toHaveLength(kinds.length);
+    > 204 |         expect(c.stripeReinstatements().reduce((n, t) => n + t.amount, 0)).toBe(total);
+          |                                                                            ^
+      205 |         for (const r of c.reinstateRows()) {
+      206 |           expect(c.createsFor(r.idempotency_key)).toBe(1);
+      207 |           expect(r.status).toBe('succeeded');
+
+      at test/s-fee-r7-transfer-create-recovery.spec.ts:204:76
+
+  ● MUTANT fee-190bps › [r7] › B-627-8 a lost reinstatement result is looked up, never paid twice › coach only › response lost and Stripe listing down at the time; retry 25 h later (key expired=true) finds it, sends nothing
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 9480
+    Received: 9490
+
+      235 |
+      236 |         expect(c.stripeReinstatements()).toHaveLength(kinds.length);
+    > 237 |         expect(c.stripeReinstatements().reduce((n, t) => n + t.amount, 0)).toBe(total);
+          |                                                                            ^
+      238 |         for (const r of c.reinstateRows()) {
+      239 |           expect(c.createsFor(r.idempotency_key)).toBe(1);
+      240 |           expect(r.status).toBe('succeeded');
+
+      at test/s-fee-r7-transfer-create-recovery.spec.ts:237:76
+
+  ● MUTANT fee-190bps › [r7] › B-627-8 a lost reinstatement result is looked up, never paid twice › coach only › response lost and Stripe listing down at the time; retry 25 h later (key expired=false) finds it, sends nothing
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 9480
+    Received: 9490
+
+      235 |
+      236 |         expect(c.stripeReinstatements()).toHaveLength(kinds.length);
+    > 237 |         expect(c.stripeReinstatements().reduce((n, t) => n + t.amount, 0)).toBe(total);
+          |                                                                            ^
+      238 |         for (const r of c.reinstateRows()) {
+      239 |           expect(c.createsFor(r.idempotency_key)).toBe(1);
+      240 |           expect(r.status).toBe('succeeded');
+
+      at test/s-fee-r7-transfer-create-recovery.spec.ts:237:76
+
+  ● MUTANT fee-190bps › [r7] › B-627-8 a lost reinstatement result is looked up, never paid twice › coach + head coach › receipt lost after Stripe moved the money; retry 25 h later (key expired=true) records it, sends nothing
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 9480
+    Received: 9490
+
+      202 |
+      203 |         expect(c.stripeReinstatements()).toHaveLength(kinds.length);
+    > 204 |         expect(c.stripeReinstatements().reduce((n, t) => n + t.amount, 0)).toBe(total);
+          |                                                                            ^
+      205 |         for (const r of c.reinstateRows()) {
+      206 |           expect(c.createsFor(r.idempotency_key)).toBe(1);
+      207 |           expect(r.status).toBe('succeeded');
+
+      at test/s-fee-r7-transfer-create-recovery.spec.ts:204:76
+
+  ● MUTANT fee-190bps › [r7] › B-627-8 a lost reinstatement result is looked up, never paid twice › coach + head coach › receipt lost after Stripe moved the money; retry 25 h later (key expired=false) records it, sends nothing
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 9480
+    Received: 9490
+
+      202 |
+      203 |         expect(c.stripeReinstatements()).toHaveLength(kinds.length);
+    > 204 |         expect(c.stripeReinstatements().reduce((n, t) => n + t.amount, 0)).toBe(total);
+          |                                                                            ^
+      205 |         for (const r of c.reinstateRows()) {
+      206 |           expect(c.createsFor(r.idempotency_key)).toBe(1);
+      207 |           expect(r.status).toBe('succeeded');
+
+      at test/s-fee-r7-transfer-create-recovery.spec.ts:204:76
+
+  ● MUTANT fee-190bps › [r7] › B-627-8 a lost reinstatement result is looked up, never paid twice › coach + head coach › response lost and Stripe listing down at the time; retry 25 h later (key expired=true) finds it, sends nothing
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 9480
+    Received: 9490
+
+      235 |
+      236 |         expect(c.stripeReinstatements()).toHaveLength(kinds.length);
+    > 237 |         expect(c.stripeReinstatements().reduce((n, t) => n + t.amount, 0)).toBe(total);
+          |                                                                            ^
+      238 |         for (const r of c.reinstateRows()) {
+      239 |           expect(c.createsFor(r.idempotency_key)).toBe(1);
+      240 |           expect(r.status).toBe('succeeded');
+
+      at test/s-fee-r7-transfer-create-recovery.spec.ts:237:76
+
+  ● MUTANT fee-190bps › [r7] › B-627-8 a lost reinstatement result is looked up, never paid twice › coach + head coach › response lost and Stripe listing down at the time; retry 25 h later (key expired=false) finds it, sends nothing
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 9480
+    Received: 9490
+
+      235 |
+      236 |         expect(c.stripeReinstatements()).toHaveLength(kinds.length);
+    > 237 |         expect(c.stripeReinstatements().reduce((n, t) => n + t.amount, 0)).toBe(total);
+          |                                                                            ^
+      238 |         for (const r of c.reinstateRows()) {
+      239 |           expect(c.createsFor(r.idempotency_key)).toBe(1);
+      240 |           expect(r.status).toBe('succeeded');
+
+      at test/s-fee-r7-transfer-create-recovery.spec.ts:237:76
+
+  ● MUTANT fee-190bps › [r7] › B-627-8 a lost reinstatement result is looked up, never paid twice › listing still unavailable or incomplete: nothing is sent, the row stays pending and alerts, then recovers once
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 2
+    Received length: 0
+    Received array:  []
+
+      287 |       /^SFEE_TRANSFER_UNCERTAIN alert=true transfer=.* op=.* amount=9480 .*not re-sent/.test(l),
+      288 |     );
+    > 289 |     expect(uncertain).toHaveLength(2);
+          |                       ^
+      290 |     expect(lines(errorLog).some((l) => /SFEE_TRANSFER_FAILED/.test(l))).toBe(false);
+      291 |
+      292 |     // Stripe can be read in full again: the existing transfer is recorded.
+
+      at Object.<anonymous> (test/s-fee-r7-transfer-create-recovery.spec.ts:289:23)
+
+  ● MUTANT fee-190bps › [r7] › B-627-8 a lost reinstatement result is looked up, never paid twice › control: proven absent (request never reached Stripe) is re-sent once, even after key expiry
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 9480
+    Received: 9490
+
+      338 |     expect(c.createsFor(row.idempotency_key)).toBe(2);
+      339 |     expect(c.stripeReinstatements()).toHaveLength(1);
+    > 340 |     expect(c.stripeReinstatements()[0].amount).toBe(9_480);
+          |                                                ^
+      341 |   });
+      342 |
+      343 |   it('control: within the key lifetime a re-send collapses on the same key (cached)', async () => {
+
+      at Object.<anonymous> (test/s-fee-r7-transfer-create-recovery.spec.ts:340:48)
+
+  ● MUTANT fee-190bps › [r7] › B-627-8 a lost reinstatement result is looked up, never paid twice › control (round 9): a definitive refusal of the adopted send is the proven final failure (repay alert is safe)
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /owed_cents_at_failure=9480 .*re-read the coach_position gap of GET \/api\/v1\/admin\/payments\/reconciliation\/purchase-1 and repay that gap only/
+    Received string:  "SFEE_TRANSFER_FAILED alert=true transfer=tr-622 settlement=cs-612 purchase=purchase-1 payee=coach-1 owed_cents_at_failure=9490 netted_cents=0 currency=usd: before repaying, re-read the coach_position gap of GET /api/v1/admin/payments/reconciliation/purchase-1 and repay that gap only (a later refund or dispute on this charge changes it); the netted cents already settled an earlier hold"
+
+      385 |     expect(repay).toHaveLength(1);
+      386 |     // C-627-8 (Opus): the alert names the live gap, not a fixed amount.
+    > 387 |     expect(repay[0]).toMatch(
+          |                      ^
+      388 |       /owed_cents_at_failure=9480 .*re-read the coach_position gap of GET \/api\/v1\/admin\/payments\/reconciliation\/purchase-1 and repay that gap only/,
+      389 |     );
+      390 |   });
+
+      at Object.<anonymous> (test/s-fee-r7-transfer-create-recovery.spec.ts:387:22)
+
+  ● MUTANT fee-190bps › [renew] › B-627-1: missed renewals are matched by charge id › a renewal on a purchase that already has a settlement is found and paid once
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "purchase_id": "cp-1",
+        "status": "settled",
+        "stripe_invoice_id": "in_2",
+    -   "target_coach_net_cents": 4630,
+    +   "target_coach_net_cents": 4635,
+      }
+
+      100 |     expect(summary).toMatchObject({ invoices_scanned: 2, invoices_backfilled: 1, settled: 1 });
+      101 |     const renewal = ctx.db.settlements.find((s) => s.stripe_charge_id === 'ch_renew');
+    > 102 |     expect(renewal).toMatchObject({
+          |                     ^
+      103 |       status: 'settled',
+      104 |       stripe_invoice_id: 'in_2',
+      105 |       purchase_id: 'cp-1',
+
+      at Object.<anonymous> (test/s-fee-renewal-backfill.spec.ts:102:21)
+
+  ● MUTANT fee-190bps › [renew] › B-627-1: missed renewals are matched by charge id › a window larger than one run is covered across runs through the saved cursor
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 9260
+    Received: 9270
+
+      155 |     const second = await ctx.svc.runSettlementSweep(NOW);
+      156 |     expect(second).toMatchObject({ invoices_scanned: 51, invoices_backfilled: 1, settled: 1 });
+    > 157 |     expect(ctx.stripe.netTo('acct_coach')).toBe(9_260);
+          |                                            ^
+      158 |     expect(ctx.cursor()).toBeNull();
+      159 |     // Stripe's paid-invoice list was never asked to retrieve unrelated charges.
+      160 |     expect(ctx.stripe.retrieveCharge.mock.calls.map((c) => c[0])).toEqual(['ch_first', 'ch_renew']);
+
+      at Object.<anonymous> (test/s-fee-renewal-backfill.spec.ts:157:44)
+
+  ● MUTANT fee-190bps › [renew] › B-627-1: missed renewals are matched by charge id › bounded: at most `limit` backfills per run; the rest resume from the cursor
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 18520
+    Received: 18540
+
+      178 |     expect(second.invoices_backfilled).toBe(1);
+      179 |     expect(ctx.db.settlements.filter((s) => s.status === 'settled')).toHaveLength(4);
+    > 180 |     expect(ctx.stripe.netTo('acct_coach')).toBe(4 * 4_630);
+          |                                            ^
+      181 |   });
+      182 |
+      183 |   it('legacy destination subscriptions (ledger rows, no settlement) are left to the legacy flow', async () => {
+
+      at Object.<anonymous> (test/s-fee-renewal-backfill.spec.ts:180:44)
+
+  ● MUTANT fee-190bps › [renew] › B-627-1: missed renewals are matched by charge id › a subscription with no settlement yet (first invoice lost too) is backfilled by charge id
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 4630
+    Received: 4635
+
+      208 |     expect(ctx.db.settlements.filter((s) => s.stripe_charge_id === 'ch_first')).toHaveLength(1);
+      209 |     expect(summary.settled).toBeGreaterThanOrEqual(1);
+    > 210 |     expect(ctx.stripe.netTo('acct_coach')).toBe(4_630);
+          |                                            ^
+      211 |   });
+      212 |
+      213 |   it('a Stripe failure listing invoices keeps the cursor and logs a specific code', async () => {
+
+      at Object.<anonymous> (test/s-fee-renewal-backfill.spec.ts:210:44)
+
+  ● MUTANT fee-190bps › [renew] › B-627-1: a charge we were told about is never lost › first Stripe read fails: a provisional awaiting_fee row is kept and the sweeper settles it
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 4630
+    Received: 4635
+
+      243 |     const summary = await ctx.svc.runSettlementSweep(NOW);
+      244 |     expect(summary).toMatchObject({ retried: 1, settled: 1 });
+    > 245 |     expect(ctx.stripe.netTo('acct_coach')).toBe(4_630);
+          |                                            ^
+      246 |   });
+      247 |
+      248 |   it('settling while another worker holds the charge lock leaves an awaiting row for the sweeper', async () => {
+
+      at Object.<anonymous> (test/s-fee-renewal-backfill.spec.ts:245:44)
+
+  ● MUTANT fee-190bps › [renew] › B-627-1: a charge we were told about is never lost › settling while another worker holds the charge lock leaves an awaiting row for the sweeper
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 4630
+    Received: 4635
+
+      260 |     ctx.db.settlements[0].updated_at = new Date(NOW.getTime() - 120_000);
+      261 |     await ctx.svc.runSettlementSweep(NOW);
+    > 262 |     expect(ctx.stripe.netTo('acct_coach')).toBe(4_630);
+          |                                            ^
+      263 |   });
+      264 |
+      265 |   it('a provisional row for a charge that turns out to be $0 is removed', async () => {
+
+      at Object.<anonymous> (test/s-fee-renewal-backfill.spec.ts:262:44)
+
+  ● MUTANT fence-always-passes › [r4] › B-627-2 fencing: a lease that expires under a live holder › after a takeover only the new holder passes the fence (Sol probe: 2 live holders -> 1 can move money)
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+      185 |       bStart.open();
+      186 |       await bAcquired.opened; // B took the expired lease: two live callbacks
+    > 187 |       await expect(lock.fence('ch_a')).rejects.toMatchObject({ why: 'taken_over' });
+          |             ^
+      188 |     });
+      189 |     bFinish.open();
+      190 |     await b;
+
+      at expect (node_modules/expect/build/index.js:2116:15)
+      at test/s-fee-r4-money-protocol.spec.ts:187:13
+      at ChargeLock.run (src/connect/fees/charge-lock.ts:173:14)
+      at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:182:5)
+
+  ● MUTANT fence-always-passes › [r4] › B-627-2 fencing: a lease that expires under a live holder › a holder past its wall-clock budget is refused at its next fence
+
+    expect(received).rejects.toMatchObject()
+
+    Received promise resolved instead of rejected
+    Resolved to value: undefined
+
+      198 |       await lock.fence('ch_a');
+      199 |       clock += 60_001;
+    > 200 |       await expect(lock.fence('ch_a')).rejects.toMatchObject({ why: 'budget_exceeded' });
+          |             ^
+      201 |     });
+      202 |   });
+      203 |
+
+      at expect (node_modules/expect/build/index.js:2116:15)
+      at test/s-fee-r4-money-protocol.spec.ts:200:13
+      at ChargeLock.run (src/connect/fees/charge-lock.ts:173:14)
+      at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:197:5)
+
+  ● MUTANT fence-always-passes › [r4] › B-627-2 fencing: a lease that expires under a live holder › a stale holder cannot move money: its adjustment is refused before Stripe, no op, no recovery
+
+    expect(received).rejects.toBeInstanceOf()
+
+    Received promise resolved instead of rejected
+    Resolved to value: "adjusted"
+
+      225 |       await bAcquired.opened;
+      226 |       // A resumes and tries to apply the $20 refund.
+    > 227 |       await expect(
+          |             ^
+      228 |         ctx.svc.applyAdjustments({
+      229 |           purchase: ctx.purchase,
+      230 |           charge_id: 'ch_1',
+
+      at expect (node_modules/expect/build/index.js:2116:15)
+      at test/s-fee-r4-money-protocol.spec.ts:227:13
+      at ChargeLock.run (src/connect/fees/charge-lock.ts:173:14)
+      at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:222:5)
+
+  ● MUTANT no-send-start-budget › [r9] › B-627-9 narrowed: a sender paused after its claim never pays after a takeover › paused between the re-proof and the request (no charge lock): the HTTP-boundary check sends nothing
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      297 |         ),
+      298 |       ),
+    > 299 |     ).toBe(true);
+          |       ^
+      300 |   });
+      301 |
+      302 |   it('a request already past the boundary (in transit) collapses on the same key with the adopted send', async () => {
+
+      at Object.<anonymous> (test/s-fee-r9-paused-sender.spec.ts:299:7)
+
+  ● MUTANT no-send-start-budget › [r9] › B-627-9 narrowed: the send-start budget › a sender that resumes after its 30 s start budget sends nothing and parks the claim until its window ends; the next worker sends it once
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "pending"
+    Received: "succeeded"
+
+      396 |     const aRes = await a;
+      397 |
+    > 398 |     expect(aRes.status).toBe('pending');
+          |                         ^
+      399 |     expect(c.reinstatements()).toHaveLength(0);
+      400 |     const parked = c.row();
+      401 |     expect(parked.stripe_send_unresolved_at.getTime()).toBe(claimedAt.getTime());
+
+      at Object.<anonymous> (test/s-fee-r9-paused-sender.spec.ts:398:25)
+
+  ● MUTANT no-send-start-budget › [r9] › B-627-9 narrowed: the send-start budget › a wall-clock step backward during the pause does not extend the start budget (monotonic age)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "pending"
+    Received: "succeeded"
+
+      430 |     const aRes = await a;
+      431 |
+    > 432 |     expect(aRes.status).toBe('pending');
+          |                         ^
+      433 |     expect(c.reinstatements()).toHaveLength(0);
+      434 |     expect(String(c.row().last_error)).toMatch(/^SFEE_TRANSFER_SEND_ABANDONED: /);
+      435 |     expect(repayAlerts()).toHaveLength(0);
+
+      at Object.<anonymous> (test/s-fee-r9-paused-sender.spec.ts:432:25)
+
+  ● MUTANT no-forward-netting › [r4] › B-627-3 / OR-111-1 recoveries: forward netting only; cash vs receivable reported honestly › full refund: the coach's OTHER past transfer is never reversed; the 270 held (2% 98 + fee 172) is netted from the next sale
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 2
+    + Received  + 2
+
+      Object {
+    -   "amount_cents": 4360,
+    -   "netted_recovery_cents": 270,
+    +   "amount_cents": 4630,
+    +   "netted_recovery_cents": 0,
+      }
+
+      617 |       (t) => t.settlement_id === ctx.settlementFor('ch_3').id,
+      618 |     )!;
+    > 619 |     expect(ch3Transfer).toMatchObject({ amount_cents: 4_360, netted_recovery_cents: 270 });
+          |                         ^
+      620 |     expect(ctx.openRecoveries()).toBe(0);
+      621 |     expect(ctx.identity('ch_1')).toEqual({
+      622 |       drift_cents: 0,
+
+      at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:619:25)
+
+  ● MUTANT no-forward-netting › [r4] › B-627-3 / OR-111-1 recoveries: forward netting only; cash vs receivable reported honestly › a won-dispute reinstatement is netted against what the coach owes on another charge
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 3
+
+      Object {
+    -   "amount_cents": 0,
+    -   "netted_recovery_cents": 3130,
+    -   "status": "netted",
+    +   "amount_cents": 3130,
+    +   "netted_recovery_cents": 0,
+    +   "status": "succeeded",
+      }
+
+      707 |     // the 3130 paid back is netted in full against the 4900 owed on ch_1, so
+      708 |     // nothing leaves TGP while the coach owes it more than that.
+    > 709 |     expect(reinstate).toMatchObject({
+          |                       ^
+      710 |       amount_cents: 0,
+      711 |       netted_recovery_cents: 3_130,
+      712 |       status: 'netted',
+
+      at Object.<anonymous> (test/s-fee-r4-money-protocol.spec.ts:709:23)
+
+  ● MUTANT no-forward-netting › [r5] › OR-111-1 worked example 1: $100 full refund › reverses that sale's own transfer (94.80), holds 5.20 = TGP 2.00 + Stripe 3.20 from the next sale, and tells the coach exactly
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 2
+    + Received  + 2
+
+      Object {
+    -   "amount_cents": 8960,
+    -   "netted_recovery_cents": 520,
+    +   "amount_cents": 9480,
+    +   "netted_recovery_cents": 0,
+      }
+
+      353 |     // Next $100 sale: its standard fees (320 + 200) plus the 520 held.
+      354 |     await ctx.sell(ctx.p100b, 'ch_next', 10_000, 320);
+    > 355 |     expect(ctx.transferFor('ch_next')).toMatchObject({
+          |                                        ^
+      356 |       amount_cents: 8_960,
+      357 |       netted_recovery_cents: 520,
+      358 |     });
+
+      at Object.<anonymous> (test/s-fee-r5-or-111-1.spec.ts:355:40)
+
+  ● MUTANT no-forward-netting › [r5] › OR-111-1 worked example 2: $100 lost dispute with a $15 fee › reverses 94.80 and holds 20.20 = TGP 2.00 + Stripe 3.20 + dispute fee 15.00; the lost outcome says the hold stands
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 2
+    + Received  + 2
+
+      Object {
+    -   "amount_cents": 7460,
+    -   "netted_recovery_cents": 2020,
+    +   "amount_cents": 9480,
+    +   "netted_recovery_cents": 0,
+      }
+
+      426 |     // Netted from the next sale; TGP ends at exactly its 2.00 on the disputed charge.
+      427 |     await ctx.sell(ctx.p100b, 'ch_next', 10_000, 320);
+    > 428 |     expect(ctx.transferFor('ch_next')).toMatchObject({
+          |                                        ^
+      429 |       amount_cents: 9_480 - 2_020,
+      430 |       netted_recovery_cents: 2_020,
+      431 |     });
+
+      at Object.<anonymous> (test/s-fee-r5-or-111-1.spec.ts:428:40)
+
+  ● MUTANT no-forward-netting › [r5] › OR-111-1 worked example 3: refused reversal after payout, then a $49 sale and a $100 sale › holds 100.00 (2.00 + 3.20 + 94.80 not reversed); the $49 sale nets 46.30 in full; the $100 sale nets the last 53.70 and pays 41.10
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 3
+    + Received  + 3
+
+      Object {
+    -   "amount_cents": 0,
+    -   "netted_recovery_cents": 4630,
+    -   "status": "netted",
+    +   "amount_cents": 4630,
+    +   "netted_recovery_cents": 0,
+    +   "status": "succeeded",
+      }
+
+      463 |     // $49 sale: fee 172, TGP 98, coach net 4630 — all of it is netted.
+      464 |     await ctx.sell(ctx.p49, 'ch_49', 4_900, 172);
+    > 465 |     expect(ctx.transferFor('ch_49')).toMatchObject({
+          |                                      ^
+      466 |       amount_cents: 0,
+      467 |       netted_recovery_cents: 4_630,
+      468 |       status: 'netted',
+
+      at Object.<anonymous> (test/s-fee-r5-or-111-1.spec.ts:465:38)
+
+  ● MUTANT no-forward-netting › [r5] › OR-111-1 netting race (CAS lease fence + per-recovery CAS) › a netting that loses its CAS to a concurrent collection re-reads and nets only what is still owed
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 2
+    + Received  + 2
+
+      Object {
+    -   "amount_cents": 480,
+    -   "netted_recovery_cents": 9000,
+    +   "amount_cents": 9480,
+    +   "netted_recovery_cents": 0,
+      }
+
+      639 |     ctx.prisma.payeeRecovery.updateMany.mockImplementation(realUpdateMany);
+      640 |     await ctx.sell(ctx.p100b, 'ch_100b', 10_000, 320);
+    > 641 |     expect(ctx.transferFor('ch_100b')).toMatchObject({
+          |                                        ^
+      642 |       amount_cents: 480,
+      643 |       netted_recovery_cents: 9_000,
+      644 |     });
+
+      at Object.<anonymous> (test/s-fee-r5-or-111-1.spec.ts:641:40)
+
+  ● MUTANT no-forward-netting › [r5] › round 6 B-627-7 / C-627-5: the forward-looking sentence uses the amount still open › $99 refund holds 4.20; a later sale nets it; a $1 refund tells the coach $1.00, not $5.20
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 0
+    Received: 420
+
+      928 |     // The next sale nets the 4.20.
+      929 |     await ctx.sell(ctx.p100b, 'ch_100b', 10_000, 320);
+    > 930 |     expect(ctx.openHeld()).toBe(0);
+          |                            ^
+      931 |     // The last $1 is refunded: only 1.00 is newly held.
+      932 |     await ctx.refundViaWebhook('ch_100', 10_000, 10_000);
+      933 |     expect(ctx.openHeld()).toBe(100);
+
+      at Object.<anonymous> (test/s-fee-r5-or-111-1.spec.ts:930:28)
+
+PASS test/aud-sol-f12r13-117-listing.spec.ts (632 MB heap size)
+  ● Console
+
+    console.log
+      AUD117_BAD_TRANSFER_LIST {
+        envelope: { has_more: false },
+        kind: 'coach_reinstate',
+        external: 1000,
+        booked: 1000,
+        status: 'pending'
+      }
+
+      at test/aud-sol-f12r13-117-listing.spec.ts:69:15
+
+    console.log
+      AUD117_BAD_TRANSFER_LIST {
+        envelope: { data: [] },
+        kind: 'coach_reinstate',
+        external: 1000,
+        booked: 1000,
+        status: 'pending'
+      }
+
+      at test/aud-sol-f12r13-117-listing.spec.ts:69:15
+
+    console.log
+      AUD117_BAD_TRANSFER_LIST {
+        envelope: { has_more: false },
+        kind: 'head_coach_reinstate',
+        external: 1000,
+        booked: 1000,
+        status: 'pending'
+      }
+
+      at test/aud-sol-f12r13-117-listing.spec.ts:69:15
+
+    console.log
+      AUD117_BAD_TRANSFER_LIST {
+        envelope: { data: [] },
+        kind: 'head_coach_reinstate',
+        external: 1000,
+        booked: 1000,
+        status: 'pending'
+      }
+
+      at test/aud-sol-f12r13-117-listing.spec.ts:69:15
+
+    console.log
+      AUD117_BAD_REVERSAL_LIST {
+        envelope: { has_more: false },
+        external: 400,
+        booked: 0,
+        opStatus: 'pending'
+      }
+
+      at test/aud-sol-f12r13-117-listing.spec.ts:97:13
+
+    console.log
+      AUD117_BAD_REVERSAL_LIST {
+        envelope: { data: [] },
+        external: 400,
+        booked: 0,
+        opStatus: 'pending'
+      }
+
+      at test/aud-sol-f12r13-117-listing.spec.ts:97:13
+
+PASS test/audit-sol-f34-683.spec.ts (655 MB heap size)
+[Nest] 3183  - 10/04/2026, 6:48:47 PM    WARN [TransferOrchestratorService] SFEE_TRANSFER_FAILED transfer=tr-21 kind=coach_net purchase=cp_audit settlement=cs-17 attempt=1/6 alert=false: kind=stripe http=503 type=api_error code=none; not visible at Stripe yet, re-checked before any re-send
+B-FEES15-118 R75 test/s-fee-r11-reversal-admission-diagnostics.spec.ts status=0
+R75 77c2f50710edf087647d61d018925045b6741311 dff4feab6c121696c2a507d997ab8868c9b19202; policy=dff4feab6c121696c2a507d997ab8868c9b19202:.github/r75-policy.json
+Counts are whole-file after (+) and before (-); net is the per-class change.
+OK — no positive token change
+
+B-FEES15-118 R75 test/transfer-orchestrator.service.spec.ts status=1
+R75 77c2f50710edf087647d61d018925045b6741311 686e9b140be2300c1d7f54c3eb1215137d3a89f8; policy=686e9b140be2300c1d7f54c3eb1215137d3a89f8:.github/r75-policy.json
+Counts are whole-file after (+) and before (-); net is the per-class change.
+as any: +1 -0 net +1
+  test/transfer-orchestrator.service.spec.ts
+FAIL: positive per-class token change
+
+PASS test/b-fees15-118-r75-probe.spec.ts (175 MB heap size)
+
+Test Suites: 1 failed, 12 passed, 13 total
+Tests:       54 failed, 373 passed, 427 total
+Snapshots:   0 total
+Time:        30.589 s
+Ran all test suites matching test/probe-aud-opus-f56-116.spec.ts|test/s-fee-r15-deferred-fx-notice-flag.spec.ts|test/aud-sol-f23-117-settlement-boundaries.spec.ts|test/audit-sol-f34-683.spec.ts|test/aud-sol-f12-117-reversal.spec.ts|test/audit-opus-f12r-682-probe.spec.ts|test/audit-opus-f12-117-682-extra.spec.ts|test/audit-opus-f12r-livedb-probe.spec.ts|test/aud-sol-f12r13-117-transfer.spec.ts|test/aud-sol-f12r13-117-listing.spec.ts|test/b-fees15-118-r75-probe.spec.ts|test/aud-sol-f23-118-notice-recovery.spec.ts|test/audit-opus-f23-118-683.spec.ts.
+##[error]Process completed with exit code 1.
+Post job cleanup.
+[command]/usr/bin/git version
+git version 2.55.0
+Temporarily overriding HOME='/home/runner/work/_temp/6724d0e3-8b3f-42dd-bcc3-25eacfa6f5b1' before making global git config changes
+Adding repository directory to the temporary git global config as a safe directory
+[command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+Removing SSH command configuration
+[command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Removing HTTP extra header
+[command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Removing includeIf entries pointing to credentials config files
+[command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+includeif.gitdir:/github/workspace/.git.path
+includeif.gitdir:/github/workspace/.git/worktrees/*.path
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+/home/runner/work/_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+/home/runner/work/_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+/github/runner_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+/github/runner_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config
+[command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Removing credentials config '/home/runner/work/_temp/git-credentials-9db80b05-b99c-41fd-a2be-ee9b6c6cb6e3.config'
+Print service container logs: 4f1a457628b34f798e1a6d4b483d0b5f_redis7alpine_beb273
+##[command]/usr/bin/docker logs --details 0f3cf68030a6c47c213aab54d4f364eb09caae922f0ffbd31b64aa86817c3f03
+ 1:C 04 Oct 2026 18:47:28.372 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+ 1:C 04 Oct 2026 18:47:28.372 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+ 1:C 04 Oct 2026 18:47:28.372 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+ 1:C 04 Oct 2026 18:47:28.372 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+ 1:M 04 Oct 2026 18:47:28.372 * monotonic clock: POSIX clock_gettime
+ 1:M 04 Oct 2026 18:47:28.373 * Running mode=standalone, port=6379.
+ 1:M 04 Oct 2026 18:47:28.373 * Server initialized
+ 1:M 04 Oct 2026 18:47:28.373 * Ready to accept connections tcp
+Stop and remove container: 4f1a457628b34f798e1a6d4b483d0b5f_redis7alpine_beb273
+##[command]/usr/bin/docker rm --force 0f3cf68030a6c47c213aab54d4f364eb09caae922f0ffbd31b64aa86817c3f03
+0f3cf68030a6c47c213aab54d4f364eb09caae922f0ffbd31b64aa86817c3f03
+Remove container network: github_network_b2c66b3fd2e24568b569370b711cf554
+##[command]/usr/bin/docker network rm github_network_b2c66b3fd2e24568b569370b711cf554
+github_network_b2c66b3fd2e24568b569370b711cf554
+Cleaning up orphan processes

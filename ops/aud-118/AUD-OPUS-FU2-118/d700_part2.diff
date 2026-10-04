@@ -1,0 +1,273 @@
+diff --git a/src/auth/auth.service.ts b/src/auth/auth.service.ts
+index 308c1d09f..f87388450 100644
+--- a/src/auth/auth.service.ts
++++ b/src/auth/auth.service.ts
+@@ -1042,8 +1042,9 @@ export class AuthService {
+         // supabase_id === NULL, and that path is auditable on its own.
+         // See QA P0-A1.
+         if (user.supabase_id && user.supabase_id !== supaUser.id) {
++          // C-611-17: ids only; the address is on the user row.
+           this.logger.warn(
+-            `googleAuth: refusing to re-bind supabase_id for existing user ${user.id} (email=${supaEmail}); supabase_id already set`,
++            `googleAuth: refusing to re-bind supabase_id for existing user ${user.id} (supabase_id=${supaUser.id}); supabase_id already set`,
+           );
+           throw new UnauthorizedException(
+             'This email is registered with a different sign-in method. Sign in with that method, then link your Google account from settings.',
+@@ -1237,8 +1238,9 @@ export class AuthService {
+         // Account-takeover guard — see googleAuth above for rationale.
+         // QA P0-A1.
+         if (user.supabase_id && user.supabase_id !== supaUser.id) {
++          // C-611-17: ids only; the address is on the user row.
+           this.logger.warn(
+-            `appleAuth: refusing to re-bind supabase_id for existing user ${user.id} (email=${supaEmail}); supabase_id already set`,
++            `appleAuth: refusing to re-bind supabase_id for existing user ${user.id} (supabase_id=${supaUser.id}); supabase_id already set`,
+           );
+           throw new UnauthorizedException(
+             'This email is registered with a different sign-in method. Sign in with that method, then link your Apple account from settings.',
+@@ -1781,7 +1783,7 @@ export class AuthService {
+     }
+ 
+     this.logger.warn(
+-      `bootstrapFirstOwner: promoted ${user.email} (id=${user.id}) to owner. Unset BOOTSTRAP_SECRET now.`,
++      `bootstrapFirstOwner: promoted user ${user.id} to owner. Unset BOOTSTRAP_SECRET now.`,
+     );
+ 
+     return {
+diff --git a/src/coach/coach-alerts.service.ts b/src/coach/coach-alerts.service.ts
+index 43ad78232..f1396516c 100644
+--- a/src/coach/coach-alerts.service.ts
++++ b/src/coach/coach-alerts.service.ts
+@@ -246,8 +246,9 @@ export class CoachAlertsService {
+         payload,
+       );
+       if (!delivered) {
++        // C-611-17: alert.message names the client; log the alert id.
+         this.logger.log(
+-          `push skipped (no token) coach=${alert.coach_id} type=${alert.alert_type} sev=${alert.severity}: ${alert.message}`,
++          `push skipped (no token) alert=${alert.id} coach=${alert.coach_id} type=${alert.alert_type} sev=${alert.severity}`,
+         );
+       }
+     } catch {
+diff --git a/src/coach/practice-type/practice-type.service.ts b/src/coach/practice-type/practice-type.service.ts
+index 9a797cc91..cbb3ea860 100644
+--- a/src/coach/practice-type/practice-type.service.ts
++++ b/src/coach/practice-type/practice-type.service.ts
+@@ -102,8 +102,9 @@ export class PracticeTypeService {
+         financeStatus = 'ok';
+       } else if (outcome.kind === 'not_found') {
+         financeStatus = 'not_found';
++        // C-611-17: the coach id, not the address used for the lookup.
+         this.logger.log(
+-          `Practice federation: no finance coach for ${u.email} - fitness-only mirror`,
++          `Practice federation: no finance coach for coach=${coachId} - fitness-only mirror`,
+         );
+       } else {
+         this.logger.error(
+diff --git a/src/public-pages/README.md b/src/public-pages/README.md
+index 38c8980a9..b71527c00 100644
+--- a/src/public-pages/README.md
++++ b/src/public-pages/README.md
+@@ -186,9 +186,13 @@ public pages until it is built and audited.
+   (`docs/privacy/vendor-deletion-and-backups.md` §0).
+   The removal steps are Apple's own (Apple Support 102571: iPhone
+   Settings > [your name] > Sign in with Apple > app > Delete; the web path
+-  is account.apple.com > Sign-In & Security). `/privacy` and
+-  `/help/delete-account` render the same `SIGN_IN_WITH_APPLE_DELETION_TEXT`
+-  and link the article (`test/privacy-apple-unlink-path.spec.ts`).
++  is account.apple.com > Sign-In & Security). The iPhone path is the iOS 18
++  or later one, so the text says so and sends earlier iOS versions (the
++  app supports 16.4 and later) and other devices to the web path
++  (C-611-18). `/privacy` and `/help/delete-account` render the same
++  `SIGN_IN_WITH_APPLE_DELETION_TEXT` and link the article
++  (`test/privacy-apple-unlink-path.spec.ts`,
++  `test/privacy-apple-ios-version.spec.ts`).
+ - Section links go through `safeHref()`: site-relative paths, `mailto:`
+   and `https:` only; anything else renders as `#`.
+ 
+diff --git a/src/public-pages/trust-pages.html.ts b/src/public-pages/trust-pages.html.ts
+index 2d6ecbf89..59936b7e9 100644
+--- a/src/public-pages/trust-pages.html.ts
++++ b/src/public-pages/trust-pages.html.ts
+@@ -81,6 +81,12 @@ export const ONE_WAY_CODE_TEXT =
+ // (published 2026-09-14) gives iPhone Settings > [your name] > Sign in with
+ // Apple > app > Delete > confirm; Sign-In & Security is the account.apple.com
+ // web path only. Used word for word by /privacy and /help/delete-account.
++// C-611-18 (agent 117): that iPhone path is the iOS 18 and later one (iPhone
++// User Guide 18.0 and 26). The app supports iOS 16.4 and later, and iOS 16
++// and 17 use a different menu under Settings > [your name] > Password and
++// Security (iPhone User Guide 16.0 and 17.0), so the iPhone sentence says
++// iOS 18 or later and earlier versions get the web steps, which do not
++// depend on the iOS version.
+ export const APPLE_SIGN_IN_SUPPORT_URL = 'https://support.apple.com/en-us/102571';
+ export const APPLE_SIGN_IN_SUPPORT_LINK: Readonly<{ label: string; href: string }> = {
+   label: 'Apple Support: Manage your apps with Sign in with Apple',
+@@ -88,8 +94,8 @@ export const APPLE_SIGN_IN_SUPPORT_LINK: Readonly<{ label: string; href: string
+ };
+ export const SIGN_IN_WITH_APPLE_DELETION_TEXT =
+   'If you used Sign in with Apple, deleting your account ends the app’s link to your Apple Account. ' +
+-  'To remove the app from your Apple Account as well, on your iPhone open Settings, tap your name, then Sign in with Apple, choose the app, tap Delete and follow the steps on screen to confirm. ' +
+-  'On the web, sign in at account.apple.com, go to Sign-In & Security, select Sign in with Apple, choose the app and stop using Sign in with Apple for it.';
++  'To remove the app from your Apple Account as well, on an iPhone with iOS 18 or later open Settings, tap your name, then Sign in with Apple, choose the app, tap Delete and follow the steps on screen to confirm. ' +
++  'On an earlier version of iOS, or on any other device, sign in at account.apple.com, go to Sign-In & Security, select Sign in with Apple, choose the app and stop using Sign in with Apple for it.';
+ 
+ export type TrustPage = 'privacy' | 'consumer-health' | 'terms' | 'security' | 'status';
+ 
+diff --git a/src/scheduling/scheduling-webhook.controller.ts b/src/scheduling/scheduling-webhook.controller.ts
+index 021bb54cd..8f89e5856 100644
+--- a/src/scheduling/scheduling-webhook.controller.ts
++++ b/src/scheduling/scheduling-webhook.controller.ts
+@@ -29,7 +29,8 @@ import { Public } from '../common/decorators/public.decorator';
+ //   - Accepts and 200s any payload (signature unverified) so smoke
+ //     tests can exercise the route shape end-to-end.
+ //   - Is gated by @Public() because providers don't carry our JWT.
+-//   - Logs the body at debug level so operators can replay if needed.
++//   - Logs the payload's shape (event name, top-level keys) at debug
++//     level, never its values (C-611-17).
+ //
+ // SECURITY: do NOT add any state mutation here without first wiring
+ // signature verification. The current handler is read-only / log-only.
+@@ -57,7 +58,7 @@ export class SchedulingWebhookController {
+       if (provided !== secret) throw new ForbiddenException('Invalid webhook secret');
+     }
+     this.logger.debug(
+-      `google-calendar webhook stub received payload (no-op): ${safeStringify(body)}`,
++      `google-calendar webhook stub received payload (no-op): ${payloadShape(body)}`,
+     );
+     return { ok: true, handler: 'stub' };
+   }
+@@ -81,16 +82,28 @@ export class SchedulingWebhookController {
+       if (provided !== secret) throw new ForbiddenException('Invalid webhook secret');
+     }
+     this.logger.debug(
+-      `zoom webhook stub received payload (no-op): ${safeStringify(body)}`,
++      `zoom webhook stub received payload (no-op): ${payloadShape(body)}`,
+     );
+     return { ok: true, handler: 'stub' };
+   }
+ }
+ 
+-function safeStringify(v: unknown): string {
+-  try {
+-    return JSON.stringify(v).slice(0, 1000);
+-  } catch {
+-    return '[unserializable]';
++// C-611-17: provider payloads carry participant names and email addresses
++// (Zoom's participant.user_name / participant.email), so the stub logs the
++// payload's shape only: the event name when it is a plain dotted token, and
++// the top-level keys. Never a value.
++const EVENT_TOKEN = /^[a-z0-9_.-]{1,64}$/i;
++const KEY_TOKEN = /^[a-z0-9_$-]{1,40}$/i;
++function payloadShape(v: unknown): string {
++  if (v === null || typeof v !== 'object' || Array.isArray(v)) {
++    return `type=${Array.isArray(v) ? 'array' : v === null ? 'null' : typeof v}`;
+   }
++  const record = v as Record<string, unknown>;
++  const event =
++    typeof record.event === 'string' && EVENT_TOKEN.test(record.event) ? record.event : 'none';
++  const keys = Object.keys(record)
++    .slice(0, 20)
++    .map((k) => (KEY_TOKEN.test(k) ? k : '?'))
++    .join(',');
++  return `event=${event} keys=${keys}`;
+ }
+diff --git a/src/storefront/checkout-recovery.service.ts b/src/storefront/checkout-recovery.service.ts
+index 16063dce8..944c42eae 100644
+--- a/src/storefront/checkout-recovery.service.ts
++++ b/src/storefront/checkout-recovery.service.ts
+@@ -13,6 +13,7 @@ import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
+ import { PrismaService } from '../prisma.service';
+ import { EmailService } from '../email/email.service';
+ import { EmailTemplateKey } from '../email/email.types';
++import { redactEmailAddresses } from '../observability/log-pii';
+ import { MIN_CHECKOUT_RECOVERY_SECRET_LENGTH } from '../common/env-validation';
+ 
+ // r48 #5 — magic-link recovery for abandoned checkouts.
+@@ -232,8 +233,9 @@ export class CheckoutRecoveryService implements OnModuleInit, OnModuleDestroy {
+       },
+     });
+     if (recentCount >= RATE_LIMIT_MAX) {
++      // C-611-17: the checkout id, never any part of the address.
+       this.logger.warn(
+-        `recovery rate-limit hit for ${email.slice(0, 3)}*** (count=${recentCount})`,
++        `recovery rate-limit hit for checkout=${checkout.id} (count=${recentCount})`,
+       );
+       return { sent: true };
+     }
+@@ -274,9 +276,9 @@ export class CheckoutRecoveryService implements OnModuleInit, OnModuleDestroy {
+       // "we sent it but it bounced" and "we sent it successfully"
+       // anyway.
+       this.logger.error(
+-        `recovery email failed for ${email.slice(0, 3)}***: ${
+-          err instanceof Error ? err.message : 'unknown'
+-        }`,
++        `recovery email failed for checkout=${checkout.id}: ${redactEmailAddresses(
++          err instanceof Error ? err.message : 'unknown',
++        )}`,
+       );
+     }
+     return { sent: true };
+diff --git a/src/talent-marketplace/admin-applications.service.ts b/src/talent-marketplace/admin-applications.service.ts
+index 8afec0542..4c9e169fc 100644
+--- a/src/talent-marketplace/admin-applications.service.ts
++++ b/src/talent-marketplace/admin-applications.service.ts
+@@ -24,16 +24,6 @@ import type {
+ 
+ const APPLICATION_ROUTE_KEY = 'tm:admin:applications:review';
+ 
+-// Truncate a note before it lands in a structured log line so a 2k-char note
+-// cannot bloat the log/Sentry breadcrumb. The full note is still persisted to
+-// the ledger row; only the logged copy is clipped. Defined locally rather than
+-// imported from the TM-7a service so this half adds no edit to that audited file.
+-const NOTE_LOG_MAX = 256;
+-function truncateNote(note: string | null): string | null {
+-  if (note === null) return null;
+-  return note.length > NOTE_LOG_MAX ? `${note.slice(0, NOTE_LOG_MAX)}\u2026` : note;
+-}
+-
+ // Decision → next enum state: approve→shortlisted / reject→rejected. The
+ // reviewable (pre-decision) state is `submitted`; the status-guarded write
+ // pins the mutation to it so a second decision matches zero rows and falls
+@@ -147,7 +137,10 @@ export class AdminApplicationsService {
+         owner_id: ownerId,
+         application_id: applicationId,
+         decision: result.decision,
+-        note: truncateNote(result.note),
++        // C-611-17: the note is free text written by the owner. The full
++        // note is on the ledger row; the log line carries only its length
++        // (0 when there is none).
++        note_length: result.note?.length ?? 0,
+         replayed: result.replayed,
+         result_status: result.status,
+         // Correlate the decision with the request/error/Sentry trail when the
+diff --git a/src/talent-marketplace/admin-moderation.service.ts b/src/talent-marketplace/admin-moderation.service.ts
+index 9adf823ea..c09ed64c4 100644
+--- a/src/talent-marketplace/admin-moderation.service.ts
++++ b/src/talent-marketplace/admin-moderation.service.ts
+@@ -21,15 +21,6 @@ import type {
+   ReviewQueueResponse,
+ } from './admin-moderation.dto';
+ 
+-// Truncate a note before it lands in a structured log line so a 2k-char note
+-// cannot bloat the log/Sentry breadcrumb. The full note is still persisted to
+-// the ledger row; only the logged copy is clipped.
+-const NOTE_LOG_MAX = 256;
+-function truncateNote(note: string | null): string | null {
+-  if (note === null) return null;
+-  return note.length > NOTE_LOG_MAX ? `${note.slice(0, NOTE_LOG_MAX)}…` : note;
+-}
+-
+ export const LISTING_ROUTE_KEY = 'tm:admin:listings:review';
+ 
+ // Decision → next enum state. Kept explicit (no invented schema): listings
+@@ -141,7 +132,10 @@ export class AdminModerationService {
+         owner_id: ownerId,
+         listing_id: listingId,
+         decision: result.decision,
+-        note: truncateNote(result.note),
++        // C-611-17: the note is free text written by the owner. The full
++        // note is on the ledger row; the log line carries only its length
++        // (0 when there is none).
++        note_length: result.note?.length ?? 0,
+         replayed: result.replayed,
+         result_status: result.status,
+         // Correlate the decision with the request/error/Sentry trail when the

@@ -1,0 +1,59 @@
+diff --git a/src/screens/settings/__tests__/DeleteAccountScreen.test.tsx b/src/screens/settings/__tests__/DeleteAccountScreen.test.tsx
+index 7ac22fdf..b5b3a848 100644
+--- a/src/screens/settings/__tests__/DeleteAccountScreen.test.tsx
++++ b/src/screens/settings/__tests__/DeleteAccountScreen.test.tsx
+@@ -702,3 +702,54 @@ describe('APPLE_FALLBACK: Apple’s current names and steps (B-PRIV-FU-117)', ()
+     expect(APPLE_FALLBACK).not.toMatch(/!/);
+   });
+ });
++
++// AUD-OPUS-FU2-118 probe (Claude Opus 5.5 lens, agent 118) on #368 @ 2216ad1d.
++// Not for merge. The new APPLE_FORM_NOTE says: "If you signed in with Apple,
++// after you confirm you will see whether Apple removed this app's access to
++// your Apple Account, and how to remove it yourself if not." When the
++// provider lookup cannot tell (getSignInProviders() -> null, a designed state)
++// and the person confirms WITH Apple, the status view must show one of the two
++// Apple cards. Expected at the PR head: FAIL (neither card renders).
++describe('AUD-OPUS-FU2-118 probe: Apple note promise when providers are unknown', () => {
++  beforeEach(() => {
++    jest.clearAllMocks();
++    focusListeners.length = 0;
++    mockedUseCurrentUser.mockReturnValue({ id: 'user-1', email: 'test@example.com', name: 'Test User', role: 'student' });
++    mockedDeletionApi.getDeletionStatus.mockResolvedValue(statusOf({ state: 'none', grace_days: 14 }));
++    mockedAppleAvailable.mockResolvedValue(true);
++    mockedProviders.mockResolvedValue(null);
++    tokenOk();
++  });
++
++  async function confirmWithAppleUnknownProviders(code: string | null, outcome: string | undefined) {
++    mockedAppleReauth.mockResolvedValue({ success: true, identityToken: 'apple-id', authorizationCode: code });
++    mockedDeletionApi.requestDeletion.mockResolvedValue(
++      stub(scheduledResponse(outcome === undefined ? { apple_revocation: undefined } : { apple_revocation: outcome })),
++    );
++    const utils = await renderScreen();
++    await waitFor(() => utils.getByTestId('apple-confirm-button'));
++    await fillForm(utils);
++    await act(async () => {
++      fireEvent.press(utils.getByTestId('apple-confirm-button'));
++    });
++    await waitFor(() => utils.getByTestId('deletion-date'));
++    return utils;
++  }
++
++  it('confirmed with Apple, no authorization code (server: not_requested): an Apple card is shown', async () => {
++    const utils = await confirmWithAppleUnknownProviders(null, 'not_requested');
++    const shown = utils.queryByTestId('apple-revoked') !== null || utils.queryByTestId('apple-fallback') !== null;
++    expect(shown).toBe(true);
++  });
++
++  it('confirmed with Apple, response without apple_revocation: an Apple card is shown', async () => {
++    const utils = await confirmWithAppleUnknownProviders('apple-code', undefined);
++    const shown = utils.queryByTestId('apple-revoked') !== null || utils.queryByTestId('apple-fallback') !== null;
++    expect(shown).toBe(true);
++  });
++
++  it('control: confirmed with Apple, code sent, server not_configured: the fallback is shown', async () => {
++    const utils = await confirmWithAppleUnknownProviders('apple-code', 'not_configured');
++    expect(utils.getByTestId('apple-fallback')).toBeTruthy();
++  });
++});

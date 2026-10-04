@@ -1,0 +1,3 @@
+#!/bin/bash
+for a in "$@"; do if [[ "$a" == ".components[].name" ]]; then exit 5; fi; done
+exec /usr/bin/jq "$@"

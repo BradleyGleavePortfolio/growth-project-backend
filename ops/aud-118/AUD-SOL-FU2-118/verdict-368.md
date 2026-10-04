@@ -1,0 +1,28 @@
+AUDIT GPT-6.1 Sol — growth-project-mobile#368 @ 2216ad1dc94d280e33a39a3ae2d8b7ac197c16dc — VERDICT: REQUEST CHANGES
+A/B/C = 0/1/0
+
+Independent T4 audit: AUD-SOL-FU2-118, agent 118; complete three-file diff reviewed, 112 changed lines, with no candidate implementation edit. [Reviewed comparison](https://github.com/BradleyGleavePortfolio/growth-project-mobile/compare/7fdb629a798d44e76475dbece1b14e68f360ab91...2216ad1dc94d280e33a39a3ae2d8b7ac197c16dc)
+
+## B-368-1 — new Apple outcome promise is not true when provider discovery is unavailable
+
+**File:line:** `src/screens/settings/DeleteAccountScreen.tsx:99-102,578-582` (new unconditional form note), with the existing scheduled-view gate at `:433-434,461-477`; the note promises a result and manual-removal guidance after confirmation, but the gate can hide both. [Reviewed screen](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/2216ad1dc94d280e33a39a3ae2d8b7ac197c16dc/src%2Fscreens%2Fsettings%2FDeleteAccountScreen.tsx)
+
+**Concrete supported counterexample:** `getSignInProviders()` returns `null`, which intentionally offers all available re-auth methods; the person confirms with Apple and gets an identity token but a nullable authorization code. Deletion succeeds with `apple_revocation="not_requested"` (the backend's defined no-code outcome), yet `isAppleAccount=false` and the `not_requested` exclusion make both `apple-revoked` and `apple-fallback` absent, contradicting the newly stated guarantee. The optional missing-outcome response has the same result. [Executed rendered-screen probe 37218572318](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37218572318), [backend no-code outcome](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/66569a616fed254e2d5022bbc277013e4652788b/src/account-deletion/apple-token-revocation.service.ts)
+
+**Proof:** two new assertions reach the scheduled deletion view and fail because `apple-fallback` is `null`; the original 47 screen tests all pass alongside them. This is a finding on the new promise, not an unrelated request to redesign deletion or provider authentication. [Corrected probe run](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37218572318)
+
+**Minimal fix rule:** preserve the truthful promise by showing conditional manual-removal guidance whenever Apple was used to confirm, or the provider is unknown and revocation is not proven; do not depend exclusively on the earlier provider lookup and do not claim `not_requested` proves success or failure. Keep the iOS-version-specific steps, and test unknown-provider `not_requested`/missing-outcome paths plus known non-Apple and `revoked` controls. [Affected view and promise](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/2216ad1dc94d280e33a39a3ae2d8b7ac197c16dc/src%2Fscreens%2Fsettings%2FDeleteAccountScreen.tsx)
+
+## Prior follow-up and Apple source truth
+
+The prior Sol #611 review's separate mobile iPhone/web-menu follow-up is implemented: the iOS 18+ Settings route, web route for earlier versions/other devices and Apple Account name match both backend #700's shared policy/help constant and Apple's official sources. No previous #368 Sol approval is reused; this is a full new-copy and call-site audit. [Prior Sol follow-up](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/611#issuecomment-5976633102), [backend shared wording](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/66569a616fed254e2d5022bbc277013e4652788b/src%2Fpublic-pages%2Ftrust-pages.html.ts), [Apple Support 102571](https://support.apple.com/en-us/102571), [iOS 18 guide](https://support.apple.com/guide/iphone/sign-in-with-apple-iph238921d37/18.0/ios/18.0), [iOS 17 guide](https://support.apple.com/guide/iphone/sign-in-with-apple-iph238921d37/17.0/ios/17.0)
+
+The revised revoked card remains gated on the server's explicit `revoked` outcome, and the new fallback/form strings remove old Apple terminology and first person; the remaining defect is the unsupported form guarantee in the recovery case above. [Complete candidate diff](https://github.com/BradleyGleavePortfolio/growth-project-mobile/compare/7fdb629a798d44e76475dbece1b14e68f360ab91...2216ad1dc94d280e33a39a3ae2d8b7ac197c16dc)
+
+## CI and evidence limits
+
+Required contexts are **3/3 green** at the exact candidate SHA; full CI reports **452 passed suites / 6,319 passed tests**, including the changed screen suite. [Exact-head build](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37181021867/job/111373456068)
+
+The independent, probe-only lane is deliberately red: **2 failed / 47 passed**; lane SHA `4dd587fc10658b783dab3d88e3a6e14e11fe156c` contains only lane files over probe commits `8ef87519c42b8bbbf1ec3202e1ab6e49cdaa2df6` and `5b9a085a95d1e2f8bef6f4b1e51e0973d28f14a1`, over the exact candidate. [Executed probe](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37218572318), [lane commit](https://github.com/BradleyGleavePortfolio/growth-project-mobile/commit/4dd587fc10658b783dab3d88e3a6e14e11fe156c)
+
+The earlier independent run `37218370876` is **not behavioral evidence**: the new harness omitted `await render()` for this testing-library version; that was corrected before the above run. The builder's genuine failing-before evidence was separately verified as 9 failed / 38 passed; no installed-device or production Apple-setting verification is claimed. [Discarded harness run](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37218370876), [verified builder before-run](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37180664588)

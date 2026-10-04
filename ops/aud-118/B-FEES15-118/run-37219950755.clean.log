@@ -1,0 +1,579 @@
+targeted	Set up job	﻿2026-10-04T17:17:39.0218238Z Current runner version: '2.337.0'
+##[group]Runner Image Provisioner
+Hosted Compute Agent
+Version: 20260901.588
+Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+Build Date: 2026-09-01T19:56:44Z
+Worker ID: {bf116cf8-f01d-4ae1-a89b-4f301181ced6}
+Azure Region: centralus
+##[endgroup]
+##[group]Operating System
+Ubuntu
+24.04.5
+LTS
+##[endgroup]
+##[group]Runner Image
+Image: ubuntu-24.04
+Version: 20260927.320.1
+Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+##[endgroup]
+##[group]GITHUB_TOKEN Permissions
+Contents: read
+Metadata: read
+Packages: read
+##[endgroup]
+Secret source: Actions
+Cache mode: write
+Prepare workflow directory
+Prepare all required actions
+Getting action download info
+Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+Complete job name: targeted
+targeted	Initialize containers	﻿2026-10-04T17:17:40.8283217Z ##[group]Checking docker version
+##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+'1.48'
+Docker daemon API version: '1.48'
+##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+'1.48'
+Docker client API version: '1.48'
+##[endgroup]
+##[group]Clean up resources from previous jobs
+##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=f5eef8"
+##[command]/usr/bin/docker network prune --force --filter "label=f5eef8"
+##[endgroup]
+##[group]Create local container network
+##[command]/usr/bin/docker network create --label f5eef8 github_network_109ca748ce054ab687b86bf758be2184
+ce864b74e10e29b9c2d4a02327051bb9e9c10083d6568ea2396fe7860d4e8b87
+##[endgroup]
+##[group]Starting redis service container
+##[command]/usr/bin/docker pull redis:7-alpine
+7-alpine: Pulling from library/redis
+16333ee0c00f: Pulling fs layer
+83234986c742: Pulling fs layer
+7eb50503c2b0: Pulling fs layer
+1522f9c6f453: Pulling fs layer
+9928009b15c8: Pulling fs layer
+4f4fb700ef54: Pulling fs layer
+4eb14bae0e1d: Pulling fs layer
+4f4fb700ef54: Waiting
+9928009b15c8: Waiting
+4eb14bae0e1d: Waiting
+1522f9c6f453: Waiting
+83234986c742: Download complete
+7eb50503c2b0: Verifying Checksum
+7eb50503c2b0: Download complete
+16333ee0c00f: Download complete
+9928009b15c8: Verifying Checksum
+9928009b15c8: Download complete
+16333ee0c00f: Pull complete
+4f4fb700ef54: Download complete
+4eb14bae0e1d: Verifying Checksum
+4eb14bae0e1d: Download complete
+1522f9c6f453: Verifying Checksum
+1522f9c6f453: Download complete
+83234986c742: Pull complete
+7eb50503c2b0: Pull complete
+1522f9c6f453: Pull complete
+9928009b15c8: Pull complete
+4f4fb700ef54: Pull complete
+4eb14bae0e1d: Pull complete
+Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+Status: Downloaded newer image for redis:7-alpine
+docker.io/library/redis:7-alpine
+##[command]/usr/bin/docker create --name 34e982689e4148f88a1ee933460a5b06_redis7alpine_6675e3 --label f5eef8 --network github_network_109ca748ce054ab687b86bf758be2184 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+7cc521383ec09b426f96dbc9e5f3d0e2c258b87fa01920764ae96ac8daed10d0
+##[command]/usr/bin/docker start 7cc521383ec09b426f96dbc9e5f3d0e2c258b87fa01920764ae96ac8daed10d0
+7cc521383ec09b426f96dbc9e5f3d0e2c258b87fa01920764ae96ac8daed10d0
+##[command]/usr/bin/docker ps --all --filter id=7cc521383ec09b426f96dbc9e5f3d0e2c258b87fa01920764ae96ac8daed10d0 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+7cc521383ec09b426f96dbc9e5f3d0e2c258b87fa01920764ae96ac8daed10d0 Up Less than a second (health: starting)
+##[command]/usr/bin/docker port 7cc521383ec09b426f96dbc9e5f3d0e2c258b87fa01920764ae96ac8daed10d0
+6379/tcp -> 0.0.0.0:6379
+6379/tcp -> [::]:6379
+##[endgroup]
+##[group]Waiting for all services to be ready
+##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 7cc521383ec09b426f96dbc9e5f3d0e2c258b87fa01920764ae96ac8daed10d0
+starting
+redis service is starting, waiting 2 seconds before checking again.
+##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 7cc521383ec09b426f96dbc9e5f3d0e2c258b87fa01920764ae96ac8daed10d0
+starting
+redis service is starting, waiting 4 seconds before checking again.
+##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 7cc521383ec09b426f96dbc9e5f3d0e2c258b87fa01920764ae96ac8daed10d0
+healthy
+redis service is healthy.
+##[endgroup]
+targeted	Run actions/checkout@v6	﻿2026-10-04T17:17:56.1768982Z ##[group]Run actions/checkout@v6
+with:
+  repository: BradleyGleavePortfolio/growth-project-backend
+  token: ***
+  ssh-strict: true
+  ssh-user: git
+  persist-credentials: true
+  clean: true
+  sparse-checkout-cone-mode: true
+  fetch-depth: 1
+  fetch-tags: false
+  show-progress: true
+  lfs: false
+  submodules: false
+  set-safe-directory: true
+  allow-unsafe-pr-checkout: false
+##[endgroup]
+Syncing repository: BradleyGleavePortfolio/growth-project-backend
+##[group]Getting Git version info
+Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+[command]/usr/bin/git version
+git version 2.55.0
+##[endgroup]
+Temporarily overriding HOME='/home/runner/work/_temp/3d278c3b-cb1a-466e-9006-4f1953fd7ff9' before making global git config changes
+Adding repository directory to the temporary git global config as a safe directory
+[command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+##[group]Determining repository object format
+##[endgroup]
+##[group]Initializing the repository
+[command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+[command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+##[endgroup]
+##[group]Disabling automatic garbage collection
+[command]/usr/bin/git config --local gc.auto 0
+##[endgroup]
+##[group]Setting up auth
+Removing SSH command configuration
+[command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Removing HTTP extra header
+[command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Removing includeIf entries pointing to credentials config files
+[command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+[command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+[command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-c0a211e0-ddae-4c83-a682-a24877cae242.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+[command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-c0a211e0-ddae-4c83-a682-a24877cae242.config
+[command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-c0a211e0-ddae-4c83-a682-a24877cae242.config
+[command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-c0a211e0-ddae-4c83-a682-a24877cae242.config
+[command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-c0a211e0-ddae-4c83-a682-a24877cae242.config
+##[endgroup]
+##[group]Fetching the repository
+[command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +e27b7e3f8e38c4c5e7962fa03dd9f8daaf896926:refs/remotes/origin/ci/B-FEES15-118-683-after
+From https://github.com/BradleyGleavePortfolio/growth-project-backend
+ * [new ref]         e27b7e3f8e38c4c5e7962fa03dd9f8daaf896926 -> origin/ci/B-FEES15-118-683-after
+[command]/usr/bin/git branch --list --remote origin/ci/B-FEES15-118-683-after
+  origin/ci/B-FEES15-118-683-after
+[command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-FEES15-118-683-after
+e27b7e3f8e38c4c5e7962fa03dd9f8daaf896926
+##[endgroup]
+##[group]Determining the checkout info
+##[endgroup]
+[command]/usr/bin/git sparse-checkout disable
+[command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+##[group]Checking out the ref
+[command]/usr/bin/git checkout --progress --force -B ci/B-FEES15-118-683-after refs/remotes/origin/ci/B-FEES15-118-683-after
+Switched to a new branch 'ci/B-FEES15-118-683-after'
+branch 'ci/B-FEES15-118-683-after' set up to track 'origin/ci/B-FEES15-118-683-after'.
+##[endgroup]
+[command]/usr/bin/git log -1 --format=%H
+e27b7e3f8e38c4c5e7962fa03dd9f8daaf896926
+targeted	Run actions/setup-node@v6	﻿2026-10-04T17:17:58.8262323Z ##[group]Run actions/setup-node@v6
+with:
+  node-version: 20
+  cache: npm
+  check-latest: false
+  token: ***
+  package-manager-cache: true
+##[endgroup]
+Attempting to download 20...
+Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+Extracting ...
+[command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/3769f882-1381-4ac8-b40f-f3aac83ec27d -f /home/runner/work/_temp/56f90e1f-5073-4c83-8816-39b8bdf6d0e2
+Adding to the cache ...
+##[group]Environment details
+node: v20.20.2
+npm: 10.8.2
+yarn: 1.22.22
+##[endgroup]
+[command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+/home/runner/.npm
+Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+Received 86828135 of 86828135 (100.0%), 94.2 MBs/sec
+Cache Size: ~83 MB (86828135 B)
+[command]/usr/bin/tar -xf /home/runner/work/_temp/927b8e8e-514d-4a47-aa08-59d08a76f722/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+Cache restored successfully
+Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+targeted	Run npm ci	﻿2026-10-04T17:18:04.5146417Z ##[group]Run npm ci
+^[[36;1mnpm ci^[[0m
+shell: /usr/bin/bash -e {0}
+##[endgroup]
+npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+
+> growth-project-backend@1.0.0 postinstall
+> prisma generate
+
+Prisma schema loaded from prisma/schema.prisma
+┌─────────────────────────────────────────────────────────┐
+│  Update available 6.19.3 -> 8.0.0-rc.19                 │
+│                                                         │
+│  This is a major update - please follow the guide at    │
+│  https://pris.ly/d/major-version-upgrade                │
+│                                                         │
+│  Run the following to update                            │
+│    npm i --save-dev prisma@latest                       │
+│    npm i @prisma/client@latest                          │
+└─────────────────────────────────────────────────────────┘
+
+✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.76s
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+
+
+> growth-project-backend@1.0.0 prepare
+> lefthook install
+
+sync hooks: ✔️(commit-msg, pre-commit)
+
+added 1115 packages, and audited 1116 packages in 22s
+
+202 packages are looking for funding
+  run `npm fund` for details
+
+3 high severity vulnerabilities
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+targeted	Run npx prisma generate	﻿2026-10-04T17:18:27.0973152Z ##[group]Run npx prisma generate
+^[[36;1mnpx prisma generate^[[0m
+shell: /usr/bin/bash -e {0}
+##[endgroup]
+Prisma schema loaded from prisma/schema.prisma
+
+✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.94s
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+
+targeted	Targeted jest	﻿2026-10-04T17:18:31.5452660Z ##[group]Run set -euo pipefail
+^[[36;1mset -euo pipefail^[[0m
+^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+env:
+  NODE_OPTIONS: --max-old-space-size=4096
+  THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+##[endgroup]
+specs: test/s-fee-r15-deferred-fx-notice-flag.spec.ts test/audit-sol-f34-683.spec.ts test/audit-sol-f34-117-683-v1.spec.ts test/audit-sol-f34-117-683-v2.spec.ts test/aud-sol-f23-117-settlement-boundaries.spec.ts
+PASS test/s-fee-r15-deferred-fx-notice-flag.spec.ts (96 MB heap size)
+PASS test/aud-sol-f23-117-settlement-boundaries.spec.ts (123 MB heap size)
+  ● Console
+
+    console.log
+      AUD117_PROVISIONAL_FX {
+        failure: 'no balance transaction',
+        row: {
+          id: 'cs-2',
+          created_at: 2026-10-04T17:18:33.508Z,
+          updated_at: 2026-10-04T17:18:33.513Z,
+          head_coach_user_id: null,
+          stripe_balance_transaction_id: 'txn_probe',
+          stripe_invoice_id: null,
+          currency: 'usd',
+          rail: 'card',
+          mechanism: 'separate_charge_transfer',
+          status: 'settled',
+          head_coach_bps: 0,
+          stripe_fee_cents: 200,
+          platform_fee_cents: 160,
+          head_coach_split_cents: 0,
+          coach_net_cents: 7640,
+          refunded_cents: 2000,
+          dispute_withdrawn_cents: 0,
+          dispute_fee_cents: 0,
+          target_platform_fee_cents: 160,
+          target_head_coach_cents: 0,
+          target_coach_net_cents: 5640,
+          settled_at: 2026-10-04T17:18:33.510Z,
+          adjusted_at: 2026-10-04T17:18:33.509Z,
+          last_error: null,
+          reconcile_requested_at: null,
+          reconcile_dispute_id: null,
+          reconcile_reason: null,
+          purchase_id: 'cp_probe',
+          coach_user_id: 'coach_1',
+          stripe_charge_id: 'ch_probe',
+          platform_bps: 200,
+          gross_cents: 8000
+        },
+        external: 5640,
+        rec: {
+          purchase_id: 'cp_probe',
+          status: 'ok',
+          drift_cents: 0,
+          stripe: {
+            amount_cents: 8000,
+            refunded_cents: 2000,
+            application_fee_cents: 0,
+            transfers_cents: 5640
+          },
+          ledger: {
+            destination_cents: 7640,
+            application_fee_cents: 160,
+            head_coach_cents: 0,
+            reversed_cents: 2000
+          },
+          notes: null
+        }
+      }
+
+      at test/aud-sol-f23-117-settlement-boundaries.spec.ts:104:13
+
+    console.log
+      AUD117_PROVISIONAL_FX {
+        failure: 'first Stripe read unavailable',
+        row: {
+          id: 'cs-13',
+          created_at: 2026-10-04T17:18:33.539Z,
+          updated_at: 2026-10-04T17:18:33.528Z,
+          head_coach_user_id: null,
+          stripe_balance_transaction_id: 'txn_probe',
+          stripe_invoice_id: null,
+          currency: 'usd',
+          rail: 'card',
+          mechanism: 'separate_charge_transfer',
+          status: 'settled',
+          head_coach_bps: 0,
+          stripe_fee_cents: 200,
+          platform_fee_cents: 160,
+          head_coach_split_cents: 0,
+          coach_net_cents: 7640,
+          refunded_cents: 2000,
+          dispute_withdrawn_cents: 0,
+          dispute_fee_cents: 0,
+          target_platform_fee_cents: 160,
+          target_head_coach_cents: 0,
+          target_coach_net_cents: 5640,
+          settled_at: 2026-10-04T17:18:33.528Z,
+          adjusted_at: 2026-10-04T17:18:33.527Z,
+          last_error: null,
+          reconcile_requested_at: null,
+          reconcile_dispute_id: null,
+          reconcile_reason: null,
+          purchase_id: 'cp_probe',
+          coach_user_id: 'coach_1',
+          stripe_charge_id: 'ch_probe',
+          platform_bps: 200,
+          gross_cents: 8000
+        },
+        external: 5640,
+        rec: {
+          purchase_id: 'cp_probe',
+          status: 'ok',
+          drift_cents: 0,
+          stripe: {
+            amount_cents: 8000,
+            refunded_cents: 2000,
+            application_fee_cents: 0,
+            transfers_cents: 5640
+          },
+          ledger: {
+            destination_cents: 7640,
+            application_fee_cents: 160,
+            head_coach_cents: 0,
+            reversed_cents: 2000
+          },
+          notes: null
+        }
+      }
+
+      at test/aud-sol-f23-117-settlement-boundaries.spec.ts:104:13
+
+    console.log
+      AUD117_NOTICE_RETRY_FLAG { noticeCount: 0, flag: 2026-10-04T17:18:33.568Z, external: 5640 }
+
+      at Object.<anonymous> (test/aud-sol-f23-117-settlement-boundaries.spec.ts:179:13)
+
+FAIL test/audit-sol-f34-117-683-v2.spec.ts (143 MB heap size)
+  ● Console
+
+    console.log
+      OBSERVATION_FX_NOTICE {"id":"pan-9","created_at":"2026-10-04T17:18:33.737Z","updated_at":"2026-10-04T17:18:33.737Z","currency":"usd","reinstated_cents":0,"inapp_status":"pending","inapp_notification_id":null,"push_status":"pending","push_notification_id":null,"email_status":"pending","email_attempts":0,"dispatch_attempts":0,"dispatch_claimed_at":null,"dispatched_at":null,"acknowledged_at":null,"settlement_id":"cs-2","payee_user_id":"coach_1","role":"coach","purchase_id":"cp_1","stripe_charge_id":"ch_1","event":"refund","charge_gross_cents":8000,"customer_refunded_cents":2000,"client_currency":"cad","client_refunded_cents":2500,"reversed_cents":2000,"held_cents":0,"held_tgp_fee_cents":0,"held_stripe_fee_cents":0,"held_dispute_fee_cents":0,"held_not_reversed_cents":0,"held_open_cents":0,"state_key":"2000-0-0","idempotency_key":"tgp-notice-ch_1-coach-refund-2000-0-0","title":"A client was refunded","body":"A client got 25.00 CAD back, $20.00 after conversion. $20.00 was taken back from that sale's payout. Nothing is held from your next sale."}
+
+      at Object.<anonymous> (test/audit-sol-f34-117-683-v2.spec.ts:43:11)
+
+    console.log
+      OBSERVATION_PENDING_CASH {"position":{"drift_cents":0,"platform_net_cents":98,"platform_cash_cents":98,"receivable_open_cents":0,"notes":[]},"rec":{"purchase_id":"cp_1","status":"unknown","drift_cents":0,"stripe":{"amount_cents":4900,"refunded_cents":0,"application_fee_cents":0,"transfers_cents":0},"ledger":{"destination_cents":0,"application_fee_cents":98,"head_coach_cents":0,"reversed_cents":0},"notes":"transfers_pending_cents=4630"}}
+
+      at Object.<anonymous> (test/audit-sol-f34-117-683-v2.spec.ts:63:11)
+
+  ● a provably never-sent pending transfer is not subtracted from platform cash
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 4728
+    Received: 98
+
+    ^[[0m ^[[90m 62 |^[[39m   expect(rec)^[[33m.^[[39mtoMatchObject({ status^[[33m:^[[39m ^[[32m'unknown'^[[39m^[[33m,^[[39m stripe^[[33m:^[[39m { transfers_cents^[[33m:^[[39m ^[[35m0^[[39m } })^[[33m;^[[39m
+     ^[[90m 63 |^[[39m   console^[[33m.^[[39mlog(^[[32m'OBSERVATION_PENDING_CASH'^[[39m^[[33m,^[[39m ^[[33mJSON^[[39m^[[33m.^[[39mstringify({ position^[[33m,^[[39m rec }))^[[33m;^[[39m
+    ^[[31m^[[1m>^[[22m^[[39m^[[90m 64 |^[[39m   expect(position^[[33m.^[[39mplatform_cash_cents)^[[33m.^[[39mtoBe(^[[35m4^[[39m_728)^[[33m;^[[39m
+     ^[[90m    |^[[39m                                        ^[[31m^[[1m^^[[22m^[[39m
+     ^[[90m 65 |^[[39m })^[[33m;^[[39m
+     ^[[90m 66 |^[[39m
+     ^[[90m 67 |^[[39m it(^[[32m'an explicitly incomplete refund list without a cursor is unavailable, never zero debits'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+
+      at Object.<anonymous> (test/audit-sol-f34-117-683-v2.spec.ts:64:40)
+
+  ● control: a full refund debit higher than original settlement gross is recovered exactly once
+
+    RefundStateUnavailableError: SFEE_REFUND_STATE_UNAVAILABLE charge=ch_1 kind=refund_page_malformed
+
+    ^[[0m ^[[90m 163 |^[[39m   type ^[[33mRefundPage^[[39m ^[[33m=^[[39m ^[[33mAwaited^[[39m^[[33m<^[[39m^[[33mReturnType^[[39m^[[33m<^[[39m^[[33mStripeConnectApiService^[[39m[^[[32m'listChargeRefunds'^[[39m]^[[33m>>^[[39m^[[33m;^[[39m
+     ^[[90m 164 |^[[39m   ^[[36mconst^[[39m cur ^[[33m=^[[39m settlementCurrency^[[33m?^[[39m^[[33m.^[[39mtoLowerCase() ^[[33m?^[[39m^[[33m?^[[39m ^[[36mnull^[[39m^[[33m;^[[39m
+    ^[[31m^[[1m>^[[22m^[[39m^[[90m 165 |^[[39m   ^[[36mconst^[[39m unavailable ^[[33m=^[[39m (kind^[[33m:^[[39m string) ^[[33m=>^[[39m ^[[36mnew^[[39m ^[[33mRefundStateUnavailableError^[[39m(chargeId^[[33m,^[[39m ^[[32m`kind=${kind}`^[[39m)^[[33m;^[[39m
+     ^[[90m     |^[[39m                                         ^[[31m^[[1m^^[[22m^[[39m
+     ^[[90m 166 |^[[39m   ^[[36mconst^[[39m list^[[33m:^[[39m ^[[33mChargeRefundList^[[39m ^[[33m=^[[39m {
+     ^[[90m 167 |^[[39m     refunds^[[33m:^[[39m []^[[33m,^[[39m
+     ^[[90m 168 |^[[39m     succeeded_debit_cents^[[33m:^[[39m ^[[35m0^[[39m^[[33m,^[[39m^[[0m
+
+      at unavailable (src/connect/fees/charge-settlement.service.ts:165:41)
+      at chargeRefundsFromStripe (src/connect/fees/charge-settlement.service.ts:185:15)
+      at refundedNow (src/connect/fees/charge-settlement.service.ts:1442:20)
+      at ChargeSettlementService.applyAdjustmentsLocked (src/connect/fees/charge-settlement.service.ts:1449:32)
+      at ChargeLock.run (src/connect/fees/charge-lock.ts:173:14)
+      at ChargeSettlementService.applyAdjustments (src/connect/fees/charge-settlement.service.ts:1354:23)
+      at Object.<anonymous> (test/audit-sol-f34-117-683-v2.spec.ts:82:3)
+
+^[[33m[Nest] 2838  - ^[[39m10/04/2026, 5:18:33 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[33mSFEE_TRANSFER_FAILED transfer=tr-15 kind=coach_net purchase=cp_1 settlement=cs-11 attempt=1/6 alert=false: kind=stripe http=503 type=api_error code=none; not visible at Stripe yet, re-checked before any re-send^[[39m
+FAIL test/audit-sol-f34-117-683-v1.spec.ts (167 MB heap size)
+^[[33m[Nest] 2838  - ^[[39m10/04/2026, 5:18:33 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[33mSFEE_TRANSFER_FAILED transfer=tr-15 kind=coach_net purchase=cp_1 settlement=cs-11 attempt=1/6 alert=false: kind=stripe http=503 type=api_error code=none; not visible at Stripe yet, re-checked before any re-send^[[39m
+  ● Console
+
+    console.log
+      OBSERVATION_FX_NOTICE {"id":"pan-9","created_at":"2026-10-04T17:18:33.957Z","updated_at":"2026-10-04T17:18:33.957Z","currency":"usd","reinstated_cents":0,"inapp_status":"pending","inapp_notification_id":null,"push_status":"pending","push_notification_id":null,"email_status":"pending","email_attempts":0,"dispatch_attempts":0,"dispatch_claimed_at":null,"dispatched_at":null,"acknowledged_at":null,"settlement_id":"cs-2","payee_user_id":"coach_1","role":"coach","purchase_id":"cp_1","stripe_charge_id":"ch_1","event":"refund","charge_gross_cents":8000,"customer_refunded_cents":2000,"client_currency":"cad","client_refunded_cents":2500,"reversed_cents":2000,"held_cents":0,"held_tgp_fee_cents":0,"held_stripe_fee_cents":0,"held_dispute_fee_cents":0,"held_not_reversed_cents":0,"held_open_cents":0,"state_key":"2000-0-0","idempotency_key":"tgp-notice-ch_1-coach-refund-2000-0-0","title":"A client was refunded","body":"A client got 25.00 CAD back, $20.00 after conversion. $20.00 was taken back from that sale's payout. Nothing is held from your next sale."}
+
+      at Object.<anonymous> (test/audit-sol-f34-117-683-v1.spec.ts:43:11)
+
+    console.log
+      OBSERVATION_PENDING_CASH {"position":{"drift_cents":0,"platform_net_cents":98,"platform_cash_cents":98,"receivable_open_cents":0,"notes":[]},"rec":{"purchase_id":"cp_1","status":"unknown","drift_cents":0,"stripe":{"amount_cents":4900,"refunded_cents":0,"application_fee_cents":0,"transfers_cents":0},"ledger":{"destination_cents":0,"application_fee_cents":98,"head_coach_cents":0,"reversed_cents":0},"notes":"transfers_pending_cents=4630"}}
+
+      at Object.<anonymous> (test/audit-sol-f34-117-683-v1.spec.ts:63:11)
+
+  ● a provably never-sent pending transfer is not subtracted from platform cash
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 4728
+    Received: 98
+
+    ^[[0m ^[[90m 62 |^[[39m   expect(rec)^[[33m.^[[39mtoMatchObject({ status^[[33m:^[[39m ^[[32m'unknown'^[[39m^[[33m,^[[39m stripe^[[33m:^[[39m { transfers_cents^[[33m:^[[39m ^[[35m0^[[39m } })^[[33m;^[[39m
+     ^[[90m 63 |^[[39m   console^[[33m.^[[39mlog(^[[32m'OBSERVATION_PENDING_CASH'^[[39m^[[33m,^[[39m ^[[33mJSON^[[39m^[[33m.^[[39mstringify({ position^[[33m,^[[39m rec }))^[[33m;^[[39m
+    ^[[31m^[[1m>^[[22m^[[39m^[[90m 64 |^[[39m   expect(position^[[33m.^[[39mplatform_cash_cents)^[[33m.^[[39mtoBe(^[[35m4^[[39m_728)^[[33m;^[[39m
+     ^[[90m    |^[[39m                                        ^[[31m^[[1m^^[[22m^[[39m
+     ^[[90m 65 |^[[39m })^[[33m;^[[39m
+     ^[[90m 66 |^[[39m
+     ^[[90m 67 |^[[39m it(^[[32m'an explicitly incomplete refund list without a cursor is unavailable, never zero debits'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+
+      at Object.<anonymous> (test/audit-sol-f34-117-683-v1.spec.ts:64:40)
+
+  ● control: a full refund debit higher than original settlement gross is recovered exactly once
+
+    RefundStateUnavailableError: SFEE_REFUND_STATE_UNAVAILABLE charge=ch_1 kind=refund_page_malformed
+
+    ^[[0m ^[[90m 163 |^[[39m   type ^[[33mRefundPage^[[39m ^[[33m=^[[39m ^[[33mAwaited^[[39m^[[33m<^[[39m^[[33mReturnType^[[39m^[[33m<^[[39m^[[33mStripeConnectApiService^[[39m[^[[32m'listChargeRefunds'^[[39m]^[[33m>>^[[39m^[[33m;^[[39m
+     ^[[90m 164 |^[[39m   ^[[36mconst^[[39m cur ^[[33m=^[[39m settlementCurrency^[[33m?^[[39m^[[33m.^[[39mtoLowerCase() ^[[33m?^[[39m^[[33m?^[[39m ^[[36mnull^[[39m^[[33m;^[[39m
+    ^[[31m^[[1m>^[[22m^[[39m^[[90m 165 |^[[39m   ^[[36mconst^[[39m unavailable ^[[33m=^[[39m (kind^[[33m:^[[39m string) ^[[33m=>^[[39m ^[[36mnew^[[39m ^[[33mRefundStateUnavailableError^[[39m(chargeId^[[33m,^[[39m ^[[32m`kind=${kind}`^[[39m)^[[33m;^[[39m
+     ^[[90m     |^[[39m                                         ^[[31m^[[1m^^[[22m^[[39m
+     ^[[90m 166 |^[[39m   ^[[36mconst^[[39m list^[[33m:^[[39m ^[[33mChargeRefundList^[[39m ^[[33m=^[[39m {
+     ^[[90m 167 |^[[39m     refunds^[[33m:^[[39m []^[[33m,^[[39m
+     ^[[90m 168 |^[[39m     succeeded_debit_cents^[[33m:^[[39m ^[[35m0^[[39m^[[33m,^[[39m^[[0m
+
+      at unavailable (src/connect/fees/charge-settlement.service.ts:165:41)
+      at chargeRefundsFromStripe (src/connect/fees/charge-settlement.service.ts:185:15)
+      at refundedNow (src/connect/fees/charge-settlement.service.ts:1442:20)
+      at ChargeSettlementService.applyAdjustmentsLocked (src/connect/fees/charge-settlement.service.ts:1449:32)
+      at ChargeLock.run (src/connect/fees/charge-lock.ts:173:14)
+      at ChargeSettlementService.applyAdjustments (src/connect/fees/charge-settlement.service.ts:1354:23)
+      at Object.<anonymous> (test/audit-sol-f34-117-683-v1.spec.ts:82:3)
+
+PASS test/audit-sol-f34-683.spec.ts (183 MB heap size)
+
+Test Suites: 2 failed, 3 passed, 5 total
+Tests:       4 failed, 36 passed, 40 total
+Snapshots:   0 total
+Time:        1.984 s
+Ran all test suites matching test/s-fee-r15-deferred-fx-notice-flag.spec.ts|test/audit-sol-f34-683.spec.ts|test/audit-sol-f34-117-683-v1.spec.ts|test/audit-sol-f34-117-683-v2.spec.ts|test/aud-sol-f23-117-settlement-boundaries.spec.ts.
+^[[33m[Nest] 2838  - ^[[39m10/04/2026, 5:18:34 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[33mSFEE_TRANSFER_FAILED transfer=tr-21 kind=coach_net purchase=cp_audit settlement=cs-17 attempt=1/6 alert=false: kind=stripe http=503 type=api_error code=none; not visible at Stripe yet, re-checked before any re-send^[[39m
+##[error]Process completed with exit code 1.
+targeted	Post Run actions/checkout@v6	﻿2026-10-04T17:18:34.3227338Z Post job cleanup.
+[command]/usr/bin/git version
+git version 2.55.0
+Temporarily overriding HOME='/home/runner/work/_temp/d11346fe-ca6b-43da-a85b-d6b382af9cfe' before making global git config changes
+Adding repository directory to the temporary git global config as a safe directory
+[command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+Removing SSH command configuration
+[command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Removing HTTP extra header
+[command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Removing includeIf entries pointing to credentials config files
+[command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+includeif.gitdir:/github/workspace/.git.path
+includeif.gitdir:/github/workspace/.git/worktrees/*.path
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+/home/runner/work/_temp/git-credentials-c0a211e0-ddae-4c83-a682-a24877cae242.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-c0a211e0-ddae-4c83-a682-a24877cae242.config
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+/home/runner/work/_temp/git-credentials-c0a211e0-ddae-4c83-a682-a24877cae242.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-c0a211e0-ddae-4c83-a682-a24877cae242.config
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+/github/runner_temp/git-credentials-c0a211e0-ddae-4c83-a682-a24877cae242.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-c0a211e0-ddae-4c83-a682-a24877cae242.config
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+/github/runner_temp/git-credentials-c0a211e0-ddae-4c83-a682-a24877cae242.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-c0a211e0-ddae-4c83-a682-a24877cae242.config
+[command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Removing credentials config '/home/runner/work/_temp/git-credentials-c0a211e0-ddae-4c83-a682-a24877cae242.config'
+targeted	Stop containers	﻿2026-10-04T17:18:34.4885937Z Print service container logs: 34e982689e4148f88a1ee933460a5b06_redis7alpine_6675e3
+##[command]/usr/bin/docker logs --details 7cc521383ec09b426f96dbc9e5f3d0e2c258b87fa01920764ae96ac8daed10d0
+ 1:C 04 Oct 2026 17:17:49.843 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+ 1:C 04 Oct 2026 17:17:49.843 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+ 1:C 04 Oct 2026 17:17:49.843 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+ 1:C 04 Oct 2026 17:17:49.843 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+ 1:M 04 Oct 2026 17:17:49.844 * monotonic clock: POSIX clock_gettime
+ 1:M 04 Oct 2026 17:17:49.844 * Running mode=standalone, port=6379.
+ 1:M 04 Oct 2026 17:17:49.844 * Server initialized
+ 1:M 04 Oct 2026 17:17:49.844 * Ready to accept connections tcp
+Stop and remove container: 34e982689e4148f88a1ee933460a5b06_redis7alpine_6675e3
+##[command]/usr/bin/docker rm --force 7cc521383ec09b426f96dbc9e5f3d0e2c258b87fa01920764ae96ac8daed10d0
+7cc521383ec09b426f96dbc9e5f3d0e2c258b87fa01920764ae96ac8daed10d0
+Remove container network: github_network_109ca748ce054ab687b86bf758be2184
+##[command]/usr/bin/docker network rm github_network_109ca748ce054ab687b86bf758be2184
+github_network_109ca748ce054ab687b86bf758be2184
+targeted	Complete job	﻿2026-10-04T17:18:39.5106030Z Cleaning up orphan processes

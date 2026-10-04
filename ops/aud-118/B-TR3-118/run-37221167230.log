@@ -1,0 +1,634 @@
+targeted	Set up job	﻿2026-10-04T17:36:41.9988391Z Current runner version: '2.337.0'
+targeted	Set up job	2026-10-04T17:36:42.0006108Z ##[group]Runner Image Provisioner
+targeted	Set up job	2026-10-04T17:36:42.0006844Z Hosted Compute Agent
+targeted	Set up job	2026-10-04T17:36:42.0007344Z Version: 20260901.588
+targeted	Set up job	2026-10-04T17:36:42.0007913Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	Set up job	2026-10-04T17:36:42.0008521Z Build Date: 2026-09-01T19:56:44Z
+targeted	Set up job	2026-10-04T17:36:42.0009078Z Worker ID: {c00242c3-057c-4935-8f8e-85b36d262c9b}
+targeted	Set up job	2026-10-04T17:36:42.0009674Z Azure Region: centralus
+targeted	Set up job	2026-10-04T17:36:42.0010183Z ##[endgroup]
+targeted	Set up job	2026-10-04T17:36:42.0011268Z ##[group]Operating System
+targeted	Set up job	2026-10-04T17:36:42.0012042Z Ubuntu
+targeted	Set up job	2026-10-04T17:36:42.0012634Z 24.04.5
+targeted	Set up job	2026-10-04T17:36:42.0013077Z LTS
+targeted	Set up job	2026-10-04T17:36:42.0013529Z ##[endgroup]
+targeted	Set up job	2026-10-04T17:36:42.0014282Z ##[group]Runner Image
+targeted	Set up job	2026-10-04T17:36:42.0014790Z Image: ubuntu-24.04
+targeted	Set up job	2026-10-04T17:36:42.0015243Z Version: 20260927.320.1
+targeted	Set up job	2026-10-04T17:36:42.0016179Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	Set up job	2026-10-04T17:36:42.0017613Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	Set up job	2026-10-04T17:36:42.0018388Z ##[endgroup]
+targeted	Set up job	2026-10-04T17:36:42.0019397Z ##[group]GITHUB_TOKEN Permissions
+targeted	Set up job	2026-10-04T17:36:42.0021098Z Contents: read
+targeted	Set up job	2026-10-04T17:36:42.0021554Z Metadata: read
+targeted	Set up job	2026-10-04T17:36:42.0022329Z Packages: read
+targeted	Set up job	2026-10-04T17:36:42.0022804Z ##[endgroup]
+targeted	Set up job	2026-10-04T17:36:42.0024452Z Secret source: Actions
+targeted	Set up job	2026-10-04T17:36:42.0025206Z Cache mode: write
+targeted	Set up job	2026-10-04T17:36:42.0025762Z Prepare workflow directory
+targeted	Set up job	2026-10-04T17:36:42.0368770Z Prepare all required actions
+targeted	Set up job	2026-10-04T17:36:42.0408525Z Getting action download info
+targeted	Set up job	2026-10-04T17:36:42.2793559Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	Set up job	2026-10-04T17:36:42.3738927Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	Set up job	2026-10-04T17:36:42.5471228Z Complete job name: targeted
+targeted	Initialize containers	﻿2026-10-04T17:36:42.5837044Z ##[group]Checking docker version
+targeted	Initialize containers	2026-10-04T17:36:42.5847704Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+targeted	Initialize containers	2026-10-04T17:36:42.6559430Z '1.48'
+targeted	Initialize containers	2026-10-04T17:36:42.6569518Z Docker daemon API version: '1.48'
+targeted	Initialize containers	2026-10-04T17:36:42.6570245Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+targeted	Initialize containers	2026-10-04T17:36:42.6701611Z '1.48'
+targeted	Initialize containers	2026-10-04T17:36:42.6707950Z Docker client API version: '1.48'
+targeted	Initialize containers	2026-10-04T17:36:42.6712635Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T17:36:42.6715374Z ##[group]Clean up resources from previous jobs
+targeted	Initialize containers	2026-10-04T17:36:42.6719516Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=50b297"
+targeted	Initialize containers	2026-10-04T17:36:42.6837717Z ##[command]/usr/bin/docker network prune --force --filter "label=50b297"
+targeted	Initialize containers	2026-10-04T17:36:42.6940287Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T17:36:42.6940893Z ##[group]Create local container network
+targeted	Initialize containers	2026-10-04T17:36:42.6948581Z ##[command]/usr/bin/docker network create --label 50b297 github_network_864ddbf9ff24486f89ee78b409be7b18
+targeted	Initialize containers	2026-10-04T17:36:42.7308316Z 8fe5e0f8b7fcf636ad54796c60673235c192869668326df83eb9d82199d9d888
+targeted	Initialize containers	2026-10-04T17:36:42.7320097Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T17:36:42.7342430Z ##[group]Starting redis service container
+targeted	Initialize containers	2026-10-04T17:36:42.7358793Z ##[command]/usr/bin/docker pull redis:7-alpine
+targeted	Initialize containers	2026-10-04T17:36:43.2694408Z 7-alpine: Pulling from library/redis
+targeted	Initialize containers	2026-10-04T17:36:43.4217917Z 16333ee0c00f: Pulling fs layer
+targeted	Initialize containers	2026-10-04T17:36:43.4222012Z 83234986c742: Pulling fs layer
+targeted	Initialize containers	2026-10-04T17:36:43.4222949Z 7eb50503c2b0: Pulling fs layer
+targeted	Initialize containers	2026-10-04T17:36:43.4223772Z 1522f9c6f453: Pulling fs layer
+targeted	Initialize containers	2026-10-04T17:36:43.4224571Z 9928009b15c8: Pulling fs layer
+targeted	Initialize containers	2026-10-04T17:36:43.4225422Z 4f4fb700ef54: Pulling fs layer
+targeted	Initialize containers	2026-10-04T17:36:43.4226137Z 4eb14bae0e1d: Pulling fs layer
+targeted	Initialize containers	2026-10-04T17:36:43.4226913Z 1522f9c6f453: Waiting
+targeted	Initialize containers	2026-10-04T17:36:43.4227522Z 9928009b15c8: Waiting
+targeted	Initialize containers	2026-10-04T17:36:43.4228594Z 4f4fb700ef54: Waiting
+targeted	Initialize containers	2026-10-04T17:36:43.4229282Z 4eb14bae0e1d: Waiting
+targeted	Initialize containers	2026-10-04T17:36:43.5826472Z 83234986c742: Download complete
+targeted	Initialize containers	2026-10-04T17:36:43.6029171Z 7eb50503c2b0: Verifying Checksum
+targeted	Initialize containers	2026-10-04T17:36:43.6031413Z 7eb50503c2b0: Download complete
+targeted	Initialize containers	2026-10-04T17:36:43.6613623Z 16333ee0c00f: Download complete
+targeted	Initialize containers	2026-10-04T17:36:43.7224988Z 9928009b15c8: Verifying Checksum
+targeted	Initialize containers	2026-10-04T17:36:43.7226652Z 9928009b15c8: Download complete
+targeted	Initialize containers	2026-10-04T17:36:43.7504536Z 16333ee0c00f: Pull complete
+targeted	Initialize containers	2026-10-04T17:36:43.8018923Z 4f4fb700ef54: Verifying Checksum
+targeted	Initialize containers	2026-10-04T17:36:43.8020158Z 4f4fb700ef54: Download complete
+targeted	Initialize containers	2026-10-04T17:36:43.8483650Z 4eb14bae0e1d: Verifying Checksum
+targeted	Initialize containers	2026-10-04T17:36:43.8485776Z 4eb14bae0e1d: Download complete
+targeted	Initialize containers	2026-10-04T17:36:43.8717962Z 83234986c742: Pull complete
+targeted	Initialize containers	2026-10-04T17:36:43.9266045Z 1522f9c6f453: Verifying Checksum
+targeted	Initialize containers	2026-10-04T17:36:43.9267506Z 1522f9c6f453: Download complete
+targeted	Initialize containers	2026-10-04T17:36:44.0232432Z 7eb50503c2b0: Pull complete
+targeted	Initialize containers	2026-10-04T17:36:44.3670698Z 1522f9c6f453: Pull complete
+targeted	Initialize containers	2026-10-04T17:36:44.3759996Z 9928009b15c8: Pull complete
+targeted	Initialize containers	2026-10-04T17:36:44.3832343Z 4f4fb700ef54: Pull complete
+targeted	Initialize containers	2026-10-04T17:36:44.3938730Z 4eb14bae0e1d: Pull complete
+targeted	Initialize containers	2026-10-04T17:36:44.3977991Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+targeted	Initialize containers	2026-10-04T17:36:44.3993677Z Status: Downloaded newer image for redis:7-alpine
+targeted	Initialize containers	2026-10-04T17:36:44.4002967Z docker.io/library/redis:7-alpine
+targeted	Initialize containers	2026-10-04T17:36:44.4028435Z ##[command]/usr/bin/docker create --name bca1b002eaee411fa58b221fa712951d_redis7alpine_eef9a0 --label 50b297 --network github_network_864ddbf9ff24486f89ee78b409be7b18 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+targeted	Initialize containers	2026-10-04T17:36:44.4247888Z 36b14a7e652bc74654ea5eeb7be4012ecda937fbafa0504b633fa03744649a3a
+targeted	Initialize containers	2026-10-04T17:36:44.4262217Z ##[command]/usr/bin/docker start 36b14a7e652bc74654ea5eeb7be4012ecda937fbafa0504b633fa03744649a3a
+targeted	Initialize containers	2026-10-04T17:36:44.6099550Z 36b14a7e652bc74654ea5eeb7be4012ecda937fbafa0504b633fa03744649a3a
+targeted	Initialize containers	2026-10-04T17:36:44.6137755Z ##[command]/usr/bin/docker ps --all --filter id=36b14a7e652bc74654ea5eeb7be4012ecda937fbafa0504b633fa03744649a3a --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+targeted	Initialize containers	2026-10-04T17:36:44.6243294Z 36b14a7e652bc74654ea5eeb7be4012ecda937fbafa0504b633fa03744649a3a Up Less than a second (health: starting)
+targeted	Initialize containers	2026-10-04T17:36:44.6254838Z ##[command]/usr/bin/docker port 36b14a7e652bc74654ea5eeb7be4012ecda937fbafa0504b633fa03744649a3a
+targeted	Initialize containers	2026-10-04T17:36:44.6363310Z 6379/tcp -> 0.0.0.0:6379
+targeted	Initialize containers	2026-10-04T17:36:44.6363925Z 6379/tcp -> [::]:6379
+targeted	Initialize containers	2026-10-04T17:36:44.6391566Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T17:36:44.6398827Z ##[group]Waiting for all services to be ready
+targeted	Initialize containers	2026-10-04T17:36:44.6410182Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 36b14a7e652bc74654ea5eeb7be4012ecda937fbafa0504b633fa03744649a3a
+targeted	Initialize containers	2026-10-04T17:36:44.6517377Z starting
+targeted	Initialize containers	2026-10-04T17:36:44.6530248Z redis service is starting, waiting 2 seconds before checking again.
+targeted	Initialize containers	2026-10-04T17:36:46.6526375Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 36b14a7e652bc74654ea5eeb7be4012ecda937fbafa0504b633fa03744649a3a
+targeted	Initialize containers	2026-10-04T17:36:46.6640558Z starting
+targeted	Initialize containers	2026-10-04T17:36:46.6648664Z redis service is starting, waiting 3 seconds before checking again.
+targeted	Initialize containers	2026-10-04T17:36:50.6234399Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 36b14a7e652bc74654ea5eeb7be4012ecda937fbafa0504b633fa03744649a3a
+targeted	Initialize containers	2026-10-04T17:36:50.6354910Z healthy
+targeted	Initialize containers	2026-10-04T17:36:50.6386685Z redis service is healthy.
+targeted	Initialize containers	2026-10-04T17:36:50.6387550Z ##[endgroup]
+targeted	Run actions/checkout@v6	﻿2026-10-04T17:36:50.6624160Z ##[group]Run actions/checkout@v6
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.6624616Z with:
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.6624961Z   repository: BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.6626986Z   token: ***
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.6627262Z   ssh-strict: true
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.6627559Z   ssh-user: git
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.6627824Z   persist-credentials: true
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.6628102Z   clean: true
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.6628559Z   sparse-checkout-cone-mode: true
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.6628862Z   fetch-depth: 1
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.6629128Z   fetch-tags: false
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.6629384Z   show-progress: true
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.6629634Z   lfs: false
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.6629918Z   submodules: false
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.6630207Z   set-safe-directory: true
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.6630507Z   allow-unsafe-pr-checkout: false
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.6630886Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7470337Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7471582Z ##[group]Getting Git version info
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7472408Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7473049Z [command]/usr/bin/git version
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7517338Z git version 2.55.0
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7533887Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7545067Z Temporarily overriding HOME='/home/runner/work/_temp/06930bf2-006d-4e01-9aed-e0091ce3bc8a' before making global git config changes
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7546259Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7549835Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7586533Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7591487Z ##[group]Determining repository object format
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7593669Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7594317Z ##[group]Initializing the repository
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7597150Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7681564Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7682583Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7683295Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7683930Z hint: call:
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7684276Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7684695Z hint: 	git config --global init.defaultBranch <name>
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7685238Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7685669Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7686321Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7686904Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7687253Z hint: 	git branch -m <name>
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7687670Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7688175Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7689070Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7694615Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7730885Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7731603Z ##[group]Disabling automatic garbage collection
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7734616Z [command]/usr/bin/git config --local gc.auto 0
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7756210Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7757019Z ##[group]Setting up auth
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7757521Z Removing SSH command configuration
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7761329Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.7783102Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.8038105Z Removing HTTP extra header
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.8042494Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.8064311Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.8244612Z Removing includeIf entries pointing to credentials config files
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.8250037Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.8272160Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.8426886Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-38d588ac-3a69-4ce8-b482-4571ef52d8a0.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.8452984Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-38d588ac-3a69-4ce8-b482-4571ef52d8a0.config
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.8474822Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-38d588ac-3a69-4ce8-b482-4571ef52d8a0.config
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.8499994Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-38d588ac-3a69-4ce8-b482-4571ef52d8a0.config
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.8521817Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-38d588ac-3a69-4ce8-b482-4571ef52d8a0.config
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.8547709Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.8548303Z ##[group]Fetching the repository
+targeted	Run actions/checkout@v6	2026-10-04T17:36:50.8554834Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +90e7281ba24f50f318b1506ec5fee76fa52d26cf:refs/remotes/origin/ci/B-TR3-118-672-after
+targeted	Run actions/checkout@v6	2026-10-04T17:36:52.5065746Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T17:36:52.5066683Z  * [new ref]         90e7281ba24f50f318b1506ec5fee76fa52d26cf -> origin/ci/B-TR3-118-672-after
+targeted	Run actions/checkout@v6	2026-10-04T17:36:52.5074904Z [command]/usr/bin/git branch --list --remote origin/ci/B-TR3-118-672-after
+targeted	Run actions/checkout@v6	2026-10-04T17:36:52.5092693Z   origin/ci/B-TR3-118-672-after
+targeted	Run actions/checkout@v6	2026-10-04T17:36:52.5098529Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-TR3-118-672-after
+targeted	Run actions/checkout@v6	2026-10-04T17:36:52.5115120Z 90e7281ba24f50f318b1506ec5fee76fa52d26cf
+targeted	Run actions/checkout@v6	2026-10-04T17:36:52.5116803Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T17:36:52.5117283Z ##[group]Determining the checkout info
+targeted	Run actions/checkout@v6	2026-10-04T17:36:52.5118618Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T17:36:52.5123381Z [command]/usr/bin/git sparse-checkout disable
+targeted	Run actions/checkout@v6	2026-10-04T17:36:52.5165308Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	Run actions/checkout@v6	2026-10-04T17:36:52.5185842Z ##[group]Checking out the ref
+targeted	Run actions/checkout@v6	2026-10-04T17:36:52.5189385Z [command]/usr/bin/git checkout --progress --force -B ci/B-TR3-118-672-after refs/remotes/origin/ci/B-TR3-118-672-after
+targeted	Run actions/checkout@v6	2026-10-04T17:36:52.6688836Z Switched to a new branch 'ci/B-TR3-118-672-after'
+targeted	Run actions/checkout@v6	2026-10-04T17:36:52.6692087Z branch 'ci/B-TR3-118-672-after' set up to track 'origin/ci/B-TR3-118-672-after'.
+targeted	Run actions/checkout@v6	2026-10-04T17:36:52.6696942Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T17:36:52.6726401Z [command]/usr/bin/git log -1 --format=%H
+targeted	Run actions/checkout@v6	2026-10-04T17:36:52.6742965Z 90e7281ba24f50f318b1506ec5fee76fa52d26cf
+targeted	Run actions/setup-node@v6	﻿2026-10-04T17:36:52.6935692Z ##[group]Run actions/setup-node@v6
+targeted	Run actions/setup-node@v6	2026-10-04T17:36:52.6935988Z with:
+targeted	Run actions/setup-node@v6	2026-10-04T17:36:52.6936284Z   node-version: 20
+targeted	Run actions/setup-node@v6	2026-10-04T17:36:52.6936563Z   cache: npm
+targeted	Run actions/setup-node@v6	2026-10-04T17:36:52.6936820Z   check-latest: false
+targeted	Run actions/setup-node@v6	2026-10-04T17:36:52.6938652Z   token: ***
+targeted	Run actions/setup-node@v6	2026-10-04T17:36:52.6938896Z   package-manager-cache: true
+targeted	Run actions/setup-node@v6	2026-10-04T17:36:52.6939215Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T17:36:52.8064357Z Attempting to download 20...
+targeted	Run actions/setup-node@v6	2026-10-04T17:36:53.5386621Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+targeted	Run actions/setup-node@v6	2026-10-04T17:36:54.0215548Z Extracting ...
+targeted	Run actions/setup-node@v6	2026-10-04T17:36:54.0297932Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/26103ff2-68e0-4520-9cbd-36714dee3782 -f /home/runner/work/_temp/bc3c4596-57d5-4f43-a7c9-f83a40bdb34c
+targeted	Run actions/setup-node@v6	2026-10-04T17:36:54.9763169Z Adding to the cache ...
+targeted	Run actions/setup-node@v6	2026-10-04T17:36:56.5921582Z ##[group]Environment details
+targeted	Run actions/setup-node@v6	2026-10-04T17:36:56.7715587Z node: v20.20.2
+targeted	Run actions/setup-node@v6	2026-10-04T17:36:56.7716349Z npm: 10.8.2
+targeted	Run actions/setup-node@v6	2026-10-04T17:36:56.7716856Z yarn: 1.22.22
+targeted	Run actions/setup-node@v6	2026-10-04T17:36:56.7717640Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T17:36:56.7729978Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+targeted	Run actions/setup-node@v6	2026-10-04T17:36:56.8530191Z /home/runner/.npm
+targeted	Run actions/setup-node@v6	2026-10-04T17:36:56.9758968Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+targeted	Run actions/setup-node@v6	2026-10-04T17:36:58.0363641Z Received 86828135 of 86828135 (100.0%), 91.6 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-04T17:36:58.0364310Z Cache Size: ~83 MB (86828135 B)
+targeted	Run actions/setup-node@v6	2026-10-04T17:36:58.0452996Z [command]/usr/bin/tar -xf /home/runner/work/_temp/88b58619-bd81-41e2-82db-e3d39aa64361/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+targeted	Run actions/setup-node@v6	2026-10-04T17:36:58.1406913Z Cache restored successfully
+targeted	Run actions/setup-node@v6	2026-10-04T17:36:58.1439721Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+targeted	Run npm ci	﻿2026-10-04T17:36:58.1580654Z ##[group]Run npm ci
+targeted	Run npm ci	2026-10-04T17:36:58.1581029Z ^[[36;1mnpm ci^[[0m
+targeted	Run npm ci	2026-10-04T17:36:58.1776394Z shell: /usr/bin/bash -e {0}
+targeted	Run npm ci	2026-10-04T17:36:58.1776810Z ##[endgroup]
+targeted	Run npm ci	2026-10-04T17:37:02.6194793Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	Run npm ci	2026-10-04T17:37:02.7660464Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+targeted	Run npm ci	2026-10-04T17:37:04.3717264Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T17:37:05.2782878Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T17:37:05.2824648Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T17:37:05.3412668Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T17:37:15.9627052Z 
+targeted	Run npm ci	2026-10-04T17:37:15.9628052Z > growth-project-backend@1.0.0 postinstall
+targeted	Run npm ci	2026-10-04T17:37:15.9628601Z > prisma generate
+targeted	Run npm ci	2026-10-04T17:37:15.9628777Z 
+targeted	Run npm ci	2026-10-04T17:37:16.6543680Z Prisma schema loaded from prisma/schema.prisma
+targeted	Run npm ci	2026-10-04T17:37:19.7280250Z ┌─────────────────────────────────────────────────────────┐
+targeted	Run npm ci	2026-10-04T17:37:19.7281522Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+targeted	Run npm ci	2026-10-04T17:37:19.7282193Z 
+targeted	Run npm ci	2026-10-04T17:37:19.7282555Z │                                                         │
+targeted	Run npm ci	2026-10-04T17:37:19.7283490Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.66s
+targeted	Run npm ci	2026-10-04T17:37:19.7284375Z │  This is a major update - please follow the guide at    │
+targeted	Run npm ci	2026-10-04T17:37:19.7285157Z │  https://pris.ly/d/major-version-upgrade                │
+targeted	Run npm ci	2026-10-04T17:37:19.7285903Z │                                                         │
+targeted	Run npm ci	2026-10-04T17:37:19.7286557Z │  Run the following to update                            │
+targeted	Run npm ci	2026-10-04T17:37:19.7287299Z │    npm i --save-dev prisma@latest                       │
+targeted	Run npm ci	2026-10-04T17:37:19.7288334Z │    npm i @prisma/client@latest                          │
+targeted	Run npm ci	2026-10-04T17:37:19.7289068Z └─────────────────────────────────────────────────────────┘
+targeted	Run npm ci	2026-10-04T17:37:19.7289440Z 
+targeted	Run npm ci	2026-10-04T17:37:19.7289899Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	Run npm ci	2026-10-04T17:37:19.7290392Z 
+targeted	Run npm ci	2026-10-04T17:37:19.7291060Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+targeted	Run npm ci	2026-10-04T17:37:19.7291598Z 
+targeted	Run npm ci	2026-10-04T17:37:19.7610129Z 
+targeted	Run npm ci	2026-10-04T17:37:19.7610971Z > growth-project-backend@1.0.0 prepare
+targeted	Run npm ci	2026-10-04T17:37:19.7611666Z > lefthook install
+targeted	Run npm ci	2026-10-04T17:37:19.7612070Z 
+targeted	Run npm ci	2026-10-04T17:37:19.8004082Z sync hooks: ✔️(commit-msg, pre-commit)
+targeted	Run npm ci	2026-10-04T17:37:19.8162770Z 
+targeted	Run npm ci	2026-10-04T17:37:19.8163930Z added 1115 packages, and audited 1116 packages in 22s
+targeted	Run npm ci	2026-10-04T17:37:19.8164221Z 
+targeted	Run npm ci	2026-10-04T17:37:19.8164499Z 202 packages are looking for funding
+targeted	Run npm ci	2026-10-04T17:37:19.8164889Z   run `npm fund` for details
+targeted	Run npm ci	2026-10-04T17:37:19.8190977Z 
+targeted	Run npm ci	2026-10-04T17:37:19.8191252Z 3 high severity vulnerabilities
+targeted	Run npm ci	2026-10-04T17:37:19.8191602Z 
+targeted	Run npm ci	2026-10-04T17:37:19.8192412Z To address all issues (including breaking changes), run:
+targeted	Run npm ci	2026-10-04T17:37:19.8192791Z   npm audit fix --force
+targeted	Run npm ci	2026-10-04T17:37:19.8193021Z 
+targeted	Run npm ci	2026-10-04T17:37:19.8193267Z Run `npm audit` for details.
+targeted	Run npx prisma generate	﻿2026-10-04T17:37:19.8557823Z ##[group]Run npx prisma generate
+targeted	Run npx prisma generate	2026-10-04T17:37:19.8558193Z ^[[36;1mnpx prisma generate^[[0m
+targeted	Run npx prisma generate	2026-10-04T17:37:19.8597647Z shell: /usr/bin/bash -e {0}
+targeted	Run npx prisma generate	2026-10-04T17:37:19.8598063Z ##[endgroup]
+targeted	Run npx prisma generate	2026-10-04T17:37:20.7591426Z Prisma schema loaded from prisma/schema.prisma
+targeted	Run npx prisma generate	2026-10-04T17:37:23.8334028Z 
+targeted	Run npx prisma generate	2026-10-04T17:37:23.8335417Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.63s
+targeted	Run npx prisma generate	2026-10-04T17:37:23.8335786Z 
+targeted	Run npx prisma generate	2026-10-04T17:37:23.8336112Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	Run npx prisma generate	2026-10-04T17:37:23.8336537Z 
+targeted	Run npx prisma generate	2026-10-04T17:37:23.8336890Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+targeted	Run npx prisma generate	2026-10-04T17:37:23.8337167Z 
+targeted	Type-check (only when .ci-lane-tsc exists)	﻿2026-10-04T17:37:23.9173202Z ##[group]Run npx tsc --noEmit
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-04T17:37:23.9173581Z ^[[36;1mnpx tsc --noEmit^[[0m
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-04T17:37:23.9208551Z shell: /usr/bin/bash -e {0}
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-04T17:37:23.9208910Z env:
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-04T17:37:23.9209177Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-04T17:37:23.9209538Z ##[endgroup]
+targeted	Targeted jest	﻿2026-10-04T17:38:00.9183016Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T17:38:00.9183384Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T17:38:00.9183768Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T17:38:00.9184272Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T17:38:00.9184629Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T17:38:00.9184945Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T17:38:00.9223171Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T17:38:00.9223705Z env:
+targeted	Targeted jest	2026-10-04T17:38:00.9224000Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T17:38:00.9224390Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T17:38:00.9224710Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T17:38:00.9290764Z specs: test/b-trials-one-trial-rule.spec.ts test/b-trials-package-rules.spec.ts test/b-trials-t1-fix-round-6.spec.ts test/b-trials-t2-fix-round-6.spec.ts test/b-trials-t2-fix-round-8.spec.ts test/b-trials-t2-idempotent-create-http.spec.ts
+targeted	Targeted jest	2026-10-04T17:38:03.0021027Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0023459Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0000 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0024509Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0025892Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0001 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0026911Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0027947Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0002 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0028966Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0029976Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0003 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0030980Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0032111Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0004 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0033141Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0034165Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0005 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0035151Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0036198Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0006 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0037297Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0038366Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0007 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0040084Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0041663Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0008 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0043147Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0044557Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0009 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0045553Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0046565Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0010 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0047568Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0048551Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0011 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0049673Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0050691Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0012 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0051661Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0053128Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0013 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0054080Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0055100Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0014 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0056062Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0057093Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0015 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0058088Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0059087Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0016 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0060035Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0061064Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0017 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0062304Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0063431Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0018 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0064421Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0065451Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0019 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0066438Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0067445Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0020 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0068438Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0069448Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0021 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0070429Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0071511Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0022 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0072754Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0073804Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0023 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0074745Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0075788Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0024 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0076759Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0077756Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0025 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0078745Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0079742Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0026 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0080722Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0081816Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0027 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0082812Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0083890Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0028 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0084834Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0085878Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0029 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0086826Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0087872Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0030 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0088843Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0089835Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0031 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0090840Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0092060Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0032 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0093134Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0094124Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0033 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0095119Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0096106Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0034 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0097074Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0098109Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0035 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0099050Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0100098Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0036 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0101037Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0102148Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0037 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0103099Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0104121Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0038 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0105122Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0106128Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0039 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0107146Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0108151Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0040 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0109135Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0110138Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0041 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0111091Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0112415Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0042 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0113438Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0114475Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0043 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0115457Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0116498Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0044 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0117439Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0118409Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0045 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0119408Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0120417Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0046 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0121446Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0122510Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0047 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0123452Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0124507Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0048 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0125439Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0126925Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0049 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0127875Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0128894Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0050 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0129884Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0130886Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0051 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0131923Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0132917Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0052 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0133968Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0135025Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0053 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0135984Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0137012Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0054 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0137972Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0139032Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0055 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0139968Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0140976Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0056 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0141996Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0143043Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0057 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0144008Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0145004Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0058 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0145954Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0146964Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0059 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0148116Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0149152Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0060 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0150113Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0151140Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0061 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0152299Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0153333Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0062 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0154308Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0155326Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0063 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0156563Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0157562Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0064 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0158513Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0159534Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0065 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0160485Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0161516Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0066 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0162598Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0163621Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0067 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0164574Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0165573Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0068 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0166557Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0167567Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0069 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0168585Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0169625Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0070 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0170574Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0171612Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0071 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0172619Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0173636Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0072 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0174611Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0175605Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0073 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0176653Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0177649Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0074 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0178667Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0179677Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0075 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0180652Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0181667Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0076 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0182691Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0183748Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0077 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0184692Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0185721Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0078 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0186674Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0187675Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0079 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0188670Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0189718Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0080 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0190700Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0191796Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0081 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0192931Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0193937Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0082 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0194876Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0195923Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0083 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0196894Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0198071Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0084 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0199018Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0200011Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0085 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0201025Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0202064Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0086 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0203077Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0204065Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0087 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0205020Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0206067Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0088 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0207007Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0208034Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0089 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0208972Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0210050Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0090 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0211045Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0212112Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0091 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0213106Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0214095Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0092 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0215110Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0216091Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0093 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0217057Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0218081Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0094 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0219111Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0220117Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0095 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0221067Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0222203Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0096 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0223160Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0224208Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0097 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0225153Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0226185Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0098 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0227137Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0228188Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0099 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0229141Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0230122Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0100 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0231116Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0232669Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0101 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0234241Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0235731Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0102 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0237188Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0238550Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0103 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0239500Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0240566Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0104 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0241506Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0242849Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0105 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0243861Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0244863Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0106 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0245858Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0246834Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0107 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0247863Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0248851Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0108 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0249819Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0250843Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0109 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0251870Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0252934Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0110 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0253871Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0254968Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0111 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0255953Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0256974Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0112 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0257954Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0258944Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0113 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0259935Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0260923Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0114 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0261982Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0263087Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0115 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0264042Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0265064Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0116 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0266040Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0267041Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0117 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0268009Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0269022Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0118 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0270020Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice card lookup failed: Error^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0271020Z ^[[33m[Nest] 3021  - ^[[39m10/04/2026, 5:38:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice delivery deferred notice=notice-p-0119 code=card_state_unknown^[[39m
+targeted	Targeted jest	2026-10-04T17:38:03.0510928Z PASS test/b-trials-t2-fix-round-6.spec.ts (131 MB heap size)
+targeted	Targeted jest	2026-10-04T17:38:03.9919871Z PASS test/b-trials-t2-idempotent-create-http.spec.ts (126 MB heap size)
+targeted	Targeted jest	2026-10-04T17:38:04.2921908Z ^[[31m[Nest] 3021  - ^[[39m10/09/2026, 5:00:30 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[EmailService] ^[[39m^[[31memail send failed template=trial-ending to=client@example.test: abort^[[39m
+targeted	Targeted jest	2026-10-04T17:38:04.3338863Z PASS test/b-trials-t2-fix-round-8.spec.ts (164 MB heap size)
+targeted	Targeted jest	2026-10-04T17:38:04.6719920Z ^[[32m[Nest] 3021  - ^[[39m10/09/2026, 5:00:30 PM ^[[32m    LOG^[[39m ^[[38;5;3m[EmailService] ^[[39m^[[32memail sent template=trial-ending to=client@example.test provider_id=msg-2^[[39m
+targeted	Targeted jest	2026-10-04T17:38:04.6721574Z ^[[33m[Nest] 3021  - ^[[39m10/09/2026, 5:00:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice email still running after abort notice=notice-p; lease held^[[39m
+targeted	Targeted jest	2026-10-04T17:38:04.6744545Z ^[[32m[Nest] 3021  - ^[[39m10/09/2026, 5:03:55 PM ^[[32m    LOG^[[39m ^[[38;5;3m[EmailService] ^[[39m^[[32memail sent template=trial-ending to=client@example.test provider_id=msg-1^[[39m
+targeted	Targeted jest	2026-10-04T17:38:04.6746945Z ^[[32m[Nest] 3021  - ^[[39m10/09/2026, 5:03:55 PM ^[[32m    LOG^[[39m ^[[38;5;3m[EmailService] ^[[39m^[[32memail sent template=trial-ending to=client@example.test provider_id=msg-2^[[39m
+targeted	Targeted jest	2026-10-04T17:38:04.6748901Z ^[[33m[Nest] 3021  - ^[[39m10/09/2026, 5:00:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[TrialNoticeService] ^[[39m^[[33mtrial notice push still running after abort notice=notice-p; lease held^[[39m
+targeted	Targeted jest	2026-10-04T17:38:04.6750902Z ^[[32m[Nest] 3021  - ^[[39m10/04/2026, 5:38:04 PM ^[[32m    LOG^[[39m ^[[38;5;3m[EmailService] ^[[39m^[[32memail sent template=trial-ending to=client@example.test provider_id=msg-1^[[39m
+targeted	Targeted jest	2026-10-04T17:38:04.6753103Z ^[[32m[Nest] 3021  - ^[[39m10/04/2026, 5:38:04 PM ^[[32m    LOG^[[39m ^[[38;5;3m[EmailService] ^[[39m^[[32memail sent template=trial-ending to=client@example.test provider_id=msg-2^[[39m
+targeted	Targeted jest	2026-10-04T17:38:04.6755207Z ^[[32m[Nest] 3021  - ^[[39m10/04/2026, 5:38:04 PM ^[[32m    LOG^[[39m ^[[38;5;3m[EmailService] ^[[39m^[[32memail sent template=trial-ending to=client@example.test provider_id=msg-3^[[39m
+targeted	Targeted jest	2026-10-04T17:38:04.6757016Z ^[[32m[Nest] 3021  - ^[[39m10/04/2026, 5:38:04 PM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T17:38:04.6800101Z PASS test/b-trials-package-rules.spec.ts (198 MB heap size)
+targeted	Targeted jest	2026-10-04T17:38:05.6784001Z ^[[32m[Nest] 3021  - ^[[39m10/04/2026, 5:38:04 PM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T17:38:05.6919938Z ^[[31m[Nest] 3021  - ^[[39m10/04/2026, 5:38:05 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-2 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T17:38:05.6922770Z ^[[32m[Nest] 3021  - ^[[39m10/04/2026, 5:38:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T17:38:05.6929441Z ^[[31m[Nest] 3021  - ^[[39m10/04/2026, 5:38:05 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-old started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T17:38:05.6937009Z ^[[31m[Nest] 3021  - ^[[39m10/04/2026, 5:38:05 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-b started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T17:38:05.7025126Z PASS test/b-trials-one-trial-rule.spec.ts (297 MB heap size)
+targeted	Targeted jest	2026-10-04T17:38:05.8162922Z ^[[32m[Nest] 3021  - ^[[39m10/04/2026, 5:38:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T17:38:05.8164092Z ^[[32m[Nest] 3021  - ^[[39m10/04/2026, 5:38:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T17:38:05.8165095Z ^[[32m[Nest] 3021  - ^[[39m10/04/2026, 5:38:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T17:38:05.8166080Z ^[[32m[Nest] 3021  - ^[[39m10/04/2026, 5:38:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T17:38:05.8167078Z ^[[32m[Nest] 3021  - ^[[39m10/04/2026, 5:38:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T17:38:05.8168032Z ^[[32m[Nest] 3021  - ^[[39m10/04/2026, 5:38:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T17:38:05.8169201Z ^[[32m[Nest] 3021  - ^[[39m10/04/2026, 5:38:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T17:38:05.8170189Z ^[[32m[Nest] 3021  - ^[[39m10/04/2026, 5:38:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T17:38:05.8171136Z ^[[32m[Nest] 3021  - ^[[39m10/04/2026, 5:38:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T17:38:05.8172591Z ^[[32m[Nest] 3021  - ^[[39m10/04/2026, 5:38:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T17:38:05.8173579Z ^[[32m[Nest] 3021  - ^[[39m10/04/2026, 5:38:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T17:38:05.8174571Z ^[[32m[Nest] 3021  - ^[[39m10/04/2026, 5:38:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T17:38:05.8175596Z ^[[32m[Nest] 3021  - ^[[39m10/04/2026, 5:38:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T17:38:05.8176601Z ^[[32m[Nest] 3021  - ^[[39m10/04/2026, 5:38:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T17:38:05.8177922Z ^[[32m[Nest] 3021  - ^[[39m10/04/2026, 5:38:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T17:38:05.8179452Z ^[[32m[Nest] 3021  - ^[[39m10/04/2026, 5:38:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T17:38:05.8180908Z ^[[32m[Nest] 3021  - ^[[39m10/04/2026, 5:38:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[TrialCheckoutCapability] ^[[39m^[[32mfree trials are sold by subscription-checkout^[[39m
+targeted	Targeted jest	2026-10-04T17:38:05.8253705Z ^[[31m[Nest] 3021  - ^[[39m10/04/2026, 5:38:05 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-2 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T17:38:05.8261907Z ^[[31m[Nest] 3021  - ^[[39m10/04/2026, 5:38:05 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TrialUsageService] ^[[39m^[[31mtrial conflict: purchase pur-2 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)^[[39m
+targeted	Targeted jest	2026-10-04T17:38:05.8338471Z PASS test/b-trials-t1-fix-round-6.spec.ts (311 MB heap size)
+targeted	Targeted jest	2026-10-04T17:38:05.8352665Z 
+targeted	Targeted jest	2026-10-04T17:38:05.8358791Z Test Suites: 6 passed, 6 total
+targeted	Targeted jest	2026-10-04T17:38:05.8359364Z Tests:       93 passed, 93 total
+targeted	Targeted jest	2026-10-04T17:38:05.8359724Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T17:38:05.8360006Z Time:        4.292 s
+targeted	Targeted jest	2026-10-04T17:38:05.8361010Z Ran all test suites matching test/b-trials-one-trial-rule.spec.ts|test/b-trials-package-rules.spec.ts|test/b-trials-t1-fix-round-6.spec.ts|test/b-trials-t2-fix-round-6.spec.ts|test/b-trials-t2-fix-round-8.spec.ts|test/b-trials-t2-idempotent-create-http.spec.ts.
+targeted	Post Run actions/setup-node@v6	﻿2026-10-04T17:38:05.9764501Z Post job cleanup.
+targeted	Post Run actions/setup-node@v6	2026-10-04T17:38:06.0775046Z Cache hit occurred on the primary key node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12, not saving cache.
+targeted	Post Run actions/checkout@v6	﻿2026-10-04T17:38:06.0863867Z Post job cleanup.
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.1544290Z [command]/usr/bin/git version
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.1571868Z git version 2.55.0
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.1598961Z Temporarily overriding HOME='/home/runner/work/_temp/9aa5e798-b7e2-4198-a1cf-25b1e4db098e' before making global git config changes
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.1599735Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.1604007Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.1625387Z Removing SSH command configuration
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.1629946Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.1654763Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.1815449Z Removing HTTP extra header
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.1819173Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.1841179Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.1995441Z Removing includeIf entries pointing to credentials config files
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.2000045Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.2020913Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.2022170Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.2022973Z includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.2023648Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.2027383Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.2042255Z /home/runner/work/_temp/git-credentials-38d588ac-3a69-4ce8-b482-4571ef52d8a0.config
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.2049759Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-38d588ac-3a69-4ce8-b482-4571ef52d8a0.config
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.2075392Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.2090654Z /home/runner/work/_temp/git-credentials-38d588ac-3a69-4ce8-b482-4571ef52d8a0.config
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.2098476Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-38d588ac-3a69-4ce8-b482-4571ef52d8a0.config
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.2123509Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.2138660Z /github/runner_temp/git-credentials-38d588ac-3a69-4ce8-b482-4571ef52d8a0.config
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.2143558Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-38d588ac-3a69-4ce8-b482-4571ef52d8a0.config
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.2166594Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.2181440Z /github/runner_temp/git-credentials-38d588ac-3a69-4ce8-b482-4571ef52d8a0.config
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.2186599Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-38d588ac-3a69-4ce8-b482-4571ef52d8a0.config
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.2212064Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Post Run actions/checkout@v6	2026-10-04T17:38:06.2361222Z Removing credentials config '/home/runner/work/_temp/git-credentials-38d588ac-3a69-4ce8-b482-4571ef52d8a0.config'
+targeted	Stop containers	﻿2026-10-04T17:38:06.2435495Z Print service container logs: bca1b002eaee411fa58b221fa712951d_redis7alpine_eef9a0
+targeted	Stop containers	2026-10-04T17:38:06.2439075Z ##[command]/usr/bin/docker logs --details 36b14a7e652bc74654ea5eeb7be4012ecda937fbafa0504b633fa03744649a3a
+targeted	Stop containers	2026-10-04T17:38:06.2549034Z  1:C 04 Oct 2026 17:36:44.613 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+targeted	Stop containers	2026-10-04T17:38:06.2550974Z  1:C 04 Oct 2026 17:36:44.613 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+targeted	Stop containers	2026-10-04T17:38:06.2551613Z  1:C 04 Oct 2026 17:36:44.613 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+targeted	Stop containers	2026-10-04T17:38:06.2552727Z  1:C 04 Oct 2026 17:36:44.613 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+targeted	Stop containers	2026-10-04T17:38:06.2553588Z  1:M 04 Oct 2026 17:36:44.613 * monotonic clock: POSIX clock_gettime
+targeted	Stop containers	2026-10-04T17:38:06.2554023Z  1:M 04 Oct 2026 17:36:44.614 * Running mode=standalone, port=6379.
+targeted	Stop containers	2026-10-04T17:38:06.2554492Z  1:M 04 Oct 2026 17:36:44.614 * Server initialized
+targeted	Stop containers	2026-10-04T17:38:06.2554972Z  1:M 04 Oct 2026 17:36:44.614 * Ready to accept connections tcp
+targeted	Stop containers	2026-10-04T17:38:06.2564552Z Stop and remove container: bca1b002eaee411fa58b221fa712951d_redis7alpine_eef9a0
+targeted	Stop containers	2026-10-04T17:38:06.2568582Z ##[command]/usr/bin/docker rm --force 36b14a7e652bc74654ea5eeb7be4012ecda937fbafa0504b633fa03744649a3a
+targeted	Stop containers	2026-10-04T17:38:06.4669571Z 36b14a7e652bc74654ea5eeb7be4012ecda937fbafa0504b633fa03744649a3a
+targeted	Stop containers	2026-10-04T17:38:06.4688337Z Remove container network: github_network_864ddbf9ff24486f89ee78b409be7b18
+targeted	Stop containers	2026-10-04T17:38:06.4691952Z ##[command]/usr/bin/docker network rm github_network_864ddbf9ff24486f89ee78b409be7b18
+targeted	Stop containers	2026-10-04T17:38:06.5620665Z github_network_864ddbf9ff24486f89ee78b409be7b18
+targeted	Complete job	﻿2026-10-04T17:38:06.5675978Z Cleaning up orphan processes

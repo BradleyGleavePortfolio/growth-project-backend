@@ -1,0 +1,26 @@
+FIX ROUND 1 (B-D34-116, agent 116) — growth-project-backend#690 @ 0681babdbe3125d7a9920b855c06d5285eeeb864
+
+Scope: closes Sol RC 0/5/1 (5975999417) and Opus RC 0/1/4 (5976089623). Before the fixes, restacked D4 (27358047) and the D3 fix round (#689 @ 6cead7ec) were merged in (merge commits). Piece size is 2,906 changed lines (was 2,415).
+
+| Finding | Change | Commit | Test (`test/dunning-d4-fix-round.spec.ts`) |
+|---|---|---|---|
+| Sol B-690-1 (in-flight subscription.updated resurrects a 2A cancel) | A live status is written inside the package-lock callback, under `DunningState ... FOR UPDATE` (the 2A intent writes that row). The write re-checks `clientCancelPending` and uses `updateMany where status != 'canceled'`. A count of 0 returns `stale_after_cancel`. | `821d943f`, `0681babd` | completed cancel during the await; pending intent during the await; live-update control |
+| Sol B-690-2 / Opus B-690-1 (failed dispute check resolves the cycle) | Throws `DunningWebhookRetryError('DUNNING_DISPUTE_CHECK_FAILED')`. The outer tx rolls back, the event is not acknowledged, and Stripe redelivers. v1 resolution and the v2 clear never run on an unknown answer. | `821d943f` | rejects with the code; cycle stays active and locked; the redelivery keeps the dispute cycle |
+| Sol B-690-3 / Opus C-690-2 (dispute effects lost on error) | `runDisputeEffect` covers dispute.created late reversal and dispute.closed. It runs awaited in `prefetchForOuterTx`, before the outer tx opens, so it waits on no outer-tx lock and runs no provider HTTP inside a tx. A failure throws `DUNNING_DISPUTE_EFFECT_FAILED` before the processed-event row exists. `handle()` awaits it when no prefetch ran. Nothing is fire-and-forget. | `821d943f` | via `BillingService.handleEvent`: the first delivery rejects with 0 processed rows; the second is processed and the cycle is resolved and unlocked |
+| Sol B-690-4 / Opus C-690-4 (free-form diagnostics) | `dunningErrorCode` in: the scheduler fatal log, the dispute effect, `recordResolution`, `applyImmediateClear`, `keepAsDisputeCycle`, `recordFailure`, `recordPaymentFailed` and payout routing. | `821d943f` | sweep / dispute-effect / clear sentinel no-leak |
+| Sol B-690-5 (unpaid excluded from grace) | Adds `DUNNING_V2_GRACE_STATUSES = ['past_due','unpaid']` in the entitlement guard. `applySubscriptionUpdated` keeps entitlement for `unpaid` only when v2 is on, the plan was entitled, and the cycle is active and unlocked. Never-entitled, canceled and locked plans are excluded. | `821d943f` | unpaid Day 7 = 200, Day 10 = 402; subscription.updated unpaid keeps grace, locked does not; past_due control |
+| Opus C-690-1 (late payment_failed reopens an ended plan; free-form `last_error`) | A canceled plan, or one with a client cancel pending, records nothing. `last_error` holds the allow-listed decline code, or `invoice_payment_failed`. | `821d943f`, `0681babd` | late failure after 2A; a live failure stores `card_declined` |
+| Sol C-690-1 / Opus C-690-3 (card page copy) | No first person. New text: "After the new card is saved, the app tries the amount owed on it; once that payment goes through, access continues, or comes back if it was paused." The app and support actions are kept. | `821d943f` | copy test |
+
+Failing-before (at f72668c2 plus the spec): 9 failed / 2 controls passed: https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37174150526
+
+Passing after: https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37174520805 (16 suites, 324/324). It covers this spec, the D3 spec, native 1A/2A, surfaces, http codes, the webhook handler, fee split, cancel-pending, public pages, stripe webhook and fixtures, the lockout guards, entitlement mounts and refund-dispute. The D5 suites on the merged tree also pass: run 37174570264.
+
+Notes:
+- The one legacy test edit is in `test/checkout-webhook-handler.spec.ts`: the payment_failed mock now carries a decline code, because `last_error` no longer stores the message.
+- A v2 dispute effect that fails persistently now fails the whole dispute event (v1 included) until Stripe stops retrying. With the flag off nothing changes.
+- D2 items for the operator: `resolvePurchaseFromCharge` swallows errors; the sweep skips locked rows; v1 `recordResolution` has no tx/guard. See report B-D34-116.
+
+Checks at this head: all applicable checks green. CodeQL, danger, banned casts and SBOM do not run on stacked bases.
+
+READY FOR AUDIT

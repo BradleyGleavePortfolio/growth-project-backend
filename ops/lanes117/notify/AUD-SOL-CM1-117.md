@@ -1,0 +1,8 @@
+# AUD-SOL-CM1-117 complete — agent 117
+
+- #674 `d93275469b0979c23431c94837043d379a6e9fe5`: REQUEST CHANGES 0/1/2; old B-674-1..4 closed, new B-674-10 source-aware lost-dispute replay produces Stripe/transfer=244 but head posting/ledger=122 after downstream transaction rollback. [Posted verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/674#issuecomment-5976672242)
+- #676 `cf5ef18b6d6f892ce6d7b975539f4ea31730286e`: REQUEST CHANGES 0/2/1; B-676-3 confirmed by three writer→CSV counterexamples (duplicate 2,450-cent team refund, falsely repeated delayed recovery, same-millisecond 99+101 exported as 101); B-676-4 never-billed trial churn fails 2 versus 1. [Posted verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/676#issuecomment-5976672219)
+- Candidate required/applicable CI is green; new independent audit lanes fail 1/53 and 4/23 assertions, with old closures passing. [M1 probe](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37177598709) [M3 probe](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37177546465)
+- Recommended default: hold train, fix M1 source boundary then restack and fix M3 event identity/churn; only 17/36 lines headroom under size cap, so coordinate logical test/source packaging, do not trim functionality. [Current M1 size](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/674#issuecomment-5976568620) [Current M3 size](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/676#issuecomment-5976568778)
+
+Full report: `/home/user/workspace/ops/reports/AUD-SOL-CM1-117.md`; retained specs/logs/receipts: `/home/user/workspace/ops/aud-117/AUD-SOL-CM1-117/`.

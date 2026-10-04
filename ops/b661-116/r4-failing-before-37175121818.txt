@@ -1,0 +1,15 @@
+  ● B-661-3 a late-delivered earlier decline never revokes a successful retry › C-661-6: Stripe answers 404 for the PaymentIntent: the decline is not applied and is not redelivered for days
+  ● B-661-3 a late-delivered earlier decline never revokes a successful retry › prefetchForOuterTx asks Stripe for the PaymentIntent status only when the purchase already settled
+  ● B-661-3 a late-delivered earlier decline never revokes a successful retry › round 4 (no transaction): a success that commits while Stripe is being asked wins over the decline
+  ● B-661-3 a late-delivered earlier decline never revokes a successful retry › round 4: a decline whose Stripe status was read before a failure and a successful retry committed never revokes that retry
+  ● B-661-3 a late-delivered earlier decline never revokes a successful retry › round 4: the success of the PaymentIntent on a provisionally paid hosted purchase records the settlement, so a decline read before it never revokes
+  ● B-661-5 a hosted Checkout purchase activates exactly once, by checkout.session.completed › decline, then a successful retry on the hosted page: the PaymentIntent success leaves the purchase to its checkout session, which activates it once with its access window
+  ● B-661-5 a hosted Checkout purchase activates exactly once, by checkout.session.completed › two open sessions: the success of session A never entitles the session B purchase a decline marked failed
+  ● C-661-7 checkout.session.completed activates only a purchase that was never activated › a purchase in status canceled stays as it is
+  ● C-661-7 checkout.session.completed activates only a purchase that was never activated › a purchase in status chargeback_lost stays as it is
+  ● C-661-7 checkout.session.completed activates only a purchase that was never activated › a purchase in status disputed stays as it is
+  ● C-661-7 checkout.session.completed activates only a purchase that was never activated › a purchase in status expired stays as it is
+  ● C-661-7 checkout.session.completed activates only a purchase that was never activated › a purchase in status paid stays as it is
+  ● C-661-7 checkout.session.completed activates only a purchase that was never activated › a purchase in status refunded stays as it is
+Test Suites: 2 failed, 2 total
+Tests:       13 failed, 51 passed, 64 total

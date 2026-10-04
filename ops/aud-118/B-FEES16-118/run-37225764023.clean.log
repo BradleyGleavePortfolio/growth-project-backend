@@ -1,0 +1,419 @@
+﻿2026-10-04T18:47:13.8672369Z Current runner version: '2.337.0'
+##[group]Runner Image Provisioner
+Hosted Compute Agent
+Version: 20260901.588
+Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+Build Date: 2026-09-01T19:56:44Z
+Worker ID: {1bb1473e-ec5a-4ac2-9b53-cfb8a0803e90}
+Azure Region: northcentralus
+##[endgroup]
+##[group]Operating System
+Ubuntu
+24.04.5
+LTS
+##[endgroup]
+##[group]Runner Image
+Image: ubuntu-24.04
+Version: 20260927.320.1
+Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+##[endgroup]
+##[group]GITHUB_TOKEN Permissions
+Contents: read
+Metadata: read
+Packages: read
+##[endgroup]
+Secret source: Actions
+Cache mode: write
+Prepare workflow directory
+Prepare all required actions
+Getting action download info
+Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+Complete job name: targeted
+##[group]Checking docker version
+##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+'1.48'
+Docker daemon API version: '1.48'
+##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+'1.48'
+Docker client API version: '1.48'
+##[endgroup]
+##[group]Clean up resources from previous jobs
+##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=e02202"
+##[command]/usr/bin/docker network prune --force --filter "label=e02202"
+##[endgroup]
+##[group]Create local container network
+##[command]/usr/bin/docker network create --label e02202 github_network_e5d9c56a64e54988be32e315fe044691
+fc9d1c88138c085d77bc5b022dc22ee3dea0f074cbe08832a4274cf7e72f19f5
+##[endgroup]
+##[group]Starting redis service container
+##[command]/usr/bin/docker pull redis:7-alpine
+7-alpine: Pulling from library/redis
+16333ee0c00f: Pulling fs layer
+83234986c742: Pulling fs layer
+7eb50503c2b0: Pulling fs layer
+1522f9c6f453: Pulling fs layer
+9928009b15c8: Pulling fs layer
+4f4fb700ef54: Pulling fs layer
+4eb14bae0e1d: Pulling fs layer
+9928009b15c8: Waiting
+4f4fb700ef54: Waiting
+4eb14bae0e1d: Waiting
+1522f9c6f453: Waiting
+83234986c742: Verifying Checksum
+83234986c742: Download complete
+7eb50503c2b0: Verifying Checksum
+7eb50503c2b0: Download complete
+16333ee0c00f: Download complete
+9928009b15c8: Verifying Checksum
+9928009b15c8: Download complete
+4f4fb700ef54: Verifying Checksum
+4f4fb700ef54: Download complete
+1522f9c6f453: Verifying Checksum
+1522f9c6f453: Download complete
+4eb14bae0e1d: Verifying Checksum
+4eb14bae0e1d: Download complete
+16333ee0c00f: Pull complete
+83234986c742: Pull complete
+7eb50503c2b0: Pull complete
+1522f9c6f453: Pull complete
+9928009b15c8: Pull complete
+4f4fb700ef54: Pull complete
+4eb14bae0e1d: Pull complete
+Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+Status: Downloaded newer image for redis:7-alpine
+docker.io/library/redis:7-alpine
+##[command]/usr/bin/docker create --name 74802318fd4f460ba2ff8c7d10f2ece0_redis7alpine_13395f --label e02202 --network github_network_e5d9c56a64e54988be32e315fe044691 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+b279c54d5dc8cabe8264d17a91cc82c1b31441c9034d07238dfefe65d5bfa6c5
+##[command]/usr/bin/docker start b279c54d5dc8cabe8264d17a91cc82c1b31441c9034d07238dfefe65d5bfa6c5
+b279c54d5dc8cabe8264d17a91cc82c1b31441c9034d07238dfefe65d5bfa6c5
+##[command]/usr/bin/docker ps --all --filter id=b279c54d5dc8cabe8264d17a91cc82c1b31441c9034d07238dfefe65d5bfa6c5 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+b279c54d5dc8cabe8264d17a91cc82c1b31441c9034d07238dfefe65d5bfa6c5 Up Less than a second (health: starting)
+##[command]/usr/bin/docker port b279c54d5dc8cabe8264d17a91cc82c1b31441c9034d07238dfefe65d5bfa6c5
+6379/tcp -> 0.0.0.0:6379
+6379/tcp -> [::]:6379
+##[endgroup]
+##[group]Waiting for all services to be ready
+##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" b279c54d5dc8cabe8264d17a91cc82c1b31441c9034d07238dfefe65d5bfa6c5
+starting
+redis service is starting, waiting 2 seconds before checking again.
+##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" b279c54d5dc8cabe8264d17a91cc82c1b31441c9034d07238dfefe65d5bfa6c5
+starting
+redis service is starting, waiting 3 seconds before checking again.
+##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" b279c54d5dc8cabe8264d17a91cc82c1b31441c9034d07238dfefe65d5bfa6c5
+healthy
+redis service is healthy.
+##[endgroup]
+##[group]Run actions/checkout@v6
+with:
+  repository: BradleyGleavePortfolio/growth-project-backend
+  token: ***
+  ssh-strict: true
+  ssh-user: git
+  persist-credentials: true
+  clean: true
+  sparse-checkout-cone-mode: true
+  fetch-depth: 1
+  fetch-tags: false
+  show-progress: true
+  lfs: false
+  submodules: false
+  set-safe-directory: true
+  allow-unsafe-pr-checkout: false
+##[endgroup]
+Syncing repository: BradleyGleavePortfolio/growth-project-backend
+##[group]Getting Git version info
+Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+[command]/usr/bin/git version
+git version 2.55.0
+##[endgroup]
+Temporarily overriding HOME='/home/runner/work/_temp/335140bc-768f-4612-b8d8-a4eb12227534' before making global git config changes
+Adding repository directory to the temporary git global config as a safe directory
+[command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+##[group]Determining repository object format
+##[endgroup]
+##[group]Initializing the repository
+[command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+[command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+##[endgroup]
+##[group]Disabling automatic garbage collection
+[command]/usr/bin/git config --local gc.auto 0
+##[endgroup]
+##[group]Setting up auth
+Removing SSH command configuration
+[command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Removing HTTP extra header
+[command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Removing includeIf entries pointing to credentials config files
+[command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+[command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+[command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+[command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config
+[command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config
+[command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config
+[command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config
+##[endgroup]
+##[group]Fetching the repository
+[command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +5e0251322d853ab23880af8b28146650b3e96390:refs/remotes/origin/ci/B-FEES16-118-684-probes
+From https://github.com/BradleyGleavePortfolio/growth-project-backend
+ * [new ref]         5e0251322d853ab23880af8b28146650b3e96390 -> origin/ci/B-FEES16-118-684-probes
+[command]/usr/bin/git branch --list --remote origin/ci/B-FEES16-118-684-probes
+  origin/ci/B-FEES16-118-684-probes
+[command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-FEES16-118-684-probes
+5e0251322d853ab23880af8b28146650b3e96390
+##[endgroup]
+##[group]Determining the checkout info
+##[endgroup]
+[command]/usr/bin/git sparse-checkout disable
+[command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+##[group]Checking out the ref
+[command]/usr/bin/git checkout --progress --force -B ci/B-FEES16-118-684-probes refs/remotes/origin/ci/B-FEES16-118-684-probes
+Switched to a new branch 'ci/B-FEES16-118-684-probes'
+branch 'ci/B-FEES16-118-684-probes' set up to track 'origin/ci/B-FEES16-118-684-probes'.
+##[endgroup]
+[command]/usr/bin/git log -1 --format=%H
+5e0251322d853ab23880af8b28146650b3e96390
+##[group]Run actions/setup-node@v6
+with:
+  node-version: 20
+  cache: npm
+  check-latest: false
+  token: ***
+  package-manager-cache: true
+##[endgroup]
+Attempting to download 20...
+Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+Extracting ...
+[command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/7563a97f-3c86-4801-b042-62ef5033646e -f /home/runner/work/_temp/1874d864-cfae-4c4d-ba04-30c7d3f30b3c
+Adding to the cache ...
+##[group]Environment details
+node: v20.20.2
+npm: 10.8.2
+yarn: 1.22.22
+##[endgroup]
+[command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+/home/runner/.npm
+Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+Received 86828135 of 86828135 (100.0%), 100.5 MBs/sec
+Cache Size: ~83 MB (86828135 B)
+[command]/usr/bin/tar -xf /home/runner/work/_temp/90a5a2bd-e5e3-4037-9bac-7755d2962017/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+Cache restored successfully
+Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+##[group]Run npm ci
+npm ci
+shell: /usr/bin/bash -e {0}
+##[endgroup]
+npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+
+> growth-project-backend@1.0.0 postinstall
+> prisma generate
+
+Prisma schema loaded from prisma/schema.prisma
+┌─────────────────────────────────────────────────────────┐
+│  Update available 6.19.3 -> 8.0.0-rc.19                 │
+
+│                                                         │
+✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.20s
+│  This is a major update - please follow the guide at    │
+│  https://pris.ly/d/major-version-upgrade                │
+│                                                         │
+│  Run the following to update                            │
+│    npm i --save-dev prisma@latest                       │
+│    npm i @prisma/client@latest                          │
+└─────────────────────────────────────────────────────────┘
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+
+
+> growth-project-backend@1.0.0 prepare
+> lefthook install
+
+sync hooks: ✔️(pre-commit, commit-msg)
+
+added 1115 packages, and audited 1116 packages in 29s
+
+202 packages are looking for funding
+  run `npm fund` for details
+
+3 high severity vulnerabilities
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+##[group]Run npx prisma generate
+npx prisma generate
+shell: /usr/bin/bash -e {0}
+##[endgroup]
+Prisma schema loaded from prisma/schema.prisma
+
+✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.21s
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+
+##[group]Run set -euo pipefail
+set -euo pipefail
+test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+echo "specs: ${SPECS[*]}"
+npx jest --ci --runInBand "${SPECS[@]}"
+shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+env:
+  NODE_OPTIONS: --max-old-space-size=4096
+  THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+##[endgroup]
+specs: test/s-fee-r15-deferred-fx-notice-flag.spec.ts test/audit-sol-f34-684.spec.ts test/audit-sol-f34-117-684-budget.spec.ts test/audit-sol-f34-117-684-refunds.spec.ts test/audit-opus-f34-117-684.spec.ts test/aud-sol-f23-118-notice-recovery.spec.ts test/audit-opus-f23-118-683.spec.ts
+PASS test/s-fee-r15-deferred-fx-notice-flag.spec.ts (106 MB heap size)
+PASS test/audit-opus-f23-118-683.spec.ts (122 MB heap size)
+PASS test/aud-sol-f23-118-notice-recovery.spec.ts (147 MB heap size)
+  ● Console
+
+    console.log
+      AUD118_NOTICE_RECOVERY {
+        failure: 'notice insert',
+        result: '',
+        failedDelivery: true,
+        durableRetry: true,
+        noticeCount: 1,
+        reconciled: [ 1, 0 ],
+        paid: 6980,
+        reversals: 1
+      }
+
+      at test/aud-sol-f23-118-notice-recovery.spec.ts:93:13
+
+    console.log
+      AUD118_NOTICE_RECOVERY {
+        failure: 'notice history read',
+        result: '',
+        failedDelivery: true,
+        durableRetry: true,
+        noticeCount: 1,
+        reconciled: [ 1, 0 ],
+        paid: 6980,
+        reversals: 1
+      }
+
+      at test/aud-sol-f23-118-notice-recovery.spec.ts:93:13
+
+    console.log
+      AUD118_TERMINAL_NOTICE_RETRY {
+        events: [ 'chargeback', 'dispute_lost' ],
+        flag: null,
+        disputeId: 'dp_notice',
+        paid: 0,
+        reversals: 1
+      }
+
+      at Object.<anonymous> (test/aud-sol-f23-118-notice-recovery.spec.ts:157:11)
+
+PASS test/audit-opus-f34-117-684.spec.ts (134 MB heap size)
+[Nest] 3138  - 10/04/2026, 6:48:08 PM    WARN [PayoutNoticeService] SFEE_NOTICE_EMAIL_FAILED notice=pan-25 payee=coach_1: kind=unknown
+[Nest] 3138  - 10/04/2026, 6:48:08 PM    WARN [PayoutNoticeService] SFEE_NOTICE_EMAIL_FAILED notice=pan-36 payee=coach_1: kind=unknown
+[Nest] 3138  - 10/04/2026, 6:48:08 PM    WARN [PayoutNoticeService] SFEE_NOTICE_EMAIL_FAILED notice=pan-47 payee=coach_1: kind=unknown
+PASS test/audit-sol-f34-117-684-budget.spec.ts (162 MB heap size)
+  ● Console
+
+    console.log
+      OBSERVATION_CANONICAL_REFUNDS {"refund_rows":[{"id":"rf-7","created_at":"2026-10-04T18:48:08.690Z","updated_at":"2026-10-04T18:48:08.707Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_0","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:08.707Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-11","created_at":"2026-10-04T18:48:08.698Z","updated_at":"2026-10-04T18:48:08.707Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_1","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:08.707Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-15","created_at":"2026-10-04T18:48:08.704Z","updated_at":"2026-10-04T18:48:08.708Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_2","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:08.708Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-19","created_at":"2026-10-04T18:48:08.709Z","updated_at":"2026-10-04T18:48:08.708Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_3","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:08.708Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-23","created_at":"2026-10-04T18:48:08.715Z","updated_at":"2026-10-04T18:48:08.708Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_4","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:08.708Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-27","created_at":"2026-10-04T18:48:08.720Z","updated_at":"2026-10-04T18:48:08.708Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_5","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:08.708Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-31","created_at":"2026-10-04T18:48:08.728Z","updated_at":"2026-10-04T18:48:08.708Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_6","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:08.708Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-35","created_at":"2026-10-04T18:48:08.733Z","updated_at":"2026-10-04T18:48:08.708Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_7","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:08.708Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-39","created_at":"2026-10-04T18:48:08.739Z","updated_at":"2026-10-04T18:48:08.708Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_8","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:08.708Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-43","created_at":"2026-10-04T18:48:08.744Z","updated_at":"2026-10-04T18:48:08.708Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_9","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:08.708Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-47","created_at":"2026-10-04T18:48:08.750Z","updated_at":"2026-10-04T18:48:08.708Z","purchase_id":"cp_1","stripe_refund_id":"re_older","stripe_charge_id":"ch_1","amount_cents":900,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:08.708Z","ledger_reversed":true,"transfer_reversed":true}],"settlement_refunded":4900}
+
+      at Object.<anonymous> (test/audit-sol-f34-117-684-budget.spec.ts:44:11)
+
+    console.log
+      OBSERVATION_NOTICE_BUDGET {"elapsed_minutes":8,"calls":16,"notices":[{"id":"pan_budget_0","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.716Z"},{"id":"pan_budget_1","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.716Z"},{"id":"pan_budget_2","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.717Z"},{"id":"pan_budget_3","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.717Z"},{"id":"pan_budget_4","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.717Z"},{"id":"pan_budget_5","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.718Z"},{"id":"pan_budget_6","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.718Z"},{"id":"pan_budget_7","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.720Z"},{"id":"pan_budget_8","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.721Z"},{"id":"pan_budget_9","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.721Z"},{"id":"pan_budget_10","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.721Z"},{"id":"pan_budget_11","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.722Z"},{"id":"pan_budget_12","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.722Z"},{"id":"pan_budget_13","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.723Z"},{"id":"pan_budget_14","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.723Z"},{"id":"pan_budget_15","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.724Z"},{"id":"pan_budget_16","dispatch_attempts":0,"dispatched_at":null},{"id":"pan_budget_17","dispatch_attempts":0,"dispatched_at":null},{"id":"pan_budget_18","dispatch_attempts":0,"dispatched_at":null},{"id":"pan_budget_19","dispatch_attempts":0,"dispatched_at":null},{"id":"pan_budget_20","dispatch_attempts":0,"dispatched_at":null},{"id":"pan_budget_21","dispatch_attempts":0,"dispatched_at":null},{"id":"pan_budget_22","dispatch_attempts":0,"dispatched_at":null},{"id":"pan_budget_23","dispatch_attempts":0,"dispatched_at":null},{"id":"pan_budget_24","dispatch_attempts":0,"dispatched_at":null}]}
+
+      at Object.<anonymous> (test/audit-sol-f34-117-684-budget.spec.ts:81:13)
+
+PASS test/audit-sol-f34-684.spec.ts (194 MB heap size)
+PASS test/audit-sol-f34-117-684-refunds.spec.ts (218 MB heap size)
+  ● Console
+
+    console.log
+      OBSERVATION_CANONICAL_REFUNDS {"refund_rows":[{"id":"rf-7","created_at":"2026-10-04T18:48:09.314Z","updated_at":"2026-10-04T18:48:09.333Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_0","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:09.333Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-11","created_at":"2026-10-04T18:48:09.322Z","updated_at":"2026-10-04T18:48:09.333Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_1","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:09.333Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-15","created_at":"2026-10-04T18:48:09.328Z","updated_at":"2026-10-04T18:48:09.333Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_2","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:09.333Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-19","created_at":"2026-10-04T18:48:09.333Z","updated_at":"2026-10-04T18:48:09.333Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_3","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:09.333Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-23","created_at":"2026-10-04T18:48:09.339Z","updated_at":"2026-10-04T18:48:09.333Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_4","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:09.333Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-27","created_at":"2026-10-04T18:48:09.348Z","updated_at":"2026-10-04T18:48:09.333Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_5","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:09.333Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-31","created_at":"2026-10-04T18:48:09.353Z","updated_at":"2026-10-04T18:48:09.333Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_6","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:09.333Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-35","created_at":"2026-10-04T18:48:09.359Z","updated_at":"2026-10-04T18:48:09.333Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_7","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:09.333Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-39","created_at":"2026-10-04T18:48:09.364Z","updated_at":"2026-10-04T18:48:09.333Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_8","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:09.333Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-43","created_at":"2026-10-04T18:48:09.370Z","updated_at":"2026-10-04T18:48:09.333Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_9","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:09.333Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-47","created_at":"2026-10-04T18:48:09.375Z","updated_at":"2026-10-04T18:48:09.334Z","purchase_id":"cp_1","stripe_refund_id":"re_older","stripe_charge_id":"ch_1","amount_cents":900,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:09.334Z","ledger_reversed":true,"transfer_reversed":true}],"settlement_refunded":4900}
+
+      at Object.<anonymous> (test/audit-sol-f34-117-684-refunds.spec.ts:42:11)
+
+
+Test Suites: 7 passed, 7 total
+Tests:       44 passed, 44 total
+Snapshots:   0 total
+Time:        4.463 s
+Ran all test suites matching test/s-fee-r15-deferred-fx-notice-flag.spec.ts|test/audit-sol-f34-684.spec.ts|test/audit-sol-f34-117-684-budget.spec.ts|test/audit-sol-f34-117-684-refunds.spec.ts|test/audit-opus-f34-117-684.spec.ts|test/aud-sol-f23-118-notice-recovery.spec.ts|test/audit-opus-f23-118-683.spec.ts.
+Post job cleanup.
+Cache hit occurred on the primary key node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12, not saving cache.
+Post job cleanup.
+[command]/usr/bin/git version
+git version 2.55.0
+Temporarily overriding HOME='/home/runner/work/_temp/c163c5e1-f226-49f8-81cb-db37f5722947' before making global git config changes
+Adding repository directory to the temporary git global config as a safe directory
+[command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+Removing SSH command configuration
+[command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Removing HTTP extra header
+[command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Removing includeIf entries pointing to credentials config files
+[command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+includeif.gitdir:/github/workspace/.git.path
+includeif.gitdir:/github/workspace/.git/worktrees/*.path
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+/home/runner/work/_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+/home/runner/work/_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+/github/runner_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+/github/runner_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config
+[command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Removing credentials config '/home/runner/work/_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config'
+Print service container logs: 74802318fd4f460ba2ff8c7d10f2ece0_redis7alpine_13395f
+##[command]/usr/bin/docker logs --details b279c54d5dc8cabe8264d17a91cc82c1b31441c9034d07238dfefe65d5bfa6c5
+ 1:C 04 Oct 2026 18:47:16.346 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+ 1:C 04 Oct 2026 18:47:16.346 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+ 1:C 04 Oct 2026 18:47:16.346 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+ 1:C 04 Oct 2026 18:47:16.346 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+ 1:M 04 Oct 2026 18:47:16.346 * monotonic clock: POSIX clock_gettime
+ 1:M 04 Oct 2026 18:47:16.347 * Running mode=standalone, port=6379.
+ 1:M 04 Oct 2026 18:47:16.347 * Server initialized
+ 1:M 04 Oct 2026 18:47:16.347 * Ready to accept connections tcp
+Stop and remove container: 74802318fd4f460ba2ff8c7d10f2ece0_redis7alpine_13395f
+##[command]/usr/bin/docker rm --force b279c54d5dc8cabe8264d17a91cc82c1b31441c9034d07238dfefe65d5bfa6c5
+b279c54d5dc8cabe8264d17a91cc82c1b31441c9034d07238dfefe65d5bfa6c5
+Remove container network: github_network_e5d9c56a64e54988be32e315fe044691
+##[command]/usr/bin/docker network rm github_network_e5d9c56a64e54988be32e315fe044691
+github_network_e5d9c56a64e54988be32e315fe044691
+Cleaning up orphan processes

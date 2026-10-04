@@ -1,0 +1,729 @@
+﻿2026-10-04T05:39:10.6478569Z Current runner version: '2.337.0'
+2026-10-04T05:39:10.6504829Z ##[group]Runner Image Provisioner
+2026-10-04T05:39:10.6505921Z Hosted Compute Agent
+2026-10-04T05:39:10.6506747Z Version: 20260901.588
+2026-10-04T05:39:10.6507372Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-04T05:39:10.6508212Z Build Date: 2026-09-01T19:56:44Z
+2026-10-04T05:39:10.6509228Z Worker ID: {c292d021-99f7-471d-857e-339ae6ec70c1}
+2026-10-04T05:39:10.6510048Z Azure Region: northcentralus
+2026-10-04T05:39:10.6510679Z ##[endgroup]
+2026-10-04T05:39:10.6512269Z ##[group]Operating System
+2026-10-04T05:39:10.6513631Z Ubuntu
+2026-10-04T05:39:10.6514162Z 24.04.5
+2026-10-04T05:39:10.6515314Z LTS
+2026-10-04T05:39:10.6515911Z ##[endgroup]
+2026-10-04T05:39:10.6516471Z ##[group]Runner Image
+2026-10-04T05:39:10.6517158Z Image: ubuntu-24.04
+2026-10-04T05:39:10.6517722Z Version: 20260927.320.1
+2026-10-04T05:39:10.6519225Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-04T05:39:10.6520855Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-04T05:39:10.6521875Z ##[endgroup]
+2026-10-04T05:39:10.6523066Z ##[group]GITHUB_TOKEN Permissions
+2026-10-04T05:39:10.6525323Z Contents: read
+2026-10-04T05:39:10.6525920Z Metadata: read
+2026-10-04T05:39:10.6526484Z Packages: read
+2026-10-04T05:39:10.6527104Z ##[endgroup]
+2026-10-04T05:39:10.6529687Z Secret source: Actions
+2026-10-04T05:39:10.6530757Z Cache mode: write
+2026-10-04T05:39:10.6531757Z Prepare workflow directory
+2026-10-04T05:39:10.6982655Z Prepare all required actions
+2026-10-04T05:39:10.7032030Z Getting action download info
+2026-10-04T05:39:10.9616270Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-04T05:39:11.0686182Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-04T05:39:11.3207449Z Complete job name: targeted
+2026-10-04T05:39:11.3743247Z ##[group]Checking docker version
+2026-10-04T05:39:11.3757200Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-04T05:39:11.4842960Z '1.48'
+2026-10-04T05:39:11.4855769Z Docker daemon API version: '1.48'
+2026-10-04T05:39:11.4856565Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-04T05:39:11.5032318Z '1.48'
+2026-10-04T05:39:11.5046508Z Docker client API version: '1.48'
+2026-10-04T05:39:11.5052373Z ##[endgroup]
+2026-10-04T05:39:11.5055506Z ##[group]Clean up resources from previous jobs
+2026-10-04T05:39:11.5061893Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=126386"
+2026-10-04T05:39:11.5211108Z ##[command]/usr/bin/docker network prune --force --filter "label=126386"
+2026-10-04T05:39:11.5342934Z ##[endgroup]
+2026-10-04T05:39:11.5343493Z ##[group]Create local container network
+2026-10-04T05:39:11.5353645Z ##[command]/usr/bin/docker network create --label 126386 github_network_cc3e16e0e15c43919869852192b8b1c9
+2026-10-04T05:39:11.5841469Z 97389bc7b8968165d27965f95526bd1754fb49dfbc1e419badddc78cf09d62ba
+2026-10-04T05:39:11.5861576Z ##[endgroup]
+2026-10-04T05:39:11.5886969Z ##[group]Starting redis service container
+2026-10-04T05:39:11.5909496Z ##[command]/usr/bin/docker pull redis:7-alpine
+2026-10-04T05:39:12.0378633Z 7-alpine: Pulling from library/redis
+2026-10-04T05:39:12.1538283Z 16333ee0c00f: Pulling fs layer
+2026-10-04T05:39:12.1540024Z 83234986c742: Pulling fs layer
+2026-10-04T05:39:12.1541314Z 7eb50503c2b0: Pulling fs layer
+2026-10-04T05:39:12.1542668Z 1522f9c6f453: Pulling fs layer
+2026-10-04T05:39:12.1543965Z 9928009b15c8: Pulling fs layer
+2026-10-04T05:39:12.1545316Z 4f4fb700ef54: Pulling fs layer
+2026-10-04T05:39:12.1546490Z 4eb14bae0e1d: Pulling fs layer
+2026-10-04T05:39:12.1547429Z 9928009b15c8: Waiting
+2026-10-04T05:39:12.1548112Z 1522f9c6f453: Waiting
+2026-10-04T05:39:12.1549074Z 4f4fb700ef54: Waiting
+2026-10-04T05:39:12.2759599Z 83234986c742: Download complete
+2026-10-04T05:39:12.2810039Z 7eb50503c2b0: Verifying Checksum
+2026-10-04T05:39:12.2812044Z 7eb50503c2b0: Download complete
+2026-10-04T05:39:12.2987777Z 16333ee0c00f: Verifying Checksum
+2026-10-04T05:39:12.2991013Z 16333ee0c00f: Download complete
+2026-10-04T05:39:12.3772571Z 9928009b15c8: Verifying Checksum
+2026-10-04T05:39:12.3774185Z 9928009b15c8: Download complete
+2026-10-04T05:39:12.3855405Z 4f4fb700ef54: Verifying Checksum
+2026-10-04T05:39:12.3856888Z 4f4fb700ef54: Download complete
+2026-10-04T05:39:12.4052030Z 1522f9c6f453: Verifying Checksum
+2026-10-04T05:39:12.4053795Z 1522f9c6f453: Download complete
+2026-10-04T05:39:12.4228207Z 16333ee0c00f: Pull complete
+2026-10-04T05:39:12.4507143Z 4eb14bae0e1d: Verifying Checksum
+2026-10-04T05:39:12.4509276Z 4eb14bae0e1d: Download complete
+2026-10-04T05:39:12.4532804Z 83234986c742: Pull complete
+2026-10-04T05:39:12.6055572Z 7eb50503c2b0: Pull complete
+2026-10-04T05:39:12.7939894Z 1522f9c6f453: Pull complete
+2026-10-04T05:39:12.8020516Z 9928009b15c8: Pull complete
+2026-10-04T05:39:12.8093020Z 4f4fb700ef54: Pull complete
+2026-10-04T05:39:12.8217168Z 4eb14bae0e1d: Pull complete
+2026-10-04T05:39:12.8258193Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+2026-10-04T05:39:12.8274779Z Status: Downloaded newer image for redis:7-alpine
+2026-10-04T05:39:12.8280969Z docker.io/library/redis:7-alpine
+2026-10-04T05:39:12.8324517Z ##[command]/usr/bin/docker create --name d08e59d3abed475e93c4466d4067e2c7_redis7alpine_72c6e0 --label 126386 --network github_network_cc3e16e0e15c43919869852192b8b1c9 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+2026-10-04T05:39:12.8591149Z 623a6a091691bdefcdf8790df29892612792fa29ff3effce702bdec098703bbe
+2026-10-04T05:39:12.8615981Z ##[command]/usr/bin/docker start 623a6a091691bdefcdf8790df29892612792fa29ff3effce702bdec098703bbe
+2026-10-04T05:39:13.0875142Z 623a6a091691bdefcdf8790df29892612792fa29ff3effce702bdec098703bbe
+2026-10-04T05:39:13.0904421Z ##[command]/usr/bin/docker ps --all --filter id=623a6a091691bdefcdf8790df29892612792fa29ff3effce702bdec098703bbe --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-04T05:39:13.1054538Z 623a6a091691bdefcdf8790df29892612792fa29ff3effce702bdec098703bbe Up Less than a second (health: starting)
+2026-10-04T05:39:13.1082257Z ##[command]/usr/bin/docker port 623a6a091691bdefcdf8790df29892612792fa29ff3effce702bdec098703bbe
+2026-10-04T05:39:13.1214810Z 6379/tcp -> 0.0.0.0:6379
+2026-10-04T05:39:13.1216183Z 6379/tcp -> [::]:6379
+2026-10-04T05:39:13.1264594Z ##[endgroup]
+2026-10-04T05:39:13.1273745Z ##[group]Waiting for all services to be ready
+2026-10-04T05:39:13.1287362Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 623a6a091691bdefcdf8790df29892612792fa29ff3effce702bdec098703bbe
+2026-10-04T05:39:13.1409627Z starting
+2026-10-04T05:39:13.1432364Z redis service is starting, waiting 2 seconds before checking again.
+2026-10-04T05:39:15.1441209Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 623a6a091691bdefcdf8790df29892612792fa29ff3effce702bdec098703bbe
+2026-10-04T05:39:15.1566750Z starting
+2026-10-04T05:39:15.1594133Z redis service is starting, waiting 4 seconds before checking again.
+2026-10-04T05:39:19.4041306Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 623a6a091691bdefcdf8790df29892612792fa29ff3effce702bdec098703bbe
+2026-10-04T05:39:19.4174128Z healthy
+2026-10-04T05:39:19.4193138Z redis service is healthy.
+2026-10-04T05:39:19.4193602Z ##[endgroup]
+2026-10-04T05:39:19.4492463Z ##[group]Run actions/checkout@v6
+2026-10-04T05:39:19.4493070Z with:
+2026-10-04T05:39:19.4493375Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T05:39:19.4496071Z   token: ***
+2026-10-04T05:39:19.4496281Z   ssh-strict: true
+2026-10-04T05:39:19.4496485Z   ssh-user: git
+2026-10-04T05:39:19.4496719Z   persist-credentials: true
+2026-10-04T05:39:19.4497200Z   clean: true
+2026-10-04T05:39:19.4497432Z   sparse-checkout-cone-mode: true
+2026-10-04T05:39:19.4497686Z   fetch-depth: 1
+2026-10-04T05:39:19.4497878Z   fetch-tags: false
+2026-10-04T05:39:19.4498084Z   show-progress: true
+2026-10-04T05:39:19.4498289Z   lfs: false
+2026-10-04T05:39:19.4498484Z   submodules: false
+2026-10-04T05:39:19.4498688Z   set-safe-directory: true
+2026-10-04T05:39:19.4499131Z   allow-unsafe-pr-checkout: false
+2026-10-04T05:39:19.4499680Z ##[endgroup]
+2026-10-04T05:39:19.5608433Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T05:39:19.5610569Z ##[group]Getting Git version info
+2026-10-04T05:39:19.5611084Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T05:39:19.5611778Z [command]/usr/bin/git version
+2026-10-04T05:39:19.5631609Z git version 2.55.0
+2026-10-04T05:39:19.5656215Z ##[endgroup]
+2026-10-04T05:39:19.5671255Z Temporarily overriding HOME='/home/runner/work/_temp/a4488d07-d195-43ae-941d-d5db01f668f9' before making global git config changes
+2026-10-04T05:39:19.5672624Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T05:39:19.5677133Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T05:39:19.5731574Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T05:39:19.5736593Z ##[group]Determining repository object format
+2026-10-04T05:39:19.5738876Z ##[endgroup]
+2026-10-04T05:39:19.5739692Z ##[group]Initializing the repository
+2026-10-04T05:39:19.5744169Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T05:39:19.5875923Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-04T05:39:19.5876587Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-04T05:39:19.5878055Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-04T05:39:19.5879307Z hint: call:
+2026-10-04T05:39:19.5879635Z hint:
+2026-10-04T05:39:19.5880229Z hint: 	git config --global init.defaultBranch <name>
+2026-10-04T05:39:19.5880835Z hint:
+2026-10-04T05:39:19.5881356Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-04T05:39:19.5882275Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-04T05:39:19.5883017Z hint:
+2026-10-04T05:39:19.5883401Z hint: 	git branch -m <name>
+2026-10-04T05:39:19.5883843Z hint:
+2026-10-04T05:39:19.5884435Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-04T05:39:19.5885604Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-04T05:39:19.5893507Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T05:39:19.5947409Z ##[endgroup]
+2026-10-04T05:39:19.5948107Z ##[group]Disabling automatic garbage collection
+2026-10-04T05:39:19.5952795Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-04T05:39:19.5985204Z ##[endgroup]
+2026-10-04T05:39:19.5985868Z ##[group]Setting up auth
+2026-10-04T05:39:19.5987111Z Removing SSH command configuration
+2026-10-04T05:39:19.5994784Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T05:39:19.6027717Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T05:39:19.6409856Z Removing HTTP extra header
+2026-10-04T05:39:19.6415742Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T05:39:19.6449449Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T05:39:19.6671660Z Removing includeIf entries pointing to credentials config files
+2026-10-04T05:39:19.6678023Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T05:39:19.6712144Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T05:39:19.6946116Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-75f71e70-001e-47b9-8d81-b00b73b21fdb.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-04T05:39:19.6987229Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-75f71e70-001e-47b9-8d81-b00b73b21fdb.config
+2026-10-04T05:39:19.7022173Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-75f71e70-001e-47b9-8d81-b00b73b21fdb.config
+2026-10-04T05:39:19.7059399Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-75f71e70-001e-47b9-8d81-b00b73b21fdb.config
+2026-10-04T05:39:19.7093115Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-75f71e70-001e-47b9-8d81-b00b73b21fdb.config
+2026-10-04T05:39:19.7130447Z ##[endgroup]
+2026-10-04T05:39:19.7130845Z ##[group]Fetching the repository
+2026-10-04T05:39:19.7141309Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +d74ca031a3006deaec46a1f7752c37371e156340:refs/remotes/origin/ci/B-PRIV-FU-117-be-before
+2026-10-04T05:39:21.3293798Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T05:39:21.3294998Z  * [new ref]         d74ca031a3006deaec46a1f7752c37371e156340 -> origin/ci/B-PRIV-FU-117-be-before
+2026-10-04T05:39:21.3304526Z [command]/usr/bin/git branch --list --remote origin/ci/B-PRIV-FU-117-be-before
+2026-10-04T05:39:21.3330614Z   origin/ci/B-PRIV-FU-117-be-before
+2026-10-04T05:39:21.3340300Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-PRIV-FU-117-be-before
+2026-10-04T05:39:21.3363335Z d74ca031a3006deaec46a1f7752c37371e156340
+2026-10-04T05:39:21.3373434Z ##[endgroup]
+2026-10-04T05:39:21.3373853Z ##[group]Determining the checkout info
+2026-10-04T05:39:21.3374297Z ##[endgroup]
+2026-10-04T05:39:21.3375682Z [command]/usr/bin/git sparse-checkout disable
+2026-10-04T05:39:21.3432774Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-04T05:39:21.3462554Z ##[group]Checking out the ref
+2026-10-04T05:39:21.3466827Z [command]/usr/bin/git checkout --progress --force -B ci/B-PRIV-FU-117-be-before refs/remotes/origin/ci/B-PRIV-FU-117-be-before
+2026-10-04T05:39:21.5636286Z Switched to a new branch 'ci/B-PRIV-FU-117-be-before'
+2026-10-04T05:39:21.5641603Z branch 'ci/B-PRIV-FU-117-be-before' set up to track 'origin/ci/B-PRIV-FU-117-be-before'.
+2026-10-04T05:39:21.5652014Z ##[endgroup]
+2026-10-04T05:39:21.5702630Z [command]/usr/bin/git log -1 --format=%H
+2026-10-04T05:39:21.5728895Z d74ca031a3006deaec46a1f7752c37371e156340
+2026-10-04T05:39:21.5997826Z ##[group]Run actions/setup-node@v6
+2026-10-04T05:39:21.5998133Z with:
+2026-10-04T05:39:21.5998329Z   node-version: 20
+2026-10-04T05:39:21.5998532Z   cache: npm
+2026-10-04T05:39:21.5998726Z   check-latest: false
+2026-10-04T05:39:21.6001604Z   token: ***
+2026-10-04T05:39:21.6001828Z   package-manager-cache: true
+2026-10-04T05:39:21.6002082Z ##[endgroup]
+2026-10-04T05:39:21.7480531Z Attempting to download 20...
+2026-10-04T05:39:22.3682042Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-04T05:39:22.7840123Z Extracting ...
+2026-10-04T05:39:22.7955225Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/f9afcdf3-ff31-4ee5-90ce-d2d47ad53bc0 -f /home/runner/work/_temp/869c61e0-8979-4109-972d-887341c51a85
+2026-10-04T05:39:23.7969352Z Adding to the cache ...
+2026-10-04T05:39:25.6248063Z ##[group]Environment details
+2026-10-04T05:39:25.8578369Z node: v20.20.2
+2026-10-04T05:39:25.8579094Z npm: 10.8.2
+2026-10-04T05:39:25.8579437Z yarn: 1.22.22
+2026-10-04T05:39:25.8580162Z ##[endgroup]
+2026-10-04T05:39:25.8601745Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+2026-10-04T05:39:25.9674362Z /home/runner/.npm
+2026-10-04T05:39:26.0865050Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T05:39:27.0409708Z Received 86828135 of 86828135 (100.0%), 98.9 MBs/sec
+2026-10-04T05:39:27.0410810Z Cache Size: ~83 MB (86828135 B)
+2026-10-04T05:39:27.0442880Z [command]/usr/bin/tar -xf /home/runner/work/_temp/c9ae51e9-d290-4886-b9a4-9ed06aa6efc8/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+2026-10-04T05:39:27.2223491Z Cache restored successfully
+2026-10-04T05:39:27.2270193Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T05:39:27.2472297Z ##[group]Run npm ci
+2026-10-04T05:39:27.2472609Z [36;1mnpm ci[0m
+2026-10-04T05:39:27.2720667Z shell: /usr/bin/bash -e {0}
+2026-10-04T05:39:27.2721000Z ##[endgroup]
+2026-10-04T05:39:33.4532612Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-04T05:39:34.5715475Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-04T05:39:35.6014800Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T05:39:37.0228949Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T05:39:37.0689480Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T05:39:37.0917809Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T05:39:50.2320502Z 
+2026-10-04T05:39:50.2321102Z > growth-project-backend@1.0.0 postinstall
+2026-10-04T05:39:50.2321513Z > prisma generate
+2026-10-04T05:39:50.2321663Z 
+2026-10-04T05:39:51.1966136Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T05:39:55.2787941Z ┌─────────────────────────────────────────────────────────┐
+2026-10-04T05:39:55.2800651Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+2026-10-04T05:39:55.2801153Z 
+2026-10-04T05:39:55.2801941Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.35s
+2026-10-04T05:39:55.2802508Z 
+2026-10-04T05:39:55.2803113Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T05:39:55.2803691Z 
+2026-10-04T05:39:55.2804540Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+2026-10-04T05:39:55.2805018Z 
+2026-10-04T05:39:55.2805318Z │                                                         │
+2026-10-04T05:39:55.2806702Z │  This is a major update - please follow the guide at    │
+2026-10-04T05:39:55.2807839Z │  https://pris.ly/d/major-version-upgrade                │
+2026-10-04T05:39:55.2809226Z │                                                         │
+2026-10-04T05:39:55.2810328Z │  Run the following to update                            │
+2026-10-04T05:39:55.2811236Z │    npm i --save-dev prisma@latest                       │
+2026-10-04T05:39:55.2812152Z │    npm i @prisma/client@latest                          │
+2026-10-04T05:39:55.2813070Z └─────────────────────────────────────────────────────────┘
+2026-10-04T05:39:55.3444806Z 
+2026-10-04T05:39:55.3445837Z > growth-project-backend@1.0.0 prepare
+2026-10-04T05:39:55.3446938Z > lefthook install
+2026-10-04T05:39:55.3447630Z 
+2026-10-04T05:39:55.4012491Z sync hooks: ✔️(pre-commit, commit-msg)
+2026-10-04T05:39:55.4187838Z 
+2026-10-04T05:39:55.4188664Z added 1115 packages, and audited 1116 packages in 28s
+2026-10-04T05:39:55.4189391Z 
+2026-10-04T05:39:55.4189662Z 202 packages are looking for funding
+2026-10-04T05:39:55.4190015Z   run `npm fund` for details
+2026-10-04T05:39:55.4222461Z 
+2026-10-04T05:39:55.4222909Z 3 high severity vulnerabilities
+2026-10-04T05:39:55.4223773Z 
+2026-10-04T05:39:55.4224383Z To address all issues (including breaking changes), run:
+2026-10-04T05:39:55.4225088Z   npm audit fix --force
+2026-10-04T05:39:55.4225350Z 
+2026-10-04T05:39:55.4225561Z Run `npm audit` for details.
+2026-10-04T05:39:55.4903809Z ##[group]Run npx prisma generate
+2026-10-04T05:39:55.4904157Z [36;1mnpx prisma generate[0m
+2026-10-04T05:39:55.4968153Z shell: /usr/bin/bash -e {0}
+2026-10-04T05:39:55.4968433Z ##[endgroup]
+2026-10-04T05:39:56.7881368Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T05:40:00.6508020Z 
+2026-10-04T05:40:00.6511571Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.11s
+2026-10-04T05:40:00.6512349Z 
+2026-10-04T05:40:00.6513120Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T05:40:00.6513745Z 
+2026-10-04T05:40:00.6514400Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+2026-10-04T05:40:00.6515033Z 
+2026-10-04T05:40:00.7708310Z ##[group]Run set -euo pipefail
+2026-10-04T05:40:00.7708661Z [36;1mset -euo pipefail[0m
+2026-10-04T05:40:00.7709426Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-04T05:40:00.7709930Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-04T05:40:00.7710297Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-04T05:40:00.7710598Z [36;1mnpx jest --ci --runInBand "${SPECS[@]}"[0m
+2026-10-04T05:40:00.7773752Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T05:40:00.7774106Z env:
+2026-10-04T05:40:00.7774337Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-04T05:40:00.7774698Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-04T05:40:00.7775013Z ##[endgroup]
+2026-10-04T05:40:00.7881316Z specs: test/privacy/no-pii-in-logs.spec.ts test/privacy/log-pii.spec.ts test/privacy-apple-ios-version.spec.ts test/privacy-apple-unlink-path.spec.ts test/privacy-round8-retention.spec.ts src/talent-marketplace/__tests__/admin-applications.service.spec.ts src/talent-marketplace/__tests__/admin-moderation.service.spec.ts
+2026-10-04T05:40:03.8097170Z FAIL test/privacy/no-pii-in-logs.spec.ts (136 MB heap size)
+2026-10-04T05:40:03.8100219Z   ● C-611-17: EmailService logs the send-log row id and template, never the address or subject › log transport: no address, no rendered subject (it holds the first name)
+2026-10-04T05:40:03.8101429Z 
+2026-10-04T05:40:03.8101806Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T05:40:03.8102230Z 
+2026-10-04T05:40:03.8102459Z     Expected substring: not "@"
+2026-10-04T05:40:03.8104071Z     Received string:        "[email:log] to=pat.client+tgp@example.com template=nudge-onboarding-abandoned subject=\"Pick up where you left off, Patricia\" key=nudge:onboarding_abandoned:sig-1:user-1"
+2026-10-04T05:40:03.8105857Z 
+2026-10-04T05:40:03.8106727Z     [0m [90m 52 |[39m   expect(lines[33m.[39mlength)[33m.[39mtoBeGreaterThan([35m0[39m)[33m;[39m
+2026-10-04T05:40:03.8107965Z      [90m 53 |[39m   [36mfor[39m ([36mconst[39m line [36mof[39m lines) {
+2026-10-04T05:40:03.8109517Z     [31m[1m>[22m[39m[90m 54 |[39m     expect(line)[33m.[39mnot[33m.[39mtoContain([32m'@'[39m)[33m;[39m
+2026-10-04T05:40:03.8110621Z      [90m    |[39m                      [31m[1m^[22m[39m
+2026-10-04T05:40:03.8111781Z      [90m 55 |[39m     expect(line)[33m.[39mnot[33m.[39mtoContain([32m'pat.client'[39m)[33m;[39m
+2026-10-04T05:40:03.8113155Z      [90m 56 |[39m     expect(line)[33m.[39mnot[33m.[39mtoContain([33mFIRST[39m)[33m;[39m
+2026-10-04T05:40:03.8113983Z      [90m 57 |[39m   }[0m
+2026-10-04T05:40:03.8114244Z 
+2026-10-04T05:40:03.8114694Z       at expectNoPersonalData (test/privacy/no-pii-in-logs.spec.ts:54:22)
+2026-10-04T05:40:03.8115677Z       at Object.<anonymous> (test/privacy/no-pii-in-logs.spec.ts:97:5)
+2026-10-04T05:40:03.8116201Z 
+2026-10-04T05:40:03.8118394Z   ● C-611-17: EmailService logs the send-log row id and template, never the address or subject › sent through the provider: logs the provider id and row id, not the address
+2026-10-04T05:40:03.8119770Z 
+2026-10-04T05:40:03.8120107Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T05:40:03.8120522Z 
+2026-10-04T05:40:03.8120732Z     Expected substring: not "@"
+2026-10-04T05:40:03.8121821Z     Received string:        "email sent template=nudge-onboarding-abandoned to=pat.client+tgp@example.com provider_id=re_msg_1"
+2026-10-04T05:40:03.8122657Z 
+2026-10-04T05:40:03.8123440Z     [0m [90m 52 |[39m   expect(lines[33m.[39mlength)[33m.[39mtoBeGreaterThan([35m0[39m)[33m;[39m
+2026-10-04T05:40:03.8124595Z      [90m 53 |[39m   [36mfor[39m ([36mconst[39m line [36mof[39m lines) {
+2026-10-04T05:40:03.8125849Z     [31m[1m>[22m[39m[90m 54 |[39m     expect(line)[33m.[39mnot[33m.[39mtoContain([32m'@'[39m)[33m;[39m
+2026-10-04T05:40:03.8126932Z      [90m    |[39m                      [31m[1m^[22m[39m
+2026-10-04T05:40:03.8128498Z      [90m 55 |[39m     expect(line)[33m.[39mnot[33m.[39mtoContain([32m'pat.client'[39m)[33m;[39m
+2026-10-04T05:40:03.8130143Z      [90m 56 |[39m     expect(line)[33m.[39mnot[33m.[39mtoContain([33mFIRST[39m)[33m;[39m
+2026-10-04T05:40:03.8131327Z      [90m 57 |[39m   }[0m
+2026-10-04T05:40:03.8131621Z 
+2026-10-04T05:40:03.8132087Z       at expectNoPersonalData (test/privacy/no-pii-in-logs.spec.ts:54:22)
+2026-10-04T05:40:03.8133143Z       at Object.<anonymous> (test/privacy/no-pii-in-logs.spec.ts:114:5)
+2026-10-04T05:40:03.8133648Z 
+2026-10-04T05:40:03.8135472Z   ● C-611-17: EmailService logs the send-log row id and template, never the address or subject › provider error that echoes the address: the log, the result and the stored error hold no address
+2026-10-04T05:40:03.8136668Z 
+2026-10-04T05:40:03.8137019Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T05:40:03.8137678Z 
+2026-10-04T05:40:03.8137897Z     Expected substring: not "@"
+2026-10-04T05:40:03.8140063Z     Received string:        "email send failed template=nudge-onboarding-abandoned to=pat.client+tgp@example.com: Resend 422: {\"message\":\"Invalid `to` field: pat.client+tgp@example.com is not a valid address\"}"
+2026-10-04T05:40:03.8141421Z 
+2026-10-04T05:40:03.8142209Z     [0m [90m 52 |[39m   expect(lines[33m.[39mlength)[33m.[39mtoBeGreaterThan([35m0[39m)[33m;[39m
+2026-10-04T05:40:03.8143502Z      [90m 53 |[39m   [36mfor[39m ([36mconst[39m line [36mof[39m lines) {
+2026-10-04T05:40:03.8144756Z     [31m[1m>[22m[39m[90m 54 |[39m     expect(line)[33m.[39mnot[33m.[39mtoContain([32m'@'[39m)[33m;[39m
+2026-10-04T05:40:03.8145761Z      [90m    |[39m                      [31m[1m^[22m[39m
+2026-10-04T05:40:03.8146819Z      [90m 55 |[39m     expect(line)[33m.[39mnot[33m.[39mtoContain([32m'pat.client'[39m)[33m;[39m
+2026-10-04T05:40:03.8148342Z      [90m 56 |[39m     expect(line)[33m.[39mnot[33m.[39mtoContain([33mFIRST[39m)[33m;[39m
+2026-10-04T05:40:03.8149435Z      [90m 57 |[39m   }[0m
+2026-10-04T05:40:03.8149720Z 
+2026-10-04T05:40:03.8150149Z       at expectNoPersonalData (test/privacy/no-pii-in-logs.spec.ts:54:22)
+2026-10-04T05:40:03.8151145Z       at Object.<anonymous> (test/privacy/no-pii-in-logs.spec.ts:135:5)
+2026-10-04T05:40:03.8151677Z 
+2026-10-04T05:40:03.8152670Z   ● C-611-17: DigestService logs the user id, never the address › log transport: the line names the user id and template only
+2026-10-04T05:40:03.8153507Z 
+2026-10-04T05:40:03.8153832Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T05:40:03.8154256Z 
+2026-10-04T05:40:03.8154465Z     Expected substring: not "@"
+2026-10-04T05:40:03.8155716Z     Received string:        "[email log] to=pat.client+tgp@example.com subject=\"Your daily summary — 3 October 2026\""
+2026-10-04T05:40:03.8156487Z 
+2026-10-04T05:40:03.8157289Z     [0m [90m 52 |[39m   expect(lines[33m.[39mlength)[33m.[39mtoBeGreaterThan([35m0[39m)[33m;[39m
+2026-10-04T05:40:03.8158471Z      [90m 53 |[39m   [36mfor[39m ([36mconst[39m line [36mof[39m lines) {
+2026-10-04T05:40:03.8159989Z     [31m[1m>[22m[39m[90m 54 |[39m     expect(line)[33m.[39mnot[33m.[39mtoContain([32m'@'[39m)[33m;[39m
+2026-10-04T05:40:03.8161043Z      [90m    |[39m                      [31m[1m^[22m[39m
+2026-10-04T05:40:03.8162134Z      [90m 55 |[39m     expect(line)[33m.[39mnot[33m.[39mtoContain([32m'pat.client'[39m)[33m;[39m
+2026-10-04T05:40:03.8163380Z      [90m 56 |[39m     expect(line)[33m.[39mnot[33m.[39mtoContain([33mFIRST[39m)[33m;[39m
+2026-10-04T05:40:03.8164221Z      [90m 57 |[39m   }[0m
+2026-10-04T05:40:03.8164483Z 
+2026-10-04T05:40:03.8164913Z       at expectNoPersonalData (test/privacy/no-pii-in-logs.spec.ts:54:22)
+2026-10-04T05:40:03.8165799Z       at Object.<anonymous> (test/privacy/no-pii-in-logs.spec.ts:181:5)
+2026-10-04T05:40:03.8166286Z 
+2026-10-04T05:40:03.8167757Z   ● C-611-17: DigestService logs the user id, never the address › provider error that echoes the address: neither the log nor the stored failure holds it
+2026-10-04T05:40:03.8169038Z 
+2026-10-04T05:40:03.8169407Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T05:40:03.8169848Z 
+2026-10-04T05:40:03.8170061Z     Expected substring: not "@"
+2026-10-04T05:40:03.8171136Z     Received string:        "Resend API error 422: Error parsing 'To': Illegal email address 'pat.client+tgp@example.com'."
+2026-10-04T05:40:03.8171989Z 
+2026-10-04T05:40:03.8173435Z     [0m [90m 198 |[39m     [36mconst[39m stored [33m=[39m notifications[33m.[39mmarkDigestFailed[33m.[39mmock[33m.[39mcalls[[35m0[39m][[35m1[39m] [36mas[39m string[33m;[39m
+2026-10-04T05:40:03.8175399Z      [90m 199 |[39m     expect(stored)[33m.[39mtoContain([32m'Resend API error 422'[39m)[33m;[39m
+2026-10-04T05:40:03.8176871Z     [31m[1m>[22m[39m[90m 200 |[39m     expect(stored)[33m.[39mnot[33m.[39mtoContain([32m'@'[39m)[33m;[39m
+2026-10-04T05:40:03.8177990Z      [90m     |[39m                        [31m[1m^[22m[39m
+2026-10-04T05:40:03.8179243Z      [90m 201 |[39m     expectNoPersonalData(logs[33m.[39mlines())[33m;[39m
+2026-10-04T05:40:03.8180713Z      [90m 202 |[39m     expect(logs[33m.[39mlines()[33m.[39mjoin([32m'\n'[39m))[33m.[39mtoContain([32m'user=user-1'[39m)[33m;[39m
+2026-10-04T05:40:03.8181771Z      [90m 203 |[39m   })[33m;[39m[0m
+2026-10-04T05:40:03.8182103Z 
+2026-10-04T05:40:03.8182548Z       at Object.<anonymous> (test/privacy/no-pii-in-logs.spec.ts:200:24)
+2026-10-04T05:40:03.8183188Z 
+2026-10-04T05:40:03.8184376Z   ● C-611-17: other log lines that carried a name, an address or a payload › coach alert push fallback: no alert message (it holds the client name)
+2026-10-04T05:40:03.8185393Z 
+2026-10-04T05:40:03.8185747Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T05:40:03.8186182Z 
+2026-10-04T05:40:03.8186693Z     Expected substring: not "Patricia"
+2026-10-04T05:40:03.8188050Z     Received string:        "push skipped (no token) coach=coach-1 type=consecutive_misses sev=warning: Patricia Quill has not logged a workout in 5+ days"
+2026-10-04T05:40:03.8189358Z 
+2026-10-04T05:40:03.8190145Z     [0m [90m 54 |[39m     expect(line)[33m.[39mnot[33m.[39mtoContain([32m'@'[39m)[33m;[39m
+2026-10-04T05:40:03.8191553Z      [90m 55 |[39m     expect(line)[33m.[39mnot[33m.[39mtoContain([32m'pat.client'[39m)[33m;[39m
+2026-10-04T05:40:03.8193087Z     [31m[1m>[22m[39m[90m 56 |[39m     expect(line)[33m.[39mnot[33m.[39mtoContain([33mFIRST[39m)[33m;[39m
+2026-10-04T05:40:03.8194138Z      [90m    |[39m                      [31m[1m^[22m[39m
+2026-10-04T05:40:03.8194713Z      [90m 57 |[39m   }
+2026-10-04T05:40:03.8195172Z      [90m 58 |[39m }
+2026-10-04T05:40:03.8195586Z      [90m 59 |[39m[0m
+2026-10-04T05:40:03.8195825Z 
+2026-10-04T05:40:03.8196289Z       at expectNoPersonalData (test/privacy/no-pii-in-logs.spec.ts:56:22)
+2026-10-04T05:40:03.8197216Z       at Object.<anonymous> (test/privacy/no-pii-in-logs.spec.ts:236:5)
+2026-10-04T05:40:03.8197698Z 
+2026-10-04T05:40:03.8199077Z   ● C-611-17: other log lines that carried a name, an address or a payload › practice federation fallback: the coach id, not the coach email
+2026-10-04T05:40:03.8200010Z 
+2026-10-04T05:40:03.8200351Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T05:40:03.8200765Z 
+2026-10-04T05:40:03.8200984Z     Expected substring: not "@"
+2026-10-04T05:40:03.8201973Z     Received string:        "Practice federation: no finance coach for pat.client+tgp@example.com - fitness-only mirror"
+2026-10-04T05:40:03.8202788Z 
+2026-10-04T05:40:03.8203600Z     [0m [90m 52 |[39m   expect(lines[33m.[39mlength)[33m.[39mtoBeGreaterThan([35m0[39m)[33m;[39m
+2026-10-04T05:40:03.8204762Z      [90m 53 |[39m   [36mfor[39m ([36mconst[39m line [36mof[39m lines) {
+2026-10-04T05:40:03.8206051Z     [31m[1m>[22m[39m[90m 54 |[39m     expect(line)[33m.[39mnot[33m.[39mtoContain([32m'@'[39m)[33m;[39m
+2026-10-04T05:40:03.8207144Z      [90m    |[39m                      [31m[1m^[22m[39m
+2026-10-04T05:40:03.8208503Z      [90m 55 |[39m     expect(line)[33m.[39mnot[33m.[39mtoContain([32m'pat.client'[39m)[33m;[39m
+2026-10-04T05:40:03.8210212Z      [90m 56 |[39m     expect(line)[33m.[39mnot[33m.[39mtoContain([33mFIRST[39m)[33m;[39m
+2026-10-04T05:40:03.8211133Z      [90m 57 |[39m   }[0m
+2026-10-04T05:40:03.8211422Z 
+2026-10-04T05:40:03.8211895Z       at expectNoPersonalData (test/privacy/no-pii-in-logs.spec.ts:54:22)
+2026-10-04T05:40:03.8212958Z       at Object.<anonymous> (test/privacy/no-pii-in-logs.spec.ts:256:5)
+2026-10-04T05:40:03.8213502Z 
+2026-10-04T05:40:03.8214667Z   ● C-611-17: other log lines that carried a name, an address or a payload › scheduling webhook stubs: the payload shape, never its values
+2026-10-04T05:40:03.8215602Z 
+2026-10-04T05:40:03.8215892Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T05:40:03.8216338Z 
+2026-10-04T05:40:03.8216571Z     Expected substring: not "@"
+2026-10-04T05:40:03.8218419Z     Received string:        "zoom webhook stub received payload (no-op): {\"event\":\"meeting.participant_joined\",\"payload\":{\"object\":{\"participant\":{\"user_name\":\"Patricia Quill\",\"email\":\"pat.client+tgp@example.com\"}}}}"
+2026-10-04T05:40:03.8220199Z 
+2026-10-04T05:40:03.8221051Z     [0m [90m 52 |[39m   expect(lines[33m.[39mlength)[33m.[39mtoBeGreaterThan([35m0[39m)[33m;[39m
+2026-10-04T05:40:03.8222329Z      [90m 53 |[39m   [36mfor[39m ([36mconst[39m line [36mof[39m lines) {
+2026-10-04T05:40:03.8223624Z     [31m[1m>[22m[39m[90m 54 |[39m     expect(line)[33m.[39mnot[33m.[39mtoContain([32m'@'[39m)[33m;[39m
+2026-10-04T05:40:03.8224670Z      [90m    |[39m                      [31m[1m^[22m[39m
+2026-10-04T05:40:03.8225835Z      [90m 55 |[39m     expect(line)[33m.[39mnot[33m.[39mtoContain([32m'pat.client'[39m)[33m;[39m
+2026-10-04T05:40:03.8227499Z      [90m 56 |[39m     expect(line)[33m.[39mnot[33m.[39mtoContain([33mFIRST[39m)[33m;[39m
+2026-10-04T05:40:03.8228395Z      [90m 57 |[39m   }[0m
+2026-10-04T05:40:03.8228684Z 
+2026-10-04T05:40:03.8229434Z       at expectNoPersonalData (test/privacy/no-pii-in-logs.spec.ts:54:22)
+2026-10-04T05:40:03.8230452Z       at Object.<anonymous> (test/privacy/no-pii-in-logs.spec.ts:273:7)
+2026-10-04T05:40:03.8230971Z 
+2026-10-04T05:40:03.8232084Z   ● C-611-17 guard: no log call under src/ interpolates an address, a name or free text › every log call under src/ passes the rules
+2026-10-04T05:40:03.8233069Z 
+2026-10-04T05:40:03.8233392Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T05:40:03.8233833Z 
+2026-10-04T05:40:03.8234026Z     - Expected  -  1
+2026-10-04T05:40:03.8234444Z     + Received  + 19
+2026-10-04T05:40:03.8234689Z 
+2026-10-04T05:40:03.8234840Z     - Array []
+2026-10-04T05:40:03.8235222Z     + Array [
+2026-10-04T05:40:03.8235836Z     +   "src/auth/auth.service.ts:1045 [email] user.id supaEmail ,",
+2026-10-04T05:40:03.8236703Z     +   "src/auth/auth.service.ts:1240 [email] user.id supaEmail ,",
+2026-10-04T05:40:03.8237603Z     +   "src/auth/auth.service.ts:1783 [email] user.email user.id ,",
+2026-10-04T05:40:03.8239189Z     +   "src/coach/coach-alerts.service.ts:249 [free-text] alert.coach_id alert.alert_type alert.severity alert.message ,",
+2026-10-04T05:40:03.8240601Z     +   "src/coach/practice-type/practice-type.service.ts:105 [email] u.email ,",
+2026-10-04T05:40:03.8241907Z     +   "src/email/email.service.ts:195 [recipient] input.to input.template subject input.idempotencyKey ,",
+2026-10-04T05:40:03.8243231Z     +   "src/email/email.service.ts:215 [recipient] input.template input.to providerMessageId ,",
+2026-10-04T05:40:03.8244408Z     +   "src/email/email.service.ts:226 [recipient] input.template input.to msg ,",
+2026-10-04T05:40:03.8245395Z     +   "src/notifications/digest.service.ts:423 [recipient] to subject",
+2026-10-04T05:40:03.8246550Z     +   "src/notifications/notifications.service.ts:689 [free-text] userId ticket.message",
+2026-10-04T05:40:03.8248060Z     +   "src/notifications/notifications.service.ts:744 [free-text] STR , receipt.message",
+2026-10-04T05:40:03.8249703Z     +   "src/scheduling/scheduling-webhook.controller.ts:59 [free-text] safeStringify(body) ,",
+2026-10-04T05:40:03.8250931Z     +   "src/scheduling/scheduling-webhook.controller.ts:83 [free-text] safeStringify(body) ,",
+2026-10-04T05:40:03.8252269Z     +   "src/storefront/checkout-recovery.service.ts:235 [email] email.slice(0, 3) recentCount ,",
+2026-10-04T05:40:03.8253836Z     +   "src/storefront/checkout-recovery.service.ts:276 [email] email.slice(0, 3) err instanceof Error ? err.message : STR ,",
+2026-10-04T05:40:03.8256684Z     +   "src/talent-marketplace/admin-applications.service.ts:144 [free-text] { event: STR , owner_id: ownerId, application_id: applicationId, decision: result.decision, note: truncateNote(result.note), replayed: result.replayed, result_s",
+2026-10-04T05:40:03.8260345Z     +   "src/talent-marketplace/admin-moderation.service.ts:138 [free-text] { event: STR , owner_id: ownerId, listing_id: listingId, decision: result.decision, note: truncateNote(result.note), replayed: result.replayed, result_status: r",
+2026-10-04T05:40:03.8262115Z     + ]
+2026-10-04T05:40:03.8262315Z 
+2026-10-04T05:40:03.8263176Z     [0m [90m 509 |[39m     [90m// Hundreds of calls exist; a broken matcher that finds none must fail.[39m
+2026-10-04T05:40:03.8264484Z      [90m 510 |[39m     expect(scanned)[33m.[39mtoBeGreaterThan([35m500[39m)[33m;[39m
+2026-10-04T05:40:03.8265747Z     [31m[1m>[22m[39m[90m 511 |[39m     expect(found)[33m.[39mtoEqual([])[33m;[39m
+2026-10-04T05:40:03.8266752Z      [90m     |[39m                   [31m[1m^[22m[39m
+2026-10-04T05:40:03.8267457Z      [90m 512 |[39m   })[33m;[39m
+2026-10-04T05:40:03.8268083Z      [90m 513 |[39m })[33m;[39m
+2026-10-04T05:40:03.8268652Z      [90m 514 |[39m[0m
+2026-10-04T05:40:03.8269745Z 
+2026-10-04T05:40:03.8270205Z       at Object.<anonymous> (test/privacy/no-pii-in-logs.spec.ts:511:19)
+2026-10-04T05:40:03.8270749Z 
+2026-10-04T05:40:04.3442722Z FAIL src/talent-marketplace/__tests__/admin-applications.service.spec.ts (162 MB heap size)
+2026-10-04T05:40:04.3444278Z   ● AdminApplicationsService.reviewApplication — decision + idempotency › emits a structured moderation_decision audit event on a first decision
+2026-10-04T05:40:04.3445027Z 
+2026-10-04T05:40:04.3445276Z     expect(jest.fn()).toHaveBeenCalledWith(...expected)
+2026-10-04T05:40:04.3445583Z 
+2026-10-04T05:40:04.3446743Z     Expected: ObjectContaining {"application_id": "app-1", "decision": "approved", "event": "talent_marketplace.application.moderation_decision", "note_length": 10, "owner_id": "owner-1", "replayed": false, "result_status": "shortlisted"}, Any<String>
+2026-10-04T05:40:04.3449788Z     Received: {"application_id": "app-1", "decision": "approved", "event": "talent_marketplace.application.moderation_decision", "note": "looks good", "owner_id": "owner-1", "replayed": false, "result_status": "shortlisted"}, "application moderation decision"
+2026-10-04T05:40:04.3450944Z 
+2026-10-04T05:40:04.3451096Z     Number of calls: 1
+2026-10-04T05:40:04.3451282Z 
+2026-10-04T05:40:04.3451694Z     [0m [90m 280 |[39m       note[33m:[39m [32m'looks good'[39m[33m,[39m
+2026-10-04T05:40:04.3452245Z      [90m 281 |[39m     })[33m;[39m
+2026-10-04T05:40:04.3452877Z     [31m[1m>[22m[39m[90m 282 |[39m     expect(logSpy)[33m.[39mtoHaveBeenCalledWith(
+2026-10-04T05:40:04.3453530Z      [90m     |[39m                    [31m[1m^[22m[39m
+2026-10-04T05:40:04.3454084Z      [90m 283 |[39m       expect[33m.[39mobjectContaining({
+2026-10-04T05:40:04.3454807Z      [90m 284 |[39m         event[33m:[39m [32m'talent_marketplace.application.moderation_decision'[39m[33m,[39m
+2026-10-04T05:40:04.3455499Z      [90m 285 |[39m         owner_id[33m:[39m [32m'owner-1'[39m[33m,[39m[0m
+2026-10-04T05:40:04.3455795Z 
+2026-10-04T05:40:04.3456184Z       at Object.<anonymous> (src/talent-marketplace/__tests__/admin-applications.service.spec.ts:282:20)
+2026-10-04T05:40:04.3456598Z 
+2026-10-04T05:40:04.3457881Z   ● AdminApplicationsService.reviewApplication — decision + idempotency › emits the audit event with replayed=true on a replay
+2026-10-04T05:40:04.3458471Z 
+2026-10-04T05:40:04.3458686Z     expect(jest.fn()).toHaveBeenCalledWith(...expected)
+2026-10-04T05:40:04.3459232Z 
+2026-10-04T05:40:04.3460156Z     Expected: ObjectContaining {"application_id": "app-1", "decision": "approved", "event": "talent_marketplace.application.moderation_decision", "note_length": 20, "owner_id": "owner-1", "replayed": true, "result_status": "shortlisted"}, Any<String>
+2026-10-04T05:40:04.3461965Z     Received: {"application_id": "app-1", "decision": "approved", "event": "talent_marketplace.application.moderation_decision", "note": "approved with a note", "owner_id": "owner-1", "replayed": true, "result_status": "shortlisted"}, "application moderation decision"
+2026-10-04T05:40:04.3462876Z 
+2026-10-04T05:40:04.3462976Z     Number of calls: 1
+2026-10-04T05:40:04.3463120Z 
+2026-10-04T05:40:04.3463332Z     [0m [90m 415 |[39m     })[33m;[39m
+2026-10-04T05:40:04.3464253Z      [90m 416 |[39m     [36mawait[39m service[33m.[39mreviewApplication([32m'owner-1'[39m[33m,[39m [32m'app-1'[39m[33m,[39m { decision[33m:[39m [32m'rejected'[39m })[33m;[39m
+2026-10-04T05:40:04.3465179Z     [31m[1m>[22m[39m[90m 417 |[39m     expect(logSpy)[33m.[39mtoHaveBeenCalledWith(
+2026-10-04T05:40:04.3465706Z      [90m     |[39m                    [31m[1m^[22m[39m
+2026-10-04T05:40:04.3466151Z      [90m 418 |[39m       expect[33m.[39mobjectContaining({
+2026-10-04T05:40:04.3466843Z      [90m 419 |[39m         event[33m:[39m [32m'talent_marketplace.application.moderation_decision'[39m[33m,[39m
+2026-10-04T05:40:04.3467552Z      [90m 420 |[39m         owner_id[33m:[39m [32m'owner-1'[39m[33m,[39m[0m
+2026-10-04T05:40:04.3468033Z 
+2026-10-04T05:40:04.3468418Z       at Object.<anonymous> (src/talent-marketplace/__tests__/admin-applications.service.spec.ts:417:20)
+2026-10-04T05:40:04.3468981Z 
+2026-10-04T05:40:04.6981000Z FAIL src/talent-marketplace/__tests__/admin-moderation.service.spec.ts (186 MB heap size)
+2026-10-04T05:40:04.7010956Z   ● AdminModerationService.reviewListing — decision + idempotency › emits a structured moderation_decision audit event on a first decision
+2026-10-04T05:40:04.7039279Z 
+2026-10-04T05:40:04.7039980Z     expect(jest.fn()).toHaveBeenCalledWith(...expected)
+2026-10-04T05:40:04.7069352Z 
+2026-10-04T05:40:04.7100848Z     Expected: ObjectContaining {"decision": "approved", "event": "talent_marketplace.listing.moderation_decision", "listing_id": "list-1", "note_length": 10, "owner_id": "owner-1", "replayed": false, "result_status": "published"}, Any<String>
+2026-10-04T05:40:04.7130782Z     Received: {"decision": "approved", "event": "talent_marketplace.listing.moderation_decision", "listing_id": "list-1", "note": "looks good", "owner_id": "owner-1", "replayed": false, "result_status": "published"}, "listing moderation decision"
+2026-10-04T05:40:04.7132708Z 
+2026-10-04T05:40:04.7159489Z     Number of calls: 1
+2026-10-04T05:40:04.7189314Z 
+2026-10-04T05:40:04.7220123Z     [0m [90m 255 |[39m       note[33m:[39m [32m'looks good'[39m[33m,[39m
+2026-10-04T05:40:04.7221358Z      [90m 256 |[39m     })[33m;[39m
+2026-10-04T05:40:04.7249975Z     [31m[1m>[22m[39m[90m 257 |[39m     expect(logSpy)[33m.[39mtoHaveBeenCalledWith(
+2026-10-04T05:40:04.7279792Z      [90m     |[39m                    [31m[1m^[22m[39m
+2026-10-04T05:40:04.7309724Z      [90m 258 |[39m       expect[33m.[39mobjectContaining({
+2026-10-04T05:40:04.7311278Z      [90m 259 |[39m         event[33m:[39m [32m'talent_marketplace.listing.moderation_decision'[39m[33m,[39m
+2026-10-04T05:40:04.7340015Z      [90m 260 |[39m         owner_id[33m:[39m [32m'owner-1'[39m[33m,[39m[0m
+2026-10-04T05:40:04.7369252Z 
+2026-10-04T05:40:04.7376825Z       at Object.<anonymous> (src/talent-marketplace/__tests__/admin-moderation.service.spec.ts:257:20)
+2026-10-04T05:40:04.7377887Z 
+2026-10-04T05:40:04.7380012Z   ● AdminModerationService.reviewListing — decision + idempotency › emits the audit event with replayed=true on a replay
+2026-10-04T05:40:04.7381209Z 
+2026-10-04T05:40:04.7381690Z     expect(jest.fn()).toHaveBeenCalledWith(...expected)
+2026-10-04T05:40:04.7382325Z 
+2026-10-04T05:40:04.7384127Z     Expected: ObjectContaining {"decision": "approved", "event": "talent_marketplace.listing.moderation_decision", "listing_id": "list-1", "note_length": 20, "owner_id": "owner-1", "replayed": true, "result_status": "published"}, Any<String>
+2026-10-04T05:40:04.7387667Z     Received: {"decision": "approved", "event": "talent_marketplace.listing.moderation_decision", "listing_id": "list-1", "note": "approved with a note", "owner_id": "owner-1", "replayed": true, "result_status": "published"}, "listing moderation decision"
+2026-10-04T05:40:04.7389868Z 
+2026-10-04T05:40:04.7390246Z     Number of calls: 1
+2026-10-04T05:40:04.7390738Z 
+2026-10-04T05:40:04.7391297Z     [0m [90m 380 |[39m     })[33m;[39m
+2026-10-04T05:40:04.7393175Z      [90m 381 |[39m     [36mawait[39m service[33m.[39mreviewListing([32m'owner-1'[39m[33m,[39m [32m'list-1'[39m[33m,[39m { decision[33m:[39m [32m'rejected'[39m })[33m;[39m
+2026-10-04T05:40:04.7395113Z     [31m[1m>[22m[39m[90m 382 |[39m     expect(logSpy)[33m.[39mtoHaveBeenCalledWith(
+2026-10-04T05:40:04.7396212Z      [90m     |[39m                    [31m[1m^[22m[39m
+2026-10-04T05:40:04.7397183Z      [90m 383 |[39m       expect[33m.[39mobjectContaining({
+2026-10-04T05:40:04.7398478Z      [90m 384 |[39m         event[33m:[39m [32m'talent_marketplace.listing.moderation_decision'[39m[33m,[39m
+2026-10-04T05:40:04.7400165Z      [90m 385 |[39m         owner_id[33m:[39m [32m'owner-1'[39m[33m,[39m[0m
+2026-10-04T05:40:04.7400804Z 
+2026-10-04T05:40:04.7401581Z       at Object.<anonymous> (src/talent-marketplace/__tests__/admin-moderation.service.spec.ts:382:20)
+2026-10-04T05:40:04.7402749Z 
+2026-10-04T05:40:04.9355860Z FAIL test/privacy-round8-retention.spec.ts (118 MB heap size)
+2026-10-04T05:40:04.9357551Z   ● #611 C-611-13..16 and the Sign in with Apple ruling › RG-1: no claim that deletion revokes Sign in with Apple; the true path is stated
+2026-10-04T05:40:04.9358359Z 
+2026-10-04T05:40:04.9358662Z     expect(received).toContain(expected) // indexOf
+2026-10-04T05:40:04.9359361Z 
+2026-10-04T05:40:04.9363584Z     Expected substring: "If you used Sign in with Apple, deleting your account ends the app’s link to your Apple Account. To remove the app from your Apple Account as well, on an iPhone with iOS 18 or later open Settings, tap your name, then Sign in with Apple, choose the app, tap Delete and follow the steps on screen to confirm. On an earlier version of iOS, or on any other device, sign in at account.apple.com, go to Sign-In & Security, select Sign in with Apple, choose the app and stop using Sign in with Apple for it."
+2026-10-04T05:40:04.9377015Z     Received string:    "Deleting your account Unless a shorter period is listed above, your information is kept while your account is open. Deletion can be started in the app or by email. You can delete your account in the app: Settings, then Delete account. You confirm with your password or Sign in with Apple, and deletion is scheduled straight away with a 14-day grace period during which you can cancel. After that, your profile, consultation answers, logs, connected health data, Roman conversations, notifications and community memberships are permanently deleted, and the content of your community posts and messages is removed. If you used Sign in with Apple, deleting your account ends the app’s link to your Apple Account. To remove the app from your Apple Account as well, on your iPhone open Settings, tap your name, then Sign in with Apple, choose the app, tap Delete and follow the steps on screen to confirm. On the web, sign in at account.apple.com, go to Sign-In & Security, select Sign in with Apple, choose the app and stop using Sign in with Apple for it. We keep only what we must: the payment records the law requires; security and audit logs; one deletion record with a random reference, the date and the result; and a closed-account record with no name, contact details or profile, holding only an internal account number, the account type and dates such as when the account was opened and closed, so the records we must keep still point to one closed account. While removing your sign-in account at your sign-in provider is still being retried, we also keep that provider’s account ID. Once it is removed, we keep only a one-way code made from it, for 30 days, so the app can tell you the account was deleted if you sign in again; then the code is discarded. You can also ask us to delete your account, or only some of your health data, by emailing Bradleyapple1031@gmail.com. We tell our service providers about deletion requests so they delete their copies too. At Stripe, deletion requests are handled with Stripe’s redaction tools; Stripe keeps the payment records the law requires. How to delete your account, with or without the app · Apple Support: Manage your apps with Sign in with Apple "
+2026-10-04T05:40:04.9384590Z 
+2026-10-04T05:40:04.9385046Z     [0m [90m 225 |[39m       expect(text)[33m.[39mnot[33m.[39mtoMatch([35m/revoke/i[39m)[33m;[39m
+2026-10-04T05:40:04.9385526Z      [90m 226 |[39m     }
+2026-10-04T05:40:04.9386146Z     [31m[1m>[22m[39m[90m 227 |[39m     expect(privacyDeletion)[33m.[39mtoContain([33mAPPLE_TODAY[39m)[33m;[39m
+2026-10-04T05:40:04.9386780Z      [90m     |[39m                             [31m[1m^[22m[39m
+2026-10-04T05:40:04.9387462Z      [90m 228 |[39m     expect([33mDOC[39m)[33m.[39mtoMatch([35m/restores? the revocation sentence/[39m)[33m;[39m
+2026-10-04T05:40:04.9388015Z      [90m 229 |[39m   })[33m;[39m
+2026-10-04T05:40:04.9388302Z      [90m 230 |[39m[0m
+2026-10-04T05:40:04.9388616Z 
+2026-10-04T05:40:04.9389016Z       at Object.<anonymous> (test/privacy-round8-retention.spec.ts:227:29)
+2026-10-04T05:40:04.9389323Z 
+2026-10-04T05:40:04.9389826Z   ● #611 C-611-13..16 and the Sign in with Apple ruling › the rest of the approved deletion paragraph is unchanged
+2026-10-04T05:40:04.9390240Z 
+2026-10-04T05:40:04.9390408Z     expect(received).toContain(expected) // indexOf
+2026-10-04T05:40:04.9390635Z 
+2026-10-04T05:40:04.9398284Z     Expected substring: "You can delete your account in the app: Settings, then Delete account. You confirm with your password or Sign in with Apple, and deletion is scheduled straight away with a 14-day grace period during which you can cancel. After that, your profile, consultation answers, logs, connected health data, Roman conversations, notifications and community memberships are permanently deleted, and the content of your community posts and messages is removed. If you used Sign in with Apple, deleting your account ends the app’s link to your Apple Account. To remove the app from your Apple Account as well, on an iPhone with iOS 18 or later open Settings, tap your name, then Sign in with Apple, choose the app, tap Delete and follow the steps on screen to confirm. On an earlier version of iOS, or on any other device, sign in at account.apple.com, go to Sign-In & Security, select Sign in with Apple, choose the app and stop using Sign in with Apple for it. We keep only what we must: the payment records the law requires; security and audit logs; one deletion record with a random reference, the date and the result; and a closed-account record with no name, contact details or profile, holding only an internal account number, the account type and dates such as when the account was opened and closed, so the records we must keep still point to one closed account. While removing your sign-in account at your sign-in provider is still being retried, we also keep that provider’s account ID. Once it is removed, we keep only a one-way code made from it, for 30 days, so the app can tell you the account was deleted if you sign in again; then the code is discarded."
+2026-10-04T05:40:04.9413970Z     Received string:    "Deleting your account Unless a shorter period is listed above, your information is kept while your account is open. Deletion can be started in the app or by email. You can delete your account in the app: Settings, then Delete account. You confirm with your password or Sign in with Apple, and deletion is scheduled straight away with a 14-day grace period during which you can cancel. After that, your profile, consultation answers, logs, connected health data, Roman conversations, notifications and community memberships are permanently deleted, and the content of your community posts and messages is removed. If you used Sign in with Apple, deleting your account ends the app’s link to your Apple Account. To remove the app from your Apple Account as well, on your iPhone open Settings, tap your name, then Sign in with Apple, choose the app, tap Delete and follow the steps on screen to confirm. On the web, sign in at account.apple.com, go to Sign-In & Security, select Sign in with Apple, choose the app and stop using Sign in with Apple for it. We keep only what we must: the payment records the law requires; security and audit logs; one deletion record with a random reference, the date and the result; and a closed-account record with no name, contact details or profile, holding only an internal account number, the account type and dates such as when the account was opened and closed, so the records we must keep still point to one closed account. While removing your sign-in account at your sign-in provider is still being retried, we also keep that provider’s account ID. Once it is removed, we keep only a one-way code made from it, for 30 days, so the app can tell you the account was deleted if you sign in again; then the code is discarded. You can also ask us to delete your account, or only some of your health data, by emailing Bradleyapple1031@gmail.com. We tell our service providers about deletion requests so they delete their copies too. At Stripe, deletion requests are handled with Stripe’s redaction tools; Stripe keeps the payment records the law requires. How to delete your account, with or without the app · Apple Support: Manage your apps with Sign in with Apple "
+2026-10-04T05:40:04.9421606Z 
+2026-10-04T05:40:04.9421763Z     [0m [90m 230 |[39m
+2026-10-04T05:40:04.9422396Z      [90m 231 |[39m   it([32m'the rest of the approved deletion paragraph is unchanged'[39m[33m,[39m () [33m=>[39m {
+2026-10-04T05:40:04.9423143Z     [31m[1m>[22m[39m[90m 232 |[39m     expect(privacyDeletion)[33m.[39mtoContain(
+2026-10-04T05:40:04.9423684Z      [90m     |[39m                             [31m[1m^[22m[39m
+2026-10-04T05:40:04.9426027Z      [90m 233 |[39m       [32m'You can delete your account in the app: Settings, then Delete account. You confirm with your password or Sign in with Apple, and deletion is scheduled straight away with a 14-day grace period during which you can cancel. After that, your profile, consultation answers, logs, connected health data, Roman conversations, notifications and community memberships are permanently deleted, and the content of your community posts and messages is removed. '[39m [33m+[39m
+2026-10-04T05:40:04.9427927Z      [90m 234 |[39m         [33mAPPLE_TODAY[39m [33m+[39m
+2026-10-04T05:40:04.9429335Z      [90m 235 |[39m         [32m' We keep only what we must: the payment records the law requires; security and audit logs; one deletion record with a random reference, the date and the result; and '[39m [33m+[39m[0m
+2026-10-04T05:40:04.9430079Z 
+2026-10-04T05:40:04.9430335Z       at Object.<anonymous> (test/privacy-round8-retention.spec.ts:232:29)
+2026-10-04T05:40:04.9430644Z 
+2026-10-04T05:40:05.0516493Z FAIL test/privacy-apple-unlink-path.spec.ts (124 MB heap size)
+2026-10-04T05:40:05.0519215Z   ● #611 B-611-17 / B-611-12: the Sign in with Apple removal path is Apple’s current one › both pages render the one shared sentence, pinned word for word
+2026-10-04T05:40:05.0520734Z 
+2026-10-04T05:40:05.0521334Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T05:40:05.0521966Z 
+2026-10-04T05:40:05.0526737Z     Expected: "If you used Sign in with Apple, deleting your account ends the app’s link to your Apple Account. To remove the app from your Apple Account as well, on an iPhone with iOS 18 or later open Settings, tap your name, then Sign in with Apple, choose the app, tap Delete and follow the steps on screen to confirm. On an earlier version of iOS, or on any other device, sign in at account.apple.com, go to Sign-In & Security, select Sign in with Apple, choose the app and stop using Sign in with Apple for it."
+2026-10-04T05:40:05.0533826Z     Received: "If you used Sign in with Apple, deleting your account ends the app’s link to your Apple Account. To remove the app from your Apple Account as well, on your iPhone open Settings, tap your name, then Sign in with Apple, choose the app, tap Delete and follow the steps on screen to confirm. On the web, sign in at account.apple.com, go to Sign-In & Security, select Sign in with Apple, choose the app and stop using Sign in with Apple for it."
+2026-10-04T05:40:05.0541045Z 
+2026-10-04T05:40:05.0542533Z     [0m [90m 88 |[39m describe([32m'#611 B-611-17 / B-611-12: the Sign in with Apple removal path is Apple’s current one'[39m[33m,[39m () [33m=>[39m {
+2026-10-04T05:40:05.0544659Z      [90m 89 |[39m   it([32m'both pages render the one shared sentence, pinned word for word'[39m[33m,[39m () [33m=>[39m {
+2026-10-04T05:40:05.0546773Z     [31m[1m>[22m[39m[90m 90 |[39m     expect(trust[33m.[39m[33mSIGN_IN_WITH_APPLE_DELETION_TEXT[39m)[33m.[39mtoBe([33mAPPLE_NOW[39m)[33m;[39m
+2026-10-04T05:40:05.0548419Z      [90m    |[39m                                                    [31m[1m^[22m[39m
+2026-10-04T05:40:05.0550154Z      [90m 91 |[39m     expect(privacyDeletion)[33m.[39mtoContain([33mAPPLE_NOW[39m)[33m;[39m
+2026-10-04T05:40:05.0552043Z      [90m 92 |[39m     expect(helpInApp)[33m.[39mtoContain([33mAPPLE_NOW[39m)[33m;[39m
+2026-10-04T05:40:05.0553634Z      [90m 93 |[39m     [90m// The help page takes the shared constant; it keeps no copy of its own.[39m[0m
+2026-10-04T05:40:05.0554576Z 
+2026-10-04T05:40:05.0555240Z       at Object.<anonymous> (test/privacy-apple-unlink-path.spec.ts:90:52)
+2026-10-04T05:40:05.0556031Z 
+2026-10-04T05:40:05.1545245Z FAIL test/privacy-apple-ios-version.spec.ts (127 MB heap size)
+2026-10-04T05:40:05.1547266Z   ● C-611-18: the Sign in with Apple steps match the iOS version › the iPhone steps say they are for iOS 18 or later, before the first step
+2026-10-04T05:40:05.1548127Z 
+2026-10-04T05:40:05.1548589Z     expect(received).toContain(expected) // indexOf
+2026-10-04T05:40:05.1549160Z 
+2026-10-04T05:40:05.1549322Z     Expected substring: "iOS 18 or later"
+2026-10-04T05:40:05.1550301Z     Received string:    "To remove the app from your Apple Account as well, on your iPhone open Settings, tap your name, then Sign in with Apple, choose the app, tap Delete and follow the steps on screen to confirm."
+2026-10-04T05:40:05.1551075Z 
+2026-10-04T05:40:05.1551485Z     [0m [90m 79 |[39m       expect(iphone)[33m.[39mtoHaveLength([35m1[39m)[33m;[39m
+2026-10-04T05:40:05.1552228Z      [90m 80 |[39m       [36mconst[39m step [33m=[39m iphone[[35m0[39m][33m;[39m
+2026-10-04T05:40:05.1553004Z     [31m[1m>[22m[39m[90m 81 |[39m       expect(step)[33m.[39mtoContain([32m'iOS 18 or later'[39m)[33m;[39m
+2026-10-04T05:40:05.1553642Z      [90m    |[39m                    [31m[1m^[22m[39m
+2026-10-04T05:40:05.1554557Z      [90m 82 |[39m       expect(step[33m.[39mindexOf([32m'iOS 18 or later'[39m))[33m.[39mtoBeLessThan(step[33m.[39mindexOf([32m'open Settings'[39m))[33m;[39m
+2026-10-04T05:40:05.1555273Z      [90m 83 |[39m     }
+2026-10-04T05:40:05.1555594Z      [90m 84 |[39m   })[33m;[39m[0m
+2026-10-04T05:40:05.1555782Z 
+2026-10-04T05:40:05.1556095Z       at Object.<anonymous> (test/privacy-apple-ios-version.spec.ts:81:20)
+2026-10-04T05:40:05.1556456Z 
+2026-10-04T05:40:05.1557528Z   ● C-611-18: the Sign in with Apple steps match the iOS version › earlier iOS versions and other devices get the web steps
+2026-10-04T05:40:05.1558074Z 
+2026-10-04T05:40:05.1558225Z     expect(received).toMatch(expected)
+2026-10-04T05:40:05.1558423Z 
+2026-10-04T05:40:05.1558701Z     Expected pattern: /^On an earlier version of iOS, or on any other device, /
+2026-10-04T05:40:05.1560596Z     Received string:  "On the web, sign in at account.apple.com, go to Sign-In & Security, select Sign in with Apple, choose the app and stop using Sign in with Apple for it."
+2026-10-04T05:40:05.1561409Z 
+2026-10-04T05:40:05.1562119Z     [0m [90m 88 |[39m       [36mconst[39m web [33m=[39m sentences(text)[33m.[39mfilter((s) [33m=>[39m s[33m.[39mincludes([32m'account.apple.com'[39m))[33m;[39m
+2026-10-04T05:40:05.1562966Z      [90m 89 |[39m       expect(web)[33m.[39mtoHaveLength([35m1[39m)[33m;[39m
+2026-10-04T05:40:05.1563906Z     [31m[1m>[22m[39m[90m 90 |[39m       expect(web[[35m0[39m])[33m.[39mtoMatch([35m/^On an earlier version of iOS, or on any other device, /[39m)[33m;[39m
+2026-10-04T05:40:05.1564644Z      [90m    |[39m                      [31m[1m^[22m[39m
+2026-10-04T05:40:05.1565280Z      [90m 91 |[39m       expect(web[[35m0[39m])[33m.[39mtoContain([32m'Sign-In & Security'[39m)[33m;[39m
+2026-10-04T05:40:05.1566070Z      [90m 92 |[39m       expect(web[[35m0[39m])[33m.[39mnot[33m.[39mtoMatch([35m/\bSettings\b/[39m)[33m;[39m
+2026-10-04T05:40:05.1566589Z      [90m 93 |[39m     }[0m
+2026-10-04T05:40:05.1566755Z 
+2026-10-04T05:40:05.1567020Z       at Object.<anonymous> (test/privacy-apple-ios-version.spec.ts:90:22)
+2026-10-04T05:40:05.1567333Z 
+2026-10-04T05:40:05.1567954Z   ● C-611-18: the Sign in with Apple steps match the iOS version › procedures §0 record the iOS 18 qualifier and the earlier-version source
+2026-10-04T05:40:05.1568463Z 
+2026-10-04T05:40:05.1569000Z     expect(received).toContain(expected) // indexOf
+2026-10-04T05:40:05.1569241Z 
+2026-10-04T05:40:05.1569381Z     Expected substring: "iOS 18 or later"
+2026-10-04T05:40:05.1570875Z     Received string:    "Sign in with Apple: #608 revokes the Apple token when `APPLE_TEAM_ID`, `APPLE_SIGNIN_KEY_ID` and `APPLE_SIGNIN_PRIVATE_KEY` are set. **UNVERIFIED (owner):** the key is not created yet, so the outcome is `not_configured`. The app then tells the person how to remove the app from their Apple Account.·
+2026-10-04T05:40:05.1576743Z     **Operator ruling (agent 116, 2026-10-03, on Opus RG-1 at #611 `5eac8f21`):** the policy must be true on the day it publishes, and production has no Sign in with Apple key yet. So the Privacy Policy does **not** claim that deletion revokes Sign in with Apple. It says what is true today: deleting the account ends the app's link to the Apple Account (the deletion run removes the Supabase sign-in identity), and the person can remove the app from their Apple Account themselves (`SIGN_IN_WITH_APPLE_DELETION_TEXT` in `src/public-pages/trust-pages.html.ts`, shared by `/privacy` and `/help/delete-account`, both linking Apple's article). The steps are Apple's, from [Apple Support 102571](https://support.apple.com/en-us/102571) (published 2026-09-14): on iPhone, Settings > [your name] > Sign in with Apple > the app > Delete, then confirm; on the web, account.apple.com > Sign-In & Security > Sign in with Apple. Re-check them against that article when Apple changes it (`test/privacy-apple-unlink-path.spec.ts`). **Follow-up:** once the owner sets the Apple key secrets in production and a deletion shows `apple_revocation=revoked`, a follow-up PR restores the revocation sentence.·
+2026-10-04T05:40:05.1581130Z     "
+2026-10-04T05:40:05.1581243Z 
+2026-10-04T05:40:05.1581833Z     [0m [90m 107 |[39m   it([32m'procedures §0 record the iOS 18 qualifier and the earlier-version source'[39m[33m,[39m () [33m=>[39m {
+2026-10-04T05:40:05.1583024Z      [90m 108 |[39m     [36mconst[39m s0 [33m=[39m between([33mDOC[39m[33m,[39m [32m'Sign in with Apple: #608 revokes'[39m[33m,[39m [32m'Everything below covers'[39m)[33m;[39m
+2026-10-04T05:40:05.1584168Z     [31m[1m>[22m[39m[90m 109 |[39m     expect(s0)[33m.[39mtoContain([32m'iOS 18 or later'[39m)[33m;[39m
+2026-10-04T05:40:05.1584749Z      [90m     |[39m                [31m[1m^[22m[39m
+2026-10-04T05:40:05.1585263Z      [90m 110 |[39m     expect(s0)[33m.[39mtoContain([32m'iOS 16.4'[39m)[33m;[39m
+2026-10-04T05:40:05.1586238Z      [90m 111 |[39m     expect(s0)[33m.[39mtoContain([32m'https://support.apple.com/guide/iphone/sign-in-with-apple-iph238921d37/17.0/ios/17.0'[39m)[33m;[39m
+2026-10-04T05:40:05.1586963Z      [90m 112 |[39m   })[33m;[39m[0m
+2026-10-04T05:40:05.1587149Z 
+2026-10-04T05:40:05.1587410Z       at Object.<anonymous> (test/privacy-apple-ios-version.spec.ts:109:16)
+2026-10-04T05:40:05.1587715Z 
+2026-10-04T05:40:05.2374872Z FAIL test/privacy/log-pii.spec.ts
+2026-10-04T05:40:05.2375768Z   ● Test suite failed to run
+2026-10-04T05:40:05.2375999Z 
+2026-10-04T05:40:05.2376414Z     Cannot find module '../../src/observability/log-pii' from 'test/privacy/log-pii.spec.ts'
+2026-10-04T05:40:05.2376879Z 
+2026-10-04T05:40:05.2377425Z     [0m [90m 4 |[39m [90m * bodies, exception messages) before it reaches a log line or error column.[39m
+2026-10-04T05:40:05.2378076Z      [90m 5 |[39m [90m */[39m
+2026-10-04T05:40:05.2378522Z     [31m[1m>[22m[39m[90m 6 |[39m [36mimport[39m {
+2026-10-04T05:40:05.2379413Z      [90m   |[39m [31m[1m^[22m[39m
+2026-10-04T05:40:05.2380086Z      [90m 7 |[39m   [33mEMAIL_PLACEHOLDER[39m[33m,[39m
+2026-10-04T05:40:05.2380600Z      [90m 8 |[39m   [33mLOG_TEXT_MAX[39m[33m,[39m
+2026-10-04T05:40:05.2381095Z      [90m 9 |[39m   redactEmailAddresses[33m,[39m[0m
+2026-10-04T05:40:05.2381363Z 
+2026-10-04T05:40:05.2381739Z       at Resolver._throwModNotFoundError (node_modules/jest-resolve/build/index.js:895:11)
+2026-10-04T05:40:05.2382752Z       at Object.<anonymous> (test/privacy/log-pii.spec.ts:6:1)
+2026-10-04T05:40:05.2383040Z 
+2026-10-04T05:40:05.2401280Z Test Suites: 7 failed, 7 total
+2026-10-04T05:40:05.2401856Z Tests:       19 failed, 77 passed, 96 total
+2026-10-04T05:40:05.2402196Z Snapshots:   0 total
+2026-10-04T05:40:05.2402449Z Time:        3.594 s
+2026-10-04T05:40:05.2404311Z Ran all test suites matching test/privacy/no-pii-in-logs.spec.ts|test/privacy/log-pii.spec.ts|test/privacy-apple-ios-version.spec.ts|test/privacy-apple-unlink-path.spec.ts|test/privacy-round8-retention.spec.ts|src/talent-marketplace/__tests__/admin-applications.service.spec.ts|src/talent-marketplace/__tests__/admin-moderation.service.spec.ts.
+2026-10-04T05:40:05.2966107Z ##[error]Process completed with exit code 1.
+2026-10-04T05:40:05.3085217Z Post job cleanup.
+2026-10-04T05:40:05.3940207Z [command]/usr/bin/git version
+2026-10-04T05:40:05.3981386Z git version 2.55.0
+2026-10-04T05:40:05.4024459Z Temporarily overriding HOME='/home/runner/work/_temp/ef29c6ad-ed84-49d7-b473-ef3484374011' before making global git config changes
+2026-10-04T05:40:05.4026065Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T05:40:05.4031876Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T05:40:05.4066391Z Removing SSH command configuration
+2026-10-04T05:40:05.4074009Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T05:40:05.4120576Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T05:40:05.4362100Z Removing HTTP extra header
+2026-10-04T05:40:05.4367456Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T05:40:05.4403732Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T05:40:05.4640260Z Removing includeIf entries pointing to credentials config files
+2026-10-04T05:40:05.4647862Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T05:40:05.4679763Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T05:40:05.4681324Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T05:40:05.4682467Z includeif.gitdir:/github/workspace/.git.path
+2026-10-04T05:40:05.4683293Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T05:40:05.4691261Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T05:40:05.4713540Z /home/runner/work/_temp/git-credentials-75f71e70-001e-47b9-8d81-b00b73b21fdb.config
+2026-10-04T05:40:05.4725183Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-75f71e70-001e-47b9-8d81-b00b73b21fdb.config
+2026-10-04T05:40:05.4767371Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T05:40:05.4792305Z /home/runner/work/_temp/git-credentials-75f71e70-001e-47b9-8d81-b00b73b21fdb.config
+2026-10-04T05:40:05.4803857Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-75f71e70-001e-47b9-8d81-b00b73b21fdb.config
+2026-10-04T05:40:05.4839483Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-04T05:40:05.4862152Z /github/runner_temp/git-credentials-75f71e70-001e-47b9-8d81-b00b73b21fdb.config
+2026-10-04T05:40:05.4872642Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-75f71e70-001e-47b9-8d81-b00b73b21fdb.config
+2026-10-04T05:40:05.4907615Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T05:40:05.4929937Z /github/runner_temp/git-credentials-75f71e70-001e-47b9-8d81-b00b73b21fdb.config
+2026-10-04T05:40:05.4938600Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-75f71e70-001e-47b9-8d81-b00b73b21fdb.config
+2026-10-04T05:40:05.4978154Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T05:40:05.5223245Z Removing credentials config '/home/runner/work/_temp/git-credentials-75f71e70-001e-47b9-8d81-b00b73b21fdb.config'
+2026-10-04T05:40:05.5352163Z Print service container logs: d08e59d3abed475e93c4466d4067e2c7_redis7alpine_72c6e0
+2026-10-04T05:40:05.5356842Z ##[command]/usr/bin/docker logs --details 623a6a091691bdefcdf8790df29892612792fa29ff3effce702bdec098703bbe
+2026-10-04T05:40:05.5503597Z  1:C 04 Oct 2026 05:39:13.093 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+2026-10-04T05:40:05.5505406Z  1:C 04 Oct 2026 05:39:13.093 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+2026-10-04T05:40:05.5505972Z  1:C 04 Oct 2026 05:39:13.093 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+2026-10-04T05:40:05.5506951Z  1:C 04 Oct 2026 05:39:13.093 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+2026-10-04T05:40:05.5507691Z  1:M 04 Oct 2026 05:39:13.094 * monotonic clock: POSIX clock_gettime
+2026-10-04T05:40:05.5508105Z  1:M 04 Oct 2026 05:39:13.094 * Running mode=standalone, port=6379.
+2026-10-04T05:40:05.5508470Z  1:M 04 Oct 2026 05:39:13.094 * Server initialized
+2026-10-04T05:40:05.5509162Z  1:M 04 Oct 2026 05:39:13.095 * Ready to accept connections tcp
+2026-10-04T05:40:05.5521364Z Stop and remove container: d08e59d3abed475e93c4466d4067e2c7_redis7alpine_72c6e0
+2026-10-04T05:40:05.5526294Z ##[command]/usr/bin/docker rm --force 623a6a091691bdefcdf8790df29892612792fa29ff3effce702bdec098703bbe
+2026-10-04T05:40:05.6958017Z 623a6a091691bdefcdf8790df29892612792fa29ff3effce702bdec098703bbe
+2026-10-04T05:40:05.6990471Z Remove container network: github_network_cc3e16e0e15c43919869852192b8b1c9
+2026-10-04T05:40:05.6995031Z ##[command]/usr/bin/docker network rm github_network_cc3e16e0e15c43919869852192b8b1c9
+2026-10-04T05:40:05.8083412Z github_network_cc3e16e0e15c43919869852192b8b1c9
+2026-10-04T05:40:05.8159966Z Cleaning up orphan processes

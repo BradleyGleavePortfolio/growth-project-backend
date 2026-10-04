@@ -1,0 +1,5 @@
+[heavy] waiting for a slot: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+
+added 1115 packages in 6m
+backend-ok
+[heavy] waiting for a slot: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error --legacy-peer-deps

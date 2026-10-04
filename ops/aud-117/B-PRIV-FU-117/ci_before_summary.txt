@@ -1,0 +1,22 @@
+  ● #611 B-611-17 / B-611-12: the Sign in with Apple removal path is Apple’s current one › both pages render the one shared sentence, pinned word for word
+  ● #611 C-611-13..16 and the Sign in with Apple ruling › RG-1: no claim that deletion revokes Sign in with Apple; the true path is stated
+  ● #611 C-611-13..16 and the Sign in with Apple ruling › the rest of the approved deletion paragraph is unchanged
+  ● AdminApplicationsService.reviewApplication — decision + idempotency › emits a structured moderation_decision audit event on a first decision
+  ● AdminApplicationsService.reviewApplication — decision + idempotency › emits the audit event with replayed=true on a replay
+  ● AdminModerationService.reviewListing — decision + idempotency › emits a structured moderation_decision audit event on a first decision
+  ● AdminModerationService.reviewListing — decision + idempotency › emits the audit event with replayed=true on a replay
+  ● C-611-17 guard: no log call under src/ interpolates an address, a name or free text › every log call under src/ passes the rules
+  ● C-611-17: DigestService logs the user id, never the address › log transport: the line names the user id and template only
+  ● C-611-17: DigestService logs the user id, never the address › provider error that echoes the address: neither the log nor the stored failure holds it
+  ● C-611-17: EmailService logs the send-log row id and template, never the address or subject › log transport: no address, no rendered subject (it holds the first name)
+  ● C-611-17: EmailService logs the send-log row id and template, never the address or subject › provider error that echoes the address: the log, the result and the stored error hold no address
+  ● C-611-17: EmailService logs the send-log row id and template, never the address or subject › sent through the provider: logs the provider id and row id, not the address
+  ● C-611-17: other log lines that carried a name, an address or a payload › coach alert push fallback: no alert message (it holds the client name)
+  ● C-611-17: other log lines that carried a name, an address or a payload › practice federation fallback: the coach id, not the coach email
+  ● C-611-17: other log lines that carried a name, an address or a payload › scheduling webhook stubs: the payload shape, never its values
+  ● C-611-18: the Sign in with Apple steps match the iOS version › earlier iOS versions and other devices get the web steps
+  ● C-611-18: the Sign in with Apple steps match the iOS version › procedures §0 record the iOS 18 qualifier and the earlier-version source
+  ● C-611-18: the Sign in with Apple steps match the iOS version › the iPhone steps say they are for iOS 18 or later, before the first step
+  ● Test suite failed to run
+Test Suites: 7 failed, 7 total
+Tests:       19 failed, 77 passed, 96 total

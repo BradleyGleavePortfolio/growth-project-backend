@@ -1,0 +1,468 @@
+diff --git a/src/lib/__tests__/appleAccountCopy.test.ts b/src/lib/__tests__/appleAccountCopy.test.ts
+new file mode 100644
+index 00000000..994420e6
+--- /dev/null
++++ b/src/lib/__tests__/appleAccountCopy.test.ts
+@@ -0,0 +1,49 @@
++/**
++ * C-368-3 (Opus, #368 r0; B-PRIVFU2-118 fix round 1): sign-in and sign-up
++ * copy uses Apple's current name, "Apple Account", and no first person, on
++ * the lines the lens named: the existing-account role notice, the provider
++ * "email not verified" message, and the coach sign-up withdrawal notice.
++ */
++const mockCaptureError = jest.fn();
++jest.mock('../../services/sentry', () => ({ captureError: (...a: unknown[]) => mockCaptureError(...a) }));
++
++import * as fs from 'fs';
++import * as path from 'path';
++import { signupRoleNoticeMessage } from '../signupRoleNotice';
++import { describeSignInFailure } from '../../utils/authFailure';
++
++const FIRST_PERSON = /\b(we|our|us)\b/i;
++
++function httpError(status: number, message: string) {
++  return Object.assign(new Error(`Request failed with status code ${status}`), {
++    response: { status, data: { message } },
++  });
++}
++
++describe('C-368-3: Apple Account, never Apple ID, and no first person', () => {
++  it('existing-account role notice', () => {
++    const text = signupRoleNoticeMessage('existing_account');
++    expect(text).toBe(
++      'This Apple Account or Google account already had an account, so you were signed in to it. The role choice applies only to new accounts.',
++    );
++    expect(text).not.toMatch(/Apple ID/);
++    expect(text).not.toMatch(FIRST_PERSON);
++  });
++
++  it('Apple "email not verified" message', () => {
++    const text = describeSignInFailure(httpError(401, 'Email not verified'), { provider: 'apple' }).message;
++    expect(text).toBe('The email on your Apple Account is not verified. Verify it with Apple, or sign up with email.');
++    expect(text).not.toMatch(/Apple ID/);
++  });
++
++  it('coach sign-up withdrawal notice after an unconfirmed request', () => {
++    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'screens', 'auth', 'CreateAccountScreen.tsx'), 'utf8');
++    const sentence = source.match(/'You chose to coach clients, but coach sign-up has been switched off, [^']*'/);
++    expect(sentence).not.toBeNull();
++    const text = sentence?.[0] ?? '';
++    expect(text).toMatch(/the app could not confirm what happened to your coach sign-up request/);
++    expect(text).toMatch(/Sign in with the same email, Apple Account or Google account first/);
++    expect(text).not.toMatch(/Apple ID/);
++    expect(text).not.toMatch(FIRST_PERSON);
++  });
++});
+diff --git a/src/lib/signupRoleNotice.ts b/src/lib/signupRoleNotice.ts
+index 877779ae..1ffcae0d 100644
+--- a/src/lib/signupRoleNotice.ts
++++ b/src/lib/signupRoleNotice.ts
+@@ -50,7 +50,7 @@ export function signupRoleNoticeMessage(kind: SignupRoleNoticeKind): string {
+     case 'coach_request_not_applied':
+       return 'Coach sign-up was not applied to this account, so it was created as a client account. You can continue as a client. To run your practice here, contact support and we will set up coach access. Use Contact support below, or Support in Settings at any time.';
+     case 'existing_account':
+-      return 'This Apple ID or Google account already had an account, so we signed you in. The role choice applies only to new accounts.';
++      return 'This Apple Account or Google account already had an account, so you were signed in to it. The role choice applies only to new accounts.';
+     case 'coach_retry_not_applied':
+       return 'Coach sign-up was not applied to this account, so you are signed in to a client account. Your earlier attempt may have created it. To run your practice here, contact support and we will set up coach access. Use Contact support below, or Support in Settings at any time.';
+     case 'new_account_from_sign_in':
+diff --git a/src/screens/auth/CreateAccountScreen.tsx b/src/screens/auth/CreateAccountScreen.tsx
+index 46b12036..1f526fb6 100644
+--- a/src/screens/auth/CreateAccountScreen.tsx
++++ b/src/screens/auth/CreateAccountScreen.tsx
+@@ -1012,7 +1012,7 @@ export default function CreateAccountScreen({ navigation, route }: Props) {
+         ? 'You chose to coach clients, but coach sign-up was switched off while you were signing up. No account has been created. You can create a client account instead, or check again later.'
+         : withdrawal === 'refused'
+           ? 'You chose to coach clients, but coach sign-up was switched off while your request was being sent, and your coach sign-up was not completed. You can create a client account instead, or check again later.'
+-          : 'You chose to coach clients, but coach sign-up has been switched off, and we could not confirm what happened to your coach sign-up request. An account may or may not have been created. Sign in with the same email, Apple ID or Google account first; if the account exists, you will be signed in to it. You can also check again later or contact support.';
++          : 'You chose to coach clients, but coach sign-up has been switched off, and the app could not confirm what happened to your coach sign-up request. An account may or may not have been created. Sign in with the same email, Apple Account or Google account first; if the account exists, you will be signed in to it. You can also check again later or contact support.';
+     return (
+       <View style={styles.container}>
+         <ScrollView contentContainerStyle={styles.scroll}>
+diff --git a/src/screens/settings/DeleteAccountScreen.tsx b/src/screens/settings/DeleteAccountScreen.tsx
+index 588205c7..bb2ca333 100644
+--- a/src/screens/settings/DeleteAccountScreen.tsx
++++ b/src/screens/settings/DeleteAccountScreen.tsx
+@@ -17,8 +17,8 @@
+  *     the server can revoke Sign in with Apple tokens.
+  *  4. Timing copy uses the server's grace_days, purge_after and completes_by.
+  *     Apple copy says access was removed only when the server reports
+- *     `revoked`; otherwise it explains how to remove the app from the
+- *     person's Apple Account (APPLE_FALLBACK).
++ *     `revoked`; otherwise anyone who may have signed in with Apple sees how
++ *     to remove the app from their Apple Account (appleFallbackCopy).
+  *
+  * Copy rules: every claim must match the backend erasure manifest
+  * (src/account-deletion/account-deletion.manifest.ts). No emoji, no
+@@ -77,7 +77,7 @@ export const PERMANENTLY_DELETED: readonly string[] = [
+ 
+ // Mirrors the manifest's retained rows (operator retention policy).
+ export const KEPT_RECORDS: readonly string[] = [
+-  'Payment and tax records that Stripe keeps for as long as the law requires. Our own copies keep only amounts, dates and payment references, with no name or contact details.',
++  'Payment and tax records that Stripe keeps for as long as the law requires. The app’s own copies keep only amounts, dates and payment references, with no name or contact details.',
+   'One deletion record with a random reference, the date and the result. It holds no name, email or account details.',
+   'If you coach: your clients are not deleted. They keep their own data and the plans you assigned, unchanged and without your contact details, and are no longer linked to you.',
+ ];
+@@ -91,13 +91,56 @@ export const BILLING_NOTE =
+ // and later, so earlier versions get the account.apple.com steps, which do not
+ // depend on the iOS version. "Apple Account" is Apple's current name for what
+ // it used to call the Apple ID (B-PRIV-FU-117).
+-export const APPLE_FALLBACK =
+-  'You can also remove this app from your Apple Account yourself. ' +
++export const APPLE_REMOVAL_STEPS =
+   'On an iPhone with iOS 18 or later, open Settings, tap your name, then Sign in with Apple, choose this app, tap Delete and follow the steps on screen to confirm. ' +
+   'On an earlier version of iOS, or on any other device, sign in at account.apple.com, go to Sign-In & Security, select Sign in with Apple, choose this app and stop using Sign in with Apple for it.';
+ 
++// C-368-1: each fallback says only what this screen knows. Right after a
++// confirmation it has the server's apple_revocation (anything but `revoked`
++// means Apple has not confirmed); on a later visit it has no outcome, since
++// GET /me/delete-account/status does not carry one. When the provider lookup
++// cannot tell whether the account uses Apple, the copy is conditional.
++export const APPLE_FALLBACK =
++  'Apple has not confirmed that this app’s access was removed. ' +
++  'You can remove this app from your Apple Account yourself. ' +
++  APPLE_REMOVAL_STEPS;
++export const APPLE_FALLBACK_IF_APPLE =
++  'If you signed in with Apple, Apple has not confirmed that this app’s access was removed, and you can remove this app from your Apple Account yourself. ' +
++  APPLE_REMOVAL_STEPS;
++export const APPLE_FALLBACK_LATER =
++  'If Apple did not confirm that this app’s access was removed when you confirmed the deletion, you can remove this app from your Apple Account yourself. ' +
++  APPLE_REMOVAL_STEPS;
++export const APPLE_FALLBACK_LATER_IF_APPLE =
++  'If you signed in with Apple and Apple did not confirm that this app’s access was removed when you confirmed the deletion, you can remove this app from your Apple Account yourself. ' +
++  APPLE_REMOVAL_STEPS;
++
++/**
++ * B-368-1: the Apple card for the status view, or null for none. `revoked`
++ * shows Apple's confirmation instead. Otherwise a card is shown whenever the
++ * person may have signed in with Apple: the account lists Apple, they
++ * confirmed with Apple here, the server tried to revoke, or the provider
++ * lookup could not tell.
++ */
++export function appleFallbackCopy(input: {
++  outcome: AppleRevocationOutcome | null;
++  confirmedHereWith: ReauthMethod | null;
++  appleAccount: boolean;
++  providersUnknown: boolean;
++}): string | null {
++  if (input.outcome === 'revoked') return null;
++  const outcomeInHand = input.confirmedHereWith !== null;
++  const appleKnown =
++    input.appleAccount ||
++    input.confirmedHereWith === 'apple' ||
++    (input.outcome !== null && input.outcome !== 'not_requested');
++  if (appleKnown) return outcomeInHand ? APPLE_FALLBACK : APPLE_FALLBACK_LATER;
++  if (input.providersUnknown) return outcomeInHand ? APPLE_FALLBACK_IF_APPLE : APPLE_FALLBACK_LATER_IF_APPLE;
++  return null;
++}
++
+ // Shown on the form. True whatever the server reports: after confirming, the
+-// status view shows either Apple's confirmation or APPLE_FALLBACK.
++// status view shows Apple's confirmation or a fallback to anyone who may have
++// signed in with Apple (appleFallbackCopy).
+ export const APPLE_FORM_NOTE =
+   'If you signed in with Apple, after you confirm you will see whether Apple removed this app’s access to your Apple Account, and how to remove it yourself if not.';
+ 
+@@ -105,7 +148,7 @@ interface DeleteAccountScreenProps {
+   navigation: NavigationProp<ParamListBase>;
+ }
+ 
+-type ReauthMethod = 'password' | 'apple' | 'google';
++export type ReauthMethod = 'password' | 'apple' | 'google';
+ type LoadPhase = 'loading' | 'ready' | 'error' | 'deleted';
+ 
+ export function formatDeletionDate(iso?: string | null): string | null {
+@@ -135,14 +178,18 @@ export default function DeleteAccountScreen({ navigation }: DeleteAccountScreenP
+ 
+   const [phase, setPhase] = useState<LoadPhase>('loading');
+   const [statusError, setStatusError] = useState(
+-    'We could not check your account deletion status. Check your connection, then try again.',
++    'The account deletion status could not be checked. Check your connection, then try again.',
+   );
+   const [status, setStatus] = useState<DeletionStatus | null>(null);
+   const [appleOutcome, setAppleOutcome] = useState<AppleRevocationOutcome | null>(null);
++  // B-368-1: the method used to confirm on this visit, so the status view
++  // knows an outcome is in hand and whether Apple was used.
++  const [confirmedWith, setConfirmedWith] = useState<ReauthMethod | null>(null);
+   const [confirmText, setConfirmText] = useState('');
+   const [password, setPassword] = useState('');
+   const [appleAvailable, setAppleAvailable] = useState(false);
+   const [providers, setProviders] = useState<SignInProvider[] | null>(null);
++  const [providersChecked, setProvidersChecked] = useState(false);
+   const [busy, setBusy] = useState(false);
+   const [error, setError] = useState<string | null>(null);
+   const signedOut = useRef(false);
+@@ -190,9 +237,15 @@ export default function DeleteAccountScreen({ navigation }: DeleteAccountScreenP
+       .catch(() => setAppleAvailable(false));
+     getSignInProviders()
+       .then((list) => {
+-        if (mounted) setProviders(list);
++        if (!mounted) return;
++        setProviders(list);
++        setProvidersChecked(true);
+       })
+-      .catch(() => setProviders(null));
++      .catch(() => {
++        if (!mounted) return;
++        setProviders(null);
++        setProvidersChecked(true);
++      });
+     return () => {
+       mounted = false;
+     };
+@@ -244,6 +297,7 @@ export default function DeleteAccountScreen({ navigation }: DeleteAccountScreenP
+       setPassword('');
+       setConfirmText('');
+       setAppleOutcome(res.data.apple_revocation ?? null);
++      setConfirmedWith(method);
+       setStatus({
+         state: 'confirmed',
+         requested_at: res.data.requested_at,
+@@ -316,6 +370,7 @@ export default function DeleteAccountScreen({ navigation }: DeleteAccountScreenP
+             await deletionApi.cancelDeletion();
+             successTap();
+             setAppleOutcome(null);
++            setConfirmedWith(null);
+             await loadStatus();
+             Alert.alert('Deletion cancelled', 'Your account is no longer scheduled for deletion.');
+           } catch (err) {
+@@ -430,8 +485,13 @@ export default function DeleteAccountScreen({ navigation }: DeleteAccountScreenP
+   if (status?.state === 'confirmed') {
+     const date = formatDeletionDate(status.purge_after);
+     const cancellable = status.cancellable !== false;
+-    const showAppleFallback =
+-      appleOutcome !== 'revoked' && (isAppleAccount || (appleOutcome !== null && appleOutcome !== 'not_requested'));
++    // A confirmation made before the lookup finished counts as unknown.
++    const appleFallback = appleFallbackCopy({
++      outcome: appleOutcome,
++      confirmedHereWith: confirmedWith,
++      appleAccount: isAppleAccount,
++      providersUnknown: providers === null && (providersChecked || confirmedWith !== null),
++    });
+     return (
+       <View style={styles.container}>
+         {header}
+@@ -465,10 +525,10 @@ export default function DeleteAccountScreen({ navigation }: DeleteAccountScreenP
+               </Text>
+             </View>
+           ) : null}
+-          {showAppleFallback ? (
++          {appleFallback ? (
+             <View style={styles.card}>
+               <Text style={styles.bodyText} testID="apple-fallback">
+-                {APPLE_FALLBACK}
++                {appleFallback}
+               </Text>
+             </View>
+           ) : null}
+diff --git a/src/screens/settings/README.md b/src/screens/settings/README.md
+index 4a45131c..c955630b 100644
+--- a/src/screens/settings/README.md
++++ b/src/screens/settings/README.md
+@@ -21,7 +21,7 @@ In-app account deletion for both roles (Apple App Review 5.1.1(v); GDPR Art. 17;
+    - on iOS when available, the native Sign in with Apple sheet (`reauthenticateWithApple()` in `src/utils/appleAuth.ts`; requests no scopes and does NOT create a new session).
+ 4. `POST /auth/recent-auth-token` (`{ password }` or `{ provider: 'apple', provider_token }`) returns a short-lived single-use token; `POST /me/delete-account` with header `X-Recent-Auth-Token` schedules the deletion **in the same request** (the 14-day grace period starts now). Apple users also send `apple_authorization_code` so the server can revoke their Sign in with Apple tokens; the response's `apple_revocation` says whether it did. The request is idempotent on the server.
+ 5. **Status view:** the exact permanent-deletion date (`purge_after`), the deleted-data list, **Keep my account** (`POST /me/delete-account/cancel`, after a confirm alert) while `cancellable`, and Sign out. The user is not signed out automatically; the account stays usable during the grace period.
+-   - Apple copy: the view says Apple removed the app's access to the Apple Account only when `apple_revocation` is `revoked`. Otherwise an Apple account sees `APPLE_FALLBACK`: Apple's own steps (Apple Support 102571), Settings > your name > Sign in with Apple on iOS 18 or later, and account.apple.com > Sign-In & Security on earlier iOS versions (the app supports iOS 16.4 and later) or any other device. It matches the backend's `SIGN_IN_WITH_APPLE_DELETION_TEXT`. Apple's current name is "Apple Account", not "Apple ID".
++   - Apple copy: the view says Apple removed the app's access to the Apple Account only when `apple_revocation` is `revoked`. Otherwise anyone who may have signed in with Apple (the account lists Apple, they confirmed with Apple, the server tried to revoke, or the provider lookup could not tell) sees a fallback from `appleFallbackCopy` (B-368-1). Right after confirming it starts "Apple has not confirmed that this app’s access was removed." (`APPLE_FALLBACK`; conditional "If you signed in with Apple, ..." when the lookup could not tell); on a later visit, which has no outcome, it says "If Apple did not confirm ..." (`APPLE_FALLBACK_LATER`). Every fallback ends with `APPLE_REMOVAL_STEPS`: Apple's own steps (Apple Support 102571), Settings > your name > Sign in with Apple on iOS 18 or later, and account.apple.com > Sign-In & Security on earlier iOS versions (the app supports iOS 16.4 and later) or any other device. It matches the backend's `SIGN_IN_WITH_APPLE_DELETION_TEXT`. Apple's current name is "Apple Account", not "Apple ID".
+ 
+ Errors: 401 on re-auth shows "That password is not correct" / "Apple could not confirm it is you"; 429 shows a wait-a-minute message; other failures show the server message. The re-auth request is sent with `skipAuthRefresh` so a wrong password is not replayed by the 401 refresh interceptor against the 5/min throttle.
+ 
+diff --git a/src/screens/settings/__tests__/DeleteAccountScreen.test.tsx b/src/screens/settings/__tests__/DeleteAccountScreen.test.tsx
+index 7ac22fdf..2c3c8be8 100644
+--- a/src/screens/settings/__tests__/DeleteAccountScreen.test.tsx
++++ b/src/screens/settings/__tests__/DeleteAccountScreen.test.tsx
+@@ -4,6 +4,8 @@
+  * Tests render, confirmation gate, success flow, and error flow.
+  */
+ 
++import * as fs from 'fs';
++import * as path from 'path';
+ import React from 'react';
+ import { Alert } from 'react-native';
+ import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
+@@ -73,7 +75,14 @@ jest.mock('expo-font', () => ({ isLoaded: () => true, loadAsync: jest.fn() }));
+ 
+ // ─── Import after mocks ────────────────────────────────────────────────────────
+ 
+-import DeleteAccountScreen, { APPLE_FALLBACK } from '../DeleteAccountScreen';
++import DeleteAccountScreen, {
++  APPLE_FALLBACK,
++  APPLE_FALLBACK_IF_APPLE,
++  APPLE_FALLBACK_LATER,
++  APPLE_FALLBACK_LATER_IF_APPLE,
++  APPLE_REMOVAL_STEPS,
++  KEPT_RECORDS,
++} from '../DeleteAccountScreen';
+ import { deletionApi } from '../../../services/api';
+ import { signOut } from '../../../services/authActions';
+ import { useCurrentUser } from '../../../hooks/useCurrentUser';
+@@ -667,9 +676,10 @@ describe('DeleteAccountScreen', () => {
+ // the app supports iOS 16.4 and later, so earlier versions get the
+ // account.apple.com steps, which do not depend on the iOS version.
+ describe('APPLE_FALLBACK: Apple’s current names and steps (B-PRIV-FU-117)', () => {
+-  it('is pinned word for word', () => {
++  it('is pinned word for word (C-368-1: it starts with what Apple has not confirmed)', () => {
+     expect(APPLE_FALLBACK).toBe(
+-      'You can also remove this app from your Apple Account yourself. ' +
++      'Apple has not confirmed that this app’s access was removed. ' +
++        'You can remove this app from your Apple Account yourself. ' +
+         'On an iPhone with iOS 18 or later, open Settings, tap your name, then Sign in with Apple, choose this app, tap Delete and follow the steps on screen to confirm. ' +
+         'On an earlier version of iOS, or on any other device, sign in at account.apple.com, go to Sign-In & Security, select Sign in with Apple, choose this app and stop using Sign in with Apple for it.',
+     );
+@@ -702,3 +712,142 @@ describe('APPLE_FALLBACK: Apple’s current names and steps (B-PRIV-FU-117)', ()
+     expect(APPLE_FALLBACK).not.toMatch(/!/);
+   });
+ });
++
++// B-PRIVFU2-118 FIX ROUND 1 (#368, agent 118). B-368-1 (both lenses): the form
++// note promises that, after confirming, a person who signed in with Apple sees
++// whether Apple removed the app's access and how to remove it if not. That has
++// to hold when the provider lookup cannot tell (getSignInProviders() -> null),
++// when the person confirmed with Apple but no authorization code reached the
++// server (not_requested), and when the response has no apple_revocation.
++// C-368-1: the fallback starts with what Apple has not confirmed; a later
++// visit (no outcome in hand) says only what this screen can know.
++describe('B-368-1 / C-368-1: an Apple card for every outcome the form note promises', () => {
++  beforeEach(() => {
++    jest.clearAllMocks();
++    focusListeners.length = 0;
++    mockedUseCurrentUser.mockReturnValue({ id: 'user-1', email: 'test@example.com', name: 'Test User', role: 'student' });
++    mockedDeletionApi.getDeletionStatus.mockResolvedValue(statusOf({ state: 'none', grace_days: 14 }));
++    mockedAppleAvailable.mockResolvedValue(true);
++    mockedProviders.mockResolvedValue(null);
++    tokenOk();
++  });
++
++  async function confirm(
++    method: 'apple' | 'password',
++    response: Record<string, unknown>,
++    code: string | null = 'apple-code',
++  ) {
++    mockedAppleReauth.mockResolvedValue({ success: true, identityToken: 'apple-id', authorizationCode: code });
++    mockedDeletionApi.requestDeletion.mockResolvedValue(stub(scheduledResponse(response)));
++    const utils = await renderScreen();
++    await waitFor(() => utils.getByTestId('confirm-input'));
++    await fillForm(utils, method === 'password' ? { password: 'pw' } : {});
++    await act(async () => {
++      fireEvent.press(utils.getByTestId(method === 'apple' ? 'apple-confirm-button' : 'confirm-button'));
++    });
++    await waitFor(() => utils.getByTestId('deletion-date'));
++    return utils;
++  }
++
++  const fallbackText = (utils: Awaited<ReturnType<typeof renderScreen>>) =>
++    [utils.getByTestId('apple-fallback').props.children].flat().join('');
++
++  it('providers unknown, confirmed with Apple, no authorization code (not_requested): the fallback', async () => {
++    const utils = await confirm('apple', { apple_revocation: 'not_requested' }, null);
++    expect(mockedDeletionApi.requestDeletion).toHaveBeenCalledWith('recent-tok', null);
++    expect(utils.queryByTestId('apple-revoked')).toBeNull();
++    expect(fallbackText(utils)).toBe(APPLE_FALLBACK);
++  });
++
++  it('providers unknown, confirmed with Apple, response without apple_revocation: the fallback', async () => {
++    const utils = await confirm('apple', { apple_revocation: undefined });
++    expect(utils.queryByTestId('apple-revoked')).toBeNull();
++    expect(fallbackText(utils)).toBe(APPLE_FALLBACK);
++  });
++
++  it('providers unknown, confirmed with the password: the fallback for a person who may use Apple', async () => {
++    const utils = await confirm('password', { apple_revocation: 'not_requested' });
++    expect(utils.queryByTestId('apple-revoked')).toBeNull();
++    expect(fallbackText(utils)).toBe(APPLE_FALLBACK_IF_APPLE);
++  });
++
++  it('control: providers unknown, Apple revoked: the confirmation only', async () => {
++    const utils = await confirm('apple', { apple_revocation: 'revoked' });
++    expect(utils.getByTestId('apple-revoked')).toBeTruthy();
++    expect(utils.queryByTestId('apple-fallback')).toBeNull();
++  });
++
++  it('control: providers unknown, code sent, server not_configured: the fallback', async () => {
++    const utils = await confirm('apple', { apple_revocation: 'not_configured' });
++    expect(fallbackText(utils)).toBe(APPLE_FALLBACK);
++  });
++
++  it('control: a known email-only account confirmed with the password sees no Apple card', async () => {
++    mockedProviders.mockResolvedValue(['email']);
++    const utils = await confirm('password', { apple_revocation: 'not_requested' });
++    expect(utils.queryByTestId('apple-revoked')).toBeNull();
++    expect(utils.queryByTestId('apple-fallback')).toBeNull();
++  });
++
++  it('a known Apple account confirmed with the password: the fallback', async () => {
++    mockedProviders.mockResolvedValue(['email', 'apple']);
++    const utils = await confirm('password', { apple_revocation: 'not_requested' });
++    expect(fallbackText(utils)).toBe(APPLE_FALLBACK);
++  });
++
++  it.each([
++    [['apple'], APPLE_FALLBACK_LATER],
++    [null, APPLE_FALLBACK_LATER_IF_APPLE],
++  ])('a later visit (providers %p) does not claim to know what Apple confirmed', async (providers, expected) => {
++    mockedProviders.mockResolvedValue(providers);
++    mockedDeletionApi.getDeletionStatus.mockResolvedValue(
++      statusOf({ state: 'confirmed', grace_days: 14, purge_after: PURGE_AFTER, cancellable: true }),
++    );
++    const utils = await renderScreen();
++    await waitFor(() => utils.getByTestId('apple-fallback'));
++    expect(fallbackText(utils)).toBe(expected);
++    expect(fallbackText(utils)).not.toMatch(/^Apple has not confirmed/);
++  });
++
++  it('control: a later visit by a known email-only account shows no Apple card', async () => {
++    mockedProviders.mockResolvedValue(['email']);
++    mockedDeletionApi.getDeletionStatus.mockResolvedValue(
++      statusOf({ state: 'confirmed', grace_days: 14, purge_after: PURGE_AFTER, cancellable: true }),
++    );
++    const utils = await renderScreen();
++    await waitFor(() => utils.getByTestId('deletion-date'));
++    await act(async () => undefined);
++    expect(utils.queryByTestId('apple-fallback')).toBeNull();
++  });
++
++  it('every fallback ends with the same Apple steps as the backend help text, and no first person', () => {
++    for (const text of [APPLE_FALLBACK, APPLE_FALLBACK_IF_APPLE, APPLE_FALLBACK_LATER, APPLE_FALLBACK_LATER_IF_APPLE]) {
++      expect(text.endsWith(APPLE_REMOVAL_STEPS)).toBe(true);
++      expect(text).toMatch(/your Apple Account yourself\. On an iPhone/);
++      expect(text).not.toMatch(/Apple ID/);
++      expect(text).not.toMatch(/\b(we|our|us)\b/i);
++      expect(text).not.toMatch(/!/);
++    }
++    expect(APPLE_FALLBACK_IF_APPLE).toMatch(/^If you signed in with Apple, Apple has not confirmed that this app’s access was removed, /);
++  });
++});
++
++// C-368-2: the screen's own copy has no first person (Opus, #368 r0).
++describe('C-368-2: DeleteAccountScreen copy has no first person', () => {
++  it('the kept-records list says the app’s own copies', () => {
++    expect(KEPT_RECORDS[0]).toBe(
++      'Payment and tax records that Stripe keeps for as long as the law requires. The app’s own copies keep only amounts, dates and payment references, with no name or contact details.',
++    );
++  });
++
++  it('no string in the screen source uses we, our or us', () => {
++    const source = fs
++      .readFileSync(path.join(__dirname, '..', 'DeleteAccountScreen.tsx'), 'utf8')
++      .replace(/\/\*[\s\S]*?\*\//g, '')
++      .replace(/^\s*\/\/.*$/gm, '');
++    const strings = source.match(/'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g) ?? [];
++    // Case-sensitive on purpose: 'en-US' is a locale, not a pronoun.
++    const firstPerson = strings.filter((literal) => /\b([Ww]e|[Oo]ur|[Uu]s)\b/.test(literal));
++    expect(firstPerson).toEqual([]);
++  });
++});
+diff --git a/src/utils/authFailure.ts b/src/utils/authFailure.ts
+index 68e08dbc..478475e6 100644
+--- a/src/utils/authFailure.ts
++++ b/src/utils/authFailure.ts
+@@ -180,7 +180,7 @@ export function describeSignInFailure(
+         provider === 'google'
+           ? 'Your Google account’s email is not verified. Verify it with Google, or sign up with email.'
+           : provider === 'apple'
+-            ? 'Your Apple ID’s email is not verified. Verify it with Apple, or sign up with email.'
++            ? 'The email on your Apple Account is not verified. Verify it with Apple, or sign up with email.'
+             : flow === 'verify'
+               ? 'Your email is not verified yet. Open the link we sent to this address, then tap I verified my email.'
+               : 'Your email is not confirmed yet. Open the link we sent, then sign in.',

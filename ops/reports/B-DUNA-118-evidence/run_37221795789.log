@@ -1,0 +1,790 @@
+﻿2026-10-04T17:46:37.7226794Z Current runner version: '2.337.0'
+2026-10-04T17:46:37.7250896Z ##[group]Runner Image Provisioner
+2026-10-04T17:46:37.7251851Z Hosted Compute Agent
+2026-10-04T17:46:37.7252480Z Version: 20260901.588
+2026-10-04T17:46:37.7253216Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-04T17:46:37.7253998Z Build Date: 2026-09-01T19:56:44Z
+2026-10-04T17:46:37.7254951Z Worker ID: {70144efb-eef5-4ae6-8e79-0f85cf769554}
+2026-10-04T17:46:37.7255727Z Azure Region: westcentralus
+2026-10-04T17:46:37.7256405Z ##[endgroup]
+2026-10-04T17:46:37.7258295Z ##[group]Operating System
+2026-10-04T17:46:37.7258997Z Ubuntu
+2026-10-04T17:46:37.7259641Z 24.04.5
+2026-10-04T17:46:37.7260196Z LTS
+2026-10-04T17:46:37.7260779Z ##[endgroup]
+2026-10-04T17:46:37.7261401Z ##[group]Runner Image
+2026-10-04T17:46:37.7262031Z Image: ubuntu-24.04
+2026-10-04T17:46:37.7262602Z Version: 20260927.320.1
+2026-10-04T17:46:37.7264003Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-04T17:46:37.7265783Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-04T17:46:37.7266804Z ##[endgroup]
+2026-10-04T17:46:37.7268099Z ##[group]GITHUB_TOKEN Permissions
+2026-10-04T17:46:37.7270030Z Contents: read
+2026-10-04T17:46:37.7270624Z Metadata: read
+2026-10-04T17:46:37.7271328Z Packages: read
+2026-10-04T17:46:37.7271917Z ##[endgroup]
+2026-10-04T17:46:37.7274061Z Secret source: Actions
+2026-10-04T17:46:37.7275275Z Cache mode: write
+2026-10-04T17:46:37.7276009Z Prepare workflow directory
+2026-10-04T17:46:37.7746071Z Prepare all required actions
+2026-10-04T17:46:37.7794117Z Getting action download info
+2026-10-04T17:46:38.1157917Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-04T17:46:38.2190881Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-04T17:46:38.4219734Z Complete job name: targeted
+2026-10-04T17:46:38.4714220Z ##[group]Checking docker version
+2026-10-04T17:46:38.4727821Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-04T17:46:38.5414857Z '1.48'
+2026-10-04T17:46:38.5423979Z Docker daemon API version: '1.48'
+2026-10-04T17:46:38.5425063Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-04T17:46:38.5587427Z '1.48'
+2026-10-04T17:46:38.5601078Z Docker client API version: '1.48'
+2026-10-04T17:46:38.5606252Z ##[endgroup]
+2026-10-04T17:46:38.5609288Z ##[group]Clean up resources from previous jobs
+2026-10-04T17:46:38.5614812Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=4be271"
+2026-10-04T17:46:38.5757543Z ##[command]/usr/bin/docker network prune --force --filter "label=4be271"
+2026-10-04T17:46:38.5882283Z ##[endgroup]
+2026-10-04T17:46:38.5883001Z ##[group]Create local container network
+2026-10-04T17:46:38.5892989Z ##[command]/usr/bin/docker network create --label 4be271 github_network_6f95685b453e4a12a1bdd3484c233db0
+2026-10-04T17:46:38.6435053Z 8e3f0febd89d10129cd3ec3c3d944d068a4c02de6ff69030c454bb002866979e
+2026-10-04T17:46:38.6455966Z ##[endgroup]
+2026-10-04T17:46:38.6480414Z ##[group]Starting redis service container
+2026-10-04T17:46:38.6503136Z ##[command]/usr/bin/docker pull redis:7-alpine
+2026-10-04T17:46:39.3754240Z 7-alpine: Pulling from library/redis
+2026-10-04T17:46:39.5645370Z 16333ee0c00f: Pulling fs layer
+2026-10-04T17:46:39.5646260Z 83234986c742: Pulling fs layer
+2026-10-04T17:46:39.5647031Z 7eb50503c2b0: Pulling fs layer
+2026-10-04T17:46:39.5647797Z 1522f9c6f453: Pulling fs layer
+2026-10-04T17:46:39.5648543Z 9928009b15c8: Pulling fs layer
+2026-10-04T17:46:39.5649294Z 4f4fb700ef54: Pulling fs layer
+2026-10-04T17:46:39.5650042Z 4eb14bae0e1d: Pulling fs layer
+2026-10-04T17:46:39.5650769Z 1522f9c6f453: Waiting
+2026-10-04T17:46:39.5651444Z 4f4fb700ef54: Waiting
+2026-10-04T17:46:39.5652103Z 9928009b15c8: Waiting
+2026-10-04T17:46:39.5652760Z 4eb14bae0e1d: Waiting
+2026-10-04T17:46:39.7505008Z 83234986c742: Verifying Checksum
+2026-10-04T17:46:39.7506329Z 83234986c742: Download complete
+2026-10-04T17:46:39.7877832Z 7eb50503c2b0: Verifying Checksum
+2026-10-04T17:46:39.7878470Z 7eb50503c2b0: Download complete
+2026-10-04T17:46:39.9149699Z 16333ee0c00f: Verifying Checksum
+2026-10-04T17:46:39.9150329Z 16333ee0c00f: Download complete
+2026-10-04T17:46:39.9802748Z 9928009b15c8: Verifying Checksum
+2026-10-04T17:46:39.9803425Z 9928009b15c8: Download complete
+2026-10-04T17:46:40.0210711Z 16333ee0c00f: Pull complete
+2026-10-04T17:46:40.0980493Z 4f4fb700ef54: Verifying Checksum
+2026-10-04T17:46:40.0981236Z 4f4fb700ef54: Download complete
+2026-10-04T17:46:40.1740254Z 4eb14bae0e1d: Verifying Checksum
+2026-10-04T17:46:40.1740835Z 4eb14bae0e1d: Download complete
+2026-10-04T17:46:40.1885548Z 1522f9c6f453: Verifying Checksum
+2026-10-04T17:46:40.1886186Z 1522f9c6f453: Download complete
+2026-10-04T17:46:41.4399148Z 83234986c742: Pull complete
+2026-10-04T17:46:41.5707054Z 7eb50503c2b0: Pull complete
+2026-10-04T17:46:41.7727348Z 1522f9c6f453: Pull complete
+2026-10-04T17:46:41.7830805Z 9928009b15c8: Pull complete
+2026-10-04T17:46:41.7900445Z 4f4fb700ef54: Pull complete
+2026-10-04T17:46:41.8011564Z 4eb14bae0e1d: Pull complete
+2026-10-04T17:46:41.8046894Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+2026-10-04T17:46:41.8065872Z Status: Downloaded newer image for redis:7-alpine
+2026-10-04T17:46:41.8074261Z docker.io/library/redis:7-alpine
+2026-10-04T17:46:41.8106994Z ##[command]/usr/bin/docker create --name 45e87487285d4c4f913de8ede9a5b15f_redis7alpine_7790b7 --label 4be271 --network github_network_6f95685b453e4a12a1bdd3484c233db0 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+2026-10-04T17:46:41.8339551Z 4cb6e2de37cc3c80c3a3ccdd5e5ae64b7fba969913ceb1482d55e6c8c29586d8
+2026-10-04T17:46:41.8363073Z ##[command]/usr/bin/docker start 4cb6e2de37cc3c80c3a3ccdd5e5ae64b7fba969913ceb1482d55e6c8c29586d8
+2026-10-04T17:46:42.0336332Z 4cb6e2de37cc3c80c3a3ccdd5e5ae64b7fba969913ceb1482d55e6c8c29586d8
+2026-10-04T17:46:42.0359035Z ##[command]/usr/bin/docker ps --all --filter id=4cb6e2de37cc3c80c3a3ccdd5e5ae64b7fba969913ceb1482d55e6c8c29586d8 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-04T17:46:42.0486025Z 4cb6e2de37cc3c80c3a3ccdd5e5ae64b7fba969913ceb1482d55e6c8c29586d8 Up Less than a second (health: starting)
+2026-10-04T17:46:42.0505495Z ##[command]/usr/bin/docker port 4cb6e2de37cc3c80c3a3ccdd5e5ae64b7fba969913ceb1482d55e6c8c29586d8
+2026-10-04T17:46:42.0628699Z 6379/tcp -> 0.0.0.0:6379
+2026-10-04T17:46:42.0629271Z 6379/tcp -> [::]:6379
+2026-10-04T17:46:42.0678515Z ##[endgroup]
+2026-10-04T17:46:42.0687535Z ##[group]Waiting for all services to be ready
+2026-10-04T17:46:42.0701057Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 4cb6e2de37cc3c80c3a3ccdd5e5ae64b7fba969913ceb1482d55e6c8c29586d8
+2026-10-04T17:46:42.0820774Z starting
+2026-10-04T17:46:42.0840572Z redis service is starting, waiting 2 seconds before checking again.
+2026-10-04T17:46:44.0839184Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 4cb6e2de37cc3c80c3a3ccdd5e5ae64b7fba969913ceb1482d55e6c8c29586d8
+2026-10-04T17:46:44.0963845Z starting
+2026-10-04T17:46:44.0976536Z redis service is starting, waiting 3 seconds before checking again.
+2026-10-04T17:46:47.8227296Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 4cb6e2de37cc3c80c3a3ccdd5e5ae64b7fba969913ceb1482d55e6c8c29586d8
+2026-10-04T17:46:47.8352184Z healthy
+2026-10-04T17:46:47.8368755Z redis service is healthy.
+2026-10-04T17:46:47.8369455Z ##[endgroup]
+2026-10-04T17:46:47.8641266Z ##[group]Run actions/checkout@v6
+2026-10-04T17:46:47.8641809Z with:
+2026-10-04T17:46:47.8642130Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T17:46:47.8644991Z   token: ***
+2026-10-04T17:46:47.8645218Z   ssh-strict: true
+2026-10-04T17:46:47.8645715Z   ssh-user: git
+2026-10-04T17:46:47.8645940Z   persist-credentials: true
+2026-10-04T17:46:47.8646203Z   clean: true
+2026-10-04T17:46:47.8646424Z   sparse-checkout-cone-mode: true
+2026-10-04T17:46:47.8646696Z   fetch-depth: 1
+2026-10-04T17:46:47.8646909Z   fetch-tags: false
+2026-10-04T17:46:47.8647135Z   show-progress: true
+2026-10-04T17:46:47.8647357Z   lfs: false
+2026-10-04T17:46:47.8647557Z   submodules: false
+2026-10-04T17:46:47.8647774Z   set-safe-directory: true
+2026-10-04T17:46:47.8648024Z   allow-unsafe-pr-checkout: false
+2026-10-04T17:46:47.8648505Z ##[endgroup]
+2026-10-04T17:46:47.9689939Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T17:46:47.9691732Z ##[group]Getting Git version info
+2026-10-04T17:46:47.9692408Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T17:46:47.9693391Z [command]/usr/bin/git version
+2026-10-04T17:46:47.9693797Z git version 2.55.0
+2026-10-04T17:46:47.9700055Z ##[endgroup]
+2026-10-04T17:46:47.9713788Z Temporarily overriding HOME='/home/runner/work/_temp/6f84eefc-6e96-449b-b1ae-ac152d9bb91d' before making global git config changes
+2026-10-04T17:46:47.9715150Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T17:46:47.9719515Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T17:46:47.9764681Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T17:46:47.9769058Z ##[group]Determining repository object format
+2026-10-04T17:46:47.9771331Z ##[endgroup]
+2026-10-04T17:46:47.9772042Z ##[group]Initializing the repository
+2026-10-04T17:46:47.9776151Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T17:46:47.9871242Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-04T17:46:47.9872055Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-04T17:46:47.9872653Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-04T17:46:47.9873102Z hint: call:
+2026-10-04T17:46:47.9873464Z hint:
+2026-10-04T17:46:47.9873898Z hint: 	git config --global init.defaultBranch <name>
+2026-10-04T17:46:47.9874311Z hint:
+2026-10-04T17:46:47.9875069Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-04T17:46:47.9875754Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-04T17:46:47.9876143Z hint:
+2026-10-04T17:46:47.9876358Z hint: 	git branch -m <name>
+2026-10-04T17:46:47.9876597Z hint:
+2026-10-04T17:46:47.9876931Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-04T17:46:47.9881795Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-04T17:46:47.9890417Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T17:46:47.9963946Z ##[endgroup]
+2026-10-04T17:46:47.9964700Z ##[group]Disabling automatic garbage collection
+2026-10-04T17:46:47.9968359Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-04T17:46:47.9998451Z ##[endgroup]
+2026-10-04T17:46:47.9998990Z ##[group]Setting up auth
+2026-10-04T17:46:48.0000096Z Removing SSH command configuration
+2026-10-04T17:46:48.0006055Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T17:46:48.0037321Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T17:46:48.0362848Z Removing HTTP extra header
+2026-10-04T17:46:48.0363469Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T17:46:48.0400340Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T17:46:48.0624112Z Removing includeIf entries pointing to credentials config files
+2026-10-04T17:46:48.0629543Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T17:46:48.0661066Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T17:46:48.0894067Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-a236a1f8-b4f2-4681-b60d-400e8fa300e2.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-04T17:46:48.0930207Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-a236a1f8-b4f2-4681-b60d-400e8fa300e2.config
+2026-10-04T17:46:48.0961781Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-a236a1f8-b4f2-4681-b60d-400e8fa300e2.config
+2026-10-04T17:46:48.0994198Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-a236a1f8-b4f2-4681-b60d-400e8fa300e2.config
+2026-10-04T17:46:48.1028077Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-a236a1f8-b4f2-4681-b60d-400e8fa300e2.config
+2026-10-04T17:46:48.1062115Z ##[endgroup]
+2026-10-04T17:46:48.1062701Z ##[group]Fetching the repository
+2026-10-04T17:46:48.1070527Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +9cbba31f6fa6bb53111522d1c07047f1f1ea78be:refs/remotes/origin/ci/B-DUNA-118-687-before
+2026-10-04T17:46:50.0466451Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T17:46:50.0467434Z  * [new ref]         9cbba31f6fa6bb53111522d1c07047f1f1ea78be -> origin/ci/B-DUNA-118-687-before
+2026-10-04T17:46:50.0478708Z [command]/usr/bin/git branch --list --remote origin/ci/B-DUNA-118-687-before
+2026-10-04T17:46:50.0505097Z   origin/ci/B-DUNA-118-687-before
+2026-10-04T17:46:50.0513513Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-DUNA-118-687-before
+2026-10-04T17:46:50.0536014Z 9cbba31f6fa6bb53111522d1c07047f1f1ea78be
+2026-10-04T17:46:50.0540595Z ##[endgroup]
+2026-10-04T17:46:50.0541205Z ##[group]Determining the checkout info
+2026-10-04T17:46:50.0542018Z ##[endgroup]
+2026-10-04T17:46:50.0546454Z [command]/usr/bin/git sparse-checkout disable
+2026-10-04T17:46:50.0596042Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-04T17:46:50.0623824Z ##[group]Checking out the ref
+2026-10-04T17:46:50.0628362Z [command]/usr/bin/git checkout --progress --force -B ci/B-DUNA-118-687-before refs/remotes/origin/ci/B-DUNA-118-687-before
+2026-10-04T17:46:50.2818877Z Switched to a new branch 'ci/B-DUNA-118-687-before'
+2026-10-04T17:46:50.2822431Z branch 'ci/B-DUNA-118-687-before' set up to track 'origin/ci/B-DUNA-118-687-before'.
+2026-10-04T17:46:50.2833713Z ##[endgroup]
+2026-10-04T17:46:50.2889374Z [command]/usr/bin/git log -1 --format=%H
+2026-10-04T17:46:50.2911694Z 9cbba31f6fa6bb53111522d1c07047f1f1ea78be
+2026-10-04T17:46:50.3167476Z ##[group]Run actions/setup-node@v6
+2026-10-04T17:46:50.3167754Z with:
+2026-10-04T17:46:50.3167951Z   node-version: 20
+2026-10-04T17:46:50.3168159Z   cache: npm
+2026-10-04T17:46:50.3168362Z   check-latest: false
+2026-10-04T17:46:50.3170831Z   token: ***
+2026-10-04T17:46:50.3171059Z   package-manager-cache: true
+2026-10-04T17:46:50.3171316Z ##[endgroup]
+2026-10-04T17:46:50.4531957Z Attempting to download 20...
+2026-10-04T17:46:51.3088500Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-04T17:46:51.9532704Z Extracting ...
+2026-10-04T17:46:51.9650848Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/c1d65887-3dd9-40cb-91dc-eee8b3ff2c8f -f /home/runner/work/_temp/3e9c7666-9f61-4b56-a04f-dbc83af91e19
+2026-10-04T17:46:53.0609275Z Adding to the cache ...
+2026-10-04T17:46:54.6284757Z ##[group]Environment details
+2026-10-04T17:46:54.8489444Z node: v20.20.2
+2026-10-04T17:46:54.8489849Z npm: 10.8.2
+2026-10-04T17:46:54.8490145Z yarn: 1.22.22
+2026-10-04T17:46:54.8490848Z ##[endgroup]
+2026-10-04T17:46:54.8515285Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+2026-10-04T17:46:54.9558391Z /home/runner/.npm
+2026-10-04T17:46:55.1477671Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T17:46:56.3693111Z Received 33554432 of 86828135 (38.6%), 32.0 MBs/sec
+2026-10-04T17:46:56.5992865Z Received 86828135 of 86828135 (100.0%), 67.3 MBs/sec
+2026-10-04T17:46:56.5994157Z Cache Size: ~83 MB (86828135 B)
+2026-10-04T17:46:56.6098405Z [command]/usr/bin/tar -xf /home/runner/work/_temp/7714f21b-bfb2-4533-9229-d64ab3eb3076/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+2026-10-04T17:46:56.7726883Z Cache restored successfully
+2026-10-04T17:46:56.7776374Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T17:46:56.7968463Z ##[group]Run npm ci
+2026-10-04T17:46:56.7968758Z npm ci
+2026-10-04T17:46:56.8165299Z shell: /usr/bin/bash -e {0}
+2026-10-04T17:46:56.8165596Z ##[endgroup]
+2026-10-04T17:47:02.3214635Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-04T17:47:02.8705012Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-04T17:47:04.4531084Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:47:05.6892250Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:47:05.7111794Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:47:05.7631812Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:47:17.9727075Z 
+2026-10-04T17:47:17.9729848Z > growth-project-backend@1.0.0 postinstall
+2026-10-04T17:47:17.9730418Z > prisma generate
+2026-10-04T17:47:17.9730604Z 
+2026-10-04T17:47:18.8807864Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T17:47:22.7024260Z ┌─────────────────────────────────────────────────────────┐
+2026-10-04T17:47:22.7026191Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+2026-10-04T17:47:22.7026603Z 
+2026-10-04T17:47:22.7027236Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.04s
+2026-10-04T17:47:22.7027702Z 
+2026-10-04T17:47:22.7028272Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T17:47:22.7028770Z 
+2026-10-04T17:47:22.7029224Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+2026-10-04T17:47:22.7030106Z 
+2026-10-04T17:47:22.7030929Z │                                                         │
+2026-10-04T17:47:22.7031811Z │  This is a major update - please follow the guide at    │
+2026-10-04T17:47:22.7032714Z │  https://pris.ly/d/major-version-upgrade                │
+2026-10-04T17:47:22.7033551Z │                                                         │
+2026-10-04T17:47:22.7034532Z │  Run the following to update                            │
+2026-10-04T17:47:22.7035311Z │    npm i --save-dev prisma@latest                       │
+2026-10-04T17:47:22.7036090Z │    npm i @prisma/client@latest                          │
+2026-10-04T17:47:22.7036905Z └─────────────────────────────────────────────────────────┘
+2026-10-04T17:47:22.7637418Z 
+2026-10-04T17:47:22.7638555Z > growth-project-backend@1.0.0 prepare
+2026-10-04T17:47:22.7639354Z > lefthook install
+2026-10-04T17:47:22.7639698Z 
+2026-10-04T17:47:22.8164156Z sync hooks: ✔️(commit-msg, pre-commit)
+2026-10-04T17:47:22.8350463Z 
+2026-10-04T17:47:22.8351313Z added 1115 packages, and audited 1116 packages in 26s
+2026-10-04T17:47:22.8351743Z 
+2026-10-04T17:47:22.8352022Z 202 packages are looking for funding
+2026-10-04T17:47:22.8352524Z   run `npm fund` for details
+2026-10-04T17:47:22.8387932Z 
+2026-10-04T17:47:22.8388435Z 3 high severity vulnerabilities
+2026-10-04T17:47:22.8388674Z 
+2026-10-04T17:47:22.8389545Z To address all issues (including breaking changes), run:
+2026-10-04T17:47:22.8390150Z   npm audit fix --force
+2026-10-04T17:47:22.8390376Z 
+2026-10-04T17:47:22.8390555Z Run `npm audit` for details.
+2026-10-04T17:47:22.9040799Z ##[group]Run npx prisma generate
+2026-10-04T17:47:22.9041120Z npx prisma generate
+2026-10-04T17:47:22.9118865Z shell: /usr/bin/bash -e {0}
+2026-10-04T17:47:22.9119145Z ##[endgroup]
+2026-10-04T17:47:24.1908741Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T17:47:27.9825409Z 
+2026-10-04T17:47:27.9826754Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.03s
+2026-10-04T17:47:27.9827181Z 
+2026-10-04T17:47:27.9827564Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T17:47:27.9827940Z 
+2026-10-04T17:47:27.9828458Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+2026-10-04T17:47:27.9828897Z 
+2026-10-04T17:47:28.1087276Z ##[group]Run set -euo pipefail
+2026-10-04T17:47:28.1087630Z set -euo pipefail
+2026-10-04T17:47:28.1088047Z test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+2026-10-04T17:47:28.1088569Z mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+2026-10-04T17:47:28.1088949Z echo "specs: ${SPECS[*]}"
+2026-10-04T17:47:28.1089263Z npx jest --ci --runInBand "${SPECS[@]}"
+2026-10-04T17:47:28.1159158Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T17:47:28.1159525Z env:
+2026-10-04T17:47:28.1159765Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-04T17:47:28.1160154Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-04T17:47:28.1160509Z ##[endgroup]
+2026-10-04T17:47:28.1264309Z specs: test/dunning-v2-foundation-fixes.spec.ts
+2026-10-04T17:47:30.7971103Z [Nest] 3130  - 10/04/2026, 5:47:30 PM   DEBUG [NotificationsService] push rate-limited: user=coach-a kind=coach_alert
+2026-10-04T17:47:30.8107466Z [Nest] 3130  - 10/04/2026, 5:47:30 PM    WARN [CoachAlertEmitter] CoachAlertEmitter push failed for coach=coach-a error=error_typeerror
+2026-10-04T17:47:30.8139556Z [Nest] 3130  - 10/04/2026, 5:47:30 PM    WARN [CoachAlertEmitter] CoachAlertEmitter push failed for coach=coach-a error=error_typeerror
+2026-10-04T17:47:30.8216030Z [Nest] 3130  - 10/04/2026, 5:47:30 PM    WARN [CoachAlertEmitter] CoachAlertEmitter push failed for coach=coach-a error=error_typeerror
+2026-10-04T17:47:30.8916536Z FAIL test/dunning-v2-foundation-fixes.spec.ts (132 MB heap size)
+2026-10-04T17:47:30.8919802Z   B-687-1 (Sol): effective access is not decided from a truncated page
+2026-10-04T17:47:30.8922575Z     ✓ a live $0 grant after 19 locked alternatives waives the lock (7 ms)
+2026-10-04T17:47:30.8923632Z     ✓ a live $0 grant after 20 locked alternatives waives the lock (7 ms)
+2026-10-04T17:47:30.8924847Z     ✓ a live $0 grant after 21 locked alternatives waives the lock (2 ms)
+2026-10-04T17:47:30.8925783Z     ✓ a live $0 grant after 60 locked alternatives waives the lock (3 ms)
+2026-10-04T17:47:30.8926797Z     ✓ control: only locked alternatives (or another client grant) never waive (3 ms)
+2026-10-04T17:47:30.8927861Z   B-687-2 (Sol), operator ruling OR-113-4: the pending prefix has no dependency-order defect
+2026-10-04T17:47:30.8929005Z     ✓ every referenced table is created by an earlier-sorting migration (11 ms)
+2026-10-04T17:47:30.8929994Z     ✓ no later-sorting migration touches a table it creates (4 ms)
+2026-10-04T17:47:30.8930969Z   B-687-1 (Opus) / C-687-1 (Sol): dunning email copy has no first person
+2026-10-04T17:47:30.8931694Z     ✓ dunning-v2-client.hbs (1 ms)
+2026-10-04T17:47:30.8932214Z     ✓ dunning-v2-coach.hbs
+2026-10-04T17:47:30.8932788Z   B-688-3 (Sol): coach delivery reports each transport honestly
+2026-10-04T17:47:30.8933783Z     ✓ the Day-7 step has separate coach in-app, push and email deliveries (2 ms)
+2026-10-04T17:47:30.8935043Z     ✓ a failed feed write and a failed push are failed (retryable), never sent (3 ms)
+2026-10-04T17:47:30.8936072Z     ✕ a retry of the failed push does not write a second coach feed row (8 ms)
+2026-10-04T17:47:30.8937044Z     ✕ control: a successful coach delivery is sent on both transports (1 ms)
+2026-10-04T17:47:30.8937971Z   B-688-4 (Sol): transport failures cross the log / outbox boundary as codes only
+2026-10-04T17:47:30.8939113Z     ✓ a provider email error and a thrown push error never reach the result or the logs (2 ms)
+2026-10-04T17:47:30.8940365Z     ✓ a coach transport error whose class name is itself a secret is logged as a code (1 ms)
+2026-10-04T17:47:30.8941257Z   dunningErrorCode: a closed vocabulary, whatever the error carries
+2026-10-04T17:47:30.8942606Z     ✓ [StripeConnectApiError: person@tgp.invalid token=SYNTHETIC_SECRET body=SYNTHETIC_BODY] -> stripe_402_card_declined (1 ms)
+2026-10-04T17:47:30.8944755Z     ✓ [StripeConnectApiError: person@tgp.invalid token=SYNTHETIC_SECRET body=SYNTHETIC_BODY] -> stripe_500
+2026-10-04T17:47:30.8946173Z     ✓ [Error: person@tgp.invalid token=SYNTHETIC_SECRET body=SYNTHETIC_BODY] -> db_P2034 (1 ms)
+2026-10-04T17:47:30.8947299Z     ✓ [Error: person@tgp.invalid token=SYNTHETIC_SECRET body=SYNTHETIC_BODY] -> error
+2026-10-04T17:47:30.8948614Z     ✓ [TypeError: person@tgp.invalid token=SYNTHETIC_SECRET body=SYNTHETIC_BODY] -> error_typeerror (1 ms)
+2026-10-04T17:47:30.8950251Z     ✓ [person@tgp.invalid token=SYNTHETIC_SECRET body=SYNTHETIC_BODY: person@tgp.invalid token=SYNTHETIC_SECRET body=SYNTHETIC_BODY] -> error_unknown
+2026-10-04T17:47:30.8951724Z     ✓ "person@tgp.invalid token=SYNTHETIC_SECRET body=SYNTHETIC_BODY" -> error_unknown
+2026-10-04T17:47:30.8952451Z     ✓ null -> error_unknown
+2026-10-04T17:47:30.8953074Z   B-687-3 (Sol) / C-687-7: the coach push receipt follows the Expo ticket
+2026-10-04T17:47:30.8954138Z     ✕ a rejected ticket is failed (retried); no token is a coded skip (5 ms)
+2026-10-04T17:47:30.8955463Z     ✕ control: an accepted ticket is sent, with display copy, not the alert type (3 ms)
+2026-10-04T17:47:30.8956358Z   B-687-4 (Sol) / B-687-5 (Opus) / C-687-6: copy claims nothing before it is true
+2026-10-04T17:47:30.8957216Z     ✕ dispute cycle step 0: no card or cancel promise (1 ms)
+2026-10-04T17:47:30.8957986Z     ✕ dispute cycle step 1: no card or cancel promise (8 ms)
+2026-10-04T17:47:30.8958742Z     ✕ dispute cycle step 2: no card or cancel promise (2 ms)
+2026-10-04T17:47:30.8959497Z     ✕ dispute cycle step 3: no card or cancel promise (3 ms)
+2026-10-04T17:47:30.8960465Z     ✕ payment cycle: a card update is a charge; access follows once it goes through (3 ms)
+2026-10-04T17:47:30.8961523Z   B-688-7 (Opus): no surface shows a raw token
+2026-10-04T17:47:30.8962285Z     ✓ step 0, both kinds and variants, no card / amount (1 ms)
+2026-10-04T17:47:30.8963068Z     ✕ step 1, both kinds and variants, no card / amount (2 ms)
+2026-10-04T17:47:30.8963809Z     ✕ step 2, both kinds and variants, no card / amount (1 ms)
+2026-10-04T17:47:30.8964811Z     ✕ step 3, both kinds and variants, no card / amount (3 ms)
+2026-10-04T17:47:30.8965422Z   Sol B-688-7 support: the fake sorts like PostgreSQL
+2026-10-04T17:47:30.8966343Z     ✕ plain desc puts nulls first, asc puts them last, `nulls` overrides (2 ms)
+2026-10-04T17:47:30.8966855Z 
+2026-10-04T17:47:30.8967820Z   ● B-688-3 (Sol): coach delivery reports each transport honestly › a retry of the failed push does not write a second coach feed row
+2026-10-04T17:47:30.8968594Z 
+2026-10-04T17:47:30.8968905Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T17:47:30.8969309Z 
+2026-10-04T17:47:30.8969461Z     Expected: "sent"
+2026-10-04T17:47:30.8969833Z     Received: "failed"
+2026-10-04T17:47:30.8970044Z 
+2026-10-04T17:47:30.8970944Z       233 |       stub({ channels: ['coach_push'], attempt: 1 }),
+2026-10-04T17:47:30.8971952Z       234 |     );
+2026-10-04T17:47:30.8973331Z     > 235 |     expect(stub(retry.results).coach_push?.status).toBe('sent');
+2026-10-04T17:47:30.8975086Z           |                                                    ^
+2026-10-04T17:47:30.8976232Z       236 |     expect(retry.results.coach_alert).toBeUndefined();
+2026-10-04T17:47:30.8977383Z       237 |     expect(inappWrites()).toBe(1);
+2026-10-04T17:47:30.8978695Z       238 |     expect(notifications.pushToUser).toHaveBeenCalledTimes(2);
+2026-10-04T17:47:30.8979432Z 
+2026-10-04T17:47:30.8979875Z       at Object.<anonymous> (test/dunning-v2-foundation-fixes.spec.ts:235:52)
+2026-10-04T17:47:30.8980378Z 
+2026-10-04T17:47:30.8981543Z   ● B-688-3 (Sol): coach delivery reports each transport honestly › control: a successful coach delivery is sent on both transports
+2026-10-04T17:47:30.8982333Z 
+2026-10-04T17:47:30.8982648Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T17:47:30.8983030Z 
+2026-10-04T17:47:30.8983174Z     Expected: "sent"
+2026-10-04T17:47:30.8983527Z     Received: "failed"
+2026-10-04T17:47:30.8983729Z 
+2026-10-04T17:47:30.8984029Z       251 |     );
+2026-10-04T17:47:30.8985366Z       252 |     expect(results.coach_alert?.status).toBe('sent');
+2026-10-04T17:47:30.8986996Z     > 253 |     expect(stub(results).coach_push?.status).toBe('sent');
+2026-10-04T17:47:30.8988357Z           |                                              ^
+2026-10-04T17:47:30.8989501Z       254 |     expect(t.coachNotified).toHaveBeenCalledTimes(1);
+2026-10-04T17:47:30.8990404Z       255 |   });
+2026-10-04T17:47:30.8990996Z       256 | });
+2026-10-04T17:47:30.8991269Z 
+2026-10-04T17:47:30.8991668Z       at Object.<anonymous> (test/dunning-v2-foundation-fixes.spec.ts:253:46)
+2026-10-04T17:47:30.8992149Z 
+2026-10-04T17:47:30.8993077Z   ● B-687-3 (Sol) / C-687-7: the coach push receipt follows the Expo ticket › a rejected ticket is failed (retried); no token is a coded skip
+2026-10-04T17:47:30.8993860Z 
+2026-10-04T17:47:30.8994129Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T17:47:30.8994694Z 
+2026-10-04T17:47:30.8995065Z     - Expected  - 2
+2026-10-04T17:47:30.8995378Z     + Received  + 1
+2026-10-04T17:47:30.8995543Z 
+2026-10-04T17:47:30.8995670Z       Object {
+2026-10-04T17:47:30.8996012Z     -   "error": "push_ticket-error",
+2026-10-04T17:47:30.8996415Z     -   "status": "failed",
+2026-10-04T17:47:30.8996757Z     +   "status": "sent",
+2026-10-04T17:47:30.8997093Z       }
+2026-10-04T17:47:30.8997251Z 
+2026-10-04T17:47:30.8998139Z       350 |   it('a rejected ticket is failed (retried); no token is a coded skip', async () => {
+2026-10-04T17:47:30.9000022Z       351 |     const error = await run('ExponentPushToken[a]', { status: 'error', message: 'x' });
+2026-10-04T17:47:30.9002151Z     > 352 |     expect(error.result).toEqual({ status: 'failed', error: 'push_ticket-error' });
+2026-10-04T17:47:30.9003439Z           |                          ^
+2026-10-04T17:47:30.9005279Z       353 |     expect((await run(null, {})).result).toEqual({ status: 'skipped', error: 'push_no_token' });
+2026-10-04T17:47:30.9006564Z       354 |   });
+2026-10-04T17:47:30.9007877Z       355 |   it('control: an accepted ticket is sent, with display copy, not the alert type', async () => {
+2026-10-04T17:47:30.9008738Z 
+2026-10-04T17:47:30.9009198Z       at Object.<anonymous> (test/dunning-v2-foundation-fixes.spec.ts:352:26)
+2026-10-04T17:47:30.9009693Z 
+2026-10-04T17:47:30.9010770Z   ● B-687-3 (Sol) / C-687-7: the coach push receipt follows the Expo ticket › control: an accepted ticket is sent, with display copy, not the alert type
+2026-10-04T17:47:30.9011651Z 
+2026-10-04T17:47:30.9011897Z     expect(received).toContain(expected) // indexOf
+2026-10-04T17:47:30.9012264Z 
+2026-10-04T17:47:30.9012499Z     Expected substring: "Avery Client"
+2026-10-04T17:47:30.9012991Z     Received string:    "dunning_step7"
+2026-10-04T17:47:30.9013303Z 
+2026-10-04T17:47:30.9015140Z       356 |     const { result, msg } = await run('ExponentPushToken[a]', { status: 'ok', id: 't' });
+2026-10-04T17:47:30.9016971Z       357 |     expect(result?.status).toBe('sent');
+2026-10-04T17:47:30.9018300Z     > 358 |     expect(msg.body).toContain('Avery Client');
+2026-10-04T17:47:30.9019331Z           |                      ^
+2026-10-04T17:47:30.9020774Z       359 |     expect(JSON.stringify(msg)).not.toMatch(/"(title|body)":"[^"]*dunning_step/);
+2026-10-04T17:47:30.9021908Z       360 |   });
+2026-10-04T17:47:30.9022436Z       361 | });
+2026-10-04T17:47:30.9022740Z 
+2026-10-04T17:47:30.9023178Z       at Object.<anonymous> (test/dunning-v2-foundation-fixes.spec.ts:358:22)
+2026-10-04T17:47:30.9023698Z 
+2026-10-04T17:47:30.9024747Z   ● B-687-4 (Sol) / B-687-5 (Opus) / C-687-6: copy claims nothing before it is true › dispute cycle step 0: no card or cancel promise
+2026-10-04T17:47:30.9025497Z 
+2026-10-04T17:47:30.9025729Z     expect(received).toMatch(expected)
+2026-10-04T17:47:30.9026030Z 
+2026-10-04T17:47:30.9026256Z     Expected pattern: /dispute/
+2026-10-04T17:47:30.9027409Z     Received string:  "Avery, your payment is still outstanding. I attempted it again today without success. Updating your card will settle it."
+2026-10-04T17:47:30.9028324Z 
+2026-10-04T17:47:30.9029849Z       386 |   it.each([0, 1, 2, 3])('dispute cycle step %i: no card or cancel promise', async (stepIndex) => {
+2026-10-04T17:47:30.9032414Z       387 |     const text = await renderStep({ stepIndex, isLateReversalCycle: true });
+2026-10-04T17:47:30.9033947Z     > 388 |     expect(text).toMatch(/dispute/);
+2026-10-04T17:47:30.9034998Z           |                  ^
+2026-10-04T17:47:30.9035750Z       389 |     expect(text).not.toMatch(
+2026-10-04T17:47:30.9036977Z       390 |       /stays on|restore|keep everything|will settle it|paid with it|End my plan/i,
+2026-10-04T17:47:30.9037981Z       391 |     );
+2026-10-04T17:47:30.9038292Z 
+2026-10-04T17:47:30.9038592Z       at test/dunning-v2-foundation-fixes.spec.ts:388:18
+2026-10-04T17:47:30.9038997Z 
+2026-10-04T17:47:30.9039925Z   ● B-687-4 (Sol) / B-687-5 (Opus) / C-687-6: copy claims nothing before it is true › dispute cycle step 1: no card or cancel promise
+2026-10-04T17:47:30.9040677Z 
+2026-10-04T17:47:30.9040899Z     expect(received).toMatch(expected)
+2026-10-04T17:47:30.9041230Z 
+2026-10-04T17:47:30.9041443Z     Expected pattern: /dispute/
+2026-10-04T17:47:30.9042849Z     Received string:  "Avery, your payment is still outstanding. I attempted it again today without success. Updating your card will settle it.········
+2026-10-04T17:47:30.9043935Z          Good day, Avery.·
+2026-10-04T17:47:30.9045271Z     Your payment of $150.00 has not yet cleared. I attempted it again today, and it was declined. The card on file ends {cardLast4}.·
+2026-10-04T17:47:30.9046688Z     Update your payment method and I will see the rest sorted. Nothing else is required of you.·
+2026-10-04T17:47:30.9047623Z     — Roman, on behalf of Morgan Coach·······
+2026-10-04T17:47:30.9048292Z            Update card in the app·······
+2026-10-04T17:47:30.9049875Z          Open this on the phone where The Growth Project app is installed. It goes straight to the card screen. Once the new card is saved, the amount owed is paid with it and your access stays on.·
+2026-10-04T17:47:30.9052386Z          If you would rather end your plan, open the app and choose End my plan on the payment screen. The unpaid amount is then canceled and nothing more is charged.·······
+2026-10-04T17:47:30.9054068Z          Questions about this payment? Reply to this email to reach a person who can help.·······
+2026-10-04T17:47:30.9054969Z     "
+2026-10-04T17:47:30.9055145Z 
+2026-10-04T17:47:30.9056688Z       386 |   it.each([0, 1, 2, 3])('dispute cycle step %i: no card or cancel promise', async (stepIndex) => {
+2026-10-04T17:47:30.9058966Z       387 |     const text = await renderStep({ stepIndex, isLateReversalCycle: true });
+2026-10-04T17:47:30.9060550Z     > 388 |     expect(text).toMatch(/dispute/);
+2026-10-04T17:47:30.9061494Z           |                  ^
+2026-10-04T17:47:30.9062288Z       389 |     expect(text).not.toMatch(
+2026-10-04T17:47:30.9063515Z       390 |       /stays on|restore|keep everything|will settle it|paid with it|End my plan/i,
+2026-10-04T17:47:30.9064649Z       391 |     );
+2026-10-04T17:47:30.9064972Z 
+2026-10-04T17:47:30.9065289Z       at test/dunning-v2-foundation-fixes.spec.ts:388:18
+2026-10-04T17:47:30.9065698Z 
+2026-10-04T17:47:30.9066623Z   ● B-687-4 (Sol) / B-687-5 (Opus) / C-687-6: copy claims nothing before it is true › dispute cycle step 2: no card or cancel promise
+2026-10-04T17:47:30.9067554Z 
+2026-10-04T17:47:30.9067796Z     expect(received).toMatch(expected)
+2026-10-04T17:47:30.9068092Z 
+2026-10-04T17:47:30.9068311Z     Expected pattern: /dispute/
+2026-10-04T17:47:30.9069746Z     Received string:  "Avery, your last payment update failed. You will be locked out in 3 days unless it is settled. Update your card to keep your access.········
+2026-10-04T17:47:30.9070895Z          Good day, Avery.·
+2026-10-04T17:47:30.9071951Z     Your payment of $150.00 has not yet cleared. I attempted it again today, and it was declined. The card on file ends {cardLast4}.·
+2026-10-04T17:47:30.9073305Z     Update your payment method and I will see the rest sorted. Nothing else is required of you.·
+2026-10-04T17:47:30.9074212Z     — Roman, on behalf of Morgan Coach·······
+2026-10-04T17:47:30.9075124Z            Update card in the app·······
+2026-10-04T17:47:30.9076737Z          Open this on the phone where The Growth Project app is installed. It goes straight to the card screen. Once the new card is saved, the amount owed is paid with it and your access stays on.·
+2026-10-04T17:47:30.9079096Z          If you would rather end your plan, open the app and choose End my plan on the payment screen. The unpaid amount is then canceled and nothing more is charged.·······
+2026-10-04T17:47:30.9080803Z          Questions about this payment? Reply to this email to reach a person who can help.········
+2026-10-04T17:47:30.9083389Z     The payment that restored your access has been reversed, Avery. You will be locked out in 3 days unless your card is updated. Update it now to keep everything. {\"headline\":\"Your last payment update failed.\",\"primaryCta\":\"Update Payment\",\"secondaryCta\":\"Not now\",\"variant\":\"lr_day3\",\"dunningStateId\":\"ds-1\"}"
+2026-10-04T17:47:30.9085356Z 
+2026-10-04T17:47:30.9086366Z       386 |   it.each([0, 1, 2, 3])('dispute cycle step %i: no card or cancel promise', async (stepIndex) => {
+2026-10-04T17:47:30.9087830Z       387 |     const text = await renderStep({ stepIndex, isLateReversalCycle: true });
+2026-10-04T17:47:30.9089015Z     > 388 |     expect(text).toMatch(/dispute/);
+2026-10-04T17:47:30.9089635Z           |                  ^
+2026-10-04T17:47:30.9090151Z       389 |     expect(text).not.toMatch(
+2026-10-04T17:47:30.9090987Z       390 |       /stays on|restore|keep everything|will settle it|paid with it|End my plan/i,
+2026-10-04T17:47:30.9091620Z       391 |     );
+2026-10-04T17:47:30.9091838Z 
+2026-10-04T17:47:30.9092033Z       at test/dunning-v2-foundation-fixes.spec.ts:388:18
+2026-10-04T17:47:30.9092287Z 
+2026-10-04T17:47:30.9092896Z   ● B-687-4 (Sol) / B-687-5 (Opus) / C-687-6: copy claims nothing before it is true › dispute cycle step 3: no card or cancel promise
+2026-10-04T17:47:30.9093424Z 
+2026-10-04T17:47:30.9093583Z     expect(received).toMatch(expected)
+2026-10-04T17:47:30.9093788Z 
+2026-10-04T17:47:30.9093946Z     Expected pattern: /dispute/
+2026-10-04T17:47:30.9095083Z     Received string:  "Avery, your payment is still outstanding. I attempted it again today without success. Updating your card will settle it.········
+2026-10-04T17:47:30.9096765Z          Good day, Avery. This is the second time a settled payment has come undone. Your access will be locked on October 14 unless $150.00 clears. Update your card now and I will restore everything at once. — Roman, on behalf of Morgan Coach·······
+2026-10-04T17:47:30.9097827Z            Update card in the app·······
+2026-10-04T17:47:30.9098849Z          Open this on the phone where The Growth Project app is installed. It goes straight to the card screen. Once the new card is saved, the amount owed is paid with it and your access stays on.·
+2026-10-04T17:47:30.9100470Z          If you would rather end your plan, open the app and choose End my plan on the payment screen. The unpaid amount is then canceled and nothing more is charged.·······
+2026-10-04T17:47:30.9101543Z          Questions about this payment? Reply to this email to reach a person who can help.········
+2026-10-04T17:47:30.9103029Z     Your payment of $150.00 has failed four times, Avery. On October 14 your access will be locked. Update your card now to keep everything. {\"headline\":\"Last chance before lockout.\",\"primaryCta\":\"Update Payment\",\"secondaryCta\":\"Not now\",\"variant\":\"day7\",\"dunningStateId\":\"ds-1\"}
+2026-10-04T17:47:30.9105125Z     Avery Client's payment failed — they will be locked out in 3 days. {\"alertId\":\"coach_notify:ds-1:1791081000000\",\"alertType\":\"dunning_step7\",\"severity\":\"warning\",\"clientUserId\":\"client-a\"}········
+2026-10-04T17:47:30.9106057Z          Good day, Morgan Coach.·
+2026-10-04T17:47:30.9107022Z     One of your clients, Avery Client, has a payment that will not clear. I have attempted it four times and it remains unpaid. Unless it is settled, their access will be locked on October 14.·
+2026-10-04T17:47:30.9107811Z     Retry history:
+2026-10-04T17:47:30.9108146Z     • Day 0 — $150.00 — declined ({reason})
+2026-10-04T17:47:30.9108552Z     • Day 1 — $150.00 — declined ({reason})
+2026-10-04T17:47:30.9108919Z     • Day 3 — $150.00 — declined ({reason})
+2026-10-04T17:47:30.9109297Z     • Day 7 — $150.00 — declined ({reason})·
+2026-10-04T17:47:30.9109909Z     You may wish to reach out to them directly. The full record is here: tgp://coach/clients/client-a·
+2026-10-04T17:47:30.9110463Z     — Roman·······
+2026-10-04T17:47:30.9111173Z          Your client has already been asked to update their card in the app. You do not need to collect the payment yourself.·······
+2026-10-04T17:47:30.9111737Z     "
+2026-10-04T17:47:30.9111873Z 
+2026-10-04T17:47:30.9112776Z       386 |   it.each([0, 1, 2, 3])('dispute cycle step %i: no card or cancel promise', async (stepIndex) => {
+2026-10-04T17:47:30.9114623Z       387 |     const text = await renderStep({ stepIndex, isLateReversalCycle: true });
+2026-10-04T17:47:30.9115679Z     > 388 |     expect(text).toMatch(/dispute/);
+2026-10-04T17:47:30.9116263Z           |                  ^
+2026-10-04T17:47:30.9116757Z       389 |     expect(text).not.toMatch(
+2026-10-04T17:47:30.9117545Z       390 |       /stays on|restore|keep everything|will settle it|paid with it|End my plan/i,
+2026-10-04T17:47:30.9118156Z       391 |     );
+2026-10-04T17:47:30.9118346Z 
+2026-10-04T17:47:30.9118553Z       at test/dunning-v2-foundation-fixes.spec.ts:388:18
+2026-10-04T17:47:30.9118823Z 
+2026-10-04T17:47:30.9119528Z   ● B-687-4 (Sol) / B-687-5 (Opus) / C-687-6: copy claims nothing before it is true › payment cycle: a card update is a charge; access follows once it goes through
+2026-10-04T17:47:30.9120108Z 
+2026-10-04T17:47:30.9120256Z     expect(received).not.toMatch(expected)
+2026-10-04T17:47:30.9120475Z 
+2026-10-04T17:47:30.9120805Z     Expected pattern: not /amount owed is paid with it|four times|attempted it|three times/
+2026-10-04T17:47:30.9121732Z     Received string:      "Avery, this is the last reminder. Your payment of $150.00 is still outstanding. Without it, your access will be locked in three days.
+2026-10-04T17:47:30.9122394Z      
+2026-10-04T17:47:30.9122592Z      
+2026-10-04T17:47:30.9122795Z        
+2026-10-04T17:47:30.9123021Z          Good day, Avery.
+2026-10-04T17:47:30.9123180Z 
+2026-10-04T17:47:30.9123953Z     This is the final notice. Your payment of $150.00 remains unpaid after four attempts. In three days your access will be locked on October 14. Update your card now and I will restore everything immediately.
+2026-10-04T17:47:30.9125264Z 
+2026-10-04T17:47:30.9125490Z     — Roman, on behalf of Morgan Coach 
+2026-10-04T17:47:30.9125839Z          
+2026-10-04T17:47:30.9126102Z            Update card in the app 
+2026-10-04T17:47:30.9126388Z          
+2026-10-04T17:47:30.9127230Z          Open this on the phone where The Growth Project app is installed. It goes straight to the card screen. Once the new card is saved, the amount owed is paid with it and your access stays on. 
+2026-10-04T17:47:30.9128493Z          If you would rather end your plan, open the app and choose End my plan on the payment screen. The unpaid amount is then canceled and nothing more is charged. 
+2026-10-04T17:47:30.9129169Z          
+2026-10-04T17:47:30.9129603Z          Questions about this payment? Reply to this email to reach a person who can help. 
+2026-10-04T17:47:30.9130051Z        
+2026-10-04T17:47:30.9130260Z      
+2026-10-04T17:47:30.9130404Z 
+2026-10-04T17:47:30.9131511Z     Your payment of $150.00 has failed four times, Avery. On October 14 your access will be locked. Update your card now to keep everything. {\"headline\":\"Last chance before lockout.\",\"primaryCta\":\"Update Payment\",\"secondaryCta\":\"Not now\",\"variant\":\"day7\",\"dunningStateId\":\"ds-1\"}
+2026-10-04T17:47:30.9133382Z     Avery Client's payment failed — they will be locked out in 3 days. {\"alertId\":\"coach_notify:ds-1:1791081000000\",\"alertType\":\"dunning_step7\",\"severity\":\"warning\",\"clientUserId\":\"client-a\"}
+2026-10-04T17:47:30.9134167Z      
+2026-10-04T17:47:30.9134570Z      
+2026-10-04T17:47:30.9134777Z        
+2026-10-04T17:47:30.9135030Z          Good day, Morgan Coach.
+2026-10-04T17:47:30.9135229Z 
+2026-10-04T17:47:30.9135923Z     One of your clients, Avery Client, has a payment that will not clear. I have attempted it four times and it remains unpaid. Unless it is settled, their access will be locked on October 14.
+2026-10-04T17:47:30.9136604Z 
+2026-10-04T17:47:30.9136728Z     Retry history:
+2026-10-04T17:47:30.9137072Z     • Day 0 — $150.00 — declined ({reason})
+2026-10-04T17:47:30.9137458Z     • Day 1 — $150.00 — declined ({reason})
+2026-10-04T17:47:30.9137839Z     • Day 3 — $150.00 — declined ({reason})
+2026-10-04T17:47:30.9138202Z     • Day 7 — $150.00 — declined ({reason})
+2026-10-04T17:47:30.9138562Z 
+2026-10-04T17:47:30.9138947Z     You may wish to reach out to them directly. The full record is here: tgp://coach/clients/client-a
+2026-10-04T17:47:30.9139346Z 
+2026-10-04T17:47:30.9139481Z     — Roman 
+2026-10-04T17:47:30.9139688Z          
+2026-10-04T17:47:30.9140242Z          Your client has already been asked to update their card in the app. You do not need to collect the payment yourself. 
+2026-10-04T17:47:30.9140791Z        
+2026-10-04T17:47:30.9140998Z      
+2026-10-04T17:47:30.9141204Z     "
+2026-10-04T17:47:30.9141325Z 
+2026-10-04T17:47:30.9142010Z       394 |   it('payment cycle: a card update is a charge; access follows once it goes through', async () => {
+2026-10-04T17:47:30.9143113Z       395 |     const text = await renderStep({ stepIndex: 3 });
+2026-10-04T17:47:30.9144287Z     > 396 |     expect(text).not.toMatch(/amount owed is paid with it|four times|attempted it|three times/);
+2026-10-04T17:47:30.9145289Z           |                      ^
+2026-10-04T17:47:30.9146091Z       397 |     expect(text).toMatch(/once that payment goes through, your access stays on/);
+2026-10-04T17:47:30.9147073Z       398 |     expect(text).toMatch(/nothing more is charged, and access ends right away/);
+2026-10-04T17:47:30.9147694Z       399 |   });
+2026-10-04T17:47:30.9147909Z 
+2026-10-04T17:47:30.9148176Z       at Object.<anonymous> (test/dunning-v2-foundation-fixes.spec.ts:396:22)
+2026-10-04T17:47:30.9148652Z 
+2026-10-04T17:47:30.9149070Z   ● B-688-7 (Opus): no surface shows a raw token › step 1, both kinds and variants, no card / amount
+2026-10-04T17:47:30.9149462Z 
+2026-10-04T17:47:30.9149611Z     expect(received).not.toMatch(expected)
+2026-10-04T17:47:30.9149835Z 
+2026-10-04T17:47:30.9150071Z     Expected pattern: not /\{\w+\}|ends \.|of {2}|so far: *$/m
+2026-10-04T17:47:30.9150764Z     Received string:      "Avery, the payment and I are not yet on speaking terms. A fresh card would help our negotiations.
+2026-10-04T17:47:30.9151320Z      
+2026-10-04T17:47:30.9151529Z      
+2026-10-04T17:47:30.9151730Z        
+2026-10-04T17:47:30.9151935Z          Good day, Avery.
+2026-10-04T17:47:30.9152116Z 
+2026-10-04T17:47:30.9152542Z     Your payment of {amount} remains unpersuaded. I tried once more today; the card ending {cardLast4} held firm.
+2026-10-04T17:47:30.9152978Z 
+2026-10-04T17:47:30.9153227Z     A fresh card usually settles the argument. I&#x27;ll handle the rest.
+2026-10-04T17:47:30.9153547Z 
+2026-10-04T17:47:30.9153750Z     — Roman, on behalf of Morgan Coach 
+2026-10-04T17:47:30.9154043Z          
+2026-10-04T17:47:30.9154291Z            Update card in the app 
+2026-10-04T17:47:30.9154744Z          
+2026-10-04T17:47:30.9155588Z          Open this on the phone where The Growth Project app is installed. It goes straight to the card screen. Once the new card is saved, the amount owed is paid with it and your access stays on. 
+2026-10-04T17:47:30.9156862Z          If you would rather end your plan, open the app and choose End my plan on the payment screen. The unpaid amount is then canceled and nothing more is charged. 
+2026-10-04T17:47:30.9157549Z          
+2026-10-04T17:47:30.9157975Z          Questions about this payment? Reply to this email to reach a person who can help. 
+2026-10-04T17:47:30.9158441Z        
+2026-10-04T17:47:30.9158640Z      
+2026-10-04T17:47:30.9158861Z     "
+2026-10-04T17:47:30.9158968Z 
+2026-10-04T17:47:30.9159601Z       408 |         jest.spyOn(Math, 'random').mockReturnValue(quip);
+2026-10-04T17:47:30.9160971Z       409 |         const text = await renderStep({ stepIndex, isLateReversalCycle: lr, tokens });
+2026-10-04T17:47:30.9162203Z     > 410 |         expect(text).not.toMatch(/\{\w+\}|ends \.|of {2}|so far: *$/m);
+2026-10-04T17:47:30.9162949Z           |                          ^
+2026-10-04T17:47:30.9163350Z       411 |       }
+2026-10-04T17:47:30.9163671Z       412 |     }
+2026-10-04T17:47:30.9164018Z       413 |   });
+2026-10-04T17:47:30.9164206Z 
+2026-10-04T17:47:30.9164636Z       at test/dunning-v2-foundation-fixes.spec.ts:410:26
+2026-10-04T17:47:30.9164900Z 
+2026-10-04T17:47:30.9165363Z   ● B-688-7 (Opus): no surface shows a raw token › step 2, both kinds and variants, no card / amount
+2026-10-04T17:47:30.9165766Z 
+2026-10-04T17:47:30.9165926Z     expect(received).not.toMatch(expected)
+2026-10-04T17:47:30.9166163Z 
+2026-10-04T17:47:30.9166385Z     Expected pattern: not /\{\w+\}|ends \.|of {2}|so far: *$/m
+2026-10-04T17:47:30.9167111Z     Received string:      "Avery, your access is on thin ice. The card ending {cardLast4} and I have tried three times now.
+2026-10-04T17:47:30.9167679Z      
+2026-10-04T17:47:30.9167900Z      
+2026-10-04T17:47:30.9168089Z        
+2026-10-04T17:47:30.9168332Z          Good day, Avery.
+2026-10-04T17:47:30.9168512Z 
+2026-10-04T17:47:30.9169054Z     Three attempts, three refusals. Your access is genuinely at risk now. Update the card and I&#x27;ll put it all back the moment it clears.
+2026-10-04T17:47:30.9169614Z 
+2026-10-04T17:47:30.9169812Z     — Roman, on behalf of Morgan Coach 
+2026-10-04T17:47:30.9170089Z          
+2026-10-04T17:47:30.9170362Z            Update card in the app 
+2026-10-04T17:47:30.9170833Z          
+2026-10-04T17:47:30.9171654Z          Open this on the phone where The Growth Project app is installed. It goes straight to the card screen. Once the new card is saved, the amount owed is paid with it and your access stays on. 
+2026-10-04T17:47:30.9172942Z          If you would rather end your plan, open the app and choose End my plan on the payment screen. The unpaid amount is then canceled and nothing more is charged. 
+2026-10-04T17:47:30.9173585Z          
+2026-10-04T17:47:30.9173986Z          Questions about this payment? Reply to this email to reach a person who can help. 
+2026-10-04T17:47:30.9174636Z        
+2026-10-04T17:47:30.9174827Z      
+2026-10-04T17:47:30.9174944Z 
+2026-10-04T17:47:30.9176133Z     Your payment of {amount} has not cleared after three attempts, Avery. Update your card now and you will keep everything. If it stays unpaid, your access will be {\"headline\":\"You are going to lose access.\",\"primaryCta\":\"Update Payment\",\"secondaryCta\":\"Not now\",\"variant\":\"day3\",\"dunningStateId\":\"ds-1\"}"
+2026-10-04T17:47:30.9177234Z 
+2026-10-04T17:47:30.9177804Z       408 |         jest.spyOn(Math, 'random').mockReturnValue(quip);
+2026-10-04T17:47:30.9178963Z       409 |         const text = await renderStep({ stepIndex, isLateReversalCycle: lr, tokens });
+2026-10-04T17:47:30.9180106Z     > 410 |         expect(text).not.toMatch(/\{\w+\}|ends \.|of {2}|so far: *$/m);
+2026-10-04T17:47:30.9180825Z           |                          ^
+2026-10-04T17:47:30.9181223Z       411 |       }
+2026-10-04T17:47:30.9181566Z       412 |     }
+2026-10-04T17:47:30.9181916Z       413 |   });
+2026-10-04T17:47:30.9182144Z 
+2026-10-04T17:47:30.9182351Z       at test/dunning-v2-foundation-fixes.spec.ts:410:26
+2026-10-04T17:47:30.9182621Z 
+2026-10-04T17:47:30.9183102Z   ● B-688-7 (Opus): no surface shows a raw token › step 3, both kinds and variants, no card / amount
+2026-10-04T17:47:30.9183502Z 
+2026-10-04T17:47:30.9183658Z     expect(received).not.toMatch(expected)
+2026-10-04T17:47:30.9183899Z 
+2026-10-04T17:47:30.9184484Z     Expected pattern: not /\{\w+\}|ends \.|of {2}|so far: *$/m
+2026-10-04T17:47:30.9185279Z     Received string:      "Avery, last call. The card ending {cardLast4} has had every chance. Three days until the lights go out.
+2026-10-04T17:47:30.9185877Z      
+2026-10-04T17:47:30.9186100Z      
+2026-10-04T17:47:30.9186324Z        
+2026-10-04T17:47:30.9186550Z          Good day, Avery.
+2026-10-04T17:47:30.9186728Z 
+2026-10-04T17:47:30.9187472Z     The final notice, and I do not send many. {amount} is still outstanding after four attempts. On {lockoutDate} the door locks. A working card stops it, and I&#x27;ll have you back in at once.
+2026-10-04T17:47:30.9188184Z 
+2026-10-04T17:47:30.9188380Z     — Roman, on behalf of Morgan Coach 
+2026-10-04T17:47:30.9188718Z          
+2026-10-04T17:47:30.9188978Z            Update card in the app 
+2026-10-04T17:47:30.9189270Z          
+2026-10-04T17:47:30.9190137Z          Open this on the phone where The Growth Project app is installed. It goes straight to the card screen. Once the new card is saved, the amount owed is paid with it and your access stays on. 
+2026-10-04T17:47:30.9191500Z          If you would rather end your plan, open the app and choose End my plan on the payment screen. The unpaid amount is then canceled and nothing more is charged. 
+2026-10-04T17:47:30.9192228Z          
+2026-10-04T17:47:30.9192685Z          Questions about this payment? Reply to this email to reach a person who can help. 
+2026-10-04T17:47:30.9193167Z        
+2026-10-04T17:47:30.9193386Z      
+2026-10-04T17:47:30.9193517Z 
+2026-10-04T17:47:30.9194865Z     Your payment of {amount} has failed four times, Avery. On {lockoutDate} your access will be locked. Update your card now to keep everything. {\"headline\":\"Last chance before lockout.\",\"primaryCta\":\"Update Payment\",\"secondaryCta\":\"Not now\",\"variant\":\"day7\",\"dunningStateId\":\"ds-1\"}
+2026-10-04T17:47:30.9196973Z     Avery Client's payment has failed four times. They lock out in 3 days unless the card cooperates. {\"alertId\":\"coach_notify:ds-1:1791081000000\",\"alertType\":\"dunning_step7\",\"severity\":\"warning\",\"clientUserId\":\"client-a\"}
+2026-10-04T17:47:30.9197925Z      
+2026-10-04T17:47:30.9198147Z      
+2026-10-04T17:47:30.9198362Z        
+2026-10-04T17:47:30.9198630Z          Good day, Morgan Coach.
+2026-10-04T17:47:30.9198830Z 
+2026-10-04T17:47:30.9199521Z     Avery Client&#x27;s card and I have had four conversations this week, none of them productive. {amount} is still outstanding, and their access locks on {lockoutDate}.
+2026-10-04T17:47:30.9200196Z 
+2026-10-04T17:47:30.9200296Z     Retry history:
+2026-10-04T17:47:30.9200706Z     • Day 0 — {amount} — declined ({reason})
+2026-10-04T17:47:30.9201126Z     • Day 1 — {amount} — declined ({reason})
+2026-10-04T17:47:30.9201524Z     • Day 3 — {amount} — declined ({reason})
+2026-10-04T17:47:30.9201923Z     • Day 7 — {amount} — declined ({reason})
+2026-10-04T17:47:30.9202130Z 
+2026-10-04T17:47:30.9202551Z     A word from you may carry more weight than mine has. The record is here: tgp://coach/clients/client-a
+2026-10-04T17:47:30.9202992Z 
+2026-10-04T17:47:30.9203132Z     — Roman 
+2026-10-04T17:47:30.9203358Z          
+2026-10-04T17:47:30.9203944Z          Your client has already been asked to update their card in the app. You do not need to collect the payment yourself. 
+2026-10-04T17:47:30.9204751Z        
+2026-10-04T17:47:30.9204973Z      
+2026-10-04T17:47:30.9205205Z     "
+2026-10-04T17:47:30.9205314Z 
+2026-10-04T17:47:30.9205952Z       408 |         jest.spyOn(Math, 'random').mockReturnValue(quip);
+2026-10-04T17:47:30.9207227Z       409 |         const text = await renderStep({ stepIndex, isLateReversalCycle: lr, tokens });
+2026-10-04T17:47:30.9208533Z     > 410 |         expect(text).not.toMatch(/\{\w+\}|ends \.|of {2}|so far: *$/m);
+2026-10-04T17:47:30.9209499Z           |                          ^
+2026-10-04T17:47:30.9209901Z       411 |       }
+2026-10-04T17:47:30.9210220Z       412 |     }
+2026-10-04T17:47:30.9210599Z       413 |   });
+2026-10-04T17:47:30.9210804Z 
+2026-10-04T17:47:30.9211035Z       at test/dunning-v2-foundation-fixes.spec.ts:410:26
+2026-10-04T17:47:30.9211318Z 
+2026-10-04T17:47:30.9211922Z   ● Sol B-688-7 support: the fake sorts like PostgreSQL › plain desc puts nulls first, asc puts them last, `nulls` overrides
+2026-10-04T17:47:30.9212417Z 
+2026-10-04T17:47:30.9212623Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T17:47:30.9212901Z 
+2026-10-04T17:47:30.9213018Z     - Expected  - 1
+2026-10-04T17:47:30.9213281Z     + Received  + 1
+2026-10-04T17:47:30.9213429Z 
+2026-10-04T17:47:30.9213544Z       Array [
+2026-10-04T17:47:30.9213796Z     -   "a",
+2026-10-04T17:47:30.9214024Z         "b",
+2026-10-04T17:47:30.9214260Z     +   "a",
+2026-10-04T17:47:30.9214686Z       ]
+2026-10-04T17:47:30.9214824Z 
+2026-10-04T17:47:30.9215705Z       421 |     const rows = (orderBy: object) => stub(fake.client()).dunningState.findMany({ orderBy });
+2026-10-04T17:47:30.9217363Z       422 |     const ids = async (orderBy: object) => (await rows(orderBy)).map((r: { id: string }) => r.id);
+2026-10-04T17:47:30.9218916Z     > 423 |     expect(await ids({ locked_out_at: 'desc' })).toEqual(['a', 'b']);
+2026-10-04T17:47:30.9220014Z           |                                                  ^
+2026-10-04T17:47:30.9221271Z       424 |     expect(await ids({ locked_out_at: { sort: 'desc', nulls: 'last' } })).toEqual(['b', 'a']);
+2026-10-04T17:47:30.9222234Z       425 |   });
+2026-10-04T17:47:30.9222682Z       426 | });
+2026-10-04T17:47:30.9222938Z 
+2026-10-04T17:47:30.9223268Z       at Object.<anonymous> (test/dunning-v2-foundation-fixes.spec.ts:423:50)
+2026-10-04T17:47:30.9223698Z 
+2026-10-04T17:47:30.9223977Z Test Suites: 1 failed, 1 total
+2026-10-04T17:47:30.9224598Z Tests:       13 failed, 22 passed, 35 total
+2026-10-04T17:47:30.9225020Z Snapshots:   0 total
+2026-10-04T17:47:30.9225350Z Time:        1.949 s
+2026-10-04T17:47:30.9225878Z Ran all test suites matching test/dunning-v2-foundation-fixes.spec.ts.
+2026-10-04T17:47:30.9384001Z ##[error]Process completed with exit code 1.
+2026-10-04T17:47:30.9499845Z Post job cleanup.
+2026-10-04T17:47:31.0359202Z [command]/usr/bin/git version
+2026-10-04T17:47:31.0396385Z git version 2.55.0
+2026-10-04T17:47:31.0435505Z Temporarily overriding HOME='/home/runner/work/_temp/0b9c41dd-7c95-4d90-8b29-063b874831b7' before making global git config changes
+2026-10-04T17:47:31.0436968Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T17:47:31.0441399Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T17:47:31.0474644Z Removing SSH command configuration
+2026-10-04T17:47:31.0481146Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T17:47:31.0519521Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T17:47:31.0769833Z Removing HTTP extra header
+2026-10-04T17:47:31.0775731Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T17:47:31.0811615Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T17:47:31.1048725Z Removing includeIf entries pointing to credentials config files
+2026-10-04T17:47:31.1056074Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T17:47:31.1086124Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T17:47:31.1087244Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T17:47:31.1088048Z includeif.gitdir:/github/workspace/.git.path
+2026-10-04T17:47:31.1088926Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T17:47:31.1095590Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T17:47:31.1135149Z /home/runner/work/_temp/git-credentials-a236a1f8-b4f2-4681-b60d-400e8fa300e2.config
+2026-10-04T17:47:31.1138178Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-a236a1f8-b4f2-4681-b60d-400e8fa300e2.config
+2026-10-04T17:47:31.1174534Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T17:47:31.1204806Z /home/runner/work/_temp/git-credentials-a236a1f8-b4f2-4681-b60d-400e8fa300e2.config
+2026-10-04T17:47:31.1208682Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-a236a1f8-b4f2-4681-b60d-400e8fa300e2.config
+2026-10-04T17:47:31.1244691Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-04T17:47:31.1268744Z /github/runner_temp/git-credentials-a236a1f8-b4f2-4681-b60d-400e8fa300e2.config
+2026-10-04T17:47:31.1278132Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-a236a1f8-b4f2-4681-b60d-400e8fa300e2.config
+2026-10-04T17:47:31.1314210Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T17:47:31.1336527Z /github/runner_temp/git-credentials-a236a1f8-b4f2-4681-b60d-400e8fa300e2.config
+2026-10-04T17:47:31.1345187Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-a236a1f8-b4f2-4681-b60d-400e8fa300e2.config
+2026-10-04T17:47:31.1379048Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T17:47:31.1619692Z Removing credentials config '/home/runner/work/_temp/git-credentials-a236a1f8-b4f2-4681-b60d-400e8fa300e2.config'
+2026-10-04T17:47:31.1745574Z Print service container logs: 45e87487285d4c4f913de8ede9a5b15f_redis7alpine_7790b7
+2026-10-04T17:47:31.1750159Z ##[command]/usr/bin/docker logs --details 4cb6e2de37cc3c80c3a3ccdd5e5ae64b7fba969913ceb1482d55e6c8c29586d8
+2026-10-04T17:47:31.1875926Z  1:C 04 Oct 2026 17:46:42.039 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+2026-10-04T17:47:31.1877658Z  1:C 04 Oct 2026 17:46:42.039 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+2026-10-04T17:47:31.1878236Z  1:C 04 Oct 2026 17:46:42.039 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+2026-10-04T17:47:31.1879089Z  1:C 04 Oct 2026 17:46:42.039 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+2026-10-04T17:47:31.1879761Z  1:M 04 Oct 2026 17:46:42.039 * monotonic clock: POSIX clock_gettime
+2026-10-04T17:47:31.1880165Z  1:M 04 Oct 2026 17:46:42.040 * Running mode=standalone, port=6379.
+2026-10-04T17:47:31.1880526Z  1:M 04 Oct 2026 17:46:42.040 * Server initialized
+2026-10-04T17:47:31.1880874Z  1:M 04 Oct 2026 17:46:42.040 * Ready to accept connections tcp
+2026-10-04T17:47:31.1894245Z Stop and remove container: 45e87487285d4c4f913de8ede9a5b15f_redis7alpine_7790b7
+2026-10-04T17:47:31.1899212Z ##[command]/usr/bin/docker rm --force 4cb6e2de37cc3c80c3a3ccdd5e5ae64b7fba969913ceb1482d55e6c8c29586d8
+2026-10-04T17:47:32.8401028Z 4cb6e2de37cc3c80c3a3ccdd5e5ae64b7fba969913ceb1482d55e6c8c29586d8
+2026-10-04T17:47:32.8428445Z Remove container network: github_network_6f95685b453e4a12a1bdd3484c233db0
+2026-10-04T17:47:32.8432966Z ##[command]/usr/bin/docker network rm github_network_6f95685b453e4a12a1bdd3484c233db0
+2026-10-04T17:47:32.9369356Z github_network_6f95685b453e4a12a1bdd3484c233db0
+2026-10-04T17:47:32.9442789Z Cleaning up orphan processes

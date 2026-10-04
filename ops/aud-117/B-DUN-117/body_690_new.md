@@ -1,0 +1,11 @@
+**Tier:** T4 (money path) | **Why:** card payments, dispute cycles, Day-10 lockout and 2A cancel | **T4 trigger scan:** Stripe pay/void/cancel, entitlement writes, dispute authority | **T3 trigger scan:** logging vocabulary, client copy | **Bounded T1:** none | **Canonical builder:** agent 116 (B-D34-116 fix round 1); restack B-DUN-117 (agent 117) | **Parent owner:** operator 117 | **Acceptance evidence:** Opus 5.5 and Sol APPROVE at the exact head | **Promotion triggers:** none (stack D1-D5 lands together, flag off)
+
+Split of #628 (dunning v2 live: card update, lockout, recovery; 12,334 lines at FIX ROUND 8 `dc47e0ef`, already current with main `d23fa317`) under the owner's PR size rule: over 3,000 changed lines is an automatic fail (MODEL_ROUTING.md 8.2, tgp-agent-context). Cut with an import-order check (no piece imports a later piece). Stack: D1 -> D2 -> D3 -> D4 -> D5, merged back to back; deploy only after D5, together with mobile #322. The tree at D5 equals #628's head (git diff). Behaviour notes for the owner from FIX ROUND 8 carry over: third-party-paid invoices settle one reconcile run later, and a dispute that arrives mid-cycle keeps the cycle open. No verdicts existed at dc47e0ef; each piece needs Opus 5.5 and Sol audits at its exact head (T4, money path). `tsc --noEmit` passes at every piece.
+
+**D4 (base D3, 2,906 lines):** client billing controller with the lockout allow-list, lockout guard, scheduler and status controller, entitlement guard, dunning webhook handling, public pages, module wiring; http-codes, surfaces, lockout (unit, e2e, privacy, AI consent) and native-card e2e specs (25 suites incl. every existing spec that imports these files, 504 passed, 16 skipped locally). First piece that changes live billing behaviour.
+
+### Fix rounds
+| Round | Head | Findings | Builder | Evidence |
+|---|---|---|---|---|
+| 1 | `0681babd` | Sol B-690-1..5, C-690-1; Opus B-690-1, C-690-1..4 | B-D34-116 | failing-before run 37174150526; passing-after 37174520805 |
+| 2 (restack, merge-only) | `06307883` | none: merge of D3 `bb992fed` carrying D1 `f8e47bf4`; D4 diff byte-identical (patch-id) | B-DUN-117 | [FIX ROUND 2](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/690#issuecomment-5976853953) |

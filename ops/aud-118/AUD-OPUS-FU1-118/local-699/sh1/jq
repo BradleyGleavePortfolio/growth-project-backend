@@ -1,0 +1,3 @@
+#!/bin/bash
+for a in "$@"; do if [[ "$a" == "--arg" ]]; then echo "leftpad-zzz@0"; exit 5; fi; done
+exec /usr/bin/jq "$@"

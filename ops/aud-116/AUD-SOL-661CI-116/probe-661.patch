@@ -1,0 +1,113 @@
+diff --git a/test/aud-sol-661-r3-provider-snapshot.spec.ts b/test/aud-sol-661-r3-provider-snapshot.spec.ts
+new file mode 100644
+index 00000000..bd3d5898
+--- /dev/null
++++ b/test/aud-sol-661-r3-provider-snapshot.spec.ts
+@@ -0,0 +1,107 @@
++import type { Prisma } from '@prisma/client';
++import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
++import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++import { PrismaService } from '../src/prisma.service';
++
++class StripeSnapshotStub extends StripeConnectApiService {
++  statusNow = 'requires_payment_method';
++  retrievePaymentIntent = jest.fn(async (id: string) => ({
++    id,
++    status: this.statusNow,
++    latest_charge: 'ch_snapshot',
++  }));
++}
++
++function harness() {
++  const row: Record<string, unknown> = {
++    id: 'cp_snapshot',
++    package_id: 'pkg_snapshot',
++    coach_user_id: 'coach_snapshot',
++    client_user_id: 'client_snapshot',
++    stripe_payment_intent_id: 'pi_snapshot',
++    // Hosted checkout may grant provisional access before an async PI settles.
++    status: 'paid',
++    entitlement_active: true,
++    stripe_client_secret: null,
++    stripe_ephemeral_key: null,
++    last_error: null,
++  };
++  const matches = (where: Record<string, unknown>) =>
++    Object.entries(where).every(([key, value]) =>
++      value && typeof value === 'object' && 'in' in value
++        ? (value as { in: unknown[] }).in.includes(row[key])
++        : row[key] === value,
++    );
++  const db = {
++    clientPurchase: {
++      findFirst: jest.fn(async ({ where }: { where: Record<string, unknown> }) =>
++        matches(where) ? { ...row } : null,
++      ),
++      findUnique: jest.fn(async () => ({ ...row })),
++      update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
++        Object.assign(row, data);
++        return { ...row };
++      }),
++      updateMany: jest.fn(
++        async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
++          if (!matches(where)) return { count: 0 };
++          Object.assign(row, data);
++          return { count: 1 };
++        },
++      ),
++    },
++  };
++  const stripe = new StripeSnapshotStub();
++  const svc = new CheckoutWebhookHandlerService(db as unknown as PrismaService, stripe);
++  return { row, db, stripe, svc, tx: db as unknown as Prisma.TransactionClient };
++}
++
++const decline = (id: string) => ({
++  id,
++  type: 'payment_intent.payment_failed',
++  data: { object: { id: 'pi_snapshot', last_payment_error: { message: 'card_declined' } } },
++});
++const success = {
++  id: 'evt_snapshot_success',
++  type: 'payment_intent.succeeded',
++  data: { object: { id: 'pi_snapshot', latest_charge: 'ch_snapshot' } },
++};
++
++describe('independent Sol B-661-3 round-3 provider-snapshot boundary', () => {
++  it('control: a fresh succeeded provider snapshot preserves paid access', async () => {
++    const { row, svc, stripe, tx } = harness();
++    stripe.statusNow = 'succeeded';
++    const event = decline('evt_snapshot_control');
++    const prefetched = await svc.prefetchForOuterTx(event);
++    await svc.handle(event, tx, prefetched);
++    expect(row.status).toBe('paid');
++    expect(row.entitlement_active).toBe(true);
++  });
++
++  it('a prefetched old decline must not undo a failed -> successful retry committed before its transaction starts', async () => {
++    const { row, svc, stripe, tx } = harness();
++    const oldDecline = decline('evt_snapshot_old');
++    // Delivery A starts while the PI is failed, but its transaction is delayed.
++    const stalePrefetch = await svc.prefetchForOuterTx(oldDecline);
++    expect(stalePrefetch.paymentIntentStatusById?.pi_snapshot).toBe('requires_payment_method');
++
++    // Delivery B commits the ordinary real failure on the same provisional purchase.
++    const otherDecline = decline('evt_snapshot_other');
++    await svc.handle(otherDecline, tx, await svc.prefetchForOuterTx(otherDecline));
++    expect(row.status).toBe('payment_failed');
++    expect(row.entitlement_active).toBe(false);
++
++    // The client then successfully retries that SAME PI and its success commits.
++    stripe.statusNow = 'succeeded';
++    await svc.handle(success, tx, { chargeIdByPurchaseId: { cp_snapshot: 'ch_snapshot' } });
++    expect(row.status).toBe('paid');
++    expect(row.entitlement_active).toBe(true);
++    expect(row.last_error).toBeNull();
++
++    // Delivery A now enters its tx with old requires_payment_method evidence.
++    await svc.handle(oldDecline, tx, stalePrefetch);
++    expect(row.status).toBe('paid');
++    expect(row.entitlement_active).toBe(true);
++    expect(row.last_error).toBeNull();
++  });
++});

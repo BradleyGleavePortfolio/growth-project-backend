@@ -1,0 +1,585 @@
+﻿2026-10-04T18:32:36.4232924Z Current runner version: '2.337.0'
+##[group]Runner Image Provisioner
+Hosted Compute Agent
+Version: 20260901.588
+Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+Build Date: 2026-09-01T19:56:44Z
+Worker ID: {87952659-5c90-45a4-ab7b-ba4e75b5649c}
+Azure Region: westus3
+##[endgroup]
+##[group]Operating System
+Ubuntu
+24.04.5
+LTS
+##[endgroup]
+##[group]Runner Image
+Image: ubuntu-24.04
+Version: 20260927.320.1
+Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+##[endgroup]
+##[group]GITHUB_TOKEN Permissions
+Contents: read
+Metadata: read
+Packages: read
+##[endgroup]
+Secret source: Actions
+Cache mode: write
+Prepare workflow directory
+Prepare all required actions
+Getting action download info
+Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+Complete job name: targeted
+##[group]Checking docker version
+##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+'1.48'
+Docker daemon API version: '1.48'
+##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+'1.48'
+Docker client API version: '1.48'
+##[endgroup]
+##[group]Clean up resources from previous jobs
+##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=87cbf3"
+##[command]/usr/bin/docker network prune --force --filter "label=87cbf3"
+##[endgroup]
+##[group]Create local container network
+##[command]/usr/bin/docker network create --label 87cbf3 github_network_fae5de33090a41b2b2b7f46dc1abc9a7
+14bd1183ce67c430f84a04e6fa47f88e8fdcb6cd4adb5e0810efe7f137ecf04d
+##[endgroup]
+##[group]Starting redis service container
+##[command]/usr/bin/docker pull redis:7-alpine
+7-alpine: Pulling from library/redis
+16333ee0c00f: Pulling fs layer
+83234986c742: Pulling fs layer
+7eb50503c2b0: Pulling fs layer
+1522f9c6f453: Pulling fs layer
+9928009b15c8: Pulling fs layer
+4f4fb700ef54: Pulling fs layer
+4eb14bae0e1d: Pulling fs layer
+1522f9c6f453: Waiting
+9928009b15c8: Waiting
+4f4fb700ef54: Waiting
+4eb14bae0e1d: Waiting
+83234986c742: Verifying Checksum
+83234986c742: Download complete
+7eb50503c2b0: Download complete
+16333ee0c00f: Download complete
+9928009b15c8: Verifying Checksum
+9928009b15c8: Download complete
+4f4fb700ef54: Download complete
+1522f9c6f453: Verifying Checksum
+1522f9c6f453: Download complete
+16333ee0c00f: Pull complete
+4eb14bae0e1d: Verifying Checksum
+4eb14bae0e1d: Download complete
+83234986c742: Pull complete
+7eb50503c2b0: Pull complete
+1522f9c6f453: Pull complete
+9928009b15c8: Pull complete
+4f4fb700ef54: Pull complete
+4eb14bae0e1d: Pull complete
+Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+Status: Downloaded newer image for redis:7-alpine
+docker.io/library/redis:7-alpine
+##[command]/usr/bin/docker create --name a53113f025414bba8bac5177c6a99a8c_redis7alpine_43c569 --label 87cbf3 --network github_network_fae5de33090a41b2b2b7f46dc1abc9a7 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+87cb6a297b3a51291d375b279ea5207902b3c8bbe4b1c0a30d5b6956d2db14f9
+##[command]/usr/bin/docker start 87cb6a297b3a51291d375b279ea5207902b3c8bbe4b1c0a30d5b6956d2db14f9
+87cb6a297b3a51291d375b279ea5207902b3c8bbe4b1c0a30d5b6956d2db14f9
+##[command]/usr/bin/docker ps --all --filter id=87cb6a297b3a51291d375b279ea5207902b3c8bbe4b1c0a30d5b6956d2db14f9 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+87cb6a297b3a51291d375b279ea5207902b3c8bbe4b1c0a30d5b6956d2db14f9 Up Less than a second (health: starting)
+##[command]/usr/bin/docker port 87cb6a297b3a51291d375b279ea5207902b3c8bbe4b1c0a30d5b6956d2db14f9
+6379/tcp -> 0.0.0.0:6379
+6379/tcp -> [::]:6379
+##[endgroup]
+##[group]Waiting for all services to be ready
+##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 87cb6a297b3a51291d375b279ea5207902b3c8bbe4b1c0a30d5b6956d2db14f9
+starting
+redis service is starting, waiting 2 seconds before checking again.
+##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 87cb6a297b3a51291d375b279ea5207902b3c8bbe4b1c0a30d5b6956d2db14f9
+starting
+redis service is starting, waiting 4 seconds before checking again.
+##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 87cb6a297b3a51291d375b279ea5207902b3c8bbe4b1c0a30d5b6956d2db14f9
+healthy
+redis service is healthy.
+##[endgroup]
+##[group]Run actions/checkout@v6
+with:
+  repository: BradleyGleavePortfolio/growth-project-backend
+  token: ***
+  ssh-strict: true
+  ssh-user: git
+  persist-credentials: true
+  clean: true
+  sparse-checkout-cone-mode: true
+  fetch-depth: 1
+  fetch-tags: false
+  show-progress: true
+  lfs: false
+  submodules: false
+  set-safe-directory: true
+  allow-unsafe-pr-checkout: false
+##[endgroup]
+Syncing repository: BradleyGleavePortfolio/growth-project-backend
+##[group]Getting Git version info
+Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+[command]/usr/bin/git version
+git version 2.55.0
+##[endgroup]
+Temporarily overriding HOME='/home/runner/work/_temp/59835189-3ac2-4111-b1ec-99e7db0a3850' before making global git config changes
+Adding repository directory to the temporary git global config as a safe directory
+[command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+##[group]Determining repository object format
+##[endgroup]
+##[group]Initializing the repository
+[command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+[command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+##[endgroup]
+##[group]Disabling automatic garbage collection
+[command]/usr/bin/git config --local gc.auto 0
+##[endgroup]
+##[group]Setting up auth
+Removing SSH command configuration
+[command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Removing HTTP extra header
+[command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Removing includeIf entries pointing to credentials config files
+[command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+[command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+[command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-85c819a5-be8e-4eb9-83b6-3f08d65342dd.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+[command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-85c819a5-be8e-4eb9-83b6-3f08d65342dd.config
+[command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-85c819a5-be8e-4eb9-83b6-3f08d65342dd.config
+[command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-85c819a5-be8e-4eb9-83b6-3f08d65342dd.config
+[command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-85c819a5-be8e-4eb9-83b6-3f08d65342dd.config
+##[endgroup]
+##[group]Fetching the repository
+[command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +025d9a3c9df12aa215b24fbb340fae7f58880039:refs/remotes/origin/ci/B-FEES16-118-683-before
+From https://github.com/BradleyGleavePortfolio/growth-project-backend
+ * [new ref]         025d9a3c9df12aa215b24fbb340fae7f58880039 -> origin/ci/B-FEES16-118-683-before
+[command]/usr/bin/git branch --list --remote origin/ci/B-FEES16-118-683-before
+  origin/ci/B-FEES16-118-683-before
+[command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-FEES16-118-683-before
+025d9a3c9df12aa215b24fbb340fae7f58880039
+##[endgroup]
+##[group]Determining the checkout info
+##[endgroup]
+[command]/usr/bin/git sparse-checkout disable
+[command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+##[group]Checking out the ref
+[command]/usr/bin/git checkout --progress --force -B ci/B-FEES16-118-683-before refs/remotes/origin/ci/B-FEES16-118-683-before
+Switched to a new branch 'ci/B-FEES16-118-683-before'
+branch 'ci/B-FEES16-118-683-before' set up to track 'origin/ci/B-FEES16-118-683-before'.
+##[endgroup]
+[command]/usr/bin/git log -1 --format=%H
+025d9a3c9df12aa215b24fbb340fae7f58880039
+##[group]Run actions/setup-node@v6
+with:
+  node-version: 20
+  cache: npm
+  check-latest: false
+  token: ***
+  package-manager-cache: true
+##[endgroup]
+Attempting to download 20...
+Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+Extracting ...
+[command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/dc020900-0b8a-429e-a779-01f2d043dccf -f /home/runner/work/_temp/ef64fdb0-038c-4f7a-9e1d-76b1d4d5e9ac
+Adding to the cache ...
+##[group]Environment details
+node: v20.20.2
+npm: 10.8.2
+yarn: 1.22.22
+##[endgroup]
+[command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+/home/runner/.npm
+Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+Received 33554432 of 86828135 (38.6%), 32.0 MBs/sec
+Received 86828135 of 86828135 (100.0%), 63.9 MBs/sec
+Cache Size: ~83 MB (86828135 B)
+[command]/usr/bin/tar -xf /home/runner/work/_temp/caeab292-54d2-4425-96c2-23961037b321/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+Cache restored successfully
+Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+##[group]Run npm ci
+npm ci
+shell: /usr/bin/bash -e {0}
+##[endgroup]
+npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+
+> growth-project-backend@1.0.0 postinstall
+> prisma generate
+
+Prisma schema loaded from prisma/schema.prisma
+┌─────────────────────────────────────────────────────────┐
+│  Update available 6.19.3 -> 8.0.0-rc.19                 │
+│                                                         │
+│  This is a major update - please follow the guide at    │
+│  https://pris.ly/d/major-version-upgrade                │
+│                                                         │
+│  Run the following to update                            │
+│    npm i --save-dev prisma@latest                       │
+│    npm i @prisma/client@latest                          │
+└─────────────────────────────────────────────────────────┘
+
+✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.72s
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+
+
+> growth-project-backend@1.0.0 prepare
+> lefthook install
+
+sync hooks: ✔️(commit-msg, pre-commit)
+
+added 1115 packages, and audited 1116 packages in 22s
+
+202 packages are looking for funding
+  run `npm fund` for details
+
+3 high severity vulnerabilities
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+##[group]Run npx prisma generate
+npx prisma generate
+shell: /usr/bin/bash -e {0}
+##[endgroup]
+Prisma schema loaded from prisma/schema.prisma
+
+✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.86s
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+
+##[group]Run set -euo pipefail
+set -euo pipefail
+test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+echo "specs: ${SPECS[*]}"
+npx jest --ci --runInBand "${SPECS[@]}"
+shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+env:
+  NODE_OPTIONS: --max-old-space-size=4096
+  THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+##[endgroup]
+specs: test/s-fee-r15-deferred-fx-notice-flag.spec.ts test/aud-sol-f23-118-notice-recovery.spec.ts test/audit-opus-f23-118-683.spec.ts
+FAIL test/s-fee-r15-deferred-fx-notice-flag.spec.ts (108 MB heap size)
+  ● round 16: a failed notice keeps its retry authority and its terminal event › B-683-7: notice insert and every flag write fail: delivery fails, one notice
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      340 |       });
+      341 |       const err = await c.adjust().catch((e: unknown) => e);
+    > 342 |       expect(isRetryableMoneyError(err)).toBe(true);
+          |                                          ^
+      343 |       expect(String(err)).toContain('SFEE_NOTICE_UNRECORDED charge=ch_1');
+      344 |       expect(c.stripe.netTo('acct_coach')).toBe(6_980);
+      345 |       const flag = c.db.settlements[0].reconcile_requested_at;
+
+      at test/s-fee-r15-deferred-fx-notice-flag.spec.ts:342:42
+
+  ● round 16: a failed notice keeps its retry authority and its terminal event › B-683-7: notice history read and every flag write fail: delivery fails, one notice
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      340 |       });
+      341 |       const err = await c.adjust().catch((e: unknown) => e);
+    > 342 |       expect(isRetryableMoneyError(err)).toBe(true);
+          |                                          ^
+      343 |       expect(String(err)).toContain('SFEE_NOTICE_UNRECORDED charge=ch_1');
+      344 |       expect(c.stripe.netTo('acct_coach')).toBe(6_980);
+      345 |       const flag = c.db.settlements[0].reconcile_requested_at;
+
+      at test/s-fee-r15-deferred-fx-notice-flag.spec.ts:342:42
+
+  ● round 16: a failed notice keeps its retry authority and its terminal event › B-683-7: notice insert and the first flag write fail: delivery fails, one notice
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      340 |       });
+      341 |       const err = await c.adjust().catch((e: unknown) => e);
+    > 342 |       expect(isRetryableMoneyError(err)).toBe(true);
+          |                                          ^
+      343 |       expect(String(err)).toContain('SFEE_NOTICE_UNRECORDED charge=ch_1');
+      344 |       expect(c.stripe.netTo('acct_coach')).toBe(6_980);
+      345 |       const flag = c.db.settlements[0].reconcile_requested_at;
+
+      at test/s-fee-r15-deferred-fx-notice-flag.spec.ts:342:42
+
+  ● round 16: a failed notice keeps its retry authority and its terminal event › B-683-7: notice history read and the first flag write fail: delivery fails, one notice
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      340 |       });
+      341 |       const err = await c.adjust().catch((e: unknown) => e);
+    > 342 |       expect(isRetryableMoneyError(err)).toBe(true);
+          |                                          ^
+      343 |       expect(String(err)).toContain('SFEE_NOTICE_UNRECORDED charge=ch_1');
+      344 |       expect(c.stripe.netTo('acct_coach')).toBe(6_980);
+      345 |       const flag = c.db.settlements[0].reconcile_requested_at;
+
+      at test/s-fee-r15-deferred-fx-notice-flag.spec.ts:342:42
+
+  ● round 16: a failed notice keeps its retry authority and its terminal event › B-683-8: a failed lost-dispute notice insert: the sweep writes it once per leg, no money moves
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 2
+    + Received  + 0
+
+      Array [
+        "coach:chargeback",
+    -   "coach:dispute_lost",
+        "head_coach:chargeback",
+    -   "head_coach:dispute_lost",
+      ]
+
+      384 |         `head_coach:${e}`,
+      385 |       ]);
+    > 386 |       expect(events()).toEqual(terminal.sort());
+          |                        ^
+      387 |       expect(c.db.settlements[0].reconcile_requested_at).toBeNull();
+      388 |       // Replays: a late `created` (no intent), the closed redelivery and a later sweep add nothing.
+      389 |       await change(null);
+
+      at test/s-fee-r15-deferred-fx-notice-flag.spec.ts:386:24
+
+  ● round 16: a failed notice keeps its retry authority and its terminal event › B-683-8: a failed lost-dispute notice history read: the sweep writes it once per leg, no money moves
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 2
+    + Received  + 0
+
+      Array [
+        "coach:chargeback",
+    -   "coach:dispute_lost",
+        "head_coach:chargeback",
+    -   "head_coach:dispute_lost",
+      ]
+
+      384 |         `head_coach:${e}`,
+      385 |       ]);
+    > 386 |       expect(events()).toEqual(terminal.sort());
+          |                        ^
+      387 |       expect(c.db.settlements[0].reconcile_requested_at).toBeNull();
+      388 |       // Replays: a late `created` (no intent), the closed redelivery and a later sweep add nothing.
+      389 |       await change(null);
+
+      at test/s-fee-r15-deferred-fx-notice-flag.spec.ts:386:24
+
+FAIL test/audit-opus-f23-118-683.spec.ts (124 MB heap size)
+  ● AUD-OPUS-F23-118 #683 round 15 probes › P4 (C-683-7, expected FAIL at 438d29e6): notice write and flag write both fail -> delivery fails or flag kept
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "outcome": Any<String>,
+    -   "retried": true,
+    +   "retried": false,
+      }
+
+      171 |     expect(c.db.notices).toHaveLength(0);
+      172 |     const retried = outcome === 'rejected' || c.db.settlements[0].reconcile_requested_at instanceof Date;
+    > 173 |     expect({ outcome, retried }).toEqual({ outcome: expect.any(String), retried: true });
+          |                                  ^
+      174 |   });
+      175 |
+      176 |   it('P5 a later refund after a deferred converted settle adds its own debit and notice names both totals', async () => {
+
+      at Object.<anonymous> (test/audit-opus-f23-118-683.spec.ts:173:34)
+
+FAIL test/aud-sol-f23-118-notice-recovery.spec.ts (142 MB heap size)
+  ● Console
+
+    console.log
+      AUD118_NOTICE_RECOVERY {
+        failure: 'notice insert',
+        result: 'adjusted',
+        failedDelivery: false,
+        durableRetry: false,
+        noticeCount: 0,
+        reconciled: [ 0, 0 ],
+        paid: 6980,
+        reversals: 1
+      }
+
+      at test/aud-sol-f23-118-notice-recovery.spec.ts:93:13
+
+    console.log
+      AUD118_NOTICE_RECOVERY {
+        failure: 'notice history read',
+        result: 'adjusted',
+        failedDelivery: false,
+        durableRetry: false,
+        noticeCount: 0,
+        reconciled: [ 0, 0 ],
+        paid: 6980,
+        reversals: 1
+      }
+
+      at test/aud-sol-f23-118-notice-recovery.spec.ts:93:13
+
+    console.log
+      AUD118_TERMINAL_NOTICE_RETRY {
+        events: [ 'chargeback' ],
+        flag: null,
+        disputeId: null,
+        paid: 0,
+        reversals: 1
+      }
+
+      at Object.<anonymous> (test/aud-sol-f23-118-notice-recovery.spec.ts:157:11)
+
+  ● a failed notice insert plus failed retry persistence must not acknowledge the delivery
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+       99 |     expect(c.stripe.reversals).toHaveLength(reversals);
+      100 |     // Recovery authority must be either a failed delivery or a persisted retry, not a log.
+    > 101 |     expect(failedDelivery || durableRetry).toBe(true);
+          |                                            ^
+      102 |     // Provider redelivery, if requested, must converge without another reversal.
+      103 |     if (failedDelivery) await c.adjust();
+      104 |     expect(c.db.notices).toHaveLength(1);
+
+      at test/aud-sol-f23-118-notice-recovery.spec.ts:101:44
+
+  ● a failed notice history read plus failed retry persistence must not acknowledge the delivery
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+       99 |     expect(c.stripe.reversals).toHaveLength(reversals);
+      100 |     // Recovery authority must be either a failed delivery or a persisted retry, not a log.
+    > 101 |     expect(failedDelivery || durableRetry).toBe(true);
+          |                                            ^
+      102 |     // Provider redelivery, if requested, must converge without another reversal.
+      103 |     if (failedDelivery) await c.adjust();
+      104 |     expect(c.db.notices).toHaveLength(1);
+
+      at test/aud-sol-f23-118-notice-recovery.spec.ts:101:44
+
+  ● a failed lost-dispute notice retains its terminal event across the flagged sweep
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 0
+
+      Array [
+        "chargeback",
+    -   "dispute_lost",
+      ]
+
+      163 |   });
+      164 |   expect(c.stripe.reversals).toHaveLength(reversals);
+    > 165 |   expect(c.db.notices?.map((n) => n.event)).toEqual(['chargeback', 'dispute_lost']);
+          |                                             ^
+      166 |   await c.svc.runSettlementSweep(new Date(Date.now() + 20 * 60_000));
+      167 |   expect(c.db.notices).toHaveLength(2);
+      168 | });
+
+      at Object.<anonymous> (test/aud-sol-f23-118-notice-recovery.spec.ts:165:45)
+
+Test Suites: 3 failed, 3 total
+Tests:       10 failed, 23 passed, 33 total
+Snapshots:   0 total
+Time:        1.779 s
+Ran all test suites matching test/s-fee-r15-deferred-fx-notice-flag.spec.ts|test/aud-sol-f23-118-notice-recovery.spec.ts|test/audit-opus-f23-118-683.spec.ts.
+##[error]Process completed with exit code 1.
+Post job cleanup.
+[command]/usr/bin/git version
+git version 2.55.0
+Temporarily overriding HOME='/home/runner/work/_temp/8d6412c6-f399-457f-8fe7-5f8d72339b44' before making global git config changes
+Adding repository directory to the temporary git global config as a safe directory
+[command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+Removing SSH command configuration
+[command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Removing HTTP extra header
+[command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Removing includeIf entries pointing to credentials config files
+[command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+includeif.gitdir:/github/workspace/.git.path
+includeif.gitdir:/github/workspace/.git/worktrees/*.path
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+/home/runner/work/_temp/git-credentials-85c819a5-be8e-4eb9-83b6-3f08d65342dd.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-85c819a5-be8e-4eb9-83b6-3f08d65342dd.config
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+/home/runner/work/_temp/git-credentials-85c819a5-be8e-4eb9-83b6-3f08d65342dd.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-85c819a5-be8e-4eb9-83b6-3f08d65342dd.config
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+/github/runner_temp/git-credentials-85c819a5-be8e-4eb9-83b6-3f08d65342dd.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-85c819a5-be8e-4eb9-83b6-3f08d65342dd.config
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+/github/runner_temp/git-credentials-85c819a5-be8e-4eb9-83b6-3f08d65342dd.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-85c819a5-be8e-4eb9-83b6-3f08d65342dd.config
+[command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Removing credentials config '/home/runner/work/_temp/git-credentials-85c819a5-be8e-4eb9-83b6-3f08d65342dd.config'
+Print service container logs: a53113f025414bba8bac5177c6a99a8c_redis7alpine_43c569
+##[command]/usr/bin/docker logs --details 87cb6a297b3a51291d375b279ea5207902b3c8bbe4b1c0a30d5b6956d2db14f9
+ 1:C 04 Oct 2026 18:32:46.896 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+ 1:C 04 Oct 2026 18:32:46.896 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+ 1:C 04 Oct 2026 18:32:46.896 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+ 1:C 04 Oct 2026 18:32:46.896 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+ 1:M 04 Oct 2026 18:32:46.896 * monotonic clock: POSIX clock_gettime
+ 1:M 04 Oct 2026 18:32:46.897 * Running mode=standalone, port=6379.
+ 1:M 04 Oct 2026 18:32:46.897 * Server initialized
+ 1:M 04 Oct 2026 18:32:46.897 * Ready to accept connections tcp
+Stop and remove container: a53113f025414bba8bac5177c6a99a8c_redis7alpine_43c569
+##[command]/usr/bin/docker rm --force 87cb6a297b3a51291d375b279ea5207902b3c8bbe4b1c0a30d5b6956d2db14f9
+87cb6a297b3a51291d375b279ea5207902b3c8bbe4b1c0a30d5b6956d2db14f9
+Remove container network: github_network_fae5de33090a41b2b2b7f46dc1abc9a7
+##[command]/usr/bin/docker network rm github_network_fae5de33090a41b2b2b7f46dc1abc9a7
+github_network_fae5de33090a41b2b2b7f46dc1abc9a7
+Cleaning up orphan processes

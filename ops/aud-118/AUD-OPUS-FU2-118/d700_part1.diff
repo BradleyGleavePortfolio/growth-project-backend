@@ -1,0 +1,309 @@
+diff --git a/docs/privacy/vendor-deletion-and-backups.md b/docs/privacy/vendor-deletion-and-backups.md
+index 3b2a70594..b4252dc9f 100644
+--- a/docs/privacy/vendor-deletion-and-backups.md
++++ b/docs/privacy/vendor-deletion-and-backups.md
+@@ -43,7 +43,7 @@ What stays (also stated on the Privacy Policy after the B-611-2 fix):
+ 
+ Sign in with Apple: #608 revokes the Apple token when `APPLE_TEAM_ID`, `APPLE_SIGNIN_KEY_ID` and `APPLE_SIGNIN_PRIVATE_KEY` are set. **UNVERIFIED (owner):** the key is not created yet, so the outcome is `not_configured`. The app then tells the person how to remove the app from their Apple Account.
+ 
+-**Operator ruling (agent 116, 2026-10-03, on Opus RG-1 at #611 `5eac8f21`):** the policy must be true on the day it publishes, and production has no Sign in with Apple key yet. So the Privacy Policy does **not** claim that deletion revokes Sign in with Apple. It says what is true today: deleting the account ends the app's link to the Apple Account (the deletion run removes the Supabase sign-in identity), and the person can remove the app from their Apple Account themselves (`SIGN_IN_WITH_APPLE_DELETION_TEXT` in `src/public-pages/trust-pages.html.ts`, shared by `/privacy` and `/help/delete-account`, both linking Apple's article). The steps are Apple's, from [Apple Support 102571](https://support.apple.com/en-us/102571) (published 2026-09-14): on iPhone, Settings > [your name] > Sign in with Apple > the app > Delete, then confirm; on the web, account.apple.com > Sign-In & Security > Sign in with Apple. Re-check them against that article when Apple changes it (`test/privacy-apple-unlink-path.spec.ts`). **Follow-up:** once the owner sets the Apple key secrets in production and a deletion shows `apple_revocation=revoked`, a follow-up PR restores the revocation sentence.
++**Operator ruling (agent 116, 2026-10-03, on Opus RG-1 at #611 `5eac8f21`):** the policy must be true on the day it publishes, and production has no Sign in with Apple key yet. So the Privacy Policy does **not** claim that deletion revokes Sign in with Apple. It says what is true today: deleting the account ends the app's link to the Apple Account (the deletion run removes the Supabase sign-in identity), and the person can remove the app from their Apple Account themselves (`SIGN_IN_WITH_APPLE_DELETION_TEXT` in `src/public-pages/trust-pages.html.ts`, shared by `/privacy` and `/help/delete-account`, both linking Apple's article). The steps are Apple's, from [Apple Support 102571](https://support.apple.com/en-us/102571) (published 2026-09-14): on iPhone, Settings > [your name] > Sign in with Apple > the app > Delete, then confirm; on the web, account.apple.com > Sign-In & Security > Sign in with Apple. That iPhone path is the iOS 18 or later one ([iPhone User Guide, iOS 18.0](https://support.apple.com/guide/iphone/sign-in-with-apple-iph238921d37/18.0/ios/18.0)). The app supports iOS 16.4 and later, and on iOS 16 and 17 the menu is a different one, under Settings > [your name] > Password and Security ([iPhone User Guide, iOS 17.0](https://support.apple.com/guide/iphone/sign-in-with-apple-iph238921d37/17.0/ios/17.0)), so the policy gives the iPhone steps for iOS 18 or later and sends earlier versions and other devices to the web steps, which do not depend on the iOS version (C-611-18). Re-check them against those pages when Apple changes them (`test/privacy-apple-unlink-path.spec.ts`, `test/privacy-apple-ios-version.spec.ts`). **Follow-up:** once the owner sets the Apple key secrets in production and a deletion shows `apple_revocation=revoked`, a follow-up PR restores the revocation sentence.
+ 
+ Everything below covers the copies the deletion run does **not** reach: vendor-side copies, logs and backups.
+ 
+diff --git a/src/account-deletion/README.md b/src/account-deletion/README.md
+index f837e9537..aeea4b474 100644
+--- a/src/account-deletion/README.md
++++ b/src/account-deletion/README.md
+@@ -30,7 +30,7 @@ period, and a nightly finalization that erases the person's data.
+    still completes; the outcome `not_configured` is logged, written to
+    `deletion_audit` and returned as `apple_revocation`. The app only says
+    Apple access was revoked when the server reports `revoked`; otherwise it
+-   tells the person they can also remove the app from their Apple ID
++   tells the person they can also remove the app from their Apple Account
+    settings. Set the key with the operator workflow
+    `.github/workflows/fly-apple-signin-set.yml` (docs/deploy-runbook.md §7b.1).
+ 5. **Google re-auth** works for Google accounts even though Google sign-in is
+diff --git a/src/email/email.service.ts b/src/email/email.service.ts
+index 228bb3138..b516d6699 100644
+--- a/src/email/email.service.ts
++++ b/src/email/email.service.ts
+@@ -10,6 +10,7 @@ import * as path from 'path';
+ import * as Handlebars from 'handlebars';
+ import { Prisma } from '@prisma/client';
+ import { PrismaService } from '../prisma.service';
++import { redactEmailAddresses } from '../observability/log-pii';
+ import {
+   EmailTemplateKey,
+   SendEmailInput,
+@@ -178,7 +179,7 @@ export class EmailService {
+       html = rendered.html;
+       subject = rendered.subject;
+     } catch (err) {
+-      const msg = err instanceof Error ? err.message : 'unknown';
++      const msg = redactEmailAddresses(err instanceof Error ? err.message : 'unknown');
+       await this._finalize(logRow.id, 'failed', null, `render: ${msg}`);
+       return {
+         status: 'failed',
+@@ -191,9 +192,12 @@ export class EmailService {
+     // 'log' transport: structured log instead of an HTTP call. Used in
+     // dev/test only — `_initTransport` enforces that production never
+     // accidentally lands here.
++    // C-611-17: log lines name the EmailSendLog row (which holds the
++    // recipient for support) and the template, never the address or the
++    // rendered subject (subjects carry first names and coach names).
+     if (this.transportKind === 'log' || !this.transport) {
+       this.logger.log(
+-        `[email:log] to=${input.to} template=${input.template} subject="${subject}" key=${input.idempotencyKey}`,
++        `[email:log] row=${logRow.id} template=${input.template} key=${input.idempotencyKey}`,
+       );
+       await this._finalize(logRow.id, 'logged', null, null);
+       return {
+@@ -213,7 +217,7 @@ export class EmailService {
+       });
+       await this._finalize(logRow.id, 'sent', providerMessageId, null);
+       this.logger.log(
+-        `email sent template=${input.template} to=${input.to} provider_id=${providerMessageId}`,
++        `email sent template=${input.template} row=${logRow.id} provider_id=${providerMessageId}`,
+       );
+       return {
+         status: 'sent',
+@@ -221,10 +225,13 @@ export class EmailService {
+         idempotencyKey: input.idempotencyKey,
+       };
+     } catch (err) {
+-      const msg = err instanceof Error ? err.message : 'unknown';
+-      await this._finalize(logRow.id, 'failed', null, msg.slice(0, 500));
++      // A provider error body can echo the address back ("Invalid `to`
++      // field: ..."); redact it once here so the log line, the stored
++      // error and the returned error (callers log it) never carry it.
++      const msg = redactEmailAddresses(err instanceof Error ? err.message : 'unknown');
++      await this._finalize(logRow.id, 'failed', null, msg);
+       this.logger.error(
+-        `email send failed template=${input.template} to=${input.to}: ${msg}`,
++        `email send failed template=${input.template} row=${logRow.id}: ${msg}`,
+       );
+       return {
+         status: 'failed',
+diff --git a/src/email/email.types.ts b/src/email/email.types.ts
+index f203c1f62..49981c6c6 100644
+--- a/src/email/email.types.ts
++++ b/src/email/email.types.ts
+@@ -59,6 +59,7 @@ export interface SendEmailResult {
+   // Mirrored from input.idempotencyKey for caller convenience.
+   idempotencyKey: string;
+   // Human-readable error text on 'failed'. Never contains the provider
+-  // API key. Safe to surface up to the operator.
++  // API key or an email address (C-611-17: provider text is passed through
++  // redactEmailAddresses). Safe to surface up to the operator.
+   error?: string;
+ }
+diff --git a/src/notifications/digest.service.ts b/src/notifications/digest.service.ts
+index 08a7d548e..83314317c 100644
+--- a/src/notifications/digest.service.ts
++++ b/src/notifications/digest.service.ts
+@@ -6,6 +6,7 @@ import * as Handlebars from 'handlebars';
+ import { PrismaService } from '../prisma.service';
+ import { NotificationsService } from './notifications.service';
+ import { NotificationKind } from './notification-kind';
++import { redactEmailAddresses } from '../observability/log-pii';
+ 
+ // Handlebars helper: {{gt a b}} — used in templates for conditional plural.
+ Handlebars.registerHelper('gt', (a: number, b: number) => a > b);
+@@ -137,7 +138,7 @@ export class DigestService {
+           ? `Your week in numbers — ${data.weekStats?.consistencyPct ?? 0}% check-in consistency`
+           : `Your daily summary — ${data.date}`;
+ 
+-      await this._send(client.email, subject, templateKey, {
++      await this._send(client.id, client.email, subject, templateKey, {
+         ...data,
+         appUrl: this.appUrl,
+         unsubscribeUrl: `${this.appUrl}/settings/notifications`,
+@@ -160,10 +161,11 @@ export class DigestService {
+ 
+       await this.notifications.markDigestSent(logId);
+     } catch (err) {
+-      await this.notifications.markDigestFailed(logId, (err as Error).message);
+-      this.logger.error(
+-        `client digest failed: user=${client.id} kind=${digestKind}: ${(err as Error).message}`,
+-      );
++      // Any step can fail with text that holds the address (a provider body,
++      // or an ORM error quoting the notification body above): redact once.
++      const msg = redactEmailAddresses((err as Error)?.message);
++      await this.notifications.markDigestFailed(logId, msg);
++      this.logger.error(`client digest failed: user=${client.id} kind=${digestKind}: ${msg}`);
+     }
+   }
+ 
+@@ -201,7 +203,7 @@ export class DigestService {
+             ? `${needCount} client${needCount !== 1 ? 's' : ''} need review today — ${data.date}`
+             : `Your coach summary — ${data.date}`;
+ 
+-      await this._send(coach.email, subject, templateKey, {
++      await this._send(coach.id, coach.email, subject, templateKey, {
+         ...data,
+         consoleUrl: this.consoleUrl,
+         unsubscribeUrl: `${this.consoleUrl}/settings/notifications`,
+@@ -220,10 +222,11 @@ export class DigestService {
+ 
+       await this.notifications.markDigestSent(logId);
+     } catch (err) {
+-      await this.notifications.markDigestFailed(logId, (err as Error).message);
+-      this.logger.error(
+-        `coach digest failed: user=${coach.id} kind=${digestKind}: ${(err as Error).message}`,
+-      );
++      // Any step can fail with text that holds the address (a provider body,
++      // or an ORM error quoting the notification body above): redact once.
++      const msg = redactEmailAddresses((err as Error)?.message);
++      await this.notifications.markDigestFailed(logId, msg);
++      this.logger.error(`coach digest failed: user=${coach.id} kind=${digestKind}: ${msg}`);
+     }
+   }
+ 
+@@ -402,7 +405,10 @@ export class DigestService {
+ 
+   // ── Private: email send ───────────────────────────────────────────────────
+ 
++  // C-611-17: `userId` is what the log line names; the address goes to the
++  // provider only.
+   private async _send(
++    userId: string,
+     to: string,
+     subject: string,
+     templateKey: string,
+@@ -420,7 +426,7 @@ export class DigestService {
+       await this._sendViaPostmark(from, to, subject, html);
+     } else {
+       // 'log' transport — dev / test mode.
+-      this.logger.log(`[email log] to=${to} subject="${subject}"`);
++      this.logger.log(`[email log] user=${userId} template=${templateKey}`);
+     }
+   }
+ 
+@@ -442,7 +448,7 @@ export class DigestService {
+     });
+     if (!res.ok) {
+       const body = await res.text();
+-      throw new Error(`Resend API error ${res.status}: ${body}`);
++      throw new Error(`Resend API error ${res.status}: ${redactEmailAddresses(body)}`);
+     }
+   }
+ 
+@@ -469,7 +475,7 @@ export class DigestService {
+     });
+     if (!res.ok) {
+       const body = await res.text();
+-      throw new Error(`SendGrid API error ${res.status}: ${body}`);
++      throw new Error(`SendGrid API error ${res.status}: ${redactEmailAddresses(body)}`);
+     }
+   }
+ 
+@@ -494,7 +500,7 @@ export class DigestService {
+     });
+     if (!res.ok) {
+       const body = await res.text();
+-      throw new Error(`Postmark API error ${res.status}: ${body}`);
++      throw new Error(`Postmark API error ${res.status}: ${redactEmailAddresses(body)}`);
+     }
+   }
+ 
+diff --git a/src/notifications/notifications.service.ts b/src/notifications/notifications.service.ts
+index 0e37152b9..741aa745e 100644
+--- a/src/notifications/notifications.service.ts
++++ b/src/notifications/notifications.service.ts
+@@ -686,14 +686,18 @@ export class NotificationsService {
+       // the message and we must NOT report delivered=true.
+       for (const ticket of tickets) {
+         if (ticket.status === 'error') {
+-          this.logger.error(`pushToUser ticket error for user ${userId}: ${ticket.message}`);
++          // C-611-17: Expo's ticket message quotes the push token
++          // ("ExponentPushToken[...] is not a registered ..."); log and
++          // return its error code only.
++          const errorCode = ticket.details?.error ?? 'unknown';
++          this.logger.error(`pushToUser ticket error for user ${userId}: ${errorCode}`);
+           // Poll receipts on a best-effort basis so stale tokens get
+           // cleared even though we report failure to the caller.
+           await this.pollReceipts(tickets, userId);
+           return {
+             delivered: false,
+             code: 'ticket-error',
+-            detail: ticket.message,
++            detail: errorCode,
+           };
+         }
+       }
+@@ -741,7 +745,9 @@ export class NotificationsService {
+                 data: { expo_push_token: null },
+               });
+             }
+-            this.logger.error('Push receipt error:', receipt.message);
++            this.logger.error(
++              `Push receipt error for user ${userId}: ${receipt.details?.error ?? 'unknown'}`,
++            );
+           }
+         }
+       }
+diff --git a/src/observability/README.md b/src/observability/README.md
+index 8440664f5..eb5eb26c2 100644
+--- a/src/observability/README.md
++++ b/src/observability/README.md
+@@ -81,6 +81,17 @@ Allowed keys that will never be redacted even if they match a prefix of the
+ above names: `request_id`, `user_id`, `method`, `path`, `status`,
+ `latency_ms`, `timestamp`, `level`, `message`, `msg`.
+ 
++### No personal data in log lines (C-611-17)
++
++Log lines carry ids and codes: the user id, the row id, the template key,
++the provider's message id or error code. They never interpolate an email
++address, a person's name or free text (message bodies, notes, alert text,
++request payloads). Text the service does not write itself (a provider's
++error body, an exception message) goes through `redactEmailAddresses`
++(`log-pii.ts`) first, because providers echo addresses back.
++`test/privacy/no-pii-in-logs.spec.ts` checks every log call under `src/`
++and the main email paths.
++
+ ---
+ 
+ ## Request-ID contract
+diff --git a/src/observability/log-pii.ts b/src/observability/log-pii.ts
+new file mode 100644
+index 000000000..602d554d8
+--- /dev/null
++++ b/src/observability/log-pii.ts
+@@ -0,0 +1,36 @@
++/**
++ * Log lines carry ids and codes, never personal data (C-611-17, agent 117,
++ * B-PRIV-FU-117; AGENT_RULES G12: no PII in errors or logs).
++ *
++ * Code in this service never interpolates an email address, a person's name
++ * or free text (message bodies, notes, request payloads) into a log line; it
++ * logs the row id, user id or template key instead. test/privacy/
++ * no-pii-in-logs.spec.ts enforces that over every log call under src/.
++ *
++ * Text this service does not write itself (an email provider's error body,
++ * an exception message) can still echo an address back, for example
++ * "Illegal email address 'pat@example.com'". `redactEmailAddresses` is for
++ * that text: every run of characters joined by an '@' becomes "[email]", so
++ * no address survives, and the result is bounded to LOG_TEXT_MAX characters.
++ */
++
++/** Longest provider or exception text that goes into a log line or error column. */
++export const LOG_TEXT_MAX = 500;
++
++/** Replacement for anything that looks like an address. */
++export const REDACTED_EMAIL = '[email]';
++
++// Any run of characters around an '@' that is not whitespace, a quote,
++// a bracket or a list separator: covers "a@b.c", "<a@b.c>", "a+tag@b",
++// "%61@b" and a lone "@". Deliberately broad: a false positive costs a few
++// characters of diagnostics, a false negative leaks an address.
++const ADDRESS_LIKE = /[^\s@<>()[\]{}"'`,;]*@[^\s@<>()[\]{}"'`,;]*/g;
++
++/**
++ * Returns `text` with every address-like run replaced by "[email]", cut to
++ * `max` characters. Never throws; a non-string becomes "unknown".
++ */
++export function redactEmailAddresses(text: unknown, max: number = LOG_TEXT_MAX): string {
++  if (typeof text !== 'string') return 'unknown';
++  return text.replace(ADDRESS_LIKE, REDACTED_EMAIL).slice(0, max);
++}

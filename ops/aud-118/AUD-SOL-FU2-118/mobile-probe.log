@@ -1,0 +1,426 @@
+﻿2026-10-04T16:52:34.0282280Z Current runner version: '2.337.0'
+2026-10-04T16:52:34.0307890Z ##[group]Runner Image Provisioner
+2026-10-04T16:52:34.0308745Z Hosted Compute Agent
+2026-10-04T16:52:34.0309756Z Version: 20260901.588
+2026-10-04T16:52:34.0310410Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-04T16:52:34.0311246Z Build Date: 2026-09-01T19:56:44Z
+2026-10-04T16:52:34.0311961Z Worker ID: {de752c6b-0f13-454e-baf9-dd8bfc095fdd}
+2026-10-04T16:52:34.0312681Z Azure Region: westus
+2026-10-04T16:52:34.0313280Z ##[endgroup]
+2026-10-04T16:52:34.0314982Z ##[group]Operating System
+2026-10-04T16:52:34.0315630Z Ubuntu
+2026-10-04T16:52:34.0316245Z 24.04.5
+2026-10-04T16:52:34.0316747Z LTS
+2026-10-04T16:52:34.0317290Z ##[endgroup]
+2026-10-04T16:52:34.0317853Z ##[group]Runner Image
+2026-10-04T16:52:34.0318530Z Image: ubuntu-24.04
+2026-10-04T16:52:34.0319349Z Version: 20260927.320.1
+2026-10-04T16:52:34.0320601Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-04T16:52:34.0322274Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-04T16:52:34.0323250Z ##[endgroup]
+2026-10-04T16:52:34.0324467Z ##[group]GITHUB_TOKEN Permissions
+2026-10-04T16:52:34.0326564Z Contents: read
+2026-10-04T16:52:34.0327600Z Metadata: read
+2026-10-04T16:52:34.0328197Z Packages: read
+2026-10-04T16:52:34.0328777Z ##[endgroup]
+2026-10-04T16:52:34.0331379Z Secret source: Actions
+2026-10-04T16:52:34.0332394Z Cache mode: write
+2026-10-04T16:52:34.0333456Z Prepare workflow directory
+2026-10-04T16:52:34.0676094Z Prepare all required actions
+2026-10-04T16:52:34.0725300Z Getting action download info
+2026-10-04T16:52:34.4430945Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-04T16:52:34.5433701Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-04T16:52:34.7294680Z Complete job name: targeted
+2026-10-04T16:52:34.8058027Z ##[group]Run actions/checkout@v6
+2026-10-04T16:52:34.8058939Z with:
+2026-10-04T16:52:34.8059746Z   repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T16:52:34.8063558Z   token: ***
+2026-10-04T16:52:34.8063975Z   ssh-strict: true
+2026-10-04T16:52:34.8064403Z   ssh-user: git
+2026-10-04T16:52:34.8064834Z   persist-credentials: true
+2026-10-04T16:52:34.8065310Z   clean: true
+2026-10-04T16:52:34.8065752Z   sparse-checkout-cone-mode: true
+2026-10-04T16:52:34.8066267Z   fetch-depth: 1
+2026-10-04T16:52:34.8066683Z   fetch-tags: false
+2026-10-04T16:52:34.8067113Z   show-progress: true
+2026-10-04T16:52:34.8067543Z   lfs: false
+2026-10-04T16:52:34.8067943Z   submodules: false
+2026-10-04T16:52:34.8068388Z   set-safe-directory: true
+2026-10-04T16:52:34.8068879Z   allow-unsafe-pr-checkout: false
+2026-10-04T16:52:34.8069815Z ##[endgroup]
+2026-10-04T16:52:34.9094540Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T16:52:34.9097900Z ##[group]Getting Git version info
+2026-10-04T16:52:34.9099572Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-04T16:52:34.9100997Z [command]/usr/bin/git version
+2026-10-04T16:52:34.9170131Z git version 2.55.0
+2026-10-04T16:52:34.9195039Z ##[endgroup]
+2026-10-04T16:52:34.9212519Z Temporarily overriding HOME='/home/runner/work/_temp/db6a594d-ac91-41bb-9679-f22a5f47c4e7' before making global git config changes
+2026-10-04T16:52:34.9214915Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T16:52:34.9219282Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-04T16:52:34.9275230Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-04T16:52:34.9280327Z ##[group]Determining repository object format
+2026-10-04T16:52:34.9282898Z ##[endgroup]
+2026-10-04T16:52:34.9283839Z ##[group]Initializing the repository
+2026-10-04T16:52:34.9287671Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-04T16:52:34.9403656Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-04T16:52:34.9404879Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-04T16:52:34.9405878Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-04T16:52:34.9406652Z hint: call:
+2026-10-04T16:52:34.9407062Z hint:
+2026-10-04T16:52:34.9407596Z hint: 	git config --global init.defaultBranch <name>
+2026-10-04T16:52:34.9408226Z hint:
+2026-10-04T16:52:34.9408810Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-04T16:52:34.9410026Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-04T16:52:34.9410784Z hint:
+2026-10-04T16:52:34.9411203Z hint: 	git branch -m <name>
+2026-10-04T16:52:34.9411677Z hint:
+2026-10-04T16:52:34.9412360Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-04T16:52:34.9419362Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+2026-10-04T16:52:34.9430844Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T16:52:34.9483260Z ##[endgroup]
+2026-10-04T16:52:34.9484073Z ##[group]Disabling automatic garbage collection
+2026-10-04T16:52:34.9487304Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-04T16:52:34.9518445Z ##[endgroup]
+2026-10-04T16:52:34.9520118Z ##[group]Setting up auth
+2026-10-04T16:52:34.9520821Z Removing SSH command configuration
+2026-10-04T16:52:34.9527119Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T16:52:34.9558429Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T16:52:34.9913885Z Removing HTTP extra header
+2026-10-04T16:52:34.9919681Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T16:52:34.9955542Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T16:52:35.0187794Z Removing includeIf entries pointing to credentials config files
+2026-10-04T16:52:35.0194449Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T16:52:35.0225587Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T16:52:35.0444595Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-fd73bf83-71a3-4ae2-b9e2-5de9e261b88f.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-04T16:52:35.0481950Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-fd73bf83-71a3-4ae2-b9e2-5de9e261b88f.config
+2026-10-04T16:52:35.0513754Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-fd73bf83-71a3-4ae2-b9e2-5de9e261b88f.config
+2026-10-04T16:52:35.0545971Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-fd73bf83-71a3-4ae2-b9e2-5de9e261b88f.config
+2026-10-04T16:52:35.0601033Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-fd73bf83-71a3-4ae2-b9e2-5de9e261b88f.config
+2026-10-04T16:52:35.0631343Z ##[endgroup]
+2026-10-04T16:52:35.0632180Z ##[group]Fetching the repository
+2026-10-04T16:52:35.0640301Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +6c1b130378b4a5df1cb80ba9874feaed67249da1:refs/remotes/origin/audit/AUD-SOL-FU2-118/368-apple-outcome
+2026-10-04T16:52:36.0602120Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-04T16:52:36.0606190Z  * [new ref]         6c1b130378b4a5df1cb80ba9874feaed67249da1 -> origin/audit/AUD-SOL-FU2-118/368-apple-outcome
+2026-10-04T16:52:36.0613145Z [command]/usr/bin/git branch --list --remote origin/audit/AUD-SOL-FU2-118/368-apple-outcome
+2026-10-04T16:52:36.0639427Z   origin/audit/AUD-SOL-FU2-118/368-apple-outcome
+2026-10-04T16:52:36.0651599Z [command]/usr/bin/git rev-parse refs/remotes/origin/audit/AUD-SOL-FU2-118/368-apple-outcome
+2026-10-04T16:52:36.0675693Z 6c1b130378b4a5df1cb80ba9874feaed67249da1
+2026-10-04T16:52:36.0688283Z ##[endgroup]
+2026-10-04T16:52:36.0689959Z ##[group]Determining the checkout info
+2026-10-04T16:52:36.0691494Z ##[endgroup]
+2026-10-04T16:52:36.0693906Z [command]/usr/bin/git sparse-checkout disable
+2026-10-04T16:52:36.0755920Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-04T16:52:36.0785197Z ##[group]Checking out the ref
+2026-10-04T16:52:36.0790572Z [command]/usr/bin/git checkout --progress --force -B audit/AUD-SOL-FU2-118/368-apple-outcome refs/remotes/origin/audit/AUD-SOL-FU2-118/368-apple-outcome
+2026-10-04T16:52:36.1843200Z Switched to a new branch 'audit/AUD-SOL-FU2-118/368-apple-outcome'
+2026-10-04T16:52:36.1849344Z branch 'audit/AUD-SOL-FU2-118/368-apple-outcome' set up to track 'origin/audit/AUD-SOL-FU2-118/368-apple-outcome'.
+2026-10-04T16:52:36.1858814Z ##[endgroup]
+2026-10-04T16:52:36.1901715Z [command]/usr/bin/git log -1 --format=%H
+2026-10-04T16:52:36.1926258Z 6c1b130378b4a5df1cb80ba9874feaed67249da1
+2026-10-04T16:52:36.2311222Z ##[group]Run actions/setup-node@v6
+2026-10-04T16:52:36.2312482Z with:
+2026-10-04T16:52:36.2313435Z   node-version: 22.13
+2026-10-04T16:52:36.2314474Z   cache: npm
+2026-10-04T16:52:36.2315452Z   check-latest: false
+2026-10-04T16:52:36.2324165Z   token: ***
+2026-10-04T16:52:36.2325220Z   package-manager-cache: true
+2026-10-04T16:52:36.2326393Z ##[endgroup]
+2026-10-04T16:52:36.3818586Z Attempting to download 22.13...
+2026-10-04T16:52:37.0992887Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+2026-10-04T16:52:37.5747868Z Extracting ...
+2026-10-04T16:52:37.5882709Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/5d36d063-bf11-4784-9f40-287f1b7c0cbd -f /home/runner/work/_temp/1678278b-2b57-4e26-817d-4a2c86d2cc74
+2026-10-04T16:52:38.7627609Z Adding to the cache ...
+2026-10-04T16:52:40.7896744Z ##[group]Environment details
+2026-10-04T16:52:41.0057075Z node: v22.13.1
+2026-10-04T16:52:41.0057716Z npm: 10.9.2
+2026-10-04T16:52:41.0058045Z yarn: 1.22.22
+2026-10-04T16:52:41.0058632Z ##[endgroup]
+2026-10-04T16:52:41.0082637Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+2026-10-04T16:52:41.1016381Z /home/runner/.npm
+2026-10-04T16:52:41.3595430Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-04T16:52:42.6377976Z Received 0 of 241027159 (0.0%), 0.0 MBs/sec
+2026-10-04T16:52:43.6378990Z Received 117440512 of 241027159 (48.7%), 56.0 MBs/sec
+2026-10-04T16:52:44.6428461Z Received 241027159 of 241027159 (100.0%), 76.5 MBs/sec
+2026-10-04T16:52:44.6429645Z Cache Size: ~230 MB (241027159 B)
+2026-10-04T16:52:44.6489997Z [command]/usr/bin/tar -xf /home/runner/work/_temp/1d714c2e-8368-4db7-95d2-e0b7f89bd740/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+2026-10-04T16:52:45.5136646Z Cache restored successfully
+2026-10-04T16:52:45.6527218Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-04T16:52:45.6730339Z ##[group]Run npm ci
+2026-10-04T16:52:45.6730674Z [36;1mnpm ci[0m
+2026-10-04T16:52:45.7038574Z shell: /usr/bin/bash -e {0}
+2026-10-04T16:52:45.7038982Z ##[endgroup]
+2026-10-04T16:52:50.7297880Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-04T16:52:50.9505267Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+2026-10-04T16:52:50.9690532Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+2026-10-04T16:52:50.9766097Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+2026-10-04T16:52:51.0711176Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+2026-10-04T16:52:51.2204178Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+2026-10-04T16:52:51.2255171Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T16:52:51.2264138Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T16:52:51.2286015Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T16:52:51.2290716Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T16:52:51.2323317Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T16:52:51.2701886Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T16:52:51.3141216Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+2026-10-04T16:52:51.7748202Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+2026-10-04T16:52:52.6035630Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+2026-10-04T16:52:56.3396199Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+2026-10-04T16:53:47.4553062Z 
+2026-10-04T16:53:47.4556860Z added 1108 packages, and audited 1109 packages in 1m
+2026-10-04T16:53:47.4557255Z 
+2026-10-04T16:53:47.4557495Z 187 packages are looking for funding
+2026-10-04T16:53:47.4557937Z   run `npm fund` for details
+2026-10-04T16:53:47.8261657Z 
+2026-10-04T16:53:47.8263042Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+2026-10-04T16:53:47.8263472Z 
+2026-10-04T16:53:47.8263833Z To address issues that do not require attention, run:
+2026-10-04T16:53:47.8264875Z   npm audit fix
+2026-10-04T16:53:47.8265135Z 
+2026-10-04T16:53:47.8265517Z To address all issues (including breaking changes), run:
+2026-10-04T16:53:47.8266098Z   npm audit fix --force
+2026-10-04T16:53:47.8266599Z 
+2026-10-04T16:53:47.8266809Z Run `npm audit` for details.
+2026-10-04T16:53:48.0186331Z ##[group]Run set -euo pipefail
+2026-10-04T16:53:48.0186765Z [36;1mset -euo pipefail[0m
+2026-10-04T16:53:48.0187160Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-04T16:53:48.0187659Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-04T16:53:48.0188022Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-04T16:53:48.0188300Z [36;1mnpx jest --ci "${SPECS[@]}"[0m
+2026-10-04T16:53:48.0254138Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T16:53:48.0254503Z ##[endgroup]
+2026-10-04T16:53:48.0355394Z specs: src/screens/settings/__tests__/audit-sol-fu2-118-apple-outcome.test.tsx src/screens/settings/__tests__/DeleteAccountScreen.test.tsx
+2026-10-04T16:53:59.8736298Z FAIL src/screens/settings/__tests__/audit-sol-fu2-118-apple-outcome.test.tsx (9.929 s)
+2026-10-04T16:53:59.9488893Z   ● Console
+2026-10-04T16:53:59.9489458Z 
+2026-10-04T16:53:59.9489721Z     console.error
+2026-10-04T16:53:59.9490419Z       The current testing environment is not configured to support act(...)
+2026-10-04T16:53:59.9491086Z 
+2026-10-04T16:53:59.9492281Z     [0m [90m 164 |[39m         [36mconst[39m res [33m=[39m [36mawait[39m deletionApi[33m.[39mgetDeletionStatus()[33m;[39m
+2026-10-04T16:53:59.9493540Z      [90m 165 |[39m         [36mconst[39m next [33m=[39m res[33m.[39mdata [33m?[39m[33m?[39m [36mnull[39m[33m;[39m
+2026-10-04T16:53:59.9494456Z     [31m[1m>[22m[39m[90m 166 |[39m         setStatus(next)[33m;[39m
+2026-10-04T16:53:59.9495107Z      [90m     |[39m         [31m[1m^[22m[39m
+2026-10-04T16:53:59.9496401Z      [90m 167 |[39m         setPhase(next[33m?[39m[33m.[39mstate [33m===[39m [32m'deleted'[39m [33m?[39m [32m'deleted'[39m [33m:[39m [32m'ready'[39m)[33m;[39m
+2026-10-04T16:53:59.9497806Z      [90m 168 |[39m       } [36mcatch[39m (err) {
+2026-10-04T16:53:59.9498742Z      [90m 169 |[39m         [36mif[39m (isAccountDeletedError(err)) {[0m
+2026-10-04T16:53:59.9499591Z 
+2026-10-04T16:53:59.9500189Z       at isConcurrentActEnvironment (node_modules/react-reconciler/cjs/react-reconciler.development.js:13990:17)
+2026-10-04T16:53:59.9501110Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16304:7)
+2026-10-04T16:53:59.9502168Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-04T16:53:59.9503697Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-04T16:53:59.9504532Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-04T16:53:59.9505165Z       at setStatus (src/screens/settings/DeleteAccountScreen.tsx:166:9)
+2026-10-04T16:53:59.9505777Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T16:53:59.9506423Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T16:53:59.9506731Z 
+2026-10-04T16:53:59.9506832Z     console.error
+2026-10-04T16:53:59.9507209Z       The current testing environment is not configured to support act(...)
+2026-10-04T16:53:59.9507508Z 
+2026-10-04T16:53:59.9508066Z     [0m [90m 165 |[39m         [36mconst[39m next [33m=[39m res[33m.[39mdata [33m?[39m[33m?[39m [36mnull[39m[33m;[39m
+2026-10-04T16:53:59.9508695Z      [90m 166 |[39m         setStatus(next)[33m;[39m
+2026-10-04T16:53:59.9510200Z     [31m[1m>[22m[39m[90m 167 |[39m         setPhase(next[33m?[39m[33m.[39mstate [33m===[39m [32m'deleted'[39m [33m?[39m [32m'deleted'[39m [33m:[39m [32m'ready'[39m)[33m;[39m
+2026-10-04T16:53:59.9510980Z      [90m     |[39m         [31m[1m^[22m[39m
+2026-10-04T16:53:59.9511384Z      [90m 168 |[39m       } [36mcatch[39m (err) {
+2026-10-04T16:53:59.9511843Z      [90m 169 |[39m         [36mif[39m (isAccountDeletedError(err)) {
+2026-10-04T16:53:59.9512864Z      [90m 170 |[39m           markDeleted()[33m;[39m[0m
+2026-10-04T16:53:59.9513100Z 
+2026-10-04T16:53:59.9513531Z       at isConcurrentActEnvironment (node_modules/react-reconciler/cjs/react-reconciler.development.js:13990:17)
+2026-10-04T16:53:59.9514424Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16304:7)
+2026-10-04T16:53:59.9515423Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-04T16:53:59.9516308Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-04T16:53:59.9517110Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-04T16:53:59.9517746Z       at setPhase (src/screens/settings/DeleteAccountScreen.tsx:167:9)
+2026-10-04T16:53:59.9518329Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T16:53:59.9518935Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T16:53:59.9519663Z 
+2026-10-04T16:53:59.9519852Z     console.error
+2026-10-04T16:53:59.9520442Z       The current testing environment is not configured to support act(...)
+2026-10-04T16:53:59.9520752Z 
+2026-10-04T16:53:59.9521002Z     [0m [90m 186 |[39m     isAppleAuthAvailable()
+2026-10-04T16:53:59.9521458Z      [90m 187 |[39m       [33m.[39mthen((ok) [33m=>[39m {
+2026-10-04T16:53:59.9522069Z     [31m[1m>[22m[39m[90m 188 |[39m         [36mif[39m (mounted) setAppleAvailable(ok)[33m;[39m
+2026-10-04T16:53:59.9523065Z      [90m     |[39m                      [31m[1m^[22m[39m
+2026-10-04T16:53:59.9523595Z      [90m 189 |[39m       })
+2026-10-04T16:53:59.9524227Z      [90m 190 |[39m       [33m.[39m[36mcatch[39m(() [33m=>[39m setAppleAvailable([36mfalse[39m))[33m;[39m
+2026-10-04T16:53:59.9524857Z      [90m 191 |[39m     getSignInProviders()[0m
+2026-10-04T16:53:59.9525101Z 
+2026-10-04T16:53:59.9525545Z       at isConcurrentActEnvironment (node_modules/react-reconciler/cjs/react-reconciler.development.js:13990:17)
+2026-10-04T16:53:59.9526482Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16304:7)
+2026-10-04T16:53:59.9527400Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-04T16:53:59.9528251Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-04T16:53:59.9529417Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-04T16:53:59.9530579Z       at setAppleAvailable (src/screens/settings/DeleteAccountScreen.tsx:188:22)
+2026-10-04T16:53:59.9530932Z 
+2026-10-04T16:53:59.9531033Z     console.error
+2026-10-04T16:53:59.9531435Z       The current testing environment is not configured to support act(...)
+2026-10-04T16:53:59.9531758Z 
+2026-10-04T16:53:59.9532026Z     [0m [90m 191 |[39m     getSignInProviders()
+2026-10-04T16:53:59.9532491Z      [90m 192 |[39m       [33m.[39mthen((list) [33m=>[39m {
+2026-10-04T16:53:59.9533099Z     [31m[1m>[22m[39m[90m 193 |[39m         [36mif[39m (mounted) setProviders(list)[33m;[39m
+2026-10-04T16:53:59.9533729Z      [90m     |[39m                      [31m[1m^[22m[39m
+2026-10-04T16:53:59.9534763Z      [90m 194 |[39m       })
+2026-10-04T16:53:59.9535394Z      [90m 195 |[39m       [33m.[39m[36mcatch[39m(() [33m=>[39m setProviders([36mnull[39m))[33m;[39m
+2026-10-04T16:53:59.9535984Z      [90m 196 |[39m     [36mreturn[39m () [33m=>[39m {[0m
+2026-10-04T16:53:59.9536217Z 
+2026-10-04T16:53:59.9536636Z       at isConcurrentActEnvironment (node_modules/react-reconciler/cjs/react-reconciler.development.js:13990:17)
+2026-10-04T16:53:59.9537529Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16304:7)
+2026-10-04T16:53:59.9538748Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-04T16:53:59.9540146Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-04T16:53:59.9541685Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-04T16:53:59.9542781Z       at setProviders (src/screens/settings/DeleteAccountScreen.tsx:193:22)
+2026-10-04T16:53:59.9543368Z 
+2026-10-04T16:53:59.9543525Z     console.error
+2026-10-04T16:53:59.9544098Z       The current testing environment is not configured to support act(...)
+2026-10-04T16:53:59.9544595Z 
+2026-10-04T16:53:59.9545438Z     [0m [90m 164 |[39m         [36mconst[39m res [33m=[39m [36mawait[39m deletionApi[33m.[39mgetDeletionStatus()[33m;[39m
+2026-10-04T16:53:59.9546853Z      [90m 165 |[39m         [36mconst[39m next [33m=[39m res[33m.[39mdata [33m?[39m[33m?[39m [36mnull[39m[33m;[39m
+2026-10-04T16:53:59.9547929Z     [31m[1m>[22m[39m[90m 166 |[39m         setStatus(next)[33m;[39m
+2026-10-04T16:53:59.9548385Z      [90m     |[39m         [31m[1m^[22m[39m
+2026-10-04T16:53:59.9549671Z      [90m 167 |[39m         setPhase(next[33m?[39m[33m.[39mstate [33m===[39m [32m'deleted'[39m [33m?[39m [32m'deleted'[39m [33m:[39m [32m'ready'[39m)[33m;[39m
+2026-10-04T16:53:59.9550431Z      [90m 168 |[39m       } [36mcatch[39m (err) {
+2026-10-04T16:53:59.9550914Z      [90m 169 |[39m         [36mif[39m (isAccountDeletedError(err)) {[0m
+2026-10-04T16:53:59.9551196Z 
+2026-10-04T16:53:59.9551614Z       at isConcurrentActEnvironment (node_modules/react-reconciler/cjs/react-reconciler.development.js:13990:17)
+2026-10-04T16:53:59.9552544Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16304:7)
+2026-10-04T16:53:59.9553424Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-04T16:53:59.9554438Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-04T16:53:59.9555890Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-04T16:53:59.9557267Z       at setStatus (src/screens/settings/DeleteAccountScreen.tsx:166:9)
+2026-10-04T16:53:59.9558438Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T16:53:59.9559822Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T16:53:59.9560412Z 
+2026-10-04T16:53:59.9560582Z     console.error
+2026-10-04T16:53:59.9561278Z       The current testing environment is not configured to support act(...)
+2026-10-04T16:53:59.9561797Z 
+2026-10-04T16:53:59.9562356Z     [0m [90m 165 |[39m         [36mconst[39m next [33m=[39m res[33m.[39mdata [33m?[39m[33m?[39m [36mnull[39m[33m;[39m
+2026-10-04T16:53:59.9563008Z      [90m 166 |[39m         setStatus(next)[33m;[39m
+2026-10-04T16:53:59.9563932Z     [31m[1m>[22m[39m[90m 167 |[39m         setPhase(next[33m?[39m[33m.[39mstate [33m===[39m [32m'deleted'[39m [33m?[39m [32m'deleted'[39m [33m:[39m [32m'ready'[39m)[33m;[39m
+2026-10-04T16:53:59.9564674Z      [90m     |[39m         [31m[1m^[22m[39m
+2026-10-04T16:53:59.9565070Z      [90m 168 |[39m       } [36mcatch[39m (err) {
+2026-10-04T16:53:59.9565532Z      [90m 169 |[39m         [36mif[39m (isAccountDeletedError(err)) {
+2026-10-04T16:53:59.9566003Z      [90m 170 |[39m           markDeleted()[33m;[39m[0m
+2026-10-04T16:53:59.9566230Z 
+2026-10-04T16:53:59.9566648Z       at isConcurrentActEnvironment (node_modules/react-reconciler/cjs/react-reconciler.development.js:13990:17)
+2026-10-04T16:53:59.9567540Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16304:7)
+2026-10-04T16:53:59.9568751Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-04T16:53:59.9569916Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-04T16:53:59.9570686Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-04T16:53:59.9571305Z       at setPhase (src/screens/settings/DeleteAccountScreen.tsx:167:9)
+2026-10-04T16:53:59.9571879Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T16:53:59.9572468Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T16:53:59.9572763Z 
+2026-10-04T16:53:59.9572858Z     console.error
+2026-10-04T16:53:59.9573226Z       The current testing environment is not configured to support act(...)
+2026-10-04T16:53:59.9573521Z 
+2026-10-04T16:53:59.9573745Z     [0m [90m 186 |[39m     isAppleAuthAvailable()
+2026-10-04T16:53:59.9574193Z      [90m 187 |[39m       [33m.[39mthen((ok) [33m=>[39m {
+2026-10-04T16:53:59.9574784Z     [31m[1m>[22m[39m[90m 188 |[39m         [36mif[39m (mounted) setAppleAvailable(ok)[33m;[39m
+2026-10-04T16:53:59.9575323Z      [90m     |[39m                      [31m[1m^[22m[39m
+2026-10-04T16:53:59.9575680Z      [90m 189 |[39m       })
+2026-10-04T16:53:59.9576243Z      [90m 190 |[39m       [33m.[39m[36mcatch[39m(() [33m=>[39m setAppleAvailable([36mfalse[39m))[33m;[39m
+2026-10-04T16:53:59.9576839Z      [90m 191 |[39m     getSignInProviders()[0m
+2026-10-04T16:53:59.9577046Z 
+2026-10-04T16:53:59.9577459Z       at isConcurrentActEnvironment (node_modules/react-reconciler/cjs/react-reconciler.development.js:13990:17)
+2026-10-04T16:53:59.9578333Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16304:7)
+2026-10-04T16:53:59.9579502Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-04T16:53:59.9580335Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-04T16:53:59.9581113Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-04T16:53:59.9581783Z       at setAppleAvailable (src/screens/settings/DeleteAccountScreen.tsx:188:22)
+2026-10-04T16:53:59.9582107Z 
+2026-10-04T16:53:59.9582195Z     console.error
+2026-10-04T16:53:59.9582566Z       The current testing environment is not configured to support act(...)
+2026-10-04T16:53:59.9582851Z 
+2026-10-04T16:53:59.9583055Z     [0m [90m 191 |[39m     getSignInProviders()
+2026-10-04T16:53:59.9583486Z      [90m 192 |[39m       [33m.[39mthen((list) [33m=>[39m {
+2026-10-04T16:53:59.9584061Z     [31m[1m>[22m[39m[90m 193 |[39m         [36mif[39m (mounted) setProviders(list)[33m;[39m
+2026-10-04T16:53:59.9584577Z      [90m     |[39m                      [31m[1m^[22m[39m
+2026-10-04T16:53:59.9584932Z      [90m 194 |[39m       })
+2026-10-04T16:53:59.9585477Z      [90m 195 |[39m       [33m.[39m[36mcatch[39m(() [33m=>[39m setProviders([36mnull[39m))[33m;[39m
+2026-10-04T16:53:59.9586033Z      [90m 196 |[39m     [36mreturn[39m () [33m=>[39m {[0m
+2026-10-04T16:53:59.9586260Z 
+2026-10-04T16:53:59.9586668Z       at isConcurrentActEnvironment (node_modules/react-reconciler/cjs/react-reconciler.development.js:13990:17)
+2026-10-04T16:53:59.9587536Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16304:7)
+2026-10-04T16:53:59.9588383Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+2026-10-04T16:53:59.9589441Z       at dispatchSetStateInternal (node_modules/react-reconciler/cjs/react-reconciler.development.js:6784:13)
+2026-10-04T16:53:59.9590259Z       at dispatchSetState (node_modules/react-reconciler/cjs/react-reconciler.development.js:6741:7)
+2026-10-04T16:53:59.9591241Z       at setProviders (src/screens/settings/DeleteAccountScreen.tsx:193:22)
+2026-10-04T16:53:59.9591554Z 
+2026-10-04T16:53:59.9592180Z   ● B-368-1: Apple confirmation with unknown providers and outcome not_requested still explains the manual removal promised on the form
+2026-10-04T16:53:59.9592710Z 
+2026-10-04T16:53:59.9592844Z     ui.getByTestId is not a function
+2026-10-04T16:53:59.9593037Z 
+2026-10-04T16:53:59.9593272Z     [0m [90m 105 |[39m       [33m/[39m[33m>[39m[33m,[39m
+2026-10-04T16:53:59.9593662Z      [90m 106 |[39m     )[33m;[39m
+2026-10-04T16:53:59.9594412Z     [31m[1m>[22m[39m[90m 107 |[39m     [36mawait[39m waitFor(() [33m=>[39m ui[33m.[39mgetByTestId([32m'apple-confirm-button'[39m))[33m;[39m
+2026-10-04T16:53:59.9595102Z      [90m     |[39m                  [31m[1m^[22m[39m
+2026-10-04T16:53:59.9595831Z      [90m 108 |[39m     expect(ui[33m.[39mgetByTestId([32m'apple-note'[39m)[33m.[39mprops[33m.[39mchildren)[33m.[39mtoMatch(
+2026-10-04T16:53:59.9597001Z      [90m 109 |[39m       [35m/you will see whether Apple removed this app’s access/[39m[33m,[39m
+2026-10-04T16:53:59.9597537Z      [90m 110 |[39m     )[33m;[39m[0m
+2026-10-04T16:53:59.9597727Z 
+2026-10-04T16:53:59.9598032Z       at src/screens/settings/__tests__/audit-sol-fu2-118-apple-outcome.test.tsx:107:18
+2026-10-04T16:53:59.9598694Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T16:53:59.9599637Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T16:53:59.9600166Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+2026-10-04T16:53:59.9600658Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+2026-10-04T16:53:59.9601264Z       at apply (src/screens/settings/__tests__/audit-sol-fu2-118-apple-outcome.test.tsx:121:4)
+2026-10-04T16:53:59.9601637Z 
+2026-10-04T16:53:59.9602225Z   ● B-368-1: Apple confirmation with unknown providers and outcome undefined still explains the manual removal promised on the form
+2026-10-04T16:53:59.9602752Z 
+2026-10-04T16:53:59.9602879Z     ui.getByTestId is not a function
+2026-10-04T16:53:59.9603071Z 
+2026-10-04T16:53:59.9603307Z     [0m [90m 105 |[39m       [33m/[39m[33m>[39m[33m,[39m
+2026-10-04T16:53:59.9603694Z      [90m 106 |[39m     )[33m;[39m
+2026-10-04T16:53:59.9604442Z     [31m[1m>[22m[39m[90m 107 |[39m     [36mawait[39m waitFor(() [33m=>[39m ui[33m.[39mgetByTestId([32m'apple-confirm-button'[39m))[33m;[39m
+2026-10-04T16:53:59.9605127Z      [90m     |[39m                  [31m[1m^[22m[39m
+2026-10-04T16:53:59.9605851Z      [90m 108 |[39m     expect(ui[33m.[39mgetByTestId([32m'apple-note'[39m)[33m.[39mprops[33m.[39mchildren)[33m.[39mtoMatch(
+2026-10-04T16:53:59.9606687Z      [90m 109 |[39m       [35m/you will see whether Apple removed this app’s access/[39m[33m,[39m
+2026-10-04T16:53:59.9607193Z      [90m 110 |[39m     )[33m;[39m[0m
+2026-10-04T16:53:59.9607383Z 
+2026-10-04T16:53:59.9607684Z       at src/screens/settings/__tests__/audit-sol-fu2-118-apple-outcome.test.tsx:107:18
+2026-10-04T16:53:59.9608332Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-04T16:53:59.9608924Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-04T16:53:59.9609700Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+2026-10-04T16:53:59.9610189Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+2026-10-04T16:53:59.9610773Z       at apply (src/screens/settings/__tests__/audit-sol-fu2-118-apple-outcome.test.tsx:121:4)
+2026-10-04T16:53:59.9611145Z 
+2026-10-04T16:53:59.9611456Z PASS src/screens/settings/__tests__/DeleteAccountScreen.test.tsx (9.825 s)
+2026-10-04T16:54:00.4847214Z A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+2026-10-04T16:54:00.4867621Z 
+2026-10-04T16:54:00.4873536Z Test Suites: 1 failed, 1 passed, 2 total
+2026-10-04T16:54:00.4874262Z Tests:       2 failed, 47 passed, 49 total
+2026-10-04T16:54:00.4874850Z Snapshots:   0 total
+2026-10-04T16:54:00.4875295Z Time:        11.265 s
+2026-10-04T16:54:00.4876930Z Ran all test suites matching /src\/screens\/settings\/__tests__\/audit-sol-fu2-118-apple-outcome.test.tsx|src\/screens\/settings\/__tests__\/DeleteAccountScreen.test.tsx/i.
+2026-10-04T16:54:00.5049550Z ##[error]Process completed with exit code 1.
+2026-10-04T16:54:00.5194975Z Post job cleanup.
+2026-10-04T16:54:00.6058753Z [command]/usr/bin/git version
+2026-10-04T16:54:00.6095914Z git version 2.55.0
+2026-10-04T16:54:00.6137506Z Temporarily overriding HOME='/home/runner/work/_temp/c8147f35-b312-4c8f-bea9-4bc0bc8514fe' before making global git config changes
+2026-10-04T16:54:00.6138594Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T16:54:00.6143763Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-04T16:54:00.6175068Z Removing SSH command configuration
+2026-10-04T16:54:00.6181866Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T16:54:00.6217173Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T16:54:00.6441006Z Removing HTTP extra header
+2026-10-04T16:54:00.6446168Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T16:54:00.6480478Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T16:54:00.6698811Z Removing includeIf entries pointing to credentials config files
+2026-10-04T16:54:00.6706275Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T16:54:00.6736060Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-04T16:54:00.6737268Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-04T16:54:00.6737922Z includeif.gitdir:/github/workspace/.git.path
+2026-10-04T16:54:00.6738473Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T16:54:00.6746050Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-04T16:54:00.6768143Z /home/runner/work/_temp/git-credentials-fd73bf83-71a3-4ae2-b9e2-5de9e261b88f.config
+2026-10-04T16:54:00.6779669Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-fd73bf83-71a3-4ae2-b9e2-5de9e261b88f.config
+2026-10-04T16:54:00.6816184Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-04T16:54:00.6838163Z /home/runner/work/_temp/git-credentials-fd73bf83-71a3-4ae2-b9e2-5de9e261b88f.config
+2026-10-04T16:54:00.6848606Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-fd73bf83-71a3-4ae2-b9e2-5de9e261b88f.config
+2026-10-04T16:54:00.6882024Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-04T16:54:00.6903363Z /github/runner_temp/git-credentials-fd73bf83-71a3-4ae2-b9e2-5de9e261b88f.config
+2026-10-04T16:54:00.6911157Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-fd73bf83-71a3-4ae2-b9e2-5de9e261b88f.config
+2026-10-04T16:54:00.6942721Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T16:54:00.6963549Z /github/runner_temp/git-credentials-fd73bf83-71a3-4ae2-b9e2-5de9e261b88f.config
+2026-10-04T16:54:00.6971977Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-fd73bf83-71a3-4ae2-b9e2-5de9e261b88f.config
+2026-10-04T16:54:00.7006132Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T16:54:00.7253370Z Removing credentials config '/home/runner/work/_temp/git-credentials-fd73bf83-71a3-4ae2-b9e2-5de9e261b88f.config'
+2026-10-04T16:54:00.7430844Z Cleaning up orphan processes

@@ -1,0 +1,466 @@
+targeted	Set up job	﻿2026-10-04T17:44:33.1753785Z Current runner version: '2.337.0'
+##[group]Runner Image Provisioner
+Hosted Compute Agent
+Version: 20260901.588
+Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+Build Date: 2026-09-01T19:56:44Z
+Worker ID: {95e908af-7892-4749-88da-ffc7105cc90b}
+Azure Region: eastus
+##[endgroup]
+##[group]Operating System
+Ubuntu
+24.04.5
+LTS
+##[endgroup]
+##[group]Runner Image
+Image: ubuntu-24.04
+Version: 20260927.320.1
+Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+##[endgroup]
+##[group]GITHUB_TOKEN Permissions
+Contents: read
+Metadata: read
+Packages: read
+##[endgroup]
+Secret source: Actions
+Cache mode: write
+Prepare workflow directory
+Prepare all required actions
+Getting action download info
+Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+Complete job name: targeted
+targeted	Initialize containers	﻿2026-10-04T17:44:33.8454352Z ##[group]Checking docker version
+##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+'1.48'
+Docker daemon API version: '1.48'
+##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+'1.48'
+Docker client API version: '1.48'
+##[endgroup]
+##[group]Clean up resources from previous jobs
+##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=e46d83"
+##[command]/usr/bin/docker network prune --force --filter "label=e46d83"
+##[endgroup]
+##[group]Create local container network
+##[command]/usr/bin/docker network create --label e46d83 github_network_f58502b729cd435c8b6ba3a181a14c38
+2e42c24f9c98618d702e7f1b6ba95095212350733600aa60dd8f6d0bbf9748ff
+##[endgroup]
+##[group]Starting redis service container
+##[command]/usr/bin/docker pull redis:7-alpine
+7-alpine: Pulling from library/redis
+16333ee0c00f: Pulling fs layer
+83234986c742: Pulling fs layer
+7eb50503c2b0: Pulling fs layer
+1522f9c6f453: Pulling fs layer
+9928009b15c8: Pulling fs layer
+4f4fb700ef54: Pulling fs layer
+4eb14bae0e1d: Pulling fs layer
+1522f9c6f453: Waiting
+9928009b15c8: Waiting
+4f4fb700ef54: Waiting
+4eb14bae0e1d: Waiting
+83234986c742: Download complete
+7eb50503c2b0: Verifying Checksum
+7eb50503c2b0: Download complete
+16333ee0c00f: Verifying Checksum
+16333ee0c00f: Download complete
+9928009b15c8: Verifying Checksum
+9928009b15c8: Download complete
+4f4fb700ef54: Verifying Checksum
+4f4fb700ef54: Download complete
+4eb14bae0e1d: Verifying Checksum
+4eb14bae0e1d: Download complete
+1522f9c6f453: Verifying Checksum
+1522f9c6f453: Download complete
+16333ee0c00f: Pull complete
+83234986c742: Pull complete
+7eb50503c2b0: Pull complete
+1522f9c6f453: Pull complete
+9928009b15c8: Pull complete
+4f4fb700ef54: Pull complete
+4eb14bae0e1d: Pull complete
+Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+Status: Downloaded newer image for redis:7-alpine
+docker.io/library/redis:7-alpine
+##[command]/usr/bin/docker create --name 8dc6f1c57da84ebc98789d4e0cebdc1b_redis7alpine_5ac2fd --label e46d83 --network github_network_f58502b729cd435c8b6ba3a181a14c38 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+e27824e08f0d2a38cfbd00ec7b49b7bf2378890197c00127a547d7631f90a774
+##[command]/usr/bin/docker start e27824e08f0d2a38cfbd00ec7b49b7bf2378890197c00127a547d7631f90a774
+e27824e08f0d2a38cfbd00ec7b49b7bf2378890197c00127a547d7631f90a774
+##[command]/usr/bin/docker ps --all --filter id=e27824e08f0d2a38cfbd00ec7b49b7bf2378890197c00127a547d7631f90a774 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+e27824e08f0d2a38cfbd00ec7b49b7bf2378890197c00127a547d7631f90a774 Up Less than a second (health: starting)
+##[command]/usr/bin/docker port e27824e08f0d2a38cfbd00ec7b49b7bf2378890197c00127a547d7631f90a774
+6379/tcp -> 0.0.0.0:6379
+6379/tcp -> [::]:6379
+##[endgroup]
+##[group]Waiting for all services to be ready
+##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" e27824e08f0d2a38cfbd00ec7b49b7bf2378890197c00127a547d7631f90a774
+starting
+redis service is starting, waiting 2 seconds before checking again.
+##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" e27824e08f0d2a38cfbd00ec7b49b7bf2378890197c00127a547d7631f90a774
+starting
+redis service is starting, waiting 3 seconds before checking again.
+##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" e27824e08f0d2a38cfbd00ec7b49b7bf2378890197c00127a547d7631f90a774
+healthy
+redis service is healthy.
+##[endgroup]
+targeted	Run actions/checkout@v6	﻿2026-10-04T17:44:43.7632698Z ##[group]Run actions/checkout@v6
+with:
+  repository: BradleyGleavePortfolio/growth-project-backend
+  token: ***
+  ssh-strict: true
+  ssh-user: git
+  persist-credentials: true
+  clean: true
+  sparse-checkout-cone-mode: true
+  fetch-depth: 1
+  fetch-tags: false
+  show-progress: true
+  lfs: false
+  submodules: false
+  set-safe-directory: true
+  allow-unsafe-pr-checkout: false
+##[endgroup]
+Syncing repository: BradleyGleavePortfolio/growth-project-backend
+##[group]Getting Git version info
+Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+[command]/usr/bin/git version
+git version 2.55.0
+##[endgroup]
+Temporarily overriding HOME='/home/runner/work/_temp/1ab2c3df-53fc-4711-af45-9afecc8a7f53' before making global git config changes
+Adding repository directory to the temporary git global config as a safe directory
+[command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+##[group]Determining repository object format
+##[endgroup]
+##[group]Initializing the repository
+[command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+[command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+##[endgroup]
+##[group]Disabling automatic garbage collection
+[command]/usr/bin/git config --local gc.auto 0
+##[endgroup]
+##[group]Setting up auth
+Removing SSH command configuration
+[command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Removing HTTP extra header
+[command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Removing includeIf entries pointing to credentials config files
+[command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+[command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+[command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-8d7782ac-d566-41ca-905d-50bc73f0d0a7.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+[command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-8d7782ac-d566-41ca-905d-50bc73f0d0a7.config
+[command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-8d7782ac-d566-41ca-905d-50bc73f0d0a7.config
+[command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-8d7782ac-d566-41ca-905d-50bc73f0d0a7.config
+[command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-8d7782ac-d566-41ca-905d-50bc73f0d0a7.config
+##[endgroup]
+##[group]Fetching the repository
+[command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +a8162236fa06ba34f1fd8c86bef87761bf28378e:refs/remotes/origin/audit/AUD-OPUS-CM-118/674-probes
+From https://github.com/BradleyGleavePortfolio/growth-project-backend
+ * [new ref]         a8162236fa06ba34f1fd8c86bef87761bf28378e -> origin/audit/AUD-OPUS-CM-118/674-probes
+[command]/usr/bin/git branch --list --remote origin/audit/AUD-OPUS-CM-118/674-probes
+  origin/audit/AUD-OPUS-CM-118/674-probes
+[command]/usr/bin/git rev-parse refs/remotes/origin/audit/AUD-OPUS-CM-118/674-probes
+a8162236fa06ba34f1fd8c86bef87761bf28378e
+##[endgroup]
+##[group]Determining the checkout info
+##[endgroup]
+[command]/usr/bin/git sparse-checkout disable
+[command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+##[group]Checking out the ref
+[command]/usr/bin/git checkout --progress --force -B audit/AUD-OPUS-CM-118/674-probes refs/remotes/origin/audit/AUD-OPUS-CM-118/674-probes
+Switched to a new branch 'audit/AUD-OPUS-CM-118/674-probes'
+branch 'audit/AUD-OPUS-CM-118/674-probes' set up to track 'origin/audit/AUD-OPUS-CM-118/674-probes'.
+##[endgroup]
+[command]/usr/bin/git log -1 --format=%H
+a8162236fa06ba34f1fd8c86bef87761bf28378e
+targeted	Run actions/setup-node@v6	﻿2026-10-04T17:44:45.4713137Z ##[group]Run actions/setup-node@v6
+with:
+  node-version: 20
+  cache: npm
+  check-latest: false
+  token: ***
+  package-manager-cache: true
+##[endgroup]
+Attempting to download 20...
+Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+Extracting ...
+[command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/9cfaec46-6774-4dab-98f8-abf5f1302015 -f /home/runner/work/_temp/49eb0efa-6ec0-47e2-a5cd-1a97c72ef53a
+Adding to the cache ...
+##[group]Environment details
+node: v20.20.2
+npm: 10.8.2
+yarn: 1.22.22
+##[endgroup]
+[command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+/home/runner/.npm
+Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+Received 86828135 of 86828135 (100.0%), 172.5 MBs/sec
+Cache Size: ~83 MB (86828135 B)
+[command]/usr/bin/tar -xf /home/runner/work/_temp/aa7159b8-5498-4886-b04b-216cef8cbda8/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+Cache restored successfully
+Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+targeted	Run npm ci	﻿2026-10-04T17:44:50.4458749Z ##[group]Run npm ci
+^[[36;1mnpm ci^[[0m
+shell: /usr/bin/bash -e {0}
+##[endgroup]
+npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+
+> growth-project-backend@1.0.0 postinstall
+> prisma generate
+
+Prisma schema loaded from prisma/schema.prisma
+┌─────────────────────────────────────────────────────────┐
+│  Update available 6.19.3 -> 8.0.0-rc.19                 │
+│                                                         │
+│  This is a major update - please follow the guide at    │
+│  https://pris.ly/d/major-version-upgrade                │
+│                                                         │
+│  Run the following to update                            │
+│    npm i --save-dev prisma@latest                       │
+│    npm i @prisma/client@latest                          │
+└─────────────────────────────────────────────────────────┘
+
+✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.06s
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+
+
+> growth-project-backend@1.0.0 prepare
+> lefthook install
+
+sync hooks: ✔️(pre-commit, commit-msg)
+
+added 1115 packages, and audited 1116 packages in 27s
+
+202 packages are looking for funding
+  run `npm fund` for details
+
+3 high severity vulnerabilities
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+targeted	Run npx prisma generate	﻿2026-10-04T17:45:17.8091403Z ##[group]Run npx prisma generate
+^[[36;1mnpx prisma generate^[[0m
+shell: /usr/bin/bash -e {0}
+##[endgroup]
+Prisma schema loaded from prisma/schema.prisma
+
+✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.07s
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+
+targeted	Targeted jest	﻿2026-10-04T17:45:22.9986738Z ##[group]Run set -euo pipefail
+^[[36;1mset -euo pipefail^[[0m
+^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+env:
+  NODE_OPTIONS: --max-old-space-size=4096
+  THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+##[endgroup]
+specs: test/audit-opus-cm-118-674.spec.ts test/audit-opcm1-117-674.spec.ts test/audit-cm1-674-reversal-mirror.spec.ts test/dispute-transfer-reversal-once.spec.ts test/refund-reversal-once.spec.ts
+PASS test/dispute-transfer-reversal-once.spec.ts (143 MB heap size)
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-d dispute=cd-1 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-d dispute=cd-1 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-d dispute=cd-1 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-d dispute=cd-1 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-000 dispute=d-000 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-002 dispute=d-002 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-004 dispute=d-004 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-006 dispute=d-006 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-008 dispute=d-008 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-010 dispute=d-010 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-012 dispute=d-012 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-014 dispute=d-014 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-016 dispute=d-016 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-018 dispute=d-018 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-020 dispute=d-020 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-022 dispute=d-022 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-024 dispute=d-024 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-026 dispute=d-026 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-028 dispute=d-028 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-030 dispute=d-030 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-032 dispute=d-032 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-034 dispute=d-034 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-036 dispute=d-036 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-038 dispute=d-038 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-040 dispute=d-040 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-042 dispute=d-042 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-044 dispute=d-044 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-000 dispute=d-000 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-002 dispute=d-002 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-004 dispute=d-004 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-006 dispute=d-006 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-008 dispute=d-008 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-010 dispute=d-010 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-012 dispute=d-012 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-014 dispute=d-014 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-016 dispute=d-016 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-018 dispute=d-018 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-020 dispute=d-020 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-022 dispute=d-022 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-024 dispute=d-024 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-026 dispute=d-026 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-028 dispute=d-028 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-000 dispute=d-000 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-002 dispute=d-002 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-004 dispute=d-004 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-006 dispute=d-006 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-008 dispute=d-008 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mtransfer reversal not yet recorded transfer=tr-p-o purchase=p-o stripe_cents=122 recorded_cents=0 code=TRANSFER_REVERSAL_NOT_YET_RECORDED^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mtransfer reversal not yet recorded transfer=tr-p-o purchase=p-o stripe_cents=100 recorded_cents=0 code=TRANSFER_REVERSAL_UNATTRIBUTED^[[39m
+^[[33m[Nest] 3081  - ^[[39m03/20/2027, 10:00:00 AM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-r refund=0cc1cabd-b10f-4aeb-9d6c-ba4f129fa8bf code=stripe_503_request_timeout^[[39m
+^[[31m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=refund-1 purchase=p-1 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+PASS test/refund-reversal-once.spec.ts (173 MB heap size)
+^[[31m[Nest] 3081  - ^[[39m10/04/2026, 5:45:27 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-late purchase=p-late code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-1 refund=refund-1 code=error^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-1 refund=refund-1 code=error^[[39m
+FAIL test/audit-cm1-674-reversal-mirror.spec.ts (125 MB heap size)
+  ● B-674-1 — webhook mirror plus local record count one Stripe reversal twice › owner reconcile recorded_from_stripe after the transfer.reversed webhook records the reversal once
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "local_reversed": 122,
+    -   "mirror_before_reconcile": 122,
+    +   "mirror_before_reconcile": 0,
+        "outcome": "recorded_from_stripe",
+        "stripe_total": 122,
+      }
+
+    ^[[0m ^[[90m 56 |^[[39m       stripe_total^[[33m:^[[39m h^[[33m.^[[39mstripeTotal(^[[32m'tr_p-late'^[[39m)^[[33m,^[[39m
+     ^[[90m 57 |^[[39m       local_reversed^[[33m:^[[39m h^[[33m.^[[39mheadCoach(^[[32m'p-late'^[[39m)^[[33m,^[[39m
+    ^[[31m^[[1m>^[[22m^[[39m^[[90m 58 |^[[39m     })^[[33m.^[[39mtoEqual({
+     ^[[90m    |^[[39m        ^[[31m^[[1m^^[[22m^[[39m
+     ^[[90m 59 |^[[39m       mirror_before_reconcile^[[33m:^[[39m ^[[35m122^[[39m^[[33m,^[[39m
+     ^[[90m 60 |^[[39m       outcome^[[33m:^[[39m ^[[32m'recorded_from_stripe'^[[39m^[[33m,^[[39m
+     ^[[90m 61 |^[[39m       stripe_total^[[33m:^[[39m ^[[35m122^[[39m^[[33m,^[[39m^[[0m
+
+      at Object.<anonymous> (test/audit-cm1-674-reversal-mirror.spec.ts:58:8)
+
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mtransfer reversal not yet recorded transfer=tr-1 purchase=p-1 stripe_cents=122 recorded_cents=0 code=TRANSFER_REVERSAL_NOT_YET_RECORDED^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mtransfer reversal not yet recorded transfer=tr-1 purchase=p-1 stripe_cents=122 recorded_cents=0 code=TRANSFER_REVERSAL_NOT_YET_RECORDED^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:26 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-1 refund=refund-1 code=error^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:27 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mtransfer reversal not yet recorded transfer=tr-p-late purchase=p-late stripe_cents=122 recorded_cents=0 code=TRANSFER_REVERSAL_NOT_YET_RECORDED^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:27 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-t refund=8212e943-ed95-4c08-a7cf-f1928d78d2a8 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:27 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mtransfer reversal not yet recorded transfer=tr-p-t purchase=p-t stripe_cents=122 recorded_cents=0 code=TRANSFER_REVERSAL_NOT_YET_RECORDED^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:27 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-f refund=e8ec8a27-c693-4405-8bb5-c75be0b3a275 code=stripe_503_request_timeout^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:27 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mtransfer reversal not yet recorded transfer=tr-p-f purchase=p-f stripe_cents=245 recorded_cents=0 code=TRANSFER_REVERSAL_NOT_YET_RECORDED^[[39m
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:27 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-c refund=0cc53e1f-da03-4a12-9726-1a5238569c42 code=stripe_503_request_timeout^[[39m
+FAIL test/audit-opus-cm-118-674.spec.ts (150 MB heap size)
+  ● AUD-OPUS-CM-118 #674 — overlapping first-success deliveries of one refund › C-674-12 (expected red): every posting of the refund carries its posted_at
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 1
+
+      Array [
+        "p-r-application_fee@2027-03-31T23:59:59.999Z",
+        "p-r-destination@2027-03-31T23:59:59.999Z",
+    -   "p-r-head@2027-03-31T23:59:59.999Z",
+    +   "p-r-head@2027-04-01T00:00:00.000Z",
+      ]
+
+    ^[[0m ^[[90m  99 |^[[39m     expect(
+     ^[[90m 100 |^[[39m       postings^[[33m.^[[39mmap((p) ^[[33m=>^[[39m ^[[32m`${p.entry_id}@${new Date(p.posted_at).toISOString()}`^[[39m)^[[33m.^[[39msort()^[[33m,^[[39m
+    ^[[31m^[[1m>^[[22m^[[39m^[[90m 101 |^[[39m     )^[[33m.^[[39mtoEqual(
+     ^[[90m     |^[[39m       ^[[31m^[[1m^^[[22m^[[39m
+     ^[[90m 102 |^[[39m       [^[[32m'p-r-application_fee'^[[39m^[[33m,^[[39m ^[[32m'p-r-destination'^[[39m^[[33m,^[[39m ^[[32m'p-r-head'^[[39m]^[[33m.^[[39mmap((e) ^[[33m=>^[[39m ^[[32m`${e}@${t0.toISOString()}`^[[39m)^[[33m,^[[39m
+     ^[[90m 103 |^[[39m     )^[[33m;^[[39m
+     ^[[90m 104 |^[[39m   })^[[33m;^[[39m^[[0m
+
+      at Object.<anonymous> (test/audit-opus-cm-118-674.spec.ts:101:7)
+
+PASS test/audit-opcm1-117-674.spec.ts (175 MB heap size)
+
+Test Suites: 2 failed, 3 passed, 5 total
+Tests:       2 failed, 30 passed, 32 total
+Snapshots:   0 total
+Time:        4.107 s
+Ran all test suites matching test/audit-opus-cm-118-674.spec.ts|test/audit-opcm1-117-674.spec.ts|test/audit-cm1-674-reversal-mirror.spec.ts|test/dispute-transfer-reversal-once.spec.ts|test/refund-reversal-once.spec.ts.
+^[[33m[Nest] 3081  - ^[[39m10/04/2026, 5:45:27 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-d dispute=cd-1 code=stripe_503_request_timeout^[[39m
+##[error]Process completed with exit code 1.
+targeted	Post Run actions/checkout@v6	﻿2026-10-04T17:45:28.1110986Z Post job cleanup.
+[command]/usr/bin/git version
+git version 2.55.0
+Temporarily overriding HOME='/home/runner/work/_temp/1e55e77a-c3db-4166-b609-3e184349f846' before making global git config changes
+Adding repository directory to the temporary git global config as a safe directory
+[command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+Removing SSH command configuration
+[command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Removing HTTP extra header
+[command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Removing includeIf entries pointing to credentials config files
+[command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+includeif.gitdir:/github/workspace/.git.path
+includeif.gitdir:/github/workspace/.git/worktrees/*.path
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+/home/runner/work/_temp/git-credentials-8d7782ac-d566-41ca-905d-50bc73f0d0a7.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-8d7782ac-d566-41ca-905d-50bc73f0d0a7.config
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+/home/runner/work/_temp/git-credentials-8d7782ac-d566-41ca-905d-50bc73f0d0a7.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-8d7782ac-d566-41ca-905d-50bc73f0d0a7.config
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+/github/runner_temp/git-credentials-8d7782ac-d566-41ca-905d-50bc73f0d0a7.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-8d7782ac-d566-41ca-905d-50bc73f0d0a7.config
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+/github/runner_temp/git-credentials-8d7782ac-d566-41ca-905d-50bc73f0d0a7.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-8d7782ac-d566-41ca-905d-50bc73f0d0a7.config
+[command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Removing credentials config '/home/runner/work/_temp/git-credentials-8d7782ac-d566-41ca-905d-50bc73f0d0a7.config'
+targeted	Stop containers	﻿2026-10-04T17:45:28.3261990Z Print service container logs: 8dc6f1c57da84ebc98789d4e0cebdc1b_redis7alpine_5ac2fd
+##[command]/usr/bin/docker logs --details e27824e08f0d2a38cfbd00ec7b49b7bf2378890197c00127a547d7631f90a774
+ 1:C 04 Oct 2026 17:44:37.708 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+ 1:C 04 Oct 2026 17:44:37.708 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+ 1:C 04 Oct 2026 17:44:37.708 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+ 1:C 04 Oct 2026 17:44:37.708 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+ 1:M 04 Oct 2026 17:44:37.709 * monotonic clock: POSIX clock_gettime
+ 1:M 04 Oct 2026 17:44:37.709 * Running mode=standalone, port=6379.
+ 1:M 04 Oct 2026 17:44:37.710 * Server initialized
+ 1:M 04 Oct 2026 17:44:37.710 * Ready to accept connections tcp
+Stop and remove container: 8dc6f1c57da84ebc98789d4e0cebdc1b_redis7alpine_5ac2fd
+##[command]/usr/bin/docker rm --force e27824e08f0d2a38cfbd00ec7b49b7bf2378890197c00127a547d7631f90a774
+e27824e08f0d2a38cfbd00ec7b49b7bf2378890197c00127a547d7631f90a774
+Remove container network: github_network_f58502b729cd435c8b6ba3a181a14c38
+##[command]/usr/bin/docker network rm github_network_f58502b729cd435c8b6ba3a181a14c38
+github_network_f58502b729cd435c8b6ba3a181a14c38
+targeted	Complete job	﻿2026-10-04T17:45:30.0940239Z Cleaning up orphan processes

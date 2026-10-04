@@ -1,0 +1,419 @@
+﻿2026-10-04T18:47:13.8672369Z Current runner version: '2.337.0'
+2026-10-04T18:47:13.8697597Z ##[group]Runner Image Provisioner
+2026-10-04T18:47:13.8698432Z Hosted Compute Agent
+2026-10-04T18:47:13.8699162Z Version: 20260901.588
+2026-10-04T18:47:13.8699823Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-04T18:47:13.8700589Z Build Date: 2026-09-01T19:56:44Z
+2026-10-04T18:47:13.8701277Z Worker ID: {1bb1473e-ec5a-4ac2-9b53-cfb8a0803e90}
+2026-10-04T18:47:13.8702519Z Azure Region: northcentralus
+2026-10-04T18:47:13.8703272Z ##[endgroup]
+2026-10-04T18:47:13.8705612Z ##[group]Operating System
+2026-10-04T18:47:13.8706331Z Ubuntu
+2026-10-04T18:47:13.8706903Z 24.04.5
+2026-10-04T18:47:13.8707746Z LTS
+2026-10-04T18:47:13.8708385Z ##[endgroup]
+2026-10-04T18:47:13.8708981Z ##[group]Runner Image
+2026-10-04T18:47:13.8709626Z Image: ubuntu-24.04
+2026-10-04T18:47:13.8710192Z Version: 20260927.320.1
+2026-10-04T18:47:13.8711837Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-04T18:47:13.8713479Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-04T18:47:13.8714524Z ##[endgroup]
+2026-10-04T18:47:13.8715787Z ##[group]GITHUB_TOKEN Permissions
+2026-10-04T18:47:13.8718088Z Contents: read
+2026-10-04T18:47:13.8718727Z Metadata: read
+2026-10-04T18:47:13.8719344Z Packages: read
+2026-10-04T18:47:13.8719926Z ##[endgroup]
+2026-10-04T18:47:13.8722327Z Secret source: Actions
+2026-10-04T18:47:13.8723433Z Cache mode: write
+2026-10-04T18:47:13.8724186Z Prepare workflow directory
+2026-10-04T18:47:13.9173376Z Prepare all required actions
+2026-10-04T18:47:13.9225155Z Getting action download info
+2026-10-04T18:47:14.2013318Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-04T18:47:14.3248057Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-04T18:47:14.5558951Z Complete job name: targeted
+2026-10-04T18:47:14.6085343Z ##[group]Checking docker version
+2026-10-04T18:47:14.6098891Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-04T18:47:14.7262817Z '1.48'
+2026-10-04T18:47:14.7270338Z Docker daemon API version: '1.48'
+2026-10-04T18:47:14.7271153Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-04T18:47:14.7440810Z '1.48'
+2026-10-04T18:47:14.7453980Z Docker client API version: '1.48'
+2026-10-04T18:47:14.7459202Z ##[endgroup]
+2026-10-04T18:47:14.7463102Z ##[group]Clean up resources from previous jobs
+2026-10-04T18:47:14.7468331Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=e02202"
+2026-10-04T18:47:14.7610968Z ##[command]/usr/bin/docker network prune --force --filter "label=e02202"
+2026-10-04T18:47:14.7741971Z ##[endgroup]
+2026-10-04T18:47:14.7742520Z ##[group]Create local container network
+2026-10-04T18:47:14.7752673Z ##[command]/usr/bin/docker network create --label e02202 github_network_e5d9c56a64e54988be32e315fe044691
+2026-10-04T18:47:14.8243865Z fc9d1c88138c085d77bc5b022dc22ee3dea0f074cbe08832a4274cf7e72f19f5
+2026-10-04T18:47:14.8264955Z ##[endgroup]
+2026-10-04T18:47:14.8291808Z ##[group]Starting redis service container
+2026-10-04T18:47:14.8313755Z ##[command]/usr/bin/docker pull redis:7-alpine
+2026-10-04T18:47:15.2840788Z 7-alpine: Pulling from library/redis
+2026-10-04T18:47:15.4126073Z 16333ee0c00f: Pulling fs layer
+2026-10-04T18:47:15.4128520Z 83234986c742: Pulling fs layer
+2026-10-04T18:47:15.4130388Z 7eb50503c2b0: Pulling fs layer
+2026-10-04T18:47:15.4132857Z 1522f9c6f453: Pulling fs layer
+2026-10-04T18:47:15.4134043Z 9928009b15c8: Pulling fs layer
+2026-10-04T18:47:15.4135073Z 4f4fb700ef54: Pulling fs layer
+2026-10-04T18:47:15.4135890Z 4eb14bae0e1d: Pulling fs layer
+2026-10-04T18:47:15.4136778Z 9928009b15c8: Waiting
+2026-10-04T18:47:15.4137603Z 4f4fb700ef54: Waiting
+2026-10-04T18:47:15.4138277Z 4eb14bae0e1d: Waiting
+2026-10-04T18:47:15.4139110Z 1522f9c6f453: Waiting
+2026-10-04T18:47:15.4859595Z 83234986c742: Verifying Checksum
+2026-10-04T18:47:15.4862661Z 83234986c742: Download complete
+2026-10-04T18:47:15.4920370Z 7eb50503c2b0: Verifying Checksum
+2026-10-04T18:47:15.4921980Z 7eb50503c2b0: Download complete
+2026-10-04T18:47:15.5246105Z 16333ee0c00f: Download complete
+2026-10-04T18:47:15.5687625Z 9928009b15c8: Verifying Checksum
+2026-10-04T18:47:15.5689548Z 9928009b15c8: Download complete
+2026-10-04T18:47:15.5979187Z 4f4fb700ef54: Verifying Checksum
+2026-10-04T18:47:15.5980998Z 4f4fb700ef54: Download complete
+2026-10-04T18:47:15.6164638Z 1522f9c6f453: Verifying Checksum
+2026-10-04T18:47:15.6166822Z 1522f9c6f453: Download complete
+2026-10-04T18:47:15.6416131Z 4eb14bae0e1d: Verifying Checksum
+2026-10-04T18:47:15.6418245Z 4eb14bae0e1d: Download complete
+2026-10-04T18:47:15.6493985Z 16333ee0c00f: Pull complete
+2026-10-04T18:47:15.6795403Z 83234986c742: Pull complete
+2026-10-04T18:47:15.8341338Z 7eb50503c2b0: Pull complete
+2026-10-04T18:47:16.0288881Z 1522f9c6f453: Pull complete
+2026-10-04T18:47:16.0391402Z 9928009b15c8: Pull complete
+2026-10-04T18:47:16.0488672Z 4f4fb700ef54: Pull complete
+2026-10-04T18:47:16.0635054Z 4eb14bae0e1d: Pull complete
+2026-10-04T18:47:16.0705034Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+2026-10-04T18:47:16.0723750Z Status: Downloaded newer image for redis:7-alpine
+2026-10-04T18:47:16.0735065Z docker.io/library/redis:7-alpine
+2026-10-04T18:47:16.0770592Z ##[command]/usr/bin/docker create --name 74802318fd4f460ba2ff8c7d10f2ece0_redis7alpine_13395f --label e02202 --network github_network_e5d9c56a64e54988be32e315fe044691 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+2026-10-04T18:47:16.1091322Z b279c54d5dc8cabe8264d17a91cc82c1b31441c9034d07238dfefe65d5bfa6c5
+2026-10-04T18:47:16.1115637Z ##[command]/usr/bin/docker start b279c54d5dc8cabe8264d17a91cc82c1b31441c9034d07238dfefe65d5bfa6c5
+2026-10-04T18:47:16.3410263Z b279c54d5dc8cabe8264d17a91cc82c1b31441c9034d07238dfefe65d5bfa6c5
+2026-10-04T18:47:16.3437808Z ##[command]/usr/bin/docker ps --all --filter id=b279c54d5dc8cabe8264d17a91cc82c1b31441c9034d07238dfefe65d5bfa6c5 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-04T18:47:16.3567369Z b279c54d5dc8cabe8264d17a91cc82c1b31441c9034d07238dfefe65d5bfa6c5 Up Less than a second (health: starting)
+2026-10-04T18:47:16.3587338Z ##[command]/usr/bin/docker port b279c54d5dc8cabe8264d17a91cc82c1b31441c9034d07238dfefe65d5bfa6c5
+2026-10-04T18:47:16.3703898Z 6379/tcp -> 0.0.0.0:6379
+2026-10-04T18:47:16.3704335Z 6379/tcp -> [::]:6379
+2026-10-04T18:47:16.3749959Z ##[endgroup]
+2026-10-04T18:47:16.3758535Z ##[group]Waiting for all services to be ready
+2026-10-04T18:47:16.3772288Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" b279c54d5dc8cabe8264d17a91cc82c1b31441c9034d07238dfefe65d5bfa6c5
+2026-10-04T18:47:16.3886233Z starting
+2026-10-04T18:47:16.3905504Z redis service is starting, waiting 2 seconds before checking again.
+2026-10-04T18:47:18.3909584Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" b279c54d5dc8cabe8264d17a91cc82c1b31441c9034d07238dfefe65d5bfa6c5
+2026-10-04T18:47:18.4036021Z starting
+2026-10-04T18:47:18.4048730Z redis service is starting, waiting 3 seconds before checking again.
+2026-10-04T18:47:22.1179046Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" b279c54d5dc8cabe8264d17a91cc82c1b31441c9034d07238dfefe65d5bfa6c5
+2026-10-04T18:47:22.1306808Z healthy
+2026-10-04T18:47:22.1322867Z redis service is healthy.
+2026-10-04T18:47:22.1323320Z ##[endgroup]
+2026-10-04T18:47:22.1616087Z ##[group]Run actions/checkout@v6
+2026-10-04T18:47:22.1616692Z with:
+2026-10-04T18:47:22.1616997Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T18:47:22.1619423Z   token: ***
+2026-10-04T18:47:22.1619635Z   ssh-strict: true
+2026-10-04T18:47:22.1619840Z   ssh-user: git
+2026-10-04T18:47:22.1620275Z   persist-credentials: true
+2026-10-04T18:47:22.1620525Z   clean: true
+2026-10-04T18:47:22.1620734Z   sparse-checkout-cone-mode: true
+2026-10-04T18:47:22.1620982Z   fetch-depth: 1
+2026-10-04T18:47:22.1621176Z   fetch-tags: false
+2026-10-04T18:47:22.1621390Z   show-progress: true
+2026-10-04T18:47:22.1621881Z   lfs: false
+2026-10-04T18:47:22.1622070Z   submodules: false
+2026-10-04T18:47:22.1622276Z   set-safe-directory: true
+2026-10-04T18:47:22.1622522Z   allow-unsafe-pr-checkout: false
+2026-10-04T18:47:22.1623053Z ##[endgroup]
+2026-10-04T18:47:22.2609285Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T18:47:22.2677596Z ##[group]Getting Git version info
+2026-10-04T18:47:22.2678443Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T18:47:22.2679912Z [command]/usr/bin/git version
+2026-10-04T18:47:22.2704895Z git version 2.55.0
+2026-10-04T18:47:22.2729190Z ##[endgroup]
+2026-10-04T18:47:22.2746630Z Temporarily overriding HOME='/home/runner/work/_temp/335140bc-768f-4612-b8d8-a4eb12227534' before making global git config changes
+2026-10-04T18:47:22.2748056Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T18:47:22.2753579Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T18:47:22.2811234Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T18:47:22.2816329Z ##[group]Determining repository object format
+2026-10-04T18:47:22.2819297Z ##[endgroup]
+2026-10-04T18:47:22.2819764Z ##[group]Initializing the repository
+2026-10-04T18:47:22.2824473Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T18:47:22.2982260Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-04T18:47:22.2982995Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-04T18:47:22.2984079Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-04T18:47:22.2984854Z hint: call:
+2026-10-04T18:47:22.2985237Z hint:
+2026-10-04T18:47:22.2985677Z hint: 	git config --global init.defaultBranch <name>
+2026-10-04T18:47:22.2986215Z hint:
+2026-10-04T18:47:22.2986594Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-04T18:47:22.2987528Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-04T18:47:22.2988201Z hint:
+2026-10-04T18:47:22.2988578Z hint: 	git branch -m <name>
+2026-10-04T18:47:22.2988968Z hint:
+2026-10-04T18:47:22.2989537Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-04T18:47:22.2990671Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-04T18:47:22.2999216Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T18:47:22.3053488Z ##[endgroup]
+2026-10-04T18:47:22.3053948Z ##[group]Disabling automatic garbage collection
+2026-10-04T18:47:22.3057877Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-04T18:47:22.3089219Z ##[endgroup]
+2026-10-04T18:47:22.3089677Z ##[group]Setting up auth
+2026-10-04T18:47:22.3091157Z Removing SSH command configuration
+2026-10-04T18:47:22.3098431Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T18:47:22.3131783Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T18:47:22.3507965Z Removing HTTP extra header
+2026-10-04T18:47:22.3513877Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T18:47:22.3546590Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T18:47:22.3766383Z Removing includeIf entries pointing to credentials config files
+2026-10-04T18:47:22.3772974Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T18:47:22.3805979Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T18:47:22.4033008Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-04T18:47:22.4070392Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config
+2026-10-04T18:47:22.4104875Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config
+2026-10-04T18:47:22.4139652Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config
+2026-10-04T18:47:22.4177590Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config
+2026-10-04T18:47:22.4205601Z ##[endgroup]
+2026-10-04T18:47:22.4206231Z ##[group]Fetching the repository
+2026-10-04T18:47:22.4214715Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +5e0251322d853ab23880af8b28146650b3e96390:refs/remotes/origin/ci/B-FEES16-118-684-probes
+2026-10-04T18:47:23.9247449Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T18:47:23.9248998Z  * [new ref]         5e0251322d853ab23880af8b28146650b3e96390 -> origin/ci/B-FEES16-118-684-probes
+2026-10-04T18:47:23.9261049Z [command]/usr/bin/git branch --list --remote origin/ci/B-FEES16-118-684-probes
+2026-10-04T18:47:23.9288725Z   origin/ci/B-FEES16-118-684-probes
+2026-10-04T18:47:23.9299779Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-FEES16-118-684-probes
+2026-10-04T18:47:23.9323606Z 5e0251322d853ab23880af8b28146650b3e96390
+2026-10-04T18:47:23.9328537Z ##[endgroup]
+2026-10-04T18:47:23.9329246Z ##[group]Determining the checkout info
+2026-10-04T18:47:23.9330281Z ##[endgroup]
+2026-10-04T18:47:23.9336008Z [command]/usr/bin/git sparse-checkout disable
+2026-10-04T18:47:23.9393450Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-04T18:47:23.9421926Z ##[group]Checking out the ref
+2026-10-04T18:47:23.9426874Z [command]/usr/bin/git checkout --progress --force -B ci/B-FEES16-118-684-probes refs/remotes/origin/ci/B-FEES16-118-684-probes
+2026-10-04T18:47:24.1614523Z Switched to a new branch 'ci/B-FEES16-118-684-probes'
+2026-10-04T18:47:24.1620957Z branch 'ci/B-FEES16-118-684-probes' set up to track 'origin/ci/B-FEES16-118-684-probes'.
+2026-10-04T18:47:24.1632025Z ##[endgroup]
+2026-10-04T18:47:24.1682625Z [command]/usr/bin/git log -1 --format=%H
+2026-10-04T18:47:24.1707788Z 5e0251322d853ab23880af8b28146650b3e96390
+2026-10-04T18:47:24.1965340Z ##[group]Run actions/setup-node@v6
+2026-10-04T18:47:24.1965623Z with:
+2026-10-04T18:47:24.1965813Z   node-version: 20
+2026-10-04T18:47:24.1966013Z   cache: npm
+2026-10-04T18:47:24.1966205Z   check-latest: false
+2026-10-04T18:47:24.1968458Z   token: ***
+2026-10-04T18:47:24.1968677Z   package-manager-cache: true
+2026-10-04T18:47:24.1968930Z ##[endgroup]
+2026-10-04T18:47:24.3437698Z Attempting to download 20...
+2026-10-04T18:47:24.9324957Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-04T18:47:25.2629988Z Extracting ...
+2026-10-04T18:47:25.2747205Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/7563a97f-3c86-4801-b042-62ef5033646e -f /home/runner/work/_temp/1874d864-cfae-4c4d-ba04-30c7d3f30b3c
+2026-10-04T18:47:26.2928391Z Adding to the cache ...
+2026-10-04T18:47:28.1902086Z ##[group]Environment details
+2026-10-04T18:47:28.4207573Z node: v20.20.2
+2026-10-04T18:47:28.4208019Z npm: 10.8.2
+2026-10-04T18:47:28.4208346Z yarn: 1.22.22
+2026-10-04T18:47:28.4209004Z ##[endgroup]
+2026-10-04T18:47:28.4231824Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+2026-10-04T18:47:28.5331947Z /home/runner/.npm
+2026-10-04T18:47:28.6402735Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T18:47:29.5861164Z Received 86828135 of 86828135 (100.0%), 100.5 MBs/sec
+2026-10-04T18:47:29.5862595Z Cache Size: ~83 MB (86828135 B)
+2026-10-04T18:47:29.5974967Z [command]/usr/bin/tar -xf /home/runner/work/_temp/90a5a2bd-e5e3-4037-9bac-7755d2962017/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+2026-10-04T18:47:29.7920550Z Cache restored successfully
+2026-10-04T18:47:29.7972221Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T18:47:29.8163171Z ##[group]Run npm ci
+2026-10-04T18:47:29.8163487Z [36;1mnpm ci[0m
+2026-10-04T18:47:29.8430076Z shell: /usr/bin/bash -e {0}
+2026-10-04T18:47:29.8430428Z ##[endgroup]
+2026-10-04T18:47:35.7280316Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-04T18:47:36.7029526Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-04T18:47:38.0059338Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T18:47:39.4522113Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T18:47:39.4846963Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T18:47:39.5187998Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T18:47:53.3596820Z 
+2026-10-04T18:47:53.3600082Z > growth-project-backend@1.0.0 postinstall
+2026-10-04T18:47:53.3600822Z > prisma generate
+2026-10-04T18:47:53.3601065Z 
+2026-10-04T18:47:54.4224913Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T18:47:58.4213532Z ┌─────────────────────────────────────────────────────────┐
+2026-10-04T18:47:58.4215149Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+2026-10-04T18:47:58.4215831Z 
+2026-10-04T18:47:58.4216476Z │                                                         │
+2026-10-04T18:47:58.4217549Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.20s
+2026-10-04T18:47:58.4218708Z │  This is a major update - please follow the guide at    │
+2026-10-04T18:47:58.4219751Z │  https://pris.ly/d/major-version-upgrade                │
+2026-10-04T18:47:58.4220681Z │                                                         │
+2026-10-04T18:47:58.4221852Z │  Run the following to update                            │
+2026-10-04T18:47:58.4223348Z │    npm i --save-dev prisma@latest                       │
+2026-10-04T18:47:58.4224255Z │    npm i @prisma/client@latest                          │
+2026-10-04T18:47:58.4225190Z └─────────────────────────────────────────────────────────┘
+2026-10-04T18:47:58.4225584Z 
+2026-10-04T18:47:58.4226188Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T18:47:58.4226778Z 
+2026-10-04T18:47:58.4227689Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+2026-10-04T18:47:58.4228501Z 
+2026-10-04T18:47:58.4787205Z 
+2026-10-04T18:47:58.4788101Z > growth-project-backend@1.0.0 prepare
+2026-10-04T18:47:58.4788702Z > lefthook install
+2026-10-04T18:47:58.4788951Z 
+2026-10-04T18:47:58.5311898Z sync hooks: ✔️(pre-commit, commit-msg)
+2026-10-04T18:47:58.5483531Z 
+2026-10-04T18:47:58.5484358Z added 1115 packages, and audited 1116 packages in 29s
+2026-10-04T18:47:58.5486048Z 
+2026-10-04T18:47:58.5486757Z 202 packages are looking for funding
+2026-10-04T18:47:58.5487304Z   run `npm fund` for details
+2026-10-04T18:47:58.5519614Z 
+2026-10-04T18:47:58.5520080Z 3 high severity vulnerabilities
+2026-10-04T18:47:58.5520986Z 
+2026-10-04T18:47:58.5521904Z To address all issues (including breaking changes), run:
+2026-10-04T18:47:58.5522711Z   npm audit fix --force
+2026-10-04T18:47:58.5522984Z 
+2026-10-04T18:47:58.5523224Z Run `npm audit` for details.
+2026-10-04T18:47:58.6159455Z ##[group]Run npx prisma generate
+2026-10-04T18:47:58.6159802Z [36;1mnpx prisma generate[0m
+2026-10-04T18:47:58.6226444Z shell: /usr/bin/bash -e {0}
+2026-10-04T18:47:58.6226712Z ##[endgroup]
+2026-10-04T18:47:59.9169511Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T18:48:03.8937307Z 
+2026-10-04T18:48:03.8938896Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.21s
+2026-10-04T18:48:03.8939377Z 
+2026-10-04T18:48:03.8939825Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T18:48:03.8940295Z 
+2026-10-04T18:48:03.8940926Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+2026-10-04T18:48:03.8941951Z 
+2026-10-04T18:48:04.0146335Z ##[group]Run set -euo pipefail
+2026-10-04T18:48:04.0146699Z [36;1mset -euo pipefail[0m
+2026-10-04T18:48:04.0147099Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-04T18:48:04.0147604Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-04T18:48:04.0147972Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-04T18:48:04.0148266Z [36;1mnpx jest --ci --runInBand "${SPECS[@]}"[0m
+2026-10-04T18:48:04.0213100Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T18:48:04.0213470Z env:
+2026-10-04T18:48:04.0213697Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-04T18:48:04.0214060Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-04T18:48:04.0214397Z ##[endgroup]
+2026-10-04T18:48:04.0321196Z specs: test/s-fee-r15-deferred-fx-notice-flag.spec.ts test/audit-sol-f34-684.spec.ts test/audit-sol-f34-117-684-budget.spec.ts test/audit-sol-f34-117-684-refunds.spec.ts test/audit-opus-f34-117-684.spec.ts test/aud-sol-f23-118-notice-recovery.spec.ts test/audit-opus-f23-118-683.spec.ts
+2026-10-04T18:48:06.5366062Z PASS test/s-fee-r15-deferred-fx-notice-flag.spec.ts (106 MB heap size)
+2026-10-04T18:48:06.8321931Z PASS test/audit-opus-f23-118-683.spec.ts (122 MB heap size)
+2026-10-04T18:48:07.1161750Z PASS test/aud-sol-f23-118-notice-recovery.spec.ts (147 MB heap size)
+2026-10-04T18:48:07.1266830Z   ● Console
+2026-10-04T18:48:07.1267196Z 
+2026-10-04T18:48:07.1267417Z     console.log
+2026-10-04T18:48:07.1267968Z       AUD118_NOTICE_RECOVERY {
+2026-10-04T18:48:07.1268589Z         failure: 'notice insert',
+2026-10-04T18:48:07.1269144Z         result: '',
+2026-10-04T18:48:07.1269621Z         failedDelivery: true,
+2026-10-04T18:48:07.1270159Z         durableRetry: true,
+2026-10-04T18:48:07.1271154Z         noticeCount: 1,
+2026-10-04T18:48:07.1271875Z         reconciled: [ 1, 0 ],
+2026-10-04T18:48:07.1272235Z         paid: 6980,
+2026-10-04T18:48:07.1272567Z         reversals: 1
+2026-10-04T18:48:07.1273002Z       }
+2026-10-04T18:48:07.1273154Z 
+2026-10-04T18:48:07.1273400Z       at test/aud-sol-f23-118-notice-recovery.spec.ts:93:13
+2026-10-04T18:48:07.1273710Z 
+2026-10-04T18:48:07.1273820Z     console.log
+2026-10-04T18:48:07.1274106Z       AUD118_NOTICE_RECOVERY {
+2026-10-04T18:48:07.1274458Z         failure: 'notice history read',
+2026-10-04T18:48:07.1274781Z         result: '',
+2026-10-04T18:48:07.1275049Z         failedDelivery: true,
+2026-10-04T18:48:07.1275348Z         durableRetry: true,
+2026-10-04T18:48:07.1275631Z         noticeCount: 1,
+2026-10-04T18:48:07.1275909Z         reconciled: [ 1, 0 ],
+2026-10-04T18:48:07.1276246Z         paid: 6980,
+2026-10-04T18:48:07.1276493Z         reversals: 1
+2026-10-04T18:48:07.1276745Z       }
+2026-10-04T18:48:07.1276875Z 
+2026-10-04T18:48:07.1277099Z       at test/aud-sol-f23-118-notice-recovery.spec.ts:93:13
+2026-10-04T18:48:07.1277392Z 
+2026-10-04T18:48:07.1277492Z     console.log
+2026-10-04T18:48:07.1277781Z       AUD118_TERMINAL_NOTICE_RETRY {
+2026-10-04T18:48:07.1278172Z         events: [ 'chargeback', 'dispute_lost' ],
+2026-10-04T18:48:07.1278524Z         flag: null,
+2026-10-04T18:48:07.1278811Z         disputeId: 'dp_notice',
+2026-10-04T18:48:07.1279099Z         paid: 0,
+2026-10-04T18:48:07.1279341Z         reversals: 1
+2026-10-04T18:48:07.1279583Z       }
+2026-10-04T18:48:07.1279711Z 
+2026-10-04T18:48:07.1280075Z       at Object.<anonymous> (test/aud-sol-f23-118-notice-recovery.spec.ts:157:11)
+2026-10-04T18:48:07.1280473Z 
+2026-10-04T18:48:08.3617898Z PASS test/audit-opus-f34-117-684.spec.ts (134 MB heap size)
+2026-10-04T18:48:08.7303713Z [33m[Nest] 3138  - [39m10/04/2026, 6:48:08 PM [33m   WARN[39m [38;5;3m[PayoutNoticeService] [39m[33mSFEE_NOTICE_EMAIL_FAILED notice=pan-25 payee=coach_1: kind=unknown[39m
+2026-10-04T18:48:08.7305568Z [33m[Nest] 3138  - [39m10/04/2026, 6:48:08 PM [33m   WARN[39m [38;5;3m[PayoutNoticeService] [39m[33mSFEE_NOTICE_EMAIL_FAILED notice=pan-36 payee=coach_1: kind=unknown[39m
+2026-10-04T18:48:08.7308242Z [33m[Nest] 3138  - [39m10/04/2026, 6:48:08 PM [33m   WARN[39m [38;5;3m[PayoutNoticeService] [39m[33mSFEE_NOTICE_EMAIL_FAILED notice=pan-47 payee=coach_1: kind=unknown[39m
+2026-10-04T18:48:08.7309867Z PASS test/audit-sol-f34-117-684-budget.spec.ts (162 MB heap size)
+2026-10-04T18:48:08.7310731Z   ● Console
+2026-10-04T18:48:08.7311153Z 
+2026-10-04T18:48:08.7311895Z     console.log
+2026-10-04T18:48:08.7327336Z       OBSERVATION_CANONICAL_REFUNDS {"refund_rows":[{"id":"rf-7","created_at":"2026-10-04T18:48:08.690Z","updated_at":"2026-10-04T18:48:08.707Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_0","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:08.707Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-11","created_at":"2026-10-04T18:48:08.698Z","updated_at":"2026-10-04T18:48:08.707Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_1","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:08.707Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-15","created_at":"2026-10-04T18:48:08.704Z","updated_at":"2026-10-04T18:48:08.708Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_2","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:08.708Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-19","created_at":"2026-10-04T18:48:08.709Z","updated_at":"2026-10-04T18:48:08.708Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_3","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:08.708Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-23","created_at":"2026-10-04T18:48:08.715Z","updated_at":"2026-10-04T18:48:08.708Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_4","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:08.708Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-27","created_at":"2026-10-04T18:48:08.720Z","updated_at":"2026-10-04T18:48:08.708Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_5","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:08.708Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-31","created_at":"2026-10-04T18:48:08.728Z","updated_at":"2026-10-04T18:48:08.708Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_6","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:08.708Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-35","created_at":"2026-10-04T18:48:08.733Z","updated_at":"2026-10-04T18:48:08.708Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_7","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:08.708Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-39","created_at":"2026-10-04T18:48:08.739Z","updated_at":"2026-10-04T18:48:08.708Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_8","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:08.708Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-43","created_at":"2026-10-04T18:48:08.744Z","updated_at":"2026-10-04T18:48:08.708Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_9","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:08.708Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-47","created_at":"2026-10-04T18:48:08.750Z","updated_at":"2026-10-04T18:48:08.708Z","purchase_id":"cp_1","stripe_refund_id":"re_older","stripe_charge_id":"ch_1","amount_cents":900,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:08.708Z","ledger_reversed":true,"transfer_reversed":true}],"settlement_refunded":4900}
+2026-10-04T18:48:08.7339385Z 
+2026-10-04T18:48:08.7339670Z       at Object.<anonymous> (test/audit-sol-f34-117-684-budget.spec.ts:44:11)
+2026-10-04T18:48:08.7339983Z 
+2026-10-04T18:48:08.7340078Z     console.log
+2026-10-04T18:48:08.7347268Z       OBSERVATION_NOTICE_BUDGET {"elapsed_minutes":8,"calls":16,"notices":[{"id":"pan_budget_0","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.716Z"},{"id":"pan_budget_1","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.716Z"},{"id":"pan_budget_2","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.717Z"},{"id":"pan_budget_3","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.717Z"},{"id":"pan_budget_4","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.717Z"},{"id":"pan_budget_5","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.718Z"},{"id":"pan_budget_6","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.718Z"},{"id":"pan_budget_7","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.720Z"},{"id":"pan_budget_8","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.721Z"},{"id":"pan_budget_9","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.721Z"},{"id":"pan_budget_10","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.721Z"},{"id":"pan_budget_11","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.722Z"},{"id":"pan_budget_12","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.722Z"},{"id":"pan_budget_13","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.723Z"},{"id":"pan_budget_14","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.723Z"},{"id":"pan_budget_15","dispatch_attempts":1,"dispatched_at":"2026-10-04T18:48:08.724Z"},{"id":"pan_budget_16","dispatch_attempts":0,"dispatched_at":null},{"id":"pan_budget_17","dispatch_attempts":0,"dispatched_at":null},{"id":"pan_budget_18","dispatch_attempts":0,"dispatched_at":null},{"id":"pan_budget_19","dispatch_attempts":0,"dispatched_at":null},{"id":"pan_budget_20","dispatch_attempts":0,"dispatched_at":null},{"id":"pan_budget_21","dispatch_attempts":0,"dispatched_at":null},{"id":"pan_budget_22","dispatch_attempts":0,"dispatched_at":null},{"id":"pan_budget_23","dispatch_attempts":0,"dispatched_at":null},{"id":"pan_budget_24","dispatch_attempts":0,"dispatched_at":null}]}
+2026-10-04T18:48:08.7353737Z 
+2026-10-04T18:48:08.7353999Z       at Object.<anonymous> (test/audit-sol-f34-117-684-budget.spec.ts:81:13)
+2026-10-04T18:48:08.7354307Z 
+2026-10-04T18:48:09.0311291Z PASS test/audit-sol-f34-684.spec.ts (194 MB heap size)
+2026-10-04T18:48:09.3453235Z PASS test/audit-sol-f34-117-684-refunds.spec.ts (218 MB heap size)
+2026-10-04T18:48:09.3454104Z   ● Console
+2026-10-04T18:48:09.3454321Z 
+2026-10-04T18:48:09.3454489Z     console.log
+2026-10-04T18:48:09.3470422Z       OBSERVATION_CANONICAL_REFUNDS {"refund_rows":[{"id":"rf-7","created_at":"2026-10-04T18:48:09.314Z","updated_at":"2026-10-04T18:48:09.333Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_0","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:09.333Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-11","created_at":"2026-10-04T18:48:09.322Z","updated_at":"2026-10-04T18:48:09.333Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_1","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:09.333Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-15","created_at":"2026-10-04T18:48:09.328Z","updated_at":"2026-10-04T18:48:09.333Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_2","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:09.333Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-19","created_at":"2026-10-04T18:48:09.333Z","updated_at":"2026-10-04T18:48:09.333Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_3","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:09.333Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-23","created_at":"2026-10-04T18:48:09.339Z","updated_at":"2026-10-04T18:48:09.333Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_4","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:09.333Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-27","created_at":"2026-10-04T18:48:09.348Z","updated_at":"2026-10-04T18:48:09.333Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_5","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:09.333Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-31","created_at":"2026-10-04T18:48:09.353Z","updated_at":"2026-10-04T18:48:09.333Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_6","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:09.333Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-35","created_at":"2026-10-04T18:48:09.359Z","updated_at":"2026-10-04T18:48:09.333Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_7","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:09.333Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-39","created_at":"2026-10-04T18:48:09.364Z","updated_at":"2026-10-04T18:48:09.333Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_8","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:09.333Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-43","created_at":"2026-10-04T18:48:09.370Z","updated_at":"2026-10-04T18:48:09.333Z","purchase_id":"cp_1","stripe_refund_id":"re_recent_9","stripe_charge_id":"ch_1","amount_cents":400,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:09.333Z","ledger_reversed":true,"transfer_reversed":true},{"id":"rf-47","created_at":"2026-10-04T18:48:09.375Z","updated_at":"2026-10-04T18:48:09.334Z","purchase_id":"cp_1","stripe_refund_id":"re_older","stripe_charge_id":"ch_1","amount_cents":900,"status":"succeeded","reason":null,"note":null,"initiated_by_user_id":null,"posted_at":"2026-10-04T18:48:09.334Z","ledger_reversed":true,"transfer_reversed":true}],"settlement_refunded":4900}
+2026-10-04T18:48:09.3483704Z 
+2026-10-04T18:48:09.3484199Z       at Object.<anonymous> (test/audit-sol-f34-117-684-refunds.spec.ts:42:11)
+2026-10-04T18:48:09.3484726Z 
+2026-10-04T18:48:09.3484746Z 
+2026-10-04T18:48:09.3491732Z Test Suites: 7 passed, 7 total
+2026-10-04T18:48:09.3492499Z Tests:       44 passed, 44 total
+2026-10-04T18:48:09.3492872Z Snapshots:   0 total
+2026-10-04T18:48:09.3493120Z Time:        4.463 s
+2026-10-04T18:48:09.3494620Z Ran all test suites matching test/s-fee-r15-deferred-fx-notice-flag.spec.ts|test/audit-sol-f34-684.spec.ts|test/audit-sol-f34-117-684-budget.spec.ts|test/audit-sol-f34-117-684-refunds.spec.ts|test/audit-opus-f34-117-684.spec.ts|test/aud-sol-f23-118-notice-recovery.spec.ts|test/audit-opus-f23-118-683.spec.ts.
+2026-10-04T18:48:09.4981233Z Post job cleanup.
+2026-10-04T18:48:09.6145855Z Cache hit occurred on the primary key node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12, not saving cache.
+2026-10-04T18:48:09.6284108Z Post job cleanup.
+2026-10-04T18:48:09.7182657Z [command]/usr/bin/git version
+2026-10-04T18:48:09.7221757Z git version 2.55.0
+2026-10-04T18:48:09.7265335Z Temporarily overriding HOME='/home/runner/work/_temp/c163c5e1-f226-49f8-81cb-db37f5722947' before making global git config changes
+2026-10-04T18:48:09.7267576Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T18:48:09.7272287Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T18:48:09.7307701Z Removing SSH command configuration
+2026-10-04T18:48:09.7314757Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T18:48:09.7354144Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T18:48:09.7597404Z Removing HTTP extra header
+2026-10-04T18:48:09.7603760Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T18:48:09.7639909Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T18:48:09.7874437Z Removing includeIf entries pointing to credentials config files
+2026-10-04T18:48:09.7881964Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T18:48:09.7912485Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T18:48:09.7914096Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T18:48:09.7915267Z includeif.gitdir:/github/workspace/.git.path
+2026-10-04T18:48:09.7916565Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T18:48:09.7924784Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T18:48:09.7948784Z /home/runner/work/_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config
+2026-10-04T18:48:09.7962767Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config
+2026-10-04T18:48:09.8002057Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T18:48:09.8026284Z /home/runner/work/_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config
+2026-10-04T18:48:09.8036357Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config
+2026-10-04T18:48:09.8071841Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-04T18:48:09.8093618Z /github/runner_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config
+2026-10-04T18:48:09.8102231Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config
+2026-10-04T18:48:09.8136784Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T18:48:09.8158215Z /github/runner_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config
+2026-10-04T18:48:09.8166770Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config
+2026-10-04T18:48:09.8205139Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T18:48:09.8438738Z Removing credentials config '/home/runner/work/_temp/git-credentials-517b396d-8e2a-4788-a7d0-5ea639dfe471.config'
+2026-10-04T18:48:09.8567213Z Print service container logs: 74802318fd4f460ba2ff8c7d10f2ece0_redis7alpine_13395f
+2026-10-04T18:48:09.8572429Z ##[command]/usr/bin/docker logs --details b279c54d5dc8cabe8264d17a91cc82c1b31441c9034d07238dfefe65d5bfa6c5
+2026-10-04T18:48:09.8705715Z  1:C 04 Oct 2026 18:47:16.346 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+2026-10-04T18:48:09.8708396Z  1:C 04 Oct 2026 18:47:16.346 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+2026-10-04T18:48:09.8708984Z  1:C 04 Oct 2026 18:47:16.346 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+2026-10-04T18:48:09.8709869Z  1:C 04 Oct 2026 18:47:16.346 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+2026-10-04T18:48:09.8710601Z  1:M 04 Oct 2026 18:47:16.346 * monotonic clock: POSIX clock_gettime
+2026-10-04T18:48:09.8711014Z  1:M 04 Oct 2026 18:47:16.347 * Running mode=standalone, port=6379.
+2026-10-04T18:48:09.8711394Z  1:M 04 Oct 2026 18:47:16.347 * Server initialized
+2026-10-04T18:48:09.8712152Z  1:M 04 Oct 2026 18:47:16.347 * Ready to accept connections tcp
+2026-10-04T18:48:09.8727132Z Stop and remove container: 74802318fd4f460ba2ff8c7d10f2ece0_redis7alpine_13395f
+2026-10-04T18:48:09.8732982Z ##[command]/usr/bin/docker rm --force b279c54d5dc8cabe8264d17a91cc82c1b31441c9034d07238dfefe65d5bfa6c5
+2026-10-04T18:48:10.0220876Z b279c54d5dc8cabe8264d17a91cc82c1b31441c9034d07238dfefe65d5bfa6c5
+2026-10-04T18:48:10.0255838Z Remove container network: github_network_e5d9c56a64e54988be32e315fe044691
+2026-10-04T18:48:10.0260812Z ##[command]/usr/bin/docker network rm github_network_e5d9c56a64e54988be32e315fe044691
+2026-10-04T18:48:10.1331059Z github_network_e5d9c56a64e54988be32e315fe044691
+2026-10-04T18:48:10.1409403Z Cleaning up orphan processes

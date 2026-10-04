@@ -1,0 +1,32 @@
+[
+ {
+  "url": "https://support.apple.com/en-us/102571",
+  "content": "### View apps on iPhone or iPad\n1. Open the Settings app, then tap [your name].\n2. Tap Sign in with Apple.\n\n### Stop using Sign in with Apple with an app on iPhone\n1. On your iPhone, open the Settings app, then tap [your name].\n2. Tap Sign in with Apple.\n3. Select the app or developer, then tap Delete. Follow the onscreen steps to confirm that you want to stop using Sign in with Apple for this app or developer.\n\n### Web path\n1. Sign in on account.apple.com.\n2. Go to Sign-In & Security.\n3. Select Sign in with Apple.\n\n### iOS version\nThe page does not specify an iOS version.\n\n### Date\n- Published Date: September 14, 2026\n- Updated date: Not stated.",
+  "error": null,
+  "published": "2026-09-14"
+ },
+ {
+  "url": "https://support.apple.com/guide/iphone/sign-in-with-apple-iph238921d37/18.0/ios/18.0",
+  "content": "### View or stop using Sign in with Apple for an app\n\n> ## Review or change Sign in with Apple settings for apps\n> 1. Go to Settings > [*your name*] > Sign in with Apple.\n> 2. To change a setting for an app, tap it, then do any of the following:\n>\n> - *Turn off forwarding email:* Tap Manage Hide My Email, tap the app, then turn off Forward To. You won\u2019t receive any further emails from the app.\n> - *Stop using Sign in with Apple:* Tap Delete, then tap Stop Using. You may be asked to create a new account the next time you try to sign in to the app.\n\n### Web path\n\nThe page does not provide a path on account.apple.com.\n\n### Page version and date\n\n- **iOS version:** iOS 18.0, as indicated by the page URL.\n- **Published or updated date:** Not stated on the page.",
+  "error": null,
+  "published": null
+ },
+ {
+  "url": "https://support.apple.com/guide/iphone/sign-in-with-apple-iph238921d37/17.0/ios/17.0",
+  "content": "### iPhone: view or stop using Sign in with Apple\n\n> 1. Go to Settings > [your name] > Password and Security.  \n> 2. Tap Apps Using Your Apple ID.  \n>   \n> All apps using Sign in with Apple appear in a list.  \n>   \n> 3. To change a setting for an app, choose the app, then do any of the following:  \n>   \n> - *Turn off forwarding email:* Turn off Forward To. You won\u2019t receive any further emails from the app.  \n> - *Stop using Sign in with Apple:* Tap Stop Using Apple ID. You may be asked to create a new account the next time you try to sign in with the app.\n\nThe page gives steps to stop using Sign in with Apple, but does not describe a separate delete action.\n\n### Web path\n\nThe page does not provide an `account.apple.com` path.\n\n### iOS version\n\nThe page URL specifies iOS 17.0: `/17.0/ios/17.0`.\n\n### Published or updated date\n\nNo published or updated date is stated on the page.",
+  "error": null,
+  "published": null
+ },
+ {
+  "url": "https://support.apple.com/guide/iphone/sign-in-with-apple-iph238921d37/16.0/ios/16.0",
+  "content": "### View or stop using Sign in with Apple for an app\n\n> 1. Go to Settings > [*your name*] > Password and Security.  \n> 2. Tap Apps Using Your Apple ID.  \n>\n> All apps using Sign in with Apple appear in a list.  \n>\n> 3. To change a setting for an app, choose the app, then do any of the following:\n>\n> - *Stop using Sign in with Apple:* Tap Stop Using Apple ID. You may be asked to create a new account the next time you try to sign in with the app.\n\nThe page does not provide a deletion step or an `account.apple.com` path.\n\n### Page version and date\n\n- **iOS version:** iOS 16.0, as indicated in the page URL.\n- **Published or updated date:** Not stated on the page.",
+  "error": null,
+  "published": null
+ },
+ {
+  "url": "https://support.apple.com/guide/iphone/sign-in-with-apple-iph238921d37/ios",
+  "content": "> 1. Go to the Settings app  \n> 2. Tap your name, then tap Sign in with Apple.  \n> 3. To change a setting for an app, tap it, then do any of the following:\n>\n>    - *Stop using Sign in with Apple: * Tap Delete, then tap Stop Using. You may be asked to create a new account the next time you try to sign in to the app.\n\n- **Web path on account.apple.com:** Not stated on this page.\n- **iOS version:** Not specified on this page.\n- **Published or updated date:** Not stated on this page.",
+  "error": null,
+  "published": null
+ }
+]

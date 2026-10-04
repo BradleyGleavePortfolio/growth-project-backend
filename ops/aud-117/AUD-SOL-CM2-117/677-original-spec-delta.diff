@@ -1,0 +1,13 @@
+diff --git a/test/coach-money.service.spec.ts b/test/coach-money.service.spec.ts
+index ec39de8d..7ff8c2c6 100644
+--- a/test/coach-money.service.spec.ts
++++ b/test/coach-money.service.spec.ts
+@@ -298,6 +298,8 @@ describe('CoachMoneyService.getSummary', () => {
+       paying_clients: 2,
+       churned_30d: 1,
+       new_clients_30d: 1,
++      trial_clients: 0,
++      trial_mrr_cents: 0,
+     });
+     for (const call of p.splitLedgerEntry.findMany.mock.calls) {
+       const w = (call[0] as { where: Record<string, unknown> }).where;

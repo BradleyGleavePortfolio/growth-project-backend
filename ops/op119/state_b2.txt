@@ -1,0 +1,12 @@
+b#671|c75002c9|main|BEHIND|2291|20 ok|Opus:APPROVE 0/0/1@c75002c9 Sol:APPROVE 0/0/0@c75002c9|last:FIX ROUND 7@c75002c9 10-04T05:34|READY@c75002c9
+b#672|2690c07c|agent115/trials-split-1-model-rules|CLEAN|2961|10 ok|Opus:APPROVE 0/0/5@c5e7ed8e(OLD) Sol:RC 0/1/1@c5e7ed8e(OLD)|last:FIX ROUND 9@2690c07c 10-04T17:51|READY@2690c07c
+b#673|5fdb5f5c|agent115/trials-split-2-editor-notices|CLEAN|2887|10 ok|Opus:APPROVE 0/0/3@df76889f(OLD) Sol:RC 0/1/2@df76889f(OLD)|last:FIX ROUND 9@5fdb5f5c 10-04T17:51|READY@5fdb5f5c
+b#674|f9e21a87|main|BEHIND|2948|20 ok|Opus:RC 0/2/6@f9e21a87 Sol:RC 0/2/2@f9e21a87|last:FIX ROUND 3@f9e21a87 10-04T17:27|READY@f9e21a87
+b#676|ccd60bbc|agent115/money-split-1-refund-reversal|CLEAN|2981|10 ok|Opus:RC 0/1/1@ccd60bbc Sol:RC 0/1/1@ccd60bbc|last:FIX ROUND 3@ccd60bbc 10-04T17:27|READY@ccd60bbc
+b#677|4799c6af|agent115/money-split-3-coach-money-api|CLEAN|2918|10 ok|Opus:APPROVE 0/0/1@4aaee4ed(OLD) Sol:APPROVE 0/0/1@1f746547(OLD)|last:FIX ROUND 3@4799c6af 10-04T17:27|READY@4799c6af
+b#687|38d9b3ab|main|BEHIND|2974|17 ok|Opus:RC 0/1/3@f8e47bf4(OLD) Sol:RC 0/2/0@f8e47bf4(OLD)|last:FIX ROUND 2@38d9b3ab 10-04T18:11|READY@38d9b3ab
+b#688|2368d5fa|agent115/dunning-split-1-foundation|CLEAN|2976|10 ok|Opus:RC 0/2/3@b17f514c(OLD) Sol:RC 0/2/0@b17f514c(OLD)|last:FIX ROUND 3@2368d5fa 10-04T18:16|READY@2368d5fa
+b#689|bb992fed|agent115/dunning-split-2-dunning-servi|CLEAN|2913|10 ok|Opus:RC 0/1/2@bb992fed Sol:RC 0/4/0@bb992fed|last:FIX ROUND 2@bb992fed 10-04T05:20|READY@bb992fed
+b#690|06307883|agent115/dunning-split-3-client-billin|CLEAN|2913|10 ok|Opus:APPROVE 0/0/3@06307883 Sol:RC 0/5/1@06307883|last:FIX ROUND 2@06307883 10-04T05:15|READY@06307883
+b#691|e0afe678|agent115/dunning-split-4-lockout-webho|CLEAN|2742|10 ok|none|last:FIX ROUND 3@e0afe678 10-04T05:20|READY@e0afe678
+b#642|4fee3c02|main|BEHIND|75|15 ok|Opus:APPROVE ?@4fee3c02 Sol:APPROVE ?@4fee3c02|last:FIX ROUND 1@4fee3c02 10-03T18:00|READY@4fee3c02

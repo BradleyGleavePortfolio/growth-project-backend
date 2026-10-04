@@ -1,0 +1,977 @@
+﻿2026-10-04T16:50:48.4007729Z Current runner version: '2.337.0'
+2026-10-04T16:50:48.4032354Z ##[group]Runner Image Provisioner
+2026-10-04T16:50:48.4033201Z Hosted Compute Agent
+2026-10-04T16:50:48.4033907Z Version: 20260901.588
+2026-10-04T16:50:48.4034552Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-04T16:50:48.4035353Z Build Date: 2026-09-01T19:56:44Z
+2026-10-04T16:50:48.4036059Z Worker ID: {bf5b21e3-8ae6-4333-a74b-fab460927377}
+2026-10-04T16:50:48.4036822Z Azure Region: westus
+2026-10-04T16:50:48.4037472Z ##[endgroup]
+2026-10-04T16:50:48.4039065Z ##[group]Operating System
+2026-10-04T16:50:48.4039855Z Ubuntu
+2026-10-04T16:50:48.4040418Z 24.04.5
+2026-10-04T16:50:48.4040938Z LTS
+2026-10-04T16:50:48.4041848Z ##[endgroup]
+2026-10-04T16:50:48.4042616Z ##[group]Runner Image
+2026-10-04T16:50:48.4043237Z Image: ubuntu-24.04
+2026-10-04T16:50:48.4043909Z Version: 20260927.320.1
+2026-10-04T16:50:48.4045139Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-04T16:50:48.4046778Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-04T16:50:48.4047772Z ##[endgroup]
+2026-10-04T16:50:48.4049024Z ##[group]GITHUB_TOKEN Permissions
+2026-10-04T16:50:48.4050870Z Contents: read
+2026-10-04T16:50:48.4051590Z Metadata: read
+2026-10-04T16:50:48.4052410Z Packages: read
+2026-10-04T16:50:48.4053088Z ##[endgroup]
+2026-10-04T16:50:48.4055134Z Secret source: Actions
+2026-10-04T16:50:48.4056325Z Cache mode: write
+2026-10-04T16:50:48.4057032Z Prepare workflow directory
+2026-10-04T16:50:48.4549941Z Prepare all required actions
+2026-10-04T16:50:48.4598216Z Getting action download info
+2026-10-04T16:50:48.8167854Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-04T16:50:48.9205749Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-04T16:50:49.1631480Z Complete job name: targeted
+2026-10-04T16:50:49.2160009Z ##[group]Checking docker version
+2026-10-04T16:50:49.2173283Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-04T16:50:49.2995115Z '1.48'
+2026-10-04T16:50:49.3014880Z Docker daemon API version: '1.48'
+2026-10-04T16:50:49.3015663Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-04T16:50:49.3183390Z '1.48'
+2026-10-04T16:50:49.3188836Z Docker client API version: '1.48'
+2026-10-04T16:50:49.3195047Z ##[endgroup]
+2026-10-04T16:50:49.3198085Z ##[group]Clean up resources from previous jobs
+2026-10-04T16:50:49.3203288Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=d88ca6"
+2026-10-04T16:50:49.3347781Z ##[command]/usr/bin/docker network prune --force --filter "label=d88ca6"
+2026-10-04T16:50:49.3473916Z ##[endgroup]
+2026-10-04T16:50:49.3474454Z ##[group]Create local container network
+2026-10-04T16:50:49.3484206Z ##[command]/usr/bin/docker network create --label d88ca6 github_network_810a88c4fbe8422fba2c95e3c699c543
+2026-10-04T16:50:49.3994897Z 2454b513e560cec57f8139aba87648896e7676e6d104ff6af7734098fa6978d7
+2026-10-04T16:50:49.4011834Z ##[endgroup]
+2026-10-04T16:50:49.4035905Z ##[group]Starting redis service container
+2026-10-04T16:50:49.4057174Z ##[command]/usr/bin/docker pull redis:7-alpine
+2026-10-04T16:50:50.2853474Z 7-alpine: Pulling from library/redis
+2026-10-04T16:50:50.5449753Z 16333ee0c00f: Pulling fs layer
+2026-10-04T16:50:50.5451205Z 83234986c742: Pulling fs layer
+2026-10-04T16:50:50.5452393Z 7eb50503c2b0: Pulling fs layer
+2026-10-04T16:50:50.5453364Z 1522f9c6f453: Pulling fs layer
+2026-10-04T16:50:50.5454387Z 9928009b15c8: Pulling fs layer
+2026-10-04T16:50:50.5455345Z 4f4fb700ef54: Pulling fs layer
+2026-10-04T16:50:50.5456273Z 4eb14bae0e1d: Pulling fs layer
+2026-10-04T16:50:50.5457216Z 1522f9c6f453: Waiting
+2026-10-04T16:50:50.5458017Z 9928009b15c8: Waiting
+2026-10-04T16:50:50.5458805Z 4f4fb700ef54: Waiting
+2026-10-04T16:50:50.5459586Z 4eb14bae0e1d: Waiting
+2026-10-04T16:50:50.7673975Z 83234986c742: Verifying Checksum
+2026-10-04T16:50:50.7675484Z 83234986c742: Download complete
+2026-10-04T16:50:50.7725461Z 7eb50503c2b0: Verifying Checksum
+2026-10-04T16:50:50.7727313Z 7eb50503c2b0: Download complete
+2026-10-04T16:50:50.7821401Z 16333ee0c00f: Verifying Checksum
+2026-10-04T16:50:50.7822162Z 16333ee0c00f: Download complete
+2026-10-04T16:50:50.8862629Z 16333ee0c00f: Pull complete
+2026-10-04T16:50:50.9110356Z 83234986c742: Pull complete
+2026-10-04T16:50:50.9896313Z 9928009b15c8: Verifying Checksum
+2026-10-04T16:50:50.9897440Z 9928009b15c8: Download complete
+2026-10-04T16:50:50.9918214Z 4f4fb700ef54: Download complete
+2026-10-04T16:50:51.0292752Z 1522f9c6f453: Verifying Checksum
+2026-10-04T16:50:51.0293431Z 1522f9c6f453: Download complete
+2026-10-04T16:50:51.0646938Z 7eb50503c2b0: Pull complete
+2026-10-04T16:50:51.2077937Z 4eb14bae0e1d: Verifying Checksum
+2026-10-04T16:50:51.2566532Z 4eb14bae0e1d: Download complete
+2026-10-04T16:50:51.2567304Z 1522f9c6f453: Pull complete
+2026-10-04T16:50:51.2662980Z 9928009b15c8: Pull complete
+2026-10-04T16:50:51.2774784Z 4f4fb700ef54: Pull complete
+2026-10-04T16:50:51.2878689Z 4eb14bae0e1d: Pull complete
+2026-10-04T16:50:51.2915839Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+2026-10-04T16:50:51.2930269Z Status: Downloaded newer image for redis:7-alpine
+2026-10-04T16:50:51.2942377Z docker.io/library/redis:7-alpine
+2026-10-04T16:50:51.2975511Z ##[command]/usr/bin/docker create --name 85d9abedae8d499f884e29a60b07212a_redis7alpine_aae716 --label d88ca6 --network github_network_810a88c4fbe8422fba2c95e3c699c543 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+2026-10-04T16:50:51.3216572Z 900bb8686e4744c4636a5513915394dfe2a3c7fd83fe552bb410a482065c2b31
+2026-10-04T16:50:51.3238825Z ##[command]/usr/bin/docker start 900bb8686e4744c4636a5513915394dfe2a3c7fd83fe552bb410a482065c2b31
+2026-10-04T16:50:51.5261378Z 900bb8686e4744c4636a5513915394dfe2a3c7fd83fe552bb410a482065c2b31
+2026-10-04T16:50:51.5281853Z ##[command]/usr/bin/docker ps --all --filter id=900bb8686e4744c4636a5513915394dfe2a3c7fd83fe552bb410a482065c2b31 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-04T16:50:51.5404096Z 900bb8686e4744c4636a5513915394dfe2a3c7fd83fe552bb410a482065c2b31 Up Less than a second (health: starting)
+2026-10-04T16:50:51.5423562Z ##[command]/usr/bin/docker port 900bb8686e4744c4636a5513915394dfe2a3c7fd83fe552bb410a482065c2b31
+2026-10-04T16:50:51.5540734Z 6379/tcp -> 0.0.0.0:6379
+2026-10-04T16:50:51.5541539Z 6379/tcp -> [::]:6379
+2026-10-04T16:50:51.5586824Z ##[endgroup]
+2026-10-04T16:50:51.5596074Z ##[group]Waiting for all services to be ready
+2026-10-04T16:50:51.5609469Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 900bb8686e4744c4636a5513915394dfe2a3c7fd83fe552bb410a482065c2b31
+2026-10-04T16:50:51.5726239Z starting
+2026-10-04T16:50:51.5745731Z redis service is starting, waiting 2 seconds before checking again.
+2026-10-04T16:50:53.5751688Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 900bb8686e4744c4636a5513915394dfe2a3c7fd83fe552bb410a482065c2b31
+2026-10-04T16:50:53.5880773Z starting
+2026-10-04T16:50:53.5895206Z redis service is starting, waiting 3 seconds before checking again.
+2026-10-04T16:50:57.3203818Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 900bb8686e4744c4636a5513915394dfe2a3c7fd83fe552bb410a482065c2b31
+2026-10-04T16:50:57.3324963Z healthy
+2026-10-04T16:50:57.3340421Z redis service is healthy.
+2026-10-04T16:50:57.3341123Z ##[endgroup]
+2026-10-04T16:50:57.3630573Z ##[group]Run actions/checkout@v6
+2026-10-04T16:50:57.3631152Z with:
+2026-10-04T16:50:57.3631452Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T16:50:57.3634424Z   token: ***
+2026-10-04T16:50:57.3634671Z   ssh-strict: true
+2026-10-04T16:50:57.3634881Z   ssh-user: git
+2026-10-04T16:50:57.3635089Z   persist-credentials: true
+2026-10-04T16:50:57.3635597Z   clean: true
+2026-10-04T16:50:57.3635806Z   sparse-checkout-cone-mode: true
+2026-10-04T16:50:57.3636055Z   fetch-depth: 1
+2026-10-04T16:50:57.3636255Z   fetch-tags: false
+2026-10-04T16:50:57.3636455Z   show-progress: true
+2026-10-04T16:50:57.3636767Z   lfs: false
+2026-10-04T16:50:57.3637070Z   submodules: false
+2026-10-04T16:50:57.3637393Z   set-safe-directory: true
+2026-10-04T16:50:57.3637785Z   allow-unsafe-pr-checkout: false
+2026-10-04T16:50:57.3638598Z ##[endgroup]
+2026-10-04T16:50:57.4707861Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T16:50:57.4710259Z ##[group]Getting Git version info
+2026-10-04T16:50:57.4711163Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T16:50:57.4712776Z [command]/usr/bin/git version
+2026-10-04T16:50:57.4713457Z git version 2.55.0
+2026-10-04T16:50:57.4718262Z ##[endgroup]
+2026-10-04T16:50:57.4734504Z Temporarily overriding HOME='/home/runner/work/_temp/eae6f0f5-b737-4044-87b7-d0e0dd3fee4a' before making global git config changes
+2026-10-04T16:50:57.4735906Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T16:50:57.4740698Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T16:50:57.4789541Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T16:50:57.4794170Z ##[group]Determining repository object format
+2026-10-04T16:50:57.4797177Z ##[endgroup]
+2026-10-04T16:50:57.4798021Z ##[group]Initializing the repository
+2026-10-04T16:50:57.4802622Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T16:50:57.4902503Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-04T16:50:57.4903070Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-04T16:50:57.4903576Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-04T16:50:57.4903995Z hint: call:
+2026-10-04T16:50:57.4904186Z hint:
+2026-10-04T16:50:57.4904501Z hint: 	git config --global init.defaultBranch <name>
+2026-10-04T16:50:57.4905001Z hint:
+2026-10-04T16:50:57.4905579Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-04T16:50:57.4906332Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-04T16:50:57.4906954Z hint:
+2026-10-04T16:50:57.4907340Z hint: 	git branch -m <name>
+2026-10-04T16:50:57.4907778Z hint:
+2026-10-04T16:50:57.4908392Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-04T16:50:57.4909656Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-04T16:50:57.4917232Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T16:50:57.4959444Z ##[endgroup]
+2026-10-04T16:50:57.4960128Z ##[group]Disabling automatic garbage collection
+2026-10-04T16:50:57.4964594Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-04T16:50:57.4993732Z ##[endgroup]
+2026-10-04T16:50:57.4994383Z ##[group]Setting up auth
+2026-10-04T16:50:57.4995302Z Removing SSH command configuration
+2026-10-04T16:50:57.5001503Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T16:50:57.5032351Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T16:50:57.5376416Z Removing HTTP extra header
+2026-10-04T16:50:57.5382387Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T16:50:57.5412264Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T16:50:57.5629407Z Removing includeIf entries pointing to credentials config files
+2026-10-04T16:50:57.5629964Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T16:50:57.5659445Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T16:50:57.5880072Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-04T16:50:57.5918155Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config
+2026-10-04T16:50:57.5948853Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config
+2026-10-04T16:50:57.5981501Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config
+2026-10-04T16:50:57.6019698Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config
+2026-10-04T16:50:57.6045371Z ##[endgroup]
+2026-10-04T16:50:57.6045832Z ##[group]Fetching the repository
+2026-10-04T16:50:57.6054033Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +243cb9e95ffc8804cf019b076c78002b783b7288:refs/remotes/origin/audit/AUD-SOL-T23-118/673-boundaries
+2026-10-04T16:50:59.0095417Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T16:50:59.0096741Z  * [new ref]         243cb9e95ffc8804cf019b076c78002b783b7288 -> origin/audit/AUD-SOL-T23-118/673-boundaries
+2026-10-04T16:50:59.0107394Z [command]/usr/bin/git branch --list --remote origin/audit/AUD-SOL-T23-118/673-boundaries
+2026-10-04T16:50:59.0133473Z   origin/audit/AUD-SOL-T23-118/673-boundaries
+2026-10-04T16:50:59.0142464Z [command]/usr/bin/git rev-parse refs/remotes/origin/audit/AUD-SOL-T23-118/673-boundaries
+2026-10-04T16:50:59.0163491Z 243cb9e95ffc8804cf019b076c78002b783b7288
+2026-10-04T16:50:59.0167731Z ##[endgroup]
+2026-10-04T16:50:59.0168136Z ##[group]Determining the checkout info
+2026-10-04T16:50:59.0169367Z ##[endgroup]
+2026-10-04T16:50:59.0175632Z [command]/usr/bin/git sparse-checkout disable
+2026-10-04T16:50:59.0225789Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-04T16:50:59.0251855Z ##[group]Checking out the ref
+2026-10-04T16:50:59.0258660Z [command]/usr/bin/git checkout --progress --force -B audit/AUD-SOL-T23-118/673-boundaries refs/remotes/origin/audit/AUD-SOL-T23-118/673-boundaries
+2026-10-04T16:50:59.2427267Z Switched to a new branch 'audit/AUD-SOL-T23-118/673-boundaries'
+2026-10-04T16:50:59.2431770Z branch 'audit/AUD-SOL-T23-118/673-boundaries' set up to track 'origin/audit/AUD-SOL-T23-118/673-boundaries'.
+2026-10-04T16:50:59.2441096Z ##[endgroup]
+2026-10-04T16:50:59.2485040Z [command]/usr/bin/git log -1 --format=%H
+2026-10-04T16:50:59.2508232Z 243cb9e95ffc8804cf019b076c78002b783b7288
+2026-10-04T16:50:59.2759107Z ##[group]Run actions/setup-node@v6
+2026-10-04T16:50:59.2759395Z with:
+2026-10-04T16:50:59.2759585Z   node-version: 20
+2026-10-04T16:50:59.2759782Z   cache: npm
+2026-10-04T16:50:59.2759976Z   check-latest: false
+2026-10-04T16:50:59.2762769Z   token: ***
+2026-10-04T16:50:59.2762995Z   package-manager-cache: true
+2026-10-04T16:50:59.2763245Z ##[endgroup]
+2026-10-04T16:50:59.4182492Z Attempting to download 20...
+2026-10-04T16:51:00.0258132Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-04T16:51:00.4074859Z Extracting ...
+2026-10-04T16:51:00.4190124Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/f8f20fb2-cac8-45e9-b539-8a66fbf5a267 -f /home/runner/work/_temp/ab1b2dcb-ac0c-456a-91eb-81b3b5762994
+2026-10-04T16:51:01.4216593Z Adding to the cache ...
+2026-10-04T16:51:03.2587063Z ##[group]Environment details
+2026-10-04T16:51:03.4768641Z node: v20.20.2
+2026-10-04T16:51:03.4769089Z npm: 10.8.2
+2026-10-04T16:51:03.4769422Z yarn: 1.22.22
+2026-10-04T16:51:03.4770126Z ##[endgroup]
+2026-10-04T16:51:03.4788252Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+2026-10-04T16:51:03.5819216Z /home/runner/.npm
+2026-10-04T16:51:03.8316802Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T16:51:05.1096615Z Received 4194304 of 86828135 (4.8%), 4.0 MBs/sec
+2026-10-04T16:51:05.8329298Z Received 86828135 of 86828135 (100.0%), 48.1 MBs/sec
+2026-10-04T16:51:05.8330053Z Cache Size: ~83 MB (86828135 B)
+2026-10-04T16:51:05.8443779Z [command]/usr/bin/tar -xf /home/runner/work/_temp/b6844848-cc27-49ef-9c5d-a24c1d608ca0/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+2026-10-04T16:51:06.0249451Z Cache restored successfully
+2026-10-04T16:51:06.0300604Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T16:51:06.0493310Z ##[group]Run npm ci
+2026-10-04T16:51:06.0493604Z [36;1mnpm ci[0m
+2026-10-04T16:51:06.0705111Z shell: /usr/bin/bash -e {0}
+2026-10-04T16:51:06.0705440Z ##[endgroup]
+2026-10-04T16:51:11.7894818Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-04T16:51:12.8487384Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-04T16:51:13.9715641Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T16:51:15.3431434Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T16:51:15.3608315Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T16:51:15.4203436Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T16:51:28.3276063Z 
+2026-10-04T16:51:28.3276744Z > growth-project-backend@1.0.0 postinstall
+2026-10-04T16:51:28.3277393Z > prisma generate
+2026-10-04T16:51:28.3277616Z 
+2026-10-04T16:51:29.2786058Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T16:51:33.1321302Z ┌─────────────────────────────────────────────────────────┐
+2026-10-04T16:51:33.1322657Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+2026-10-04T16:51:33.1323688Z │                                                         │
+2026-10-04T16:51:33.1324879Z │  This is a major update - please follow the guide at    │
+2026-10-04T16:51:33.1326061Z │  https://pris.ly/d/major-version-upgrade                │
+2026-10-04T16:51:33.1327136Z │                                                         │
+2026-10-04T16:51:33.1328822Z │  Run the following to update                            │
+2026-10-04T16:51:33.1330201Z │    npm i --save-dev prisma@latest                       │
+2026-10-04T16:51:33.1331530Z │    npm i @prisma/client@latest                          │
+2026-10-04T16:51:33.1333066Z └─────────────────────────────────────────────────────────┘
+2026-10-04T16:51:33.1333709Z 
+2026-10-04T16:51:33.1334823Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.14s
+2026-10-04T16:51:33.1335741Z 
+2026-10-04T16:51:33.1336738Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T16:51:33.1337694Z 
+2026-10-04T16:51:33.1339252Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+2026-10-04T16:51:33.1340498Z 
+2026-10-04T16:51:33.1883473Z 
+2026-10-04T16:51:33.1884205Z > growth-project-backend@1.0.0 prepare
+2026-10-04T16:51:33.1885011Z > lefthook install
+2026-10-04T16:51:33.1885338Z 
+2026-10-04T16:51:33.2389706Z sync hooks: ✔️(commit-msg, pre-commit)
+2026-10-04T16:51:33.2580845Z 
+2026-10-04T16:51:33.2581591Z added 1115 packages, and audited 1116 packages in 27s
+2026-10-04T16:51:33.2581920Z 
+2026-10-04T16:51:33.2582364Z 202 packages are looking for funding
+2026-10-04T16:51:33.2582718Z   run `npm fund` for details
+2026-10-04T16:51:33.2614270Z 
+2026-10-04T16:51:33.2614495Z 3 high severity vulnerabilities
+2026-10-04T16:51:33.2615165Z 
+2026-10-04T16:51:33.2615702Z To address all issues (including breaking changes), run:
+2026-10-04T16:51:33.2616287Z   npm audit fix --force
+2026-10-04T16:51:33.2616530Z 
+2026-10-04T16:51:33.2616742Z Run `npm audit` for details.
+2026-10-04T16:51:33.3265222Z ##[group]Run npx prisma generate
+2026-10-04T16:51:33.3265553Z [36;1mnpx prisma generate[0m
+2026-10-04T16:51:33.3338581Z shell: /usr/bin/bash -e {0}
+2026-10-04T16:51:33.3338867Z ##[endgroup]
+2026-10-04T16:51:34.5773224Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T16:51:38.4918321Z 
+2026-10-04T16:51:38.4919652Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.17s
+2026-10-04T16:51:38.4920273Z 
+2026-10-04T16:51:38.4920921Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T16:51:38.4921520Z 
+2026-10-04T16:51:38.4922638Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+2026-10-04T16:51:38.4923334Z 
+2026-10-04T16:51:38.6120324Z ##[group]Run set -euo pipefail
+2026-10-04T16:51:38.6120678Z [36;1mset -euo pipefail[0m
+2026-10-04T16:51:38.6121110Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-04T16:51:38.6121650Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-04T16:51:38.6122378Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-04T16:51:38.6122728Z [36;1mnpx jest --ci --runInBand "${SPECS[@]}"[0m
+2026-10-04T16:51:38.6186184Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T16:51:38.6186564Z env:
+2026-10-04T16:51:38.6186821Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-04T16:51:38.6187200Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-04T16:51:38.6187553Z ##[endgroup]
+2026-10-04T16:51:38.6288328Z specs: test/audit-sol-t12-117-672.spec.ts test/audit-sol-t23-118-conflict.spec.ts test/b-trials-t2-fix-round-8.spec.ts test/b-trials-3-fix-round.spec.ts test/b-trials-notice-and-webhook.spec.ts test/b-trials-package-rules.spec.ts test/b-trials-t2-idempotent-create-http.spec.ts test/b-trials-idempotent-create-compose.spec.ts
+2026-10-04T16:51:42.6125021Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.6214702Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.6237339Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel failed for purchase pur-1 attempt=1 code=http_503 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T16:51:42.6317365Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.6394293Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.6424158Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.6595007Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.6654911Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.6665146Z [31m[Nest] 3105  - [39m10/04/2026, 4:52:02 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel failed for purchase pur-1 attempt=1 code=timeout (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T16:51:42.6669570Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.6674037Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel failed for purchase pur-1 attempt=1 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T16:51:42.6678579Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel failed for purchase pur-1 attempt=2 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T16:51:42.6693685Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel failed for purchase pur-1 attempt=3 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T16:51:42.6697259Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel failed for purchase pur-1 attempt=4 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T16:51:42.6700676Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel failed for purchase pur-1 attempt=5 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T16:51:42.6704603Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.6716240Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)[39m
+2026-10-04T16:51:42.6751940Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.6774855Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.7269898Z [33m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.7273173Z [33m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.7276052Z [33m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.7278869Z [33m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.7281533Z [33m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice push outcome dropped (lease lost) notice=row_1[39m
+2026-10-04T16:51:42.7284621Z [33m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice email outcome dropped (lease lost) notice=row_1[39m
+2026-10-04T16:51:42.7287219Z [33m[Nest] 3105  - [39m10/04/2026, 4:52:17 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice push still running after abort notice=row_1; lease held[39m
+2026-10-04T16:51:43.0018931Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:43 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:43.0023871Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:43 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel failed for purchase pur-1 attempt=1 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T16:51:43.0027099Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:43 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel failed for purchase pur-1 attempt=2 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T16:51:43.0029723Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:43 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel failed for purchase pur-1 attempt=3 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T16:51:43.0033902Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:43 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)[39m
+2026-10-04T16:51:43.0042785Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:43 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:43.0045688Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:43 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel failed for purchase pur-1 attempt=1 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T16:51:43.0048350Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:43 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel failed for purchase pur-1 attempt=2 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T16:51:43.0051061Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:43 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel failed for purchase pur-1 attempt=3 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T16:51:43.0053525Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:43 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)[39m
+2026-10-04T16:51:43.0178268Z PASS test/b-trials-3-fix-round.spec.ts (122 MB heap size)
+2026-10-04T16:51:44.1316047Z [33m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T16:51:44.1318021Z [33m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=row_1 code=card_state_unknown[39m
+2026-10-04T16:51:44.1319676Z [33m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T16:51:44.1470211Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:44 PM [31m  ERROR[39m [38;5;3m[TrialNoticeService] [39m[31mtrial notice reconcile errored: TypeError[39m
+2026-10-04T16:51:44.1573336Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:44 PM [31m  ERROR[39m [38;5;3m[TrialNoticeService] [39m[31mtrial notice reconcile errored: TypeError[39m
+2026-10-04T16:51:44.1609587Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:44 PM [31m  ERROR[39m [38;5;3m[TrialNoticeService] [39m[31mtrial notice reconcile errored: TypeError[39m
+2026-10-04T16:51:44.1709869Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:44 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:44.1795873Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:44 PM [31m  ERROR[39m [38;5;3m[BillingService] [39m[31mStripe event handler failed event=evt_t2 type=customer.subscription.trial_will_end: db down[39m
+2026-10-04T16:51:44.2213598Z PASS test/b-trials-notice-and-webhook.spec.ts (201 MB heap size)
+2026-10-04T16:51:44.5497688Z [33m[Nest] 3105  - [39m10/04/2026, 4:51:44 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mtrial conflict: cancelled subscription sub_1 (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:44.7063292Z [31m[Nest] 3105  - [39m10/09/2026, 5:00:30 PM [31m  ERROR[39m [38;5;3m[EmailService] [39m[31memail send failed template=trial-ending to=client@example.test: synthetic abort[39m
+2026-10-04T16:51:44.7634716Z [33m[Nest] 3105  - [39m10/04/2026, 4:51:44 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T16:51:44.7643249Z FAIL test/audit-sol-t12-117-672.spec.ts (227 MB heap size)
+2026-10-04T16:51:44.7655618Z   ● AUD-SOL-T23-118 — current truth at actual push admission › an extension committed during push preference preparation retires the old warning before dispatch
+2026-10-04T16:51:44.7657001Z 
+2026-10-04T16:51:44.7657481Z     expect(jest.fn()).not.toHaveBeenCalled()
+2026-10-04T16:51:44.7658035Z 
+2026-10-04T16:51:44.7658432Z     Expected number of calls: 0
+2026-10-04T16:51:44.7659111Z     Received number of calls: 1
+2026-10-04T16:51:44.7659591Z 
+2026-10-04T16:51:44.7663113Z     1: "client-a", "Your free trial", "Your free trial ends on Oct 12. Your card will be charged $49 then. Cancel anytime before.", {"actionScreen": "ClientPackages", "deep_link": "tgp://plan", "kind": "trial_ending", "purchase_id": "p"}, {Symbol(kEvents): Map {}, Symbol(events.maxEventTargetListeners): 10, Symbol(events.maxEventTargetListenersWarned): false, Symbol(kHandlers): Map {}, Symbol(kAborted): false, Symbol(kReason): undefined, Symbol(kComposite): false}
+2026-10-04T16:51:44.7667508Z [33m[Nest] 3105  - [39m10/04/2026, 4:51:44 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p code=card_state_unknown[39m
+2026-10-04T16:51:44.7669321Z 
+2026-10-04T16:51:44.7669842Z     [0m [90m 411 |[39m     })[33m;[39m
+2026-10-04T16:51:44.7671313Z      [90m 412 |[39m     [36mawait[39m w[33m.[39mservice[33m.[39mdeliver(id[33m,[39m [33mNOW[39m)[33m;[39m
+2026-10-04T16:51:44.7673578Z     [31m[1m>[22m[39m[90m 413 |[39m     expect(w[33m.[39mnotifications[33m.[39mpushToUser)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T16:51:44.7675206Z      [90m     |[39m                                            [31m[1m^[22m[39m
+2026-10-04T16:51:44.7676636Z      [90m 414 |[39m     expect(w[33m.[39memail[33m.[39msend)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T16:51:44.7678196Z      [90m 415 |[39m     expect(w[33m.[39mnotices[33m.[39mrows[[35m0[39m])[33m.[39mtoMatchObject({
+2026-10-04T16:51:44.7680365Z      [90m 416 |[39m       push_status[33m:[39m [32m'skipped'[39m[33m,[39m email_status[33m:[39m [32m'skipped'[39m[33m,[39m last_error[33m:[39m [32m'skip:trial_superseded'[39m[33m,[39m[0m
+2026-10-04T16:51:44.7681646Z 
+2026-10-04T16:51:44.7682466Z       at Object.<anonymous> (test/audit-sol-t12-117-672.spec.ts:413:44)
+2026-10-04T16:51:44.7683156Z 
+2026-10-04T16:51:44.7684591Z   ● AUD-SOL-T23-118 — current truth at actual push admission › a cancellation-at-period-end committed during preferences never sends the old will-charge claim
+2026-10-04T16:51:44.7685820Z 
+2026-10-04T16:51:44.7686272Z     expect(received).toContain(expected) // indexOf
+2026-10-04T16:51:44.7686818Z 
+2026-10-04T16:51:44.7687269Z     Expected substring: "Your card will not be charged"
+2026-10-04T16:51:44.7688462Z     Received string:    "Your free trial ends on Oct 12. Your card will be charged $49 then. Cancel anytime before."
+2026-10-04T16:51:44.7689324Z 
+2026-10-04T16:51:44.7690492Z     [0m [90m 429 |[39m     [36mconst[39m calls [33m=[39m w[33m.[39mnotifications[33m.[39mpushToUser[33m.[39mmock[33m.[39mcalls[33m;[39m
+2026-10-04T16:51:44.7692232Z      [90m 430 |[39m     expect(calls)[33m.[39mtoHaveLength([35m1[39m)[33m;[39m
+2026-10-04T16:51:44.7693920Z [33m[Nest] 3105  - [39m10/04/2026, 4:51:44 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T16:51:44.7696169Z     [31m[1m>[22m[39m[90m 431 |[39m     expect(calls[[35m0[39m][[35m2[39m])[33m.[39mtoContain([32m'Your card will not be charged'[39m)[33m;[39m
+2026-10-04T16:51:44.7697584Z      [90m     |[39m                         [31m[1m^[22m[39m
+2026-10-04T16:51:44.7699078Z      [90m 432 |[39m     expect(calls[[35m0[39m][[35m2[39m])[33m.[39mnot[33m.[39mtoContain([32m'Your card will be charged'[39m)[33m;[39m
+2026-10-04T16:51:44.7700306Z      [90m 433 |[39m   })[33m;[39m
+2026-10-04T16:51:44.7701018Z      [90m 434 |[39m })[33m;[39m[0m
+2026-10-04T16:51:44.7701483Z 
+2026-10-04T16:51:44.7702246Z       at Object.<anonymous> (test/audit-sol-t12-117-672.spec.ts:431:25)
+2026-10-04T16:51:44.7704460Z [32m[Nest] 3105  - [39m10/09/2026, 5:00:30 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32memail sent template=trial-ending to=client@example.test provider_id=synthetic-provider-id[39m
+2026-10-04T16:51:44.7705758Z 
+2026-10-04T16:51:45.7765959Z PASS test/b-trials-t2-idempotent-create-http.spec.ts (286 MB heap size)
+2026-10-04T16:51:46.1752648Z [31m[Nest] 3105  - [39m10/09/2026, 5:00:30 PM [31m  ERROR[39m [38;5;3m[EmailService] [39m[31memail send failed template=trial-ending to=client@example.test: abort[39m
+2026-10-04T16:51:46.2203625Z PASS test/b-trials-t2-fix-round-8.spec.ts (319 MB heap size)
+2026-10-04T16:51:46.7468171Z [32m[Nest] 3105  - [39m10/09/2026, 5:00:30 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32memail sent template=trial-ending to=client@example.test provider_id=msg-2[39m
+2026-10-04T16:51:46.7470976Z [33m[Nest] 3105  - [39m10/09/2026, 5:00:35 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice email still running after abort notice=notice-p; lease held[39m
+2026-10-04T16:51:46.7474777Z [32m[Nest] 3105  - [39m10/09/2026, 5:03:55 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32memail sent template=trial-ending to=client@example.test provider_id=msg-1[39m
+2026-10-04T16:51:46.7486020Z [32m[Nest] 3105  - [39m10/09/2026, 5:03:55 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32memail sent template=trial-ending to=client@example.test provider_id=msg-2[39m
+2026-10-04T16:51:46.7488158Z [33m[Nest] 3105  - [39m10/09/2026, 5:00:35 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice push still running after abort notice=notice-p; lease held[39m
+2026-10-04T16:51:46.7489752Z [32m[Nest] 3105  - [39m10/04/2026, 4:51:46 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32memail sent template=trial-ending to=client@example.test provider_id=msg-1[39m
+2026-10-04T16:51:46.7491300Z [32m[Nest] 3105  - [39m10/04/2026, 4:51:46 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32memail sent template=trial-ending to=client@example.test provider_id=msg-2[39m
+2026-10-04T16:51:46.7493184Z [32m[Nest] 3105  - [39m10/04/2026, 4:51:46 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32memail sent template=trial-ending to=client@example.test provider_id=msg-3[39m
+2026-10-04T16:51:46.7494638Z [32m[Nest] 3105  - [39m10/04/2026, 4:51:46 PM [32m    LOG[39m [38;5;3m[TrialCheckoutCapability] [39m[32mfree trials are sold by subscription-checkout[39m
+2026-10-04T16:51:46.7568277Z PASS test/b-trials-package-rules.spec.ts (357 MB heap size)
+2026-10-04T16:51:46.9279556Z [32m[Nest] 3105  - [39m10/04/2026, 4:51:46 PM [32m    LOG[39m [38;5;3m[TrialCheckoutCapability] [39m[32mfree trials are sold by subscription-checkout[39m
+2026-10-04T16:51:46.9303408Z PASS test/b-trials-idempotent-create-compose.spec.ts (365 MB heap size)
+2026-10-04T16:51:47.2998419Z FAIL test/audit-sol-t23-118-conflict.spec.ts (393 MB heap size)
+2026-10-04T16:51:47.3000847Z   ● AUD-SOL-T23-118 — actual cancellation admission clocks › a late-row cancellation holds a fresh lease while its bounded Stripe operation runs
+2026-10-04T16:51:47.3002609Z 
+2026-10-04T16:51:47.3003039Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T16:51:47.3003426Z 
+2026-10-04T16:51:47.3003587Z     - Expected  - 2
+2026-10-04T16:51:47.3003933Z     + Received  + 2
+2026-10-04T16:51:47.3004134Z 
+2026-10-04T16:51:47.3005044Z       Object {
+2026-10-04T16:51:47.3005445Z     -   "lateCalls": 1,
+2026-10-04T16:51:47.3005835Z     -   "other": "busy",
+2026-10-04T16:51:47.3006247Z     +   "lateCalls": 2,
+2026-10-04T16:51:47.3006567Z     +   "other": "cancelled",
+2026-10-04T16:51:47.3006905Z       }
+2026-10-04T16:51:47.3007056Z 
+2026-10-04T16:51:47.3007900Z     [0m [90m 54 |[39m     held[33m.[39mresolve({ id[33m:[39m [32m'sub-7'[39m[33m,[39m status[33m:[39m [32m'canceled'[39m })[33m;[39m
+2026-10-04T16:51:47.3008885Z      [90m 55 |[39m     [36mawait[39m firstSweep[33m;[39m
+2026-10-04T16:51:47.3010279Z     [31m[1m>[22m[39m[90m 56 |[39m     expect({ lateCalls[33m,[39m other })[33m.[39mtoEqual({ lateCalls[33m:[39m [35m1[39m[33m,[39m other[33m:[39m [32m'busy'[39m })[33m;[39m
+2026-10-04T16:51:47.3011461Z      [90m    |[39m                                  [31m[1m^[22m[39m
+2026-10-04T16:51:47.3012216Z      [90m 57 |[39m   })[33m;[39m
+2026-10-04T16:51:47.3012682Z      [90m 58 |[39m })[33m;[39m
+2026-10-04T16:51:47.3013069Z      [90m 59 |[39m[0m
+2026-10-04T16:51:47.3013272Z 
+2026-10-04T16:51:47.3013626Z       at Object.<anonymous> (test/audit-sol-t23-118-conflict.spec.ts:56:34)
+2026-10-04T16:51:47.3014054Z 
+2026-10-04T16:51:47.3024005Z Test Suites: 2 failed, 6 passed, 8 total
+2026-10-04T16:51:47.3024616Z Tests:       3 failed, 133 passed, 136 total
+2026-10-04T16:51:47.3025012Z Snapshots:   0 total
+2026-10-04T16:51:47.3025254Z Time:        7.815 s
+2026-10-04T16:51:47.3027029Z Ran all test suites matching test/audit-sol-t12-117-672.spec.ts|test/audit-sol-t23-118-conflict.spec.ts|test/b-trials-t2-fix-round-8.spec.ts|test/b-trials-3-fix-round.spec.ts|test/b-trials-notice-and-webhook.spec.ts|test/b-trials-package-rules.spec.ts|test/b-trials-t2-idempotent-create-http.spec.ts|test/b-trials-idempotent-create-compose.spec.ts.
+2026-10-04T16:51:47.3845436Z [33m[Nest] 3105  - [39m10/09/2026, 5:00:09 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-0 (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:47.3848074Z [33m[Nest] 3105  - [39m10/09/2026, 5:00:18 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-1 (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:47.3850627Z [33m[Nest] 3105  - [39m10/09/2026, 5:00:27 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-2 (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:47.3853429Z [33m[Nest] 3105  - [39m10/09/2026, 5:00:36 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-3 (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:47.3855549Z [33m[Nest] 3105  - [39m10/09/2026, 5:00:45 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-4 (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:47.3857562Z [33m[Nest] 3105  - [39m10/09/2026, 5:00:54 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-5 (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:47.3859566Z [33m[Nest] 3105  - [39m10/09/2026, 5:01:03 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-6 (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:47.3861860Z [33m[Nest] 3105  - [39m10/09/2026, 5:01:08 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-7 (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:47.4768127Z ##[error]Process completed with exit code 1.
+2026-10-04T16:51:47.4885756Z Post job cleanup.
+2026-10-04T16:51:47.5711623Z [command]/usr/bin/git version
+2026-10-04T16:51:47.5747475Z git version 2.55.0
+2026-10-04T16:51:47.5787774Z Temporarily overriding HOME='/home/runner/work/_temp/ed92770d-1821-4188-a043-cfa3053894a9' before making global git config changes
+2026-10-04T16:51:47.5789007Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T16:51:47.5791498Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T16:51:47.5821480Z Removing SSH command configuration
+2026-10-04T16:51:47.5828232Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T16:51:47.5864521Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T16:51:47.6086509Z Removing HTTP extra header
+2026-10-04T16:51:47.6091209Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T16:51:47.6125327Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T16:51:47.6342814Z Removing includeIf entries pointing to credentials config files
+2026-10-04T16:51:47.6348874Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T16:51:47.6376554Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T16:51:47.6378100Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T16:51:47.6379431Z includeif.gitdir:/github/workspace/.git.path
+2026-10-04T16:51:47.6380687Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T16:51:47.6386744Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T16:51:47.6409167Z /home/runner/work/_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config
+2026-10-04T16:51:47.6420580Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config
+2026-10-04T16:51:47.6454894Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T16:51:47.6476463Z /home/runner/work/_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config
+2026-10-04T16:51:47.6485571Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config
+2026-10-04T16:51:47.6516204Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-04T16:51:47.6536446Z /github/runner_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config
+2026-10-04T16:51:47.6544014Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config
+2026-10-04T16:51:47.6574722Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T16:51:47.6594583Z /github/runner_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config
+2026-10-04T16:51:47.6603329Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config
+2026-10-04T16:51:47.6636314Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T16:51:47.6864713Z Removing credentials config '/home/runner/work/_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config'
+2026-10-04T16:51:47.6997160Z Print service container logs: 85d9abedae8d499f884e29a60b07212a_redis7alpine_aae716
+2026-10-04T16:51:47.7001500Z ##[command]/usr/bin/docker logs --details 900bb8686e4744c4636a5513915394dfe2a3c7fd83fe552bb410a482065c2b31
+2026-10-04T16:51:47.7124910Z  1:C 04 Oct 2026 16:50:51.532 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+2026-10-04T16:51:47.7126745Z  1:C 04 Oct 2026 16:50:51.532 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+2026-10-04T16:51:47.7133385Z  1:C 04 Oct 2026 16:50:51.532 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+2026-10-04T16:51:47.7134976Z  1:C 04 Oct 2026 16:50:51.532 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+2026-10-04T16:51:47.7136045Z  1:M 04 Oct 2026 16:50:51.532 * monotonic clock: POSIX clock_gettime
+2026-10-04T16:51:47.7136862Z  1:M 04 Oct 2026 16:50:51.533 * Running mode=standalone, port=6379.
+2026-10-04T16:51:47.7137477Z  1:M 04 Oct 2026 16:50:51.533 * Server initialized
+2026-10-04T16:51:47.7138044Z  1:M 04 Oct 2026 16:50:51.533 * Ready to accept connections tcp
+2026-10-04T16:51:47.7144760Z Stop and remove container: 85d9abedae8d499f884e29a60b07212a_redis7alpine_aae716
+2026-10-04T16:51:47.7149661Z ##[command]/usr/bin/docker rm --force 900bb8686e4744c4636a5513915394dfe2a3c7fd83fe552bb410a482065c2b31
+2026-10-04T16:51:48.5583428Z 900bb8686e4744c4636a5513915394dfe2a3c7fd83fe552bb410a482065c2b31
+2026-10-04T16:51:48.5610379Z Remove container network: github_network_810a88c4fbe8422fba2c95e3c699c543
+2026-10-04T16:51:48.5615512Z ##[command]/usr/bin/docker network rm github_network_810a88c4fbe8422fba2c95e3c699c543
+2026-10-04T16:51:48.6546167Z github_network_810a88c4fbe8422fba2c95e3c699c543
+2026-10-04T16:51:48.6622737Z Cleaning up orphan processes
+2026-10-04T16:50:44.9180000Z Evaluating targeted.if
+2026-10-04T16:50:44.9180000Z Evaluating: success()
+2026-10-04T16:50:44.9180000Z Result: true
+2026-10-04T16:50:44.9190000Z Requested labels: ubuntu-latest
+2026-10-04T16:50:44.9190000Z Job defined at: BradleyGleavePortfolio/growth-project-backend/.github/workflows/ci-lane.yml@refs/heads/audit/AUD-SOL-T23-118/673-boundaries
+2026-10-04T16:50:44.9190000Z Waiting for a runner to pick up this job...
+2026-10-04T16:50:45.3760000Z Job is waiting for a hosted runner to come online.
+2026-10-04T16:50:45.3760000Z Job is about to start running on the hosted runner: GitHub Actions 1000026221﻿2026-10-04T16:50:48.4007123Z Current runner version: '2.337.0'
+2026-10-04T16:50:48.4032330Z ##[group]Runner Image Provisioner
+2026-10-04T16:50:48.4033195Z Hosted Compute Agent
+2026-10-04T16:50:48.4033902Z Version: 20260901.588
+2026-10-04T16:50:48.4034548Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-04T16:50:48.4035350Z Build Date: 2026-09-01T19:56:44Z
+2026-10-04T16:50:48.4036055Z Worker ID: {bf5b21e3-8ae6-4333-a74b-fab460927377}
+2026-10-04T16:50:48.4036819Z Azure Region: westus
+2026-10-04T16:50:48.4037469Z ##[endgroup]
+2026-10-04T16:50:48.4039050Z ##[group]Operating System
+2026-10-04T16:50:48.4039852Z Ubuntu
+2026-10-04T16:50:48.4040415Z 24.04.5
+2026-10-04T16:50:48.4040935Z LTS
+2026-10-04T16:50:48.4041840Z ##[endgroup]
+2026-10-04T16:50:48.4042611Z ##[group]Runner Image
+2026-10-04T16:50:48.4043234Z Image: ubuntu-24.04
+2026-10-04T16:50:48.4043905Z Version: 20260927.320.1
+2026-10-04T16:50:48.4044963Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-04T16:50:48.4046774Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-04T16:50:48.4047768Z ##[endgroup]
+2026-10-04T16:50:48.4049019Z ##[group]GITHUB_TOKEN Permissions
+2026-10-04T16:50:48.4050850Z Contents: read
+2026-10-04T16:50:48.4051586Z Metadata: read
+2026-10-04T16:50:48.4052405Z Packages: read
+2026-10-04T16:50:48.4053083Z ##[endgroup]
+2026-10-04T16:50:48.4055118Z Secret source: Actions
+2026-10-04T16:50:48.4056320Z Cache mode: write
+2026-10-04T16:50:48.4057027Z Prepare workflow directory
+2026-10-04T16:50:48.4549910Z Prepare all required actions
+2026-10-04T16:50:48.4598191Z Getting action download info
+2026-10-04T16:50:48.8167815Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-04T16:50:48.9205723Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-04T16:50:49.1631454Z Complete job name: targeted
+﻿2026-10-04T16:50:49.2159983Z ##[group]Checking docker version
+2026-10-04T16:50:49.2173261Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-04T16:50:49.2995056Z '1.48'
+2026-10-04T16:50:49.3014857Z Docker daemon API version: '1.48'
+2026-10-04T16:50:49.3015657Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-04T16:50:49.3183324Z '1.48'
+2026-10-04T16:50:49.3188820Z Docker client API version: '1.48'
+2026-10-04T16:50:49.3195023Z ##[endgroup]
+2026-10-04T16:50:49.3198064Z ##[group]Clean up resources from previous jobs
+2026-10-04T16:50:49.3203267Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=d88ca6"
+2026-10-04T16:50:49.3347746Z ##[command]/usr/bin/docker network prune --force --filter "label=d88ca6"
+2026-10-04T16:50:49.3473885Z ##[endgroup]
+2026-10-04T16:50:49.3474449Z ##[group]Create local container network
+2026-10-04T16:50:49.3484133Z ##[command]/usr/bin/docker network create --label d88ca6 github_network_810a88c4fbe8422fba2c95e3c699c543
+2026-10-04T16:50:49.3994832Z 2454b513e560cec57f8139aba87648896e7676e6d104ff6af7734098fa6978d7
+2026-10-04T16:50:49.4011811Z ##[endgroup]
+2026-10-04T16:50:49.4035889Z ##[group]Starting redis service container
+2026-10-04T16:50:49.4057151Z ##[command]/usr/bin/docker pull redis:7-alpine
+2026-10-04T16:50:50.2853364Z 7-alpine: Pulling from library/redis
+2026-10-04T16:50:50.5449675Z 16333ee0c00f: Pulling fs layer
+2026-10-04T16:50:50.5451178Z 83234986c742: Pulling fs layer
+2026-10-04T16:50:50.5452372Z 7eb50503c2b0: Pulling fs layer
+2026-10-04T16:50:50.5453340Z 1522f9c6f453: Pulling fs layer
+2026-10-04T16:50:50.5454364Z 9928009b15c8: Pulling fs layer
+2026-10-04T16:50:50.5455330Z 4f4fb700ef54: Pulling fs layer
+2026-10-04T16:50:50.5456235Z 4eb14bae0e1d: Pulling fs layer
+2026-10-04T16:50:50.5457198Z 1522f9c6f453: Waiting
+2026-10-04T16:50:50.5457998Z 9928009b15c8: Waiting
+2026-10-04T16:50:50.5458788Z 4f4fb700ef54: Waiting
+2026-10-04T16:50:50.5459565Z 4eb14bae0e1d: Waiting
+2026-10-04T16:50:50.7673766Z 83234986c742: Verifying Checksum
+2026-10-04T16:50:50.7675469Z 83234986c742: Download complete
+2026-10-04T16:50:50.7725389Z 7eb50503c2b0: Verifying Checksum
+2026-10-04T16:50:50.7727289Z 7eb50503c2b0: Download complete
+2026-10-04T16:50:50.7821372Z 16333ee0c00f: Verifying Checksum
+2026-10-04T16:50:50.7821958Z 16333ee0c00f: Download complete
+2026-10-04T16:50:50.8862544Z 16333ee0c00f: Pull complete
+2026-10-04T16:50:50.9110258Z 83234986c742: Pull complete
+2026-10-04T16:50:50.9896250Z 9928009b15c8: Verifying Checksum
+2026-10-04T16:50:50.9897409Z 9928009b15c8: Download complete
+2026-10-04T16:50:50.9918189Z 4f4fb700ef54: Download complete
+2026-10-04T16:50:51.0292724Z 1522f9c6f453: Verifying Checksum
+2026-10-04T16:50:51.0293416Z 1522f9c6f453: Download complete
+2026-10-04T16:50:51.0646897Z 7eb50503c2b0: Pull complete
+2026-10-04T16:50:51.2077882Z 4eb14bae0e1d: Verifying Checksum
+2026-10-04T16:50:51.2566476Z 4eb14bae0e1d: Download complete
+2026-10-04T16:50:51.2567294Z 1522f9c6f453: Pull complete
+2026-10-04T16:50:51.2662897Z 9928009b15c8: Pull complete
+2026-10-04T16:50:51.2774751Z 4f4fb700ef54: Pull complete
+2026-10-04T16:50:51.2878666Z 4eb14bae0e1d: Pull complete
+2026-10-04T16:50:51.2915779Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+2026-10-04T16:50:51.2930243Z Status: Downloaded newer image for redis:7-alpine
+2026-10-04T16:50:51.2942352Z docker.io/library/redis:7-alpine
+2026-10-04T16:50:51.2975495Z ##[command]/usr/bin/docker create --name 85d9abedae8d499f884e29a60b07212a_redis7alpine_aae716 --label d88ca6 --network github_network_810a88c4fbe8422fba2c95e3c699c543 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+2026-10-04T16:50:51.3216528Z 900bb8686e4744c4636a5513915394dfe2a3c7fd83fe552bb410a482065c2b31
+2026-10-04T16:50:51.3238808Z ##[command]/usr/bin/docker start 900bb8686e4744c4636a5513915394dfe2a3c7fd83fe552bb410a482065c2b31
+2026-10-04T16:50:51.5261089Z 900bb8686e4744c4636a5513915394dfe2a3c7fd83fe552bb410a482065c2b31
+2026-10-04T16:50:51.5281841Z ##[command]/usr/bin/docker ps --all --filter id=900bb8686e4744c4636a5513915394dfe2a3c7fd83fe552bb410a482065c2b31 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-04T16:50:51.5404064Z 900bb8686e4744c4636a5513915394dfe2a3c7fd83fe552bb410a482065c2b31 Up Less than a second (health: starting)
+2026-10-04T16:50:51.5423550Z ##[command]/usr/bin/docker port 900bb8686e4744c4636a5513915394dfe2a3c7fd83fe552bb410a482065c2b31
+2026-10-04T16:50:51.5540707Z 6379/tcp -> 0.0.0.0:6379
+2026-10-04T16:50:51.5541527Z 6379/tcp -> [::]:6379
+2026-10-04T16:50:51.5586812Z ##[endgroup]
+2026-10-04T16:50:51.5596061Z ##[group]Waiting for all services to be ready
+2026-10-04T16:50:51.5609457Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 900bb8686e4744c4636a5513915394dfe2a3c7fd83fe552bb410a482065c2b31
+2026-10-04T16:50:51.5726220Z starting
+2026-10-04T16:50:51.5745696Z redis service is starting, waiting 2 seconds before checking again.
+2026-10-04T16:50:53.5751641Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 900bb8686e4744c4636a5513915394dfe2a3c7fd83fe552bb410a482065c2b31
+2026-10-04T16:50:53.5880733Z starting
+2026-10-04T16:50:53.5895198Z redis service is starting, waiting 3 seconds before checking again.
+2026-10-04T16:50:57.3203784Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 900bb8686e4744c4636a5513915394dfe2a3c7fd83fe552bb410a482065c2b31
+2026-10-04T16:50:57.3324943Z healthy
+2026-10-04T16:50:57.3340410Z redis service is healthy.
+2026-10-04T16:50:57.3341119Z ##[endgroup]
+﻿2026-10-04T16:50:57.3630551Z ##[group]Run actions/checkout@v6
+2026-10-04T16:50:57.3631147Z with:
+2026-10-04T16:50:57.3631449Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T16:50:57.3634420Z   token: ***
+2026-10-04T16:50:57.3634669Z   ssh-strict: true
+2026-10-04T16:50:57.3634878Z   ssh-user: git
+2026-10-04T16:50:57.3635086Z   persist-credentials: true
+2026-10-04T16:50:57.3635594Z   clean: true
+2026-10-04T16:50:57.3635803Z   sparse-checkout-cone-mode: true
+2026-10-04T16:50:57.3636052Z   fetch-depth: 1
+2026-10-04T16:50:57.3636253Z   fetch-tags: false
+2026-10-04T16:50:57.3636452Z   show-progress: true
+2026-10-04T16:50:57.3636762Z   lfs: false
+2026-10-04T16:50:57.3637065Z   submodules: false
+2026-10-04T16:50:57.3637389Z   set-safe-directory: true
+2026-10-04T16:50:57.3637781Z   allow-unsafe-pr-checkout: false
+2026-10-04T16:50:57.3638592Z ##[endgroup]
+2026-10-04T16:50:57.4707838Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T16:50:57.4710176Z ##[group]Getting Git version info
+2026-10-04T16:50:57.4711141Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T16:50:57.4712765Z [command]/usr/bin/git version
+2026-10-04T16:50:57.4713450Z git version 2.55.0
+2026-10-04T16:50:57.4718250Z ##[endgroup]
+2026-10-04T16:50:57.4734488Z Temporarily overriding HOME='/home/runner/work/_temp/eae6f0f5-b737-4044-87b7-d0e0dd3fee4a' before making global git config changes
+2026-10-04T16:50:57.4735900Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T16:50:57.4740683Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T16:50:57.4789525Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T16:50:57.4794157Z ##[group]Determining repository object format
+2026-10-04T16:50:57.4797166Z ##[endgroup]
+2026-10-04T16:50:57.4798016Z ##[group]Initializing the repository
+2026-10-04T16:50:57.4802598Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T16:50:57.4902491Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-04T16:50:57.4903067Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-04T16:50:57.4903574Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-04T16:50:57.4903992Z hint: call:
+2026-10-04T16:50:57.4904183Z hint:
+2026-10-04T16:50:57.4904497Z hint: 	git config --global init.defaultBranch <name>
+2026-10-04T16:50:57.4904994Z hint:
+2026-10-04T16:50:57.4905560Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-04T16:50:57.4906326Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-04T16:50:57.4906947Z hint:
+2026-10-04T16:50:57.4907334Z hint: 	git branch -m <name>
+2026-10-04T16:50:57.4907772Z hint:
+2026-10-04T16:50:57.4908372Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-04T16:50:57.4909642Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-04T16:50:57.4917217Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T16:50:57.4959431Z ##[endgroup]
+2026-10-04T16:50:57.4960123Z ##[group]Disabling automatic garbage collection
+2026-10-04T16:50:57.4964581Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-04T16:50:57.4993719Z ##[endgroup]
+2026-10-04T16:50:57.4994377Z ##[group]Setting up auth
+2026-10-04T16:50:57.4995290Z Removing SSH command configuration
+2026-10-04T16:50:57.5001489Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T16:50:57.5032335Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T16:50:57.5376124Z Removing HTTP extra header
+2026-10-04T16:50:57.5382371Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T16:50:57.5412249Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T16:50:57.5629393Z Removing includeIf entries pointing to credentials config files
+2026-10-04T16:50:57.5629961Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T16:50:57.5659431Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T16:50:57.5880048Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-04T16:50:57.5918089Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config
+2026-10-04T16:50:57.5948840Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config
+2026-10-04T16:50:57.5981488Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config
+2026-10-04T16:50:57.6019683Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config
+2026-10-04T16:50:57.6045359Z ##[endgroup]
+2026-10-04T16:50:57.6045829Z ##[group]Fetching the repository
+2026-10-04T16:50:57.6054004Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +243cb9e95ffc8804cf019b076c78002b783b7288:refs/remotes/origin/audit/AUD-SOL-T23-118/673-boundaries
+2026-10-04T16:50:59.0095371Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T16:50:59.0096730Z  * [new ref]         243cb9e95ffc8804cf019b076c78002b783b7288 -> origin/audit/AUD-SOL-T23-118/673-boundaries
+2026-10-04T16:50:59.0107379Z [command]/usr/bin/git branch --list --remote origin/audit/AUD-SOL-T23-118/673-boundaries
+2026-10-04T16:50:59.0133461Z   origin/audit/AUD-SOL-T23-118/673-boundaries
+2026-10-04T16:50:59.0142451Z [command]/usr/bin/git rev-parse refs/remotes/origin/audit/AUD-SOL-T23-118/673-boundaries
+2026-10-04T16:50:59.0163478Z 243cb9e95ffc8804cf019b076c78002b783b7288
+2026-10-04T16:50:59.0167724Z ##[endgroup]
+2026-10-04T16:50:59.0168133Z ##[group]Determining the checkout info
+2026-10-04T16:50:59.0169362Z ##[endgroup]
+2026-10-04T16:50:59.0175622Z [command]/usr/bin/git sparse-checkout disable
+2026-10-04T16:50:59.0225763Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-04T16:50:59.0251842Z ##[group]Checking out the ref
+2026-10-04T16:50:59.0258644Z [command]/usr/bin/git checkout --progress --force -B audit/AUD-SOL-T23-118/673-boundaries refs/remotes/origin/audit/AUD-SOL-T23-118/673-boundaries
+2026-10-04T16:50:59.2427237Z Switched to a new branch 'audit/AUD-SOL-T23-118/673-boundaries'
+2026-10-04T16:50:59.2431757Z branch 'audit/AUD-SOL-T23-118/673-boundaries' set up to track 'origin/audit/AUD-SOL-T23-118/673-boundaries'.
+2026-10-04T16:50:59.2441087Z ##[endgroup]
+2026-10-04T16:50:59.2485024Z [command]/usr/bin/git log -1 --format=%H
+2026-10-04T16:50:59.2508219Z 243cb9e95ffc8804cf019b076c78002b783b7288
+﻿2026-10-04T16:50:59.2759095Z ##[group]Run actions/setup-node@v6
+2026-10-04T16:50:59.2759392Z with:
+2026-10-04T16:50:59.2759583Z   node-version: 20
+2026-10-04T16:50:59.2759779Z   cache: npm
+2026-10-04T16:50:59.2759974Z   check-latest: false
+2026-10-04T16:50:59.2762765Z   token: ***
+2026-10-04T16:50:59.2762993Z   package-manager-cache: true
+2026-10-04T16:50:59.2763243Z ##[endgroup]
+2026-10-04T16:50:59.4182468Z Attempting to download 20...
+2026-10-04T16:51:00.0258087Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-04T16:51:00.4074826Z Extracting ...
+2026-10-04T16:51:00.4190093Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/f8f20fb2-cac8-45e9-b539-8a66fbf5a267 -f /home/runner/work/_temp/ab1b2dcb-ac0c-456a-91eb-81b3b5762994
+2026-10-04T16:51:01.4216557Z Adding to the cache ...
+2026-10-04T16:51:03.2587031Z ##[group]Environment details
+2026-10-04T16:51:03.4768492Z node: v20.20.2
+2026-10-04T16:51:03.4769085Z npm: 10.8.2
+2026-10-04T16:51:03.4769419Z yarn: 1.22.22
+2026-10-04T16:51:03.4770123Z ##[endgroup]
+2026-10-04T16:51:03.4788237Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+2026-10-04T16:51:03.5819183Z /home/runner/.npm
+2026-10-04T16:51:03.8316777Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T16:51:05.1096580Z Received 4194304 of 86828135 (4.8%), 4.0 MBs/sec
+2026-10-04T16:51:05.8329227Z Received 86828135 of 86828135 (100.0%), 48.1 MBs/sec
+2026-10-04T16:51:05.8330045Z Cache Size: ~83 MB (86828135 B)
+2026-10-04T16:51:05.8443750Z [command]/usr/bin/tar -xf /home/runner/work/_temp/b6844848-cc27-49ef-9c5d-a24c1d608ca0/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+2026-10-04T16:51:06.0249407Z Cache restored successfully
+2026-10-04T16:51:06.0300540Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+﻿2026-10-04T16:51:06.0493296Z ##[group]Run npm ci
+2026-10-04T16:51:06.0493601Z [36;1mnpm ci[0m
+2026-10-04T16:51:06.0705098Z shell: /usr/bin/bash -e {0}
+2026-10-04T16:51:06.0705437Z ##[endgroup]
+2026-10-04T16:51:11.7894784Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-04T16:51:12.8487347Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-04T16:51:13.9715607Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T16:51:15.3431318Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T16:51:15.3608261Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T16:51:15.4203400Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T16:51:28.3276026Z 
+2026-10-04T16:51:28.3276738Z > growth-project-backend@1.0.0 postinstall
+2026-10-04T16:51:28.3277387Z > prisma generate
+2026-10-04T16:51:28.3277612Z 
+2026-10-04T16:51:29.2785985Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T16:51:33.1321260Z ┌─────────────────────────────────────────────────────────┐
+2026-10-04T16:51:33.1322634Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+2026-10-04T16:51:33.1323681Z │                                                         │
+2026-10-04T16:51:33.1324872Z │  This is a major update - please follow the guide at    │
+2026-10-04T16:51:33.1326053Z │  https://pris.ly/d/major-version-upgrade                │
+2026-10-04T16:51:33.1327128Z │                                                         │
+2026-10-04T16:51:33.1328810Z │  Run the following to update                            │
+2026-10-04T16:51:33.1330194Z │    npm i --save-dev prisma@latest                       │
+2026-10-04T16:51:33.1331522Z │    npm i @prisma/client@latest                          │
+2026-10-04T16:51:33.1333054Z └─────────────────────────────────────────────────────────┘
+2026-10-04T16:51:33.1333703Z 
+2026-10-04T16:51:33.1334772Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.14s
+2026-10-04T16:51:33.1335736Z 
+2026-10-04T16:51:33.1336731Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T16:51:33.1337689Z 
+2026-10-04T16:51:33.1339245Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+2026-10-04T16:51:33.1340493Z 
+2026-10-04T16:51:33.1883424Z 
+2026-10-04T16:51:33.1884197Z > growth-project-backend@1.0.0 prepare
+2026-10-04T16:51:33.1885005Z > lefthook install
+2026-10-04T16:51:33.1885334Z 
+2026-10-04T16:51:33.2389670Z sync hooks: ✔️(commit-msg, pre-commit)
+2026-10-04T16:51:33.2580800Z 
+2026-10-04T16:51:33.2581583Z added 1115 packages, and audited 1116 packages in 27s
+2026-10-04T16:51:33.2581917Z 
+2026-10-04T16:51:33.2582358Z 202 packages are looking for funding
+2026-10-04T16:51:33.2582715Z   run `npm fund` for details
+2026-10-04T16:51:33.2614260Z 
+2026-10-04T16:51:33.2614492Z 3 high severity vulnerabilities
+2026-10-04T16:51:33.2614798Z 
+2026-10-04T16:51:33.2615691Z To address all issues (including breaking changes), run:
+2026-10-04T16:51:33.2616283Z   npm audit fix --force
+2026-10-04T16:51:33.2616524Z 
+2026-10-04T16:51:33.2616737Z Run `npm audit` for details.
+﻿2026-10-04T16:51:33.3265210Z ##[group]Run npx prisma generate
+2026-10-04T16:51:33.3265550Z [36;1mnpx prisma generate[0m
+2026-10-04T16:51:33.3338574Z shell: /usr/bin/bash -e {0}
+2026-10-04T16:51:33.3338865Z ##[endgroup]
+2026-10-04T16:51:34.5773176Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T16:51:38.4918273Z 
+2026-10-04T16:51:38.4919641Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.17s
+2026-10-04T16:51:38.4920265Z 
+2026-10-04T16:51:38.4920913Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T16:51:38.4921514Z 
+2026-10-04T16:51:38.4922629Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+2026-10-04T16:51:38.4923330Z 
+﻿2026-10-04T16:51:38.6120313Z ##[group]Run set -euo pipefail
+2026-10-04T16:51:38.6120675Z [36;1mset -euo pipefail[0m
+2026-10-04T16:51:38.6121107Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-04T16:51:38.6121647Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-04T16:51:38.6122370Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-04T16:51:38.6122725Z [36;1mnpx jest --ci --runInBand "${SPECS[@]}"[0m
+2026-10-04T16:51:38.6186176Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T16:51:38.6186561Z env:
+2026-10-04T16:51:38.6186818Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-04T16:51:38.6187198Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-04T16:51:38.6187550Z ##[endgroup]
+2026-10-04T16:51:38.6288266Z specs: test/audit-sol-t12-117-672.spec.ts test/audit-sol-t23-118-conflict.spec.ts test/b-trials-t2-fix-round-8.spec.ts test/b-trials-3-fix-round.spec.ts test/b-trials-notice-and-webhook.spec.ts test/b-trials-package-rules.spec.ts test/b-trials-t2-idempotent-create-http.spec.ts test/b-trials-idempotent-create-compose.spec.ts
+2026-10-04T16:51:42.6124979Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.6214672Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.6237323Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel failed for purchase pur-1 attempt=1 code=http_503 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T16:51:42.6317328Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.6394282Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.6424148Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.6594971Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.6654844Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.6665130Z [31m[Nest] 3105  - [39m10/04/2026, 4:52:02 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel failed for purchase pur-1 attempt=1 code=timeout (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T16:51:42.6669554Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.6674021Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel failed for purchase pur-1 attempt=1 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T16:51:42.6677954Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel failed for purchase pur-1 attempt=2 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T16:51:42.6693671Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel failed for purchase pur-1 attempt=3 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T16:51:42.6697248Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel failed for purchase pur-1 attempt=4 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T16:51:42.6700666Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel failed for purchase pur-1 attempt=5 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T16:51:42.6704576Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.6716226Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)[39m
+2026-10-04T16:51:42.6751928Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.6774829Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.7269866Z [33m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.7273159Z [33m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.7276039Z [33m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.7278857Z [33m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase pur-1 (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:42.7281502Z [33m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice push outcome dropped (lease lost) notice=row_1[39m
+2026-10-04T16:51:42.7284607Z [33m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice email outcome dropped (lease lost) notice=row_1[39m
+2026-10-04T16:51:42.7287197Z [33m[Nest] 3105  - [39m10/04/2026, 4:52:17 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice push still running after abort notice=row_1; lease held[39m
+2026-10-04T16:51:43.0018890Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:43 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:43.0023430Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:43 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel failed for purchase pur-1 attempt=1 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T16:51:43.0027094Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:43 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel failed for purchase pur-1 attempt=2 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T16:51:43.0029719Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:43 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel failed for purchase pur-1 attempt=3 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T16:51:43.0033894Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:43 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)[39m
+2026-10-04T16:51:43.0042771Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:43 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:43.0045681Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:43 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel failed for purchase pur-1 attempt=1 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T16:51:43.0048341Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:43 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel failed for purchase pur-1 attempt=2 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T16:51:43.0051052Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:43 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict: cancel failed for purchase pur-1 attempt=3 code=http_500 (TRIAL_ALREADY_USED, retried by the sweep)[39m
+2026-10-04T16:51:43.0053514Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:43 PM [31m  ERROR[39m [38;5;3m[TrialConflictService] [39m[31mtrial conflict superseded: purchase pur-1 started billing before its cancel succeeded (TRIAL_ALREADY_USED, offer a refund)[39m
+2026-10-04T16:51:43.0178228Z PASS test/b-trials-3-fix-round.spec.ts (122 MB heap size)
+2026-10-04T16:51:44.1316010Z [33m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T16:51:44.1318017Z [33m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=row_1 code=card_state_unknown[39m
+2026-10-04T16:51:44.1319673Z [33m[Nest] 3105  - [39m10/04/2026, 4:51:42 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T16:51:44.1470188Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:44 PM [31m  ERROR[39m [38;5;3m[TrialNoticeService] [39m[31mtrial notice reconcile errored: TypeError[39m
+2026-10-04T16:51:44.1573284Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:44 PM [31m  ERROR[39m [38;5;3m[TrialNoticeService] [39m[31mtrial notice reconcile errored: TypeError[39m
+2026-10-04T16:51:44.1609568Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:44 PM [31m  ERROR[39m [38;5;3m[TrialNoticeService] [39m[31mtrial notice reconcile errored: TypeError[39m
+2026-10-04T16:51:44.1709841Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:44 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase pur-1 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:44.1795850Z [31m[Nest] 3105  - [39m10/04/2026, 4:51:44 PM [31m  ERROR[39m [38;5;3m[BillingService] [39m[31mStripe event handler failed event=evt_t2 type=customer.subscription.trial_will_end: db down[39m
+2026-10-04T16:51:44.2213564Z PASS test/b-trials-notice-and-webhook.spec.ts (201 MB heap size)
+2026-10-04T16:51:44.5497168Z [33m[Nest] 3105  - [39m10/04/2026, 4:51:44 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mtrial conflict: cancelled subscription sub_1 (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:44.7063244Z [31m[Nest] 3105  - [39m10/09/2026, 5:00:30 PM [31m  ERROR[39m [38;5;3m[EmailService] [39m[31memail send failed template=trial-ending to=client@example.test: synthetic abort[39m
+2026-10-04T16:51:44.7634674Z [33m[Nest] 3105  - [39m10/04/2026, 4:51:44 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T16:51:44.7643227Z FAIL test/audit-sol-t12-117-672.spec.ts (227 MB heap size)
+2026-10-04T16:51:44.7655603Z   ● AUD-SOL-T23-118 — current truth at actual push admission › an extension committed during push preference preparation retires the old warning before dispatch
+2026-10-04T16:51:44.7656994Z 
+2026-10-04T16:51:44.7657462Z     expect(jest.fn()).not.toHaveBeenCalled()
+2026-10-04T16:51:44.7658031Z 
+2026-10-04T16:51:44.7658428Z     Expected number of calls: 0
+2026-10-04T16:51:44.7659107Z     Received number of calls: 1
+2026-10-04T16:51:44.7659587Z 
+2026-10-04T16:51:44.7663080Z     1: "client-a", "Your free trial", "Your free trial ends on Oct 12. Your card will be charged $49 then. Cancel anytime before.", {"actionScreen": "ClientPackages", "deep_link": "tgp://plan", "kind": "trial_ending", "purchase_id": "p"}, {Symbol(kEvents): Map {}, Symbol(events.maxEventTargetListeners): 10, Symbol(events.maxEventTargetListenersWarned): false, Symbol(kHandlers): Map {}, Symbol(kAborted): false, Symbol(kReason): undefined, Symbol(kComposite): false}
+2026-10-04T16:51:44.7667492Z [33m[Nest] 3105  - [39m10/04/2026, 4:51:44 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p code=card_state_unknown[39m
+2026-10-04T16:51:44.7669315Z 
+2026-10-04T16:51:44.7669838Z     [0m [90m 411 |[39m     })[33m;[39m
+2026-10-04T16:51:44.7671306Z      [90m 412 |[39m     [36mawait[39m w[33m.[39mservice[33m.[39mdeliver(id[33m,[39m [33mNOW[39m)[33m;[39m
+2026-10-04T16:51:44.7673557Z     [31m[1m>[22m[39m[90m 413 |[39m     expect(w[33m.[39mnotifications[33m.[39mpushToUser)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T16:51:44.7675200Z      [90m     |[39m                                            [31m[1m^[22m[39m
+2026-10-04T16:51:44.7676623Z      [90m 414 |[39m     expect(w[33m.[39memail[33m.[39msend)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+2026-10-04T16:51:44.7678192Z      [90m 415 |[39m     expect(w[33m.[39mnotices[33m.[39mrows[[35m0[39m])[33m.[39mtoMatchObject({
+2026-10-04T16:51:44.7680360Z      [90m 416 |[39m       push_status[33m:[39m [32m'skipped'[39m[33m,[39m email_status[33m:[39m [32m'skipped'[39m[33m,[39m last_error[33m:[39m [32m'skip:trial_superseded'[39m[33m,[39m[0m
+2026-10-04T16:51:44.7681641Z 
+2026-10-04T16:51:44.7682460Z       at Object.<anonymous> (test/audit-sol-t12-117-672.spec.ts:413:44)
+2026-10-04T16:51:44.7683152Z 
+2026-10-04T16:51:44.7684574Z   ● AUD-SOL-T23-118 — current truth at actual push admission › a cancellation-at-period-end committed during preferences never sends the old will-charge claim
+2026-10-04T16:51:44.7685817Z 
+2026-10-04T16:51:44.7686268Z     expect(received).toContain(expected) // indexOf
+2026-10-04T16:51:44.7686814Z 
+2026-10-04T16:51:44.7687265Z     Expected substring: "Your card will not be charged"
+2026-10-04T16:51:44.7688458Z     Received string:    "Your free trial ends on Oct 12. Your card will be charged $49 then. Cancel anytime before."
+2026-10-04T16:51:44.7689321Z 
+2026-10-04T16:51:44.7690488Z     [0m [90m 429 |[39m     [36mconst[39m calls [33m=[39m w[33m.[39mnotifications[33m.[39mpushToUser[33m.[39mmock[33m.[39mcalls[33m;[39m
+2026-10-04T16:51:44.7692226Z      [90m 430 |[39m     expect(calls)[33m.[39mtoHaveLength([35m1[39m)[33m;[39m
+2026-10-04T16:51:44.7693915Z [33m[Nest] 3105  - [39m10/04/2026, 4:51:44 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+2026-10-04T16:51:44.7695937Z     [31m[1m>[22m[39m[90m 431 |[39m     expect(calls[[35m0[39m][[35m2[39m])[33m.[39mtoContain([32m'Your card will not be charged'[39m)[33m;[39m
+2026-10-04T16:51:44.7697580Z      [90m     |[39m                         [31m[1m^[22m[39m
+2026-10-04T16:51:44.7699074Z      [90m 432 |[39m     expect(calls[[35m0[39m][[35m2[39m])[33m.[39mnot[33m.[39mtoContain([32m'Your card will be charged'[39m)[33m;[39m
+2026-10-04T16:51:44.7700302Z      [90m 433 |[39m   })[33m;[39m
+2026-10-04T16:51:44.7701015Z      [90m 434 |[39m })[33m;[39m[0m
+2026-10-04T16:51:44.7701479Z 
+2026-10-04T16:51:44.7702240Z       at Object.<anonymous> (test/audit-sol-t12-117-672.spec.ts:431:25)
+2026-10-04T16:51:44.7704455Z [32m[Nest] 3105  - [39m10/09/2026, 5:00:30 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32memail sent template=trial-ending to=client@example.test provider_id=synthetic-provider-id[39m
+2026-10-04T16:51:44.7705753Z 
+2026-10-04T16:51:45.7765911Z PASS test/b-trials-t2-idempotent-create-http.spec.ts (286 MB heap size)
+2026-10-04T16:51:46.1752583Z [31m[Nest] 3105  - [39m10/09/2026, 5:00:30 PM [31m  ERROR[39m [38;5;3m[EmailService] [39m[31memail send failed template=trial-ending to=client@example.test: abort[39m
+2026-10-04T16:51:46.2203593Z PASS test/b-trials-t2-fix-round-8.spec.ts (319 MB heap size)
+2026-10-04T16:51:46.7468126Z [32m[Nest] 3105  - [39m10/09/2026, 5:00:30 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32memail sent template=trial-ending to=client@example.test provider_id=msg-2[39m
+2026-10-04T16:51:46.7470970Z [33m[Nest] 3105  - [39m10/09/2026, 5:00:35 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice email still running after abort notice=notice-p; lease held[39m
+2026-10-04T16:51:46.7474768Z [32m[Nest] 3105  - [39m10/09/2026, 5:03:55 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32memail sent template=trial-ending to=client@example.test provider_id=msg-1[39m
+2026-10-04T16:51:46.7485985Z [32m[Nest] 3105  - [39m10/09/2026, 5:03:55 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32memail sent template=trial-ending to=client@example.test provider_id=msg-2[39m
+2026-10-04T16:51:46.7488151Z [33m[Nest] 3105  - [39m10/09/2026, 5:00:35 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice push still running after abort notice=notice-p; lease held[39m
+2026-10-04T16:51:46.7489748Z [32m[Nest] 3105  - [39m10/04/2026, 4:51:46 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32memail sent template=trial-ending to=client@example.test provider_id=msg-1[39m
+2026-10-04T16:51:46.7491297Z [32m[Nest] 3105  - [39m10/04/2026, 4:51:46 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32memail sent template=trial-ending to=client@example.test provider_id=msg-2[39m
+2026-10-04T16:51:46.7493178Z [32m[Nest] 3105  - [39m10/04/2026, 4:51:46 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32memail sent template=trial-ending to=client@example.test provider_id=msg-3[39m
+2026-10-04T16:51:46.7494630Z [32m[Nest] 3105  - [39m10/04/2026, 4:51:46 PM [32m    LOG[39m [38;5;3m[TrialCheckoutCapability] [39m[32mfree trials are sold by subscription-checkout[39m
+2026-10-04T16:51:46.7568248Z PASS test/b-trials-package-rules.spec.ts (357 MB heap size)
+2026-10-04T16:51:46.9279521Z [32m[Nest] 3105  - [39m10/04/2026, 4:51:46 PM [32m    LOG[39m [38;5;3m[TrialCheckoutCapability] [39m[32mfree trials are sold by subscription-checkout[39m
+2026-10-04T16:51:46.9303393Z PASS test/b-trials-idempotent-create-compose.spec.ts (365 MB heap size)
+2026-10-04T16:51:47.2998380Z FAIL test/audit-sol-t23-118-conflict.spec.ts (393 MB heap size)
+2026-10-04T16:51:47.3000836Z   ● AUD-SOL-T23-118 — actual cancellation admission clocks › a late-row cancellation holds a fresh lease while its bounded Stripe operation runs
+2026-10-04T16:51:47.3002599Z 
+2026-10-04T16:51:47.3003033Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T16:51:47.3003422Z 
+2026-10-04T16:51:47.3003584Z     - Expected  - 2
+2026-10-04T16:51:47.3003930Z     + Received  + 2
+2026-10-04T16:51:47.3004131Z 
+2026-10-04T16:51:47.3004256Z       Object {
+2026-10-04T16:51:47.3005441Z     -   "lateCalls": 1,
+2026-10-04T16:51:47.3005832Z     -   "other": "busy",
+2026-10-04T16:51:47.3006245Z     +   "lateCalls": 2,
+2026-10-04T16:51:47.3006564Z     +   "other": "cancelled",
+2026-10-04T16:51:47.3006903Z       }
+2026-10-04T16:51:47.3007053Z 
+2026-10-04T16:51:47.3007896Z     [0m [90m 54 |[39m     held[33m.[39mresolve({ id[33m:[39m [32m'sub-7'[39m[33m,[39m status[33m:[39m [32m'canceled'[39m })[33m;[39m
+2026-10-04T16:51:47.3008882Z      [90m 55 |[39m     [36mawait[39m firstSweep[33m;[39m
+2026-10-04T16:51:47.3010275Z     [31m[1m>[22m[39m[90m 56 |[39m     expect({ lateCalls[33m,[39m other })[33m.[39mtoEqual({ lateCalls[33m:[39m [35m1[39m[33m,[39m other[33m:[39m [32m'busy'[39m })[33m;[39m
+2026-10-04T16:51:47.3011458Z      [90m    |[39m                                  [31m[1m^[22m[39m
+2026-10-04T16:51:47.3012212Z      [90m 57 |[39m   })[33m;[39m
+2026-10-04T16:51:47.3012670Z      [90m 58 |[39m })[33m;[39m
+2026-10-04T16:51:47.3013067Z      [90m 59 |[39m[0m
+2026-10-04T16:51:47.3013270Z 
+2026-10-04T16:51:47.3013623Z       at Object.<anonymous> (test/audit-sol-t23-118-conflict.spec.ts:56:34)
+2026-10-04T16:51:47.3014052Z 
+2026-10-04T16:51:47.3023997Z Test Suites: 2 failed, 6 passed, 8 total
+2026-10-04T16:51:47.3024612Z Tests:       3 failed, 133 passed, 136 total
+2026-10-04T16:51:47.3025009Z Snapshots:   0 total
+2026-10-04T16:51:47.3025251Z Time:        7.815 s
+2026-10-04T16:51:47.3027026Z Ran all test suites matching test/audit-sol-t12-117-672.spec.ts|test/audit-sol-t23-118-conflict.spec.ts|test/b-trials-t2-fix-round-8.spec.ts|test/b-trials-3-fix-round.spec.ts|test/b-trials-notice-and-webhook.spec.ts|test/b-trials-package-rules.spec.ts|test/b-trials-t2-idempotent-create-http.spec.ts|test/b-trials-idempotent-create-compose.spec.ts.
+2026-10-04T16:51:47.3845389Z [33m[Nest] 3105  - [39m10/09/2026, 5:00:09 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-0 (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:47.3848071Z [33m[Nest] 3105  - [39m10/09/2026, 5:00:18 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-1 (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:47.3850624Z [33m[Nest] 3105  - [39m10/09/2026, 5:00:27 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-2 (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:47.3853425Z [33m[Nest] 3105  - [39m10/09/2026, 5:00:36 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-3 (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:47.3855547Z [33m[Nest] 3105  - [39m10/09/2026, 5:00:45 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-4 (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:47.3857556Z [33m[Nest] 3105  - [39m10/09/2026, 5:00:54 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-5 (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:47.3859557Z [33m[Nest] 3105  - [39m10/09/2026, 5:01:03 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-6 (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:47.3861854Z [33m[Nest] 3105  - [39m10/09/2026, 5:01:08 PM [33m   WARN[39m [38;5;3m[TrialConflictService] [39m[33mtrial conflict: cancelled subscription for purchase purchase-7 (TRIAL_ALREADY_USED)[39m
+2026-10-04T16:51:47.4768101Z ##[error]Process completed with exit code 1.
+﻿2026-10-04T16:51:47.4885749Z Post job cleanup.
+2026-10-04T16:51:47.5711555Z [command]/usr/bin/git version
+2026-10-04T16:51:47.5747460Z git version 2.55.0
+2026-10-04T16:51:47.5787762Z Temporarily overriding HOME='/home/runner/work/_temp/ed92770d-1821-4188-a043-cfa3053894a9' before making global git config changes
+2026-10-04T16:51:47.5789000Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T16:51:47.5791489Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T16:51:47.5821459Z Removing SSH command configuration
+2026-10-04T16:51:47.5828223Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T16:51:47.5864508Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T16:51:47.6086490Z Removing HTTP extra header
+2026-10-04T16:51:47.6091128Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T16:51:47.6125315Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T16:51:47.6342798Z Removing includeIf entries pointing to credentials config files
+2026-10-04T16:51:47.6348862Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T16:51:47.6376540Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T16:51:47.6378091Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T16:51:47.6379418Z includeif.gitdir:/github/workspace/.git.path
+2026-10-04T16:51:47.6380674Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T16:51:47.6386713Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T16:51:47.6409153Z /home/runner/work/_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config
+2026-10-04T16:51:47.6420565Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config
+2026-10-04T16:51:47.6454882Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T16:51:47.6476450Z /home/runner/work/_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config
+2026-10-04T16:51:47.6485551Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config
+2026-10-04T16:51:47.6516190Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-04T16:51:47.6536432Z /github/runner_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config
+2026-10-04T16:51:47.6544004Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config
+2026-10-04T16:51:47.6574709Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T16:51:47.6594569Z /github/runner_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config
+2026-10-04T16:51:47.6603317Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config
+2026-10-04T16:51:47.6636014Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T16:51:47.6864691Z Removing credentials config '/home/runner/work/_temp/git-credentials-a2e89481-4289-408e-93ee-62f465afec4a.config'
+﻿2026-10-04T16:51:47.6997146Z Print service container logs: 85d9abedae8d499f884e29a60b07212a_redis7alpine_aae716
+2026-10-04T16:51:47.7001490Z ##[command]/usr/bin/docker logs --details 900bb8686e4744c4636a5513915394dfe2a3c7fd83fe552bb410a482065c2b31
+2026-10-04T16:51:47.7124893Z  1:C 04 Oct 2026 16:50:51.532 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+2026-10-04T16:51:47.7126741Z  1:C 04 Oct 2026 16:50:51.532 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+2026-10-04T16:51:47.7133364Z  1:C 04 Oct 2026 16:50:51.532 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+2026-10-04T16:51:47.7134920Z  1:C 04 Oct 2026 16:50:51.532 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+2026-10-04T16:51:47.7136040Z  1:M 04 Oct 2026 16:50:51.532 * monotonic clock: POSIX clock_gettime
+2026-10-04T16:51:47.7136852Z  1:M 04 Oct 2026 16:50:51.533 * Running mode=standalone, port=6379.
+2026-10-04T16:51:47.7137474Z  1:M 04 Oct 2026 16:50:51.533 * Server initialized
+2026-10-04T16:51:47.7138041Z  1:M 04 Oct 2026 16:50:51.533 * Ready to accept connections tcp
+2026-10-04T16:51:47.7144750Z Stop and remove container: 85d9abedae8d499f884e29a60b07212a_redis7alpine_aae716
+2026-10-04T16:51:47.7149651Z ##[command]/usr/bin/docker rm --force 900bb8686e4744c4636a5513915394dfe2a3c7fd83fe552bb410a482065c2b31
+2026-10-04T16:51:48.5583394Z 900bb8686e4744c4636a5513915394dfe2a3c7fd83fe552bb410a482065c2b31
+2026-10-04T16:51:48.5610367Z Remove container network: github_network_810a88c4fbe8422fba2c95e3c699c543
+2026-10-04T16:51:48.5615478Z ##[command]/usr/bin/docker network rm github_network_810a88c4fbe8422fba2c95e3c699c543
+2026-10-04T16:51:48.6546144Z github_network_810a88c4fbe8422fba2c95e3c699c543
+﻿2026-10-04T16:51:48.6622725Z Cleaning up orphan processes

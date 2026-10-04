@@ -1,0 +1,1059 @@
+﻿2026-10-04T17:38:16.9834467Z Current runner version: '2.337.0'
+2026-10-04T17:38:16.9861912Z ##[group]Runner Image Provisioner
+2026-10-04T17:38:16.9863028Z Hosted Compute Agent
+2026-10-04T17:38:16.9864199Z Version: 20260901.588
+2026-10-04T17:38:16.9865057Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-04T17:38:16.9866015Z Build Date: 2026-09-01T19:56:44Z
+2026-10-04T17:38:16.9866992Z Worker ID: {5ec369b9-2c57-4493-ac23-60745069bf2a}
+2026-10-04T17:38:16.9867969Z Azure Region: eastus
+2026-10-04T17:38:16.9868676Z ##[endgroup]
+2026-10-04T17:38:16.9870514Z ##[group]Operating System
+2026-10-04T17:38:16.9871306Z Ubuntu
+2026-10-04T17:38:16.9872071Z 24.04.5
+2026-10-04T17:38:16.9872787Z LTS
+2026-10-04T17:38:16.9873466Z ##[endgroup]
+2026-10-04T17:38:16.9874201Z ##[group]Runner Image
+2026-10-04T17:38:16.9874939Z Image: ubuntu-24.04
+2026-10-04T17:38:16.9875719Z Version: 20260927.320.1
+2026-10-04T17:38:16.9877227Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-04T17:38:16.9879488Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-04T17:38:16.9880725Z ##[endgroup]
+2026-10-04T17:38:16.9882459Z ##[group]GITHUB_TOKEN Permissions
+2026-10-04T17:38:16.9884746Z Contents: read
+2026-10-04T17:38:16.9885577Z Metadata: read
+2026-10-04T17:38:16.9886264Z Packages: read
+2026-10-04T17:38:16.9887066Z ##[endgroup]
+2026-10-04T17:38:16.9889839Z Secret source: Actions
+2026-10-04T17:38:16.9891118Z Cache mode: write
+2026-10-04T17:38:16.9891966Z Prepare workflow directory
+2026-10-04T17:38:17.0361966Z Prepare all required actions
+2026-10-04T17:38:17.0417105Z Getting action download info
+2026-10-04T17:38:17.2221300Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-04T17:38:17.4631989Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-04T17:38:17.8783911Z Complete job name: targeted
+2026-10-04T17:38:17.9181580Z ##[group]Checking docker version
+2026-10-04T17:38:17.9192228Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-04T17:38:18.5016971Z '1.48'
+2026-10-04T17:38:18.5026783Z Docker daemon API version: '1.48'
+2026-10-04T17:38:18.5027508Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-04T17:38:18.5161955Z '1.48'
+2026-10-04T17:38:18.5173161Z Docker client API version: '1.48'
+2026-10-04T17:38:18.5178946Z ##[endgroup]
+2026-10-04T17:38:18.5181892Z ##[group]Clean up resources from previous jobs
+2026-10-04T17:38:18.5186408Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=fbe5de"
+2026-10-04T17:38:18.5302054Z ##[command]/usr/bin/docker network prune --force --filter "label=fbe5de"
+2026-10-04T17:38:18.5410451Z ##[endgroup]
+2026-10-04T17:38:18.5410928Z ##[group]Create local container network
+2026-10-04T17:38:18.5419347Z ##[command]/usr/bin/docker network create --label fbe5de github_network_c4a3c3b73f8a4885ade2de398e60edcd
+2026-10-04T17:38:18.6619223Z 017a5dfd1cbf918caed6fc261bf0a0632b1cc4b05c8976e2edb0a7f6e66fa61d
+2026-10-04T17:38:18.6636488Z ##[endgroup]
+2026-10-04T17:38:18.6657350Z ##[group]Starting redis service container
+2026-10-04T17:38:18.6675096Z ##[command]/usr/bin/docker pull redis:7-alpine
+2026-10-04T17:38:19.0534324Z 7-alpine: Pulling from library/redis
+2026-10-04T17:38:19.1277883Z 16333ee0c00f: Pulling fs layer
+2026-10-04T17:38:19.1278947Z 83234986c742: Pulling fs layer
+2026-10-04T17:38:19.1279673Z 7eb50503c2b0: Pulling fs layer
+2026-10-04T17:38:19.1280349Z 1522f9c6f453: Pulling fs layer
+2026-10-04T17:38:19.1281031Z 9928009b15c8: Pulling fs layer
+2026-10-04T17:38:19.1281804Z 4f4fb700ef54: Pulling fs layer
+2026-10-04T17:38:19.1282785Z 4eb14bae0e1d: Pulling fs layer
+2026-10-04T17:38:19.1283503Z 1522f9c6f453: Waiting
+2026-10-04T17:38:19.1284060Z 9928009b15c8: Waiting
+2026-10-04T17:38:19.1284628Z 4f4fb700ef54: Waiting
+2026-10-04T17:38:19.1285185Z 4eb14bae0e1d: Waiting
+2026-10-04T17:38:19.1806294Z 83234986c742: Download complete
+2026-10-04T17:38:19.1824776Z 7eb50503c2b0: Verifying Checksum
+2026-10-04T17:38:19.2096110Z 7eb50503c2b0: Download complete
+2026-10-04T17:38:19.2097479Z 16333ee0c00f: Verifying Checksum
+2026-10-04T17:38:19.2098462Z 16333ee0c00f: Download complete
+2026-10-04T17:38:19.2104144Z 9928009b15c8: Verifying Checksum
+2026-10-04T17:38:19.2105137Z 9928009b15c8: Download complete
+2026-10-04T17:38:19.2379589Z 4eb14bae0e1d: Verifying Checksum
+2026-10-04T17:38:19.2380689Z 4eb14bae0e1d: Download complete
+2026-10-04T17:38:19.2405658Z 4f4fb700ef54: Download complete
+2026-10-04T17:38:19.2507039Z 1522f9c6f453: Verifying Checksum
+2026-10-04T17:38:19.2508123Z 1522f9c6f453: Download complete
+2026-10-04T17:38:19.5473478Z 16333ee0c00f: Pull complete
+2026-10-04T17:38:27.5260490Z 83234986c742: Pull complete
+2026-10-04T17:38:27.6404818Z 7eb50503c2b0: Pull complete
+2026-10-04T17:38:27.9377362Z 1522f9c6f453: Pull complete
+2026-10-04T17:38:27.9453457Z 9928009b15c8: Pull complete
+2026-10-04T17:38:27.9516611Z 4f4fb700ef54: Pull complete
+2026-10-04T17:38:27.9593804Z 4eb14bae0e1d: Pull complete
+2026-10-04T17:38:27.9624451Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+2026-10-04T17:38:27.9635407Z Status: Downloaded newer image for redis:7-alpine
+2026-10-04T17:38:27.9642030Z docker.io/library/redis:7-alpine
+2026-10-04T17:38:27.9671243Z ##[command]/usr/bin/docker create --name 2d9eb6e3980e4963a4b197c0fa7bf9a7_redis7alpine_b28683 --label fbe5de --network github_network_c4a3c3b73f8a4885ade2de398e60edcd --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+2026-10-04T17:38:28.0008940Z eb60ffab37fd8047d07270bcc6af2b6fb2f7cac732501d459771382b1d8230d9
+2026-10-04T17:38:28.0027522Z ##[command]/usr/bin/docker start eb60ffab37fd8047d07270bcc6af2b6fb2f7cac732501d459771382b1d8230d9
+2026-10-04T17:38:28.1744561Z eb60ffab37fd8047d07270bcc6af2b6fb2f7cac732501d459771382b1d8230d9
+2026-10-04T17:38:28.1760968Z ##[command]/usr/bin/docker ps --all --filter id=eb60ffab37fd8047d07270bcc6af2b6fb2f7cac732501d459771382b1d8230d9 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-04T17:38:28.1863576Z eb60ffab37fd8047d07270bcc6af2b6fb2f7cac732501d459771382b1d8230d9 Up Less than a second (health: starting)
+2026-10-04T17:38:28.1879916Z ##[command]/usr/bin/docker port eb60ffab37fd8047d07270bcc6af2b6fb2f7cac732501d459771382b1d8230d9
+2026-10-04T17:38:28.1974512Z 6379/tcp -> 0.0.0.0:6379
+2026-10-04T17:38:28.1974845Z 6379/tcp -> [::]:6379
+2026-10-04T17:38:28.2011375Z ##[endgroup]
+2026-10-04T17:38:28.2018042Z ##[group]Waiting for all services to be ready
+2026-10-04T17:38:28.2029055Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" eb60ffab37fd8047d07270bcc6af2b6fb2f7cac732501d459771382b1d8230d9
+2026-10-04T17:38:28.2126848Z starting
+2026-10-04T17:38:28.2143441Z redis service is starting, waiting 2 seconds before checking again.
+2026-10-04T17:38:30.2151881Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" eb60ffab37fd8047d07270bcc6af2b6fb2f7cac732501d459771382b1d8230d9
+2026-10-04T17:38:30.2259321Z starting
+2026-10-04T17:38:30.2267318Z redis service is starting, waiting 3 seconds before checking again.
+2026-10-04T17:38:33.9530079Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" eb60ffab37fd8047d07270bcc6af2b6fb2f7cac732501d459771382b1d8230d9
+2026-10-04T17:38:33.9644085Z healthy
+2026-10-04T17:38:33.9656117Z redis service is healthy.
+2026-10-04T17:38:33.9656761Z ##[endgroup]
+2026-10-04T17:38:33.9872229Z ##[group]Run actions/checkout@v6
+2026-10-04T17:38:33.9872641Z with:
+2026-10-04T17:38:33.9872887Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T17:38:33.9874929Z   token: ***
+2026-10-04T17:38:33.9875107Z   ssh-strict: true
+2026-10-04T17:38:33.9875282Z   ssh-user: git
+2026-10-04T17:38:33.9875457Z   persist-credentials: true
+2026-10-04T17:38:33.9875656Z   clean: true
+2026-10-04T17:38:33.9876008Z   sparse-checkout-cone-mode: true
+2026-10-04T17:38:33.9876213Z   fetch-depth: 1
+2026-10-04T17:38:33.9876374Z   fetch-tags: false
+2026-10-04T17:38:33.9876538Z   show-progress: true
+2026-10-04T17:38:33.9876703Z   lfs: false
+2026-10-04T17:38:33.9876853Z   submodules: false
+2026-10-04T17:38:33.9877015Z   set-safe-directory: true
+2026-10-04T17:38:33.9877211Z   allow-unsafe-pr-checkout: false
+2026-10-04T17:38:33.9877834Z ##[endgroup]
+2026-10-04T17:38:34.0711258Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T17:38:34.0712424Z ##[group]Getting Git version info
+2026-10-04T17:38:34.0712818Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T17:38:34.0713355Z [command]/usr/bin/git version
+2026-10-04T17:38:34.0737221Z git version 2.55.0
+2026-10-04T17:38:34.0755573Z ##[endgroup]
+2026-10-04T17:38:34.0766817Z Temporarily overriding HOME='/home/runner/work/_temp/4d37f3f2-3f52-45e2-8952-d2436d91f6ae' before making global git config changes
+2026-10-04T17:38:34.0767627Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T17:38:34.0771332Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T17:38:34.0809958Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T17:38:34.0813215Z ##[group]Determining repository object format
+2026-10-04T17:38:34.0814971Z ##[endgroup]
+2026-10-04T17:38:34.0815299Z ##[group]Initializing the repository
+2026-10-04T17:38:34.0818509Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T17:38:34.0907862Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-04T17:38:34.0908517Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-04T17:38:34.0909438Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-04T17:38:34.0910020Z hint: call:
+2026-10-04T17:38:34.0910260Z hint:
+2026-10-04T17:38:34.0910586Z hint: 	git config --global init.defaultBranch <name>
+2026-10-04T17:38:34.0910965Z hint:
+2026-10-04T17:38:34.0911327Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-04T17:38:34.0911866Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-04T17:38:34.0912346Z hint:
+2026-10-04T17:38:34.0912606Z hint: 	git branch -m <name>
+2026-10-04T17:38:34.0912869Z hint:
+2026-10-04T17:38:34.0913142Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-04T17:38:34.0913648Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-04T17:38:34.0918955Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T17:38:34.0954707Z ##[endgroup]
+2026-10-04T17:38:34.0955042Z ##[group]Disabling automatic garbage collection
+2026-10-04T17:38:34.0957885Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-04T17:38:34.0982081Z ##[endgroup]
+2026-10-04T17:38:34.0982389Z ##[group]Setting up auth
+2026-10-04T17:38:34.0983498Z Removing SSH command configuration
+2026-10-04T17:38:34.0987800Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T17:38:34.1011996Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T17:38:34.1275699Z Removing HTTP extra header
+2026-10-04T17:38:34.1280255Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T17:38:34.1304943Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T17:38:34.1482275Z Removing includeIf entries pointing to credentials config files
+2026-10-04T17:38:34.1487270Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T17:38:34.1512462Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T17:38:34.1695136Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-1c5d63a0-620a-461b-af24-6f1c4d65d39e.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-04T17:38:34.1724685Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-1c5d63a0-620a-461b-af24-6f1c4d65d39e.config
+2026-10-04T17:38:34.1750348Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-1c5d63a0-620a-461b-af24-6f1c4d65d39e.config
+2026-10-04T17:38:34.1844138Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-1c5d63a0-620a-461b-af24-6f1c4d65d39e.config
+2026-10-04T17:38:34.2322049Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-1c5d63a0-620a-461b-af24-6f1c4d65d39e.config
+2026-10-04T17:38:34.2347176Z ##[endgroup]
+2026-10-04T17:38:34.2347511Z ##[group]Fetching the repository
+2026-10-04T17:38:34.2354507Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +c7224bb71590856b528d5fe46540820e0bea5ffd:refs/remotes/origin/ci/B-PRIVFU2-118-700-before
+2026-10-04T17:38:35.6054978Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T17:38:35.6055531Z  * [new ref]         c7224bb71590856b528d5fe46540820e0bea5ffd -> origin/ci/B-PRIVFU2-118-700-before
+2026-10-04T17:38:35.6064032Z [command]/usr/bin/git branch --list --remote origin/ci/B-PRIVFU2-118-700-before
+2026-10-04T17:38:35.6085837Z   origin/ci/B-PRIVFU2-118-700-before
+2026-10-04T17:38:35.6100426Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-PRIVFU2-118-700-before
+2026-10-04T17:38:35.6113575Z c7224bb71590856b528d5fe46540820e0bea5ffd
+2026-10-04T17:38:35.6129715Z ##[endgroup]
+2026-10-04T17:38:35.6130169Z ##[group]Determining the checkout info
+2026-10-04T17:38:35.6130530Z ##[endgroup]
+2026-10-04T17:38:35.6140211Z [command]/usr/bin/git sparse-checkout disable
+2026-10-04T17:38:35.6179115Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-04T17:38:35.6201326Z ##[group]Checking out the ref
+2026-10-04T17:38:35.6205691Z [command]/usr/bin/git checkout --progress --force -B ci/B-PRIVFU2-118-700-before refs/remotes/origin/ci/B-PRIVFU2-118-700-before
+2026-10-04T17:38:35.7910316Z Switched to a new branch 'ci/B-PRIVFU2-118-700-before'
+2026-10-04T17:38:35.7912385Z branch 'ci/B-PRIVFU2-118-700-before' set up to track 'origin/ci/B-PRIVFU2-118-700-before'.
+2026-10-04T17:38:35.7920451Z ##[endgroup]
+2026-10-04T17:38:35.7957152Z [command]/usr/bin/git log -1 --format=%H
+2026-10-04T17:38:35.7976448Z c7224bb71590856b528d5fe46540820e0bea5ffd
+2026-10-04T17:38:35.8184742Z ##[group]Run actions/setup-node@v6
+2026-10-04T17:38:35.8184968Z with:
+2026-10-04T17:38:35.8185126Z   node-version: 20
+2026-10-04T17:38:35.8185292Z   cache: npm
+2026-10-04T17:38:35.8185449Z   check-latest: false
+2026-10-04T17:38:35.8187330Z   token: ***
+2026-10-04T17:38:35.8187506Z   package-manager-cache: true
+2026-10-04T17:38:35.8187710Z ##[endgroup]
+2026-10-04T17:38:35.9289466Z Attempting to download 20...
+2026-10-04T17:38:36.4077378Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-04T17:38:36.6453425Z Extracting ...
+2026-10-04T17:38:36.6570812Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/1328baa5-b6b0-4feb-995a-626a6e753d60 -f /home/runner/work/_temp/be4efcb6-d34c-487c-9317-43d77faa1821
+2026-10-04T17:38:37.5017982Z Adding to the cache ...
+2026-10-04T17:38:39.4650223Z ##[group]Environment details
+2026-10-04T17:38:39.6357604Z node: v20.20.2
+2026-10-04T17:38:39.6357945Z npm: 10.8.2
+2026-10-04T17:38:39.6369617Z yarn: 1.22.22
+2026-10-04T17:38:39.6370221Z ##[endgroup]
+2026-10-04T17:38:39.6373358Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+2026-10-04T17:38:39.7186153Z /home/runner/.npm
+2026-10-04T17:38:39.7793876Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T17:38:40.2637338Z Received 86828135 of 86828135 (100.0%), 192.6 MBs/sec
+2026-10-04T17:38:40.2638568Z Cache Size: ~83 MB (86828135 B)
+2026-10-04T17:38:40.2663093Z [command]/usr/bin/tar -xf /home/runner/work/_temp/3be7c82d-d992-4e30-845a-35993051394b/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+2026-10-04T17:38:40.3997205Z Cache restored successfully
+2026-10-04T17:38:40.4037927Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T17:38:40.4224490Z ##[group]Run npm ci
+2026-10-04T17:38:40.4224735Z [36;1mnpm ci[0m
+2026-10-04T17:38:40.4599563Z shell: /usr/bin/bash -e {0}
+2026-10-04T17:38:40.4599817Z ##[endgroup]
+2026-10-04T17:38:44.9369747Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-04T17:38:45.8678042Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-04T17:38:46.7948056Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:38:47.7193222Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:38:47.7244347Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:38:47.7650224Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:38:58.3971489Z 
+2026-10-04T17:38:58.3972186Z > growth-project-backend@1.0.0 postinstall
+2026-10-04T17:38:58.3972660Z > prisma generate
+2026-10-04T17:38:58.3972825Z 
+2026-10-04T17:38:59.1163273Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T17:39:02.1772562Z ┌─────────────────────────────────────────────────────────┐
+2026-10-04T17:39:02.1773376Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+2026-10-04T17:39:02.1773820Z │                                                         │
+2026-10-04T17:39:02.1774227Z │  This is a major update - please follow the guide at    │
+2026-10-04T17:39:02.1774671Z │  https://pris.ly/d/major-version-upgrade                │
+2026-10-04T17:39:02.1775079Z │                                                         │
+2026-10-04T17:39:02.1775446Z │  Run the following to update                            │
+2026-10-04T17:39:02.1775833Z │    npm i --save-dev prisma@latest                       │
+2026-10-04T17:39:02.1776199Z │    npm i @prisma/client@latest                          │
+2026-10-04T17:39:02.1776909Z └─────────────────────────────────────────────────────────┘
+2026-10-04T17:39:02.1777276Z 
+2026-10-04T17:39:02.1777733Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.67s
+2026-10-04T17:39:02.1777991Z 
+2026-10-04T17:39:02.1778288Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T17:39:02.1778547Z 
+2026-10-04T17:39:02.1779281Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+2026-10-04T17:39:02.1779807Z 
+2026-10-04T17:39:02.2247439Z 
+2026-10-04T17:39:02.2248084Z > growth-project-backend@1.0.0 prepare
+2026-10-04T17:39:02.2248521Z > lefthook install
+2026-10-04T17:39:02.2248803Z 
+2026-10-04T17:39:02.2688517Z sync hooks: ✔️(pre-commit, commit-msg)
+2026-10-04T17:39:02.2840985Z 
+2026-10-04T17:39:02.2841570Z added 1115 packages, and audited 1116 packages in 22s
+2026-10-04T17:39:02.2841911Z 
+2026-10-04T17:39:02.2842168Z 202 packages are looking for funding
+2026-10-04T17:39:02.2842572Z   run `npm fund` for details
+2026-10-04T17:39:02.2867995Z 
+2026-10-04T17:39:02.2868311Z 3 high severity vulnerabilities
+2026-10-04T17:39:02.2869094Z 
+2026-10-04T17:39:02.2869527Z To address all issues (including breaking changes), run:
+2026-10-04T17:39:02.2870065Z   npm audit fix --force
+2026-10-04T17:39:02.2870248Z 
+2026-10-04T17:39:02.2870408Z Run `npm audit` for details.
+2026-10-04T17:39:02.3394566Z ##[group]Run npx prisma generate
+2026-10-04T17:39:02.3394832Z [36;1mnpx prisma generate[0m
+2026-10-04T17:39:02.3452746Z shell: /usr/bin/bash -e {0}
+2026-10-04T17:39:02.3452978Z ##[endgroup]
+2026-10-04T17:39:03.2813850Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T17:39:06.2880597Z 
+2026-10-04T17:39:06.2881822Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.59s
+2026-10-04T17:39:06.2882278Z 
+2026-10-04T17:39:06.2882713Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T17:39:06.2883129Z 
+2026-10-04T17:39:06.2883708Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+2026-10-04T17:39:06.2884215Z 
+2026-10-04T17:39:06.3892338Z ##[group]Run set -euo pipefail
+2026-10-04T17:39:06.3892616Z [36;1mset -euo pipefail[0m
+2026-10-04T17:39:06.3892937Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-04T17:39:06.3893329Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-04T17:39:06.3893615Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-04T17:39:06.3893859Z [36;1mnpx jest --ci --runInBand "${SPECS[@]}"[0m
+2026-10-04T17:39:06.3951586Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T17:39:06.3951868Z env:
+2026-10-04T17:39:06.3952058Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-04T17:39:06.3952342Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-04T17:39:06.3952599Z ##[endgroup]
+2026-10-04T17:39:06.4037845Z specs: test/privacy/log-pii.spec.ts test/privacy/no-pii-probe-replays.spec.ts test/privacy/no-pii-in-logs.spec.ts test/email.service.spec.ts test/privacy/aud-opus-fu2-118-coach-name-probe.spec.ts test/privacy/aud-opus-fu2-118-finance-path-probe.spec.ts test/privacy/aud-opus-fu2-118-reset-email-probe.spec.ts test/privacy/audit-sol-fu2-118-boundary.spec.ts
+2026-10-04T17:39:08.6718603Z FAIL test/privacy/no-pii-in-logs.spec.ts (140 MB heap size)
+2026-10-04T17:39:08.6720591Z   ● C-611-17: EmailService logs the send-log row id and template, never the address or subject › provider error that echoes the address: the log, the result and the stored error hold no address
+2026-10-04T17:39:08.6721457Z 
+2026-10-04T17:39:08.6721688Z     expect(received).toContain(expected) // indexOf
+2026-10-04T17:39:08.6721953Z 
+2026-10-04T17:39:08.6722230Z     Expected substring: "provider=resend status=422 code=other"
+2026-10-04T17:39:08.6723257Z     Received string:    "email send failed template=nudge-onboarding-abandoned row=row-1: Resend 422: {\"message\":\"Invalid `to` field: [email] is not a valid address\"}"
+2026-10-04T17:39:08.6724526Z 
+2026-10-04T17:39:08.6725020Z     [0m [90m 135 |[39m     expectNoPersonalData(logs[33m.[39mlines())[33m;[39m
+2026-10-04T17:39:08.6725908Z      [90m 136 |[39m     [90m// B-700-1: the provider, the HTTP status and the provider's code only.[39m
+2026-10-04T17:39:08.6727267Z     [31m[1m>[22m[39m[90m 137 |[39m     expect(logs[33m.[39mlines()[33m.[39mjoin([32m'\n'[39m))[33m.[39mtoContain([32m'provider=resend status=422 code=other'[39m)[33m;[39m
+2026-10-04T17:39:08.6728338Z      [90m     |[39m                                     [31m[1m^[22m[39m
+2026-10-04T17:39:08.6729432Z      [90m 138 |[39m     expect(res[33m.[39merror)[33m.[39mtoBe([32m'provider=resend status=422 code=other'[39m)[33m;[39m
+2026-10-04T17:39:08.6730756Z      [90m 139 |[39m     [36mconst[39m updates [33m=[39m db[33m.[39memailSendLog[33m.[39mupdate[33m.[39mmock[33m.[39mcalls[33m;[39m
+2026-10-04T17:39:08.6732163Z      [90m 140 |[39m     [36mconst[39m stored [33m=[39m [33mString[39m(updates[updates[33m.[39mlength [33m-[39m [35m1[39m][[35m0[39m][33m.[39mdata[33m.[39merror)[33m;[39m[0m
+2026-10-04T17:39:08.6732871Z 
+2026-10-04T17:39:08.6733211Z       at Object.<anonymous> (test/privacy/no-pii-in-logs.spec.ts:137:37)
+2026-10-04T17:39:08.6733566Z 
+2026-10-04T17:39:08.6734395Z   ● C-611-17: DigestService logs the user id, never the address › provider error that echoes the address: neither the log nor the stored failure holds it
+2026-10-04T17:39:08.6735087Z 
+2026-10-04T17:39:08.6735501Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T17:39:08.6735795Z 
+2026-10-04T17:39:08.6736028Z     Expected: "provider=resend status=422 code=unparsed"
+2026-10-04T17:39:08.6736682Z     Received: "Resend API error 422: Error parsing 'To': Illegal email address '[email]'."
+2026-10-04T17:39:08.6737109Z 
+2026-10-04T17:39:08.6737799Z     [0m [90m 196 |[39m     expect(notifications[33m.[39mmarkDigestFailed)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)[33m;[39m
+2026-10-04T17:39:08.6739901Z      [90m 197 |[39m     [36mconst[39m stored [33m=[39m notifications[33m.[39mmarkDigestFailed[33m.[39mmock[33m.[39mcalls[[35m0[39m][[35m1[39m] [36mas[39m string[33m;[39m
+2026-10-04T17:39:08.6741381Z     [31m[1m>[22m[39m[90m 198 |[39m     expect(stored)[33m.[39mtoBe([32m'provider=resend status=422 code=unparsed'[39m)[33m;[39m
+2026-10-04T17:39:08.6742202Z      [90m     |[39m                    [31m[1m^[22m[39m
+2026-10-04T17:39:08.6742854Z      [90m 199 |[39m     expectNoPersonalData(logs[33m.[39mlines())[33m;[39m
+2026-10-04T17:39:08.6743872Z      [90m 200 |[39m     expect(logs[33m.[39mlines()[33m.[39mjoin([32m'\n'[39m))[33m.[39mtoContain([32m'user=user-1'[39m)[33m;[39m
+2026-10-04T17:39:08.6744609Z      [90m 201 |[39m   })[33m;[39m[0m
+2026-10-04T17:39:08.6744841Z 
+2026-10-04T17:39:08.6745232Z       at Object.<anonymous> (test/privacy/no-pii-in-logs.spec.ts:198:20)
+2026-10-04T17:39:08.6745587Z 
+2026-10-04T17:39:08.6746351Z   ● C-611-17: other log lines that carried a name, an address or a payload › scheduling webhook stubs: the payload shape, never its values
+2026-10-04T17:39:08.6746996Z 
+2026-10-04T17:39:08.6747204Z     expect(received).toContain(expected) // indexOf
+2026-10-04T17:39:08.6747489Z 
+2026-10-04T17:39:08.6747920Z     Expected substring: "event=meeting.participant_joined keys=event,payload other_keys=0"
+2026-10-04T17:39:08.6749040Z     Received string:    "zoom webhook stub received payload (no-op): event=meeting.participant_joined keys=event,payload
+2026-10-04T17:39:08.6749972Z     google-calendar webhook stub received payload (no-op): event=none keys=attendee"
+2026-10-04T17:39:08.6750399Z 
+2026-10-04T17:39:08.6751492Z     [0m [90m 270 |[39m       [36mawait[39m ctrl[33m.[39mgoogleCalendar({ attendee[33m:[39m { displayName[33m:[39m [33mPERSON[39m[33m,[39m email[33m:[39m [33mADDRESS[39m } }[33m,[39m req)[33m;[39m
+2026-10-04T17:39:08.6752915Z      [90m 271 |[39m       expectNoPersonalData(logs[33m.[39mlines())[33m;[39m
+2026-10-04T17:39:08.6753872Z     [31m[1m>[22m[39m[90m 272 |[39m       expect(logs[33m.[39mlines()[33m.[39mjoin([32m'\n'[39m))[33m.[39mtoContain(
+2026-10-04T17:39:08.6754664Z      [90m     |[39m                                       [31m[1m^[22m[39m
+2026-10-04T17:39:08.6755525Z      [90m 273 |[39m         [32m'event=meeting.participant_joined keys=event,payload other_keys=0'[39m[33m,[39m
+2026-10-04T17:39:08.6756212Z      [90m 274 |[39m       )[33m;[39m
+2026-10-04T17:39:08.6757222Z      [90m 275 |[39m       expect(logs[33m.[39mlines()[33m.[39mjoin([32m'\n'[39m))[33m.[39mtoContain([32m'event=none keys=none other_keys=1'[39m)[33m;[39m[0m
+2026-10-04T17:39:08.6757837Z 
+2026-10-04T17:39:08.6758130Z       at Object.<anonymous> (test/privacy/no-pii-in-logs.spec.ts:272:39)
+2026-10-04T17:39:08.6758490Z 
+2026-10-04T17:39:08.6759633Z   ● C-611-17 / B-700-1 / B-700-2 guard: no log call under src/ interpolates personal data › every log call under src/ passes the rules (exception text: only the listed legacy counts)
+2026-10-04T17:39:08.6760442Z 
+2026-10-04T17:39:08.6760691Z     expect(received).toEqual(expected) // deep equality
+2026-10-04T17:39:08.6760970Z 
+2026-10-04T17:39:08.6761105Z     - Expected  - 1
+2026-10-04T17:39:08.6761389Z     + Received  + 8
+2026-10-04T17:39:08.6761563Z 
+2026-10-04T17:39:08.6761676Z     - Array []
+2026-10-04T17:39:08.6761918Z     + Array [
+2026-10-04T17:39:08.6762647Z     +   "src/admin/federation/finance-admin.client.ts:166 [path] path lastDegraded?.kind === STR ? lastDegraded.reason : STR ,",
+2026-10-04T17:39:08.6763592Z     +   "src/coach/brief/coach-brief.service.ts:1481 [name] violation safeCoachName ,",
+2026-10-04T17:39:08.6764357Z     +   "src/coach/brief/coach-brief.service.ts:1501 [name] violation2 safeCoachName ,",
+2026-10-04T17:39:08.6765171Z     +   "src/coach/brief/coach-brief.service.ts:1505 [name] safeCoachName secondAttempt.error ,",
+2026-10-04T17:39:08.6766005Z     +   "src/coach/brief/coach-brief.service.ts:1510 [name] safeCoachName firstAttempt.error ,",
+2026-10-04T17:39:08.6767352Z     +   "src/storefront/checkout-recovery.service.ts:278 [email] checkout.id redactEmailAddresses( err instanceof Error ? err.message : STR , ) ,",
+2026-10-04T17:39:08.6768182Z     + ]
+2026-10-04T17:39:08.6768298Z 
+2026-10-04T17:39:08.6769043Z     [0m [90m 731 |[39m     [90m// Hundreds of calls exist; a broken matcher that finds none must fail.[39m
+2026-10-04T17:39:08.6769865Z      [90m 732 |[39m     expect(scanned)[33m.[39mtoBeGreaterThan([35m500[39m)[33m;[39m
+2026-10-04T17:39:08.6770655Z     [31m[1m>[22m[39m[90m 733 |[39m     expect(found)[33m.[39mtoEqual([])[33m;[39m
+2026-10-04T17:39:08.6771255Z      [90m     |[39m                   [31m[1m^[22m[39m
+2026-10-04T17:39:08.6772003Z      [90m 734 |[39m     expect(exceptionText)[33m.[39mtoEqual([33mLEGACY_EXCEPTION_TEXT[39m)[33m;[39m
+2026-10-04T17:39:08.6772701Z      [90m 735 |[39m   })[33m;[39m
+2026-10-04T17:39:08.6773065Z      [90m 736 |[39m[0m
+2026-10-04T17:39:08.6773250Z 
+2026-10-04T17:39:08.6773544Z       at Object.<anonymous> (test/privacy/no-pii-in-logs.spec.ts:733:19)
+2026-10-04T17:39:08.6773894Z 
+2026-10-04T17:39:10.2571103Z FAIL test/privacy/no-pii-probe-replays.spec.ts (154 MB heap size)
+2026-10-04T17:39:10.2572512Z   ● Sol B-700-1 replay: provider and render failures keep codes, never text › EmailService provider failure with a display name and free text
+2026-10-04T17:39:10.2572950Z 
+2026-10-04T17:39:10.2573121Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T17:39:10.2573320Z 
+2026-10-04T17:39:10.2573462Z     Expected substring: not "Patricia Quill"
+2026-10-04T17:39:10.2574793Z     Received string:        "email send failed template=nudge-onboarding-abandoned row=row-privacy-probe: Resend 422: {\"message\":\"Invalid recipient Patricia Quill <[email]>; private consultation details\"} Resend 422: {\"message\":\"Invalid recipient Patricia Quill <[email]>; private consultation details\"} Resend 422: {\"message\":\"Invalid recipient Patricia Quill <[email]>; private consultation details\"}"
+2026-10-04T17:39:10.2576165Z 
+2026-10-04T17:39:10.2576295Z     [0m [90m 82 |[39m
+2026-10-04T17:39:10.2576897Z      [90m 83 |[39m [36mfunction[39m expectNone(surface[33m:[39m string[33m,[39m [33m...[39mneedles[33m:[39m string[])[33m:[39m [36mvoid[39m {
+2026-10-04T17:39:10.2577821Z     [31m[1m>[22m[39m[90m 84 |[39m   [36mfor[39m ([36mconst[39m needle [36mof[39m needles) expect(surface)[33m.[39mnot[33m.[39mtoContain(needle)[33m;[39m
+2026-10-04T17:39:10.2578467Z      [90m    |[39m                                                     [31m[1m^[22m[39m
+2026-10-04T17:39:10.2578884Z      [90m 85 |[39m }
+2026-10-04T17:39:10.2579085Z      [90m 86 |[39m
+2026-10-04T17:39:10.2579361Z      [90m 87 |[39m [36mfunction[39m emailDb() {[0m
+2026-10-04T17:39:10.2579534Z 
+2026-10-04T17:39:10.2579721Z       at expectNone (test/privacy/no-pii-probe-replays.spec.ts:84:53)
+2026-10-04T17:39:10.2580156Z       at Object.<anonymous> (test/privacy/no-pii-probe-replays.spec.ts:144:5)
+2026-10-04T17:39:10.2580391Z 
+2026-10-04T17:39:10.2580850Z   ● Sol B-700-1 replay: provider and render failures keep codes, never text › control: a Resend error name from the documented list is kept
+2026-10-04T17:39:10.2581225Z 
+2026-10-04T17:39:10.2581369Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T17:39:10.2581556Z 
+2026-10-04T17:39:10.2581721Z     Expected: "provider=resend status=422 code=validation_error"
+2026-10-04T17:39:10.2582210Z     Received: "Resend 422: {\"name\":\"validation_error\",\"message\":\"Invalid recipient Patricia Quill <[email]>\"}"
+2026-10-04T17:39:10.2582521Z 
+2026-10-04T17:39:10.2582663Z     [0m [90m 156 |[39m     )[33m;[39m
+2026-10-04T17:39:10.2583477Z      [90m 157 |[39m     [36mconst[39m result [33m=[39m [36mawait[39m [36mnew[39m [33mEmailService[39m(fake[33m<[39m[33mPrismaService[39m[33m>[39m(db)[33m,[39m resendConfig)[33m.[39msend(input)[33m;[39m
+2026-10-04T17:39:10.2584610Z     [31m[1m>[22m[39m[90m 158 |[39m     expect(result[33m.[39merror)[33m.[39mtoBe([32m'provider=resend status=422 code=validation_error'[39m)[33m;[39m
+2026-10-04T17:39:10.2585207Z      [90m     |[39m                          [31m[1m^[22m[39m
+2026-10-04T17:39:10.2585508Z      [90m 159 |[39m   })[33m;[39m
+2026-10-04T17:39:10.2585735Z      [90m 160 |[39m
+2026-10-04T17:39:10.2586293Z      [90m 161 |[39m   it([32m'EmailService render exception that quotes the recipient name'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-04T17:39:10.2586662Z 
+2026-10-04T17:39:10.2586862Z       at Object.<anonymous> (test/privacy/no-pii-probe-replays.spec.ts:158:26)
+2026-10-04T17:39:10.2587102Z 
+2026-10-04T17:39:10.2587546Z   ● Sol B-700-1 replay: provider and render failures keep codes, never text › EmailService render exception that quotes the recipient name
+2026-10-04T17:39:10.2587924Z 
+2026-10-04T17:39:10.2588069Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T17:39:10.2588253Z 
+2026-10-04T17:39:10.2588373Z     Expected substring: not "Patricia Quill"
+2026-10-04T17:39:10.2589284Z     Received string:        " render: Cannot render greeting for Patricia Quill; private consultation details render: Cannot render greeting for Patricia Quill; private consultation details"
+2026-10-04T17:39:10.2589785Z 
+2026-10-04T17:39:10.2589888Z     [0m [90m 82 |[39m
+2026-10-04T17:39:10.2590468Z      [90m 83 |[39m [36mfunction[39m expectNone(surface[33m:[39m string[33m,[39m [33m...[39mneedles[33m:[39m string[])[33m:[39m [36mvoid[39m {
+2026-10-04T17:39:10.2591321Z     [31m[1m>[22m[39m[90m 84 |[39m   [36mfor[39m ([36mconst[39m needle [36mof[39m needles) expect(surface)[33m.[39mnot[33m.[39mtoContain(needle)[33m;[39m
+2026-10-04T17:39:10.2591933Z      [90m    |[39m                                                     [31m[1m^[22m[39m
+2026-10-04T17:39:10.2592337Z      [90m 85 |[39m }
+2026-10-04T17:39:10.2592528Z      [90m 86 |[39m
+2026-10-04T17:39:10.2592791Z      [90m 87 |[39m [36mfunction[39m emailDb() {[0m
+2026-10-04T17:39:10.2592956Z 
+2026-10-04T17:39:10.2593145Z       at expectNone (test/privacy/no-pii-probe-replays.spec.ts:84:53)
+2026-10-04T17:39:10.2593545Z       at Object.<anonymous> (test/privacy/no-pii-probe-replays.spec.ts:171:5)
+2026-10-04T17:39:10.2593781Z 
+2026-10-04T17:39:10.2594244Z   ● Sol B-700-1 replay: provider and render failures keep codes, never text › DigestService provider failure with a display name and free text
+2026-10-04T17:39:10.2594629Z 
+2026-10-04T17:39:10.2594774Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T17:39:10.2594955Z 
+2026-10-04T17:39:10.2595076Z     Expected substring: not "Patricia Quill"
+2026-10-04T17:39:10.2595435Z     Received string:        "client daily digest: 1 eligible users, window=2026-10-04
+2026-10-04T17:39:10.2596433Z     client digest failed: user=user-1 kind=client_daily: Resend API error 422: {\"message\":\"Invalid recipient Patricia Quill <[email]>; private consultation details\"} Resend API error 422: {\"message\":\"Invalid recipient Patricia Quill <[email]>; private consultation details\"}"
+2026-10-04T17:39:10.2597143Z 
+2026-10-04T17:39:10.2597250Z     [0m [90m 82 |[39m
+2026-10-04T17:39:10.2597813Z      [90m 83 |[39m [36mfunction[39m expectNone(surface[33m:[39m string[33m,[39m [33m...[39mneedles[33m:[39m string[])[33m:[39m [36mvoid[39m {
+2026-10-04T17:39:10.2598664Z     [31m[1m>[22m[39m[90m 84 |[39m   [36mfor[39m ([36mconst[39m needle [36mof[39m needles) expect(surface)[33m.[39mnot[33m.[39mtoContain(needle)[33m;[39m
+2026-10-04T17:39:10.2599377Z      [90m    |[39m                                                     [31m[1m^[22m[39m
+2026-10-04T17:39:10.2599677Z      [90m 85 |[39m }
+2026-10-04T17:39:10.2599883Z      [90m 86 |[39m
+2026-10-04T17:39:10.2600139Z      [90m 87 |[39m [36mfunction[39m emailDb() {[0m
+2026-10-04T17:39:10.2600315Z 
+2026-10-04T17:39:10.2600491Z       at expectNone (test/privacy/no-pii-probe-replays.spec.ts:84:53)
+2026-10-04T17:39:10.2601164Z       at Object.<anonymous> (test/privacy/no-pii-probe-replays.spec.ts:209:5)
+2026-10-04T17:39:10.2601480Z 
+2026-10-04T17:39:10.2602133Z   ● Sol B-700-1 replay: provider and render failures keep codes, never text › an address that crossed the old 500-character cut leaves no fragment
+2026-10-04T17:39:10.2602679Z 
+2026-10-04T17:39:10.2602883Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T17:39:10.2603141Z 
+2026-10-04T17:39:10.2603339Z     Expected: "provider=resend status=422 code=unparsed"
+2026-10-04T17:39:10.2604665Z     Received: "Resend 422:                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         "
+2026-10-04T17:39:10.2605323Z 
+2026-10-04T17:39:10.2606002Z     [0m [90m 219 |[39m     [36mconst[39m stored [33m=[39m [33mString[39m(db[33m.[39memailSendLog[33m.[39mupdate[33m.[39mmock[33m.[39mcalls[[35m0[39m][[35m0[39m][33m.[39mdata[33m.[39merror)[33m;[39m
+2026-10-04T17:39:10.2606983Z      [90m 220 |[39m     expectNone([32m`${logs().join('\n')} ${result.error} ${stored}`[39m[33m,[39m [32m'patricia.qu'[39m[33m,[39m [32m'@'[39m)[33m;[39m
+2026-10-04T17:39:10.2607803Z     [31m[1m>[22m[39m[90m 221 |[39m     expect(result[33m.[39merror)[33m.[39mtoBe([32m'provider=resend status=422 code=unparsed'[39m)[33m;[39m
+2026-10-04T17:39:10.2608350Z      [90m     |[39m                          [31m[1m^[22m[39m
+2026-10-04T17:39:10.2608654Z      [90m 222 |[39m   })[33m;[39m
+2026-10-04T17:39:10.2609512Z      [90m 223 |[39m })[33m;[39m
+2026-10-04T17:39:10.2609739Z      [90m 224 |[39m[0m
+2026-10-04T17:39:10.2609851Z 
+2026-10-04T17:39:10.2610071Z       at Object.<anonymous> (test/privacy/no-pii-probe-replays.spec.ts:221:26)
+2026-10-04T17:39:10.2610432Z 
+2026-10-04T17:39:10.2610862Z   ● Sol B-700-2 / Opus C-700-5 replay: webhook stubs log finite labels only › zoom: a crafted event name and key are counted, never shown
+2026-10-04T17:39:10.2611231Z 
+2026-10-04T17:39:10.2611367Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T17:39:10.2611548Z 
+2026-10-04T17:39:10.2611656Z     Expected substring: not "Patricia"
+2026-10-04T17:39:10.2612108Z     Received string:        "zoom webhook stub received payload (no-op): event=Patricia-Quill keys=event,Patricia-Quill"
+2026-10-04T17:39:10.2612435Z 
+2026-10-04T17:39:10.2612535Z     [0m [90m 82 |[39m
+2026-10-04T17:39:10.2613098Z      [90m 83 |[39m [36mfunction[39m expectNone(surface[33m:[39m string[33m,[39m [33m...[39mneedles[33m:[39m string[])[33m:[39m [36mvoid[39m {
+2026-10-04T17:39:10.2613962Z     [31m[1m>[22m[39m[90m 84 |[39m   [36mfor[39m ([36mconst[39m needle [36mof[39m needles) expect(surface)[33m.[39mnot[33m.[39mtoContain(needle)[33m;[39m
+2026-10-04T17:39:10.2614571Z      [90m    |[39m                                                     [31m[1m^[22m[39m
+2026-10-04T17:39:10.2614869Z      [90m 85 |[39m }
+2026-10-04T17:39:10.2615062Z      [90m 86 |[39m
+2026-10-04T17:39:10.2615316Z      [90m 87 |[39m [36mfunction[39m emailDb() {[0m
+2026-10-04T17:39:10.2615475Z 
+2026-10-04T17:39:10.2615655Z       at expectNone (test/privacy/no-pii-probe-replays.spec.ts:84:53)
+2026-10-04T17:39:10.2615995Z       at test/privacy/no-pii-probe-replays.spec.ts:236:7
+2026-10-04T17:39:10.2616173Z 
+2026-10-04T17:39:10.2616639Z   ● Sol B-700-2 / Opus C-700-5 replay: webhook stubs log finite labels only › googleCalendar: a crafted event name and key are counted, never shown
+2026-10-04T17:39:10.2617020Z 
+2026-10-04T17:39:10.2617166Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T17:39:10.2617339Z 
+2026-10-04T17:39:10.2617446Z     Expected substring: not "Patricia"
+2026-10-04T17:39:10.2618039Z     Received string:        "google-calendar webhook stub received payload (no-op): event=Patricia-Quill keys=event,Patricia-Quill"
+2026-10-04T17:39:10.2618413Z 
+2026-10-04T17:39:10.2618508Z     [0m [90m 82 |[39m
+2026-10-04T17:39:10.2619155Z      [90m 83 |[39m [36mfunction[39m expectNone(surface[33m:[39m string[33m,[39m [33m...[39mneedles[33m:[39m string[])[33m:[39m [36mvoid[39m {
+2026-10-04T17:39:10.2619983Z     [31m[1m>[22m[39m[90m 84 |[39m   [36mfor[39m ([36mconst[39m needle [36mof[39m needles) expect(surface)[33m.[39mnot[33m.[39mtoContain(needle)[33m;[39m
+2026-10-04T17:39:10.2620580Z      [90m    |[39m                                                     [31m[1m^[22m[39m
+2026-10-04T17:39:10.2620869Z      [90m 85 |[39m }
+2026-10-04T17:39:10.2621091Z      [90m 86 |[39m
+2026-10-04T17:39:10.2621344Z      [90m 87 |[39m [36mfunction[39m emailDb() {[0m
+2026-10-04T17:39:10.2621502Z 
+2026-10-04T17:39:10.2621681Z       at expectNone (test/privacy/no-pii-probe-replays.spec.ts:84:53)
+2026-10-04T17:39:10.2622014Z       at test/privacy/no-pii-probe-replays.spec.ts:236:7
+2026-10-04T17:39:10.2622187Z 
+2026-10-04T17:39:10.2622628Z   ● Sol B-700-2 / Opus C-700-5 replay: webhook stubs log finite labels only › control: a recognised Zoom event and its envelope keys are named
+2026-10-04T17:39:10.2622990Z 
+2026-10-04T17:39:10.2623123Z     expect(received).toContain(expected) // indexOf
+2026-10-04T17:39:10.2623294Z 
+2026-10-04T17:39:10.2623512Z     Expected substring: "event=meeting.started keys=event,event_ts,payload other_keys=0"
+2026-10-04T17:39:10.2624073Z     Received string:    "zoom webhook stub received payload (no-op): event=meeting.started keys=event,event_ts,payload"
+2026-10-04T17:39:10.2624399Z 
+2026-10-04T17:39:10.2624704Z     [0m [90m 246 |[39m       fake[33m<[39m[33mRequest[39m[33m>[39m({ headers[33m:[39m {} })[33m,[39m
+2026-10-04T17:39:10.2625204Z      [90m 247 |[39m     )[33m;[39m
+2026-10-04T17:39:10.2625897Z     [31m[1m>[22m[39m[90m 248 |[39m     expect(logs()[33m.[39mjoin([32m'\n'[39m))[33m.[39mtoContain([32m'event=meeting.started keys=event,event_ts,payload other_keys=0'[39m)[33m;[39m
+2026-10-04T17:39:10.2626528Z      [90m     |[39m                               [31m[1m^[22m[39m
+2026-10-04T17:39:10.2627013Z      [90m 249 |[39m     expectNone(logs()[33m.[39mjoin([32m'\n'[39m)[33m,[39m [32m'@'[39m)[33m;[39m
+2026-10-04T17:39:10.2627401Z      [90m 250 |[39m   })[33m;[39m
+2026-10-04T17:39:10.2627652Z      [90m 251 |[39m })[33m;[39m[0m
+2026-10-04T17:39:10.2627794Z 
+2026-10-04T17:39:10.2628001Z       at Object.<anonymous> (test/privacy/no-pii-probe-replays.spec.ts:248:31)
+2026-10-04T17:39:10.2628236Z 
+2026-10-04T17:39:10.2628637Z   ● Opus B-700-1 replay: coach brief log lines never hold the coach name › Claude call error (the probe called without a coach id)
+2026-10-04T17:39:10.2629195Z 
+2026-10-04T17:39:10.2629326Z     expect(received).toContain(expected) // indexOf
+2026-10-04T17:39:10.2629491Z 
+2026-10-04T17:39:10.2629723Z     Expected substring: "CoachBrief Claude call failed for coach=unset mode=solo_coach"
+2026-10-04T17:39:10.2630348Z     Received string:    "CoachBrief Claude call failed for coach=Patricia Quillfeather: upstream 529 overloaded for Patricia Quillfeather"
+2026-10-04T17:39:10.2630720Z 
+2026-10-04T17:39:10.2631035Z     [0m [90m 273 |[39m     expect(res[33m.[39mgenerated_by)[33m.[39mtoBe([32m'fallback'[39m)[33m;[39m
+2026-10-04T17:39:10.2631584Z      [90m 274 |[39m     [36mconst[39m all [33m=[39m lines()[33m.[39mjoin([32m'\n'[39m)[33m;[39m
+2026-10-04T17:39:10.2632298Z     [31m[1m>[22m[39m[90m 275 |[39m     expect(all)[33m.[39mtoContain([32m'CoachBrief Claude call failed for coach=unset mode=solo_coach'[39m)[33m;[39m
+2026-10-04T17:39:10.2632835Z      [90m     |[39m                 [31m[1m^[22m[39m
+2026-10-04T17:39:10.2633256Z      [90m 276 |[39m     expect(all)[33m.[39mtoContain([32m': error=Error'[39m)[33m;[39m
+2026-10-04T17:39:10.2633817Z      [90m 277 |[39m     expectNone(all[33m,[39m [33mSURNAME[39m)[33m;[39m
+2026-10-04T17:39:10.2634152Z      [90m 278 |[39m   })[33m;[39m[0m
+2026-10-04T17:39:10.2634294Z 
+2026-10-04T17:39:10.2634491Z       at Object.<anonymous> (test/privacy/no-pii-probe-replays.spec.ts:275:17)
+2026-10-04T17:39:10.2634716Z 
+2026-10-04T17:39:10.2635151Z   ● Opus B-700-1 replay: coach brief log lines never hold the coach name › contract failure twice: the coach id, mode and date, never the name
+2026-10-04T17:39:10.2635520Z 
+2026-10-04T17:39:10.2635642Z     expect(received).toContain(expected) // indexOf
+2026-10-04T17:39:10.2635814Z 
+2026-10-04T17:39:10.2635951Z     Expected substring: "coach=coach-1 mode=solo_coach"
+2026-10-04T17:39:10.2636485Z     Received string:    "CoachBrief Claude output failed contract (too_few_sentences:2) for coach=Patricia Quillfeather; attempting one repair
+2026-10-04T17:39:10.2637220Z     CoachBrief Claude repair attempt also failed contract (too_few_sentences:2) for coach=Patricia Quillfeather; using fallback"
+2026-10-04T17:39:10.2637566Z 
+2026-10-04T17:39:10.2637868Z     [0m [90m 285 |[39m     [36mconst[39m all [33m=[39m lines()[33m.[39mjoin([32m'\n'[39m)[33m;[39m
+2026-10-04T17:39:10.2638384Z      [90m 286 |[39m     expect(all)[33m.[39mtoContain([32m'failed contract'[39m)[33m;[39m
+2026-10-04T17:39:10.2639123Z     [31m[1m>[22m[39m[90m 287 |[39m     expect(all)[33m.[39mtoContain([32m'coach=coach-1 mode=solo_coach'[39m)[33m;[39m
+2026-10-04T17:39:10.2639589Z      [90m     |[39m                 [31m[1m^[22m[39m
+2026-10-04T17:39:10.2639975Z      [90m 288 |[39m     expectNone(all[33m,[39m [33mSURNAME[39m)[33m;[39m
+2026-10-04T17:39:10.2640305Z      [90m 289 |[39m   })[33m;[39m
+2026-10-04T17:39:10.2640556Z      [90m 290 |[39m })[33m;[39m[0m
+2026-10-04T17:39:10.2640796Z 
+2026-10-04T17:39:10.2641001Z       at Object.<anonymous> (test/privacy/no-pii-probe-replays.spec.ts:287:17)
+2026-10-04T17:39:10.2641228Z 
+2026-10-04T17:39:10.2641764Z   ● Opus B-700-2 replay: addresses that arrive through upstream text or a path › forgotPassword: a Supabase error that echoes the address logs status and code only
+2026-10-04T17:39:10.2642198Z 
+2026-10-04T17:39:10.2642321Z     expect(received).toContain(expected) // indexOf
+2026-10-04T17:39:10.2642491Z 
+2026-10-04T17:39:10.2642778Z     Expected substring: "resetPasswordForEmail failed: error=Object status=400 code=email_address_invalid"
+2026-10-04T17:39:10.2643375Z     Received string:    "resetPasswordForEmail failed: Email address \"pat.client+tgp@example.com\" is invalid"
+2026-10-04T17:39:10.2643686Z 
+2026-10-04T17:39:10.2644169Z     [0m [90m 297 |[39m     [36mawait[39m service[33m.[39mforgotPassword([33mRESET_ADDRESS[39m)[33m.[39m[36mcatch[39m(() [33m=>[39m undefined)[33m;[39m
+2026-10-04T17:39:10.2644843Z      [90m 298 |[39m     [36mconst[39m all [33m=[39m logs()[33m.[39mjoin([32m'\n'[39m)[33m;[39m
+2026-10-04T17:39:10.2645628Z     [31m[1m>[22m[39m[90m 299 |[39m     expect(all)[33m.[39mtoContain([32m'resetPasswordForEmail failed: error=Object status=400 code=email_address_invalid'[39m)[33m;[39m
+2026-10-04T17:39:10.2646221Z      [90m     |[39m                 [31m[1m^[22m[39m
+2026-10-04T17:39:10.2646669Z      [90m 300 |[39m     expectNone(all[33m,[39m [32m'@'[39m[33m,[39m [32m'pat.client'[39m)[33m;[39m
+2026-10-04T17:39:10.2647060Z      [90m 301 |[39m   })[33m;[39m
+2026-10-04T17:39:10.2647289Z      [90m 302 |[39m[0m
+2026-10-04T17:39:10.2647406Z 
+2026-10-04T17:39:10.2647601Z       at Object.<anonymous> (test/privacy/no-pii-probe-replays.spec.ts:299:17)
+2026-10-04T17:39:10.2647832Z 
+2026-10-04T17:39:10.2648351Z   ● Opus B-700-2 replay: addresses that arrive through upstream text or a path › finance federation degraded: a fixed route label, never the path with the address
+2026-10-04T17:39:10.2648965Z 
+2026-10-04T17:39:10.2649089Z     expect(received).toContain(expected) // indexOf
+2026-10-04T17:39:10.2649259Z 
+2026-10-04T17:39:10.2649655Z     Expected substring: "Finance federation degraded route=coaches/by-email/practice reason=http_error"
+2026-10-04T17:39:10.2650387Z     Received string:    "Finance federation degraded path=/api/admin/federation/coaches/by-email/pat.client%2Btgp%40example.com/practice reason=http_error"
+2026-10-04T17:39:10.2650823Z 
+2026-10-04T17:39:10.2651131Z     [0m [90m 312 |[39m     expect(outcome[33m.[39mkind)[33m.[39mtoBe([32m'degraded'[39m)[33m;[39m
+2026-10-04T17:39:10.2651671Z      [90m 313 |[39m     [36mconst[39m all [33m=[39m logs()[33m.[39mjoin([32m'\n'[39m)[33m;[39m
+2026-10-04T17:39:10.2652439Z     [31m[1m>[22m[39m[90m 314 |[39m     expect(all)[33m.[39mtoContain([32m'Finance federation degraded route=coaches/by-email/practice reason=http_error'[39m)[33m;[39m
+2026-10-04T17:39:10.2653013Z      [90m     |[39m                 [31m[1m^[22m[39m
+2026-10-04T17:39:10.2653555Z      [90m 315 |[39m     expectNone(all[33m,[39m [32m'pat.client'[39m[33m,[39m [32m'%40'[39m[33m,[39m [32m'@'[39m)[33m;[39m
+2026-10-04T17:39:10.2653980Z      [90m 316 |[39m   })[33m;[39m
+2026-10-04T17:39:10.2654210Z      [90m 317 |[39m[0m
+2026-10-04T17:39:10.2654317Z 
+2026-10-04T17:39:10.2654521Z       at Object.<anonymous> (test/privacy/no-pii-probe-replays.spec.ts:314:17)
+2026-10-04T17:39:10.2654755Z 
+2026-10-04T17:39:10.2655203Z   ● Opus B-700-2 replay: addresses that arrive through upstream text or a path › finance user search: the search text never reaches the line
+2026-10-04T17:39:10.2655567Z 
+2026-10-04T17:39:10.2655699Z     expect(received).toContain(expected) // indexOf
+2026-10-04T17:39:10.2655872Z 
+2026-10-04T17:39:10.2655981Z     Expected substring: "route=users/search"
+2026-10-04T17:39:10.2656529Z     Received string:    "Finance federation degraded path=/api/admin/federation/users/search?q=Patricia+Quill&limit=5 reason=http_error"
+2026-10-04T17:39:10.2657019Z 
+2026-10-04T17:39:10.2657490Z     [0m [90m 326 |[39m     [36mawait[39m [36mnew[39m [33mHttp500Client[39m()[33m.[39msearchUsers([33mPERSON[39m[33m,[39m [35m5[39m)[33m;[39m
+2026-10-04T17:39:10.2658159Z      [90m 327 |[39m     [36mconst[39m all [33m=[39m logs()[33m.[39mjoin([32m'\n'[39m)[33m;[39m
+2026-10-04T17:39:10.2658820Z     [31m[1m>[22m[39m[90m 328 |[39m     expect(all)[33m.[39mtoContain([32m'route=users/search'[39m)[33m;[39m
+2026-10-04T17:39:10.2659262Z      [90m     |[39m                 [31m[1m^[22m[39m
+2026-10-04T17:39:10.2659733Z      [90m 329 |[39m     expectNone(all[33m,[39m [32m'Patricia'[39m[33m,[39m [32m'Quill'[39m)[33m;[39m
+2026-10-04T17:39:10.2660120Z      [90m 330 |[39m   })[33m;[39m
+2026-10-04T17:39:10.2660368Z      [90m 331 |[39m })[33m;[39m[0m
+2026-10-04T17:39:10.2660506Z 
+2026-10-04T17:39:10.2660706Z       at Object.<anonymous> (test/privacy/no-pii-probe-replays.spec.ts:328:17)
+2026-10-04T17:39:10.2660945Z 
+2026-10-04T17:39:10.5014266Z [31m[Nest] 2881  - [39m10/04/2026, 5:39:10 PM [31m  ERROR[39m [38;5;3m[EmailService] [39m[31memail send failed template=coach-invites-client row=row-1: Resend 422: domain not verified[39m
+2026-10-04T17:39:10.5147477Z FAIL test/email.service.spec.ts (167 MB heap size)
+2026-10-04T17:39:10.5148219Z   ● EmailService › send (resend transport) › returns failed + records error when Resend rejects
+2026-10-04T17:39:10.5148528Z 
+2026-10-04T17:39:10.5148860Z     expect(received).toBe(expected) // Object.is equality
+2026-10-04T17:39:10.5149108Z 
+2026-10-04T17:39:10.5149261Z     Expected: "provider=resend status=422 code=unparsed"
+2026-10-04T17:39:10.5149570Z     Received: "Resend 422: domain not verified"
+2026-10-04T17:39:10.5149739Z 
+2026-10-04T17:39:10.5150065Z     [0m [90m 302 |[39m       expect(res[33m.[39mstatus)[33m.[39mtoBe([32m'failed'[39m)[33m;[39m
+2026-10-04T17:39:10.5150635Z      [90m 303 |[39m       [90m// B-700-1: the provider, status and code, never the body text.[39m
+2026-10-04T17:39:10.5151736Z     [31m[1m>[22m[39m[90m 304 |[39m       expect(res[33m.[39merror)[33m.[39mtoBe([32m'provider=resend status=422 code=unparsed'[39m)[33m;[39m
+2026-10-04T17:39:10.5152314Z      [90m     |[39m                         [31m[1m^[22m[39m
+2026-10-04T17:39:10.5152834Z      [90m 305 |[39m       expect(prisma[33m.[39memailSendLog[33m.[39mupdate)[33m.[39mtoHaveBeenCalledWith(
+2026-10-04T17:39:10.5153310Z      [90m 306 |[39m         expect[33m.[39mobjectContaining({
+2026-10-04T17:39:10.5153875Z      [90m 307 |[39m           data[33m:[39m expect[33m.[39mobjectContaining({ status[33m:[39m [32m'failed'[39m })[33m,[39m[0m
+2026-10-04T17:39:10.5154203Z 
+2026-10-04T17:39:10.5154361Z       at Object.<anonymous> (test/email.service.spec.ts:304:25)
+2026-10-04T17:39:10.5154565Z 
+2026-10-04T17:39:10.8111812Z [32m[Nest] 2881  - [39m10/04/2026, 5:39:10 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32m[email:log] row=row-1 template=coach-invites-client key=invite:abc[39m
+2026-10-04T17:39:10.8113884Z [32m[Nest] 2881  - [39m10/04/2026, 5:39:10 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32memail send skipped: idempotency hit key=invite:abc[39m
+2026-10-04T17:39:10.8115609Z [32m[Nest] 2881  - [39m10/04/2026, 5:39:10 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32memail sent template=coach-invites-client row=row-1 provider_id=msg_abc[39m
+2026-10-04T17:39:10.8119899Z FAIL test/privacy/audit-sol-fu2-118-boundary.spec.ts (194 MB heap size)
+2026-10-04T17:39:10.8121411Z   ● B-700-1: email/digest error diagnostics are codes, not arbitrary provider/exception text › EmailService provider failure cannot retain a display name or other free text
+2026-10-04T17:39:10.8122294Z 
+2026-10-04T17:39:10.8122904Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T17:39:10.8123246Z 
+2026-10-04T17:39:10.8123528Z     Expected substring: not "Patricia Quill"
+2026-10-04T17:39:10.8125792Z     Received string:        "[[\"email send failed template=nudge-onboarding-abandoned row=row-privacy-probe: Resend 422: {\\\"message\\\":\\\"Invalid recipient Patricia Quill <[email]>; private consultation details\\\"}\"]] Resend 422: {\"message\":\"Invalid recipient Patricia Quill <[email]>; private consultation details\"} Resend 422: {\"message\":\"Invalid recipient Patricia Quill <[email]>; private consultation details\"}"
+2026-10-04T17:39:10.8128143Z 
+2026-10-04T17:39:10.8129614Z     [0m [90m 81 |[39m     [36mconst[39m stored [33m=[39m [33mString[39m(db[33m.[39memailSendLog[33m.[39mupdate[33m.[39mmock[33m.[39mcalls[[35m0[39m][[35m0[39m][33m.[39mdata[33m.[39merror)[33m;[39m
+2026-10-04T17:39:10.8131105Z      [90m 82 |[39m     [36mconst[39m diagnosticSurfaces [33m=[39m [32m`${logs()} ${result.error} ${stored}`[39m[33m;[39m
+2026-10-04T17:39:10.8132237Z     [31m[1m>[22m[39m[90m 83 |[39m     expect(diagnosticSurfaces)[33m.[39mnot[33m.[39mtoContain([33mPERSON[39m)[33m;[39m
+2026-10-04T17:39:10.8133219Z      [90m    |[39m                                    [31m[1m^[22m[39m
+2026-10-04T17:39:10.8134104Z      [90m 84 |[39m     expect(diagnosticSurfaces)[33m.[39mnot[33m.[39mtoContain([33mPRIVATE_TEXT[39m)[33m;[39m
+2026-10-04T17:39:10.8134880Z      [90m 85 |[39m   })[33m;[39m
+2026-10-04T17:39:10.8135301Z      [90m 86 |[39m[0m
+2026-10-04T17:39:10.8135534Z 
+2026-10-04T17:39:10.8136046Z       at Object.<anonymous> (test/privacy/audit-sol-fu2-118-boundary.spec.ts:83:36)
+2026-10-04T17:39:10.8136488Z 
+2026-10-04T17:39:10.8137428Z   ● B-700-1: email/digest error diagnostics are codes, not arbitrary provider/exception text › EmailService render exception cannot retain the template recipient name
+2026-10-04T17:39:10.8138167Z 
+2026-10-04T17:39:10.8138393Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T17:39:10.8138876Z 
+2026-10-04T17:39:10.8139071Z     Expected substring: not "Patricia Quill"
+2026-10-04T17:39:10.8140166Z     Received string:        "render: Cannot render greeting for Patricia Quill; private consultation details render: Cannot render greeting for Patricia Quill; private consultation details"
+2026-10-04T17:39:10.8141008Z 
+2026-10-04T17:39:10.8141775Z     [0m [90m  95 |[39m     expect(result[33m.[39mstatus)[33m.[39mtoBe([32m'failed'[39m)[33m;[39m
+2026-10-04T17:39:10.8143279Z      [90m  96 |[39m     [36mconst[39m stored [33m=[39m [33mString[39m(db[33m.[39memailSendLog[33m.[39mupdate[33m.[39mmock[33m.[39mcalls[[35m0[39m][[35m0[39m][33m.[39mdata[33m.[39merror)[33m;[39m
+2026-10-04T17:39:10.8144780Z     [31m[1m>[22m[39m[90m  97 |[39m     expect([32m`${result.error} ${stored}`[39m)[33m.[39mnot[33m.[39mtoContain([33mPERSON[39m)[33m;[39m
+2026-10-04T17:39:10.8145681Z      [90m     |[39m                                             [31m[1m^[22m[39m
+2026-10-04T17:39:10.8146605Z      [90m  98 |[39m     expect([32m`${result.error} ${stored}`[39m)[33m.[39mnot[33m.[39mtoContain([33mPRIVATE_TEXT[39m)[33m;[39m
+2026-10-04T17:39:10.8147370Z      [90m  99 |[39m   })[33m;[39m
+2026-10-04T17:39:10.8147725Z      [90m 100 |[39m[0m
+2026-10-04T17:39:10.8147890Z 
+2026-10-04T17:39:10.8148213Z       at Object.<anonymous> (test/privacy/audit-sol-fu2-118-boundary.spec.ts:97:45)
+2026-10-04T17:39:10.8148588Z 
+2026-10-04T17:39:10.8149680Z   ● B-700-1: email/digest error diagnostics are codes, not arbitrary provider/exception text › DigestService provider failure cannot log/store a display name or free text
+2026-10-04T17:39:10.8150398Z 
+2026-10-04T17:39:10.8150600Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T17:39:10.8150883Z 
+2026-10-04T17:39:10.8151051Z     Expected substring: not "Patricia Quill"
+2026-10-04T17:39:10.8152976Z     Received string:        "[[\"client daily digest: 1 eligible users, window=2026-10-04\"],[\"client digest failed: user=user-1 kind=client_daily: Resend API error 422: {\\\"message\\\":\\\"Invalid recipient Patricia Quill <[email]>; private consultation details\\\"}\"]] Resend API error 422: {\"message\":\"Invalid recipient Patricia Quill <[email]>; private consultation details\"}"
+2026-10-04T17:39:10.8154775Z 
+2026-10-04T17:39:10.8155353Z     [0m [90m 137 |[39m     expect(logs())[33m.[39mnot[33m.[39mtoContain([33mADDRESS[39m)[33m;[39m
+2026-10-04T17:39:10.8156756Z      [90m 138 |[39m     [36mconst[39m stored [33m=[39m [33mString[39m(notifications[33m.[39mmarkDigestFailed[33m.[39mmock[33m.[39mcalls[[35m0[39m][[35m1[39m])[33m;[39m
+2026-10-04T17:39:10.8158218Z     [31m[1m>[22m[39m[90m 139 |[39m     expect([32m`${logs()} ${stored}`[39m)[33m.[39mnot[33m.[39mtoContain([33mPERSON[39m)[33m;[39m
+2026-10-04T17:39:10.8189578Z      [90m     |[39m                                       [31m[1m^[22m[39m
+2026-10-04T17:39:10.8190571Z      [90m 140 |[39m     expect([32m`${logs()} ${stored}`[39m)[33m.[39mnot[33m.[39mtoContain([33mPRIVATE_TEXT[39m)[33m;[39m
+2026-10-04T17:39:10.8191316Z      [90m 141 |[39m   })[33m;[39m
+2026-10-04T17:39:10.8191714Z      [90m 142 |[39m[0m
+2026-10-04T17:39:10.8191904Z 
+2026-10-04T17:39:10.8192278Z       at Object.<anonymous> (test/privacy/audit-sol-fu2-118-boundary.spec.ts:139:39)
+2026-10-04T17:39:10.8192687Z 
+2026-10-04T17:39:10.8193748Z   ● B-700-2: webhook shape labels must be finite server-owned labels, not attacker-controlled tokens › zoom cannot publish a syntactically valid private name as an event or object key
+2026-10-04T17:39:10.8194618Z 
+2026-10-04T17:39:10.8194853Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T17:39:10.8195148Z 
+2026-10-04T17:39:10.8195344Z     Expected substring: not "Patricia-Quill"
+2026-10-04T17:39:10.8196146Z     Received string:        "[[\"zoom webhook stub received payload (no-op): event=Patricia-Quill keys=event,Patricia-Quill\"]]"
+2026-10-04T17:39:10.8196711Z 
+2026-10-04T17:39:10.8196982Z     [0m [90m 179 |[39m         )[33m;[39m
+2026-10-04T17:39:10.8197897Z      [90m 180 |[39m         expect(res)[33m.[39mtoEqual({ ok[33m:[39m [36mtrue[39m[33m,[39m handler[33m:[39m [32m'stub'[39m })[33m;[39m
+2026-10-04T17:39:10.8199493Z     [31m[1m>[22m[39m[90m 181 |[39m         expect(logs())[33m.[39mnot[33m.[39mtoContain([32m'Patricia-Quill'[39m)[33m;[39m
+2026-10-04T17:39:10.8200378Z      [90m     |[39m                            [31m[1m^[22m[39m
+2026-10-04T17:39:10.8201186Z      [90m 182 |[39m         expect(logs())[33m.[39mnot[33m.[39mtoContain([33mPRIVATE_TEXT[39m)[33m;[39m
+2026-10-04T17:39:10.8201885Z      [90m 183 |[39m       } [36mfinally[39m {
+2026-10-04T17:39:10.8203025Z      [90m 184 |[39m         [36mif[39m (savedSecret [33m===[39m undefined) [36mdelete[39m process[33m.[39menv[33m.[39m[33mSCHEDULING_WEBHOOK_SECRET[39m[33m;[39m[0m
+2026-10-04T17:39:10.8203735Z 
+2026-10-04T17:39:10.8203994Z       at test/privacy/audit-sol-fu2-118-boundary.spec.ts:181:28
+2026-10-04T17:39:10.8204304Z 
+2026-10-04T17:39:10.8205407Z   ● B-700-2: webhook shape labels must be finite server-owned labels, not attacker-controlled tokens › googleCalendar cannot publish a syntactically valid private name as an event or object key
+2026-10-04T17:39:10.8206297Z 
+2026-10-04T17:39:10.8206538Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T17:39:10.8206837Z 
+2026-10-04T17:39:10.8207032Z     Expected substring: not "Patricia-Quill"
+2026-10-04T17:39:10.8207905Z     Received string:        "[[\"google-calendar webhook stub received payload (no-op): event=Patricia-Quill keys=event,Patricia-Quill\"]]"
+2026-10-04T17:39:10.8208545Z 
+2026-10-04T17:39:10.8208977Z     [0m [90m 179 |[39m         )[33m;[39m
+2026-10-04T17:39:10.8209884Z      [90m 180 |[39m         expect(res)[33m.[39mtoEqual({ ok[33m:[39m [36mtrue[39m[33m,[39m handler[33m:[39m [32m'stub'[39m })[33m;[39m
+2026-10-04T17:39:10.8211038Z     [31m[1m>[22m[39m[90m 181 |[39m         expect(logs())[33m.[39mnot[33m.[39mtoContain([32m'Patricia-Quill'[39m)[33m;[39m
+2026-10-04T17:39:10.8211876Z      [90m     |[39m                            [31m[1m^[22m[39m
+2026-10-04T17:39:10.8212976Z      [90m 182 |[39m         expect(logs())[33m.[39mnot[33m.[39mtoContain([33mPRIVATE_TEXT[39m)[33m;[39m
+2026-10-04T17:39:10.8213673Z      [90m 183 |[39m       } [36mfinally[39m {
+2026-10-04T17:39:10.8214754Z      [90m 184 |[39m         [36mif[39m (savedSecret [33m===[39m undefined) [36mdelete[39m process[33m.[39menv[33m.[39m[33mSCHEDULING_WEBHOOK_SECRET[39m[33m;[39m[0m
+2026-10-04T17:39:10.8215442Z 
+2026-10-04T17:39:10.8215720Z       at test/privacy/audit-sol-fu2-118-boundary.spec.ts:181:28
+2026-10-04T17:39:10.8216047Z 
+2026-10-04T17:39:10.9381156Z FAIL test/privacy/log-pii.spec.ts (204 MB heap size)
+2026-10-04T17:39:10.9382582Z   ● B-700-1: describeFailure keeps the class, status and a known code only › a plain Error: the class, never the message
+2026-10-04T17:39:10.9383188Z 
+2026-10-04T17:39:10.9383615Z     TypeError: (0 , log_pii_1.describeFailure) is not a function
+2026-10-04T17:39:10.9384018Z 
+2026-10-04T17:39:10.9384801Z     [0m [90m 26 |[39m describe([32m'B-700-1: describeFailure keeps the class, status and a known code only'[39m[33m,[39m () [33m=>[39m {
+2026-10-04T17:39:10.9385886Z      [90m 27 |[39m   it([32m'a plain Error: the class, never the message'[39m[33m,[39m () [33m=>[39m {
+2026-10-04T17:39:10.9387283Z     [31m[1m>[22m[39m[90m 28 |[39m     [36mconst[39m out [33m=[39m describeFailure([36mnew[39m [33mError[39m([32m`Cannot render greeting for ${PERSON} <${ADDRESS}>; ${PRIVATE_TEXT}`[39m))[33m;[39m
+2026-10-04T17:39:10.9388355Z      [90m    |[39m                                [31m[1m^[22m[39m
+2026-10-04T17:39:10.9389286Z      [90m 29 |[39m     expect(out)[33m.[39mtoBe([32m'error=Error'[39m)[33m;[39m
+2026-10-04T17:39:10.9389846Z      [90m 30 |[39m   })[33m;[39m
+2026-10-04T17:39:10.9390204Z      [90m 31 |[39m[0m
+2026-10-04T17:39:10.9390388Z 
+2026-10-04T17:39:10.9390647Z       at Object.<anonymous> (test/privacy/log-pii.spec.ts:28:32)
+2026-10-04T17:39:10.9390984Z 
+2026-10-04T17:39:10.9391691Z   ● B-700-1: describeFailure keeps the class, status and a known code only › a TypeError from fetch: the network code from its cause
+2026-10-04T17:39:10.9392621Z 
+2026-10-04T17:39:10.9392879Z     TypeError: (0 , log_pii_1.describeFailure) is not a function
+2026-10-04T17:39:10.9393179Z 
+2026-10-04T17:39:10.9393872Z     [0m [90m 34 |[39m       cause[33m:[39m { code[33m:[39m [32m'ECONNRESET'[39m[33m,[39m message[33m:[39m [33mADDRESS[39m }[33m,[39m
+2026-10-04T17:39:10.9394618Z      [90m 35 |[39m     })[33m;[39m
+2026-10-04T17:39:10.9395518Z     [31m[1m>[22m[39m[90m 36 |[39m     expect(describeFailure(err))[33m.[39mtoBe([32m'error=TypeError code=ECONNRESET'[39m)[33m;[39m
+2026-10-04T17:39:10.9396373Z      [90m    |[39m                           [31m[1m^[22m[39m
+2026-10-04T17:39:10.9396844Z      [90m 37 |[39m   })[33m;[39m
+2026-10-04T17:39:10.9397199Z      [90m 38 |[39m
+2026-10-04T17:39:10.9398065Z      [90m 39 |[39m   it([32m'a Supabase Auth error that echoes the address: status and Supabase code'[39m[33m,[39m () [33m=>[39m {[0m
+2026-10-04T17:39:10.9398652Z 
+2026-10-04T17:39:10.9399111Z       at Object.<anonymous> (test/privacy/log-pii.spec.ts:36:27)
+2026-10-04T17:39:10.9399448Z 
+2026-10-04T17:39:10.9400261Z   ● B-700-1: describeFailure keeps the class, status and a known code only › a Supabase Auth error that echoes the address: status and Supabase code
+2026-10-04T17:39:10.9400935Z 
+2026-10-04T17:39:10.9401203Z     TypeError: (0 , log_pii_1.describeFailure) is not a function
+2026-10-04T17:39:10.9401530Z 
+2026-10-04T17:39:10.9401846Z     [0m [90m 43 |[39m       status[33m:[39m [35m400[39m[33m,[39m
+2026-10-04T17:39:10.9402353Z      [90m 44 |[39m     }[33m;[39m
+2026-10-04T17:39:10.9403081Z     [31m[1m>[22m[39m[90m 45 |[39m     [36mconst[39m out [33m=[39m describeFailure(supabaseShape)[33m;[39m
+2026-10-04T17:39:10.9403820Z      [90m    |[39m                                [31m[1m^[22m[39m
+2026-10-04T17:39:10.9405072Z      [90m 46 |[39m     expect(out)[33m.[39mtoBe([32m'error=Object status=400 code=email_address_invalid'[39m)[33m;[39m
+2026-10-04T17:39:10.9405823Z      [90m 47 |[39m     expectNoText(out)[33m;[39m
+2026-10-04T17:39:10.9406283Z      [90m 48 |[39m   })[33m;[39m[0m
+2026-10-04T17:39:10.9406503Z 
+2026-10-04T17:39:10.9406766Z       at Object.<anonymous> (test/privacy/log-pii.spec.ts:45:32)
+2026-10-04T17:39:10.9407080Z 
+2026-10-04T17:39:10.9407685Z   ● B-700-1: describeFailure keeps the class, status and a known code only › a Prisma known request error: the P code
+2026-10-04T17:39:10.9408236Z 
+2026-10-04T17:39:10.9408491Z     TypeError: (0 , log_pii_1.describeFailure) is not a function
+2026-10-04T17:39:10.9408979Z 
+2026-10-04T17:39:10.9409375Z     [0m [90m 53 |[39m       clientVersion[33m:[39m [32m'test'[39m[33m,[39m
+2026-10-04T17:39:10.9409908Z      [90m 54 |[39m     })[33m;[39m
+2026-10-04T17:39:10.9410601Z     [31m[1m>[22m[39m[90m 55 |[39m     [36mconst[39m out [33m=[39m describeFailure(err)[33m;[39m
+2026-10-04T17:39:10.9411298Z      [90m    |[39m                                [31m[1m^[22m[39m
+2026-10-04T17:39:10.9412195Z      [90m 56 |[39m     expect(out)[33m.[39mtoBe([32m'error=PrismaClientKnownRequestError code=P2002'[39m)[33m;[39m
+2026-10-04T17:39:10.9412900Z      [90m 57 |[39m   })[33m;[39m
+2026-10-04T17:39:10.9413223Z      [90m 58 |[39m[0m
+2026-10-04T17:39:10.9413392Z 
+2026-10-04T17:39:10.9413627Z       at Object.<anonymous> (test/privacy/log-pii.spec.ts:55:32)
+2026-10-04T17:39:10.9413914Z 
+2026-10-04T17:39:10.9414586Z   ● B-700-1: describeFailure keeps the class, status and a known code only › a jose claim failure: the jose code and the claim name
+2026-10-04T17:39:10.9415140Z 
+2026-10-04T17:39:10.9415380Z     TypeError: (0 , log_pii_1.describeFailure) is not a function
+2026-10-04T17:39:10.9415671Z 
+2026-10-04T17:39:10.9416010Z     [0m [90m 62 |[39m       claim [33m=[39m [32m'aud'[39m[33m;[39m
+2026-10-04T17:39:10.9416498Z      [90m 63 |[39m     }
+2026-10-04T17:39:10.9417740Z     [31m[1m>[22m[39m[90m 64 |[39m     expect(describeFailure([36mnew[39m [33mJWTClaimValidationFailed[39m([32m`unexpected "aud" ${ADDRESS}`[39m)))[33m.[39mtoBe(
+2026-10-04T17:39:10.9419005Z      [90m    |[39m                           [31m[1m^[22m[39m
+2026-10-04T17:39:10.9419944Z      [90m 65 |[39m       [32m'error=JWTClaimValidationFailed code=ERR_JWT_CLAIM_VALIDATION_FAILED claim=aud'[39m[33m,[39m
+2026-10-04T17:39:10.9420694Z      [90m 66 |[39m     )[33m;[39m
+2026-10-04T17:39:10.9421126Z      [90m 67 |[39m   })[33m;[39m[0m
+2026-10-04T17:39:10.9421351Z 
+2026-10-04T17:39:10.9421623Z       at Object.<anonymous> (test/privacy/log-pii.spec.ts:64:27)
+2026-10-04T17:39:10.9421942Z 
+2026-10-04T17:39:10.9422759Z   ● B-700-1: describeFailure keeps the class, status and a known code only › a code outside every list is "other", even when it is shaped like a code
+2026-10-04T17:39:10.9423476Z 
+2026-10-04T17:39:10.9423757Z     TypeError: (0 , log_pii_1.describeFailure) is not a function
+2026-10-04T17:39:10.9424084Z 
+2026-10-04T17:39:10.9424225Z     [0m [90m 68 |[39m
+2026-10-04T17:39:10.9425059Z      [90m 69 |[39m   it([32m'a code outside every list is "other", even when it is shaped like a code'[39m[33m,[39m () [33m=>[39m {
+2026-10-04T17:39:10.9426688Z     [31m[1m>[22m[39m[90m 70 |[39m     [36mconst[39m out [33m=[39m describeFailure({ code[33m:[39m [32m'patricia_quill'[39m[33m,[39m status[33m:[39m [35m422[39m[33m,[39m message[33m:[39m [33mPERSON[39m })[33m;[39m
+2026-10-04T17:39:10.9427949Z      [90m    |[39m                                [31m[1m^[22m[39m
+2026-10-04T17:39:10.9429005Z      [90m 71 |[39m     expect(out)[33m.[39mtoBe([32m'error=Object status=422 code=other'[39m)[33m;[39m
+2026-10-04T17:39:10.9430386Z      [90m 72 |[39m     expect(describeFailure({ code[33m:[39m [32m'MY_MODULE_CODE'[39m }[33m,[39m [36mnew[39m [33mSet[39m([[32m'MY_MODULE_CODE'[39m])))[33m.[39mtoBe(
+2026-10-04T17:39:10.9431749Z      [90m 73 |[39m       [32m'error=Object code=MY_MODULE_CODE'[39m[33m,[39m[0m
+2026-10-04T17:39:10.9432127Z 
+2026-10-04T17:39:10.9432413Z       at Object.<anonymous> (test/privacy/log-pii.spec.ts:70:32)
+2026-10-04T17:39:10.9432742Z 
+2026-10-04T17:39:10.9433479Z   ● B-700-1: describeFailure keeps the class, status and a known code only › never throws, and describes values that are not errors
+2026-10-04T17:39:10.9434022Z 
+2026-10-04T17:39:10.9434263Z     TypeError: (0 , log_pii_1.describeFailure) is not a function
+2026-10-04T17:39:10.9434525Z 
+2026-10-04T17:39:10.9434686Z     [0m [90m 77 |[39m
+2026-10-04T17:39:10.9435420Z      [90m 78 |[39m   it([32m'never throws, and describes values that are not errors'[39m[33m,[39m () [33m=>[39m {
+2026-10-04T17:39:10.9436549Z     [31m[1m>[22m[39m[90m 79 |[39m     expect(describeFailure(undefined))[33m.[39mtoBe([32m'error=none'[39m)[33m;[39m
+2026-10-04T17:39:10.9437318Z      [90m    |[39m                           [31m[1m^[22m[39m
+2026-10-04T17:39:10.9438104Z      [90m 80 |[39m     expect(describeFailure([36mnull[39m))[33m.[39mtoBe([32m'error=none'[39m)[33m;[39m
+2026-10-04T17:39:10.9439367Z      [90m 81 |[39m     expect(describeFailure([32m`${PERSON} ${ADDRESS}`[39m))[33m.[39mtoBe([32m'error=non_error'[39m)[33m;[39m
+2026-10-04T17:39:10.9440494Z      [90m 82 |[39m     expect(describeFailure([35m42[39m))[33m.[39mtoBe([32m'error=non_error'[39m)[33m;[39m[0m
+2026-10-04T17:39:10.9440968Z 
+2026-10-04T17:39:10.9441212Z       at Object.<anonymous> (test/privacy/log-pii.spec.ts:79:27)
+2026-10-04T17:39:10.9441518Z 
+2026-10-04T17:39:10.9442685Z   ● B-700-1 / C-700-3: provider failures carry the provider, status and code, never the body › resend body 0: code {"name":"validation_error","message":"Invalid recipient Patricia Quill <pat.client+tgp@example.com>"}
+2026-10-04T17:39:10.9443589Z 
+2026-10-04T17:39:10.9443868Z     TypeError: (0 , log_pii_1.providerErrorCode) is not a function
+2026-10-04T17:39:10.9444222Z 
+2026-10-04T17:39:10.9445768Z     [0m [90m 104 |[39m     [[32m'sendgrid'[39m[33m,[39m [33mJSON[39m[33m.[39mstringify({ errors[33m:[39m [{ message[33m:[39m [32m`${PERSON} ${ADDRESS}`[39m[33m,[39m field[33m:[39m [32m'personalizations'[39m }] })[33m,[39m [32m'other'[39m][33m,[39m
+2026-10-04T17:39:10.9447573Z      [90m 105 |[39m   ] [36mas[39m [36mconst[39m)([32m'%s body %#: code %s'[39m[33m,[39m (provider[33m,[39m body[33m,[39m code) [33m=>[39m {
+2026-10-04T17:39:10.9448980Z     [31m[1m>[22m[39m[90m 106 |[39m     expect(providerErrorCode(provider[33m,[39m body))[33m.[39mtoBe(code)[33m;[39m
+2026-10-04T17:39:10.9449822Z      [90m     |[39m                             [31m[1m^[22m[39m
+2026-10-04T17:39:10.9451089Z      [90m 107 |[39m     [36mconst[39m failure [33m=[39m [36mnew[39m [33mProviderFailure[39m(provider[33m,[39m [35m422[39m[33m,[39m providerErrorCode(provider[33m,[39m body))[33m;[39m
+2026-10-04T17:39:10.9452625Z      [90m 108 |[39m     expect(failure[33m.[39mmessage)[33m.[39mtoBe([32m`provider=${provider} status=422 code=${code}`[39m)[33m;[39m
+2026-10-04T17:39:10.9453809Z      [90m 109 |[39m     expect(describeFailure(failure))[33m.[39mtoBe(failure[33m.[39mmessage)[33m;[39m[0m
+2026-10-04T17:39:10.9454326Z 
+2026-10-04T17:39:10.9454520Z       at test/privacy/log-pii.spec.ts:106:29
+2026-10-04T17:39:10.9454776Z 
+2026-10-04T17:39:10.9455737Z   ● B-700-1 / C-700-3: provider failures carry the provider, status and code, never the body › resend body 1: code {"name":"Patricia-Quill","message":"private consultation details"}
+2026-10-04T17:39:10.9456514Z 
+2026-10-04T17:39:10.9456803Z     TypeError: (0 , log_pii_1.providerErrorCode) is not a function
+2026-10-04T17:39:10.9457127Z 
+2026-10-04T17:39:10.9458500Z     [0m [90m 104 |[39m     [[32m'sendgrid'[39m[33m,[39m [33mJSON[39m[33m.[39mstringify({ errors[33m:[39m [{ message[33m:[39m [32m`${PERSON} ${ADDRESS}`[39m[33m,[39m field[33m:[39m [32m'personalizations'[39m }] })[33m,[39m [32m'other'[39m][33m,[39m
+2026-10-04T17:39:10.9460689Z      [90m 105 |[39m   ] [36mas[39m [36mconst[39m)([32m'%s body %#: code %s'[39m[33m,[39m (provider[33m,[39m body[33m,[39m code) [33m=>[39m {
+2026-10-04T17:39:10.9461927Z     [31m[1m>[22m[39m[90m 106 |[39m     expect(providerErrorCode(provider[33m,[39m body))[33m.[39mtoBe(code)[33m;[39m
+2026-10-04T17:39:10.9462771Z      [90m     |[39m                             [31m[1m^[22m[39m
+2026-10-04T17:39:10.9464059Z      [90m 107 |[39m     [36mconst[39m failure [33m=[39m [36mnew[39m [33mProviderFailure[39m(provider[33m,[39m [35m422[39m[33m,[39m providerErrorCode(provider[33m,[39m body))[33m;[39m
+2026-10-04T17:39:10.9465570Z      [90m 108 |[39m     expect(failure[33m.[39mmessage)[33m.[39mtoBe([32m`provider=${provider} status=422 code=${code}`[39m)[33m;[39m
+2026-10-04T17:39:10.9466754Z      [90m 109 |[39m     expect(describeFailure(failure))[33m.[39mtoBe(failure[33m.[39mmessage)[33m;[39m[0m
+2026-10-04T17:39:10.9467798Z 
+2026-10-04T17:39:10.9467995Z       at test/privacy/log-pii.spec.ts:106:29
+2026-10-04T17:39:10.9468377Z 
+2026-10-04T17:39:10.9469728Z   ● B-700-1 / C-700-3: provider failures carry the provider, status and code, never the body › resend body 2: code {"message":"Invalid recipient Patricia Quill <pat.client+tgp@example.com>; private consultation details"}
+2026-10-04T17:39:10.9470690Z 
+2026-10-04T17:39:10.9470976Z     TypeError: (0 , log_pii_1.providerErrorCode) is not a function
+2026-10-04T17:39:10.9471316Z 
+2026-10-04T17:39:10.9472669Z     [0m [90m 104 |[39m     [[32m'sendgrid'[39m[33m,[39m [33mJSON[39m[33m.[39mstringify({ errors[33m:[39m [{ message[33m:[39m [32m`${PERSON} ${ADDRESS}`[39m[33m,[39m field[33m:[39m [32m'personalizations'[39m }] })[33m,[39m [32m'other'[39m][33m,[39m
+2026-10-04T17:39:10.9474625Z      [90m 105 |[39m   ] [36mas[39m [36mconst[39m)([32m'%s body %#: code %s'[39m[33m,[39m (provider[33m,[39m body[33m,[39m code) [33m=>[39m {
+2026-10-04T17:39:10.9476031Z     [31m[1m>[22m[39m[90m 106 |[39m     expect(providerErrorCode(provider[33m,[39m body))[33m.[39mtoBe(code)[33m;[39m
+2026-10-04T17:39:10.9476935Z      [90m     |[39m                             [31m[1m^[22m[39m
+2026-10-04T17:39:10.9478251Z      [90m 107 |[39m     [36mconst[39m failure [33m=[39m [36mnew[39m [33mProviderFailure[39m(provider[33m,[39m [35m422[39m[33m,[39m providerErrorCode(provider[33m,[39m body))[33m;[39m
+2026-10-04T17:39:10.9479895Z      [90m 108 |[39m     expect(failure[33m.[39mmessage)[33m.[39mtoBe([32m`provider=${provider} status=422 code=${code}`[39m)[33m;[39m
+2026-10-04T17:39:10.9481051Z      [90m 109 |[39m     expect(describeFailure(failure))[33m.[39mtoBe(failure[33m.[39mmessage)[33m;[39m[0m
+2026-10-04T17:39:10.9481547Z 
+2026-10-04T17:39:10.9481740Z       at test/privacy/log-pii.spec.ts:106:29
+2026-10-04T17:39:10.9481990Z 
+2026-10-04T17:39:10.9484373Z   ● B-700-1 / C-700-3: provider failures carry the provider, status and code, never the body › resend body 3: code                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         pat.client+tgp@example.com
+2026-10-04T17:39:10.9485884Z 
+2026-10-04T17:39:10.9486199Z     TypeError: (0 , log_pii_1.providerErrorCode) is not a function
+2026-10-04T17:39:10.9486532Z 
+2026-10-04T17:39:10.9487895Z     [0m [90m 104 |[39m     [[32m'sendgrid'[39m[33m,[39m [33mJSON[39m[33m.[39mstringify({ errors[33m:[39m [{ message[33m:[39m [32m`${PERSON} ${ADDRESS}`[39m[33m,[39m field[33m:[39m [32m'personalizations'[39m }] })[33m,[39m [32m'other'[39m][33m,[39m
+2026-10-04T17:39:10.9490204Z      [90m 105 |[39m   ] [36mas[39m [36mconst[39m)([32m'%s body %#: code %s'[39m[33m,[39m (provider[33m,[39m body[33m,[39m code) [33m=>[39m {
+2026-10-04T17:39:10.9491448Z     [31m[1m>[22m[39m[90m 106 |[39m     expect(providerErrorCode(provider[33m,[39m body))[33m.[39mtoBe(code)[33m;[39m
+2026-10-04T17:39:10.9492294Z      [90m     |[39m                             [31m[1m^[22m[39m
+2026-10-04T17:39:10.9493544Z      [90m 107 |[39m     [36mconst[39m failure [33m=[39m [36mnew[39m [33mProviderFailure[39m(provider[33m,[39m [35m422[39m[33m,[39m providerErrorCode(provider[33m,[39m body))[33m;[39m
+2026-10-04T17:39:10.9495042Z      [90m 108 |[39m     expect(failure[33m.[39mmessage)[33m.[39mtoBe([32m`provider=${provider} status=422 code=${code}`[39m)[33m;[39m
+2026-10-04T17:39:10.9496216Z      [90m 109 |[39m     expect(describeFailure(failure))[33m.[39mtoBe(failure[33m.[39mmessage)[33m;[39m[0m
+2026-10-04T17:39:10.9496724Z 
+2026-10-04T17:39:10.9496913Z       at test/privacy/log-pii.spec.ts:106:29
+2026-10-04T17:39:10.9497169Z 
+2026-10-04T17:39:10.9497831Z   ● B-700-1 / C-700-3: provider failures carry the provider, status and code, never the body › resend body 4: code 
+2026-10-04T17:39:10.9498354Z 
+2026-10-04T17:39:10.9498645Z     TypeError: (0 , log_pii_1.providerErrorCode) is not a function
+2026-10-04T17:39:10.9499148Z 
+2026-10-04T17:39:10.9500490Z     [0m [90m 104 |[39m     [[32m'sendgrid'[39m[33m,[39m [33mJSON[39m[33m.[39mstringify({ errors[33m:[39m [{ message[33m:[39m [32m`${PERSON} ${ADDRESS}`[39m[33m,[39m field[33m:[39m [32m'personalizations'[39m }] })[33m,[39m [32m'other'[39m][33m,[39m
+2026-10-04T17:39:10.9502227Z      [90m 105 |[39m   ] [36mas[39m [36mconst[39m)([32m'%s body %#: code %s'[39m[33m,[39m (provider[33m,[39m body[33m,[39m code) [33m=>[39m {
+2026-10-04T17:39:10.9503453Z     [31m[1m>[22m[39m[90m 106 |[39m     expect(providerErrorCode(provider[33m,[39m body))[33m.[39mtoBe(code)[33m;[39m
+2026-10-04T17:39:10.9504471Z      [90m     |[39m                             [31m[1m^[22m[39m
+2026-10-04T17:39:10.9505811Z      [90m 107 |[39m     [36mconst[39m failure [33m=[39m [36mnew[39m [33mProviderFailure[39m(provider[33m,[39m [35m422[39m[33m,[39m providerErrorCode(provider[33m,[39m body))[33m;[39m
+2026-10-04T17:39:10.9507355Z      [90m 108 |[39m     expect(failure[33m.[39mmessage)[33m.[39mtoBe([32m`provider=${provider} status=422 code=${code}`[39m)[33m;[39m
+2026-10-04T17:39:10.9508529Z      [90m 109 |[39m     expect(describeFailure(failure))[33m.[39mtoBe(failure[33m.[39mmessage)[33m;[39m[0m
+2026-10-04T17:39:10.9509221Z 
+2026-10-04T17:39:10.9509427Z       at test/privacy/log-pii.spec.ts:106:29
+2026-10-04T17:39:10.9509681Z 
+2026-10-04T17:39:10.9510791Z   ● B-700-1 / C-700-3: provider failures carry the provider, status and code, never the body › postmark body 5: code {"ErrorCode":300,"Message":"Invalid 'To' address: 'pat.client+tgp@example.com'."}
+2026-10-04T17:39:10.9511679Z 
+2026-10-04T17:39:10.9511974Z     TypeError: (0 , log_pii_1.providerErrorCode) is not a function
+2026-10-04T17:39:10.9512317Z 
+2026-10-04T17:39:10.9513666Z     [0m [90m 104 |[39m     [[32m'sendgrid'[39m[33m,[39m [33mJSON[39m[33m.[39mstringify({ errors[33m:[39m [{ message[33m:[39m [32m`${PERSON} ${ADDRESS}`[39m[33m,[39m field[33m:[39m [32m'personalizations'[39m }] })[33m,[39m [32m'other'[39m][33m,[39m
+2026-10-04T17:39:10.9515274Z      [90m 105 |[39m   ] [36mas[39m [36mconst[39m)([32m'%s body %#: code %s'[39m[33m,[39m (provider[33m,[39m body[33m,[39m code) [33m=>[39m {
+2026-10-04T17:39:10.9516457Z     [31m[1m>[22m[39m[90m 106 |[39m     expect(providerErrorCode(provider[33m,[39m body))[33m.[39mtoBe(code)[33m;[39m
+2026-10-04T17:39:10.9517303Z      [90m     |[39m                             [31m[1m^[22m[39m
+2026-10-04T17:39:10.9519004Z      [90m 107 |[39m     [36mconst[39m failure [33m=[39m [36mnew[39m [33mProviderFailure[39m(provider[33m,[39m [35m422[39m[33m,[39m providerErrorCode(provider[33m,[39m body))[33m;[39m
+2026-10-04T17:39:10.9520489Z      [90m 108 |[39m     expect(failure[33m.[39mmessage)[33m.[39mtoBe([32m`provider=${provider} status=422 code=${code}`[39m)[33m;[39m
+2026-10-04T17:39:10.9521621Z      [90m 109 |[39m     expect(describeFailure(failure))[33m.[39mtoBe(failure[33m.[39mmessage)[33m;[39m[0m
+2026-10-04T17:39:10.9522108Z 
+2026-10-04T17:39:10.9522305Z       at test/privacy/log-pii.spec.ts:106:29
+2026-10-04T17:39:10.9522569Z 
+2026-10-04T17:39:10.9523531Z   ● B-700-1 / C-700-3: provider failures carry the provider, status and code, never the body › postmark body 6: code {"ErrorCode":"Patricia Quill","Message":"Patricia Quill"}
+2026-10-04T17:39:10.9524300Z 
+2026-10-04T17:39:10.9524582Z     TypeError: (0 , log_pii_1.providerErrorCode) is not a function
+2026-10-04T17:39:10.9524943Z 
+2026-10-04T17:39:10.9526328Z     [0m [90m 104 |[39m     [[32m'sendgrid'[39m[33m,[39m [33mJSON[39m[33m.[39mstringify({ errors[33m:[39m [{ message[33m:[39m [32m`${PERSON} ${ADDRESS}`[39m[33m,[39m field[33m:[39m [32m'personalizations'[39m }] })[33m,[39m [32m'other'[39m][33m,[39m
+2026-10-04T17:39:10.9528136Z      [90m 105 |[39m   ] [36mas[39m [36mconst[39m)([32m'%s body %#: code %s'[39m[33m,[39m (provider[33m,[39m body[33m,[39m code) [33m=>[39m {
+2026-10-04T17:39:10.9529606Z     [31m[1m>[22m[39m[90m 106 |[39m     expect(providerErrorCode(provider[33m,[39m body))[33m.[39mtoBe(code)[33m;[39m
+2026-10-04T17:39:10.9530468Z      [90m     |[39m                             [31m[1m^[22m[39m
+2026-10-04T17:39:10.9531799Z      [90m 107 |[39m     [36mconst[39m failure [33m=[39m [36mnew[39m [33mProviderFailure[39m(provider[33m,[39m [35m422[39m[33m,[39m providerErrorCode(provider[33m,[39m body))[33m;[39m
+2026-10-04T17:39:10.9533356Z      [90m 108 |[39m     expect(failure[33m.[39mmessage)[33m.[39mtoBe([32m`provider=${provider} status=422 code=${code}`[39m)[33m;[39m
+2026-10-04T17:39:10.9534769Z      [90m 109 |[39m     expect(describeFailure(failure))[33m.[39mtoBe(failure[33m.[39mmessage)[33m;[39m[0m
+2026-10-04T17:39:10.9535282Z 
+2026-10-04T17:39:10.9535473Z       at test/privacy/log-pii.spec.ts:106:29
+2026-10-04T17:39:10.9535739Z 
+2026-10-04T17:39:10.9536849Z   ● B-700-1 / C-700-3: provider failures carry the provider, status and code, never the body › sendgrid body 7: code {"errors":[{"message":"Patricia Quill pat.client+tgp@example.com","field":"personalizations"}]}
+2026-10-04T17:39:10.9537684Z 
+2026-10-04T17:39:10.9537968Z     TypeError: (0 , log_pii_1.providerErrorCode) is not a function
+2026-10-04T17:39:10.9538301Z 
+2026-10-04T17:39:10.9539801Z     [0m [90m 104 |[39m     [[32m'sendgrid'[39m[33m,[39m [33mJSON[39m[33m.[39mstringify({ errors[33m:[39m [{ message[33m:[39m [32m`${PERSON} ${ADDRESS}`[39m[33m,[39m field[33m:[39m [32m'personalizations'[39m }] })[33m,[39m [32m'other'[39m][33m,[39m
+2026-10-04T17:39:10.9541646Z      [90m 105 |[39m   ] [36mas[39m [36mconst[39m)([32m'%s body %#: code %s'[39m[33m,[39m (provider[33m,[39m body[33m,[39m code) [33m=>[39m {
+2026-10-04T17:39:10.9542901Z     [31m[1m>[22m[39m[90m 106 |[39m     expect(providerErrorCode(provider[33m,[39m body))[33m.[39mtoBe(code)[33m;[39m
+2026-10-04T17:39:10.9543698Z      [90m     |[39m                             [31m[1m^[22m[39m
+2026-10-04T17:39:10.9544991Z      [90m 107 |[39m     [36mconst[39m failure [33m=[39m [36mnew[39m [33mProviderFailure[39m(provider[33m,[39m [35m422[39m[33m,[39m providerErrorCode(provider[33m,[39m body))[33m;[39m
+2026-10-04T17:39:10.9546538Z      [90m 108 |[39m     expect(failure[33m.[39mmessage)[33m.[39mtoBe([32m`provider=${provider} status=422 code=${code}`[39m)[33m;[39m
+2026-10-04T17:39:10.9547689Z      [90m 109 |[39m     expect(describeFailure(failure))[33m.[39mtoBe(failure[33m.[39mmessage)[33m;[39m[0m
+2026-10-04T17:39:10.9548382Z 
+2026-10-04T17:39:10.9548586Z       at test/privacy/log-pii.spec.ts:106:29
+2026-10-04T17:39:10.9549047Z 
+2026-10-04T17:39:10.9549885Z   ● B-700-1 / C-700-3: provider failures carry the provider, status and code, never the body › a code or status that is not server-owned is replaced
+2026-10-04T17:39:10.9550543Z 
+2026-10-04T17:39:10.9550822Z     TypeError: log_pii_1.ProviderFailure is not a constructor
+2026-10-04T17:39:10.9551142Z 
+2026-10-04T17:39:10.9551343Z     [0m [90m 112 |[39m
+2026-10-04T17:39:10.9552104Z      [90m 113 |[39m   it([32m'a code or status that is not server-owned is replaced'[39m[33m,[39m () [33m=>[39m {
+2026-10-04T17:39:10.9553913Z     [31m[1m>[22m[39m[90m 114 |[39m     expect([36mnew[39m [33mProviderFailure[39m([32m'resend'[39m[33m,[39m [35m422[39m[33m,[39m [33mPERSON[39m)[33m.[39mmessage)[33m.[39mtoBe([32m'provider=resend status=422 code=other'[39m)[33m;[39m
+2026-10-04T17:39:10.9555175Z      [90m     |[39m            [31m[1m^[22m[39m
+2026-10-04T17:39:10.9556409Z      [90m 115 |[39m     expect([36mnew[39m [33mProviderFailure[39m([32m'resend'[39m[33m,[39m [35m4220[39m[33m,[39m [32m'validation_error'[39m)[33m.[39mmessage)[33m.[39mtoBe(
+2026-10-04T17:39:10.9557546Z      [90m 116 |[39m       [32m'provider=resend status=none code=validation_error'[39m[33m,[39m
+2026-10-04T17:39:10.9558180Z      [90m 117 |[39m     )[33m;[39m[0m
+2026-10-04T17:39:10.9558420Z 
+2026-10-04T17:39:10.9558860Z       at Object.<anonymous> (test/privacy/log-pii.spec.ts:114:12)
+2026-10-04T17:39:10.9559185Z 
+2026-10-04T17:39:11.1447651Z FAIL test/privacy/aud-opus-fu2-118-coach-name-probe.spec.ts (225 MB heap size)
+2026-10-04T17:39:11.1449395Z   ● AUD-OPUS-FU2-118 probe: coach brief log lines and the coach name › Claude call error: no log line holds the coach name
+2026-10-04T17:39:11.1450046Z 
+2026-10-04T17:39:11.1450515Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T17:39:11.1450849Z 
+2026-10-04T17:39:11.1451027Z     Expected substring: not "Quillfeather"
+2026-10-04T17:39:11.1452077Z     Received string:        "CoachBrief Claude call failed for coach=Patricia Quillfeather: upstream 529 overloaded"
+2026-10-04T17:39:11.1452619Z 
+2026-10-04T17:39:11.1453035Z     [0m [90m 62 |[39m     [36mconst[39m all [33m=[39m lines()[33m;[39m
+2026-10-04T17:39:11.1453999Z      [90m 63 |[39m     expect(all[33m.[39mjoin([32m'\n'[39m))[33m.[39mtoContain([32m'CoachBrief Claude call failed'[39m)[33m;[39m
+2026-10-04T17:39:11.1455538Z     [31m[1m>[22m[39m[90m 64 |[39m     [36mfor[39m ([36mconst[39m line [36mof[39m all) expect(line)[33m.[39mnot[33m.[39mtoContain([33mSURNAME[39m)[33m;[39m
+2026-10-04T17:39:11.1456527Z      [90m    |[39m                                              [31m[1m^[22m[39m
+2026-10-04T17:39:11.1457036Z      [90m 65 |[39m   })[33m;[39m
+2026-10-04T17:39:11.1457410Z      [90m 66 |[39m
+2026-10-04T17:39:11.1458303Z      [90m 67 |[39m   it([32m'Claude contract failure twice: no log line holds the coach name'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+2026-10-04T17:39:11.1459012Z 
+2026-10-04T17:39:11.1459428Z       at Object.<anonymous> (test/privacy/aud-opus-fu2-118-coach-name-probe.spec.ts:64:46)
+2026-10-04T17:39:11.1459870Z 
+2026-10-04T17:39:11.1460606Z   ● AUD-OPUS-FU2-118 probe: coach brief log lines and the coach name › Claude contract failure twice: no log line holds the coach name
+2026-10-04T17:39:11.1461208Z 
+2026-10-04T17:39:11.1461430Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T17:39:11.1461720Z 
+2026-10-04T17:39:11.1461907Z     Expected substring: not "Quillfeather"
+2026-10-04T17:39:11.1462796Z     Received string:        "CoachBrief Claude output failed contract (too_few_sentences:2) for coach=Patricia Quillfeather; attempting one repair"
+2026-10-04T17:39:11.1463435Z 
+2026-10-04T17:39:11.1463802Z     [0m [90m 72 |[39m     [36mconst[39m all [33m=[39m lines()[33m;[39m
+2026-10-04T17:39:11.1464962Z      [90m 73 |[39m     expect(all[33m.[39mjoin([32m'\n'[39m))[33m.[39mtoContain([32m'failed contract'[39m)[33m;[39m
+2026-10-04T17:39:11.1466248Z     [31m[1m>[22m[39m[90m 74 |[39m     [36mfor[39m ([36mconst[39m line [36mof[39m all) expect(line)[33m.[39mnot[33m.[39mtoContain([33mSURNAME[39m)[33m;[39m
+2026-10-04T17:39:11.1467248Z      [90m    |[39m                                              [31m[1m^[22m[39m
+2026-10-04T17:39:11.1467756Z      [90m 75 |[39m   })[33m;[39m
+2026-10-04T17:39:11.1468132Z      [90m 76 |[39m })[33m;[39m
+2026-10-04T17:39:11.1468518Z      [90m 77 |[39m[0m
+2026-10-04T17:39:11.1468917Z 
+2026-10-04T17:39:11.1469396Z       at Object.<anonymous> (test/privacy/aud-opus-fu2-118-coach-name-probe.spec.ts:74:46)
+2026-10-04T17:39:11.1469958Z 
+2026-10-04T17:39:11.4121210Z FAIL test/privacy/aud-opus-fu2-118-reset-email-probe.spec.ts (251 MB heap size)
+2026-10-04T17:39:11.4122325Z   ● AUD-OPUS-FU2-118 probe: forgotPassword and a Supabase error that echoes the address › no log line holds the address
+2026-10-04T17:39:11.4123000Z 
+2026-10-04T17:39:11.4123202Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T17:39:11.4123483Z 
+2026-10-04T17:39:11.4123650Z     Expected substring: not "@"
+2026-10-04T17:39:11.4124234Z     Received string:        "resetPasswordForEmail failed: Email address \"pat.client+tgp@example.com\" is invalid"
+2026-10-04T17:39:11.4124631Z 
+2026-10-04T17:39:11.4125144Z     [0m [90m 48 |[39m     expect(lines[33m.[39mjoin([32m'\n'[39m))[33m.[39mtoContain([32m'resetPasswordForEmail failed'[39m)[33m;[39m
+2026-10-04T17:39:11.4125875Z      [90m 49 |[39m     [36mfor[39m ([36mconst[39m line [36mof[39m lines) {
+2026-10-04T17:39:11.4126523Z     [31m[1m>[22m[39m[90m 50 |[39m       expect(line)[33m.[39mnot[33m.[39mtoContain([32m'@'[39m)[33m;[39m
+2026-10-04T17:39:11.4127089Z      [90m    |[39m                        [31m[1m^[22m[39m
+2026-10-04T17:39:11.4140016Z      [90m 51 |[39m       expect(line)[33m.[39mnot[33m.[39mtoContain([32m'pat.client'[39m)[33m;[39m
+2026-10-04T17:39:11.4140802Z      [90m 52 |[39m     }
+2026-10-04T17:39:11.4141562Z      [90m 53 |[39m   })[33m;[39m[0m
+2026-10-04T17:39:11.4141814Z 
+2026-10-04T17:39:11.4142238Z       at Object.<anonymous> (test/privacy/aud-opus-fu2-118-reset-email-probe.spec.ts:50:24)
+2026-10-04T17:39:11.4142711Z 
+2026-10-04T17:39:11.6660413Z FAIL test/privacy/aud-opus-fu2-118-finance-path-probe.spec.ts (259 MB heap size)
+2026-10-04T17:39:11.6661934Z   ● AUD-OPUS-FU2-118 probe: finance federation degraded log line and the coach address › no log line holds the address, encoded or not
+2026-10-04T17:39:11.6662560Z 
+2026-10-04T17:39:11.6662788Z     expect(received).not.toContain(expected) // indexOf
+2026-10-04T17:39:11.6663083Z 
+2026-10-04T17:39:11.6663249Z     Expected substring: not "pat.client"
+2026-10-04T17:39:11.6664091Z     Received string:        "Finance federation degraded path=/api/admin/federation/coaches/by-email/pat.client%2Btgp%40example.com/practice reason=http_error"
+2026-10-04T17:39:11.6664586Z 
+2026-10-04T17:39:11.6665046Z     [0m [90m 37 |[39m     expect(lines[33m.[39mjoin([32m'\n'[39m))[33m.[39mtoContain([32m'Finance federation degraded'[39m)[33m;[39m
+2026-10-04T17:39:11.6665634Z      [90m 38 |[39m     [36mfor[39m ([36mconst[39m line [36mof[39m lines) {
+2026-10-04T17:39:11.6666199Z     [31m[1m>[22m[39m[90m 39 |[39m       expect(line)[33m.[39mnot[33m.[39mtoContain([32m'pat.client'[39m)[33m;[39m
+2026-10-04T17:39:11.6666665Z      [90m    |[39m                        [31m[1m^[22m[39m
+2026-10-04T17:39:11.6667117Z      [90m 40 |[39m       expect(line)[33m.[39mnot[33m.[39mtoMatch([35m/%40|@/[39m)[33m;[39m
+2026-10-04T17:39:11.6667470Z      [90m 41 |[39m     }
+2026-10-04T17:39:11.6667718Z      [90m 42 |[39m   })[33m;[39m[0m
+2026-10-04T17:39:11.6667868Z 
+2026-10-04T17:39:11.6668130Z       at Object.<anonymous> (test/privacy/aud-opus-fu2-118-finance-path-probe.spec.ts:39:24)
+2026-10-04T17:39:11.6668872Z 
+2026-10-04T17:39:11.6689859Z Test Suites: 8 failed, 8 total
+2026-10-04T17:39:11.6690306Z Tests:       43 failed, 21 passed, 64 total
+2026-10-04T17:39:11.6690718Z Snapshots:   0 total
+2026-10-04T17:39:11.6691008Z Time:        4.622 s
+2026-10-04T17:39:11.6693328Z Ran all test suites matching test/privacy/log-pii.spec.ts|test/privacy/no-pii-probe-replays.spec.ts|test/privacy/no-pii-in-logs.spec.ts|test/email.service.spec.ts|test/privacy/aud-opus-fu2-118-coach-name-probe.spec.ts|test/privacy/aud-opus-fu2-118-finance-path-probe.spec.ts|test/privacy/aud-opus-fu2-118-reset-email-probe.spec.ts|test/privacy/audit-sol-fu2-118-boundary.spec.ts.
+2026-10-04T17:39:11.8094929Z ##[error]Process completed with exit code 1.
+2026-10-04T17:39:11.8189092Z Post job cleanup.
+2026-10-04T17:39:11.8864498Z [command]/usr/bin/git version
+2026-10-04T17:39:11.8895333Z git version 2.55.0
+2026-10-04T17:39:11.8924130Z Temporarily overriding HOME='/home/runner/work/_temp/be21f140-dec3-47a5-9f87-eda28fb8c062' before making global git config changes
+2026-10-04T17:39:11.8925223Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T17:39:11.8928534Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T17:39:11.8953829Z Removing SSH command configuration
+2026-10-04T17:39:11.8958877Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T17:39:11.8987995Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T17:39:11.9176679Z Removing HTTP extra header
+2026-10-04T17:39:11.9181267Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T17:39:11.9207918Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T17:39:11.9390743Z Removing includeIf entries pointing to credentials config files
+2026-10-04T17:39:11.9396278Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T17:39:11.9418863Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T17:39:11.9419943Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T17:39:11.9420719Z includeif.gitdir:/github/workspace/.git.path
+2026-10-04T17:39:11.9421248Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T17:39:11.9426453Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T17:39:11.9444200Z /home/runner/work/_temp/git-credentials-1c5d63a0-620a-461b-af24-6f1c4d65d39e.config
+2026-10-04T17:39:11.9453407Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-1c5d63a0-620a-461b-af24-6f1c4d65d39e.config
+2026-10-04T17:39:11.9482749Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T17:39:11.9500428Z /home/runner/work/_temp/git-credentials-1c5d63a0-620a-461b-af24-6f1c4d65d39e.config
+2026-10-04T17:39:11.9506953Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-1c5d63a0-620a-461b-af24-6f1c4d65d39e.config
+2026-10-04T17:39:11.9533553Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-04T17:39:11.9550477Z /github/runner_temp/git-credentials-1c5d63a0-620a-461b-af24-6f1c4d65d39e.config
+2026-10-04T17:39:11.9557005Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-1c5d63a0-620a-461b-af24-6f1c4d65d39e.config
+2026-10-04T17:39:11.9582816Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T17:39:11.9599399Z /github/runner_temp/git-credentials-1c5d63a0-620a-461b-af24-6f1c4d65d39e.config
+2026-10-04T17:39:11.9605859Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-1c5d63a0-620a-461b-af24-6f1c4d65d39e.config
+2026-10-04T17:39:11.9633489Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T17:39:11.9820094Z Removing credentials config '/home/runner/work/_temp/git-credentials-1c5d63a0-620a-461b-af24-6f1c4d65d39e.config'
+2026-10-04T17:39:11.9919759Z Print service container logs: 2d9eb6e3980e4963a4b197c0fa7bf9a7_redis7alpine_b28683
+2026-10-04T17:39:11.9923447Z ##[command]/usr/bin/docker logs --details eb60ffab37fd8047d07270bcc6af2b6fb2f7cac732501d459771382b1d8230d9
+2026-10-04T17:39:12.0024734Z  1:C 04 Oct 2026 17:38:28.179 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+2026-10-04T17:39:12.0034317Z  1:C 04 Oct 2026 17:38:28.179 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+2026-10-04T17:39:12.0035023Z  1:C 04 Oct 2026 17:38:28.179 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+2026-10-04T17:39:12.0036014Z  1:C 04 Oct 2026 17:38:28.179 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+2026-10-04T17:39:12.0036718Z  1:M 04 Oct 2026 17:38:28.179 * monotonic clock: POSIX clock_gettime
+2026-10-04T17:39:12.0037053Z  1:M 04 Oct 2026 17:38:28.180 * Running mode=standalone, port=6379.
+2026-10-04T17:39:12.0037347Z  1:M 04 Oct 2026 17:38:28.180 * Server initialized
+2026-10-04T17:39:12.0037626Z  1:M 04 Oct 2026 17:38:28.180 * Ready to accept connections tcp
+2026-10-04T17:39:12.0041748Z Stop and remove container: 2d9eb6e3980e4963a4b197c0fa7bf9a7_redis7alpine_b28683
+2026-10-04T17:39:12.0045421Z ##[command]/usr/bin/docker rm --force eb60ffab37fd8047d07270bcc6af2b6fb2f7cac732501d459771382b1d8230d9
+2026-10-04T17:39:17.9132119Z eb60ffab37fd8047d07270bcc6af2b6fb2f7cac732501d459771382b1d8230d9
+2026-10-04T17:39:17.9157476Z Remove container network: github_network_c4a3c3b73f8a4885ade2de398e60edcd
+2026-10-04T17:39:17.9161547Z ##[command]/usr/bin/docker network rm github_network_c4a3c3b73f8a4885ade2de398e60edcd
+2026-10-04T17:39:17.9969343Z github_network_c4a3c3b73f8a4885ade2de398e60edcd
+2026-10-04T17:39:18.0035526Z Cleaning up orphan processes

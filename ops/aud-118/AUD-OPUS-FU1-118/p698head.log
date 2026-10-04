@@ -1,0 +1,510 @@
+targeted	Set up job	﻿2026-10-04T16:57:55.1249122Z Current runner version: '2.337.0'
+targeted	Set up job	2026-10-04T16:57:55.1275118Z ##[group]Runner Image Provisioner
+targeted	Set up job	2026-10-04T16:57:55.1276033Z Hosted Compute Agent
+targeted	Set up job	2026-10-04T16:57:55.1276773Z Version: 20260901.588
+targeted	Set up job	2026-10-04T16:57:55.1277508Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	Set up job	2026-10-04T16:57:55.1278646Z Build Date: 2026-09-01T19:56:44Z
+targeted	Set up job	2026-10-04T16:57:55.1279388Z Worker ID: {7d1a82c6-0069-4bc6-8f08-dda1d8eb321c}
+targeted	Set up job	2026-10-04T16:57:55.1280179Z Azure Region: westcentralus
+targeted	Set up job	2026-10-04T16:57:55.1280866Z ##[endgroup]
+targeted	Set up job	2026-10-04T16:57:55.1282388Z ##[group]Operating System
+targeted	Set up job	2026-10-04T16:57:55.1283123Z Ubuntu
+targeted	Set up job	2026-10-04T16:57:55.1283687Z 24.04.5
+targeted	Set up job	2026-10-04T16:57:55.1284270Z LTS
+targeted	Set up job	2026-10-04T16:57:55.1285232Z ##[endgroup]
+targeted	Set up job	2026-10-04T16:57:55.1285817Z ##[group]Runner Image
+targeted	Set up job	2026-10-04T16:57:55.1286435Z Image: ubuntu-24.04
+targeted	Set up job	2026-10-04T16:57:55.1287099Z Version: 20260927.320.1
+targeted	Set up job	2026-10-04T16:57:55.1288516Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	Set up job	2026-10-04T16:57:55.1290368Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	Set up job	2026-10-04T16:57:55.1291362Z ##[endgroup]
+targeted	Set up job	2026-10-04T16:57:55.1292718Z ##[group]GITHUB_TOKEN Permissions
+targeted	Set up job	2026-10-04T16:57:55.1294619Z Contents: read
+targeted	Set up job	2026-10-04T16:57:55.1295353Z Metadata: read
+targeted	Set up job	2026-10-04T16:57:55.1296029Z Packages: read
+targeted	Set up job	2026-10-04T16:57:55.1296705Z ##[endgroup]
+targeted	Set up job	2026-10-04T16:57:55.1299062Z Secret source: Actions
+targeted	Set up job	2026-10-04T16:57:55.1300141Z Cache mode: write
+targeted	Set up job	2026-10-04T16:57:55.1300876Z Prepare workflow directory
+targeted	Set up job	2026-10-04T16:57:55.1734554Z Prepare all required actions
+targeted	Set up job	2026-10-04T16:57:55.1783137Z Getting action download info
+targeted	Set up job	2026-10-04T16:57:55.4741333Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	Set up job	2026-10-04T16:57:55.5577449Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	Set up job	2026-10-04T16:57:55.7479474Z Complete job name: targeted
+targeted	Initialize containers	﻿2026-10-04T16:57:55.7994640Z ##[group]Checking docker version
+targeted	Initialize containers	2026-10-04T16:57:55.8008286Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+targeted	Initialize containers	2026-10-04T16:57:55.8683559Z '1.48'
+targeted	Initialize containers	2026-10-04T16:57:55.8699293Z Docker daemon API version: '1.48'
+targeted	Initialize containers	2026-10-04T16:57:55.8700130Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+targeted	Initialize containers	2026-10-04T16:57:55.8868660Z '1.48'
+targeted	Initialize containers	2026-10-04T16:57:55.8883276Z Docker client API version: '1.48'
+targeted	Initialize containers	2026-10-04T16:57:55.8888545Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T16:57:55.8892173Z ##[group]Clean up resources from previous jobs
+targeted	Initialize containers	2026-10-04T16:57:55.8896819Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=7fc83a"
+targeted	Initialize containers	2026-10-04T16:57:55.9039983Z ##[command]/usr/bin/docker network prune --force --filter "label=7fc83a"
+targeted	Initialize containers	2026-10-04T16:57:55.9167351Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T16:57:55.9168327Z ##[group]Create local container network
+targeted	Initialize containers	2026-10-04T16:57:55.9178421Z ##[command]/usr/bin/docker network create --label 7fc83a github_network_500c737e7f484d65bb086030e4cc27a2
+targeted	Initialize containers	2026-10-04T16:57:55.9685879Z 3c57ab509b76e782a2b6cbe8672c77f9dddf2a1f3e3ea786d1d5d804e280506f
+targeted	Initialize containers	2026-10-04T16:57:55.9703593Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T16:57:55.9727781Z ##[group]Starting redis service container
+targeted	Initialize containers	2026-10-04T16:57:55.9750199Z ##[command]/usr/bin/docker pull redis:7-alpine
+targeted	Initialize containers	2026-10-04T16:57:56.6394664Z 7-alpine: Pulling from library/redis
+targeted	Initialize containers	2026-10-04T16:57:56.8439943Z 16333ee0c00f: Pulling fs layer
+targeted	Initialize containers	2026-10-04T16:57:56.8441620Z 83234986c742: Pulling fs layer
+targeted	Initialize containers	2026-10-04T16:57:56.8443190Z 7eb50503c2b0: Pulling fs layer
+targeted	Initialize containers	2026-10-04T16:57:56.8444204Z 1522f9c6f453: Pulling fs layer
+targeted	Initialize containers	2026-10-04T16:57:56.8445152Z 9928009b15c8: Pulling fs layer
+targeted	Initialize containers	2026-10-04T16:57:56.8446218Z 4f4fb700ef54: Pulling fs layer
+targeted	Initialize containers	2026-10-04T16:57:56.8447250Z 4eb14bae0e1d: Pulling fs layer
+targeted	Initialize containers	2026-10-04T16:57:56.8448380Z 9928009b15c8: Waiting
+targeted	Initialize containers	2026-10-04T16:57:56.8449217Z 4f4fb700ef54: Waiting
+targeted	Initialize containers	2026-10-04T16:57:56.8450079Z 4eb14bae0e1d: Waiting
+targeted	Initialize containers	2026-10-04T16:57:56.8450960Z 1522f9c6f453: Waiting
+targeted	Initialize containers	2026-10-04T16:57:57.0345607Z 83234986c742: Verifying Checksum
+targeted	Initialize containers	2026-10-04T16:57:57.0347506Z 83234986c742: Download complete
+targeted	Initialize containers	2026-10-04T16:57:57.0805833Z 7eb50503c2b0: Verifying Checksum
+targeted	Initialize containers	2026-10-04T16:57:57.0811126Z 7eb50503c2b0: Download complete
+targeted	Initialize containers	2026-10-04T16:57:57.1970314Z 16333ee0c00f: Download complete
+targeted	Initialize containers	2026-10-04T16:57:57.2606661Z 9928009b15c8: Verifying Checksum
+targeted	Initialize containers	2026-10-04T16:57:57.2608936Z 9928009b15c8: Download complete
+targeted	Initialize containers	2026-10-04T16:57:57.3045265Z 16333ee0c00f: Pull complete
+targeted	Initialize containers	2026-10-04T16:57:57.3878714Z 4f4fb700ef54: Verifying Checksum
+targeted	Initialize containers	2026-10-04T16:57:57.3879558Z 4f4fb700ef54: Download complete
+targeted	Initialize containers	2026-10-04T16:57:57.4503832Z 4eb14bae0e1d: Verifying Checksum
+targeted	Initialize containers	2026-10-04T16:57:57.4504481Z 4eb14bae0e1d: Download complete
+targeted	Initialize containers	2026-10-04T16:57:57.4911419Z 1522f9c6f453: Verifying Checksum
+targeted	Initialize containers	2026-10-04T16:57:57.4911924Z 1522f9c6f453: Download complete
+targeted	Initialize containers	2026-10-04T16:57:59.2584310Z 83234986c742: Pull complete
+targeted	Initialize containers	2026-10-04T16:57:59.3850646Z 7eb50503c2b0: Pull complete
+targeted	Initialize containers	2026-10-04T16:57:59.5792259Z 1522f9c6f453: Pull complete
+targeted	Initialize containers	2026-10-04T16:57:59.5862114Z 9928009b15c8: Pull complete
+targeted	Initialize containers	2026-10-04T16:57:59.5926859Z 4f4fb700ef54: Pull complete
+targeted	Initialize containers	2026-10-04T16:57:59.6016131Z 4eb14bae0e1d: Pull complete
+targeted	Initialize containers	2026-10-04T16:57:59.6051899Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+targeted	Initialize containers	2026-10-04T16:57:59.6062223Z Status: Downloaded newer image for redis:7-alpine
+targeted	Initialize containers	2026-10-04T16:57:59.6070853Z docker.io/library/redis:7-alpine
+targeted	Initialize containers	2026-10-04T16:57:59.6109865Z ##[command]/usr/bin/docker create --name ef63c8bf523e427b9e4c76894d05cf7d_redis7alpine_27aca9 --label 7fc83a --network github_network_500c737e7f484d65bb086030e4cc27a2 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+targeted	Initialize containers	2026-10-04T16:57:59.6345241Z 4234ccb487bf564503e8f682a3d54fda5bfa236605eaa2d3cd957ae10dae175a
+targeted	Initialize containers	2026-10-04T16:57:59.6366539Z ##[command]/usr/bin/docker start 4234ccb487bf564503e8f682a3d54fda5bfa236605eaa2d3cd957ae10dae175a
+targeted	Initialize containers	2026-10-04T16:57:59.8282015Z 4234ccb487bf564503e8f682a3d54fda5bfa236605eaa2d3cd957ae10dae175a
+targeted	Initialize containers	2026-10-04T16:57:59.8302211Z ##[command]/usr/bin/docker ps --all --filter id=4234ccb487bf564503e8f682a3d54fda5bfa236605eaa2d3cd957ae10dae175a --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+targeted	Initialize containers	2026-10-04T16:57:59.8421547Z 4234ccb487bf564503e8f682a3d54fda5bfa236605eaa2d3cd957ae10dae175a Up Less than a second (health: starting)
+targeted	Initialize containers	2026-10-04T16:57:59.8440183Z ##[command]/usr/bin/docker port 4234ccb487bf564503e8f682a3d54fda5bfa236605eaa2d3cd957ae10dae175a
+targeted	Initialize containers	2026-10-04T16:57:59.8551918Z 6379/tcp -> 0.0.0.0:6379
+targeted	Initialize containers	2026-10-04T16:57:59.8552546Z 6379/tcp -> [::]:6379
+targeted	Initialize containers	2026-10-04T16:57:59.8597669Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T16:57:59.8606421Z ##[group]Waiting for all services to be ready
+targeted	Initialize containers	2026-10-04T16:57:59.8619640Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 4234ccb487bf564503e8f682a3d54fda5bfa236605eaa2d3cd957ae10dae175a
+targeted	Initialize containers	2026-10-04T16:57:59.8747164Z starting
+targeted	Initialize containers	2026-10-04T16:57:59.8769039Z redis service is starting, waiting 2 seconds before checking again.
+targeted	Initialize containers	2026-10-04T16:58:01.8780786Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 4234ccb487bf564503e8f682a3d54fda5bfa236605eaa2d3cd957ae10dae175a
+targeted	Initialize containers	2026-10-04T16:58:01.8901340Z starting
+targeted	Initialize containers	2026-10-04T16:58:01.8914217Z redis service is starting, waiting 4 seconds before checking again.
+targeted	Initialize containers	2026-10-04T16:58:06.1051455Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 4234ccb487bf564503e8f682a3d54fda5bfa236605eaa2d3cd957ae10dae175a
+targeted	Initialize containers	2026-10-04T16:58:06.1177587Z healthy
+targeted	Initialize containers	2026-10-04T16:58:06.1193974Z redis service is healthy.
+targeted	Initialize containers	2026-10-04T16:58:06.1194703Z ##[endgroup]
+targeted	Run actions/checkout@v6	﻿2026-10-04T16:58:06.1474457Z ##[group]Run actions/checkout@v6
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.1474997Z with:
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.1475304Z   repository: BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.1478134Z   token: ***
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.1478421Z   ssh-strict: true
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.1478681Z   ssh-user: git
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.1479134Z   persist-credentials: true
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.1479381Z   clean: true
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.1479603Z   sparse-checkout-cone-mode: true
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.1479859Z   fetch-depth: 1
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.1480062Z   fetch-tags: false
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.1480284Z   show-progress: true
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.1480510Z   lfs: false
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.1480708Z   submodules: false
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.1480919Z   set-safe-directory: true
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.1481165Z   allow-unsafe-pr-checkout: false
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.1481675Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2602924Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2605153Z ##[group]Getting Git version info
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2606081Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2607162Z [command]/usr/bin/git version
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2607560Z git version 2.55.0
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2609151Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2614054Z Temporarily overriding HOME='/home/runner/work/_temp/34313a75-4e26-4222-bf58-bbc9673994e1' before making global git config changes
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2615293Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2618797Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2665655Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2670078Z ##[group]Determining repository object format
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2672251Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2672692Z ##[group]Initializing the repository
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2678235Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2755507Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2756341Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2757367Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2758380Z hint: call:
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2758845Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2759576Z hint: 	git config --global init.defaultBranch <name>
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2760376Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2761116Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2762208Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2763138Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2763733Z hint: 	git branch -m <name>
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2764409Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2765204Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2766557Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2769854Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2812749Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2813399Z ##[group]Disabling automatic garbage collection
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2817090Z [command]/usr/bin/git config --local gc.auto 0
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2846729Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2847276Z ##[group]Setting up auth
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2848589Z Removing SSH command configuration
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2854846Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.2886636Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.3194175Z Removing HTTP extra header
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.3199813Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.3231606Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.3456978Z Removing includeIf entries pointing to credentials config files
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.3463536Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.3494853Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.3732006Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-ecd37aa8-8a38-4427-be1a-0b418582c516.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.3767325Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-ecd37aa8-8a38-4427-be1a-0b418582c516.config
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.3798740Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-ecd37aa8-8a38-4427-be1a-0b418582c516.config
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.3831511Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-ecd37aa8-8a38-4427-be1a-0b418582c516.config
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.3864819Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-ecd37aa8-8a38-4427-be1a-0b418582c516.config
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.3898666Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.3899072Z ##[group]Fetching the repository
+targeted	Run actions/checkout@v6	2026-10-04T16:58:06.3906712Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +b3f9cc781fbf322357f10d300ff12ea6107c72f7:refs/remotes/origin/audit/AUD-OPUS-FU1-118/698-keyset
+targeted	Run actions/checkout@v6	2026-10-04T16:58:08.2557066Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T16:58:08.2558120Z  * [new ref]         b3f9cc781fbf322357f10d300ff12ea6107c72f7 -> origin/audit/AUD-OPUS-FU1-118/698-keyset
+targeted	Run actions/checkout@v6	2026-10-04T16:58:08.2568634Z [command]/usr/bin/git branch --list --remote origin/audit/AUD-OPUS-FU1-118/698-keyset
+targeted	Run actions/checkout@v6	2026-10-04T16:58:08.2594470Z   origin/audit/AUD-OPUS-FU1-118/698-keyset
+targeted	Run actions/checkout@v6	2026-10-04T16:58:08.2603274Z [command]/usr/bin/git rev-parse refs/remotes/origin/audit/AUD-OPUS-FU1-118/698-keyset
+targeted	Run actions/checkout@v6	2026-10-04T16:58:08.2626314Z b3f9cc781fbf322357f10d300ff12ea6107c72f7
+targeted	Run actions/checkout@v6	2026-10-04T16:58:08.2630987Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T16:58:08.2631573Z ##[group]Determining the checkout info
+targeted	Run actions/checkout@v6	2026-10-04T16:58:08.2632236Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T16:58:08.2636942Z [command]/usr/bin/git sparse-checkout disable
+targeted	Run actions/checkout@v6	2026-10-04T16:58:08.2684811Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	Run actions/checkout@v6	2026-10-04T16:58:08.2712934Z ##[group]Checking out the ref
+targeted	Run actions/checkout@v6	2026-10-04T16:58:08.2718237Z [command]/usr/bin/git checkout --progress --force -B audit/AUD-OPUS-FU1-118/698-keyset refs/remotes/origin/audit/AUD-OPUS-FU1-118/698-keyset
+targeted	Run actions/checkout@v6	2026-10-04T16:58:08.4901582Z Switched to a new branch 'audit/AUD-OPUS-FU1-118/698-keyset'
+targeted	Run actions/checkout@v6	2026-10-04T16:58:08.4905963Z branch 'audit/AUD-OPUS-FU1-118/698-keyset' set up to track 'origin/audit/AUD-OPUS-FU1-118/698-keyset'.
+targeted	Run actions/checkout@v6	2026-10-04T16:58:08.4916279Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T16:58:08.4961095Z [command]/usr/bin/git log -1 --format=%H
+targeted	Run actions/checkout@v6	2026-10-04T16:58:08.4986524Z b3f9cc781fbf322357f10d300ff12ea6107c72f7
+targeted	Run actions/setup-node@v6	﻿2026-10-04T16:58:08.5240545Z ##[group]Run actions/setup-node@v6
+targeted	Run actions/setup-node@v6	2026-10-04T16:58:08.5240840Z with:
+targeted	Run actions/setup-node@v6	2026-10-04T16:58:08.5241039Z   node-version: 20
+targeted	Run actions/setup-node@v6	2026-10-04T16:58:08.5241243Z   cache: npm
+targeted	Run actions/setup-node@v6	2026-10-04T16:58:08.5241451Z   check-latest: false
+targeted	Run actions/setup-node@v6	2026-10-04T16:58:08.5244042Z   token: ***
+targeted	Run actions/setup-node@v6	2026-10-04T16:58:08.5244273Z   package-manager-cache: true
+targeted	Run actions/setup-node@v6	2026-10-04T16:58:08.5244534Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T16:58:08.6680977Z Attempting to download 20...
+targeted	Run actions/setup-node@v6	2026-10-04T16:58:09.5523814Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+targeted	Run actions/setup-node@v6	2026-10-04T16:58:10.1718754Z Extracting ...
+targeted	Run actions/setup-node@v6	2026-10-04T16:58:10.1829644Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/a7105030-4335-41d1-8b73-900381ffeab7 -f /home/runner/work/_temp/dc289265-352a-410e-b5c6-6f98b7029b84
+targeted	Run actions/setup-node@v6	2026-10-04T16:58:11.2741434Z Adding to the cache ...
+targeted	Run actions/setup-node@v6	2026-10-04T16:58:12.7466116Z ##[group]Environment details
+targeted	Run actions/setup-node@v6	2026-10-04T16:58:12.9770906Z node: v20.20.2
+targeted	Run actions/setup-node@v6	2026-10-04T16:58:12.9771415Z npm: 10.8.2
+targeted	Run actions/setup-node@v6	2026-10-04T16:58:12.9771712Z yarn: 1.22.22
+targeted	Run actions/setup-node@v6	2026-10-04T16:58:12.9772376Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T16:58:12.9789646Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+targeted	Run actions/setup-node@v6	2026-10-04T16:58:13.0794262Z /home/runner/.npm
+targeted	Run actions/setup-node@v6	2026-10-04T16:58:13.2479118Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+targeted	Run actions/setup-node@v6	2026-10-04T16:58:14.4636438Z Received 41943040 of 86828135 (48.3%), 40.0 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-04T16:58:14.7215515Z Received 86828135 of 86828135 (100.0%), 65.8 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-04T16:58:14.7216590Z Cache Size: ~83 MB (86828135 B)
+targeted	Run actions/setup-node@v6	2026-10-04T16:58:14.7273445Z [command]/usr/bin/tar -xf /home/runner/work/_temp/bf76f86b-5b9b-485c-8603-78183eba870f/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+targeted	Run actions/setup-node@v6	2026-10-04T16:58:14.9011867Z Cache restored successfully
+targeted	Run actions/setup-node@v6	2026-10-04T16:58:14.9073754Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+targeted	Run npm ci	﻿2026-10-04T16:58:14.9322785Z ##[group]Run npm ci
+targeted	Run npm ci	2026-10-04T16:58:14.9323175Z ^[[36;1mnpm ci^[[0m
+targeted	Run npm ci	2026-10-04T16:58:14.9552886Z shell: /usr/bin/bash -e {0}
+targeted	Run npm ci	2026-10-04T16:58:14.9553197Z ##[endgroup]
+targeted	Run npm ci	2026-10-04T16:58:20.5616289Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	Run npm ci	2026-10-04T16:58:21.1140830Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+targeted	Run npm ci	2026-10-04T16:58:22.8116515Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T16:58:23.9611077Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T16:58:24.0008132Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T16:58:24.0353010Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T16:58:35.5759543Z 
+targeted	Run npm ci	2026-10-04T16:58:35.5760519Z > growth-project-backend@1.0.0 postinstall
+targeted	Run npm ci	2026-10-04T16:58:35.5761061Z > prisma generate
+targeted	Run npm ci	2026-10-04T16:58:35.5761255Z 
+targeted	Run npm ci	2026-10-04T16:58:36.4714020Z Prisma schema loaded from prisma/schema.prisma
+targeted	Run npm ci	2026-10-04T16:58:40.1513611Z ┌─────────────────────────────────────────────────────────┐
+targeted	Run npm ci	2026-10-04T16:58:40.1514668Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+targeted	Run npm ci	2026-10-04T16:58:40.1515485Z │                                                         │
+targeted	Run npm ci	2026-10-04T16:58:40.1516237Z │  This is a major update - please follow the guide at    │
+targeted	Run npm ci	2026-10-04T16:58:40.1516870Z │  https://pris.ly/d/major-version-upgrade                │
+targeted	Run npm ci	2026-10-04T16:58:40.1517387Z │                                                         │
+targeted	Run npm ci	2026-10-04T16:58:40.1518521Z │  Run the following to update                            │
+targeted	Run npm ci	2026-10-04T16:58:40.1519032Z │    npm i --save-dev prisma@latest                       │
+targeted	Run npm ci	2026-10-04T16:58:40.1519510Z │    npm i @prisma/client@latest                          │
+targeted	Run npm ci	2026-10-04T16:58:40.1519994Z └─────────────────────────────────────────────────────────┘
+targeted	Run npm ci	2026-10-04T16:58:40.1520573Z 
+targeted	Run npm ci	2026-10-04T16:58:40.1521403Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.97s
+targeted	Run npm ci	2026-10-04T16:58:40.1521934Z 
+targeted	Run npm ci	2026-10-04T16:58:40.1522342Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	Run npm ci	2026-10-04T16:58:40.1522689Z 
+targeted	Run npm ci	2026-10-04T16:58:40.1523189Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+targeted	Run npm ci	2026-10-04T16:58:40.1523622Z 
+targeted	Run npm ci	2026-10-04T16:58:40.2096630Z 
+targeted	Run npm ci	2026-10-04T16:58:40.2097582Z > growth-project-backend@1.0.0 prepare
+targeted	Run npm ci	2026-10-04T16:58:40.2098374Z > lefthook install
+targeted	Run npm ci	2026-10-04T16:58:40.2098604Z 
+targeted	Run npm ci	2026-10-04T16:58:40.2667464Z sync hooks: ✔️(pre-commit, commit-msg)
+targeted	Run npm ci	2026-10-04T16:58:40.2835012Z 
+targeted	Run npm ci	2026-10-04T16:58:40.2835647Z added 1115 packages, and audited 1116 packages in 25s
+targeted	Run npm ci	2026-10-04T16:58:40.2836004Z 
+targeted	Run npm ci	2026-10-04T16:58:40.2836178Z 202 packages are looking for funding
+targeted	Run npm ci	2026-10-04T16:58:40.2836536Z   run `npm fund` for details
+targeted	Run npm ci	2026-10-04T16:58:40.2868215Z 
+targeted	Run npm ci	2026-10-04T16:58:40.2868495Z 3 high severity vulnerabilities
+targeted	Run npm ci	2026-10-04T16:58:40.2868733Z 
+targeted	Run npm ci	2026-10-04T16:58:40.2869533Z To address all issues (including breaking changes), run:
+targeted	Run npm ci	2026-10-04T16:58:40.2870072Z   npm audit fix --force
+targeted	Run npm ci	2026-10-04T16:58:40.2870232Z 
+targeted	Run npm ci	2026-10-04T16:58:40.2870366Z Run `npm audit` for details.
+targeted	Run npx prisma generate	﻿2026-10-04T16:58:40.3505114Z ##[group]Run npx prisma generate
+targeted	Run npx prisma generate	2026-10-04T16:58:40.3505448Z ^[[36;1mnpx prisma generate^[[0m
+targeted	Run npx prisma generate	2026-10-04T16:58:40.3573040Z shell: /usr/bin/bash -e {0}
+targeted	Run npx prisma generate	2026-10-04T16:58:40.3573322Z ##[endgroup]
+targeted	Run npx prisma generate	2026-10-04T16:58:41.5937677Z Prisma schema loaded from prisma/schema.prisma
+targeted	Run npx prisma generate	2026-10-04T16:58:45.2886323Z 
+targeted	Run npx prisma generate	2026-10-04T16:58:45.2887637Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.97s
+targeted	Run npx prisma generate	2026-10-04T16:58:45.2888388Z 
+targeted	Run npx prisma generate	2026-10-04T16:58:45.2888951Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	Run npx prisma generate	2026-10-04T16:58:45.2889480Z 
+targeted	Run npx prisma generate	2026-10-04T16:58:45.2890191Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+targeted	Run npx prisma generate	2026-10-04T16:58:45.2890651Z 
+targeted	Targeted jest	﻿2026-10-04T16:58:45.4111079Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T16:58:45.4111433Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T16:58:45.4111848Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T16:58:45.4112344Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T16:58:45.4112703Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T16:58:45.4113000Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T16:58:45.4182789Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T16:58:45.4183146Z env:
+targeted	Targeted jest	2026-10-04T16:58:45.4183396Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T16:58:45.4183754Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T16:58:45.4184083Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T16:58:45.4288250Z specs: test/aud-opus-fu1-698-probe.spec.ts test/data-export-archive-inventory.spec.ts test/data-export-storage.spec.ts
+targeted	Targeted jest	2026-10-04T16:58:48.1676260Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export upload failed (STORAGE_HTTP_503), attempt 1 of 3; retrying.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.1678743Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export upload failed (STORAGE_NETWORK), attempt 2 of 3; retrying.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.1680194Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export archive delete failed (STORAGE_HTTP_500), attempt 1 of 3; retrying.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.1681656Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export archive delete failed (STORAGE_HTTP_502), attempt 2 of 3; retrying.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.1683510Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export archive check failed (STORAGE_TIMEOUT), attempt 1 of 3; retrying.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.1684863Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export archive check failed (STORAGE_TIMEOUT), attempt 2 of 3; retrying.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.4980059Z ^[[95m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[DataExportStorageDeadline] ^[[39m^[[95mop: settled after it was abandoned or cancelled: late^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.4982307Z ^[[95m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[DataExportStorageDeadline] ^[[39m^[[95mop: settled after it was abandoned or cancelled: late^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.4984705Z ^[[95m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[DataExportStorageDeadline] ^[[39m^[[95mdata export read: settled after it was abandoned or cancelled: aborted^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.4986952Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export read failed (STORAGE_TIMEOUT), attempt 1 of 3; retrying.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.4989414Z ^[[95m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[DataExportStorageDeadline] ^[[39m^[[95mdata export read: settled after it was abandoned or cancelled: aborted^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.4991383Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export read failed (STORAGE_TIMEOUT), attempt 2 of 3; retrying.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.4992752Z ^[[95m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[DataExportStorageDeadline] ^[[39m^[[95mdata export read: settled after it was abandoned or cancelled: aborted^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.4994397Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.4996150Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.4998513Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5000190Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5001848Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5003491Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5005132Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5006764Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5008811Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5010452Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5012073Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5014276Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5017017Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5020094Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5022924Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5025781Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5028896Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5031765Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5034905Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5037795Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5041048Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5043998Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5046915Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5050088Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5053368Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5056260Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5059476Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5061553Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5063216Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5064854Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5066462Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5068241Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5069868Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5071745Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5073226Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export archive delete failed (STORAGE_HTTP_500), attempt 1 of 3; retrying.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5074618Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export archive delete failed (STORAGE_HTTP_500), attempt 2 of 3; retrying.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5076174Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5077809Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5079577Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5081210Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5082982Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5084616Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5086125Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export archive delete failed (STORAGE_HTTP_503), attempt 1 of 3; retrying.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5087483Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export archive delete failed (STORAGE_HTTP_503), attempt 2 of 3; retrying.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5089165Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5090821Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5092446Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5093882Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export upload failed (STORAGE_HTTP_503), attempt 1 of 3; retrying.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5095379Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5096998Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5098655Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export upload failed (STORAGE_HTTP_504), attempt 1 of 3; retrying.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5099948Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export upload failed (STORAGE_HTTP_504), attempt 2 of 3; retrying.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5101444Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5103069Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5104703Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5106305Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5109296Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5110999Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5112794Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5114408Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5116034Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5117633Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5119417Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5120895Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export archive delete failed (STORAGE_HTTP_503), attempt 1 of 3; retrying.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5122302Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export archive delete failed (STORAGE_HTTP_503), attempt 2 of 3; retrying.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5123830Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5126118Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5127774Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5129594Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5131227Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5132890Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5134498Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5136263Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5137963Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5139593Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5141196Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5142813Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5144467Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5146095Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5147710Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.5315379Z PASS test/data-export-storage.spec.ts (129 MB heap size)
+targeted	Targeted jest	2026-10-04T16:58:48.9343369Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9346852Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9348986Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9350755Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9352438Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9354135Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9355792Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9357591Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9359375Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9361073Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9362752Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9364389Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9366091Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9367817Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9369574Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9371188Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9372836Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9374018Z PASS test/data-export-archive-inventory.spec.ts (144 MB heap size)
+targeted	Targeted jest	2026-10-04T16:58:48.9375156Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export archive check failed (STORAGE_HTTP_503), attempt 1 of 3; retrying.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9376518Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export archive check failed (STORAGE_HTTP_503), attempt 2 of 3; retrying.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9378178Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9379817Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9381441Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9383055Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9384827Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9386430Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9387865Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export read link failed (STORAGE_HTTP_502), attempt 1 of 3; retrying.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9389477Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SupabaseArchiveStore] ^[[39m^[[33mdata export read link failed (STORAGE_HTTP_502), attempt 2 of 3; retrying.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9390994Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9392623Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9394229Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9395823Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9397435Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9399158Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9400984Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9402578Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9404218Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9405810Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9407434Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9409162Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9410929Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9412530Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9414144Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9415738Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9417104Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportController] ^[[39m^[[33mDownload of export e1 ended early (client closed).^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9418748Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9420430Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9422041Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9423661Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9425277Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9427030Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:48.9428902Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:49.4867052Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:49 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:49.4869140Z PASS test/aud-opus-fu1-698-probe.spec.ts (166 MB heap size)
+targeted	Targeted jest	2026-10-04T16:58:49.4871290Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:49 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:49.4874210Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:49 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:49.4877637Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:49 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:49.4880719Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:49 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:49.4883602Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:49 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:49.4886484Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:49 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:49.4889691Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:49 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:49.4892652Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:49 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:49.4895613Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:49 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:49.4898810Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:49 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:49.4901783Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:49 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:49.4904637Z ^[[33m[Nest] 3128  - ^[[39m10/04/2026, 4:58:49 PM ^[[33m   WARN^[[39m ^[[38;5;3m[DataExportService] ^[[39m^[[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.^[[39m
+targeted	Targeted jest	2026-10-04T16:58:49.4906139Z 
+targeted	Targeted jest	2026-10-04T16:58:49.4906415Z Test Suites: 3 passed, 3 total
+targeted	Targeted jest	2026-10-04T16:58:49.4906925Z Tests:       96 passed, 96 total
+targeted	Targeted jest	2026-10-04T16:58:49.4907369Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T16:58:49.4907750Z Time:        3.251 s
+targeted	Targeted jest	2026-10-04T16:58:49.4908884Z Ran all test suites matching test/aud-opus-fu1-698-probe.spec.ts|test/data-export-archive-inventory.spec.ts|test/data-export-storage.spec.ts.
+targeted	Post Run actions/setup-node@v6	﻿2026-10-04T16:58:49.6311473Z Post job cleanup.
+targeted	Post Run actions/setup-node@v6	2026-10-04T16:58:49.7479933Z Cache hit occurred on the primary key node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12, not saving cache.
+targeted	Post Run actions/checkout@v6	﻿2026-10-04T16:58:49.7610898Z Post job cleanup.
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.8476869Z [command]/usr/bin/git version
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.8514266Z git version 2.55.0
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.8550794Z Temporarily overriding HOME='/home/runner/work/_temp/47bbf8f0-ad6c-4e45-8293-07d34aa5bd7d' before making global git config changes
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.8551761Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.8556320Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.8588337Z Removing SSH command configuration
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.8594540Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.8630576Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.8872712Z Removing HTTP extra header
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.8877245Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.8910193Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.9144400Z Removing includeIf entries pointing to credentials config files
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.9150525Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.9178577Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.9179548Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.9180225Z includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.9180734Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.9187517Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.9210457Z /home/runner/work/_temp/git-credentials-ecd37aa8-8a38-4427-be1a-0b418582c516.config
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.9221728Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-ecd37aa8-8a38-4427-be1a-0b418582c516.config
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.9259288Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.9283340Z /home/runner/work/_temp/git-credentials-ecd37aa8-8a38-4427-be1a-0b418582c516.config
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.9293709Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-ecd37aa8-8a38-4427-be1a-0b418582c516.config
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.9328307Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.9351211Z /github/runner_temp/git-credentials-ecd37aa8-8a38-4427-be1a-0b418582c516.config
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.9360588Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-ecd37aa8-8a38-4427-be1a-0b418582c516.config
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.9396487Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.9419064Z /github/runner_temp/git-credentials-ecd37aa8-8a38-4427-be1a-0b418582c516.config
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.9427634Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-ecd37aa8-8a38-4427-be1a-0b418582c516.config
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.9465544Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Post Run actions/checkout@v6	2026-10-04T16:58:49.9724841Z Removing credentials config '/home/runner/work/_temp/git-credentials-ecd37aa8-8a38-4427-be1a-0b418582c516.config'
+targeted	Stop containers	﻿2026-10-04T16:58:49.9874341Z Print service container logs: ef63c8bf523e427b9e4c76894d05cf7d_redis7alpine_27aca9
+targeted	Stop containers	2026-10-04T16:58:49.9879207Z ##[command]/usr/bin/docker logs --details 4234ccb487bf564503e8f682a3d54fda5bfa236605eaa2d3cd957ae10dae175a
+targeted	Stop containers	2026-10-04T16:58:50.0015867Z  1:C 04 Oct 2026 16:57:59.833 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+targeted	Stop containers	2026-10-04T16:58:50.0018459Z  1:C 04 Oct 2026 16:57:59.834 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+targeted	Stop containers	2026-10-04T16:58:50.0030556Z  1:C 04 Oct 2026 16:57:59.834 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+targeted	Stop containers	2026-10-04T16:58:50.0031867Z  1:C 04 Oct 2026 16:57:59.834 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+targeted	Stop containers	2026-10-04T16:58:50.0032696Z  1:M 04 Oct 2026 16:57:59.834 * monotonic clock: POSIX clock_gettime
+targeted	Stop containers	2026-10-04T16:58:50.0033131Z  1:M 04 Oct 2026 16:57:59.835 * Running mode=standalone, port=6379.
+targeted	Stop containers	2026-10-04T16:58:50.0033528Z  1:M 04 Oct 2026 16:57:59.835 * Server initialized
+targeted	Stop containers	2026-10-04T16:58:50.0033898Z  1:M 04 Oct 2026 16:57:59.835 * Ready to accept connections tcp
+targeted	Stop containers	2026-10-04T16:58:50.0039679Z Stop and remove container: ef63c8bf523e427b9e4c76894d05cf7d_redis7alpine_27aca9
+targeted	Stop containers	2026-10-04T16:58:50.0044184Z ##[command]/usr/bin/docker rm --force 4234ccb487bf564503e8f682a3d54fda5bfa236605eaa2d3cd957ae10dae175a
+targeted	Stop containers	2026-10-04T16:58:51.6711192Z 4234ccb487bf564503e8f682a3d54fda5bfa236605eaa2d3cd957ae10dae175a
+targeted	Stop containers	2026-10-04T16:58:51.6741114Z Remove container network: github_network_500c737e7f484d65bb086030e4cc27a2
+targeted	Stop containers	2026-10-04T16:58:51.6745583Z ##[command]/usr/bin/docker network rm github_network_500c737e7f484d65bb086030e4cc27a2
+targeted	Stop containers	2026-10-04T16:58:51.7876248Z github_network_500c737e7f484d65bb086030e4cc27a2
+targeted	Complete job	﻿2026-10-04T16:58:51.7950398Z Cleaning up orphan processes

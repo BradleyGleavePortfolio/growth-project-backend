@@ -1,0 +1,46 @@
+AUDIT GPT-6.1 Sol — growth-project-backend#683 @ e2af8ca1fe872ca3c319b52b3ac3b8fca17de7bd — VERDICT: REQUEST CHANGES
+A/B/C = 0/3/0
+
+Independent **T4** audit of the complete F3 diff, its tests, settlement/refund/transfer/reconciliation call sites, and split boundaries; three new acceptance failures are independently reproduced against this exact candidate plus audit-only tests. [F3 candidate/readiness](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/683#issuecomment-5975772659) [Executed independent probe](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37171490432)
+
+### Prior findings and evidence applicability
+
+Retain Sol's recorded B-627-1/2/4–8 closures on their previously reviewed boundaries; B-627-3 remains superseded by OR-111-1, not a demand for reserves, debits, payout delays or reversals of another sale. [Prior Sol dispositions](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/627#issuecomment-5962121921) [Prior Sol APPROVE](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/627#issuecomment-5964131926)
+
+Evidence reuse was verified with `git diff 7c29d981..e2af8ca1` on all three piece files: reconciliation and the settlement spec are byte-identical to the prior Sol-approved original; the settlement service adds only the 53-line charge-locked transfer wrapper/constants, which were read fully and traced to both F4 call sites. This reuses prior closure evidence, not a blanket approval of the new counterexamples below. [Prior Sol approval](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/627#issuecomment-5964131926) [F3 settlement service](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/e2af8ca1fe872ca3c319b52b3ac3b8fca17de7bd/src%2Fconnect%2Ffees%2Fcharge-settlement.service.ts)
+
+Sol B-627-9 was subsequently closed at its paused-sender boundary; latest B-627-10 and the separate C-627-10 nullable-key follow-up belong to F2, not this diff. FIX ROUND 10's closed-code fix/failing-before evidence is recorded without substituting this F3 verdict for F2's assigned audit. [Latest Sol verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/627#issuecomment-5972047312) [Round 10](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/627#issuecomment-5972269313)
+
+### B-683-1 — presentment refund cents are subtracted as settlement-currency cents
+
+**File:line:** `src/connect/fees/charge-settlement.service.ts:579–594,1317–1325`; related comparison `src/connect/fees/reconciliation.service.ts:361–364`. Gross/processing amounts and the transfer currency come from `balance_transaction`, but `charge.amount_refunded`, caller refund amounts and `ChargeRefund.amount_cents` are used unchanged in that different currency. The package contract explicitly permits CAD/GBP/EUR/AUD as well as USD. [Settlement arithmetic](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/e2af8ca1fe872ca3c319b52b3ac3b8fca17de7bd/src%2Fconnect%2Ffees%2Fcharge-settlement.service.ts) [Package currencies](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/e2af8ca1fe872ca3c319b52b3ac3b8fca17de7bd/src/packages/packages.dto.ts)
+
+**Counterexample:** CAD 100 presentment settles as USD 80 with USD 2 actual processing; a CAD 25 refund withdrawing USD 20 should leave the coach USD 56.40 after the USD 1.60 platform fee. The real settlement service instead transfers **USD 51.40**, treating CAD 2,500 cents as USD 2,500 cents; the same-currency refund control passes. [Executed FX failure/control](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37171490432)
+
+Stripe documents that converted refund/dispute debits use the current exchange rate, which can differ from the original charge rate; copying the charge's original ratio is therefore not a general fix. [Stripe conversion/refund contract](https://docs.stripe.com/payments/currencies/disputes-refunds?locale=en-GB)
+
+**Minimal fix rule / verification:** establish canonical succeeded-refund debits in the settlement currency from their actual balance transactions, retain presentment amounts/currency separately where needed for customer-facing reporting, and compare like-currency quantities throughout settlement/reconciliation/notices. Do not silently remove supported currencies. Cover early/late, partial/full, changed-FX refunds, head-coach legs and same-currency controls with failing-before/passing-after evidence.
+
+### B-683-2 — pending/unexecuted transfers are reported as Stripe cash and “ok”
+
+**File:line:** `src/connect/fees/reconciliation.service.ts:65–86,373–395` (shared `payeePositionCents` counts a pending promise for convergence, not proof of cash). The reconciler subtracts every non-failed row as an actual transfer and exports it as `stripe.transfers_cents`, without requiring an executed receipt. [Reconciliation implementation](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/e2af8ca1fe872ca3c319b52b3ac3b8fca17de7bd/src%2Fconnect%2Ffees%2Freconciliation.service.ts)
+
+**Counterexample:** a genuine provider-outage path leaves the coach transfer `pending` with `stripe_transfer_id=null` and **zero external coach funds**. The actual reconciler persists **`status=ok`, `drift_cents=0`, `stripe.transfers_cents=4630`, `notes=null`**, even while the destination ledger correctly remains pending/zero posted. This falsely certifies cash that never left Stripe, rather than merely exposing an OR-111-1 unsecured receivable. [Executed reconciliation failure](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37171490432)
+
+**Minimal fix rule / verification:** separate promised positions used to avoid duplicate enqueueing from executed transfer cash used for reconciliation; unresolved creates must produce pending/unknown or actionable drift, never a paid/ok cash attestation. Preserve already-collected netting semantics. Test never-sent pending, uncertain response, recovered receipt, definitive failed, netted-only and succeeded/reversed controls.
+
+### B-683-3 — notice-recording failures export arbitrary diagnostic text to logs
+
+**File:line:** `src/connect/fees/charge-settlement.service.ts:1533–1537`, with the same raw-message pattern at `:823,867,956,990,1022,1103,1117,1139,1275,1298,1986,2005,2042`. Adding an `SFEE_*` prefix does not sanitize a DB/provider error message, which can include the attempted notice body or other input. [Settlement failure boundaries](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/e2af8ca1fe872ca3c319b52b3ac3b8fca17de7bd/src%2Fconnect%2Ffees%2Fcharge-settlement.service.ts)
+
+**Counterexample:** inject a failed `payoutAdjustmentNotice.create` containing a synthetic message/body canary. The real service logs that canary verbatim in `SFEE_NOTICE_FAILED alert=true`; refund movement still correctly converges, so the failure is specifically diagnostic privacy, not a broken fixture or duplicate-money assertion. [Executed log-canary failure](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37171490432)
+
+**Minimal fix rule / verification:** closed diagnostic vocabulary with fixed unknown fallback and IDs/codes only at these centralized-log boundaries; never interpolate error name/message, arbitrary provider code, notice body or email. Retain actionable retry/support context and original money failure behavior; run canaries for DB validation payloads, arbitrary names/messages/codes and provider failures.
+
+### CI and piece boundary
+
+Independent one-job CI, source = this head plus one probe spec (workflow head `b3077cad8ac7e25259dab29273b01ca32395f130`), reports **3 failed acceptance assertions / 27 passed controls**, including all 26 candidate charge-settlement tests. Persistence and Stripe are synthetic; the services, fee/ledger/orchestrator/charge-lock paths are real. No local heavy work or live provider/production action occurred. [Independent CI](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37171490432)
+
+The actual candidate build has **three failed suites / nine tests**: purchase-split-handler (2), checkout-webhook-fee-split (2), **reconciliation.service (5)**; the last five lack the new `chargeSettlement.findMany` fake, whose update is in F4. All other applicable checks pass, but the red-by-design wording names checkout and omits reconciliation, so its stated exact failure list needs correction rather than claiming it matched. [Exact F3 build](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37151662477/job/111286637746) [F4 reconciliation fixture/update](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/42e9ca13b0b365315fade00f0fce869f5e25834b/test%2Freconciliation.service.spec.ts)
+
+No later-piece import or migration is introduced by F3; the deliberately incomplete stack is **not independently landable/deployable**. Keep rule-11 atomic landing, all main-only checks on the assembled exact tree, and mobile #321 pairing; fix these findings in F3 and restack rather than editing later pieces as their owners. [Operator landing/readiness contract](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/683#issuecomment-5975772659)
