@@ -10,6 +10,7 @@ import { EmailService } from '../email/email.service';
 import { EmailTemplateKey } from '../email/email.types';
 import { NotificationKind } from '../notifications/notification-kind';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PushAbortedError } from '../notifications/push-delivery.types';
 import { PrismaService } from '../prisma.service';
 
 // S-FEE round 5 (owner decision OR-111-1) — delivery and read side of the
@@ -32,6 +33,9 @@ import { PrismaService } from '../prisma.service';
 export const PAYOUT_NOTICE_DEEP_LINK = 'tgp://coach/money';
 export const PAYOUT_NOTICE_CLAIM_TTL_MS = 5 * 60_000;
 export const PAYOUT_NOTICE_MAX_ATTEMPTS = 6;
+// Round 17 (Sol B-684-3): no channel starts with less than this left on the notice's claim, so
+// a provider call (bounded by its own client timeout) ends before another worker may take over.
+export const PAYOUT_NOTICE_SEND_MARGIN_MS = 60_000;
 export const PAYOUT_NOTICE_PAGE_MAX = 50;
 
 // Channel outcomes that are final: a retry never repeats them (B-627-6).
@@ -39,11 +43,20 @@ const INAPP_DONE = new Set(['sent', 'off']);
 const PUSH_DONE = new Set(['sent', 'off', 'no_token', 'invalid_token']);
 const EMAIL_DONE = new Set(['sent', 'logged', 'no_address', 'disabled']);
 
+// The limits one claim's channels are sent within (Sol B-684-3).
+interface SendWindow {
+  canSend: () => Promise<boolean>;
+  stopAt: number;
+  claimedAt: Date;
+}
+
 interface ChannelResult {
   status: string;
   notification_id?: string;
   // The channel's receipt was already written with the delivery itself.
   receipt_saved?: boolean;
+  // Round 17 (Sol B-684-3): the send boundary refused; the channel stays as it was.
+  stopped?: boolean;
 }
 
 class InAppAlreadyRecorded extends Error {
@@ -91,6 +104,45 @@ export interface PayoutAdjustmentsView {
 
 const pastDeadline = (deadlineAt?: number): boolean =>
   deadlineAt !== undefined && Date.now() >= deadlineAt;
+
+/** The email provider call was refused because the notice's send window closed. */
+class NoticeSendWindowClosed extends Error {
+  constructor() {
+    super('SFEE_NOTICE_SEND_WINDOW_CLOSED');
+    this.name = 'NoticeSendWindowClosed';
+  }
+}
+
+/**
+ * Round 19 (Sol B-684-3): the AbortSignal handed to a push / email provider call. It aborts at
+ * `stopAt` (the run deadline or the end of this worker's claim, whichever comes first) on a
+ * timer, and any read of `aborted` at or past `stopAt` aborts it on the spot: a provider's check
+ * right before it sends reads the clock, so a late timer (busy event loop) never lets a send
+ * start after the limit.
+ */
+export function noticeSendSignal(
+  stopAt: number,
+  reason: () => Error,
+): { signal: AbortSignal; release: () => void } {
+  const controller = new AbortController();
+  const { signal } = controller;
+  let aborted = false;
+  const expire = (): void => {
+    if (aborted) return;
+    aborted = true;
+    controller.abort(reason());
+  };
+  const timer = setTimeout(expire, Math.max(0, stopAt - Date.now()));
+  timer.unref?.();
+  Object.defineProperty(signal, 'aborted', {
+    configurable: true,
+    get: (): boolean => {
+      if (!aborted && Date.now() >= stopAt) expire();
+      return aborted;
+    },
+  });
+  return { signal, release: () => clearTimeout(timer) };
+}
 
 function amountsOf(n: PayoutAdjustmentNotice): PayoutNoticeAmounts {
   return {
@@ -179,18 +231,52 @@ export class PayoutNoticeService {
     deadlineAt?: number,
   ): Promise<boolean> {
     if (n.dispatched_at) return false;
+    // Round 17 (Sol B-684-3): the claim is stamped with the time it is taken, never an earlier
+    // batch start, so a claim is never born older than its TTL.
+    const claimedAt = new Date(Math.max(now.getTime(), Date.now()));
     const claim = await this.prisma.payoutAdjustmentNotice.updateMany({
       where: {
         id: n.id,
         dispatched_at: null,
         OR: [
           { dispatch_claimed_at: null },
-          { dispatch_claimed_at: { lte: new Date(now.getTime() - PAYOUT_NOTICE_CLAIM_TTL_MS) } },
+          {
+            dispatch_claimed_at: {
+              lte: new Date(claimedAt.getTime() - PAYOUT_NOTICE_CLAIM_TTL_MS),
+            },
+          },
         ],
       },
-      data: { dispatch_claimed_at: now, dispatch_attempts: { increment: 1 } },
+      data: { dispatch_claimed_at: claimedAt, dispatch_attempts: { increment: 1 } },
     });
     if (claim.count !== 1) return false;
+    // Round 17 (Sol B-684-3): immediately before each channel starts, the claim is re-proved
+    // (a fence that matches only this worker's claim) and then the run deadline and the claim's
+    // remaining lifetime are checked, after every preparatory await. A stop keeps the unfinished
+    // channels pending, releases the claim and does not count the attempt (C-684-10).
+    const canSend = async (): Promise<boolean> => {
+      const fence = await this.prisma.payoutAdjustmentNotice.updateMany({
+        where: { id: n.id, dispatched_at: null, dispatch_claimed_at: claimedAt },
+        data: { dispatch_claimed_at: claimedAt },
+      });
+      const sendBy =
+        claimedAt.getTime() + PAYOUT_NOTICE_CLAIM_TTL_MS - PAYOUT_NOTICE_SEND_MARGIN_MS;
+      return fence.count === 1 && !pastDeadline(deadlineAt) && Date.now() < sendBy;
+    };
+    // Round 19 (Sol B-684-3): a provider call in flight is aborted at the run deadline or when
+    // this worker's claim ends, and none starts at or after that point (noticeSendSignal).
+    const stopAt = Math.min(
+      deadlineAt ?? Number.POSITIVE_INFINITY,
+      claimedAt.getTime() + PAYOUT_NOTICE_CLAIM_TTL_MS,
+    );
+    const window = { canSend, stopAt, claimedAt };
+    const stop = async (): Promise<false> => {
+      await this.prisma.payoutAdjustmentNotice.updateMany({
+        where: { id: n.id, dispatched_at: null, dispatch_claimed_at: claimedAt },
+        data: { dispatch_claimed_at: null, dispatch_attempts: { decrement: 1 } },
+      });
+      return false;
+    };
     // Re-read under the claim: the channels a previous attempt finished are
     // never repeated (B-627-6, round 6).
     const row = await this.prisma.payoutAdjustmentNotice.findUnique({ where: { id: n.id } });
@@ -216,6 +302,7 @@ export class PayoutNoticeService {
     // receipt commit together (C-627-8 Sol, round 7); push and email are
     // at least once across a receipt write that fails after the provider
     // accepted them (email additionally dedupes on its own attempt key).
+    if (!INAPP_DONE.has(row.inapp_status) && !(await canSend())) return stop();
     const inapp: ChannelResult = INAPP_DONE.has(row.inapp_status)
       ? { status: row.inapp_status }
       : await this.deliverInApp(row, payload);
@@ -226,25 +313,29 @@ export class PayoutNoticeService {
       });
     }
     // Push and email wait for the next run once the deadline passes (Sol B-684-3).
-    if (!PUSH_DONE.has(row.push_status) && pastDeadline(deadlineAt)) return false;
+    if (!PUSH_DONE.has(row.push_status) && !(await canSend())) return stop();
     const push: ChannelResult = PUSH_DONE.has(row.push_status)
       ? { status: row.push_status }
-      : await this.deliverPush(row, payload);
+      : await this.deliverPush(row, payload, window);
     if (push.status !== row.push_status || push.notification_id) {
       await this.saveChannel(row.id, {
         push_status: push.status,
         ...(push.notification_id ? { push_notification_id: push.notification_id } : {}),
       });
     }
-    if (!EMAIL_DONE.has(row.email_status) && pastDeadline(deadlineAt)) return false;
-    const email: ChannelResult = EMAIL_DONE.has(row.email_status)
+    if (push.stopped) return stop();
+    if (!EMAIL_DONE.has(row.email_status) && !(await canSend())) return stop();
+    const mailOutcome: ChannelResult = EMAIL_DONE.has(row.email_status)
       ? { status: row.email_status }
-      : await this.deliverEmail(row, now);
-    if (email.status !== row.email_status) {
-      await this.saveChannel(row.id, { email_status: email.status });
+      : await this.deliverEmail(row, window);
+    if (mailOutcome.stopped) return stop();
+    if (mailOutcome.status !== row.email_status) {
+      await this.saveChannel(row.id, { email_status: mailOutcome.status });
     }
     const failed =
-      !INAPP_DONE.has(inapp.status) || !PUSH_DONE.has(push.status) || !EMAIL_DONE.has(email.status);
+      !INAPP_DONE.has(inapp.status) ||
+      !PUSH_DONE.has(push.status) ||
+      !EMAIL_DONE.has(mailOutcome.status);
     // A channel that is not done leaves the notice undelivered (the claim
     // expires and the sweeper retries only that channel, up to
     // PAYOUT_NOTICE_MAX_ATTEMPTS); the Money page shows it either way.
@@ -257,7 +348,7 @@ export class PayoutNoticeService {
     }
     if (failed && finalAttempt) {
       this.logger.error(
-        `SFEE_NOTICE_UNDELIVERED alert=true notice=${row.id} payee=${row.payee_user_id} inapp=${inapp.status} push=${push.status} email=${email.status}: gave up after ${PAYOUT_NOTICE_MAX_ATTEMPTS} attempts; the payee still sees it on the Money page`,
+        `SFEE_NOTICE_UNDELIVERED alert=true notice=${row.id} payee=${row.payee_user_id} inapp=${inapp.status} push=${push.status} email=${mailOutcome.status}: gave up after ${PAYOUT_NOTICE_MAX_ATTEMPTS} attempts; the payee still sees it on the Money page`,
       );
     }
     return !failed;
@@ -331,7 +422,13 @@ export class PayoutNoticeService {
   private async deliverPush(
     n: PayoutAdjustmentNotice,
     payload: Record<string, unknown>,
+    { canSend, stopAt }: SendWindow,
   ): Promise<ChannelResult> {
+    const unchanged = (rowId?: string | null): ChannelResult => ({
+      status: n.push_status,
+      stopped: true,
+      ...(rowId ? { notification_id: rowId } : {}),
+    });
     try {
       let rowId = n.push_notification_id;
       if (!rowId) {
@@ -346,6 +443,7 @@ export class PayoutNoticeService {
               )
             : 'enabled';
         if (gate !== 'enabled') return { status: 'off' };
+        if (!(await canSend())) return unchanged();
         const pushRow = await this.notifications.createNotification({
           user_id: n.payee_user_id,
           kind: NotificationKind.COACH_ALERT,
@@ -363,11 +461,26 @@ export class PayoutNoticeService {
         }
         rowId = pushRow.id;
       }
-      const res = await this.notifications.pushToUser(n.payee_user_id, n.title, n.body, {
-        type: 'payout_adjustment',
-        notice_id: n.id,
-        deep_link: PAYOUT_NOTICE_DEEP_LINK,
-      });
+      if (!(await canSend())) return unchanged(rowId);
+      // Round 19 (Sol B-684-3): pushToUser re-checks the signal after its token read and right
+      // before Expo; an abort there leaves the push pending for the next run.
+      const sendWindow = noticeSendSignal(
+        stopAt,
+        () => new PushAbortedError('SFEE_NOTICE_SEND_WINDOW_CLOSED'),
+      );
+      let res: Awaited<ReturnType<NotificationsService['pushToUser']>>;
+      try {
+        res = await this.notifications.pushToUser(
+          n.payee_user_id,
+          n.title,
+          n.body,
+          { type: 'payout_adjustment', notice_id: n.id, deep_link: PAYOUT_NOTICE_DEEP_LINK },
+          sendWindow.signal,
+        );
+      } finally {
+        sendWindow.release();
+      }
+      if (res.code === 'aborted') return unchanged(rowId);
       if (res.delivered) return { status: 'sent', notification_id: rowId };
       if (res.code === 'no-token') return { status: 'no_token', notification_id: rowId };
       // The device token is dead: a retry cannot reach it (done, not failed).
@@ -394,7 +507,10 @@ export class PayoutNoticeService {
    * sent again); sending and younger than the claim TTL = still in flight
    * (wait); failed, missing or a stale sending row = send the next attempt.
    */
-  private async deliverEmail(n: PayoutAdjustmentNotice, now: Date): Promise<ChannelResult> {
+  private async deliverEmail(
+    n: PayoutAdjustmentNotice,
+    { canSend, stopAt, claimedAt: now }: SendWindow,
+  ): Promise<ChannelResult> {
     if (!this.email) return { status: 'disabled' };
     try {
       const user = await this.prisma.user.findUnique({
@@ -418,17 +534,39 @@ export class PayoutNoticeService {
           return { status: 'pending' };
         }
       }
+      if (!(await canSend())) return { status: n.email_status, stopped: true };
       const attempt = n.email_attempts + 1;
       // Recorded before the send: a crash after it never reuses this key.
-      await this.prisma.payoutAdjustmentNotice.updateMany({
+      const taken = await this.prisma.payoutAdjustmentNotice.updateMany({
         where: { id: n.id, email_attempts: n.email_attempts },
         data: { email_attempts: attempt },
       });
-      const status = await this.sendEmail(
-        n,
-        user,
-        payoutNoticeEmailKey(n.idempotency_key, attempt),
-      );
+      // Round 19 (Sol B-684-3): another worker took this attempt number, so this one sends
+      // nothing. After the write the claim and the budget are proved again; a stop returns the
+      // unused attempt number (only while this worker still holds the claim) and sends nothing.
+      if (taken.count !== 1) return { status: n.email_status, stopped: true };
+      if (!(await canSend())) {
+        await this.prisma.payoutAdjustmentNotice.updateMany({
+          where: { id: n.id, email_attempts: attempt, dispatch_claimed_at: now },
+          data: { email_attempts: n.email_attempts },
+        });
+        return { status: n.email_status, stopped: true };
+      }
+      const sendWindow = noticeSendSignal(stopAt, () => new NoticeSendWindowClosed());
+      let status: string;
+      try {
+        status = await this.sendEmail(
+          n,
+          user,
+          payoutNoticeEmailKey(n.idempotency_key, attempt),
+          sendWindow.signal,
+        );
+      } finally {
+        sendWindow.release();
+      }
+      // The provider was never called (EmailService checked the signal right before it): the
+      // email stays as it was and the next run uses the next attempt number.
+      if (status === 'not_started') return { status: n.email_status, stopped: true };
       // 'skipped' means the key is already in the log (another sender):
       // the next attempt reads that row instead of sending.
       return { status: status === 'skipped' ? 'pending' : status };
@@ -444,6 +582,7 @@ export class PayoutNoticeService {
     n: PayoutAdjustmentNotice,
     user: { email: string; name: string | null },
     idempotencyKey: string,
+    signal?: AbortSignal,
   ): Promise<string> {
     if (!this.email) return 'disabled';
     const a = amountsOf(n);
@@ -453,6 +592,7 @@ export class PayoutNoticeService {
       to: user.email,
       template: EmailTemplateKey.COACH_PAYOUT_ADJUSTMENT,
       idempotencyKey,
+      signal,
       data: {
         subject: n.title,
         title: n.title,
@@ -472,6 +612,7 @@ export class PayoutNoticeService {
         has_hold: n.held_cents > 0,
       },
     });
+    if (res.notStarted) return 'not_started';
     if (res.status === 'failed') {
       this.logger.warn(
         `SFEE_NOTICE_EMAIL_FAILED notice=${n.id} payee=${n.payee_user_id}: provider_failed`,
