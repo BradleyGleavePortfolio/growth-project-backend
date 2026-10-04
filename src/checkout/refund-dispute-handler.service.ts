@@ -99,7 +99,11 @@ function transferReversalErrorCode(err: unknown): string {
           : 'other';
     return `stripe_${status}_${code}`;
   }
-  return 'error';
+  const closed = err instanceof ServiceUnavailableException ? err.getResponse() : null;
+  const code = (closed as { code?: unknown } | null)?.code;
+  return code === 'TRANSFER_REVERSALS_LIST_INCOMPLETE' || code === 'TRANSFER_REVERSALS_TOO_MANY'
+    ? code
+    : 'error';
 }
 
 // B-641-9: the named Stripe reversal already settles another refund.
@@ -569,7 +573,7 @@ export class RefundDisputeHandlerService {
       row.id,
       args.purchase.id,
       args.amount_cents,
-      new Date(),
+      () => new Date(),
       ledgerJustReversed ? (row.posted_at ?? undefined) : undefined,
     );
 
@@ -588,7 +592,7 @@ export class RefundDisputeHandlerService {
     refundRowId: string,
     purchaseId: string,
     refundAmountCents: number,
-    now: Date = new Date(),
+    clock: () => Date,
     postedAt?: Date,
   ): Promise<RefundTransferReversalOutcome> {
     const current = await this.prisma.chargeRefund.findUnique({ where: { id: refundRowId } });
@@ -599,7 +603,9 @@ export class RefundDisputeHandlerService {
       await this.markTransferReversalDone(this.prisma, refundRowId);
       return 'nothing_owed';
     }
-    const admission = await this.admitTransferReversalAttempt(refundRowId, now, owed.amount_cents);
+    // B-674-13: the window is checked at the send, not at the sweep's start.
+    const at = clock();
+    const admission = await this.admitTransferReversalAttempt(refundRowId, at, owed.amount_cents);
     if (admission.outcome !== 'admitted') return admission.outcome;
     try {
       await this.transfers.reverse({
@@ -761,6 +767,8 @@ export class RefundDisputeHandlerService {
 
     let retried = 0;
     let reversed = 0;
+    const startedMs = Date.now();
+    const sendClock = () => new Date(now.getTime() + Date.now() - startedMs);
     // B-641-8 (Sol): never-attempted rows first, then least recently tried.
     // Each touched row leaves the owed set or is stamped with `now`, so the
     // `last attempt before now` filter pages past it (no cursor).
@@ -795,7 +803,7 @@ export class RefundDisputeHandlerService {
           row.id,
           row.purchase_id,
           row.amount_cents,
-          now,
+          sendClock,
         );
         if (outcome === 'reversed') reversed++;
         if (outcome === 'needs_review') needsReview++;
@@ -1078,9 +1086,20 @@ export class RefundDisputeHandlerService {
         limit: 100,
         starting_after: startingAfter,
       });
-      out.push(...res.data);
-      if (!res.has_more || res.data.length === 0) return out;
-      startingAfter = res.data[res.data.length - 1].id;
+      // B-674-14: complete only at has_more=false; a page that says has_more
+      // but adds no new reversal is incomplete and never proves absence.
+      const fresh = res.data.filter((r) => !out.some((o) => o.id === r.id));
+      out.push(...fresh);
+      if (!res.has_more) return out;
+      if (fresh.length === 0) {
+        throw new ServiceUnavailableException({
+          code: 'TRANSFER_REVERSALS_LIST_INCOMPLETE',
+          error: 'TRANSFER_REVERSALS_LIST_INCOMPLETE',
+          message:
+            'Stripe returned an incomplete list of reversals for this transfer, so nothing was sent or recorded. Retry in a few minutes.',
+        });
+      }
+      startingAfter = fresh[fresh.length - 1].id;
     }
     throw new ServiceUnavailableException({
       code: 'TRANSFER_REVERSALS_TOO_MANY',

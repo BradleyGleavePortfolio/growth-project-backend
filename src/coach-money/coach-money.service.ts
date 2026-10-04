@@ -244,7 +244,7 @@ const LOST_DISPUTE_STATUS_LIST: string[] = [...LOST_DISPUTE_STATUSES];
  * A purchase that billed: a paid status, or the ledger holds a posted coach
  * slice for it. A free trial cancelled before its first bill has neither.
  */
-const BILLED_WHERE = {
+export const BILLED_WHERE = {
   OR: [
     { status: { in: [...PAID_PURCHASE_STATUSES] } },
     { splits: { some: { kind: 'destination', status: { in: COUNTED_SLICE_STATUSES } } } },
@@ -1407,6 +1407,8 @@ export class CoachMoneyService {
           entitlement_active: true,
           source: null,
           amount_cents: { gt: 0 },
+          // B-676-5: a trial whose first invoice failed never billed: not MRR.
+          OR: [{ status: 'trialing' }, BILLED_WHERE],
         },
         select: {
           client_user_id: true,

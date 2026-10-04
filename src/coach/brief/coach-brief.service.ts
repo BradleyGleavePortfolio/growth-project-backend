@@ -35,6 +35,7 @@ import {
   noClientDataSubject,
 } from '../../ai-egress/ai-egress.types';
 import { createAnthropicClient } from '../../ai-egress/provider-clients';
+import { describeFailure } from '../../observability/log-pii';
 
 /**
  * Sentinel error surfaced by `markBriefRead` when the briefId either does
@@ -107,20 +108,16 @@ export function bucketDateLocal(
   }
 }
 
-function errorMessageOf(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (typeof err === 'string') return err;
-  try {
-    return JSON.stringify(err);
-  } catch {
-    return String(err);
-  }
-}
-
 // R44: typed internal errors for Coach Brief — replaces raw Error
 // construction in the service. These never propagate to coaches
 // (callClaude catches and falls back to the deterministic narrative),
 // but a `code` field keeps internal logs greppable.
+// B-700-1: the codes describeFailure may print for this module.
+const BRIEF_ERROR_CODES: ReadonlySet<string> = new Set([
+  'COACH_BRIEF_CLAUDE_EMPTY',
+  'COACH_BRIEF_CLAUDE_CONTRACT_FAILED',
+]);
+
 class CoachBriefClaudeError extends Error {
   readonly code:
     | 'COACH_BRIEF_CLAUDE_EMPTY'
@@ -1393,6 +1390,8 @@ export class CoachBriefService {
     // R2b — REQUIRED. null = no client in scope allowed AI help: the
     // deterministic narrative is used and nothing is sent.
     ai: BriefAiInput | null,
+    // B-700-1: what the log lines name instead of the coach's name.
+    coachId?: string,
   ): Promise<{ narrative: string; generated_by: 'ai' | 'fallback' }> {
     // Fast-path fallback for zero-action briefs — no Claude call needed.
     // Solo/sub-coach mode keys off client-level action counters; head-
@@ -1437,7 +1436,7 @@ export class CoachBriefService {
     } catch (err) {
       // ANTHROPIC_API_KEY missing — never propagate as 500 to coach.
       this.logger.error(
-        `CoachBrief Anthropic client init failed: ${errorMessageOf(err)}`,
+        `CoachBrief Anthropic client init failed: ${describeFailure(err, BRIEF_ERROR_CODES)}`,
       );
       return {
         narrative: buildFallbackNarrative(ctx),
@@ -1451,15 +1450,17 @@ export class CoachBriefService {
         : buildSoloCoachSystemPrompt();
     // R2b — the prompt is built from the AI context only (consented clients).
     const userPrompt = buildBriefPrompt(ai.ctx, ai.scope);
-    // P1-8: every downstream prompt-or-log interpolation of the
-    // coach's name (repair prompt, contract validator, log lines)
-    // must run through sanitizePromptIdentifier so a malicious
+    // P1-8: every downstream prompt interpolation of the coach's name
+    // (repair prompt, contract validator) must run through
+    // sanitizePromptIdentifier so a malicious
     // User.name cannot smuggle newlines, fake system delimiters, or
     // injection payloads into the Claude conversation.
     const safeCoachFirstName = sanitizePromptIdentifier(
       ctx.coach_first_name,
     );
-    const safeCoachName = sanitizePromptIdentifier(ctx.coach_name);
+    // B-700-1: log lines name the coach id, the mode and the brief date,
+    // never the coach's name (the name goes to the prompt only).
+    const logRef = `coach=${coachId ?? 'unset'} mode=${ctx.brief_mode} date=${ctx.date}`;
 
     // P1-7: validate Claude output against the voice contract. On
     // violation, try one repair round-trip with the violation reason
@@ -1479,7 +1480,7 @@ export class CoachBriefService {
         return { narrative: firstAttempt.narrative, generated_by: 'ai' };
       }
       this.logger.warn(
-        `CoachBrief Claude output failed contract (${violation}) for coach=${safeCoachName}; attempting one repair`,
+        `CoachBrief Claude output failed contract (${violation}) for ${logRef}; attempting one repair`,
       );
 
       const repairPrompt = `${userPrompt}\n\nYour previous response violated the contract (${violation}). Output a fresh brief that:\n- Is exactly 3 to 5 complete sentences (no more, no fewer).\n- Begins with ${safeCoachFirstName} in the very first sentence.\n- Uses first-person plural TGP voice ("we", "we're", "we've") at least once.\n- Contains no markdown, no bullet points, no meta prefix like "Here is".\n- Stays under ${BRIEF_MAX_NARRATIVE_CHARS} characters.`;
@@ -1499,16 +1500,16 @@ export class CoachBriefService {
           return { narrative: secondAttempt.narrative, generated_by: 'ai' };
         }
         this.logger.warn(
-          `CoachBrief Claude repair attempt also failed contract (${violation2}) for coach=${safeCoachName}; using fallback`,
+          `CoachBrief Claude repair attempt also failed contract (${violation2}) for ${logRef}; using fallback`,
         );
       } else {
         this.logger.warn(
-          `CoachBrief Claude repair attempt errored for coach=${safeCoachName}: ${secondAttempt.error}`,
+          `CoachBrief Claude repair attempt errored for ${logRef}: ${secondAttempt.error}`,
         );
       }
     } else {
       this.logger.error(
-        `CoachBrief Claude call failed for coach=${safeCoachName}: ${firstAttempt.error}`,
+        `CoachBrief Claude call failed for ${logRef}: ${firstAttempt.error}`,
       );
     }
 
@@ -1569,7 +1570,9 @@ export class CoachBriefService {
           : normalized;
       return { kind: 'success', narrative: clamped };
     } catch (err) {
-      return { kind: 'error', error: errorMessageOf(err) };
+      // B-700-1: the class, status and code only; an SDK or egress message
+      // can quote prompt content.
+      return { kind: 'error', error: describeFailure(err, BRIEF_ERROR_CODES) };
     } finally {
       clearTimeout(timer);
     }
@@ -1802,7 +1805,7 @@ export class CoachBriefService {
         );
       }
 
-      const { narrative, generated_by } = await this.callClaude(context, aiInput);
+      const { narrative, generated_by } = await this.callClaude(context, aiInput, coachId);
 
       const updated = await this.prisma.coachBrief.update({
         where: {
@@ -1830,7 +1833,7 @@ export class CoachBriefService {
       // Release the claim so the next request can retry. We do not
       // distinguish failures here — the next caller will re-claim.
       this.logger.error(
-        `CoachBrief generation failed for coach=${coachId}: ${errorMessageOf(err)}`,
+        `CoachBrief generation failed for coach=${coachId}: ${describeFailure(err, BRIEF_ERROR_CODES)}`,
       );
       // P1-10 fix round 5: a failed cleanup is itself a real incident.
       // The previous `.catch(() => undefined)` silently masked
@@ -1852,7 +1855,7 @@ export class CoachBriefService {
         });
       } catch (cleanupErr) {
         this.logger.error(
-          `CoachBrief generation cleanup also failed for coach=${coachId} date=${briefDate} primary=${errorMessageOf(err)} cleanup=${errorMessageOf(cleanupErr)}`,
+          `CoachBrief generation cleanup also failed for coach=${coachId} date=${briefDate} primary=${describeFailure(err, BRIEF_ERROR_CODES)} cleanup=${describeFailure(cleanupErr, BRIEF_ERROR_CODES)}`,
         );
       }
       throw err;
