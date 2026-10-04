@@ -225,7 +225,8 @@ export class PayoutNoticeService {
         ...(inapp.notification_id ? { inapp_notification_id: inapp.notification_id } : {}),
       });
     }
-    if (pastDeadline(deadlineAt)) return false; // push and email wait for the next run
+    // Push and email wait for the next run once the deadline passes (Sol B-684-3).
+    if (!PUSH_DONE.has(row.push_status) && pastDeadline(deadlineAt)) return false;
     const push: ChannelResult = PUSH_DONE.has(row.push_status)
       ? { status: row.push_status }
       : await this.deliverPush(row, payload);
@@ -235,7 +236,7 @@ export class PayoutNoticeService {
         ...(push.notification_id ? { push_notification_id: push.notification_id } : {}),
       });
     }
-    if (pastDeadline(deadlineAt)) return false; // email waits for the next run
+    if (!EMAIL_DONE.has(row.email_status) && pastDeadline(deadlineAt)) return false;
     const email: ChannelResult = EMAIL_DONE.has(row.email_status)
       ? { status: row.email_status }
       : await this.deliverEmail(row, now);
