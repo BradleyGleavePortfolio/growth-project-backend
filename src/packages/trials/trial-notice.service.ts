@@ -87,6 +87,11 @@ export { willChargeCard } from './trial-copy';
 //     released only once a send stopped; the provider key dedups a retry;
 //   * C-672-7 (ruling): a zone that is not the client's own names the time
 //     and the zone ("Oct 13 at 12:30 AM EDT"), never a bare date.
+//
+// B-TR3-118 (agent 118) — Sol B-672-3: a channel's copy is built at its
+// admission, after the claim and the preference read, from the purchase read
+// last; a trial extended, cancelled, converted or ended meanwhile is never
+// sent on the older snapshot (admit()).
 
 export const TRIAL_NOTICE_MAX_ATTEMPTS = 5;
 /** Stripe's default trial_will_end lead: three days before the trial end. */
@@ -198,6 +203,8 @@ const DELIVERY_PURCHASE_SELECT = {
 type DeliveryPurchase = Prisma.ClientPurchaseGetPayload<{
   select: typeof DELIVERY_PURCHASE_SELECT;
 }>;
+/** B-672-3 — the purchase truth, card state and copy one channel is sent on. */
+type Prepared = { purchase: DeliveryPurchase; cardOnFile: boolean; copy: TrialEndingCopy };
 
 export interface RecordTrialNoticeArgs {
   purchase: NoticePurchase;
@@ -449,8 +456,9 @@ export class TrialNoticeService {
 
   /**
    * Deliver push + email for a recorded notice. Never throws. Every claim
-   * reads a fresh clock from `now` (B-672-1); each channel is prepared right
-   * before its own claim, so an email after a slow push sees the trial then (B-672-3).
+   * reads a fresh clock from `now` (B-672-1). Each channel is checked before
+   * its claim (a retired notice spends no claim) and prepared again at its
+   * admission, which builds the copy that is sent (B-672-3).
    */
   async deliver(noticeId: string, now: Date = new Date()): Promise<void> {
     const clock = elapsedClock(now);
@@ -458,31 +466,12 @@ export class TrialNoticeService {
       const notice = await this.prisma.packageTrialNotice.findUnique({ where: { id: noticeId } });
       if (!notice) return;
       if (channelOpen(notice, 'push')) {
-        const push = await this.prepare(notice, clock);
-        if (!push) return;
-        await this.deliverPush(notice, push.copy.title, push.copy.body, clock);
+        if (!(await this.prepare(notice, clock))) return;
+        await this.deliverPush(notice, clock);
       }
       if (!channelOpen(notice, 'email') || !this.email) return;
-      const mail = await this.prepare(notice, clock);
-      if (!mail) return;
-      const { purchase } = mail;
-      await this.deliverEmail(
-        notice,
-        {
-          recipient: purchase.client,
-          planName: purchase.package?.name ?? 'your plan',
-          coachName: purchase.coach?.name ?? null,
-          dateLabel: mail.copy.dateLabel,
-          amountLabel: chargeLabel(
-            formatTrialAmount(notice.amount_cents, notice.currency),
-            notice.tax_may_apply,
-          ),
-          cancelAtPeriodEnd: purchase.cancel_at_period_end,
-          cardOnFile: mail.cardOnFile,
-          cadence: cadenceLabel(purchase.package?.interval, purchase.package?.interval_count),
-        },
-        clock,
-      );
+      if (!(await this.prepare(notice, clock))) return;
+      await this.deliverEmail(notice, clock);
     } catch (err) {
       this.logger.error(`trial notice delivery failed notice=${noticeId}: ${trialErrorClass(err)}`);
     }
@@ -492,11 +481,12 @@ export class TrialNoticeService {
    * B-672-3 — the truth one channel is sent on: the notice must describe the
    * purchase's current started, unended trial (else it is retired) and the
    * card state must be known (else it stays pending). null: send nothing.
+   * B-TR3-118: the zone and the customer card are read first and the purchase
+   * last, so no read of this preparation can outdate the purchase truth.
    */
-  private async prepare(
-    notice: PackageTrialNotice,
-    clock: () => Date,
-  ): Promise<{ purchase: DeliveryPurchase; cardOnFile: boolean; copy: TrialEndingCopy } | null> {
+  private async prepare(notice: PackageTrialNotice, clock: () => Date): Promise<Prepared | null> {
+    const zone = await this.noticeZone(notice.client_user_id);
+    const customerCard = await this.customerHasDefaultCard(notice.client_user_id);
     const purchase = await this.prisma.clientPurchase.findUnique({
       where: { id: notice.purchase_id },
       select: DELIVERY_PURCHASE_SELECT,
@@ -508,7 +498,7 @@ export class TrialNoticeService {
     }
     // B-656-5 — the truth at delivery time (the card may have been removed
     // or replaced since the notice was recorded).
-    const cardOnFile = await this.cardAuthority(purchase.card_on_file, notice.client_user_id);
+    const cardOnFile = willChargeCard(purchase.card_on_file, customerCard);
     if (cardOnFile === null) {
       // Unknown card state (the read failed): send nothing rather than a
       // wrong promise; the channels stay pending and the sweep retries.
@@ -526,7 +516,7 @@ export class TrialNoticeService {
         cardOnFile,
         taxMayApply: notice.tax_may_apply,
       },
-      await this.noticeZone(notice.client_user_id),
+      zone,
     );
     return { purchase, cardOnFile, copy };
   }
@@ -713,12 +703,7 @@ export class TrialNoticeService {
     return recorded;
   }
 
-  private async deliverPush(
-    notice: PackageTrialNotice,
-    title: string,
-    body: string,
-    clock: () => Date,
-  ): Promise<void> {
+  private async deliverPush(notice: PackageTrialNotice, clock: () => Date): Promise<void> {
     // B-672-4 — never a second push of this notice while one is still running here.
     if (this.running.has(`${notice.id}:push`)) return;
     const lease = await this.claim(notice.id, 'push', clock());
@@ -728,9 +713,10 @@ export class TrialNoticeService {
     // B-656-4 — the client's preferences at delivery time (a mute set after
     // the notice was recorded still applies).
     const prefs = await this.notifications.getPreferences(notice.client_user_id);
-    // B-672-1 / B-672-3 — the preference read may have used up the lease or
-    // run past the trial end: never start a send that cannot be honest.
-    if (!(await this.admit(notice, 'push', lease, clock))) return;
+    // B-672-1 / B-672-3 — the preference read may have used up the lease, run
+    // past the trial end or outlived the purchase truth: the copy is built now.
+    const ready = await this.admit(notice, 'push', lease, clock);
+    if (!ready) return;
     let sent: Bounded<PushOutcome> | null = null;
     if ((prefs as Record<string, unknown>).muted === true) {
       status = 'suppressed';
@@ -738,8 +724,8 @@ export class TrialNoticeService {
       sent = await this.bounded(`${notice.id}:push`, (signal) =>
         this.notifications.pushToUser(
           notice.client_user_id,
-          title,
-          body,
+          ready.copy.title,
+          ready.copy.body,
           {
             kind: NotificationKind.TRIAL_ENDING,
             purchase_id: notice.purchase_id,
@@ -773,33 +759,27 @@ export class TrialNoticeService {
     await this.complete(notice.id, 'push', lease.token, outcome);
   }
 
-  private async deliverEmail(
-    notice: PackageTrialNotice,
-    ctx: {
-      recipient: { email: string | null; name: string | null } | null;
-      planName: string;
-      coachName: string | null;
-      dateLabel: string;
-      amountLabel: string;
-      cancelAtPeriodEnd: boolean;
-      cardOnFile: boolean;
-      cadence: string;
-    },
-    clock: () => Date,
-  ): Promise<void> {
+  private async deliverEmail(notice: PackageTrialNotice, clock: () => Date): Promise<void> {
     const mailer = this.email;
     if (!mailer) return;
     // B-672-4 — never a second email of this notice while one is still running here.
     if (this.running.has(`${notice.id}:email`)) return;
     const lease = await this.claim(notice.id, 'email', clock());
     if (!lease) return;
-    if (!ctx.recipient?.email) {
+    // B-672-3 — the copy is built at admission, from the purchase as it is now.
+    const ready = await this.admit(notice, 'email', lease, clock);
+    if (!ready) return;
+    const { purchase, copy } = ready;
+    const to = purchase.client?.email;
+    if (!to) {
       await this.complete(notice.id, 'email', lease.token, { email_status: 'no_email' });
       return;
     }
-    if (!(await this.admit(notice, 'email', lease, clock))) return;
-    const to = ctx.recipient.email;
-    const reason = trialNoChargeReason(ctx);
+    const pkg = purchase.package;
+    const reason = trialNoChargeReason({
+      cancelAtPeriodEnd: purchase.cancel_at_period_end,
+      cardOnFile: ready.cardOnFile,
+    });
     // Attempt 1 keeps the original key; every later attempt gets its own key
     // (EmailService treats a reused key as already sent) and starts only once
     // the earlier send stopped (B-672-4). The provider key is the same on every
@@ -818,12 +798,15 @@ export class TrialNoticeService {
           providerIdempotencyKey: baseKey,
           signal,
           data: {
-            recipient_name: firstName(ctx.recipient?.name),
-            plan_name: ctx.planName,
-            coach_name: ctx.coachName,
-            trial_end_date: ctx.dateLabel,
-            amount_display: ctx.amountLabel,
-            cadence: ctx.cadence,
+            recipient_name: firstName(purchase.client?.name),
+            plan_name: pkg?.name ?? 'your plan',
+            coach_name: purchase.coach?.name ?? null,
+            trial_end_date: copy.dateLabel,
+            amount_display: chargeLabel(
+              formatTrialAmount(notice.amount_cents, notice.currency),
+              notice.tax_may_apply,
+            ),
+            cadence: cadenceLabel(pkg?.interval, pkg?.interval_count),
             will_charge: reason === null,
             no_card: reason === 'no_card',
           },
@@ -898,32 +881,33 @@ export class TrialNoticeService {
   }
 
   /**
-   * The last check before a send (fenced; a refused claim gives its attempt
-   * back): B-672-1 the lease must still cover the bounded transport and its
-   * abort grace (else retried later); B-672-3 past the trial end it retires.
+   * The last check before a send, after the claim and any preference read
+   * (fenced; a refused claim gives its attempt back). B-672-3 (B-TR3-118): the
+   * notice is prepared again here and only this copy is sent; a notice that no
+   * longer describes the current trial retires, an unknown card stays pending.
+   * B-672-1: the lease must still cover the bounded transport and its abort
+   * grace (else retried later).
    */
   private async admit(
     notice: PackageTrialNotice,
     channel: Channel,
     lease: { token: string; until: Date },
     clock: () => Date,
-  ): Promise<boolean> {
-    const at = clock().getTime();
-    const ended = at >= notice.trial_ends_at.getTime();
+  ): Promise<Prepared | null> {
+    const ready = await this.prepare(notice, clock);
     const room =
       lease.until.getTime() - TRIAL_NOTICE_TRANSPORT_TIMEOUT_MS - TRIAL_NOTICE_ABORT_GRACE_MS;
-    if (!ended && at < room) return true;
-    const last_error = ended ? 'skip:trial_ended' : `${channel}:lease_exhausted`;
-    const status = ended ? 'skipped' : 'pending';
+    if (ready && clock().getTime() < room) return ready;
+    const why = ready ? { last_error: `${channel}:lease_exhausted` } : {};
     await this.complete(
       notice.id,
       channel,
       lease.token,
       channel === 'push'
-        ? { push_attempts: { increment: -1 }, push_status: status, last_error }
-        : { email_attempts: { increment: -1 }, email_status: status, last_error },
+        ? { push_attempts: { increment: -1 }, ...why }
+        : { email_attempts: { increment: -1 }, ...why },
     );
-    return false;
+    return null;
   }
 
   /** B-672-2 / B-672-3 — retire every still-pending channel ('skipped'; see reopen()). */
