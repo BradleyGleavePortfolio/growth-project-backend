@@ -61,10 +61,11 @@ import {
  *
  * DELIVERY GUARANTEE (C-628-12): the per-row claim makes the DATABASE the
  * authority (no two live workers send a row; a stale one never overwrites a
- * newer receipt). After a claim expires the row is sent again: email is
- * deduplicated by the reused idempotency key; push (Expo, no key) and the
- * in-app blocker are AT-LEAST-ONCE (a duplicate reminder is the accepted
- * failure, a missed one is not). A queued push outbox (#648) is audited there.
+ * newer receipt). After a claim expires the row is sent again. Email is
+ * deduplicated by the reused idempotency key; the
+ * client push (Expo) and the in-app blocker row: AT-LEAST-ONCE (Expo takes no
+ * key; a duplicate reminder is the accepted failure, a missed one is not). A
+ * queued push outbox (#648) is audited there.
  *
  * LOCK TIMING: the Day-10 lock is applied by the hourly sweep, so it lands
  * up to 1 hour after the Day-10 instant (never before it).
