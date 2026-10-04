@@ -74,7 +74,10 @@ function world(opts: { tz?: string | null; email?: string | null; pushCode?: str
     connectCustomer: { findUnique: jest.fn(async () => null) },
     notificationPreferences: {
       findUnique: jest.fn(async () =>
-        opts.tz === null ? null : { timezone: opts.tz ?? 'America/Los_Angeles' },
+        // B-TR2-117 — the client's own (stamped) zone: the date reads bare (C-672-7).
+        opts.tz === null
+          ? null
+          : { timezone: opts.tz ?? 'America/Los_Angeles', timezone_updated_at: NOW },
       ),
     },
     coachPackage: {
@@ -449,11 +452,11 @@ describe('B-TRIALS — delivery (push + email after commit, retried by the sweep
 describe('B-TRIALS — webhook trial lifecycle', () => {
   it('customer.subscription.trial_will_end is claimed and hands the notice to post-commit delivery', async () => {
     const w = world();
+    // B-TR2-117 — the purchase mirrors the trial end the event announces.
+    const end = new Date(epoch(new Date(Date.now() + 3 * 864e5)) * 1000);
+    w.purchases[0].trial_ends_at = end;
     const res = await w.handler.handle(
-      event(
-        'customer.subscription.trial_will_end',
-        trialSub({ trial_end: epoch(new Date(Date.now() + 3 * 864e5)) }),
-      ),
+      event('customer.subscription.trial_will_end', trialSub({ trial_end: epoch(end) })),
       w.tx,
     );
     expect(res.claimed).toBe(true);
@@ -472,6 +475,29 @@ describe('B-TRIALS — webhook trial lifecycle', () => {
     );
     expect(w.purchases[0].entitlement_active).toBe(false);
     expect(w.usage.rows).toHaveLength(0);
+  });
+
+  it('C-671-4 (B-TR2-117) — a trial that never started keeps no trial end: never "The trial is over"', async () => {
+    const w = world();
+    Object.assign(w.purchases[0], { entitlement_active: false, trial_ends_at: null });
+    const noCard = trialSub({ default_payment_method: null });
+    await w.handler.handle(event('customer.subscription.updated', noCard), w.tx);
+    expect(w.purchases[0].trial_ends_at).toBeNull();
+    expect(purchaseTrialView(w.purchases[0]).state).toBe('setup_incomplete');
+    const gone = trialSub({ status: 'canceled', default_payment_method: null });
+    await w.handler.handle(event('customer.subscription.updated', gone, 'evt_2'), w.tx);
+    expect(w.purchases[0]).toMatchObject({ status: 'canceled', trial_ends_at: null });
+    expect(purchaseTrialView(w.purchases[0]).state).toBe('none');
+    // Control: a trial that started keeps its end through the cancel and reads 'ended'.
+    const s = world();
+    Object.assign(s.purchases[0], { entitlement_active: false, trial_ends_at: null });
+    await s.handler.handle(event('customer.subscription.updated', trialSub()), s.tx);
+    await s.handler.handle(
+      event('customer.subscription.updated', trialSub({ status: 'canceled' }), 'evt_2'),
+      s.tx,
+    );
+    expect(s.purchases[0].trial_ends_at).toEqual(TRIAL_END);
+    expect(purchaseTrialView(s.purchases[0]).state).toBe('ended');
   });
 
   it('a trialing subscription WITH a saved card grants access, records trial_ends_at and starts the trial', async () => {

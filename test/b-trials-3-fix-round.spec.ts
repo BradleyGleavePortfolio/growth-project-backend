@@ -29,6 +29,7 @@ import { trialEndingCopy, willChargeCard } from '../src/packages/trials/trial-co
 import { assertValidTrial } from '../src/packages/trials/trial-rules';
 import {
   TRIAL_NOTICE_LEAD_MS,
+  TRIAL_NOTICE_ABORT_GRACE_MS,
   TRIAL_NOTICE_LEASE_MS,
   TRIAL_NOTICE_TRANSPORT_TIMEOUT_MS,
   TrialNoticeService,
@@ -130,7 +131,11 @@ function world(
     packageTrialUsage: usage,
     packageTrialConflict: conflicts,
     notificationPreferences: {
-      findUnique: jest.fn(async () => ({ timezone: 'America/Los_Angeles' })),
+      // B-TR2-117 — the client's own (stamped) zone: the date reads bare (C-672-7).
+      findUnique: jest.fn(async () => ({
+        timezone: 'America/Los_Angeles',
+        timezone_updated_at: NOW,
+      })),
     },
     connectCustomer: {
       findUnique: jest.fn(async () =>
@@ -242,6 +247,14 @@ function world(
 }
 
 type World = ReturnType<typeof world>;
+type NoticeDeps = ConstructorParameters<typeof TrialNoticeService>;
+/** B-TR2-117 — another replica: one process never starts a second send of a channel (B-672-4). */
+const replica = (w: World) =>
+  new TrialNoticeService(
+    stub<NoticeDeps[0]>(w.prisma),
+    stub<NoticeDeps[1]>(w.notifications),
+    stub<NoticeDeps[2]>(w.email),
+  );
 
 /** Another purchase already holds this client's trial with coach-1. */
 function trialAlreadyStartedElsewhere(w: World) {
@@ -524,7 +537,7 @@ describe('B-656-2 — exclusive, fenced, bounded channel delivery', () => {
     for (let i = 0; i < 20 && w.notifications.pushToUser.mock.calls.length === 0; i += 1) {
       await new Promise((r) => setImmediate(r));
     }
-    await w.noticeSvc.deliver(id, new Date(NOW.getTime() + TRIAL_NOTICE_LEASE_MS + 1000));
+    await replica(w).deliver(id, new Date(NOW.getTime() + TRIAL_NOTICE_LEASE_MS + 1000));
     expect(w.notices.rows[0].push_status).toBe('delivered');
     gate.resolve({ delivered: false, code: 'transport-error' });
     await a;
@@ -542,7 +555,7 @@ describe('B-656-2 — exclusive, fenced, bounded channel delivery', () => {
     for (let i = 0; i < 30 && w.email.send.mock.calls.length === 0; i += 1) {
       await new Promise((r) => setImmediate(r));
     }
-    await w.noticeSvc.deliver(id, new Date(NOW.getTime() + TRIAL_NOTICE_LEASE_MS + 1000));
+    await replica(w).deliver(id, new Date(NOW.getTime() + TRIAL_NOTICE_LEASE_MS + 1000));
     expect(w.notices.rows[0].email_status).toBe('sent');
     gate.resolve({ status: 'failed', error: 'x' });
     await a;
@@ -554,7 +567,7 @@ describe('B-656-2 — exclusive, fenced, bounded channel delivery', () => {
     ]);
   });
 
-  it('a hung push is bounded by the transport timeout and stays pending for the sweep', async () => {
+  it('a hung push that ignores its abort: delivery returns, the row stays pending, the lease is held', async () => {
     jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
     try {
       const w = world();
@@ -566,12 +579,16 @@ describe('B-656-2 — exclusive, fenced, bounded channel delivery', () => {
       for (let i = 0; i < 20 && w.notifications.pushToUser.mock.calls.length === 0; i += 1) {
         await new Promise((r) => setImmediate(r));
       }
-      jest.advanceTimersByTime(TRIAL_NOTICE_TRANSPORT_TIMEOUT_MS + 1);
+      await jest.advanceTimersByTimeAsync(
+        TRIAL_NOTICE_TRANSPORT_TIMEOUT_MS + TRIAL_NOTICE_ABORT_GRACE_MS + 1,
+      );
       await p;
+      // B-TR2-117 (B-672-4) — the push may still reach the device: no retry
+      // may start until it ends, so its lease is kept (renewed) meanwhile.
       expect(w.notices.rows[0]).toMatchObject({
         push_status: 'pending',
         last_error: expect.stringMatching(/^(push:timeout|email:)/),
-        push_lease_token: null,
+        push_lease_token: expect.any(String),
       });
       expect(TRIAL_NOTICE_TRANSPORT_TIMEOUT_MS).toBeLessThan(TRIAL_NOTICE_LEASE_MS);
     } finally {
@@ -708,7 +725,8 @@ describe('B-656-5 — card removed mid-trial: access kept, the truth told', () =
   });
 
   it('trial_will_end after the card was removed: the notice is sent and says nothing will be charged', async () => {
-    const end = new Date(Date.now() + 2 * 864e5);
+    // Stripe's second precision: the purchase mirrors the event's trial_end.
+    const end = new Date(epoch(new Date(Date.now() + 2 * 864e5)) * 1000);
     const w = world({ purchase: { card_on_file: false, trial_ends_at: end } });
     const res = await w.handler.handle(
       event(
