@@ -5,6 +5,7 @@ import {
   heldBreakdownLines,
   type PayoutNoticeAmounts,
 } from '../connect/fees/payout-notice-copy';
+import { settlementFailureCode } from '../connect/fees/charge-settlement.service';
 import { EmailService } from '../email/email.service';
 import { EmailTemplateKey } from '../email/email.types';
 import { NotificationKind } from '../notifications/notification-kind';
@@ -295,7 +296,7 @@ export class PayoutNoticeService {
         return { status: fresh?.inapp_status ?? 'failed', receipt_saved: true };
       }
       this.logger.warn(
-        `SFEE_NOTICE_INAPP_FAILED notice=${n.id} payee=${n.payee_user_id}: ${(err as Error).message}`,
+        `SFEE_NOTICE_INAPP_FAILED notice=${n.id} payee=${n.payee_user_id}: ${settlementFailureCode(err)}`,
       );
       return { status: 'failed' };
     }
@@ -356,7 +357,7 @@ export class PayoutNoticeService {
       return { status: 'failed', notification_id: rowId };
     } catch (err) {
       this.logger.warn(
-        `SFEE_NOTICE_PUSH_FAILED notice=${n.id} payee=${n.payee_user_id}: ${(err as Error).message}`,
+        `SFEE_NOTICE_PUSH_FAILED notice=${n.id} payee=${n.payee_user_id}: ${settlementFailureCode(err)}`,
       );
       return { status: 'failed', notification_id: n.push_notification_id ?? undefined };
     }
@@ -411,7 +412,7 @@ export class PayoutNoticeService {
       return { status: status === 'skipped' ? 'pending' : status };
     } catch (err) {
       this.logger.warn(
-        `SFEE_NOTICE_EMAIL_FAILED notice=${n.id} payee=${n.payee_user_id}: ${(err as Error).message}`,
+        `SFEE_NOTICE_EMAIL_FAILED notice=${n.id} payee=${n.payee_user_id}: ${settlementFailureCode(err)}`,
       );
       return { status: 'failed' };
     }
@@ -448,7 +449,7 @@ export class PayoutNoticeService {
     });
     if (res.status === 'failed') {
       this.logger.warn(
-        `SFEE_NOTICE_EMAIL_FAILED notice=${n.id} payee=${n.payee_user_id}: ${res.error ?? 'provider error'}`,
+        `SFEE_NOTICE_EMAIL_FAILED notice=${n.id} payee=${n.payee_user_id}: provider_failed`,
       );
     }
     return res.status;
@@ -540,7 +541,7 @@ export class PayoutNoticeService {
       throw new NotFoundException({
         code: 'PAYOUT_NOTICE_NOT_FOUND',
         message:
-          'We could not find that payout notice on your account. Refresh Money to see your current notices.',
+          'That payout notice is not on this account. Refresh Money to see the current notices.',
       });
     }
     return { acknowledged_at: now.toISOString() };
