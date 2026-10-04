@@ -1,0 +1,34 @@
+AUDIT Claude Opus 5.5 — growth-project-mobile#346 @ 4522eb8e550119a5cb770b93b9525290b4ffb03f — VERDICT: REQUEST CHANGES
+A/B/C = 0/2/3
+
+Agent 117, job AUD-OPUS-S12-117 (Opus lens). Full independent audit of split piece W2 at its exact head (base W1 #345). Required check at this head: [Typecheck, lint, test](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37152924654/job/111290319845) green. W2 is not inert: it puts the setup checklist in the Command Center Overview header (`CoachHomeCards.tsx`, `OverviewScreen.tsx`) and registers the `CoachSetup` route.
+
+Probe: [CI lane run 37180389838](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37180389838) at this head plus one spec (`src/components/coach/setup/__tests__/audOpusS12FormProbe.test.tsx`, never merge). It drives the real `FirstPackageForm`, `createPackageOnce`, `coachPackagesApi` and `coachSetupApi` over an axios double that follows backend main: one package per key, PATCH merges only the fields it gets, free must be one-time, archived cannot be published. Result 5 failed / 2 passed (both controls pass: paid monthly, and free from the start). An [earlier run 37180193869](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37180193869) failed only on a harness error (sync `render`) and is superseded.
+
+### B-346-1 — setup copy speaks as "we" / "our"
+- Where: `src/components/coach/setup/CoachSetupChecklist.tsx:121` "We will mark the moment with you when it lands."; `src/screens/coach/setup/CoachSetupScreen.tsx:44` "Stripe, our payments partner, collects ...". Both are still present at the stack top (#351). The only guard, `connectCopyStates.test.ts` ("no copy speaks as we"), covers `connectCopy` alone.
+- Fix rule: rewrite both without first person (e.g. "This turns done when your first client payment arrives." / "Stripe, the payments provider TGP uses, collects ..."), and add the same `\b(we|We|us|our|Our)\b|!` guard over the checklist strings and the setup screen. The identical phrase at `CoachWizardNavigator.tsx:343` belongs to #347 (reported there through the operator).
+
+### B-329-5 (Sol, retained; caller part) — the form admits a create, and runs follow-on writes, after the owner or mount changed
+- Where: `src/components/coach/setup/FirstPackageForm.tsx:194-219`. Checks happen only at `:193`, `:207` and `:215`. The awaits for `publishPackage` (`:208`), `inviteLink` (`:211`) and `bindFreePackage` (`:212`) run back to back with no check between them. `await clearIntent` (`:217`) is followed by `setResumed` / `onCreated` (`:218-219`) with no re-check. The admission inside the helper is the #345 part.
+- Counterexample (probe above): hold the write-ahead, then unmount, or switch the account and rerender, then release. Expected 0 creates; received 1 both times. FIX ROUND 5 claims "Every await in the wizard submit re-checks the account and mount"; that claim does not hold at this head.
+- Fix rule: pass `isLive = () => mounted && coachRef.current === owner` into `createPackageOnce`, and re-check after each of `:208`, `:211`, `:212`, `:217` before the next write. Leave the saved intent on disk when stopping. Closure: both admission probe cases pass, plus a case where unmounting between publish and bind sends no bind.
+
+### C-346-1 — panel async writes have no stale or mount guard; one Retry targets the wrong action
+`CoachSetupChecklist.tsx:140-158` (`setSnap(await loadSetupStatus(...))`), `GetPaidPanel.tsx:57-99,174-182` and `InviteShareCard.tsx:60-96` write state after awaits with no generation or mount check. A slower earlier focus-load can overwrite a newer one. Cross-account display is bounded by the gate unmount. `GetPaidPanel.tsx:150` `onRetry={view ? openStripe : load}`: after a failed "Check status again", Retry opens Stripe onboarding instead of re-checking. Fix rule: per-load generation plus a mounted ref; Retry repeats the action that failed.
+
+### C-346-2 — a remembered package that has since been archived traps the form
+Counterexample (probe above): stored intent has `packageId` pkg_1, and pkg_1 was archived in Packages. Every Create re-publishes pkg_1, backend answers 400 `PACKAGE_ARCHIVED` (`packages.service.ts:614-619`), and `onCreated` is never called. A 404 from publish or update is the same. Fix rule (mirrors C-329-8): when publish or update for the intent's own package answers `PACKAGE_ARCHIVED` or 404, clear the intent and make a fresh create in the same tap. Closure: the probe case passes.
+
+### C-346-3 — this piece depends on fixes that live in later pieces; land #345-#351 as one
+At this head `CoachHomeCards.tsx:22-48` navigates into `SettingsStack` without `initial: false`. That is B-332-7: a Settings stack opened this way loses its root (sign out, account deletion), and the fix lives in #349. An active sub-coach gets 403 from `/coach/connect/status` (backend `NoActiveSubCoachGuard`, `coach-connect.controller.ts:32`), so the Overview checklist shows a permanent error. That is C-332-1, and the fix lives in #348. A-329-1 (Money page) lives in #348-#351. The checklist, Get paid and invite tests live in #347. None of this blocks #346 under rule 11, but it stops being true if #346 lands without #348-#351.
+
+### Shown here, owned by #345 (not counted against #346)
+B-345-1: through `FirstPackageForm.tsx:200-201`, a monthly package made, publish lost, then One time picked is published as a monthly subscription while `onCreated` reports one-time (probe case 3: server `billing_type` is `recurring`). Picking Free instead fails every retry with `PACKAGE_FREE_MUST_BE_ONE_TIME` (probe case 4). The fix lives in `packagesApi.ts` (#345). #346 should carry the form-level test (the server row's cadence equals what `onCreated` reports).
+
+### #329 findings in the split (W2 scope)
+Closed: B-329-1 for its scope (the form refuses to create on unreadable storage, `:186-190`; resumed intent and editor durability are tested in `packageCreateDurability.test.tsx`); C-329-4 (checklist errors with retry, `CoachSetupChecklist.tsx:186-188`); C-329-2 and C-329-1 consumed from W1; C-329-8 (410 fresh create in the same tap, tested). The checklist never routes to Earnings (`CoachHomeCards.tsx:38-48`). Still open: B-329-5 (above). A-329-1 belongs to #348-#351.
+
+Verified clean: `assertStripeUrl` before `openAuthSessionAsync`; an expired onboarding link is re-minted once; $19.99 floor or free validation; fee copy "price minus Stripe processing and the TGP 2% fee"; `describeError` gives specific copy, a support route, and Sentry with ids and codes only; the share message is in the coach's own voice; touch targets and a11y roles and labels.
+
+Head re-read immediately before posting: 4522eb8e550119a5cb770b93b9525290b4ffb03f.

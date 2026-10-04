@@ -1,0 +1,167 @@
+diff --git a/src/checkout/purchase-split-handler.service.ts b/src/checkout/purchase-split-handler.service.ts
+index dde329a6..6d22507d 100644
+--- a/src/checkout/purchase-split-handler.service.ts
++++ b/src/checkout/purchase-split-handler.service.ts
+@@ -51,14 +51,10 @@ export class PurchaseSplitHandlerService {
+   // Resolve the charge id from a PaymentIntent (one-time) or Invoice
+   // (recurring). Returns null when not yet known (rare race; the webhook
+   // pipeline will re-invoke us on the next event).
+-  async resolveChargeIdForPurchase(
+-    purchase: ClientPurchase,
+-  ): Promise<string | null> {
++  async resolveChargeIdForPurchase(purchase: ClientPurchase): Promise<string | null> {
+     if (!purchase.stripe_payment_intent_id) return null;
+     try {
+-      const pi = await this.stripe.retrievePaymentIntent(
+-        purchase.stripe_payment_intent_id,
+-      );
++      const pi = await this.stripe.retrievePaymentIntent(purchase.stripe_payment_intent_id);
+       const charge =
+         (typeof pi.latest_charge === 'string' ? pi.latest_charge : null) ??
+         pi.charges?.data?.[0]?.id ??
+@@ -151,15 +147,13 @@ export class PurchaseSplitHandlerService {
+       plan,
+       platform_account_id: null,
+       seller_stripe_account_id: seller.stripe_account_id,
+-      head_coach_stripe_account_id:
+-        headCoachAccount?.stripe_account_id ?? null,
++      head_coach_stripe_account_id: headCoachAccount?.stripe_account_id ?? null,
+     });
+ 
+     // Resolve the parent charge id so we can mark the application_fee +
+     // destination slices as posted and (for sub-coach) enqueue a transfer
+     // with source_transaction set.
+-    const chargeId =
+-      args.invoice_charge_id ?? (await this.resolveChargeIdForPurchase(purchase));
++    const chargeId = args.invoice_charge_id ?? (await this.resolveChargeIdForPurchase(purchase));
+ 
+     // Mark application_fee + destination as posted now that we know the
+     // charge id. These slices moved synchronously at Stripe-charge time
+@@ -177,11 +171,7 @@ export class PurchaseSplitHandlerService {
+     }
+ 
+     let transferEnqueued = false;
+-    if (
+-      plan.head_coach_id &&
+-      plan.head_coach_split_cents > 0 &&
+-      headCoachAccount
+-    ) {
++    if (plan.head_coach_id && plan.head_coach_split_cents > 0 && headCoachAccount) {
+       const headCoachEntry = entries.find((e) => e.kind === 'head_coach_split');
+       if (headCoachEntry) {
+         const transfer = await this.transfers.enqueueHeadCoachTransfer({
+@@ -199,7 +189,8 @@ export class PurchaseSplitHandlerService {
+         // and the sweeper picks it up.
+         if (transfer.source_stripe_charge_id) {
+           try {
+-            await this.transfers.attempt(transfer.id);
++            // B-627-9 (c): under the charge's money lock, like the sweeper.
++            await this.settlements.attemptTransferUnderLock(transfer);
+           } catch (err) {
+             this.logger.warn(
+               `transfer.attempt failed inline purchase=${purchase.id}: ${(err as Error).message}`,
+@@ -259,7 +250,9 @@ export class PurchaseSplitHandlerService {
+         break;
+       }
+       attempted += 1;
+-      const updated = await this.transfers.attempt(row.id);
++      // B-627-9 (c): the sweeper takes the same per-charge money lock and
++      // fence as the inline settlement path (busy -> left for the next run).
++      const updated = await this.settlements.attemptTransferUnderLock(row);
+       if (updated.status === 'succeeded') succeeded += 1;
+       else if (updated.status === 'failed') failed += 1;
+     }
+diff --git a/src/connect/fees/charge-settlement.service.ts b/src/connect/fees/charge-settlement.service.ts
+index d4dfd07f..944bb2e0 100644
+--- a/src/connect/fees/charge-settlement.service.ts
++++ b/src/connect/fees/charge-settlement.service.ts
+@@ -358,6 +358,10 @@ export function payeePositionCents(
+   return position;
+ }
+ 
++// B-627-9 (c): how long the transfer sweeper waits for a charge's money lock
++// before leaving that row for the next run.
++export const SWEEP_TRANSFER_LOCK_WAIT_MS = 1_000;
++
+ @Injectable()
+ export class ChargeSettlementService {
+   private readonly logger = new Logger(ChargeSettlementService.name);
+@@ -2004,6 +2008,55 @@ export class ChargeSettlementService {
+     }
+   }
+ 
++  /**
++   * S-FEE round 8 (B-627-9 c) — post one transfer from outside a settlement
++   * critical section (the transfer sweeper, the legacy head-coach inline
++   * attempt) under the same per-charge money lock and fence the inline
++   * settlement path takes, so the common overlap (a webhook settling the
++   * charge while the sweeper retries its transfer) is serialized. The lock is
++   * a lease, not a proof: a holder paused past its TTL can overlap the next
++   * one, which is why the transfer protocol itself also holds young markers
++   * and compare-and-sets every outcome (TransferOrchestratorService.attempt).
++   *
++   * Deadlock-free: the sweeper holds no other charge lock while it waits
++   * (rows are attempted one at a time), the wait is bounded
++   * (SWEEP_TRANSFER_LOCK_WAIT_MS), and no DB transaction is open across it.
++   * Busy or lost lock: nothing moved; the row stays due for the next run.
++   */
++  async attemptTransferUnderLock(
++    row: Pick<ConnectTransfer, 'id' | 'source_stripe_charge_id' | 'settlement_id'>,
++  ): Promise<ConnectTransfer> {
++    const chargeId = await this.chargeIdOfTransfer(row);
++    if (!chargeId) return this.transfers.attempt(row.id);
++    try {
++      return await this.chargeLock.run(
++        chargeId,
++        () => this.transfers.attempt(row.id, { beforeStripe: this.fenceFor(chargeId) }),
++        SWEEP_TRANSFER_LOCK_WAIT_MS,
++      );
++    } catch (err) {
++      if (!isRetryableMoneyError(err)) throw err;
++      this.logger.warn(
++        `SFEE_TRANSFER_DEFERRED transfer=${row.id} charge=${chargeId}: ${(err as Error).message}; nothing moved, the next sweep retries`,
++      );
++      return this.prisma.connectTransfer.findUniqueOrThrow({ where: { id: row.id } });
++    }
++  }
++
++  // The charge whose money a transfer moves: its source charge, or (dispute
++  // reinstatements, which have none) its settlement's charge.
++  private async chargeIdOfTransfer(
++    row: Pick<ConnectTransfer, 'source_stripe_charge_id' | 'settlement_id'>,
++  ): Promise<string | null> {
++    if (row.source_stripe_charge_id) return row.source_stripe_charge_id;
++    if (!row.settlement_id) return null;
++    const settlement = await this.prisma.chargeSettlement.findUnique({
++      where: { id: row.settlement_id },
++      select: { stripe_charge_id: true },
++    });
++    return settlement?.stripe_charge_id ?? null;
++  }
++
+   private outcome(
+     status: SettleStatus,
+     chargeId: string | null,
+diff --git a/test/s-fee-settlement-sweep.spec.ts b/test/s-fee-settlement-sweep.spec.ts
+index 7c4def97..23a7cbc3 100644
+--- a/test/s-fee-settlement-sweep.spec.ts
++++ b/test/s-fee-settlement-sweep.spec.ts
+@@ -287,7 +287,7 @@ function settlementSetup() {
+ 
+ describe('sweep retries a failed coach transfer with backoff, exactly once', () => {
+   it('first attempt fails (SFEE_TRANSFER_FAILED, backoff), two overlapping sweeps pay $46.30 once', async () => {
+-    const { db, stripe, settlements, splits, purchase } = settlementSetup();
++    const { db, stripe, settlements, splits, transfers, purchase } = settlementSetup();
+     stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4_900, fee: 172 }));
+     stripe.createTransfer.mockRejectedValueOnce(
+       new StripeConnectApiError('Stripe is temporarily unavailable', 503, null, 'api_error'),
+@@ -310,6 +310,9 @@ describe('sweep retries a failed coach transfer with backoff, exactly once', ()
+     // them; the coach is paid once.
+     // First retry backoff is 5 minutes (BACKOFF_MINUTES[1]).
+     const later = new Date(Date.now() + 6 * 60_000);
++    // Round 8 (B-627-9): 6 minutes later is past the 5 minute in-flight
++    // window of the first (unresolved) send.
++    transfers.clock = () => later;
+     await Promise.all([splits.runTransferSweeper(later), splits.runTransferSweeper(later)]);
+     expect(stripe.netTo('acct_coach')).toBe(4_630);
+     expect(new Set(stripe.createTransfer.mock.calls.map((c) => c[0].idempotencyKey)).size).toBe(1);

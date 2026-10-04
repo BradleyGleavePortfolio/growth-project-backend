@@ -1,0 +1,29 @@
+diff --git a/app.json b/app.json
+index d803c2c..274a7ed 100644
+--- a/app.json
++++ b/app.json
+@@ -7,6 +7,15 @@
+       "com.growthproject.app"
+     ],
+     "version": "1.0.0",
++    "runtimeVersion": {
++      "policy": "fingerprint"
++    },
++    "updates": {
++      "enabled": true,
++      "url": "https://u.expo.dev/a12c3345-cc8c-4c2c-9c57-711c10a57c1c",
++      "checkAutomatically": "ON_LOAD",
++      "fallbackToCacheTimeout": 0
++    },
+     "orientation": "portrait",
+     "icon": "./assets/icon.png",
+     "userInterfaceStyle": "light",
+@@ -34,7 +43,7 @@
+         "backgroundColor": "#F5EFE4"
+       },
+       "package": "com.growthproject.app",
+-      "versionCode": 4,
++      "versionCode": 5,
+       "intentFilters": [
+         {
+           "action": "VIEW",

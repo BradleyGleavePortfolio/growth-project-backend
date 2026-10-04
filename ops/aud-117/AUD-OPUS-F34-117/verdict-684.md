@@ -1,0 +1,49 @@
+AUDIT Claude Opus 5.5 — growth-project-backend#684 @ e9ee033d425a61bb48efe2ac2387a23e5347acb0 — VERDICT: REQUEST CHANGES
+A/B/C = 0/1/2
+
+Lens job AUD-OPUS-F34-117 (agent 117). Tier T4 (webhook-driven money moves, refunds, sweep cron, coach-facing copy). Piece F4 of the #627 split, base F3 #683 @ 35a18539. 23 files, +2572/-423 = 2,995 changed lines (under 3,000; 5 lines of headroom, see "For the operator").
+
+## Prior findings of this lens (at 42e9ca13, REQUEST CHANGES 0/1/2)
+| Finding | State | Evidence |
+|---|---|---|
+| B-684-1 first-person / exclamation copy | Closed | `payout-notice.hbs:20` "It comes out of your next payout, and the notice stays in Money until it clears."; 404 "That payout notice is not on this account. Refresh Money to see the current notices."; guard test over every notice string `/\b(we|our|us)\b|!|\p{Extended_Pictographic}/iu`. No added non-comment string in `git diff 35a18539 e9ee033d -- src` contains we/our/us or "!". |
+| C-684-2 held amount only on the listed page | Closed | payout-notice.service.ts:491-503 reads the newest notice per listed settlement for this payee (bounded by the page's settlements, same ordering as the list); test "live held amount on any page". |
+| C-684-3 dispute alert copy (outside this diff) | Open, carried | refund-dispute-handler.service.ts:1031 unchanged; operator item. |
+
+Sol B-684-1/B-684-2/C-684-1 were checked independently: closed codes now at every notice, dispatch, guest, admin, `retrievePaymentIntent` and cron log sink in the delta (`settlementFailureCode` / `provider_failed`); the latest-ten refund case is addressed by the new final `applyAdjustments` (refund-dispute-handler.service.ts:379-390), which is the subject of B-684-3.
+
+## Evidence reuse (G09)
+- Reused: this lens's #627 APPROVE @ 3a5338d7 and the #684 review @ 42e9ca13 (https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/684#issuecomment-5975905095) for F4 files not touched since (billing.service, checkout-webhook-handler, checkout.module, payment-ops.controller, connect.module, coach-connect, email, admin analytics, the updated main specs).
+- Why it applies: 392473a3 (restack) = 42e9ca13 + F3 merge, F4's files byte-identical; the F4 content delta is payout-notice.service.ts (30), purchase-split-handler.service.ts (5), refund-dispute-handler.service.ts (22), settlement-sweep.cron.ts (7), payout-notice.hbs (2) and the new `test/s-fee-r11-fx-cash-truncation-logs.spec.ts` (361). All 6 merges since are clean (no remerge diff).
+- Re-done deeply at this head: every delta line; refund status handling end to end (charge.refunded per-refund path, the new final convergence, `charge.refund.updated`, `applySettlementRefund`), because the round-11 call changes which refunds move money.
+
+## Piece-boundary safety
+- Compiles alone and is fully green: run 37175734211 build-and-test https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37175734211/job/111357831986 : 719 suites passed, 0 failed, 12,401 tests; it turns F3's three red-by-design suites green. Every other check green.
+- Failing-before 37173415148 (pre-fix 42e9ca13 + an earlier version of the round-11 spec: 14 fail, 2 controls pass); passing-after 37175462104 (e9ee033d tree). Later spec edits (Prisma validation canary, email/body canaries, `kind=db_validation`) only add assertions the pre-fix code also fails (it logged the raw message); recorded as a note, not a finding.
+
+## Findings
+
+### B-684-3 — async-rail refunds: one terminal outcome moves the wrong money for any `amount_refunded` semantics
+- Where: `src/checkout/refund-dispute-handler.service.ts:379-390` (round 11: final `applyAdjustments` with `refunded_cents: charge.amount_refunded`, a total with no refund status), `:489-494` (per-refund path: "pending refunds shouldn't move our books", money only on `succeeded`), `:395-421` (`onRefundUpdated` writes only the row status; no money path), `:604-622` (`applySettlementRefund` sums succeeded ChargeRefund rows).
+- Fact: an asynchronous refund (ACH Direct Debit refunds always; card refunds when the platform balance is short) is created `pending`, `charge.refunded` fires at creation, and the terminal status arrives only as a refund update. Stripe's own connector documents the measured sequence "bank transfer: refund.created(PENDING) -> charge.refunded -> refund.updated(succeeded)" (https://github.com/stripe/stripe-commercetools-checkout-app/blob/main/context/business-rules/refunds-reversals.md); a failed refund returns the funds to the platform balance (https://docs.stripe.com/refunds). The bank_debit rail is an owner-ruled rail (platform-fee.service.ts:118, :284).
+- Probe (lens-only branch, never merged; spec `test/audit-opus-f34-117-684.spec.ts`, 4,900 charge, fee 172, coach net 4,630):
+  - At this head (probe commit fc1e97b4 on e9ee033d), run https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37177972171/job/111364486553 : P1 FAIL (pending refund with `amount_refunded` 4,900: `refunded_cents` 4,900, coach reversed before the refund succeeded); P2 FAIL (that refund then fails: `refunded_cents` stays 4,900, the coach loses the 4,630 sale permanently while Stripe returns 4,900 to the platform); P3 FAIL (if `amount_refunded` excludes the pending refund: after `charge.refund.updated` succeeded, `refunded_cents` stays 0, TGP has paid 4,900 and the coach keeps 4,630); P4 and P5 controls pass.
+  - Same spec at the pre-round-11 head (d64d844c on 392473a3), run https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37177980871/job/111364512077 : P1 and P2 pass, P3 and P4 FAIL. Round 11 moved the defect from "an async refund never converges" to "a pending refund moves money and a later failure is never undone"; neither head gets every terminal outcome right.
+- Minimal fix rule:
+  1. The canonical refunded total is the sum of SUCCEEDED refunds only: the embedded `refunds.data` when `has_more` is false, otherwise every page of `listChargeRefunds` (F3 helper; add `amount` to its type) summing `amount` where `status === 'succeeded'`. Never `charge.amount_refunded`. This keeps the invariant at :489-491 and matches `convertedRefundedCents`.
+  2. `onRefundUpdated` (route `charge.refund.updated`, and `refund.updated` if the endpoint receives it) re-enters the per-refund money path for a refund that becomes `succeeded` under the charge lock (upsert with the new status -> `applySettlementRefund` -> coach alert), idempotent on `ledger_reversed`.
+- Verify: probe P1-P5 all pass at the fix head (spec kept at `/home/user/workspace/ops/aud-117/AUD-OPUS-F34-117/probe-audit-opus-f34-117-684.spec.ts` in the fleet workspace); keep the round-11 truncated-list tests green (11 succeeded refunds, 10 embedded, `has_more` true: converges once, one reversal).
+
+### C-684-4 — a refund that fails after its money was applied is silent (partly outside this diff)
+- Where: `refund-dispute-handler.service.ts:395-421`; `charge-settlement.service.ts` keeps `refunded_cents` monotonic (`Math.max`).
+- Counterexample: card refund `succeeded`, coach reversed; days later the refund fails (Stripe returns the funds to the platform balance). No alert and no reconcile flag; the coach stays debited, and only a later manual reconcile shows drift against Stripe's lowered `amount_refunded`.
+- Fix rule: on a transition `succeeded -> failed|canceled` for a settlement charge, log `SFEE_REFUND_FAILED_AFTER_APPLY alert=true charge=<id> refund=<id>` and flag the settlement for reconcile; re-crediting the coach (re-transfer) is an operator decision.
+
+### C-684-3 (carried) — dispute alert copy at refund-dispute-handler.service.ts:1031, outside this diff; unchanged, see the 116 verdict.
+
+## Consistency note for the B-684-3 fix
+- F3's reconciliation (reconciliation.service.ts:349, same-currency branch) also reads `charge.amount_refunded`; with fix rule 1 it should use the same succeeded-only total, or a pending refund can read as drift. That line is in #683 (16 lines of headroom).
+
+## Notes
+- Probe branches `audit/AUD-OPUS-F34-117/684-asyncrefund` and `audit/AUD-OPUS-F34-117/684pre-asyncrefund` are deleted after this verdict; the spec is kept in the lens report folder.
+- Size: F4 is at 2,995 changed lines. The B-684-3 fix plus its tests will not fit; the builder needs to move tests (for example the F3 part of the round-11 spec) to a test-only piece or the next piece. Operator decision.

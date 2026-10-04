@@ -1,0 +1,21 @@
+Banned cast tokens (R75 / R100.A2) | success | https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37175235171/job/111356379454
+CodeQL JS/TS (javascript-typescript) | success | https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37175235247/job/111356379746
+CodeQL | success | https://github.com/BradleyGleavePortfolio/growth-project-backend/runs/111357457881
+Forward migrations apply cleanly | success | https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37175235248/job/111356379884
+New migrations are reversible (or explicitly marked IRREVERSIBLE) | success | https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37175235248/job/111357050913
+Schema parity (migrations match schema.prisma) | success | https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37175235313/job/111356379922
+actionlint (.github/workflows/*.yml) | success | https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37175235175/job/111356379716
+build-and-test | success | https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37175235299/job/111356379869
+build-sbom | success | https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37175235201/job/111356379566
+comment-deploy-readiness | success | https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37175235220/job/111356795006
+community-live-tests | success | https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37175235299/job/111356380071
+danger dry-run (dangerfile.js) | success | https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37175235175/job/111356379543
+danger | success | https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37175235172/job/111356379659
+deploy-readiness-gate | skipped | https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37175235220/job/111356380657
+mwb-3-live-tests | success | https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37175235299/job/111356379939
+npm audit (high+critical, whole graph) | success | https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37175235193/job/111356379694
+rls-floor-guard | success | https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37175235299/job/111356379983
+rls-live-tests | success | https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37175235299/job/111356380010
+shellcheck (scripts/*.sh) | success | https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37175235175/job/111356379858
+size-label | success | https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37175235239/job/111356379857
+test-deploy-readiness | success | https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37175235220/job/111356379770

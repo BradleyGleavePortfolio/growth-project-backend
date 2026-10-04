@@ -1,0 +1,298 @@
+diff --git a/src/packages/trials/trial-notice.service.ts b/src/packages/trials/trial-notice.service.ts
+index 418fb3ab..10de4c5b 100644
+--- a/src/packages/trials/trial-notice.service.ts
++++ b/src/packages/trials/trial-notice.service.ts
+@@ -15,6 +15,8 @@ import {
+   willChargeCard,
+ } from './trial-copy';
+ 
++import { trialErrorClass, trialPushCode } from './trial-diagnostics';
++
+ export { willChargeCard } from './trial-copy';
+ 
+ // B-TRIALS (OR-113-2) — "your free trial ends soon" notice.
+@@ -61,6 +63,8 @@ export const TRIAL_NOTICE_LEAD_MS = 3 * 24 * 60 * 60 * 1000;
+ export const TRIAL_NOTICE_LEASE_MS = 2 * 60 * 1000;
+ export const TRIAL_NOTICE_TRANSPORT_TIMEOUT_MS = 30 * 1000;
+ const RECONCILE_BATCH = 100;
++/** Pages one reconcile sweep reads before it resumes on the next sweep. */
++export const RECONCILE_MAX_PAGES = 50;
+ /** Mobile route the notice opens (Your plan: trial end date + cancel). */
+ export const TRIAL_ACTION_SCREEN = 'ClientPackages';
+ /** Give the post-commit delivery a head start before the sweeper retries. */
+@@ -141,6 +145,8 @@ export function upcomingChargeCents(sub: TrialWillEndSubscription, fallbackCents
+ @Injectable()
+ export class TrialNoticeService {
+   private readonly logger = new Logger(TrialNoticeService.name);
++  /** B-656-3 — keyset position when a reconcile sweep hit the page cap. */
++  private reconcileCursor: { endsAt: Date; id: string } | null = null;
+ 
+   constructor(
+     private readonly prisma: PrismaService,
+@@ -177,14 +183,21 @@ export class TrialNoticeService {
+     // yet. The notice is not lost: the trial start (recordIfDue) or the
+     // reconciler records it as soon as the trial really starts.
+     if (!purchase.entitlement_active) return null;
+-    const customerDefault = await this.customerHasDefaultCard(purchase.client_user_id, tx);
++    // B-656-5 — card authority is tri-state; unknown (a failed read) never
++    // becomes "no card". The reconciler records it once the read succeeds.
++    const cardOnFile = await this.cardAuthority(
++      subscriptionHasPaymentMethod(sub),
++      purchase.client_user_id,
++      tx,
++    );
++    if (cardOnFile === null) return null;
+     return this.recordNotice(tx, {
+       purchase,
+       trialEndsAt,
+       amountCents: upcomingChargeCents(sub, purchase.amount_cents),
+       currency: (sub.items?.data?.[0]?.price?.currency ?? purchase.currency ?? 'usd').toLowerCase(),
+       cancelAtPeriodEnd: !!sub.cancel_at_period_end,
+-      cardOnFile: willChargeCard(subscriptionHasPaymentMethod(sub), customerDefault),
++      cardOnFile,
+       source: 'trial_will_end',
+       eventId: args.eventId,
+       now,
+@@ -211,7 +224,12 @@ export class TrialNoticeService {
+     if (!end) return null;
+     const left = end.getTime() - now.getTime();
+     if (left <= 0 || left > TRIAL_NOTICE_LEAD_MS) return null;
+-    const customerDefault = await this.customerHasDefaultCard(args.purchase.client_user_id, tx);
++    const cardOnFile = await this.cardAuthority(
++      subscriptionHasPaymentMethod(args.sub),
++      args.purchase.client_user_id,
++      tx,
++    );
++    if (cardOnFile === null) return null; // unknown: the reconciler records it
+     return this.recordNotice(tx, {
+       purchase: args.purchase,
+       trialEndsAt: end,
+@@ -222,7 +240,7 @@ export class TrialNoticeService {
+         'usd'
+       ).toLowerCase(),
+       cancelAtPeriodEnd: !!args.sub.cancel_at_period_end,
+-      cardOnFile: willChargeCard(subscriptionHasPaymentMethod(args.sub), customerDefault),
++      cardOnFile,
+       source: 'trial_start',
+       eventId: args.eventId ?? null,
+       now,
+@@ -314,10 +332,15 @@ export class TrialNoticeService {
+       const timeZone = await this.clientTimeZone(notice.client_user_id);
+       // B-656-5 — the truth at delivery time (the card may have been removed
+       // or replaced since the notice was recorded).
+-      const cardOnFile = willChargeCard(
+-        purchase.card_on_file,
+-        await this.customerHasDefaultCard(notice.client_user_id),
+-      );
++      const cardOnFile = await this.cardAuthority(purchase.card_on_file, notice.client_user_id);
++      if (cardOnFile === null) {
++        // Unknown card state (the read failed): send nothing rather than a
++        // wrong promise; both channels stay pending and the sweep retries.
++        this.logger.warn(
++          `trial notice delivery deferred notice=${noticeId} code=card_state_unknown`,
++        );
++        return;
++      }
+       const copy = trialEndingCopy({
+         trialEndsAt: notice.trial_ends_at,
+         amountCents: notice.amount_cents,
+@@ -342,9 +365,7 @@ export class TrialNoticeService {
+         now,
+       );
+     } catch (err) {
+-      this.logger.error(
+-        `trial notice delivery failed notice=${noticeId}: ${(err as Error)?.name ?? 'error'}`,
+-      );
++      this.logger.error(`trial notice delivery failed notice=${noticeId}: ${trialErrorClass(err)}`);
+     }
+   }
+ 
+@@ -360,7 +381,7 @@ export class TrialNoticeService {
+       reconciled = await this.reconcileDue(now);
+     } catch (err) {
+       // A reconcile failure never blocks the delivery retries below.
+-      this.logger.error(`trial notice reconcile errored: ${(err as Error)?.name ?? 'error'}`);
++      this.logger.error(`trial notice reconcile errored: ${trialErrorClass(err)}`);
+     }
+     const due = await this.prisma.packageTrialNotice.findMany({
+       where: {
+@@ -387,26 +408,67 @@ export class TrialNoticeService {
+    * endpoint that is missing the event. Returns how many it recorded.
+    */
+   async reconcileDue(now: Date = new Date()): Promise<number> {
+-    const candidates = await this.prisma.clientPurchase.findMany({
+-      where: {
+-        status: 'trialing',
+-        entitlement_active: true,
+-        trial_ends_at: { gt: now, lte: new Date(now.getTime() + TRIAL_NOTICE_LEAD_MS) },
+-      },
+-      orderBy: { trial_ends_at: 'asc' },
+-      take: RECONCILE_BATCH,
+-      select: {
+-        id: true,
+-        client_user_id: true,
+-        package_id: true,
+-        amount_cents: true,
+-        currency: true,
+-        cancel_at_period_end: true,
+-        card_on_file: true,
+-        trial_ends_at: true,
+-      },
+-    });
+-    if (candidates.length === 0) return 0;
++    const horizon = new Date(now.getTime() + TRIAL_NOTICE_LEAD_MS);
++    // B-656-3 — keyset paging on (trial_ends_at, id): already-noticed rows
++    // never hold back a due trial behind them. A sweep that hits the page cap
++    // resumes from its cursor next time instead of rereading the first pages.
++    let cursor = this.reconcileCursor;
++    this.reconcileCursor = null;
++    let recorded = 0;
++    for (let page = 0; page < RECONCILE_MAX_PAGES; page += 1) {
++      const candidates = await this.prisma.clientPurchase.findMany({
++        where: {
++          AND: [
++            {
++              status: 'trialing',
++              entitlement_active: true,
++              trial_ends_at: { gt: now, lte: horizon },
++            },
++            ...(cursor
++              ? [
++                  {
++                    OR: [
++                      { trial_ends_at: { gt: cursor.endsAt } },
++                      { trial_ends_at: cursor.endsAt, id: { gt: cursor.id } },
++                    ],
++                  },
++                ]
++              : []),
++          ],
++        },
++        orderBy: [{ trial_ends_at: 'asc' }, { id: 'asc' }],
++        take: RECONCILE_BATCH,
++        select: {
++          id: true,
++          client_user_id: true,
++          package_id: true,
++          amount_cents: true,
++          currency: true,
++          cancel_at_period_end: true,
++          card_on_file: true,
++          trial_ends_at: true,
++        },
++      });
++      if (candidates.length === 0) return recorded;
++      recorded += await this.reconcilePage(candidates, now);
++      const last = candidates[candidates.length - 1];
++      if (candidates.length < RECONCILE_BATCH || !last.trial_ends_at) return recorded;
++      cursor = { endsAt: last.trial_ends_at, id: last.id };
++    }
++    this.reconcileCursor = cursor;
++    this.logger.warn(
++      `trial notice reconcile hit the page cap (${RECONCILE_MAX_PAGES}); resumes next sweep`,
++    );
++    return recorded;
++  }
++
++  private async reconcilePage(
++    candidates: Array<
++      NoticePurchase &
++        Pick<ClientPurchase, 'cancel_at_period_end' | 'card_on_file' | 'trial_ends_at'>
++    >,
++    now: Date,
++  ): Promise<number> {
+     const existing = await this.prisma.packageTrialNotice.findMany({
+       where: { purchase_id: { in: candidates.map((c) => c.id) } },
+       select: { purchase_id: true, trial_ends_at: true },
+@@ -417,7 +479,10 @@ export class TrialNoticeService {
+       const end = p.trial_ends_at;
+       if (!end || have.has(`${p.id}:${end.getTime()}`)) continue;
+       try {
+-        const customerDefault = await this.customerHasDefaultCard(p.client_user_id);
++        const cardOnFile = await this.cardAuthority(p.card_on_file, p.client_user_id);
++        if (cardOnFile === null) continue; // unknown: retried next sweep
++        // A concurrent writer may record the same notice: the unique
++        // (purchase_id, trial_ends_at) makes the second insert a no-op.
+         const id = await this.prisma.$transaction((tx) =>
+           this.recordNotice(tx, {
+             purchase: p,
+@@ -425,7 +490,7 @@ export class TrialNoticeService {
+             amountCents: p.amount_cents,
+             currency: (p.currency || 'usd').toLowerCase(),
+             cancelAtPeriodEnd: p.cancel_at_period_end,
+-            cardOnFile: willChargeCard(p.card_on_file, customerDefault),
++            cardOnFile,
+             source: 'sweep',
+             now,
+           }),
+@@ -436,7 +501,7 @@ export class TrialNoticeService {
+         }
+       } catch (err) {
+         this.logger.error(
+-          `trial notice reconcile failed purchase=${p.id}: ${(err as Error)?.name ?? 'error'}`,
++          `trial notice reconcile failed purchase=${p.id}: ${trialErrorClass(err)}`,
+         );
+       }
+     }
+@@ -487,10 +552,10 @@ export class TrialNoticeService {
+         status = 'delivered';
+       } else if (result.code === 'no-token' || result.code === 'invalid-token') {
+         status = 'no_token';
+-        error = `push:${result.code}`;
++        error = `push:${trialPushCode(result.code)}`;
+       } else {
+         status = lease.attempt >= TRIAL_NOTICE_MAX_ATTEMPTS ? 'failed' : 'pending';
+-        error = `push:${result.code}`;
++        error = `push:${trialPushCode(result.code)}`;
+       }
+     }
+     await this.complete(notice.id, 'push', lease.token, {
+@@ -553,7 +618,7 @@ export class TrialNoticeService {
+       else if (res.status === 'failed') error = `email:${res.error ? 'provider_failed' : 'failed'}`;
+       else status = 'sent';
+     } catch (err) {
+-      error = `email:${(err as Error)?.name ?? 'error'}`;
++      error = `email:${trialErrorClass(err)}`;
+     }
+     if (status !== 'sent' && lease.attempt >= TRIAL_NOTICE_MAX_ATTEMPTS) status = 'failed';
+     await this.complete(notice.id, 'email', lease.token, {
+@@ -631,8 +696,25 @@ export class TrialNoticeService {
+     return true;
+   }
+ 
+-  /** The client's customer-level default card (Stripe invoice default). */
+-  private async customerHasDefaultCard(userId: string, tx?: Tx): Promise<boolean> {
++  /**
++   * B-656-5 — will the trial end charge a card? true / false, or null when
++   * it cannot be known right now (the customer read failed). The customer
++   * default is read only when the subscription itself has no card.
++   */
++  private async cardAuthority(
++    subscriptionCard: boolean | null | undefined,
++    userId: string,
++    tx?: Tx,
++  ): Promise<boolean | null> {
++    if (subscriptionCard === true) return true;
++    return willChargeCard(subscriptionCard, await this.customerHasDefaultCard(userId, tx));
++  }
++
++  /**
++   * The client's customer-level default card (Stripe invoice default):
++   * true / false, or null when the read failed (unknown, never "no card").
++   */
++  private async customerHasDefaultCard(userId: string, tx?: Tx): Promise<boolean | null> {
+     const db = tx ?? this.prisma;
+     try {
+       const row = await db.connectCustomer.findUnique({
+@@ -640,8 +722,9 @@ export class TrialNoticeService {
+         select: { default_payment_method_id: true },
+       });
+       return !!row?.default_payment_method_id;
+-    } catch {
+-      return false;
++    } catch (err) {
++      this.logger.warn(`trial notice card lookup failed: ${trialErrorClass(err)}`);
++      return null;
+     }
+   }
+ 

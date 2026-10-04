@@ -1,0 +1,31 @@
+# TGP CI lane (operator 115). Lives ONLY on ci/** and audit/** branches; never merge it into a PR or main.
+# One job: targeted jest (+ optional tsc). Specs in .ci-lane-specs (one per line); empty .ci-lane-tsc file also runs tsc.
+name: ci-lane
+on:
+  push:
+    branches: ['ci/**', 'audit/**']
+concurrency:
+  group: ci-lane-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  targeted:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.13
+          cache: npm
+      - run: npm ci
+      - name: Type-check (only when .ci-lane-tsc exists)
+        if: hashFiles('.ci-lane-tsc') != ''
+        run: npx tsc --noEmit
+      - name: Targeted jest
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+          mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+          echo "specs: ${SPECS[*]}"
+          npx jest --ci "${SPECS[@]}"
