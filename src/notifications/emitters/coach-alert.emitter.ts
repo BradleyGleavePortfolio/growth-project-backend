@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { NotificationsService } from '../notifications.service';
 import { NotificationKind } from '../notification-kind';
+import { DEFAULT_NOTIFICATION_CATEGORY } from '../notification-category.enum';
 import { dunningErrorCode } from '../../checkout/dunning-v2/dunning-v2.safe-error';
 
 export interface CoachAlertNotificationPayload {
@@ -25,7 +26,12 @@ export interface CoachAlertDelivery {
   inapp: CoachAlertTransport;
   /** The push and its read-state row ('skipped' when not asked for). */
   push: CoachAlertTransport;
+  /** Why a verified push was not delivered (B-687-3), e.g. 'ticket-error'. */
+  pushCode?: string;
 }
+
+/** A push whose Expo ticket is checked (B-687-3), with display copy (C-687-7). */
+export type VerifiedCoachPush = { title: string; body: string };
 
 /**
  * CoachAlertEmitter — mirrors a CoachAlert row into the notification inbox.
@@ -51,6 +57,7 @@ export class CoachAlertEmitter {
   async emit(
     payload: CoachAlertNotificationPayload,
     only: { inapp?: boolean; push?: boolean } = {},
+    verifiedPush?: VerifiedCoachPush,
   ): Promise<CoachAlertDelivery> {
     const { coachId, alertId, alertType, message, severity, clientUserId } = payload;
     const deepLink = clientUserId ? `tgp://coach/clients/${clientUserId}` : 'tgp://coach/alerts';
@@ -75,14 +82,25 @@ export class CoachAlertEmitter {
     }
     if (only.push !== false) {
       try {
-        // Push via Phase 6B path; false is a transport failure.
-        const pushed = await this.notifications.pushToCoach(coachId, {
-          alertId,
-          alertType,
-          severity,
-          message: message.slice(0, 160),
-        });
-        out.push = pushed ? 'sent' : 'failed';
+        if (verifiedPush) {
+          // B-687-3: pushToUser reads Expo's ticket: rejected = failed, no
+          // usable token = skipped. Display copy, not the alert type (C-687-7).
+          const { title, body } = verifiedPush;
+          const data = { alertId, alertType, category: DEFAULT_NOTIFICATION_CATEGORY };
+          const res = await this.notifications.pushToUser(coachId, title, body, data);
+          if (res?.delivered === false) out.pushCode = res.code;
+          const noDevice = out.pushCode === 'no-token' || out.pushCode === 'invalid-token';
+          out.push = !out.pushCode ? 'sent' : noDevice ? 'skipped' : 'failed';
+        } else {
+          // Push via Phase 6B path; false is a transport failure.
+          const pushed = await this.notifications.pushToCoach(coachId, {
+            alertId,
+            alertType,
+            severity,
+            message: message.slice(0, 160),
+          });
+          out.push = pushed ? 'sent' : 'failed';
+        }
       } catch (err) {
         out.push = 'failed';
         this.warn('push', coachId, err);
