@@ -11,7 +11,10 @@
 // share this: the `setup_intent.succeeded` webhook (primary), the plan read
 // while the app shows "Confirming your plan", and the checkout paths that
 // would otherwise reuse or retire the attempt.
-import type { StripeConnectApiService, StripeSubscriptionCheckoutObject } from '../connect/stripe-connect-api.service';
+import type {
+  StripeConnectApiService,
+  StripeSubscriptionCheckoutObject,
+} from '../connect/stripe-connect-api.service';
 
 const SETUP_SECRET_RE = /^(seti_[A-Za-z0-9]+)_secret_/;
 
@@ -49,7 +52,11 @@ export async function readTrialSetup(
   }
   const id =
     setupIntentIdOf(storedSecret) ??
-    (typeof pending === 'string' ? pending : pending && typeof pending.id === 'string' ? pending.id : null);
+    (typeof pending === 'string'
+      ? pending
+      : pending && typeof pending.id === 'string'
+        ? pending.id
+        : null);
   if (!id) return null;
   const si = await stripe.retrieveSetupIntent(id);
   return {
@@ -89,7 +96,11 @@ export async function attachTrialCard(
 }
 
 /** SetupIntent statuses the native sheet can still complete. */
-const OPEN_SETUP_STATUSES = new Set(['requires_payment_method', 'requires_confirmation', 'requires_action']);
+const OPEN_SETUP_STATUSES = new Set([
+  'requires_payment_method',
+  'requires_confirmation',
+  'requires_action',
+]);
 
 /**
  * Sol/Opus B-679-10 — the setup-sheet secret of a trial attempt whose

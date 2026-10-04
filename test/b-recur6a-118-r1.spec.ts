@@ -122,8 +122,7 @@ describe('Sol B-679-7 account deletion finds an unbound checkout subscription', 
     updated_at: old,
     ...over,
   });
-  const tx = (rows: unknown[]) =>
-    any({ clientPurchase: { findMany: jest.fn(async () => rows) } });
+  const tx = (rows: unknown[]) => any({ clientPurchase: { findMany: jest.fn(async () => rows) } });
   const lister = (data: unknown[], hasMore = false) => ({
     listSubscriptionsForCustomer: jest.fn(async () => ({ data, has_more: hasMore })),
   });

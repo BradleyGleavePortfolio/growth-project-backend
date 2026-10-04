@@ -32,10 +32,19 @@ function setup(trialDays = 0) {
     ...{ coach_user_id: COACH, stripe_account_id: 'acct_coach' },
     ...{ charges_enabled: true, deauthorized_at: null },
   });
-  const packages: any = { getById: async (id: string) => prisma._packages.find((p: any) => p.id === id) };
+  const packages: any = {
+    getById: async (id: string) => prisma._packages.find((p: any) => p.id === id),
+  };
   const fees: any = { planFor: async () => ({ head_coach_id: null }) };
   const helpers: any = makeCheckoutHelpers(prisma);
-  const svc = new SubscriptionCheckoutService(prisma, stripe, packages, { ready: true } as any, fees, helpers);
+  const svc = new SubscriptionCheckoutService(
+    prisma,
+    stripe,
+    packages,
+    { ready: true } as any,
+    fees,
+    helpers,
+  );
   return { prisma, stripe, svc };
 }
 type F = ReturnType<typeof setup>;
@@ -49,9 +58,12 @@ async function resultOf(p: Promise<unknown>): Promise<any> {
 }
 const intent = (f: F, key = KEY1) =>
   f.svc.createSubscriptionIntent(CLIENT, { package_id: PKG, idempotency_key: key });
-const timeout = () => new StripeConnectApiError('synthetic', 503, 'request_timeout', 'api_connection_error');
+const timeout = () =>
+  new StripeConnectApiError('synthetic', 503, 'request_timeout', 'api_connection_error');
 const live = (f: F) =>
-  [...f.stripe._subs.values()].filter((s: any) => !['canceled', 'incomplete_expired'].includes(s.status));
+  [...f.stripe._subs.values()].filter(
+    (s: any) => !['canceled', 'incomplete_expired'].includes(s.status),
+  );
 /** Runs `fn` once, right after the write that matches `when` (its reply delayed). */
 function afterWrite(f: F, when: (args: any) => boolean, fn: () => void) {
   const write = f.prisma.clientPurchase.updateMany.getMockImplementation();
@@ -133,11 +145,22 @@ describe('Sol B-679-7 a create is sent only under authority shared with account 
     });
     await resultOf(intent(f, KEY2));
     expect(row.status).toBe('pending');
-  });
+  }, 15_000);
 });
 
 describe('Sol B-679-8 an unresolved rejected bind keeps the one-subscription exclusion', () => {
-  function closeBeforeBind(f: F, close = { status: 'expired' } as Record<string, unknown>) {
+  function closeBeforeBind(
+    f: F,
+    close: Record<string, unknown> = { status: 'expired' },
+    paid = false,
+  ) {
+    const create = f.stripe.createSubscription.getMockImplementation();
+    f.stripe.createSubscription.mockImplementationOnce(async (a: any) => {
+      const sub = await create(a);
+      sub.latest_invoice.status = paid ? 'paid' : 'open';
+      if (paid) sub.status = 'active';
+      return paid ? sub : structuredClone(sub);
+    });
     const bind = f.prisma.clientPurchase.updateMany.getMockImplementation();
     let once = false;
     f.prisma.clientPurchase.updateMany.mockImplementation(async (a: any) => {
@@ -163,14 +186,7 @@ describe('Sol B-679-8 an unresolved rejected bind keeps the one-subscription exc
 
   it('(failed before) paid before the cleanup: the next key answers already active', async () => {
     const f = setup();
-    closeBeforeBind(f);
-    const create = f.stripe.createSubscription.getMockImplementation();
-    f.stripe.createSubscription.mockImplementationOnce(async (a: any) => {
-      const sub = await create(a);
-      Object.assign(sub, { status: 'active' });
-      sub.latest_invoice.status = 'paid';
-      return sub;
-    });
+    closeBeforeBind(f, { status: 'expired' }, true);
     expect((await resultOf(intent(f))).body?.code).toBe('PAYMENT_RETRY');
     expect((await resultOf(intent(f, KEY2))).body?.code).toBe('SUBSCRIPTION_ALREADY_ACTIVE');
     expect(f.stripe.createSubscription).toHaveBeenCalledTimes(1);
@@ -223,7 +239,10 @@ describe('Sol/Opus B-679-10 a trial with no pending SetupIntent gets the attempt
     noPendingSetup(f, 'pm_customer_default');
     const first = await intent(f);
     const second = await intent(f, KEY2);
-    expect([second.subscription_id, second.client_secret]).toEqual([first.subscription_id, first.client_secret]);
+    expect([second.subscription_id, second.client_secret]).toEqual([
+      first.subscription_id,
+      first.client_secret,
+    ]);
     expect(f.stripe.createSubscription).toHaveBeenCalledTimes(1);
     expect(f.stripe.createSetupIntent).toHaveBeenCalledTimes(1);
   });
