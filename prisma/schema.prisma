@@ -4012,10 +4012,8 @@ model SplitLedgerEntry {
   @@index([payee_user_id, status])
 }
 
-// B-676-1 (B-CM1-116) — what ONE refund or lost chargeback took back from ONE
-// slice, written with the reversed_cents increase and never updated, so coach
-// Money reports each event's cents at posted_at. source_id: ChargeRefund or
-// ChargeDispute id.
+// B-676-1 (B-CM1-116): what ONE refund / lost chargeback (source_id) took back
+// from ONE slice, written once with the reversed_cents increase.
 model SplitLedgerReversal {
   id          String           @id @default(uuid())
   entry_id    String
@@ -4423,8 +4421,7 @@ model ChargeRefund {
   // never-attempted rows first, then the least recently attempted, so rows
   // that keep failing never hold later refunds back across runs.
   transfer_reversal_last_attempt_at  DateTime?
-  // B-674-3 (d): the amount sent on the first attempt; every resend under the
-  // same refund-scoped key replays it.
+  // B-674-3 (d): the first attempt's amount; every resend replays it.
   transfer_reversal_amount_cents     Int?
   // B-641-9: the Stripe transfer reversal recorded for this refund (every
   // path, B-674-3). Unique, so one Stripe reversal settles at most one refund.

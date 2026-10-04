@@ -13,22 +13,10 @@ import {
 // class only. The exception object, its name, message, code or any provider
 // or database text never reaches a log line or Sentry.
 export const REFUND_TRANSFER_SWEEP_FAILED_CODE = 'REFUND_TRANSFER_REVERSAL_SWEEP_FAILED';
-export type RefundTransferSweepErrorClass =
-  'ledger_write_conflict' | 'database' | 'stripe' | 'unknown';
-
-export function refundTransferSweepErrorClass(err: unknown): RefundTransferSweepErrorClass {
+export function refundTransferSweepErrorClass(err: unknown): string {
   if (err instanceof LedgerWriteConflictError) return 'ledger_write_conflict';
   if (err instanceof StripeConnectApiError) return 'stripe';
-  if (
-    err instanceof Prisma.PrismaClientKnownRequestError ||
-    err instanceof Prisma.PrismaClientUnknownRequestError ||
-    err instanceof Prisma.PrismaClientInitializationError ||
-    err instanceof Prisma.PrismaClientRustPanicError ||
-    err instanceof Prisma.PrismaClientValidationError
-  ) {
-    return 'database';
-  }
-  return 'unknown';
+  return err instanceof Prisma.PrismaClientKnownRequestError ? 'database' : 'unknown';
 }
 
 /**

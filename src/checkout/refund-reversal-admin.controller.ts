@@ -6,14 +6,12 @@ import {
   Param,
   Post,
   Query,
-  ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
-import { StripeConnectApiError } from '../connect/stripe-connect-api.service';
 import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
 
 // B-641-7 — head-coach reversals still owed after the 23-hour Stripe window
@@ -50,7 +48,6 @@ export class AdminRefundReversalController {
       'REFUND_TRANSFER_REVERSAL_ALREADY_RECORDED | REFUND_TRANSFER_REVERSAL_NOT_IN_REVIEW | TRANSFER_REVERSAL_BELONGS_TO_OTHER_REFUND | TRANSFER_REVERSAL_UNATTRIBUTED | TRANSFER_NOT_IN_STRIPE',
   })
   @ApiResponse({ status: 422, description: 'TRANSFER_REVERSAL_NOT_FOUND' })
-  @ApiResponse({ status: 503, description: 'RECONCILE_STRIPE_UNAVAILABLE' })
   async reconcileRefundReversal(
     @Param('id') chargeRefundId: string,
     @Body()
@@ -69,19 +66,9 @@ export class AdminRefundReversalController {
           'stripe_transfer_reversal_id must be a Stripe reversal id (trr_...) and confirm_none_in_stripe must be true or false.',
       });
     }
-    return this.refundDispute
-      .reconcileTransferReversal(chargeRefundId, {
-        stripe_transfer_reversal_id: id as string | undefined,
-        confirm_none_in_stripe: confirm === true,
-      })
-      .catch((err: unknown) => {
-        // C-674-6: Stripe failed before anything was claimed or recorded.
-        if (!(err instanceof StripeConnectApiError)) throw err;
-        throw new ServiceUnavailableException({
-          code: 'RECONCILE_STRIPE_UNAVAILABLE',
-          error: 'RECONCILE_STRIPE_UNAVAILABLE',
-          message: 'Stripe did not answer. Nothing was recorded. Reconcile this refund again.',
-        });
-      });
+    return this.refundDispute.reconcileTransferReversal(chargeRefundId, {
+      stripe_transfer_reversal_id: id as string | undefined,
+      confirm_none_in_stripe: confirm === true,
+    });
   }
 }

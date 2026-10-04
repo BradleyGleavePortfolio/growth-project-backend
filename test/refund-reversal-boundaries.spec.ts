@@ -114,7 +114,7 @@ describe('B-674-1 — a concurrent reversal of another refund is added to, never
   });
 });
 
-describe('B-674-2 / C-674-6 — owner recovery routes over HTTP with the real guards', () => {
+describe('B-674-2 — owner recovery routes over HTTP with the real guards', () => {
   const live = { deleted_at: null, deletion_scheduled_at: null };
   const users: Record<string, Row> = {
     owner: { id: 'owner-1', role: 'owner', ...live },
@@ -190,19 +190,6 @@ describe('B-674-2 / C-674-6 — owner recovery routes over HTTP with the real gu
       stripe_transfer_reversal_id: 'trr_1',
       confirm_none_in_stripe: false,
     });
-  });
-
-  it('a Stripe failure during reconcile is a coded 503 with no provider text', async () => {
-    refundDispute.reconcileTransferReversal.mockRejectedValueOnce(
-      new StripeConnectApiError(CANARY, 503, null, 'request_timeout'),
-    );
-    const rec = await call('/r-1/reconcile', 'jwt-owner', {});
-    const body = await rec.text();
-    expect([rec.status, JSON.parse(body).code, body.includes(CANARY)]).toEqual([
-      503,
-      'RECONCILE_STRIPE_UNAVAILABLE',
-      false,
-    ]);
   });
 
   it.each([
