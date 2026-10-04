@@ -787,6 +787,9 @@ export class StripeConnectApiService {
     description?: string;
     metadata?: Record<string, string>;
     idempotencyKey: string;
+    // S-FEE round 11 (B-682-1): same contract as createTransfer's beforeSend
+    // (the reversal send-start budget); when it throws, nothing is sent.
+    beforeSend?: () => void;
   }): Promise<{
     id: string;
     transfer: string;
@@ -805,6 +808,7 @@ export class StripeConnectApiService {
       `/transfers/${encodeURIComponent(args.transfer_id)}/reversals`,
       form,
       args.idempotencyKey,
+      args.beforeSend,
     );
   }
 
