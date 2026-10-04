@@ -34,6 +34,14 @@ import { trialErrorClass } from '../packages/trials/trial-diagnostics';
 // @unique is unchanged.
 type WebhookTx = Prisma.TransactionClient;
 
+/** B-TRIALS — the trial columns and access an event resolves to. */
+type TrialTransition = {
+  data: Prisma.ClientPurchaseUpdateInput;
+  conflict: boolean;
+  entitled: boolean;
+  noticeId?: string;
+};
+
 // Lifecycle:
 //
 //   pending  -- checkout.session.completed   --> paid (one_time) / active (recurring)
@@ -901,6 +909,12 @@ export class CheckoutWebhookHandlerService {
    * starts inside the warning window (B-656-3), and turns a lost one-trial
    * race into a durable owed cancellation that vetoes trial access on every
    * later event (B-656-1).
+   *
+   * B-TR2-117 (C-671-4) — T1's purchaseTrialView reads a non-trialing
+   * purchase with trial_ends_at as "The trial is over", so trial_ends_at is
+   * written only for a trial that really started: this event starts it, or
+   * an earlier write or the ledger says it did. A never-started attempt
+   * keeps none and reads 'none' (setup_incomplete while it is trialing).
    */
   private async applyTrialState(
     db: WebhookTx | PrismaService,
@@ -909,16 +923,29 @@ export class CheckoutWebhookHandlerService {
     sub: TrialWillEndSubscription & { id?: string; trial_start?: number | null },
     entitled: boolean,
     eventId?: string,
-  ): Promise<{
-    data: Prisma.ClientPurchaseUpdateInput;
-    conflict: boolean;
-    entitled: boolean;
-    noticeId?: string;
-  }> {
+  ): Promise<TrialTransition> {
+    const out = await this.trialTransition(db, purchase, status, sub, entitled, eventId);
+    const trialEndsAt = this.toDate(sub.trial_end ?? null);
+    if (!trialEndsAt || out.conflict) return out;
+    const started =
+      !!purchase.trial_ends_at ||
+      (status === 'trialing' && out.entitled) ||
+      (!!this.trialUsage && (await this.trialUsage.hasStarted(db, purchase.id)));
+    if (started) out.data.trial_ends_at = trialEndsAt;
+    return out;
+  }
+
+  private async trialTransition(
+    db: WebhookTx | PrismaService,
+    purchase: ClientPurchase,
+    status: string,
+    sub: TrialWillEndSubscription & { id?: string; trial_start?: number | null },
+    entitled: boolean,
+    eventId?: string,
+  ): Promise<TrialTransition> {
     const trialEndsAt = this.toDate(sub.trial_end ?? null);
     const trialStart = this.toDate(sub.trial_start ?? null);
     const data: Prisma.ClientPurchaseUpdateInput = {};
-    if (trialEndsAt) data.trial_ends_at = trialEndsAt;
     if (trialEndsAt && trialStart && !purchase.trial_days) {
       const days = Math.round((trialEndsAt.getTime() - trialStart.getTime()) / 86_400_000);
       if (days >= 1 && days <= 30) data.trial_days = days;
