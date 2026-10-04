@@ -376,6 +376,59 @@ describe('B-674-12 — overlapping first closes keep one canonical closed_at', (
     expect(times).toEqual(Array(3).fill(t0));
     expect(h.state()).toMatchObject({ stripe: 122, transfer: 122, slice: 122 });
   });
+
+  // B-CM4-118: the same race on a refund's first success (posted_at): two
+  // charge.refunded deliveries (replicas) for a refund stored pending.
+  it('a refund delivery that read posted_at=null before another wrote it moves neither posted_at nor a posting', async () => {
+    const t0 = new Date('2027-03-31T23:59:59.999Z');
+    jest.useFakeTimers({
+      doNotFake: ['nextTick', 'setImmediate', 'setTimeout', 'setInterval', 'queueMicrotask'],
+    });
+    jest.setSystemTime(t0);
+    const h = teamSale('p-r', new Date(t0.getTime() - 5 * HOUR));
+    const pending = { status: 'pending', posted_at: null, ledger_reversed: false };
+    h.db.state.chargeRefund.push(refundRow('rf-1', 'p-r', t0, { ...pending, amount_cents: 980 }));
+    const [enterA, enterB, goA, goB] = [0, 1, 2, 3].map(() => {
+      let open!: () => void;
+      return { at: new Promise<void>((r) => (open = r)), open: () => open() };
+    });
+    const find = h.db.chargeRefund.findUnique.bind(h.db.chargeRefund);
+    let reads = 0;
+    // Each delivery holds its first read (posted_at=null) until released.
+    h.db.chargeRefund.findUnique = jest.fn(async (args: Row) => {
+      const snapshot = await find(args);
+      if (args.where.stripe_refund_id && reads < 2) {
+        const first = reads++ === 0;
+        (first ? enterA : enterB).open();
+        await (first ? goA : goB).at;
+      }
+      return snapshot;
+    });
+    const refunded = (id: string) => ({
+      id,
+      type: 'charge.refunded',
+      data: {
+        object: {
+          id: 'ch_p-r', amount: 4900, amount_refunded: 980, refunded: false,
+          refunds: { data: [{ id: 're_rf-1', amount: 980, status: 'succeeded' }] },
+        },
+      },
+    });
+    const a = h.svc.handle(refunded('evt_a'));
+    await enterA.at;
+    const b = h.svc.handle(refunded('evt_b'));
+    await enterB.at; // both read posted_at=null
+    goA.open();
+    await a; // A succeeds and posts at t0
+    jest.setSystemTime(t0.getTime() + 1); // April
+    goB.open();
+    await b;
+    const refund = (h.db.state.chargeRefund as Row[])[0];
+    expect(refund).toMatchObject({ status: 'succeeded', posted_at: t0, ledger_reversed: true });
+    const times = (h.db.state.splitLedgerReversal as Row[]).map((r) => r.posted_at);
+    expect(times).toEqual(Array(3).fill(t0));
+    expect(h.state()).toMatchObject({ stripe: 49, transfer: 49, slice: 49 });
+  });
 });
 
 describe('B-674-5 — reconcile never counts a chargeback reversal for a refund (C-674-10: bound id)', () => {
