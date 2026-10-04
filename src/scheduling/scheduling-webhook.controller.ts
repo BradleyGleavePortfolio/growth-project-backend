@@ -29,7 +29,8 @@ import { Public } from '../common/decorators/public.decorator';
 //   - Accepts and 200s any payload (signature unverified) so smoke
 //     tests can exercise the route shape end-to-end.
 //   - Is gated by @Public() because providers don't carry our JWT.
-//   - Logs the body at debug level so operators can replay if needed.
+//   - Logs the payload's shape (event name, top-level keys) at debug
+//     level, never its values (C-611-17).
 //
 // SECURITY: do NOT add any state mutation here without first wiring
 // signature verification. The current handler is read-only / log-only.
@@ -57,7 +58,7 @@ export class SchedulingWebhookController {
       if (provided !== secret) throw new ForbiddenException('Invalid webhook secret');
     }
     this.logger.debug(
-      `google-calendar webhook stub received payload (no-op): ${safeStringify(body)}`,
+      `google-calendar webhook stub received payload (no-op): ${payloadShape(body)}`,
     );
     return { ok: true, handler: 'stub' };
   }
@@ -81,16 +82,28 @@ export class SchedulingWebhookController {
       if (provided !== secret) throw new ForbiddenException('Invalid webhook secret');
     }
     this.logger.debug(
-      `zoom webhook stub received payload (no-op): ${safeStringify(body)}`,
+      `zoom webhook stub received payload (no-op): ${payloadShape(body)}`,
     );
     return { ok: true, handler: 'stub' };
   }
 }
 
-function safeStringify(v: unknown): string {
-  try {
-    return JSON.stringify(v).slice(0, 1000);
-  } catch {
-    return '[unserializable]';
+// C-611-17: provider payloads carry participant names and email addresses
+// (Zoom's participant.user_name / participant.email), so the stub logs the
+// payload's shape only: the event name when it is a plain dotted token, and
+// the top-level keys. Never a value.
+const EVENT_TOKEN = /^[a-z0-9_.-]{1,64}$/i;
+const KEY_TOKEN = /^[a-z0-9_$-]{1,40}$/i;
+function payloadShape(v: unknown): string {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) {
+    return `type=${Array.isArray(v) ? 'array' : v === null ? 'null' : typeof v}`;
   }
+  const record = v as Record<string, unknown>;
+  const event =
+    typeof record.event === 'string' && EVENT_TOKEN.test(record.event) ? record.event : 'none';
+  const keys = Object.keys(record)
+    .slice(0, 20)
+    .map((k) => (KEY_TOKEN.test(k) ? k : '?'))
+    .join(',');
+  return `event=${event} keys=${keys}`;
 }

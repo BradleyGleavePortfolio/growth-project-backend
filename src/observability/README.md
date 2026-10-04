@@ -81,6 +81,17 @@ Allowed keys that will never be redacted even if they match a prefix of the
 above names: `request_id`, `user_id`, `method`, `path`, `status`,
 `latency_ms`, `timestamp`, `level`, `message`, `msg`.
 
+### No personal data in log lines (C-611-17)
+
+Log lines carry ids and codes: the user id, the row id, the template key,
+the provider's message id or error code. They never interpolate an email
+address, a person's name or free text (message bodies, notes, alert text,
+request payloads). Text the service does not write itself (a provider's
+error body, an exception message) goes through `redactEmailAddresses`
+(`log-pii.ts`) first, because providers echo addresses back.
+`test/privacy/no-pii-in-logs.spec.ts` checks every log call under `src/`
+and the main email paths.
+
 ---
 
 ## Request-ID contract

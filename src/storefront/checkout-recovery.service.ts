@@ -13,6 +13,7 @@ import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
 import { PrismaService } from '../prisma.service';
 import { EmailService } from '../email/email.service';
 import { EmailTemplateKey } from '../email/email.types';
+import { redactEmailAddresses } from '../observability/log-pii';
 import { MIN_CHECKOUT_RECOVERY_SECRET_LENGTH } from '../common/env-validation';
 
 // r48 #5 — magic-link recovery for abandoned checkouts.
@@ -232,8 +233,9 @@ export class CheckoutRecoveryService implements OnModuleInit, OnModuleDestroy {
       },
     });
     if (recentCount >= RATE_LIMIT_MAX) {
+      // C-611-17: the checkout id, never any part of the address.
       this.logger.warn(
-        `recovery rate-limit hit for ${email.slice(0, 3)}*** (count=${recentCount})`,
+        `recovery rate-limit hit for checkout=${checkout.id} (count=${recentCount})`,
       );
       return { sent: true };
     }
@@ -274,9 +276,9 @@ export class CheckoutRecoveryService implements OnModuleInit, OnModuleDestroy {
       // "we sent it but it bounced" and "we sent it successfully"
       // anyway.
       this.logger.error(
-        `recovery email failed for ${email.slice(0, 3)}***: ${
-          err instanceof Error ? err.message : 'unknown'
-        }`,
+        `recovery email failed for checkout=${checkout.id}: ${redactEmailAddresses(
+          err instanceof Error ? err.message : 'unknown',
+        )}`,
       );
     }
     return { sent: true };

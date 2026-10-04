@@ -59,6 +59,7 @@ export interface SendEmailResult {
   // Mirrored from input.idempotencyKey for caller convenience.
   idempotencyKey: string;
   // Human-readable error text on 'failed'. Never contains the provider
-  // API key. Safe to surface up to the operator.
+  // API key or an email address (C-611-17: provider text is passed through
+  // redactEmailAddresses). Safe to surface up to the operator.
   error?: string;
 }

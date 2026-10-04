@@ -81,6 +81,12 @@ export const ONE_WAY_CODE_TEXT =
 // (published 2026-09-14) gives iPhone Settings > [your name] > Sign in with
 // Apple > app > Delete > confirm; Sign-In & Security is the account.apple.com
 // web path only. Used word for word by /privacy and /help/delete-account.
+// C-611-18 (agent 117): that iPhone path is the iOS 18 and later one (iPhone
+// User Guide 18.0 and 26). The app supports iOS 16.4 and later, and iOS 16
+// and 17 use a different menu under Settings > [your name] > Password and
+// Security (iPhone User Guide 16.0 and 17.0), so the iPhone sentence says
+// iOS 18 or later and earlier versions get the web steps, which do not
+// depend on the iOS version.
 export const APPLE_SIGN_IN_SUPPORT_URL = 'https://support.apple.com/en-us/102571';
 export const APPLE_SIGN_IN_SUPPORT_LINK: Readonly<{ label: string; href: string }> = {
   label: 'Apple Support: Manage your apps with Sign in with Apple',
@@ -88,8 +94,8 @@ export const APPLE_SIGN_IN_SUPPORT_LINK: Readonly<{ label: string; href: string 
 };
 export const SIGN_IN_WITH_APPLE_DELETION_TEXT =
   'If you used Sign in with Apple, deleting your account ends the app’s link to your Apple Account. ' +
-  'To remove the app from your Apple Account as well, on your iPhone open Settings, tap your name, then Sign in with Apple, choose the app, tap Delete and follow the steps on screen to confirm. ' +
-  'On the web, sign in at account.apple.com, go to Sign-In & Security, select Sign in with Apple, choose the app and stop using Sign in with Apple for it.';
+  'To remove the app from your Apple Account as well, on an iPhone with iOS 18 or later open Settings, tap your name, then Sign in with Apple, choose the app, tap Delete and follow the steps on screen to confirm. ' +
+  'On an earlier version of iOS, or on any other device, sign in at account.apple.com, go to Sign-In & Security, select Sign in with Apple, choose the app and stop using Sign in with Apple for it.';
 
 export type TrustPage = 'privacy' | 'consumer-health' | 'terms' | 'security' | 'status';
 

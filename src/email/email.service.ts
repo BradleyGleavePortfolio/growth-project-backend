@@ -10,6 +10,7 @@ import * as path from 'path';
 import * as Handlebars from 'handlebars';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { redactEmailAddresses } from '../observability/log-pii';
 import {
   EmailTemplateKey,
   SendEmailInput,
@@ -178,7 +179,7 @@ export class EmailService {
       html = rendered.html;
       subject = rendered.subject;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'unknown';
+      const msg = redactEmailAddresses(err instanceof Error ? err.message : 'unknown');
       await this._finalize(logRow.id, 'failed', null, `render: ${msg}`);
       return {
         status: 'failed',
@@ -191,9 +192,12 @@ export class EmailService {
     // 'log' transport: structured log instead of an HTTP call. Used in
     // dev/test only — `_initTransport` enforces that production never
     // accidentally lands here.
+    // C-611-17: log lines name the EmailSendLog row (which holds the
+    // recipient for support) and the template, never the address or the
+    // rendered subject (subjects carry first names and coach names).
     if (this.transportKind === 'log' || !this.transport) {
       this.logger.log(
-        `[email:log] to=${input.to} template=${input.template} subject="${subject}" key=${input.idempotencyKey}`,
+        `[email:log] row=${logRow.id} template=${input.template} key=${input.idempotencyKey}`,
       );
       await this._finalize(logRow.id, 'logged', null, null);
       return {
@@ -213,7 +217,7 @@ export class EmailService {
       });
       await this._finalize(logRow.id, 'sent', providerMessageId, null);
       this.logger.log(
-        `email sent template=${input.template} to=${input.to} provider_id=${providerMessageId}`,
+        `email sent template=${input.template} row=${logRow.id} provider_id=${providerMessageId}`,
       );
       return {
         status: 'sent',
@@ -221,10 +225,13 @@ export class EmailService {
         idempotencyKey: input.idempotencyKey,
       };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'unknown';
-      await this._finalize(logRow.id, 'failed', null, msg.slice(0, 500));
+      // A provider error body can echo the address back ("Invalid `to`
+      // field: ..."); redact it once here so the log line, the stored
+      // error and the returned error (callers log it) never carry it.
+      const msg = redactEmailAddresses(err instanceof Error ? err.message : 'unknown');
+      await this._finalize(logRow.id, 'failed', null, msg);
       this.logger.error(
-        `email send failed template=${input.template} to=${input.to}: ${msg}`,
+        `email send failed template=${input.template} row=${logRow.id}: ${msg}`,
       );
       return {
         status: 'failed',

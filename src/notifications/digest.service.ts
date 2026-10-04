@@ -6,6 +6,7 @@ import * as Handlebars from 'handlebars';
 import { PrismaService } from '../prisma.service';
 import { NotificationsService } from './notifications.service';
 import { NotificationKind } from './notification-kind';
+import { redactEmailAddresses } from '../observability/log-pii';
 
 // Handlebars helper: {{gt a b}} — used in templates for conditional plural.
 Handlebars.registerHelper('gt', (a: number, b: number) => a > b);
@@ -137,7 +138,7 @@ export class DigestService {
           ? `Your week in numbers — ${data.weekStats?.consistencyPct ?? 0}% check-in consistency`
           : `Your daily summary — ${data.date}`;
 
-      await this._send(client.email, subject, templateKey, {
+      await this._send(client.id, client.email, subject, templateKey, {
         ...data,
         appUrl: this.appUrl,
         unsubscribeUrl: `${this.appUrl}/settings/notifications`,
@@ -160,10 +161,11 @@ export class DigestService {
 
       await this.notifications.markDigestSent(logId);
     } catch (err) {
-      await this.notifications.markDigestFailed(logId, (err as Error).message);
-      this.logger.error(
-        `client digest failed: user=${client.id} kind=${digestKind}: ${(err as Error).message}`,
-      );
+      // Any step can fail with text that holds the address (a provider body,
+      // or an ORM error quoting the notification body above): redact once.
+      const msg = redactEmailAddresses((err as Error)?.message);
+      await this.notifications.markDigestFailed(logId, msg);
+      this.logger.error(`client digest failed: user=${client.id} kind=${digestKind}: ${msg}`);
     }
   }
 
@@ -201,7 +203,7 @@ export class DigestService {
             ? `${needCount} client${needCount !== 1 ? 's' : ''} need review today — ${data.date}`
             : `Your coach summary — ${data.date}`;
 
-      await this._send(coach.email, subject, templateKey, {
+      await this._send(coach.id, coach.email, subject, templateKey, {
         ...data,
         consoleUrl: this.consoleUrl,
         unsubscribeUrl: `${this.consoleUrl}/settings/notifications`,
@@ -220,10 +222,11 @@ export class DigestService {
 
       await this.notifications.markDigestSent(logId);
     } catch (err) {
-      await this.notifications.markDigestFailed(logId, (err as Error).message);
-      this.logger.error(
-        `coach digest failed: user=${coach.id} kind=${digestKind}: ${(err as Error).message}`,
-      );
+      // Any step can fail with text that holds the address (a provider body,
+      // or an ORM error quoting the notification body above): redact once.
+      const msg = redactEmailAddresses((err as Error)?.message);
+      await this.notifications.markDigestFailed(logId, msg);
+      this.logger.error(`coach digest failed: user=${coach.id} kind=${digestKind}: ${msg}`);
     }
   }
 
@@ -402,7 +405,10 @@ export class DigestService {
 
   // ── Private: email send ───────────────────────────────────────────────────
 
+  // C-611-17: `userId` is what the log line names; the address goes to the
+  // provider only.
   private async _send(
+    userId: string,
     to: string,
     subject: string,
     templateKey: string,
@@ -420,7 +426,7 @@ export class DigestService {
       await this._sendViaPostmark(from, to, subject, html);
     } else {
       // 'log' transport — dev / test mode.
-      this.logger.log(`[email log] to=${to} subject="${subject}"`);
+      this.logger.log(`[email log] user=${userId} template=${templateKey}`);
     }
   }
 
@@ -442,7 +448,7 @@ export class DigestService {
     });
     if (!res.ok) {
       const body = await res.text();
-      throw new Error(`Resend API error ${res.status}: ${body}`);
+      throw new Error(`Resend API error ${res.status}: ${redactEmailAddresses(body)}`);
     }
   }
 
@@ -469,7 +475,7 @@ export class DigestService {
     });
     if (!res.ok) {
       const body = await res.text();
-      throw new Error(`SendGrid API error ${res.status}: ${body}`);
+      throw new Error(`SendGrid API error ${res.status}: ${redactEmailAddresses(body)}`);
     }
   }
 
@@ -494,7 +500,7 @@ export class DigestService {
     });
     if (!res.ok) {
       const body = await res.text();
-      throw new Error(`Postmark API error ${res.status}: ${body}`);
+      throw new Error(`Postmark API error ${res.status}: ${redactEmailAddresses(body)}`);
     }
   }
 

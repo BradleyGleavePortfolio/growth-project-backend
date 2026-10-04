@@ -686,14 +686,18 @@ export class NotificationsService {
       // the message and we must NOT report delivered=true.
       for (const ticket of tickets) {
         if (ticket.status === 'error') {
-          this.logger.error(`pushToUser ticket error for user ${userId}: ${ticket.message}`);
+          // C-611-17: Expo's ticket message quotes the push token
+          // ("ExponentPushToken[...] is not a registered ..."); log and
+          // return its error code only.
+          const errorCode = ticket.details?.error ?? 'unknown';
+          this.logger.error(`pushToUser ticket error for user ${userId}: ${errorCode}`);
           // Poll receipts on a best-effort basis so stale tokens get
           // cleared even though we report failure to the caller.
           await this.pollReceipts(tickets, userId);
           return {
             delivered: false,
             code: 'ticket-error',
-            detail: ticket.message,
+            detail: errorCode,
           };
         }
       }
@@ -741,7 +745,9 @@ export class NotificationsService {
                 data: { expo_push_token: null },
               });
             }
-            this.logger.error('Push receipt error:', receipt.message);
+            this.logger.error(
+              `Push receipt error for user ${userId}: ${receipt.details?.error ?? 'unknown'}`,
+            );
           }
         }
       }

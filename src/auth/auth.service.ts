@@ -1042,8 +1042,9 @@ export class AuthService {
         // supabase_id === NULL, and that path is auditable on its own.
         // See QA P0-A1.
         if (user.supabase_id && user.supabase_id !== supaUser.id) {
+          // C-611-17: ids only; the address is on the user row.
           this.logger.warn(
-            `googleAuth: refusing to re-bind supabase_id for existing user ${user.id} (email=${supaEmail}); supabase_id already set`,
+            `googleAuth: refusing to re-bind supabase_id for existing user ${user.id} (supabase_id=${supaUser.id}); supabase_id already set`,
           );
           throw new UnauthorizedException(
             'This email is registered with a different sign-in method. Sign in with that method, then link your Google account from settings.',
@@ -1237,8 +1238,9 @@ export class AuthService {
         // Account-takeover guard — see googleAuth above for rationale.
         // QA P0-A1.
         if (user.supabase_id && user.supabase_id !== supaUser.id) {
+          // C-611-17: ids only; the address is on the user row.
           this.logger.warn(
-            `appleAuth: refusing to re-bind supabase_id for existing user ${user.id} (email=${supaEmail}); supabase_id already set`,
+            `appleAuth: refusing to re-bind supabase_id for existing user ${user.id} (supabase_id=${supaUser.id}); supabase_id already set`,
           );
           throw new UnauthorizedException(
             'This email is registered with a different sign-in method. Sign in with that method, then link your Apple account from settings.',
@@ -1781,7 +1783,7 @@ export class AuthService {
     }
 
     this.logger.warn(
-      `bootstrapFirstOwner: promoted ${user.email} (id=${user.id}) to owner. Unset BOOTSTRAP_SECRET now.`,
+      `bootstrapFirstOwner: promoted user ${user.id} to owner. Unset BOOTSTRAP_SECRET now.`,
     );
 
     return {
