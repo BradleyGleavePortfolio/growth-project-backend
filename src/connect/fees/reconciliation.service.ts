@@ -46,7 +46,6 @@ export function settlementIdentityDrift(input: SettlementIdentityInput): {
   platform_net_cents: number;
   platform_cash_cents: number;
   receivable_open_cents: number;
-  pending_transfer_cents: number;
   notes: string[];
 } {
   const s = input.settlement;
@@ -84,15 +83,12 @@ export function settlementIdentityDrift(input: SettlementIdentityInput): {
   }
   let transferred = 0;
   let nettedIn = 0;
-  let pending = 0;
   for (const t of input.transfers) {
     // Netting on this charge's transfers paid other charges' debts; it stands
     // even when the transfer finally failed (C-627-6, round 6).
     nettedIn += t.netted_recovery_cents;
     if (t.status === 'failed') continue;
     transferred += t.amount_cents - t.reversed_amount_cents;
-    // B-683-2 (round 11): a row Stripe has not executed is a promise, not cash.
-    if (t.status !== 'succeeded' && t.status !== 'reversed') pending += t.amount_cents;
   }
   const live = input.recoveries.filter((r) => r.status !== 'released');
   const owed = live.reduce((n, r) => n + r.amount_cents, 0);
@@ -117,7 +113,6 @@ export function settlementIdentityDrift(input: SettlementIdentityInput): {
     platform_net_cents: platformNet,
     platform_cash_cents: platformCash,
     receivable_open_cents: receivableOpen,
-    pending_transfer_cents: pending,
     notes,
   };
 }
@@ -384,15 +379,18 @@ export class ReconciliationService {
         },
       });
       drift += result.drift_cents;
-      pending += result.pending_transfer_cents;
       platformCash += result.platform_cash_cents;
       receivableOpen += result.receivable_open_cents;
       gross += bt?.amount ?? charge.amount;
       refunded += stripeRefunded;
       for (const n of result.notes) notes.push(`${s.stripe_charge_id} ${n}`);
       for (const t of transfers) {
-        if (t.settlement_id === s.id && (t.status === 'succeeded' || t.status === 'reversed')) {
+        if (t.settlement_id !== s.id || t.status === 'failed') continue;
+        // B-683-2 (round 11): a row Stripe has not executed is a promise, not cash.
+        if (t.status === 'succeeded' || t.status === 'reversed') {
           transferred += t.amount_cents - t.reversed_amount_cents;
+        } else {
+          pending += t.amount_cents;
         }
       }
     }
