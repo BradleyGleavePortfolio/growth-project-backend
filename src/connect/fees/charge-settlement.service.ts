@@ -130,34 +130,90 @@ export function settlementFailureCode(err: unknown): string {
   return moneyErrorDiagnostic(err); // the shared money vocabulary (F2)
 }
 
-// Round 11 (B-683-1): a converted charge's refunded cents in its SETTLEMENT currency:
-// each succeeded refund's own balance-transaction debit (Stripe converts a refund at
-// that day's rate, not the charge's), over every page. Presentment cents (callers,
-// ChargeRefund rows, amount_refunded) never mix in. Unreadable: nothing moves.
-export async function convertedRefundedCents(
+// Round 13 (Opus B-684-3, Sol B-683-4 / B-684-1): one refund on a charge as Stripe lists it.
+export interface StripeChargeRefund {
+  id: string;
+  status: string;
+  // The client's own (presentment) currency and amount.
+  amount_cents: number;
+  currency: string;
+  // A succeeded refund's debit in the SETTLEMENT currency (round 11, B-683-1: a converted
+  // refund's own balance transaction, at that day's rate); null while not succeeded.
+  debit_cents: number | null;
+}
+
+export interface ChargeRefundList {
+  refunds: StripeChargeRefund[];
+  // Succeeded refunds only: a pending refund moves no money until Stripe says it succeeded.
+  succeeded_debit_cents: number;
+  succeeded_client_cents: number;
+}
+
+/**
+ * Every refund on a charge, read from Stripe to the last page. Only a page that says
+ * has_more=false ends the list; a malformed page or refund, has_more=true without an advancing
+ * cursor, or the page cap is RefundStateUnavailableError (retryable; nothing moves).
+ */
+export async function chargeRefundsFromStripe(
   stripe: StripeConnectApiService,
   chargeId: string,
-  currency: string,
-): Promise<number> {
+  settlementCurrency: string,
+): Promise<ChargeRefundList> {
   type RefundPage = Awaited<ReturnType<StripeConnectApiService['listChargeRefunds']>>;
-  let total = 0;
+  const cur = settlementCurrency.toLowerCase();
+  const unavailable = (kind: string) => new RefundStateUnavailableError(chargeId, `kind=${kind}`);
+  const list: ChargeRefundList = {
+    refunds: [],
+    succeeded_debit_cents: 0,
+    succeeded_client_cents: 0,
+  };
   let after: string | null = null;
   for (let page = 0; page < 20; page += 1) {
-    const res: RefundPage = await stripe.listChargeRefunds(chargeId, after).catch((err: unknown) => {
-      throw new RefundStateUnavailableError(chargeId, settlementFailureCode(err));
-    });
-    for (const r of res.data ?? []) {
-      const bt = r.balance_transaction as StripeBalanceTransactionObject | null | undefined;
-      if (r.status !== 'succeeded') continue;
-      if (typeof bt?.amount !== 'number' || bt.currency?.toLowerCase() !== currency) {
-        throw new RefundStateUnavailableError(chargeId, 'kind=refund_balance_transaction_missing');
-      }
-      total += Math.max(0, -bt.amount);
+    const res: RefundPage = await stripe
+      .listChargeRefunds(chargeId, after)
+      .catch((err: unknown) => {
+        throw new RefundStateUnavailableError(chargeId, settlementFailureCode(err));
+      });
+    if (!Array.isArray(res?.data) || typeof res.has_more !== 'boolean') {
+      throw unavailable('refund_page_malformed');
     }
-    after = res.data?.[res.data.length - 1]?.id ?? null;
-    if (!res.has_more || !after) return total;
+    for (const r of res.data) {
+      const amount = r?.amount;
+      const currency = typeof r?.currency === 'string' ? r.currency.toLowerCase() : '';
+      if (!r?.id || typeof r.status !== 'string' || !Number.isSafeInteger(amount) || !currency) {
+        throw unavailable('refund_page_malformed');
+      }
+      const cents = Math.max(0, amount as number);
+      let debit: number | null = null;
+      if (r.status === 'succeeded') {
+        const bt = r.balance_transaction as StripeBalanceTransactionObject | null | undefined;
+        if (currency === cur) debit = cents;
+        else if (Number.isSafeInteger(bt?.amount) && bt?.currency?.toLowerCase() === cur) {
+          debit = Math.max(0, -(bt?.amount ?? 0));
+        } else throw unavailable('refund_balance_transaction_missing');
+        list.succeeded_debit_cents += debit;
+        list.succeeded_client_cents += cents;
+      }
+      list.refunds.push({
+        id: r.id,
+        status: r.status,
+        amount_cents: cents,
+        currency,
+        debit_cents: debit,
+      });
+    }
+    if (!res.has_more) return list;
+    const next = res.data[res.data.length - 1]?.id ?? null;
+    if (!next || next === after) throw unavailable('refund_list_incomplete');
+    after = next;
   }
-  throw new RefundStateUnavailableError(chargeId, 'kind=refund_list_incomplete');
+  throw unavailable('refund_list_incomplete');
+}
+
+/** A converted charge's succeeded refunds in the client's own currency. */
+export interface ClientRefund {
+  currency: string;
+  cents: number;
 }
 
 export interface SweepSummary {
@@ -322,6 +378,7 @@ export function adjustmentNoticeAmounts(args: {
   >;
   recoveries: Array<Pick<PayeeRecovery, 'status' | 'amount_cents' | 'collected_cents'>>;
   previous_held_cents: number | null;
+  client?: ClientRefund | null;
 }): PayoutNoticeAmounts {
   let reversed = 0;
   let reinstated = 0;
@@ -353,6 +410,8 @@ export function adjustmentNoticeAmounts(args: {
     currency: args.currency,
     charge_gross_cents: args.split.gross_cents,
     customer_refunded_cents: args.adj.refunded_cents + args.adj.dispute_withdrawn_cents,
+    client_currency: args.client?.currency ?? null,
+    client_refunded_cents: args.client?.cents ?? null,
     reversed_cents: Math.max(0, reversed),
     reinstated_cents: Math.max(0, reinstated),
     released_cents: released,
@@ -620,14 +679,15 @@ export class ChargeSettlementService {
       head_coach_bps: headCoachBps,
       rail: railForPaymentMethodType(charge.payment_method_details?.type),
     });
-    // A refund can land before we settle (webhook ordering). Stripe's
-    // amount_refunded is the truth at this moment; B-683-1: for a converted
-    // charge, the refunds' own settlement-currency debits.
+    // A refund can land before we settle (webhook ordering). Round 13 (Opus B-684-3): the
+    // charge's SUCCEEDED refunds from Stripe's full refund list, in the settlement currency;
+    // amount_refunded also counts pending refunds, so it only says whether to look.
     const currency = bt.currency.toLowerCase();
-    let refunded = Math.max(row.refunded_cents, charge.amount_refunded ?? 0);
-    if ((charge.currency ?? currency).toLowerCase() !== currency && refunded > 0) {
+    let refunded = row.refunded_cents;
+    if ((charge.amount_refunded ?? 0) > 0) {
       try {
-        refunded = await convertedRefundedCents(this.stripe, chargeId, currency);
+        const list = await chargeRefundsFromStripe(this.stripe, chargeId, currency);
+        refunded = Math.max(refunded, list.succeeded_debit_cents);
       } catch (err) {
         return this.markAwaiting(row, chargeId, `${settlementFailureCode(err)}: retried`);
       }
@@ -1358,10 +1418,16 @@ export class ChargeSettlementService {
     // B-683-1: a converted charge's refunds come from Stripe in the
     // settlement currency; presentment cents are never mixed in.
     const fx = (input.purchase.currency ?? row.currency).toLowerCase() !== row.currency;
-    const refundedNow = () =>
-      fx
-        ? convertedRefundedCents(this.stripe, input.charge_id, row.currency)
-        : this.succeededRefundCents(input.charge_id);
+    // Round 13 (Sol B-683-1): on a converted charge, what the client got back in their own
+    // currency, kept apart from the settlement debit for the payee notice.
+    let client: ClientRefund | null = null;
+    const refundedNow = async () => {
+      if (!fx) return this.succeededRefundCents(input.charge_id);
+      const list = await chargeRefundsFromStripe(this.stripe, input.charge_id, row.currency);
+      const currency = list.refunds[0]?.currency ?? input.purchase.currency ?? row.currency;
+      client = { currency, cents: list.succeeded_client_cents };
+      return list.succeeded_debit_cents;
+    };
 
     for (let round = 0; round < 4; round += 1) {
       const refundedOnRecord = await refundedNow();
@@ -1474,7 +1540,7 @@ export class ChargeSettlementService {
       if (after <= next.refunded_cents) {
         // OR-111-1: tell each payee exactly what changed, from the converged
         // state, still under the lock (idempotent per charge/leg/event/state).
-        await this.recordAdjustmentNotices(current, legs, next, input.notice_event ?? null);
+        await this.recordAdjustmentNotices(current, legs, next, input.notice_event ?? null, client);
         return adjusted ? 'adjusted' : 'unchanged';
       }
     }
@@ -1499,6 +1565,7 @@ export class ChargeSettlementService {
     legs: Leg[],
     adj: ChargeAdjustments,
     hint: 'dispute_lost' | null,
+    client: ClientRefund | null = null,
   ): Promise<number> {
     try {
       const split = splitOf(row);
@@ -1528,6 +1595,8 @@ export class ChargeSettlementService {
           transfers: transfers.filter((t) => t.destination_user_id === leg.payee_user_id),
           recoveries: recoveries.filter((r) => r.payee_user_id === leg.payee_user_id),
           previous_held_cents: latest?.held_cents ?? null,
+          // A refund notice on a converted charge names the client's own amount (B-683-1).
+          client: event === 'refund' && adj.dispute_withdrawn_cents === 0 ? client : null,
         });
         if (
           latest &&
@@ -1535,7 +1604,8 @@ export class ChargeSettlementService {
           latest.held_cents === amounts.held_cents &&
           latest.reversed_cents === amounts.reversed_cents &&
           latest.reinstated_cents === amounts.reinstated_cents &&
-          latest.customer_refunded_cents === amounts.customer_refunded_cents
+          latest.customer_refunded_cents === amounts.customer_refunded_cents &&
+          latest.client_refunded_cents === amounts.client_refunded_cents
         ) {
           continue; // nothing this payee can see changed (e.g. a fee-only update on the other leg)
         }
@@ -1558,6 +1628,8 @@ export class ChargeSettlementService {
               currency: row.currency,
               charge_gross_cents: amounts.charge_gross_cents,
               customer_refunded_cents: amounts.customer_refunded_cents,
+              client_currency: amounts.client_currency,
+              client_refunded_cents: amounts.client_refunded_cents,
               reversed_cents: amounts.reversed_cents,
               reinstated_cents: amounts.reinstated_cents,
               held_cents: amounts.held_cents,
