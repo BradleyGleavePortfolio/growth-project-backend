@@ -9,6 +9,7 @@ export const MONEY_RETRY_CODES = {
   reversalUncertain: 'SFEE_REVERSAL_UNCERTAIN',
   disputeUnavailable: 'SFEE_DISPUTE_STATE_UNAVAILABLE',
   refundUnavailable: 'SFEE_REFUND_STATE_UNAVAILABLE',
+  noticeUnrecorded: 'SFEE_NOTICE_UNRECORDED',
 } as const;
 
 /**
@@ -67,6 +68,16 @@ export class RefundStateUnavailableError extends Error {
   }
 }
 
+// Round 16 (Sol B-683-7): the money is converged, but neither the payee notice nor its retry
+// flag could be written. The delivery fails so Stripe redelivers; the replay records the notice.
+export class NoticeUnrecordedError extends Error {
+  readonly code = MONEY_RETRY_CODES.noticeUnrecorded;
+  constructor(chargeId: string) {
+    super(`${MONEY_RETRY_CODES.noticeUnrecorded} charge=${chargeId}`);
+    this.name = 'NoticeUnrecordedError';
+  }
+}
+
 export function isReversalUncertain(err: unknown): err is ReversalUncertainError {
   return err instanceof ReversalUncertainError;
 }
@@ -78,6 +89,7 @@ export function isRetryableMoneyError(err: unknown): boolean {
     isChargeLockLost(err) ||
     err instanceof ReversalUncertainError ||
     err instanceof DisputeStateUnavailableError ||
-    err instanceof RefundStateUnavailableError
+    err instanceof RefundStateUnavailableError ||
+    err instanceof NoticeUnrecordedError
   );
 }

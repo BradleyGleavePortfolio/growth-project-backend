@@ -25,6 +25,7 @@ import { moneyErrorDiagnostic } from './money-diagnostics';
 import {
   DisputeStateUnavailableError,
   MONEY_RETRY_CODES,
+  NoticeUnrecordedError,
   RefundStateUnavailableError,
   ReversalUncertainError,
   isRetryableMoneyError,
@@ -125,6 +126,7 @@ export function settlementFailureCode(err: unknown): string {
   if (err instanceof ReversalUncertainError) return MONEY_RETRY_CODES.reversalUncertain;
   if (err instanceof DisputeStateUnavailableError) return MONEY_RETRY_CODES.disputeUnavailable;
   if (err instanceof RefundStateUnavailableError) return err.message; // closed parts and ids
+  if (err instanceof NoticeUnrecordedError) return MONEY_RETRY_CODES.noticeUnrecorded;
   if (isChargeLockBusy(err)) return SETTLEMENT_LOG_CODES.lockBusy;
   if (isChargeLockLost(err)) return 'SFEE_CHARGE_LOCK_LOST';
   return moneyErrorDiagnostic(err); // the shared money vocabulary (F2)
@@ -347,8 +349,8 @@ function stateKey(adj: ChargeAdjustments): string {
 /**
  * OR-111-1 — which payee notice an adjustment state calls for. A chargeback is any state with
  * withdrawn funds; a dispute that stops withdrawing funds after a chargeback notice was won; a
- * lost dispute is announced by the dispute-closed handler (hint). Anything else with refunded
- * cents is a refund.
+ * lost dispute is announced by the hint (the dispute-closed handler, or Stripe's dispute status
+ * read under the lock on any later run, round 16). Anything else with refunded cents is a refund.
  */
 export function noticeEventFor(
   adj: ChargeAdjustments,
@@ -1371,14 +1373,14 @@ export class ChargeSettlementService {
     chargeId: string,
     disputeId: string | null,
     err: unknown,
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
       const row = await this.prisma.chargeSettlement.findUnique({
         where: { stripe_charge_id: chargeId },
         select: { id: true, reconcile_dispute_id: true },
       });
-      if (!row) return;
-      await this.prisma.chargeSettlement.updateMany({
+      if (!row) return false;
+      const saved = await this.prisma.chargeSettlement.updateMany({
         where: { id: row.id },
         data: {
           reconcile_requested_at: new Date(),
@@ -1386,10 +1388,12 @@ export class ChargeSettlementService {
           reconcile_reason: settlementFailureCode(err),
         },
       });
+      return saved.count === 1;
     } catch (flagErr) {
       this.logger.error(
         `${SETTLEMENT_LOG_CODES.reconcilePending} alert=true charge=${chargeId}: could not flag the settlement for the sweeper (${settlementFailureCode(flagErr)}); relying on Stripe redelivery`,
       );
+      return false;
     }
   }
 
@@ -1425,10 +1429,8 @@ export class ChargeSettlementService {
     if (row.status === 'legacy_destination') return 'legacy';
     // A flagged settlement re-reads its dispute even when this caller only
     // knows about refunds (the sweeper, a transfer.reversed sync).
-    const dispute = await this.currentDispute({
-      ...input,
-      dispute_id: input.dispute_id ?? row.reconcile_dispute_id ?? null,
-    });
+    const disputeId = input.dispute_id ?? row.reconcile_dispute_id ?? null;
+    const dispute = await this.currentDispute({ ...input, dispute_id: disputeId });
     let current: ChargeSettlement = row;
     let adjusted = false;
     // B-683-1: a converted charge's refunds come from Stripe in the
@@ -1556,8 +1558,10 @@ export class ChargeSettlementService {
       if (after <= next.refunded_cents) {
         // OR-111-1: tell each payee exactly what changed, from the converged
         // state, still under the lock (idempotent per charge/leg/event/state).
-        const hint = input.notice_event ?? null;
-        if (!(await this.recordAdjustmentNotices(current, legs, next, hint, client))) {
+        // Round 16 (Sol B-683-8): a retry carries no notice_event; a lost dispute is re-derived
+        // from Stripe's status read under this lock, so its terminal notice is never dropped.
+        const hint = input.notice_event ?? (dispute?.lost ? 'dispute_lost' : null);
+        if (!(await this.recordAdjustmentNotices(current, legs, next, hint, client, disputeId))) {
           run.flagged = true;
         }
         return adjusted ? 'adjusted' : 'unchanged';
@@ -1577,7 +1581,8 @@ export class ChargeSettlementService {
    * and what is held from the payee's next sale(s), split into TGP's 2%, Stripe's processing fee,
    * the dispute fee and any share Stripe refused to reverse. Delivery (push / in-app / email) is
    * done by the dispatcher after the lock is released. A failure here never undoes the money: the
-   * settlement is flagged and the sweeper re-runs it. Returns false when it flagged (B-683-5).
+   * settlement is flagged (with its dispute id) and the sweeper re-runs it. Returns false when it
+   * flagged (B-683-5); throws NoticeUnrecordedError when the flag could not be saved (B-683-7).
    */
   private async recordAdjustmentNotices(
     row: ChargeSettlement,
@@ -1585,6 +1590,7 @@ export class ChargeSettlementService {
     adj: ChargeAdjustments,
     hint: 'dispute_lost' | null,
     client: ClientRefund | null = null,
+    disputeId: string | null = null,
   ): Promise<boolean> {
     try {
       const split = splitOf(row);
@@ -1668,10 +1674,13 @@ export class ChargeSettlementService {
       }
       return true;
     } catch (err) {
+      // Round 16 (Sol B-683-7): acknowledged only with a saved retry flag; otherwise the
+      // delivery fails and Stripe redelivers (the money is converged and idempotent).
+      const flagged = await this.flagForReconcile(row.stripe_charge_id, disputeId, err);
       this.logger.error(
-        `${SETTLEMENT_LOG_CODES.noticeFailed} alert=true charge=${row.stripe_charge_id}: could not record the payee notice (${settlementFailureCode(err)}); the money is converged and the sweeper retries the notice`,
+        `${SETTLEMENT_LOG_CODES.noticeFailed} alert=true charge=${row.stripe_charge_id}: could not record the payee notice (${settlementFailureCode(err)}); the money is converged and ${flagged ? 'the sweeper retries the notice' : 'the delivery fails for redelivery'}`,
       );
-      await this.flagForReconcile(row.stripe_charge_id, null, err);
+      if (!flagged) throw new NoticeUnrecordedError(row.stripe_charge_id);
       return false;
     }
   }
@@ -1695,7 +1704,7 @@ export class ChargeSettlementService {
    */
   private async currentDispute(
     input: AdjustmentInput,
-  ): Promise<{ withdrawn_cents: number; fee_cents: number } | null> {
+  ): Promise<{ withdrawn_cents: number; fee_cents: number; lost?: boolean } | null> {
     if (!input.dispute_id) return input.dispute ?? null;
     let fresh: Awaited<ReturnType<StripeConnectApiService['retrieveDispute']>>;
     try {
@@ -1730,7 +1739,7 @@ export class ChargeSettlementService {
         );
       }
     }
-    return disputeAmountsFrom(fresh.balance_transactions);
+    return { ...disputeAmountsFrom(fresh.balance_transactions), lost: fresh.status === 'lost' };
   }
 
   /** True when the charge settled through S-FEE (not a legacy destination charge). */

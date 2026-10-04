@@ -10,6 +10,7 @@ import { Logger } from '@nestjs/common';
 import type { ClientPurchase } from '@prisma/client';
 import { ChargeSettlementService } from '../src/connect/fees/charge-settlement.service';
 import { FeePolicyService } from '../src/connect/fees/fee-policy.service';
+import { isRetryableMoneyError } from '../src/connect/fees/money-errors';
 import { ReconciliationService } from '../src/connect/fees/reconciliation.service';
 import { SplitLedgerService } from '../src/connect/fees/split-ledger.service';
 import { TransferOrchestratorService } from '../src/connect/fees/transfer-orchestrator.service';
@@ -290,4 +291,106 @@ describe('Sol B-683-5 a run never clears the retry flag it raised', () => {
       reconcile_reason: null,
     });
   });
+});
+
+// Round 16 (B-FEES16-118, Sol 5982960241 at 438d29e6):
+//   Sol B-683-7  notice and retry-flag writes both failed, yet the run resolved (webhook 2xx).
+//   Sol B-683-8  a failed lost-dispute notice was flagged without its dispute id; the sweep re-ran
+//                without the terminal intent, saw an unchanged state and cleared the flag.
+describe('round 16: a failed notice keeps its retry authority and its terminal event', () => {
+  type Ctx = ReturnType<typeof setup>;
+  // SQL NULL never satisfies `lte`; the shared fake's string compare does. Flagged rows only.
+  const flaggedOnly = (c: Ctx) => {
+    const find = c.prisma.chargeSettlement.findMany.getMockImplementation();
+    c.prisma.chargeSettlement.findMany.mockImplementation(async (args = {}) => {
+      const rows = find ? await find(args) : [];
+      const lte = args.where?.reconcile_requested_at?.lte;
+      return lte ? rows.filter((r) => r.reconcile_requested_at instanceof Date) : rows;
+    });
+  };
+  const fail = (c: Ctx, what: string) => {
+    const notices = c.prisma.payoutAdjustmentNotice;
+    const op = what === 'insert' ? notices.create : notices.findMany;
+    op.mockRejectedValueOnce(new Error('write failed'));
+  };
+  const sweep = (c: Ctx, min: number) => c.svc.runSettlementSweep(new Date(Date.now() + min * 6e4));
+
+  it.each([
+    ['insert', 'every'],
+    ['history read', 'every'],
+    ['insert', 'the first'],
+    ['history read', 'the first'],
+  ])(
+    'B-683-7: notice %s and %s flag write fail: delivery fails, one notice',
+    async (what, flags) => {
+      const c = setup({ fx: false });
+      flaggedOnly(c);
+      c.stripe.charges.set('ch_1', c.charge(0));
+      await c.settle();
+      c.stripe.charges.set('ch_1', c.charge(2_500));
+      fail(c, what);
+      const update = c.prisma.chargeSettlement.updateMany.getMockImplementation();
+      let down = true;
+      c.prisma.chargeSettlement.updateMany.mockImplementation(async (args) => {
+        if (down && args.data.reconcile_requested_at instanceof Date) {
+          down = flags === 'every';
+          throw new Error('flag write failed');
+        }
+        return update ? update(args) : { count: 0 };
+      });
+      const err = await c.adjust().catch((e: unknown) => e);
+      expect(isRetryableMoneyError(err)).toBe(true);
+      expect(String(err)).toContain('SFEE_NOTICE_UNRECORDED charge=ch_1');
+      expect(c.stripe.netTo('acct_coach')).toBe(6_980);
+      const flag = c.db.settlements[0].reconcile_requested_at;
+      expect(flag instanceof Date).toBe(flags === 'the first');
+      const reversals = c.stripe.reversals.length;
+      down = false; // the outage ends
+      await sweep(c, 2);
+      expect(c.db.notices ?? []).toHaveLength(flag ? 1 : 0); // a saved flag alone repairs it
+      expect(await c.adjust()).toBe('unchanged'); // Stripe redelivers the failed delivery
+      await sweep(c, 20);
+      expect(c.db.notices?.map((n) => n.event)).toEqual(['refund']);
+      expect(c.db.settlements[0].reconcile_requested_at).toBeNull();
+      expect(c.stripe.reversals).toHaveLength(reversals);
+      expect(c.stripe.netTo('acct_coach')).toBe(6_980);
+    },
+  );
+
+  it.each(['insert', 'history read'])(
+    'B-683-8: a failed lost-dispute notice %s: the sweep writes it once per leg, no money moves',
+    async (what) => {
+      const c = setup({ fx: false, head: true });
+      flaggedOnly(c);
+      c.stripe.charges.set('ch_1', c.charge(0));
+      await c.settle();
+      const balance_transactions = [{ id: 'txn_dp', amount: -10_000, fee: 1_500 }];
+      c.stripe.disputes.set('dp_1', { id: 'dp_1', balance_transactions });
+      const purchase = c.db.purchases[0] as ClientPurchase;
+      const change = (notice_event: 'dispute_lost' | null) =>
+        c.svc.applyAdjustments({ purchase, charge_id: 'ch_1', dispute_id: 'dp_1', notice_event });
+      const events = () => c.db.notices?.map((n) => `${n.role}:${n.event}`).sort();
+      await change(null);
+      expect(events()).toEqual(['coach:chargeback', 'head_coach:chargeback']);
+      Object.assign(c.stripe.disputes.get('dp_1') ?? {}, { status: 'lost' });
+      const money = () => [c.stripe.reversals.length, JSON.stringify(c.db.recoveries)];
+      const before = money();
+      fail(c, what);
+      expect(await change('dispute_lost')).toBe('unchanged');
+      expect(c.db.settlements[0].reconcile_requested_at).toBeInstanceOf(Date);
+      await sweep(c, 2);
+      const terminal = ['chargeback', 'dispute_lost'].flatMap((e) => [
+        `coach:${e}`,
+        `head_coach:${e}`,
+      ]);
+      expect(events()).toEqual(terminal.sort());
+      expect(c.db.settlements[0].reconcile_requested_at).toBeNull();
+      // Replays: a late `created` (no intent), the closed redelivery and a later sweep add nothing.
+      await change(null);
+      await change('dispute_lost');
+      await sweep(c, 20);
+      expect(events()).toEqual(terminal);
+      expect(money()).toEqual(before);
+    },
+  );
 });
