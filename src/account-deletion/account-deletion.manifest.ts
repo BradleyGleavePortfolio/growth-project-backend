@@ -415,6 +415,14 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   },
   { model: 'ClientPurchase', field: 'client_user_id', action: retain(FINANCE) },
   { model: 'ClientPurchase', field: 'coach_user_id', action: retain(FINANCE) },
+  // B-TRIALS (#656) — free-trial bookkeeping. Ids, dates and trial lengths
+  // only; useful only while the person exists (a tombstoned id never buys a
+  // second trial). No FK to ClientPurchase (purchase_id is a plain id), so
+  // these deletes are order-free. The notice's email_status column is a
+  // delivery state, not an address, and goes with the row.
+  { model: 'PackageTrialNotice', field: 'client_user_id', action: del },
+  { model: 'PackageTrialUsage', field: 'client_user_id', action: del },
+  { model: 'PackageTrialUsage', field: 'coach_user_id', action: del },
   {
     model: 'GuestCheckout',
     field: 'created_user_id',
