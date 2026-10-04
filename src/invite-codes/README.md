@@ -57,7 +57,7 @@ infeasible.
 | `GET` | `/coach/invite-codes` | List the caller's codes |
 | `DELETE` | `/coach/invite-codes/:id` | Revoke (IDOR-checked) |
 | `GET` | `/coaches/me/invite-link` | Get the default per-coach link (lazy create) |
-| `POST` | `/coaches/me/invite-link/regenerate` | Rotate the default link; old code stops resolving immediately |
+| `POST` | `/coaches/me/invite-link/regenerate` | Rotate the default link; the old code is archived revoked, so a new signup with it gets `code_revoked` |
 
 ### Public
 
@@ -125,6 +125,41 @@ is a new redemption.
 Tests: `test/invite-attach-idempotent-replay.spec.ts`,
 `test/select-role-canonical-attach.spec.ts`,
 `test/invite-attach-reliability.spec.ts`.
+
+## Coach code tools (A2, flag `FEATURE_COACH_CODE_TOOLS`, default OFF)
+
+`coach-code-tools.controller.ts` / `coach-code-tools.service.ts`. Every route
+is `JwtAuthGuard + CoachGuard`, `@Roles('coach','owner')`, tenancy from
+`req.user.id` only, and answers `404 coach_code_tools_disabled` while the
+flag is off. `:id` is an `InviteCode` id or the literal `coach-link`.
+
+| Method | Path | Behavior |
+|---|---|---|
+| `GET` | `/coach/codes` | Coach link first, then shareable codes (no single-recipient invites) with status (`active`, `retiring`, `revoked`, `expired`, `used_up`), `join_url` = `qr_payload` (`https://app.trygrowthproject.com/join/<code>`), package, lineage and exact ledger usage (`signups_total`, `signups_7d`) |
+| `POST` | `/coach/codes` | Create a `GP-XXXXXX` code (unlimited, no expiry unless set; optional label, `max_uses`, `expires_at`, package + grant mode via `InviteGrantService.setBinding`). `Idempotency-Key` header: a retry returns the first code (`replayed: true`) |
+| `POST` | `/coach/codes/:id/rotate` | New code with the same settings, linked by `rotated_from_id`; the old one is revoked now (`grace_hours` 0, default) or keeps working until `now + grace_hours` (max 168). A retried rotate returns the existing successor. `coach-link` archives the old link code as an InviteCode row so it keeps resolving |
+| `POST` | `/coach/codes/:id/revoke` | Turn a code off (idempotent). The coach link can only be rotated (`409 coach_link_not_revocable`) |
+| `GET` | `/coach/codes/signups?days=30` | Exact daily signups (1-90 days) in the coach's time zone (`CoachProfile.timezone`, else `America/Los_Angeles`), zero-filled, overall / `by_code` / `by_package`, with `unusual_today` (today >= 3 and >= 3x the trailing 7-day average) to catch a leaked code |
+
+Every create / rotate / revoke writes an audit row (`invite_code.created`,
+`invite_code.rotated`, `invite_code.revoked`). Rotating or revoking never
+touches `User.coach_id`, so clients who already joined stay with the coach.
+
+### Signup ledger (`InviteRedemption`, always on)
+
+`attachUserToCoachByCode` writes one row per NEW redemption inside the attach
+transaction (code string, `coach_link` / `invite_code`, the package bound at
+that moment). Replays and refusals write nothing. RLS: the coach reads own
+rows, owner reads all, no public writes, anon denied
+(`20270302000000_coach_code_tools`). Counts start at deploy.
+
+### Specific refusals for an existing code
+
+A NEW redemption of a code that resolves to a coach but cannot take a signup
+now answers `code_revoked`, `code_expired` (including the end of a rotation
+grace window) or `code_exhausted` with copy that says what to do next.
+Unknown codes stay `invite_code_invalid`; public preview / validate stay
+collapsed to `{ valid: false }`.
 
 ## Security and tenancy rules
 

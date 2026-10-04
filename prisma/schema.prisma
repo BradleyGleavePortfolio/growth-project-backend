@@ -376,6 +376,9 @@ model User {
   team_audit_events_as_actor    TeamAuditEvent[]         @relation("TeamAuditEventActor")
   team_audit_events_as_target   TeamAuditEvent[]         @relation("TeamAuditEventTarget")
   invite_codes_invited_by       InviteCode[]             @relation("InviteCodeInvitedBy")
+  // A2 coach code tools — signup ledger (coach side / client side).
+  invite_redemptions_as_coach   InviteRedemption[]       @relation("InviteRedemptionCoach")
+  invite_redemptions_as_client  InviteRedemption[]       @relation("InviteRedemptionClient")
 
   // Phase 8 Connect — head-coach team profile (business name, public team
   // code, capacity mirror) and sub-coach invitations. One TeamProfile per
@@ -757,35 +760,78 @@ model ActivityEvent {
 }
 
 model InviteCode {
-  id                  String    @id @default(uuid())
-  code                String    @unique
+  id                  String             @id @default(uuid())
+  code                String             @unique
   coach_id            String
-  coach               User      @relation("CoachInviteCodes", fields: [coach_id], references: [id])
+  coach               User               @relation("CoachInviteCodes", fields: [coach_id], references: [id])
   // Team Mode — sub-coach attribution. When a sub-coach creates an invite
   // their user_id lands here while coach_id remains the head coach who
   // owns the team. Null on legacy rows where the head coach issued the
   // invite directly. The audit feed reads this to show "Invited by sub-
   // coach <name>" without joining a separate ledger.
   invited_by_user_id  String?
-  invited_by          User?     @relation("InviteCodeInvitedBy", fields: [invited_by_user_id], references: [id])
-  created_at          DateTime  @default(now())
+  invited_by          User?              @relation("InviteCodeInvitedBy", fields: [invited_by_user_id], references: [id])
+  created_at          DateTime           @default(now())
   expires_at          DateTime?
   max_uses            Int?
-  used_count          Int       @default(0)
-  revoked             Boolean   @default(false)
-  intended_email      String?   @db.Text
+  used_count          Int                @default(0)
+  revoked             Boolean            @default(false)
+  intended_email      String?            @db.Text
   accepted_by_user_id String?
   accepted_at         DateTime?
   // C01 — optional package binding: on successful attach via this code the
   // redeemer receives a $0 grant for `package` according to `grant_mode`.
   package_id          String?
-  package             CoachPackage? @relation("InviteCodePackage", fields: [package_id], references: [id], onDelete: SetNull)
-  grant_mode          InviteGrantMode @default(none)
+  package             CoachPackage?      @relation("InviteCodePackage", fields: [package_id], references: [id], onDelete: SetNull)
+  grant_mode          InviteGrantMode    @default(none)
+  // A2 coach code tools (20270302000000). `label` is the coach's own name
+  // for the code ("Clinic front desk"). `revoked_at` stamps when `revoked`
+  // flipped. A rotation links the successor to the code it replaced through
+  // `rotated_from_id` (unique: one successor per code, which also makes a
+  // retried rotate idempotent). `idempotency_key` makes a retried create
+  // return the first row instead of minting a second code.
+  label               String?            @db.Text
+  revoked_at          DateTime?
+  idempotency_key     String?            @db.Text
+  rotated_from_id     String?            @unique
+  rotated_from        InviteCode?        @relation("InviteCodeRotation", fields: [rotated_from_id], references: [id], onDelete: SetNull)
+  rotated_to          InviteCode?        @relation("InviteCodeRotation")
+  redemptions         InviteRedemption[]
 
+  @@unique([coach_id, idempotency_key])
   @@index([coach_id])
   @@index([code])
   @@index([invited_by_user_id])
   @@index([package_id])
+}
+
+// A2 coach code tools — append-only signup ledger. One row per NEW
+// redemption (InviteCodesService.attachUserToCoachByCode, inside the attach
+// transaction), never for an idempotent replay. `code` is the exact code
+// string redeemed (coach link or InviteCode row) and `package_id` the package
+// bound to that code at redemption time, so daily signups per code and per
+// package are exact counts of rows, bucketed in the coach's time zone.
+// Coach-scoped RLS (owner reads all); no public writes.
+model InviteRedemption {
+  id             String        @id @default(uuid())
+  coach_id       String
+  coach          User          @relation("InviteRedemptionCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  client_user_id String
+  client         User          @relation("InviteRedemptionClient", fields: [client_user_id], references: [id], onDelete: Cascade)
+  invite_code_id String?
+  invite_code    InviteCode?   @relation(fields: [invite_code_id], references: [id], onDelete: SetNull)
+  code           String        @db.Text
+  // 'coach_link' (CoachProfile.invite_code) | 'invite_code' (InviteCode row)
+  source         String        @db.Text
+  package_id     String?
+  package        CoachPackage? @relation("InviteRedemptionPackage", fields: [package_id], references: [id], onDelete: SetNull)
+  redeemed_at    DateTime      @default(now())
+
+  @@index([coach_id, redeemed_at])
+  @@index([invite_code_id])
+  @@index([client_user_id])
+  @@index([package_id])
+  @@index([code])
 }
 
 model UserProfile {
@@ -3539,6 +3585,7 @@ model CoachPackage {
   purchases ClientPurchase[]
   // C01 — invite codes / permanent coach codes bound to this package.
   bound_invite_codes    InviteCode[]   @relation("InviteCodePackage")
+  invite_redemptions    InviteRedemption[] @relation("InviteRedemptionPackage")
   bound_coach_profiles  CoachProfile[] @relation("CoachProfileInviteCodePackage")
 
   // R43 Storefront Phase 1 — guest-checkout share links.

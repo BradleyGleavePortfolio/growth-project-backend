@@ -1293,6 +1293,7 @@ describe('C13 — coach_cannot_redeem (Opus B1 / Grok A2)', () => {
         update: jest.fn(),
         updateMany: jest.fn(async () => ({ count: 1 })),
       },
+      inviteRedemption: { create: jest.fn(async ({ data }: any) => ({ id: 'red-1', ...data })) }, // A2 signup ledger
       $transaction: jest.fn(async (cb: any) => cb(prisma)),
     };
     const analytics: any = { capture: jest.fn() };
