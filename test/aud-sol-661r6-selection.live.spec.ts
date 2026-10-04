@@ -23,12 +23,14 @@ class StripeStub extends StripeConnectApiService {
   createEphemeralKey = jest.fn(async () => ({ secret: 'ek_test_solr6' }));
 }
 function wiring<T>(value: object): T { return value as T; }
-function legalOrder<T extends object>(client: T): T {
+function legalOrder<T extends { clientPurchase: Prisma.TransactionClient['clientPurchase'] }>(
+  client: T,
+): T {
   return new Proxy(client, {
     get(target, key, receiver) {
       const value = Reflect.get(target, key, receiver);
       if (key === 'clientPurchase') {
-        return new Proxy(value, {
+        return new Proxy(target.clientPurchase, {
           get(delegate, method) {
             const original = Reflect.get(delegate, method);
             if (method === 'findFirst' || method === 'findMany') {
