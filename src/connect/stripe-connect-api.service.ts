@@ -926,6 +926,17 @@ export class StripeConnectApiService {
     return this.getOnAccount(`/balance_transactions?${params.toString()}`, args.connectedAccountId);
   }
 
+  // Round 11 (B-683-1): one page of a charge's refunds, newest first, each with its
+  // balance transaction (the debit in the SETTLEMENT currency).
+  async listChargeRefunds(charge: string, startingAfter: string | null): Promise<{
+    data: Array<{ id: string; status?: string; balance_transaction?: unknown }>;
+    has_more?: boolean;
+  }> {
+    const q = new URLSearchParams({ charge, limit: '100', 'expand[]': 'data.balance_transaction' });
+    if (startingAfter) q.set('starting_after', startingAfter);
+    return this.get(`/refunds?${q.toString()}`);
+  }
+
   // Retrieve a single Refund (used for webhook handlers + admin lookup).
   async retrieveRefund(refundId: string): Promise<{
     id: string;
