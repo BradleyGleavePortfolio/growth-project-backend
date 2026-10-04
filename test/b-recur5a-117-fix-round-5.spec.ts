@@ -1,13 +1,12 @@
 // B-RECUR5A-117 fix round 5 (#678 + #679). Acceptance cases for Sol
 // B-679-4 / B-679-7 / B-679-8 and Opus B-679-8 / B-679-9 / C-679-3 (lens IDs
 // collide: each case names its lens). Every case marked (failed before)
-// failed at #679 f48fa8f0. Synthetic stateful doubles only.
+// failed at #679 f48fa8f0 (CI lane run 37183949652). The R1 request-form
+// cases of Opus B-679-8 live in test/b-recur5a-117-trial-end-form.spec.ts.
+// Synthetic stateful doubles only.
 import { HttpException } from '@nestjs/common';
 import { SubscriptionCheckoutService } from '../src/checkout/subscription-checkout.service';
-import {
-  StripeConnectApiError,
-  StripeConnectApiService,
-} from '../src/connect/stripe-connect-api.service';
+import { StripeConnectApiError } from '../src/connect/stripe-connect-api.service';
 import { makeCheckoutHelpers, makeFakePrisma, makeFakeStripe } from './support/b-recur-fakes';
 
 const CLIENT = '11111111-1111-4111-8111-111111111111';
@@ -116,51 +115,12 @@ function trialEnd(sub: any, customerDefault: string | null): 'charged' | 'ended'
   return sub.default_payment_method || customerDefault ? 'charged' : 'ended';
 }
 
-/** The real Stripe client with its HTTP recorded (no network). */
-class Recording extends StripeConnectApiService {
-  forms: string[] = [];
-  protected fetchImpl: typeof fetch = async (_input: any, init: any) => {
-    this.forms.push(decodeURIComponent(String(init?.body ?? '')));
-    return new Response(JSON.stringify({ id: 'sub_x', status: 'trialing' }), { status: 200 });
-  };
-}
-
 beforeAll(() => {
   process.env.STRIPE_PUBLISHABLE_KEY = 'pk_test_synthetic';
 });
 afterEach(() => jest.restoreAllMocks());
 
 describe('Opus B-679-8 a trial converts only on the attempt’s own saved card', () => {
-  const prev = process.env.STRIPE_SECRET_KEY;
-  beforeEach(() => {
-    process.env.STRIPE_SECRET_KEY = 'sk_test_synthetic';
-  });
-  afterAll(() => {
-    process.env.STRIPE_SECRET_KEY = prev;
-  });
-
-  it('(failed before) a trial create carries a Stripe-enforced end; a plan without a trial does not', async () => {
-    const api = new Recording();
-    const base = { customer: 'cus_A', recurringPriceId: 'price_A', onBehalfOf: 'acct_coach' };
-    await api.createSubscription({ ...base, trialPeriodDays: 7, idempotencyKey: 'k1' });
-    await api.createSubscription({ ...base, idempotencyKey: 'k2' });
-    expect(api.forms[0]).toContain('trial_period_days=7');
-    expect(api.forms[0]).toContain('cancel_at_period_end=true');
-    expect(api.forms[1]).not.toContain('cancel_at_period_end');
-  });
-
-  it('(failed before) the saved-card attach lifts that end in the same request', async () => {
-    const api = new Recording();
-    await api.setSubscriptionDefaultPaymentMethod({
-      subscriptionId: 'sub_x',
-      paymentMethodId: 'pm_own',
-      idempotencyKey: 'k3',
-    });
-    expect(api.forms).toEqual([
-      expect.stringMatching(/^(?=.*default_payment_method=pm_own)(?=.*cancel_at_period_end=false)/),
-    ]);
-  });
-
   it('(failed before) an abandoned attempt never converts on the customer default card', async () => {
     const f = setup({ trial_days: 7 });
     const out = await intent(f.svc);
