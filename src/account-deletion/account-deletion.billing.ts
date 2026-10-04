@@ -76,8 +76,9 @@ export class AccountDeletionBillingService {
    * Sol B-679-7 — subscriptions of native checkout attempts that Stripe may
    * have created but that are not bound to their row (a create that timed
    * out, or a request that died before its bind). The send itself is fenced:
-   * the checkout holds this user FOR KEY SHARE from its claim through its
-   * bind and finalization holds FOR UPDATE, so no send runs now. Stripe is
+   * the checkout holds both parties FOR KEY SHARE from its claim through its
+   * bind and finalization holds FOR UPDATE, so no send runs now. Covers
+   * attempts where the user pays (client) and where the user is paid (coach). Stripe is
    * asked for each attempt's own subscription (metadata.tgp_purchase_id,
    * created after the attempt). Fails closed: an attempt touched in the last
    * two minutes (Stripe may still be finishing its create), an unreadable or
@@ -87,20 +88,31 @@ export class AccountDeletionBillingService {
     tx: Prisma.TransactionClient,
     userId: string,
   ): Promise<string[]> {
+    // B-678-3 — the deleted user as payer (client) or payee (coach); the key
+    // carries the row's own client id.
     const rows = await tx.clientPurchase.findMany({
       where: {
-        client_user_id: userId,
+        OR: [{ client_user_id: userId }, { coach_user_id: userId }],
         billing_type: 'recurring',
         status: 'pending',
         stripe_subscription_id: null,
         stripe_customer_id: { not: null },
-        idempotency_key: { startsWith: `sub-${userId}-` },
+        idempotency_key: { startsWith: 'sub-' },
         stripe_checkout_session_id: { startsWith: 'sub-' },
       },
-      select: { id: true, stripe_customer_id: true, created_at: true, updated_at: true },
+      select: {
+        id: true,
+        client_user_id: true,
+        idempotency_key: true,
+        stripe_customer_id: true,
+        created_at: true,
+        updated_at: true,
+      },
     });
     const ids: string[] = [];
     for (const row of rows) {
+      const key = row.idempotency_key;
+      if (key && !key.startsWith(`sub-${row.client_user_id}-`)) continue;
       if (
         !this.checkoutStripe ||
         Date.now() - row.updated_at.getTime() < UNBOUND_ATTEMPT_SETTLE_MS
