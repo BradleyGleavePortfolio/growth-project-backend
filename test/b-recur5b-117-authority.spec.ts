@@ -201,13 +201,16 @@ describe('B-680-2: a decline read before a payment never reopens dunning', () =>
     expect(h.dunning.recordFailure).not.toHaveBeenCalled();
   });
 
-  it('control: the past_due update Stripe sends with the decline lands first: dunning opens once, no redelivery', async () => {
+  it('control: the past_due update Stripe sends with the decline lands first: one redelivery, then dunning opens once', async () => {
     const h = harness();
     h.setLive(sub('past_due', { latest_invoice: 'in_r' }));
     const decline = declined();
     const pre = await h.svc.prefetchForOuterTx(decline);
     await h.deliver(ev('customer.subscription.updated', sub('past_due')));
-    await expect(h.svc.handle(decline, h.prisma, pre)).resolves.toMatchObject({ claimed: true });
+    // B-680-2 (R119) — no write is exempt from the fence.
+    await expect(h.svc.handle(decline, h.prisma, pre)).rejects.toThrow(/redeliver/);
+    expect(h.dunning.recordFailure).not.toHaveBeenCalled();
+    await expect(h.deliver(decline)).resolves.toMatchObject({ claimed: true });
     expect(h.row()).toMatchObject({ status: 'past_due', entitlement_active: true, last_error: 'Your card was declined.' });
     expect(h.dunning.recordFailure).toHaveBeenCalledTimes(1);
   });

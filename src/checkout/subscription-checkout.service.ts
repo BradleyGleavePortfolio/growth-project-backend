@@ -327,23 +327,32 @@ export class SubscriptionCheckoutService {
   // ── GET /v1/checkout/subscriptions[/:id] ───────────────────────────────
 
   async listPlans(clientUserId: string): Promise<ClientPlanView[]> {
-    const rows = await this.prisma.clientPurchase.findMany({
+    // Sol B-679-11 — a client only sees real plans (unpaid abandoned attempts
+    // hidden), filtered before any limit: every live or billable plan (one per
+    // package and coach) is listed whole; only ended history is capped.
+    const base = {
+      client_user_id: clientUserId,
+      billing_type: 'recurring',
+      stripe_subscription_id: { not: null },
+    };
+    const live = await this.prisma.clientPurchase.findMany({
       where: {
-        client_user_id: clientUserId,
-        billing_type: 'recurring',
-        stripe_subscription_id: { not: null },
+        ...base,
+        OR: [
+          { entitlement_active: true },
+          { trial_started_at: { not: null } },
+          { status: { in: ['past_due', 'unpaid'] } },
+        ],
       },
+      orderBy: { created_at: 'desc' },
+    });
+    const ended = await this.prisma.clientPurchase.findMany({
+      where: { ...base, status: 'canceled', entitlement_active: false, trial_started_at: null },
       orderBy: { created_at: 'desc' },
       take: 50,
     });
-    // Hide unpaid abandoned attempts; a client only sees real plans.
-    const real = rows.filter(
-      (r) =>
-        r.entitlement_active ||
-        r.trial_started_at ||
-        r.status === 'canceled' ||
-        r.status === 'past_due' ||
-        r.status === 'unpaid',
+    const real = [...live, ...ended].sort(
+      (a, b) => b.created_at.getTime() - a.created_at.getTime(),
     );
     const pkgs = await this.packagesById(real.map((r) => r.package_id));
     return real.map((r) => planView(r, pkgs.get(r.package_id) ?? null));
@@ -1041,8 +1050,10 @@ export class SubscriptionCheckoutService {
         await this.attachTrialCardQuietly(sub.id, setup.payment_method, row.id);
         return true;
       }
-      // A default card whose SetupIntent cannot be found is never canceled.
-      return setup ? setup.status === 'processing' : !!sub.default_payment_method;
+      // Sol B-679-10 — no SetupIntent: no sheet was ever stored or handed
+      // out, so a customer default is not this attempt's consent (the
+      // enforced end stays set); the guarded end reconciles the unused trial.
+      return setup?.status === 'processing';
     }
     return !subscriptionUnpaid(sub);
   }

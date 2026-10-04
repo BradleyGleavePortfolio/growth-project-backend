@@ -117,6 +117,8 @@ describe('Sol B-679-7 account deletion finds an unbound checkout subscription', 
   const old = new Date(Date.now() - 10 * 60_000);
   const row = (over: Record<string, unknown> = {}) => ({
     id: 'pur_1',
+    client_user_id: USER,
+    idempotency_key: `sub-${USER}-k`,
     stripe_customer_id: 'cus_1',
     created_at: old,
     updated_at: old,
@@ -142,10 +144,10 @@ describe('Sol B-679-7 account deletion finds an unbound checkout subscription', 
     expect(await collect(svc, t)).toEqual(['sub_own']);
     expect(t.clientPurchase.findMany.mock.calls[0][0].where).toEqual(
       expect.objectContaining({
-        client_user_id: USER,
+        OR: [{ client_user_id: USER }, { coach_user_id: USER }],
         status: 'pending',
         stripe_subscription_id: null,
-        idempotency_key: { startsWith: `sub-${USER}-` },
+        idempotency_key: { startsWith: 'sub-' },
       }),
     );
     expect(stripe.listSubscriptionsForCustomer).toHaveBeenCalledWith('cus_1', {

@@ -86,14 +86,25 @@ function trialStartPatch(
 /** B-680-1 — Stripe never moves a subscription out of these states. */
 const STRIPE_ENDED_STATUSES = new Set(['canceled', 'incomplete_expired']);
 
-/** B-680-1 — the purchase ended (deleted, expired or retired) and grants nothing. */
+/**
+ * B-680-1 — access that no Stripe event restores: the plan ended (deleted,
+ * expired or retired) or was revoked for money (full refund, lost dispute,
+ * dispute: R-DISPUTE-PAUSE, the coach restarts access separately).
+ */
+const REVOKED_STATUSES = new Set([
+  'canceled',
+  'expired',
+  'incomplete_expired',
+  'refunded',
+  'chargeback_lost',
+  'disputed',
+]);
+
+/** B-680-1 — the purchase ended or was revoked and grants nothing, whenever read. */
 export function purchaseHasEnded(
   purchase: Pick<ClientPurchase, 'status' | 'entitlement_active'>,
 ): boolean {
-  return (
-    ['canceled', 'expired', 'incomplete_expired'].includes(purchase.status) &&
-    !purchase.entitlement_active
-  );
+  return REVOKED_STATUSES.has(purchase.status) && !purchase.entitlement_active;
 }
 
 /**
@@ -1747,12 +1758,12 @@ export class CheckoutWebhookHandlerService {
       const live: SubscriptionSnapshot = sub;
       updated = await this.activateUnderPackageLock(tx, purchase.package_id, async (client) => {
         // B-680-1 — decide on the purchase as it is under the lock: a
-        // purchase that ended while Stripe was read (or whose subscription
-        // ended) is never reopened. The money below still settles.
+        // purchase that ended or was revoked is never reopened, whenever
+        // Stripe was read. The money below still settles.
         const fresh = (await this.lockPurchase(client, purchase.id)) ?? purchase;
         wasEntitled = fresh.entitlement_active;
+        if (purchaseHasEnded(fresh)) return fresh;
         const changed = revision !== undefined && lifecycleRevision(fresh) !== revision;
-        if (purchaseHasEnded(fresh) && (changed || STRIPE_ENDED_STATUSES.has(status))) return fresh;
         const entitled = subscriptionGrantsAccess(fresh, live);
         const trial = trialStartPatch(fresh, live, entitled);
         if (changed) {
@@ -1895,19 +1906,16 @@ export class CheckoutWebhookHandlerService {
       return { claimed: true, purchase_id: purchase.id, reason: 'invoice_superseded' };
     }
     // B-680-2 — Stripe sends the final decline and the deletion together: a
-    // deletion that committed after the read above is never reopened. A write
-    // after the invoice read (a payment, a revocation) supersedes that read:
-    // read again (redeliver). The one exception is the write that moved the
-    // plan into past_due (the customer.subscription.updated Stripe sends with
-    // a renewal's first decline). A plan already past_due at the read gets no
-    // exception: a payment of this invoice that leaves the subscription
-    // past_due on another invoice also writes past_due.
-    const enteredPastDue = (fresh: ClientPurchase) =>
-      fresh.status === 'past_due' && authority?.purchaseStatus !== 'past_due';
+    // deletion that committed after the read above is never reopened. Any
+    // write after the invoice read supersedes that read: read again
+    // (redeliver). No write is exempt: a status cannot show which invoice
+    // moved the plan (the past_due update Stripe sends with this decline,
+    // or a payment of this invoice that leaves another one unpaid), so the
+    // paired update costs one redelivery, never a decline of a paid invoice.
     const updated = await this.activateUnderPackageLock(tx, purchase.package_id, async (client) => {
       const fresh = await this.lockPurchase(client, purchase.id);
       if (!fresh || purchaseHasEnded(fresh)) return null;
-      if (authority && writeVersion(fresh) !== authority.version && !enteredPastDue(fresh)) {
+      if (authority && writeVersion(fresh) !== authority.version) {
         throw new WebhookRedeliverError(
           `invoice.payment_failed: purchase=${fresh.id} changed after the invoice read; redeliver`,
         );
@@ -1915,7 +1923,9 @@ export class CheckoutWebhookHandlerService {
       return client.clientPurchase.update({
         where: { id: purchase.id },
         data: {
-          status: 'past_due',
+          // C-680-11 — a decline never downgrades unpaid (access already
+          // ended) to past_due.
+          status: fresh.status === 'unpaid' ? 'unpaid' : 'past_due',
           // Entitlement is retained during past_due — same as SaaS billing —
           // until Stripe ultimately cancels the subscription, which fires
           // customer.subscription.deleted.
