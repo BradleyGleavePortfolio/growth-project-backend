@@ -152,15 +152,16 @@ export interface ChargeRefundList {
 /**
  * Every refund on a charge, read from Stripe to the last page. Only a page that says
  * has_more=false ends the list; a malformed page or refund, has_more=true without an advancing
- * cursor, or the page cap is RefundStateUnavailableError (retryable; nothing moves).
+ * cursor, or the page cap is RefundStateUnavailableError (retryable; nothing moves). With no
+ * settlement currency (an identity read: ids, statuses, client amounts) no debit is read.
  */
 export async function chargeRefundsFromStripe(
   stripe: StripeConnectApiService,
   chargeId: string,
-  settlementCurrency: string,
+  settlementCurrency: string | null,
 ): Promise<ChargeRefundList> {
   type RefundPage = Awaited<ReturnType<StripeConnectApiService['listChargeRefunds']>>;
-  const cur = settlementCurrency.toLowerCase();
+  const cur = settlementCurrency?.toLowerCase() ?? null;
   const unavailable = (kind: string) => new RefundStateUnavailableError(chargeId, `kind=${kind}`);
   const list: ChargeRefundList = {
     refunds: [],
@@ -185,15 +186,15 @@ export async function chargeRefundsFromStripe(
       }
       const cents = Math.max(0, amount as number);
       let debit: number | null = null;
-      if (r.status === 'succeeded') {
+      if (r.status === 'succeeded' && cur) {
         const bt = r.balance_transaction as StripeBalanceTransactionObject | null | undefined;
         if (currency === cur) debit = cents;
         else if (Number.isSafeInteger(bt?.amount) && bt?.currency?.toLowerCase() === cur) {
           debit = Math.max(0, -(bt?.amount ?? 0));
         } else throw unavailable('refund_balance_transaction_missing');
         list.succeeded_debit_cents += debit;
-        list.succeeded_client_cents += cents;
       }
+      if (r.status === 'succeeded') list.succeeded_client_cents += cents;
       list.refunds.push({
         id: r.id,
         status: r.status,
