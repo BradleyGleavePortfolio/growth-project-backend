@@ -36,6 +36,7 @@ describe('Opus B-679-8 a trial converts only on the attempt’s own saved card',
       subscriptionId: 'sub_x',
       paymentMethodId: 'pm_own',
       idempotencyKey: 'k3',
+      liftTrialEnd: true,
     });
     expect(api.forms).toEqual([
       expect.stringMatching(/^(?=.*default_payment_method=pm_own)(?=.*cancel_at_period_end=false)/),

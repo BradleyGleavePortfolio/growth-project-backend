@@ -166,3 +166,12 @@ export function planChangeUnconfirmed(): HttpException {
     message: `The change to this plan was sent, but the payment service has not confirmed it yet. Refresh Your plan in a minute, and choose Keep plan again if it still shows an end date. If it keeps happening, contact support at ${SUPPORT_EMAIL}.`,
   });
 }
+
+/** The client's account is gone (never found, or deleted while this request ran). */
+export function clientNotFound(): HttpException {
+  return new NotFoundException({
+    code: 'CLIENT_NOT_FOUND',
+    error: 'CLIENT_NOT_FOUND',
+    message: 'Your account was not found. Sign out and sign back in, then try again.',
+  });
+}
