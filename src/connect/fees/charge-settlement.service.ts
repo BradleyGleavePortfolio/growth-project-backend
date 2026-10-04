@@ -2123,14 +2123,14 @@ export class ChargeSettlementService {
   private async markAwaiting(
     row: ChargeSettlement,
     chargeId: string,
-    message: string,
+    diagnostic: string,
   ): Promise<SettleOutcome> {
     await this.prisma.chargeSettlement.updateMany({
       where: { id: row.id, status: 'awaiting_fee' },
-      data: { last_error: message },
+      data: { last_error: diagnostic },
     });
-    this.logger.warn(`settleCharge waiting charge=${chargeId}: ${message}`);
-    return this.outcome('awaiting_fee', chargeId, row.id, message);
+    this.logger.warn(`settleCharge waiting charge=${chargeId}: ${diagnostic}`);
+    return this.outcome('awaiting_fee', chargeId, row.id, diagnostic);
   }
 
   private async attemptPendingTransfers(settlementId: string, chargeId: string): Promise<void> {

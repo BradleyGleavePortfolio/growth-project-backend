@@ -212,7 +212,8 @@ export class PayoutNoticeService {
         where: { id: n.id, dispatched_at: null, dispatch_claimed_at: claimedAt },
         data: { dispatch_claimed_at: claimedAt },
       });
-      const sendBy = claimedAt.getTime() + PAYOUT_NOTICE_CLAIM_TTL_MS - PAYOUT_NOTICE_SEND_MARGIN_MS;
+      const sendBy =
+        claimedAt.getTime() + PAYOUT_NOTICE_CLAIM_TTL_MS - PAYOUT_NOTICE_SEND_MARGIN_MS;
       return fence.count === 1 && !pastDeadline(deadlineAt) && Date.now() < sendBy;
     };
     const stop = async (): Promise<false> => {
@@ -270,15 +271,17 @@ export class PayoutNoticeService {
     }
     if (push.stopped) return stop();
     if (!EMAIL_DONE.has(row.email_status) && !(await canSend())) return stop();
-    const email: ChannelResult = EMAIL_DONE.has(row.email_status)
+    const mailOutcome: ChannelResult = EMAIL_DONE.has(row.email_status)
       ? { status: row.email_status }
       : await this.deliverEmail(row, claimedAt, canSend);
-    if (email.stopped) return stop();
-    if (email.status !== row.email_status) {
-      await this.saveChannel(row.id, { email_status: email.status });
+    if (mailOutcome.stopped) return stop();
+    if (mailOutcome.status !== row.email_status) {
+      await this.saveChannel(row.id, { email_status: mailOutcome.status });
     }
     const failed =
-      !INAPP_DONE.has(inapp.status) || !PUSH_DONE.has(push.status) || !EMAIL_DONE.has(email.status);
+      !INAPP_DONE.has(inapp.status) ||
+      !PUSH_DONE.has(push.status) ||
+      !EMAIL_DONE.has(mailOutcome.status);
     // A channel that is not done leaves the notice undelivered (the claim
     // expires and the sweeper retries only that channel, up to
     // PAYOUT_NOTICE_MAX_ATTEMPTS); the Money page shows it either way.
@@ -291,7 +294,7 @@ export class PayoutNoticeService {
     }
     if (failed && finalAttempt) {
       this.logger.error(
-        `SFEE_NOTICE_UNDELIVERED alert=true notice=${row.id} payee=${row.payee_user_id} inapp=${inapp.status} push=${push.status} email=${email.status}: gave up after ${PAYOUT_NOTICE_MAX_ATTEMPTS} attempts; the payee still sees it on the Money page`,
+        `SFEE_NOTICE_UNDELIVERED alert=true notice=${row.id} payee=${row.payee_user_id} inapp=${inapp.status} push=${push.status} email=${mailOutcome.status}: gave up after ${PAYOUT_NOTICE_MAX_ATTEMPTS} attempts; the payee still sees it on the Money page`,
       );
     }
     return !failed;
