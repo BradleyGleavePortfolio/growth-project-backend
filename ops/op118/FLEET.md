@@ -21,9 +21,9 @@ AUD-SOL-H23-118   aud_sol_h23_118_health_connect_lens_muu2k7wi sol m#360 m#361  
 AUD-OPUS-H23-118  aud_opus_h23_118_health_connect_lens_muu2nrcd opus m#360 m#361 launched 10:06 [DONE: m#360 APPROVE 0/0/3 5982484127; m#361 APPROVE 0/0/2 5982484292]
 AUD-SOL-H45-118   aud_sol_h45_118_health_connect_lens_muu2nrck sol m#362 m#363 launched 10:06 [DONE: m#362 RC 0/4/1 5982471782; m#363 APPROVE 0/0/1 5982471986]
 AUD-OPUS-H45-118  aud_opus_h45_118_health_connect_lens_muu2szmk opus m#362 m#363 launched 10:11 [DONE: m#362 RC 0/2/4 5982561308; m#363 APPROVE 0/0/1 5982569167]
-B-PRIVFU2-118     b_privfu2_118_700_m_368_round_muu31d1l  opus  #700 m#368  launched 10:17
+B-PRIVFU2-118     b_privfu2_118_700_m_368_round_muu31d1l  opus  #700 m#368  launched 10:17 [DONE 11:13: READY #700 5e3dabb0 (2,012), m#368 fdfecc47]
 B-TR3-118         b_tr3_118_trials_round_muu33q2v         opus  #672 #673  launched 10:19 [DONE 10:55: READY #672 2690c07c (2,961), #673 5fdb5f5c (2,887); late-clock probe replay with one read-stub line accepted]
-B-DUNA-118        b_duna_118_dunning_d1_d2_round_muu345cb opus #687 #688 launched 10:20
+B-DUNA-118        b_duna_118_dunning_d1_d2_round_muu345cb opus #687 #688 launched 10:20 [DONE 11:20: READY #687 38d9b3ab (2,974), #688 2368d5fa (2,976)]
 AUD-OPUS-H6-118   aud_opus_h6_118_health_connect_lens_muu345cj opus m#364 launched 10:20 [DONE: m#364 RC 0/2/4 5982643511]
 AUD-SOL-H6-118    aud_sol_h6_118_health_connect_lens_muu345cq sol m#364 launched 10:20 [DONE: m#364 RC 0/1/1 5982566404]
 AUD-OPUS-SH-118   aud_opus_sh_118_payment_sheet_lens_muu36hwo opus m#342 m#343 launched 10:22 [DONE: m#342 APPROVE 0/0/5 5982679049; m#343 RC 0/1/5 5982679186 B-343-6 claimFree saleKind]
@@ -35,5 +35,7 @@ AUD-OPUS-CM-118   aud_opus_cm_118_coach_money_lens_muu3ksxn opus #674 #676 launc
 AUD-SOL-CM-118    aud_sol_cm_118_coach_money_lens_muu3ksy1 sol #674 #676 launched 10:33 [DONE: #674 RC 0/2/2 5982716289 (B-674-13 stale send-time idempotency retention; B-674-14 incomplete Stripe pagination authorizes another reversal); #676 RC 0/1/1 5982716659 (B-676-5 never-billed trial counted as MRR after first invoice fails)]
 DRAIN to 5 from 10:32 (owner). Running 14 at 10:32.
 AUD-OPUS-F23-118  (launched 10:56, opus, #682 #683) [DONE: #682 APPROVE 0/0/3 5982917037; #683 APPROVE 0/0/4 5982917163]
-AUD-SOL-F23-118   (launched 11:03, sol, #682 #683)
+AUD-SOL-F23-118   (launched 11:03, sol, #682 #683) [DONE: #682 APPROVE 0/0/0 5982935646; #683 RC 0/2/2 5982960241]
 B-RECUR6B-118     (launched 11:11, opus, #680 + restack #696 #701)
+AUD-SOL-PV3-118   (launched 11:13, sol, #700 m#368)
+AUD-OPUS-PV3-118  (launched 11:18, opus, #700 m#368)

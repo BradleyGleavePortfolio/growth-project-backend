@@ -42,3 +42,7 @@
 - Trials Cs (B-TR3-118): C-672-11, C-672-10, Opus C-673-2, Opus C-673-1, carried C-672-3/5/6b; C-673-3 on the #680 list.
 - Coach Cs (Opus CM): C-674-12 (new), C-674-6/7/8/9/11, C-676-6, carried C-641-2 / C-676-1. Decisions on default: fix B-674-13/14 in #674 and B-676-5 in #676 now (export BILLED_WHERE for C-673-3).
 - C-683-7 (Opus F23 P4): notice write + flag write both fail -> webhook 2xx, nothing retries (money correct). charge-settlement.service.ts:1388-1393, :1672-1675. Fix in the first fees round after the freeze (~6 lines in F3, P4 failing-before).
+- Privacy (B-PRIVFU2-118): 306 older exception-text log calls in 141 files (shrink-only baseline) -> separate mechanical PR; first person remains in other backend/mobile copy; legal pages keep 'we/our' (operator default; mention to owner).
+- Fees Cs (Sol F23): booked-versus-actual cash; incomplete invoice cursor.
+- Dunning Cs (B-DUNA-118): C-688-9 lock order; pinned Roman push + lockout copy still claims attempts/settlement (separate PR before FEATURE_DUNNING_V2 on); 160-char blocker cut; dispute blocker links to card screen; no recorded dispute amount; raw provider text in logs/stored reason. C-688-10 deviation: coach email says "open Clients, then {clientName}" (https link would not open the app). B-DUNB: pass dispute event time as closedAt in D4.
+- OWNER DECISION to present: a dispute on a paid recurring plan that never failed opens no dunning cycle today (no binding ruling). Default: a dispute on any paid recurring plan opens the compressed cycle.

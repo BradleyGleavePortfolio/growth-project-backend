@@ -1,0 +1,7 @@
+R75 b644198b90bb9ab1dc62a78794e12cf09f8ace7c b002ec21583e4e7053deacbe064e2c35f0f2865d; policy=b002ec21583e4e7053deacbe064e2c35f0f2865d:.github/r75-policy.json
+Counts are whole-file after (+) and before (-); net is the per-class change.
+as any: +69 -83 net -14
+as unknown as: +9 -9 net 0
+as never: +60 -60 net 0
+empty-catch-undefined: +1 -1 net 0
+OK — no positive token change

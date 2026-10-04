@@ -330,6 +330,34 @@ B-RECUR6A FIX ROUND 6; 2,529 lines), #696 5225e0789befdfa55a49f2381d3e11ebc02565
 5. FIX ROUND + READY on #680; merge-only restack #696 and #701 with READY (restack) comments (new tests go to #696/#701 if #680 nears
    3,000). Write notify/recur.txt "recur top: #701 @ <sha> (B-RECUR6B-118, <time>)"; release the lock. Report: ops/reports/B-RECUR6B-118.md.
 
+## AUD-OPUS-PV3-118 / AUD-SOL-PV3-118 — privacy follow-ups backend #700 + mobile #368 (T4: PII in logs, public privacy copy)
+Heads: backend #700 5e3dabb0d0b9adc3ecf53c06f7bccf11852745fb (base main; 2,012 lines, operator SIZE ASSESSMENT KEEP), mobile #368
+fdfecc47a4ff8a65bf1cd8f6a26f1c2a34c88c45 (base main). B-PRIVFU2-118 FIX ROUND 2 / FIX ROUND 1 + READY (#700 5982863868, m#368
+5982922216); report ops/reports/B-PRIVFU2-118.md (verify every claim). Findings to check closed: #700 Sol RC 0/2/1 (5982324455) and
+Opus RC 0/2/5 (5982447222: B-700-1 coach full name in coach-brief.service.ts:1482-1511 that the guard missed; B-700-2 emails via
+auth.service.ts:879/:1474 Supabase error text and finance-admin.client.ts:166-167 URL path); m#368 Sol RC 0/1/0 (mobile 5982340884) and
+Opus RC 0/1/3 (5982447325: B-368-1 Apple note promises an outcome card that never appears when the provider is unknown; first person
+and "Apple ID" copy). Replay both lenses' probes (ops/aud-118/AUD-OPUS-FU2-118/probes/, ops/aud-118/AUD-SOL-FU2-118/). Check the log
+guard catches the probe shapes and that its 306-call baseline can only shrink. The mobile copy and the live backend policy text must say
+the same thing. Out of scope (operator): Opus C-700-1 (needs a migration), C-700-4 (calorie values), legal pages' first person.
+Both PRs merge as soon as dual APPROVE + green (independent of the stacks). Reports: ops/reports/AUD-OPUS-PV3-118.md, AUD-SOL-PV3-118.md.
+
+## B-FEES16-118 (builder, Claude Opus 5.5, T4: fees — JOB ONE) — F3 #683 (+ merge-only restack F4 #684 -> F4b #697 -> F5 #685 -> F6 #686)
+Heads: #682 70f879a2 (DUAL APPROVE: Opus 5982917037, Sol 5982935646; do not touch), #683 438d29e64f24e6f803a578dae56e0140a44d1c52
+(2,835 lines; 165 headroom), #684 bbf2eac6, #697 1807d4cc (operator FR16 R75 fix), #685 b62eebe1, #686 b002ec21. Take lock `fees`.
+#683: Opus APPROVE 0/0/4 (5982917163). Sol RC 0/2/2 (5982960241):
+- B-683-7: if the notice write and the retry-flag write both fail, the webhook still answers 2xx and nothing retries (Opus rated it C;
+  Opus probe P4 proves it: charge-settlement.service.ts:1388-1393 and :1672-1675). Fix: fail the delivery (non-2xx) or keep durable retry
+  authority so a later sweep or Stripe redelivery completes it; never both silent.
+- B-683-8: terminal dispute intent is lost during retry (Sol's acceptance cases). Fix so a retry keeps the terminal intent.
+Replay Sol's retained probe (ops/aud-118/AUD-SOL-F23-118/) and Opus's P4 (ops/aud-118/AUD-OPUS-F23-118/audit-opus-f23-118-683.spec.ts) as
+failing-before tests. New tests go to F4b #697 or F5/F6 spec PRs if #683 would pass 3,000 (byte-identical moves, add after the merge).
+#683 stays red by design with exactly the named fixture failures that F4 carries; say so with the run. R75 range check clean from
+b644198b at F3 and at #686. Sol Cs (booked-versus-actual cash, incomplete invoice cursor) and the carried Cs go to your report.
+Then merge-only restack #684 -> #697 -> #685 -> #686 with FIX ROUND (restack) + READY comments at green heads. Do NOT touch recurring
+(#678-#701): the operator restacks it after you. Write notify/fees.txt "fees top: #686 @ <sha> (B-FEES16-118, <time>)"; release the
+lock. Report: ops/reports/B-FEES16-118.md.
+
 ## QUEUED (operator launches as slots free; STOP-AND-DRAIN: hold 5 concurrent since 10:32 PDT; strict order)
 1. AUD-OPUS-F23-118 + AUD-SOL-F23-118 (entry above).
 2. [LAUNCHED 11:1x] B-RECUR6B-118: #680 + #696/#701 (B-RECUR6A done 10:36; R2 top #679 8bbf4a41; its handoff notes: one #680 test needs
@@ -345,7 +373,7 @@ serialization, unpaid grace, failure/cancel race, acknowledged persistence failu
 client-billing.service.ts:323-330 reversed amount from the last failed renewal, not the disputed charge; minimal fix show no amount, probe
 P3 failing-before) and APPROVE #690 0/0/3 (5982575812). Same-line Cs: C-690-6 lock-order inversion checkout-webhook-handler:891-904 (same
 as Sol lock order B), C-690-7 payment-failed check/write not atomic (same as Sol failure/cancel race). Others to report: C-689-3, C-689-4,
-C-690-5, C-690-2 (Sol). Restack on B-DUNA's D2 top first. Then dunning lens pairs on D1-D4 + D5 (#691 + #642).
+C-690-5, C-690-2 (Sol). Restack on B-DUNA's D2 top first (#688 2368d5fa, notify/dunning.txt); B-DUNA closed Opus D34's three D2-level Bs and checked W0-W4 probes on throwaway merges; pass the dispute's event time as closedAt in D4. Then dunning lens pairs on D1-D4 + D5 (#691 + #642).
 9. Lens pairs: trials after B-TR3; privacy after B-PRIVFU2; HC after B-HC4; lockout m#352+m#353 (B-LOCK READY) then m#354; wizard
    m#345+m#346 then #347 + W3 fix round; coach M4 #677; dunning D1-D4 + D5 (#691 + #642).
 10. Remainder: programs #355-#358, N1-N4.
