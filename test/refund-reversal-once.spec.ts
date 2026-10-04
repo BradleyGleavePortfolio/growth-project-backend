@@ -31,6 +31,7 @@ function store(): StatefulPrisma {
     transfer_reversed: false,
   }));
   db.model('splitLedgerEntry');
+  db.model('splitLedgerReversal', [['id'], ['entry_id', 'source_kind', 'source_id']]);
   db.model('connectTransfer');
   db.model('connectAccount', [['id'], ['coach_user_id']]);
   db.model('guestCheckout');
@@ -70,7 +71,10 @@ function store(): StatefulPrisma {
     created_at: at,
     updated_at: at,
   });
-  db.state.splitLedgerEntry.push(slice('destination', 4802, COACH), slice('application_fee', 98, null));
+  db.state.splitLedgerEntry.push(
+    slice('destination', 4802, COACH),
+    slice('application_fee', 98, null),
+  );
   // A pending partial refund (USD 24.50 of 49.00) that completes later.
   db.state.chargeRefund.push({
     id: 'refund-1',
@@ -121,7 +125,11 @@ function harness(): Harness {
     }
     return { id: `trr_${args.idempotencyKey}` };
   });
-  const transfers = Reflect.construct(TransferOrchestratorService, [db, { reverseTransfer }, ledger]);
+  const transfers = Reflect.construct(TransferOrchestratorService, [
+    db,
+    { reverseTransfer },
+    ledger,
+  ]);
   const alerts = jest.fn(async () => undefined);
   const svc = Reflect.construct(RefundDisputeHandlerService, [
     db,
@@ -242,9 +250,10 @@ describe('B-641-7 — one refund, one reversal', () => {
 
   it('a stop between Stripe and the local record is recovered without a second reversal', async () => {
     const h = harness();
-    const originalUpdate = h.db.connectTransfer.update.bind(h.db.connectTransfer);
+    // B-674-1: the reversal write is a compare-and-set updateMany.
+    const originalUpdate = h.db.connectTransfer.updateMany.bind(h.db.connectTransfer);
     let failNext = true;
-    h.db.connectTransfer.update = async (...args: unknown[]) => {
+    h.db.connectTransfer.updateMany = async (...args: unknown[]) => {
       if (failNext) {
         failNext = false;
         throw new Error('process stopped');
@@ -266,9 +275,10 @@ describe('B-641-7 — one refund, one reversal', () => {
 
   it('a stop inside the ledger reversal rolls the claim back so the redelivery applies it once', async () => {
     const h = harness();
-    const originalUpdate = h.db.splitLedgerEntry.update.bind(h.db.splitLedgerEntry);
+    // B-674-1: the reversal write is a compare-and-set updateMany.
+    const originalUpdate = h.db.splitLedgerEntry.updateMany.bind(h.db.splitLedgerEntry);
     let failNext = true;
-    h.db.splitLedgerEntry.update = async (...args: unknown[]) => {
+    h.db.splitLedgerEntry.updateMany = async (...args: unknown[]) => {
       if (failNext) {
         failNext = false;
         throw new Error('process stopped');
@@ -285,6 +295,42 @@ describe('B-641-7 — one refund, one reversal', () => {
     expect(headCoach(h.db)).toBe(122);
     expect(h.alerts).toHaveBeenCalledTimes(1);
   });
+
+  // B-674-3: transfer.reversed lands before the record on the webhook and
+  // admin completion paths; the reversal is recorded once and its id bound.
+  it.each(['charge.refund.updated', 'admin refund'])(
+    'B-674-3: %s, webhook first, records 122 once',
+    async (path) => {
+      const h = harness();
+      const provider = h.reverseTransfer.getMockImplementation()!;
+      h.reverseTransfer.mockImplementation(async (args) => {
+        const receipt = await provider(args);
+        const object = { id: 'tr_synthetic', amount_reversed: stripeTotal(h), reversed: false };
+        await h.svc.handle({ id: 'evt_rev', type: 'transfer.reversed', data: { object } });
+        return receipt;
+      });
+      if (path === 'admin refund') {
+        Reflect.get(h.svc, 'stripe').createRefund = async () => ({
+          id: 're_1',
+          amount: 2450,
+          status: 'succeeded',
+        });
+        await h.svc.createAdminRefund({
+          purchase_id: 'p-1',
+          amount_cents: 2450,
+          initiated_by_user_id: 'owner-1',
+        });
+      } else {
+        await h.svc.handle(refundUpdated);
+      }
+      expect([stripeTotal(h), headCoach(h.db)]).toEqual([122, 122]);
+      expect(refundRow(h.db)).toMatchObject({
+        transfer_reversed: true,
+        transfer_reversal_amount_cents: 122,
+        transfer_reversal_stripe_id: `trr_${refundTransferReversalKey('refund-1')}`,
+      });
+    },
+  );
 
   it('outside the Stripe idempotency window the sweep reports instead of reversing again', async () => {
     const h = harness();

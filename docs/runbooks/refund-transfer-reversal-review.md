@@ -17,7 +17,8 @@ refund (fingerprint `refund-transfer-reversal-review` + the refund id). Extra fi
 ## Runbook line
 
 Within one business day: `GET /v1/admin/payments/refund-reversals/review` (owner), then for each row
-`POST /v1/admin/payments/refund-reversals/<charge_refund_id>/reconcile` with an empty body. Stripe is the truth:
+`POST /v1/admin/payments/refund-reversals/<charge_refund_id>/reconcile` with an empty body. Both routes take the owner's
+Supabase JWT as the bearer (the owner-console service token is refused). Stripe is the truth:
 
 | Response `outcome` / `code`                      | Meaning                                                                                                                                              | Next action                                                                                                                                                                                                                                           |
 | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -30,6 +31,11 @@ Within one business day: `GET /v1/admin/payments/refund-reversals/review` (owner
 | 409 `TRANSFER_REVERSAL_UNDERSIZED`               | The reversal is smaller than this refund's head-coach share (`reversal_amount_cents` < `owed_cents`). Nothing was recorded; the row stays in review. | Escalate to engineering with the refund id and both amounts. Do not reverse the rest by hand.                                                                                                                                                         |
 | 422 `TRANSFER_REVERSAL_NOT_FOUND`                | No reversal with that id on this transfer.                                                                                                           | Copy the id again from the Dashboard.                                                                                                                                                                                                                 |
 | 409 `REFUND_TRANSFER_REVERSAL_NOT_IN_REVIEW`     | The row is still inside the automatic window.                                                                                                        | Wait; the sweep owns it.                                                                                                                                                                                                                              |
+| 503 `RECONCILE_STRIPE_UNAVAILABLE`               | Stripe did not answer (listing the reversals or sending the new one). Nothing was recorded.                                                          | Reconcile the same row again; if Stripe made the reversal, the retry finds it and records it once.                                                                                                                                                    |
 
 Never reverse a head-coach transfer by hand in the Dashboard for a row in review without recording it here afterwards
 (`stripe_transfer_reversal_id`), or the books and Stripe disagree. Never reverse any other transfer of that coach (OR-111-1).
+
+The `transfer.reversed` webhook never changes the recorded totals. When Stripe's total on a transfer is higher than what
+the backend recorded, it logs `TRANSFER_REVERSAL_NOT_YET_RECORDED` with the transfer id and both totals: a reversal still
+being recorded (the sweep or this runbook settles it) or one made by hand in the Dashboard (record it here).

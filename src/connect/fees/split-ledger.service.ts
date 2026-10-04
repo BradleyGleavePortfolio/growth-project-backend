@@ -3,6 +3,27 @@ import type { ClientPurchase, Prisma, SplitLedgerEntry } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import type { SplitPlan } from './fee-policy.service';
 
+// B-674-1: compare-and-set attempts for one slice reversal before giving up.
+export const LEDGER_REVERSAL_CAS_ATTEMPTS = 8;
+
+// B-676-1: the refund or lost chargeback a reversal posting belongs to.
+export interface LedgerReversalSource {
+  kind: 'refund' | 'dispute';
+  /** ChargeRefund.id or ChargeDispute.id. */
+  id: string;
+  /** When the event took the money back (the Money window it reports in). */
+  at: Date;
+}
+
+// Closed code only: the slice id, never row contents.
+export class LedgerWriteConflictError extends Error {
+  readonly code = 'LEDGER_REVERSAL_WRITE_CONFLICT';
+  constructor(readonly entryId: string) {
+    super(`LEDGER_REVERSAL_WRITE_CONFLICT entry=${entryId}`);
+    this.name = 'LedgerWriteConflictError';
+  }
+}
+
 // SplitLedgerService — append-only ledger of every dollar slice that a
 // purchase produces. Three kinds:
 //
@@ -123,32 +144,62 @@ export class SplitLedgerService {
   // status=reversed.
   // `db` lets a caller apply the reversal inside its own transaction, next to
   // the claim that makes it happen exactly once (B-641-7).
+  // B-674-1 (B-CM1-116): compare-and-set on the reversed_cents read, so a
+  // concurrent reversal of another refund is added to, never overwritten; a
+  // lost race re-reads; exhaustion throws and rolls the caller's claim back.
+  // B-676-1: with `source` (pass a transaction client) the event's cents are
+  // posted to SplitLedgerReversal in the same transaction, once per slice.
   async applyReversal(
     args: {
       entry_id: string;
       reversed_cents: number;
       stripe_transfer_id?: string | null;
+      source?: LedgerReversalSource;
     },
     db: Prisma.TransactionClient = this.prisma,
   ): Promise<SplitLedgerEntry> {
-    const current = await db.splitLedgerEntry.findUniqueOrThrow({
-      where: { id: args.entry_id },
-    });
-    const newReversed = Math.min(
-      current.amount_cents,
-      current.reversed_cents + args.reversed_cents,
-    );
-    const fullyReversed = newReversed >= current.amount_cents;
-    return db.splitLedgerEntry.update({
-      where: { id: args.entry_id },
-      data: {
+    const source = args.source;
+    if (source) {
+      const posted = await db.splitLedgerReversal.findFirst({
+        where: { entry_id: args.entry_id, source_kind: source.kind, source_id: source.id },
+      });
+      if (posted) return db.splitLedgerEntry.findUniqueOrThrow({ where: { id: args.entry_id } });
+    }
+    for (let attempt = 0; attempt < LEDGER_REVERSAL_CAS_ATTEMPTS; attempt++) {
+      const current = await db.splitLedgerEntry.findUniqueOrThrow({
+        where: { id: args.entry_id },
+      });
+      const newReversed = Math.min(
+        current.amount_cents,
+        current.reversed_cents + Math.max(0, args.reversed_cents),
+      );
+      const fullyReversed = newReversed >= current.amount_cents;
+      const data = {
         reversed_cents: newReversed,
         status: fullyReversed ? 'reversed' : current.status,
-        reversed_at: fullyReversed ? new Date() : current.reversed_at,
-        stripe_transfer_id:
-          args.stripe_transfer_id ?? current.stripe_transfer_id ?? undefined,
-      },
-    });
+        reversed_at: fullyReversed ? (current.reversed_at ?? new Date()) : current.reversed_at,
+        stripe_transfer_id: args.stripe_transfer_id ?? current.stripe_transfer_id,
+      };
+      const won = await db.splitLedgerEntry.updateMany({
+        where: { id: args.entry_id, reversed_cents: current.reversed_cents },
+        data,
+      });
+      if (won.count !== 1) continue;
+      const cents = newReversed - current.reversed_cents;
+      if (source && cents > 0) {
+        await db.splitLedgerReversal.create({
+          data: {
+            entry_id: args.entry_id,
+            source_kind: source.kind,
+            source_id: source.id,
+            cents,
+            posted_at: source.at,
+          },
+        });
+      }
+      return { ...current, ...data };
+    }
+    throw new LedgerWriteConflictError(args.entry_id);
   }
 
   async findByPurchase(

@@ -458,6 +458,9 @@ describe('RefundDisputeHandlerService dispute-lost × cancelPendingForPurchase',
         }),
       },
       clientPurchase: {
+        // B-676-1: the dispute's ledger reversal now runs in a transaction.
+        findUnique: async (q: { where: { id: string } }) =>
+          purchases.find((p) => p.id === q.where.id) ?? null,
         update: jest.fn(async ({ where, data }: any) => {
           const row = purchases.find((p) => p.id === where.id);
           if (!row) throw new Error('not found');
