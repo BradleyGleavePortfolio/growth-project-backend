@@ -700,6 +700,26 @@ describe('PackagesService', () => {
   });
 
   describe('B1: combo min/max error copy', () => {
+    // #627 round 6 (mobile #321 C-321-7): $0 is free on one-time packages
+    // only, so the recurring floor copy never offers "make it free".
+    it('a recurring package under $19.99 is never offered $0', async () => {
+      const err = await svc
+        .create('coach-1', {
+          name: 'p',
+          amount_cents: 1000,
+          billing_type: 'recurring',
+          interval: 'month',
+        })
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect((err as BadRequestException).getResponse()).toEqual({
+        error: 'PACKAGE_PRICE_BELOW_MINIMUM',
+        code: 'PACKAGE_PRICE_BELOW_MINIMUM',
+        message: 'Recurring packages start at $19.99.',
+        minimum_cents: 1999,
+      });
+    });
+
     it('primary minimum copy is specific when there is no recurring companion', async () => {
       const err = await svc
         .create('coach-1', { name: 'p', amount_cents: 10 })

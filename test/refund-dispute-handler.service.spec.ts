@@ -102,7 +102,12 @@ function makePrismaStub() {
         return { ...row };
       }),
     },
+    // No reversal operation is written before the first head-coach reversal.
+    transferReversalOp: { findUnique: jest.fn(async () => null) },
     connectTransfer: {
+      findMany: jest.fn(async ({ where = {} }: any) =>
+        transfers.filter((t) => Object.entries(where).every(([k, v]) => t[k] === v)),
+      ),
       findFirst: jest.fn(async ({ where = {} }: any) =>
         transfers.find((t) =>
           Object.entries(where).every(([k, v]) => t[k] === v),

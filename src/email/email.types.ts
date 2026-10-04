@@ -26,6 +26,8 @@ export const EmailTemplateKey = {
   PAYMENT_REMINDER_URGENT: 'payment-reminder-urgent',
   PAYMENT_FINAL_NOTICE: 'payment-final-notice',
   PAYMENT_RECOVERED: 'payment-recovered',
+  // S-FEE round 5 (OR-111-1) — refund / chargeback payout notice to a coach.
+  COACH_PAYOUT_ADJUSTMENT: 'coach-payout-adjustment',
 } as const;
 export type EmailTemplateKey =
   (typeof EmailTemplateKey)[keyof typeof EmailTemplateKey];
@@ -49,6 +51,9 @@ export interface SendEmailInput {
   from?: string;
   // Optional reply-to header; falls back to provider default if unset.
   replyTo?: string;
+  // Optional cancellation: checked before the send-log row, again right before the transport,
+  // and passed to the provider request. An abort before the transport returns notStarted.
+  signal?: AbortSignal;
 }
 
 export interface SendEmailResult {
@@ -64,4 +69,6 @@ export interface SendEmailResult {
   // message, which can hold an address or a name). Safe to surface up to
   // the operator.
   error?: string;
+  // True when input.signal aborted before the provider was called: nothing was sent.
+  notStarted?: boolean;
 }

@@ -89,11 +89,12 @@ function loseFirstAnswer(h: ReturnType<typeof harness>) {
 }
 
 describe('B-674-5 / B-674-10 — a lost chargeback reverses the head-coach share once and records it once', () => {
-  it('a lost Stripe answer is recorded by the redelivery from Stripe, with no second request', async () => {
+  it('a lost Stripe answer is recorded from Stripe\'s reversal list, with no second request', async () => {
     const h = lostDispute();
     loseFirstAnswer(h);
+    // The reversal operation finds Stripe's reversal by its key at once.
     await h.svc.handle(h.closed());
-    expect(h.state()).toEqual({ stripe: 245, transfer: 0, slice: 0, postings: [] });
+    expect(h.state()).toEqual({ stripe: 245, transfer: 245, slice: 245, postings: [245] });
     expect(h.dispute()).toMatchObject({ ledger_reversed: true, transfer_reversal_amount_cents: 245 });
     await h.svc.handle(h.closed('evt_d_again'));
     await h.svc.retryPendingTransferReversals();
@@ -133,8 +134,8 @@ describe('B-674-5 / B-674-10 — a lost chargeback reverses the head-coach share
     await h.svc.retryPendingTransferReversals();
     expect(h.state()).toEqual({ stripe: 122, transfer: 122, slice: 122, postings: [122] });
     expect(
-      h.reverseTransfer.mock.calls.map(([a]) => [a.idempotencyKey, a.amount, a.metadata?.tgp_charge_dispute_id]),
-    ).toEqual(Array(3).fill(['tgp-tr-rev-dispute-cd-1', 122, 'cd-1']));
+      h.reverseTransfer.mock.calls.map(([a]) => [a.idempotencyKey, a.amount, a.metadata?.tgp_reversal_op]),
+    ).toEqual(Array(3).fill(['tgp-tr-rev-dispute-cd-1', 122, 'tgp-tr-rev-dispute-cd-1']));
   });
 
   it('a rollback after the record (entitlement write fails) never sends or adds the reversal again', async () => {
@@ -194,7 +195,7 @@ describe('B-674-11 — the chargeback sweep reaches every owed reversal across b
       return made(a);
     });
     const tried = () =>
-      h.reverseTransfer.mock.calls.map(([a]) => a.metadata!.tgp_charge_dispute_id);
+      h.reverseTransfer.mock.calls.map(([a]) => a.metadata!.tgp_reversal_op.replace('tgp-tr-rev-dispute-', ''));
     return { ...h, ids, tried };
   }
   const stuck = () =>

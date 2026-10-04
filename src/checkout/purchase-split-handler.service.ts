@@ -1,10 +1,16 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import type { ClientPurchase } from '@prisma/client';
+import {
+  ChargeSettlementService,
+  settlementFailureCode,
+  type SweepSummary,
+} from '../connect/fees/charge-settlement.service';
 import { FeePolicyService } from '../connect/fees/fee-policy.service';
 import { SplitLedgerService } from '../connect/fees/split-ledger.service';
 import { TransferOrchestratorService } from '../connect/fees/transfer-orchestrator.service';
 import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
 import { PrismaService } from '../prisma.service';
+import { PayoutNoticeService } from './payout-notice.service';
 
 // PurchaseSplitHandlerService — bridges the lifecycle webhook handler
 // and the Phase 4 split machinery. Responsibilities:
@@ -20,6 +26,12 @@ import { PrismaService } from '../prisma.service';
 //
 // The handler is idempotent — every step uses composite-unique upserts
 // or stable Stripe idempotency keys.
+//
+// S-FEE: every successful coach-package charge is handed to
+// ChargeSettlementService, which pays the coach price - actual Stripe fee -
+// TGP 2% (- head-coach split) by Transfer. Only a legacy destination charge
+// (minted before S-FEE, Stripe already moved the coach's share) still runs
+// the original head-coach-only flow below (legacyOnChargeSucceeded).
 
 @Injectable()
 export class PurchaseSplitHandlerService {
@@ -31,39 +43,78 @@ export class PurchaseSplitHandlerService {
     private feePolicy: FeePolicyService,
     private ledger: SplitLedgerService,
     private transfers: TransferOrchestratorService,
+    private settlements: ChargeSettlementService,
+    // S-FEE round 5 (OR-111-1): re-delivers payout notices a webhook could
+    // not deliver. @Optional() for legacy hand-built wiring.
+    @Optional() private payoutNotices?: PayoutNoticeService,
   ) {}
 
   // Resolve the charge id from a PaymentIntent (one-time) or Invoice
   // (recurring). Returns null when not yet known (rare race; the webhook
   // pipeline will re-invoke us on the next event).
-  async resolveChargeIdForPurchase(
-    purchase: ClientPurchase,
-  ): Promise<string | null> {
+  async resolveChargeIdForPurchase(purchase: ClientPurchase): Promise<string | null> {
     if (!purchase.stripe_payment_intent_id) return null;
     try {
-      const pi = await this.stripe.retrievePaymentIntent(
-        purchase.stripe_payment_intent_id,
-      );
+      const pi = await this.stripe.retrievePaymentIntent(purchase.stripe_payment_intent_id);
       const charge =
         (typeof pi.latest_charge === 'string' ? pi.latest_charge : null) ??
         pi.charges?.data?.[0]?.id ??
         null;
       return charge ?? null;
     } catch (err) {
+      // Round 13 (G12): a closed code only, never the error's free text.
       this.logger.warn(
-        `resolveChargeIdForPurchase failed pi=${purchase.stripe_payment_intent_id}: ${(err as Error).message}`,
+        `resolveChargeIdForPurchase failed pi=${purchase.stripe_payment_intent_id}: ${settlementFailureCode(err)}`,
       );
       return null;
     }
   }
 
-  // Called from the webhook handler after a successful payment. Builds
-  // the ledger and queues the head-coach transfer (if applicable).
-  // Returns the resolved Stripe charge id for telemetry.
+  // Called from the webhook handler after a successful payment. Settles the
+  // charge (S-FEE) or, for a legacy destination charge, builds the legacy
+  // ledger and queues the head-coach transfer. Returns the resolved Stripe
+  // charge id for telemetry.
   async onChargeSucceeded(args: {
     purchase: ClientPurchase;
     invoice_amount_cents?: number; // for recurring renewals, may differ from snapshot
     invoice_charge_id?: string | null; // for recurring renewals, when known
+  }): Promise<{ charge_id: string | null; ledger_entries: number; transfer_enqueued: boolean }> {
+    const purchase = args.purchase;
+    // Free packages and $0 grants never settle, transfer or post revenue.
+    if (!(purchase.amount_cents > 0) || args.invoice_amount_cents === 0) {
+      return { charge_id: null, ledger_entries: 0, transfer_enqueued: false };
+    }
+    const chargeId = args.invoice_charge_id ?? (await this.resolveChargeIdForPurchase(purchase));
+    if (!chargeId) {
+      // Subscription-mode Checkout completion carries no PaymentIntent: settle
+      // every paid invoice of the subscription instead (idempotent per charge).
+      const outcomes = await this.settlements.settlePurchase(purchase);
+      return {
+        charge_id: outcomes.find((o) => o.charge_id)?.charge_id ?? null,
+        ledger_entries: outcomes.reduce((n, o) => n + o.ledger_entries, 0),
+        transfer_enqueued: outcomes.some((o) => o.transfers_enqueued > 0),
+      };
+    }
+    const outcome = await this.settlements.settleCharge({
+      purchase,
+      charge_id: chargeId,
+    });
+    if (outcome.status !== 'legacy_destination') {
+      return {
+        charge_id: chargeId,
+        ledger_entries: outcome.ledger_entries,
+        transfer_enqueued: outcome.transfers_enqueued > 0,
+      };
+    }
+    return this.legacyOnChargeSucceeded({ ...args, invoice_charge_id: chargeId });
+  }
+
+  // Pre-S-FEE flow, unchanged, for destination charges minted before S-FEE
+  // (Stripe already routed `amount - application_fee` to the seller).
+  private async legacyOnChargeSucceeded(args: {
+    purchase: ClientPurchase;
+    invoice_amount_cents?: number;
+    invoice_charge_id?: string | null;
   }): Promise<{ charge_id: string | null; ledger_entries: number; transfer_enqueued: boolean }> {
     const purchase = args.purchase;
     const seller = await this.prisma.connectAccount.findUnique({
@@ -98,15 +149,13 @@ export class PurchaseSplitHandlerService {
       plan,
       platform_account_id: null,
       seller_stripe_account_id: seller.stripe_account_id,
-      head_coach_stripe_account_id:
-        headCoachAccount?.stripe_account_id ?? null,
+      head_coach_stripe_account_id: headCoachAccount?.stripe_account_id ?? null,
     });
 
     // Resolve the parent charge id so we can mark the application_fee +
     // destination slices as posted and (for sub-coach) enqueue a transfer
     // with source_transaction set.
-    const chargeId =
-      args.invoice_charge_id ?? (await this.resolveChargeIdForPurchase(purchase));
+    const chargeId = args.invoice_charge_id ?? (await this.resolveChargeIdForPurchase(purchase));
 
     // Mark application_fee + destination as posted now that we know the
     // charge id. These slices moved synchronously at Stripe-charge time
@@ -124,11 +173,7 @@ export class PurchaseSplitHandlerService {
     }
 
     let transferEnqueued = false;
-    if (
-      plan.head_coach_id &&
-      plan.head_coach_split_cents > 0 &&
-      headCoachAccount
-    ) {
+    if (plan.head_coach_id && plan.head_coach_split_cents > 0 && headCoachAccount) {
       const headCoachEntry = entries.find((e) => e.kind === 'head_coach_split');
       if (headCoachEntry) {
         const transfer = await this.transfers.enqueueHeadCoachTransfer({
@@ -146,10 +191,11 @@ export class PurchaseSplitHandlerService {
         // and the sweeper picks it up.
         if (transfer.source_stripe_charge_id) {
           try {
-            await this.transfers.attempt(transfer.id);
+            // B-627-9 (c): under the charge's money lock, like the sweeper.
+            await this.settlements.attemptTransferUnderLock(transfer);
           } catch (err) {
             this.logger.warn(
-              `transfer.attempt failed inline purchase=${purchase.id}: ${(err as Error).message}`,
+              `transfer.attempt failed inline purchase=${purchase.id}: ${settlementFailureCode(err)}`,
             );
           }
         }
@@ -163,20 +209,81 @@ export class PurchaseSplitHandlerService {
     };
   }
 
-  // Run all due-but-pending transfers (sweeper entry point).
-  async runTransferSweeper(now: Date = new Date()): Promise<{
+  // Run all due-but-pending transfers (sweeper entry point). S-FEE: first
+  // retry settlements waiting on Stripe's fee and settle any recent paid
+  // purchase no webhook settled, then post due transfers.
+  //
+  // Bounded: at most `batch` transfers per run (settlements use their own
+  // limit), and it stops starting new work once `deadlineAt` passes so a run
+  // always ends inside its single-runner lease. Whatever is left is due on
+  // the next run. Each transfer row is retried with its own backoff
+  // (TransferOrchestratorService.BACKOFF_MINUTES) under its Stripe
+  // idempotency key, so a repeated or overlapping run cannot pay twice.
+  async runTransferSweeper(
+    now: Date = new Date(),
+    opts: { batch?: number; deadlineAt?: number } = {},
+  ): Promise<{
     attempted: number;
     succeeded: number;
     failed: number;
+    deadline_reached?: boolean;
+    settlements?: SweepSummary;
+    notices_delivered?: number;
   }> {
-    const due = await this.transfers.findDueTransfers(now);
+    const settlements = await this.settlements.runSettlementSweep(now, 25, opts.deadlineAt);
+    let noticesDelivered = 0;
+    if (this.payoutNotices && !(opts.deadlineAt !== undefined && Date.now() >= opts.deadlineAt)) {
+      try {
+        // Sol B-684-3 (round 13): notice delivery keeps the sweep's deadline too.
+        noticesDelivered = await this.payoutNotices.dispatchPending(now, 25, opts.deadlineAt);
+      } catch (err) {
+        this.logger.warn(
+          `SFEE_NOTICE_DISPATCH_DEFERRED sweep: ${settlementFailureCode(err)}; the next run retries`,
+        );
+      }
+    }
+    const due = await this.transfers.findDueTransfers(now, opts.batch ?? 50);
+    let attempted = 0;
     let succeeded = 0;
     let failed = 0;
+    // Notice delivery or settlements stopped on the deadline (Sol B-684-3).
+    let deadlineReached = opts.deadlineAt !== undefined && Date.now() >= opts.deadlineAt;
     for (const row of due) {
-      const updated = await this.transfers.attempt(row.id);
+      if (opts.deadlineAt !== undefined && Date.now() >= opts.deadlineAt) {
+        deadlineReached = true;
+        break;
+      }
+      attempted += 1;
+      // B-627-9 (c): the sweeper takes the same per-charge money lock and
+      // fence as the inline settlement path (busy -> left for the next run).
+      const updated = await this.settlements.attemptTransferUnderLock(row);
       if (updated.status === 'succeeded') succeeded += 1;
       else if (updated.status === 'failed') failed += 1;
     }
-    return { attempted: due.length, succeeded, failed };
+    return {
+      attempted,
+      succeeded,
+      failed,
+      ...(deadlineReached ? { deadline_reached: true } : {}),
+      settlements,
+      ...(noticesDelivered > 0 ? { notices_delivered: noticesDelivered } : {}),
+    };
+  }
+
+  // S-FEE — settle a guest-storefront purchase after its conversion commits
+  // (the guest PaymentIntent / first invoice has no checkout-session hook).
+  // Never throws; the settlement sweeper is the backstop.
+  async settleGuestPurchaseByPaymentIntent(paymentIntentId: string): Promise<void> {
+    try {
+      const purchase = await this.prisma.clientPurchase.findFirst({
+        where: { stripe_payment_intent_id: paymentIntentId },
+      });
+      if (!purchase || !(purchase.amount_cents > 0)) return;
+      await this.settlements.settlePurchase(purchase);
+    } catch (err) {
+      this.logger.warn(
+        `guest settlement failed pi=${paymentIntentId}: ${settlementFailureCode(err)}`,
+      );
+    }
   }
 }
