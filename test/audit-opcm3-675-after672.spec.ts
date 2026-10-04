@@ -215,7 +215,7 @@ const H1 = '765ae7c487c58adbfbd50f1ec32efc5ed7e14b3693789dadf2dd66d09bf8f0ae';
 const P0 = '00000000-0000-4000-8000-0000000000a0';
 const P1 = '00000000-0000-4000-8000-0000000000a1';
 const LIT0 = { name: 'Literal coaching', description: 'Strength.', amount_cents: 4900, currency: 'usd', billing_type: 'recurring', billing_interval: 'month', billing_interval_count: 1 };
-const LIT1 = { name: 'Literal one-time', amount_cents: 2500 };
+const LIT1 = { name: 'Literal one-time', amount_cents: 2500, billing_type: 'one_time' };
 
 describe('AUD-OPUS-CM3-116 #675 + #672: keys claimed before trials still replay', () => {
   const db = makeDb();
