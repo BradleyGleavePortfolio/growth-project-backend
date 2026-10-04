@@ -28,6 +28,7 @@ describe('independent #611 FR8 truth checks', () => {
     const beforeSend = buildSentryOptions('https://unused.invalid', {}).beforeSend;
     if (!beforeSend) throw new Error('Required privacy hook missing');
     const event: Sentry.ErrorEvent = {
+      type: undefined,
       event_id: 'synthetic-sol-fr8',
       exception: { values: [{ type: 'Error', value: 'synthetic provider failure' }] },
       user: { id: 'synthetic-id', email: 'synthetic@example.invalid', username: 'synthetic' },
