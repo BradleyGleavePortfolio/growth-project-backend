@@ -1025,8 +1025,8 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'BILLING_PORTAL_URL',
     tier: 'optional',
-    default: 'DUNNING_UPDATE_CARD_URL (the in-app card update link)',
-    reason: 'Card update link in v1 dunning emails.',
+    default: "'https://thegrowthproject.app/billing'",
+    reason: 'Billing portal link in dunning emails.',
   },
   {
     name: 'IOS_BUNDLE_ID',

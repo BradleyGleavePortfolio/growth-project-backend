@@ -1,12 +1,14 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
-import type { ClientPurchase, DunningAttempt, DunningState, PaymentReminder } from '@prisma/client';
+import type {
+  ClientPurchase,
+  DunningAttempt,
+  DunningState,
+  PaymentReminder,
+} from '@prisma/client';
 import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
 import { EmailService } from '../email/email.service';
 import { EmailTemplateKey } from '../email/email.types';
 import { PrismaService } from '../prisma.service';
-import { isDunningV2Enabled } from './dunning-v2/dunning-v2.feature';
-import { DUNNING_UPDATE_CARD_URL } from './dunning-v2/dunning-v2.cadence';
-import { DUNNING_V2_REVERSAL_REASON } from './dunning-v2/dunning-v2.service';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dunning v1 — webhook-driven failed-payment recovery.
@@ -61,7 +63,12 @@ export const DUNNING_MAX_SEND_RETRIES_DEFAULT = 3;
 // now + base * 4^N. (1h, 4h, 16h with the default base.)
 export const DUNNING_RETRY_BACKOFF_MS_DEFAULT = 60 * 60 * 1000;
 
-export type DunningStepKind = 'soft' | 'urgent' | 'final' | 'recovered' | 'cancelled';
+export type DunningStepKind =
+  | 'soft'
+  | 'urgent'
+  | 'final'
+  | 'recovered'
+  | 'cancelled';
 
 export interface DunningCadenceStep {
   // Days from first failure (Day 0 = immediately).
@@ -115,9 +122,21 @@ export function resolveDunningConfig(env?: NodeJS.ProcessEnv): DunningConfig {
     }
   }
   const graceDays = numEnv(env, 'DUNNING_GRACE_DAYS', DUNNING_GRACE_DAYS_DEFAULT);
-  const maxFailures = numEnv(env, 'DUNNING_MAX_FAILURES', DUNNING_MAX_FAILURES_DEFAULT);
-  const maxSendRetries = numEnv(env, 'DUNNING_MAX_SEND_RETRIES', DUNNING_MAX_SEND_RETRIES_DEFAULT);
-  const retryBackoffMs = numEnv(env, 'DUNNING_RETRY_BACKOFF_MS', DUNNING_RETRY_BACKOFF_MS_DEFAULT);
+  const maxFailures = numEnv(
+    env,
+    'DUNNING_MAX_FAILURES',
+    DUNNING_MAX_FAILURES_DEFAULT,
+  );
+  const maxSendRetries = numEnv(
+    env,
+    'DUNNING_MAX_SEND_RETRIES',
+    DUNNING_MAX_SEND_RETRIES_DEFAULT,
+  );
+  const retryBackoffMs = numEnv(
+    env,
+    'DUNNING_RETRY_BACKOFF_MS',
+    DUNNING_RETRY_BACKOFF_MS_DEFAULT,
+  );
   return { cadence, graceDays, maxFailures, maxSendRetries, retryBackoffMs };
 }
 
@@ -183,18 +202,6 @@ export class DunningService {
   // ── Webhook entry points ──────────────────────────────────────────────────
 
   async recordFailure(input: RecordFailureInput): Promise<DunningState> {
-    try {
-      return await this.recordFailureOnce(input);
-    } catch (err) {
-      // C-688-3 (Opus): the state write is fenced on the reason read first, so
-      // a dispute marker written in between is never replaced. That lost race
-      // (P2025, nothing written yet) runs once more on a fresh read.
-      if ((err as { code?: unknown } | null)?.code !== 'P2025') throw err;
-      return this.recordFailureOnce(input);
-    }
-  }
-
-  private async recordFailureOnce(input: RecordFailureInput): Promise<DunningState> {
     const { purchase } = input;
     const now = new Date();
     const existing = await this.prisma.dunningState.findUnique({
@@ -229,25 +236,22 @@ export class DunningService {
 
     const row = existing
       ? await this.prisma.dunningState.update({
-          where: { purchase_id: purchase.id, last_failure_reason: existing.last_failure_reason },
+          where: { purchase_id: purchase.id },
           data: {
             // If the previous window had resolved, reopen with a fresh
             // cadence. Otherwise the existing window continues.
             ...(reopened ?? {}),
             failure_count: { increment: 1 },
-            last_attempt_number: input.attempt_number ?? existing.last_attempt_number,
-            last_failed_amount_cents: input.amount_due_cents ?? existing.last_failed_amount_cents,
+            last_attempt_number:
+              input.attempt_number ?? existing.last_attempt_number,
+            last_failed_amount_cents:
+              input.amount_due_cents ?? existing.last_failed_amount_cents,
             last_failure_at: now,
-            // B-628-13: a decline never replaces the dispute marker of an
-            // active dispute cycle (the dispute is still outstanding).
-            last_failure_reason:
-              !reopened &&
-              existing.status === 'active' &&
-              existing.last_failure_reason === DUNNING_V2_REVERSAL_REASON
-                ? existing.last_failure_reason
-                : (input.reason ?? existing.last_failure_reason),
+            last_failure_reason: input.reason ?? existing.last_failure_reason,
             grace_period_ends_at:
-              existing.grace_period_ends_at && existing.grace_period_ends_at > now && !reopened
+              existing.grace_period_ends_at &&
+              existing.grace_period_ends_at > now &&
+              !reopened
                 ? existing.grace_period_ends_at
                 : grace,
             cancel_scheduled_at:
@@ -306,7 +310,8 @@ export class DunningService {
     // the v0 PaymentReminder feed still read them. Dedup window key =
     // stripe invoice id (one per failed invoice), matching v0 semantics.
     const windowKey =
-      input.stripe_invoice_id ?? `inv-na-${Math.floor(now.getTime() / (60 * 60 * 1000))}`;
+      input.stripe_invoice_id ??
+      `inv-na-${Math.floor(now.getTime() / (60 * 60 * 1000))}`;
     await this.enqueueReminder({
       purchase_id: purchase.id,
       recipient_user_id: purchase.client_user_id,
@@ -385,7 +390,8 @@ export class DunningService {
   // cancel the failing sub).
   async terminate(
     purchaseId: string,
-    reason: 'subscription_deleted' | 'admin_cancel' | 'grace_expired' = 'subscription_deleted',
+    reason: 'subscription_deleted' | 'admin_cancel' | 'grace_expired' =
+      'subscription_deleted',
   ): Promise<DunningState | null> {
     const existing = await this.prisma.dunningState.findUnique({
       where: { purchase_id: purchaseId },
@@ -419,18 +425,11 @@ export class DunningService {
 
   // ── Cadence runner — drain due attempts and send their emails ──────────────
 
-  async tick(
-    now: Date = new Date(),
-    limit = 100,
-  ): Promise<{
+  async tick(now: Date = new Date(), limit = 100): Promise<{
     sent: number;
     skipped: number;
     failed: number;
   }> {
-    // S-DUNNING: with Smart Dunning v2 on, v2 owns every client notice
-    // (Days 0/1/3/7, time-driven by the v2 sweep). Draining the v1 cadence
-    // too would send a second, differently-timed email sequence.
-    if (isDunningV2Enabled()) return { sent: 0, skipped: 0, failed: 0 };
     // Two query passes so we don't have to OR over status — keeps the index
     // scan on (status, scheduled_for) and (status, next_retry_at) clean.
     //   1. status='pending' and scheduled_for <= now  — first-time sends.
@@ -814,7 +813,9 @@ export class DunningService {
       where: { dunning_state_id: state.id, step_index: { lt: 0 } },
       orderBy: { step_index: 'asc' },
     });
-    const newSlot = existingAdhoc.length ? existingAdhoc[0].step_index - 1 : -1;
+    const newSlot = existingAdhoc.length
+      ? existingAdhoc[0].step_index - 1
+      : -1;
     await this.prisma.dunningAttempt.create({
       data: {
         dunning_state_id: state.id,
@@ -835,20 +836,14 @@ export class DunningService {
 
   // ── Sweeper — kept for v0 compatibility, now also drives the cadence tick.
 
-  async runSweeper(now: Date = new Date()): Promise<{
+  async runSweeper(
+    now: Date = new Date(),
+  ): Promise<{
     scanned: number;
     canceled: number;
     final_warned: number;
     cadence_sent: number;
   }> {
-    // S-DUNNING: with Smart Dunning v2 on, the v1 grace window (7 days, then
-    // cancel the Stripe subscription) contradicts the v2 sequence (access
-    // through Day 9, lock on Day 10, subscription left past_due so Stripe's
-    // retries and the hosted invoice keep working). Never cancel under v2.
-    if (isDunningV2Enabled()) {
-      this.logEvent('dunning.sweeper_skipped_v2', {});
-      return { scanned: 0, canceled: 0, final_warned: 0, cadence_sent: 0 };
-    }
     // First drain the cadence so any due attempts fire before we check
     // for expired-grace rows.
     const tickResult = await this.tick(now);
@@ -903,11 +898,17 @@ export class DunningService {
     };
   }
 
-  async findExpiredGracePeriods(now: Date = new Date(), limit = 50): Promise<DunningState[]> {
+  async findExpiredGracePeriods(
+    now: Date = new Date(),
+    limit = 50,
+  ): Promise<DunningState[]> {
     return this.prisma.dunningState.findMany({
       where: {
         status: 'active',
-        OR: [{ grace_period_ends_at: { lte: now } }, { cancel_scheduled_at: { lte: now } }],
+        OR: [
+          { grace_period_ends_at: { lte: now } },
+          { cancel_scheduled_at: { lte: now } },
+        ],
       },
       orderBy: { grace_period_ends_at: 'asc' },
       take: limit,
@@ -1026,7 +1027,9 @@ export class DunningService {
     );
     for (const step of this.cfg.cadence) {
       const idx = this.cfg.cadence.indexOf(step);
-      const scheduledFor = new Date(now.getTime() + step.dayOffset * 24 * 3600 * 1000);
+      const scheduledFor = new Date(
+        now.getTime() + step.dayOffset * 24 * 3600 * 1000,
+      );
       try {
         await this.prisma.dunningAttempt.create({
           data: {
@@ -1110,7 +1113,9 @@ export class DunningService {
       return { shouldSend: true, cancellationDate: cd, reason: 'no_stripe_sub' };
     }
     try {
-      const sub = await this.stripe.retrieveSubscription(purchase.stripe_subscription_id);
+      const sub = await this.stripe.retrieveSubscription(
+        purchase.stripe_subscription_id,
+      );
       // Already canceled — the customer.subscription.deleted webhook will
       // (or already did) drive the terminal copy; don't double-message.
       if (sub.status === 'canceled' || sub.canceled_at) {
@@ -1139,14 +1144,17 @@ export class DunningService {
       // since-epoch) is the source of truth when set; otherwise fall back
       // to current_period_end; final fallback is now + 24h so the email
       // never shows a past date.
-      const cancelAtSec = (sub as Record<string, unknown>).cancel_at as number | undefined;
+      const cancelAtSec =
+        (sub as Record<string, unknown>).cancel_at as number | undefined;
       const periodEndSec = sub.current_period_end;
       const fallbackMs = Date.now() + 24 * 60 * 60 * 1000;
       const cancellationMs =
         (typeof cancelAtSec === 'number' && cancelAtSec * 1000) ||
         (typeof periodEndSec === 'number' && periodEndSec * 1000) ||
         fallbackMs;
-      const fresh = new Date(cancellationMs > Date.now() ? cancellationMs : fallbackMs);
+      const fresh = new Date(
+        cancellationMs > Date.now() ? cancellationMs : fallbackMs,
+      );
       return {
         shouldSend: true,
         cancellationDate: fresh,
@@ -1213,10 +1221,10 @@ export class DunningService {
     return {
       recipient_name: recipientName ?? null,
       amount_display: formatCurrency(amount, purchase.currency ?? 'usd'),
-      cancellation_date: cancellation ? cancellation.toISOString().slice(0, 10) : null,
-      // S-DUNNING-R2 (OR-110-2): the default opens the native in-app card
-      // update (universal link), not a browser-hosted billing page.
-      billing_portal_url: process.env.BILLING_PORTAL_URL ?? DUNNING_UPDATE_CARD_URL,
+      cancellation_date: cancellation
+        ? cancellation.toISOString().slice(0, 10)
+        : null,
+      billing_portal_url: process.env.BILLING_PORTAL_URL ?? 'https://thegrowthproject.app/billing',
       coach_name: null,
     };
   }
@@ -1229,7 +1237,9 @@ export class DunningService {
       throw new Error(`dunning: no state for purchase ${purchaseId}`);
     }
     if (state.status !== 'active') {
-      throw new Error(`dunning: state for purchase ${purchaseId} is ${state.status}, not active`);
+      throw new Error(
+        `dunning: state for purchase ${purchaseId} is ${state.status}, not active`,
+      );
     }
     return state;
   }
@@ -1248,7 +1258,10 @@ export class DunningService {
     attemptNumber: number | null,
     now: Date,
   ): Date {
-    if (typeof attemptNumber === 'number' && attemptNumber >= this.cfg.maxFailures) {
+    if (
+      typeof attemptNumber === 'number' &&
+      attemptNumber >= this.cfg.maxFailures
+    ) {
       return new Date(now.getTime() + 24 * 60 * 60 * 1000);
     }
     return existing?.cancel_scheduled_at ?? this.computeGracePeriodEnd(now);
