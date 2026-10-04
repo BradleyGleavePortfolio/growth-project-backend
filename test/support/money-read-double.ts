@@ -68,6 +68,11 @@ const RELATIONS: Record<string, Record<string, Relation>> = {
       many: false,
       resolve: (r, db) => (db.state.clientPurchase ?? []).filter((p) => p.id === r.purchase_id),
     },
+    reversal_postings: {
+      model: 'splitLedgerReversal',
+      many: true,
+      resolve: (r, db) => (db.state.splitLedgerReversal ?? []).filter((x) => x.entry_id === r.id),
+    },
   },
 };
 

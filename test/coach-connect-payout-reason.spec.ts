@@ -1,17 +1,27 @@
-// C-332-14 (Opus on mobile#332, fixed here by B-COACH-5 agent 115): the
-// mobile Money page shows a failed payout's description as its red reason,
-// so /coach/connect/payouts must send Stripe's failure_message for a failed
-// payout, not the payout's own description. Failed at 1ad67022 (the mapper
-// sent description ?? failure_message for every payout).
+// C-332-14 (Opus on mobile#332): the mobile Money page shows a failed
+// payout's description as its red reason. C-676-2 (B-CM1-116): that reason is
+// app copy for Stripe's failure_code with the coach's next step; Stripe's
+// failure_message and description are free text and are never shown. Failed
+// at 564f33bf (the mapper sent failure_message, else the description).
 import 'reflect-metadata';
 import { CoachConnectService, payoutReason } from '../src/coach-connect/coach-connect.service';
 
+const CANARY = 'PRIVATE_CANARY_bank_text';
+
 describe('payoutReason', () => {
-  it('a failed payout reads its failure message first', () => {
-    expect(payoutReason('failed', 'STRIPE PAYOUT', 'The bank account has been closed.')).toBe(
-      'The bank account has been closed.',
+  it('a failed payout reads app copy for its failure_code, never Stripe text', () => {
+    expect(payoutReason('failed', CANARY, 'account_closed')).toBe(
+      'This bank account cannot take payouts. Add a different bank account in Stripe.',
     );
-    expect(payoutReason('failed', 'STRIPE PAYOUT', null)).toBe('STRIPE PAYOUT');
+    expect(payoutReason('failed', CANARY, 'no_account')).toBe(
+      'The bank details on file are wrong. Correct them in Stripe.',
+    );
+    expect(payoutReason('failed', CANARY, 'new_code')).toBe(
+      'The payout failed. Open Stripe for details. Reference: new_code.',
+    );
+    for (const code of [null, CANARY, '__proto__x', 'constructor']) {
+      expect(payoutReason('failed', CANARY, code)).toMatch(/^The payout failed\. Open Stripe/);
+    }
   });
   it('any other payout keeps its description', () => {
     expect(payoutReason('paid', 'Auto payout', null)).toBe('Auto payout');
@@ -21,7 +31,7 @@ describe('payoutReason', () => {
 });
 
 describe('CoachConnectService.listPayouts failed payout reason', () => {
-  it('maps a failed Stripe payout to its failure message', async () => {
+  it('maps a failed Stripe payout to app copy for its failure_code', async () => {
     const prisma = {
       connectAccount: {
         findUnique: jest.fn(async () => ({
@@ -43,7 +53,8 @@ describe('CoachConnectService.listPayouts failed payout reason', () => {
             arrival_date: 1_700_000_000,
             created: 1_699_900_000,
             description: 'STRIPE PAYOUT',
-            failure_message: 'The bank account has been closed.',
+            failure_code: 'account_closed',
+            failure_message: CANARY,
           },
         ],
         has_more: false,
@@ -61,7 +72,8 @@ describe('CoachConnectService.listPayouts failed payout reason', () => {
     expect(out[0]).toMatchObject({
       id: 'po_f',
       status: 'failed',
-      description: 'The bank account has been closed.',
+      description: 'This bank account cannot take payouts. Add a different bank account in Stripe.',
     });
+    expect(JSON.stringify(out)).not.toContain(CANARY);
   });
 });
