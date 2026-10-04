@@ -465,8 +465,13 @@ export class StripeConnectApiService {
     metadata?: Record<string, string>;
     // B-RECUR (OR-113-2) — free trial: Stripe starts the subscription in
     // `trialing`, the first invoice is $0, and the card is collected up front
-    // through `pending_setup_intent` (PaymentSheet setup mode). A trial that
-    // ends without a saved card cancels instead of trying to charge.
+    // through `pending_setup_intent` (PaymentSheet setup mode).
+    // C-678-1 / B-679-8 (Opus) — `missing_payment_method=cancel` alone does
+    // not stop a charge: at trial end Stripe also counts the CUSTOMER's
+    // default card (set by the billing portal). So a trial is created with a
+    // Stripe-enforced end (`cancel_at_period_end`; a trial's period ends at
+    // trial_end) that only setSubscriptionDefaultPaymentMethod lifts, in the
+    // same request that makes the attempt's own saved card the default.
     trialPeriodDays?: number;
     idempotencyKey: string;
   }): Promise<StripeSubscriptionCheckoutObject> {
@@ -488,6 +493,7 @@ export class StripeConnectApiService {
     if (args.trialPeriodDays && args.trialPeriodDays > 0) {
       form.trial_period_days = String(args.trialPeriodDays);
       form['trial_settings[end_behavior][missing_payment_method]'] = 'cancel';
+      form.cancel_at_period_end = 'true';
       form['expand[1]'] = 'pending_setup_intent';
     }
     if (args.metadata) {
@@ -954,6 +960,9 @@ export class StripeConnectApiService {
 
   // B-RECUR — make the card a trial's SetupIntent saved the subscription's
   // default, so the first real invoice after the trial charges it.
+  // B-679-8 (Opus) — the same request lifts the trial's create-time end, so
+  // a trial converts only on the attempt's own card. Callers send it only
+  // before the trial was granted (never over a cancel the client chose).
   async setSubscriptionDefaultPaymentMethod(args: {
     subscriptionId: string;
     paymentMethodId: string;
@@ -961,7 +970,7 @@ export class StripeConnectApiService {
   }): Promise<StripeSubscriptionObject> {
     return this.post<StripeSubscriptionObject>(
       `/subscriptions/${encodeURIComponent(args.subscriptionId)}`,
-      { default_payment_method: args.paymentMethodId },
+      { default_payment_method: args.paymentMethodId, cancel_at_period_end: 'false' },
       args.idempotencyKey,
     );
   }

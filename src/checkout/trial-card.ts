@@ -71,6 +71,9 @@ export function trialCardSaved(state: TrialSetupState | null): state is TrialSet
  * webhook, the plan read and the checkout paths collapse onto one write.
  * Stripe answers with customer.subscription.updated carrying the default,
  * which is the event that grants the trial.
+ * B-679-8 (Opus) — the same write lifts the trial's create-time end, so the
+ * trial converts at trial end only on this card. Call it only with the card
+ * the attempt's own SetupIntent saved, and only before the trial was granted.
  */
 export async function attachTrialCard(
   stripe: Pick<StripeConnectApiService, 'setSubscriptionDefaultPaymentMethod'>,

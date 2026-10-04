@@ -184,6 +184,7 @@ export interface FakeSub {
   metadata?: Record<string, string>;
   created?: number;
   current_period_end: number;
+  cancel_at_period_end?: boolean;
   default_payment_method: string | null;
   items: { data: Array<{ price: { id: string } }> };
   latest_invoice: any;
@@ -243,6 +244,9 @@ export function makeFakeStripe() {
         created: Math.floor(Date.now() / 1000),
         current_period_end:
           Math.floor(Date.now() / 1000) + (trial ? args.trialPeriodDays : 30) * 86400,
+        // B-679-8 (Opus) — like createSubscription: a trial ends at trial_end
+        // unless the saved-card attach lifts it.
+        cancel_at_period_end: trial,
         default_payment_method: null,
         items: { data: [{ price: { id: args.recurringPriceId } }] },
         latest_invoice: {
@@ -341,7 +345,12 @@ export function makeFakeStripe() {
     })),
     setSubscriptionDefaultPaymentMethod: jest.fn(async (args: any) => {
       const sub = subs.get(args.subscriptionId);
-      if (sub) sub.default_payment_method = args.paymentMethodId;
+      if (sub) {
+        Object.assign(sub, {
+          default_payment_method: args.paymentMethodId,
+          cancel_at_period_end: false,
+        });
+      }
       return sub;
     }),
   };

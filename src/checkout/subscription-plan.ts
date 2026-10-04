@@ -97,6 +97,18 @@ export function isIdempotencyMismatch(err: unknown): boolean {
   );
 }
 
+/**
+ * C-679-3 — Stripe has no such object under this key (404 resource_missing):
+ * proven absence, not an outage, so the attempt can end and free its plan.
+ */
+export function isResourceMissing(err: unknown): boolean {
+  return (
+    err instanceof StripeConnectApiError &&
+    err.httpStatus === 404 &&
+    err.stripeCode === 'resource_missing'
+  );
+}
+
 /** PaymentIntent statuses a PaymentSheet can still complete. */
 export const PAYABLE_PI_STATUSES = new Set([
   'requires_payment_method',
