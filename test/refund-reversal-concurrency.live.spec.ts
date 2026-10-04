@@ -150,6 +150,9 @@ liveDescribe('B-674-1 live: concurrent reversals of different refunds both count
       refund('a', 2_000),
       refund('b', 1_000),
     ]);
+    // The transfer's reversals are serialised (reversal_seq): one that loses
+    // the slot stays owed and the retry sweep sends it.
+    await svc.retryPendingTransferReversals(new Date(Date.now() + 1000));
     const slices = await prisma.splitLedgerEntry.findMany({
       where: { purchase_id: purchase.id },
       orderBy: { kind: 'asc' },
@@ -161,13 +164,14 @@ liveDescribe('B-674-1 live: concurrent reversals of different refunds both count
     ]);
   }, 90_000);
 
-  it('head-coach transfer: two refunds recording behind a held transfer lock reverse 100 + 50', async () => {
+  it('head-coach transfer: two refunds racing for the transfer reverse 100 + 50 (the loser via the sweep)', async () => {
     const { refund } = await seedPurchase('pt');
     reverseTransfer.mockClear();
     await raceBehindLock('ConnectTransfer', ['pt-tr'], () => [
       refund('a', 2_000),
       refund('b', 1_000),
     ]);
+    await svc.retryPendingTransferReversals(new Date(Date.now() + 1000));
     const transfer = await prisma.connectTransfer.findUniqueOrThrow({ where: { id: 'pt-tr' } });
     const slice = await prisma.splitLedgerEntry.findUniqueOrThrow({
       where: { id: 'pt-head_coach_split' },

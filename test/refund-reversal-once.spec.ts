@@ -34,6 +34,14 @@ function store(): StatefulPrisma {
   db.model('splitLedgerEntry');
   db.model('splitLedgerReversal', [['id'], ['entry_id', 'source_kind', 'source_id']]);
   db.model('connectTransfer');
+  db.model('transferReversalOp', [['id'], ['idempotency_key'], ['stripe_reversal_id']], () => ({
+    status: 'pending',
+    attempts: 0,
+    last_attempt_at: null,
+    last_error: null,
+    stripe_reversal_id: null,
+    resolved_at: null,
+  }));
   db.model('connectAccount', [['id'], ['coach_user_id']]);
   db.model('guestCheckout');
   db.model('notification');
@@ -102,6 +110,9 @@ function store(): StatefulPrisma {
     reversed_amount_cents: 0,
     ledger_entry_id: null,
     reversed_at: null,
+    kind: 'head_coach_split',
+    settlement_id: null,
+    reversal_seq: 0,
   });
   return db;
 }
@@ -126,9 +137,18 @@ function harness(): Harness {
     }
     return { id: `trr_${args.idempotencyKey}` };
   });
+  // Stripe's reversal list (each carries its operation key in metadata).
+  const listTransferReversals = jest.fn(async () => ({
+    data: [...stripeReversals].map(([key, amount]) => ({
+      id: `trr_${key}`,
+      amount,
+      metadata: { tgp_reversal_op: key },
+    })),
+    has_more: false,
+  }));
   const transfers = Reflect.construct(TransferOrchestratorService, [
     db,
-    { reverseTransfer },
+    { reverseTransfer, listTransferReversals },
     ledger,
   ]);
   const alerts = jest.fn(async () => undefined);
@@ -251,10 +271,10 @@ describe('B-641-7 — one refund, one reversal', () => {
 
   it('a stop between Stripe and the local record is recovered without a second reversal', async () => {
     const h = harness();
-    // B-674-1: the reversal write is a compare-and-set updateMany.
-    const originalUpdate = h.db.connectTransfer.updateMany.bind(h.db.connectTransfer);
+    // The operation's completion writes the transfer total (after Stripe).
+    const originalUpdate = h.db.connectTransfer.update.bind(h.db.connectTransfer);
     let failNext = true;
-    h.db.connectTransfer.updateMany = async (...args: unknown[]) => {
+    h.db.connectTransfer.update = async (...args: unknown[]) => {
       if (failNext) {
         failNext = false;
         throw new Error('process stopped');
@@ -268,8 +288,8 @@ describe('B-641-7 — one refund, one reversal', () => {
 
     // The sweep retries rows last attempted before its `now`: run it 1 s later.
     await h.svc.retryPendingTransferReversals(new Date(Date.now() + 1000));
-    // Stripe saw the same key twice and made one reversal; recorded once.
-    expect(h.reverseTransfer).toHaveBeenCalledTimes(2);
+    // The retry finds Stripe's reversal by its key and records it: no resend.
+    expect(h.reverseTransfer).toHaveBeenCalledTimes(1);
     expect(stripeTotal(h)).toBe(122);
     expect(headCoach(h.db)).toBe(122);
     expect(refundRow(h.db)).toMatchObject({ transfer_reversed: true });
