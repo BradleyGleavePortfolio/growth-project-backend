@@ -19,9 +19,16 @@ import {
   type StripeBalanceTransactionObject,
   type StripeChargeObject,
 } from '../stripe-connect-api.service';
-import { ChargeLock, isChargeLockBusy } from './charge-lock';
+import { ChargeLock, isChargeLockBusy, isChargeLockLost } from './charge-lock';
 import { FeePolicyService } from './fee-policy.service';
-import { DisputeStateUnavailableError, isRetryableMoneyError } from './money-errors';
+import { moneyErrorDiagnostic } from './money-diagnostics';
+import {
+  DisputeStateUnavailableError,
+  MONEY_RETRY_CODES,
+  RefundStateUnavailableError,
+  ReversalUncertainError,
+  isRetryableMoneyError,
+} from './money-errors';
 import {
   payoutNoticeCopy,
   type PayoutNoticeAmounts,
@@ -34,65 +41,55 @@ import {
   type SettlementTransferKind,
 } from './transfer-orchestrator.service';
 
-// ChargeSettlementService — S-FEE. Pays the coach their real net for every
-// coach-package charge.
+// ChargeSettlementService — S-FEE. Pays the coach their real net for every coach-package charge.
 //
 // Mechanism (Stripe "separate charges and transfers", with on_behalf_of):
-//   1. Checkout creates the charge on the platform with on_behalf_of = the
-//      coach's connected account and NO transfer_data / application fee.
-//   2. When the charge succeeds (checkout.session.completed one-time,
-//      payment_intent.succeeded, invoice.paid for every subscription invoice,
-//      guest conversion, or the backstop sweeper) we read the charge with its
-//      balance_transaction expanded. balance_transaction.fee is Stripe's
-//      ACTUAL fee (international card, currency conversion and all).
-//   3. computeChargeSplit (PlatformFeeService, the single fee function)
-//      splits the gross: coach_net = gross - stripe_fee - 2% - head-coach.
-//   4. We transfer coach_net (and the head-coach split) with
-//      source_transaction = the charge. TGP keeps exactly its fee, so the
-//      platform net of every charge is >= 0.
+//   1. Checkout creates the charge on the platform with on_behalf_of = the coach's connected
+//      account and NO transfer_data / application fee.
+//   2. When the charge succeeds (checkout.session.completed one-time, payment_intent.succeeded,
+//      invoice.paid for every subscription invoice, guest conversion, or the backstop sweeper)
+//      we read the charge with its balance_transaction expanded. balance_transaction.fee is
+//      Stripe's ACTUAL fee (international card, currency conversion and all).
+//   3. computeChargeSplit (PlatformFeeService, the single fee function) splits the gross:
+//      coach_net = gross - stripe_fee - 2% - head-coach.
+//   4. We transfer coach_net (and the head-coach split) with source_transaction = the charge.
+//      TGP keeps exactly its fee, so the platform net of every charge is >= 0.
 //
 // Refunds / disputes: applyAdjustments re-derives every party's target with
-// computeAdjustedTargets and moves each payee to it: post pending transfers,
-// reverse posted transfers, and record whatever a reversal cannot recover
-// (TGP's 2%, the non-returned processing fee, a dispute fee, a reversal Stripe
-// refused) as a PayeeRecovery that is netted out of that payee's next
-// transfers. Stripe: "It's up to your platform to reconcile any amount owed
-// back to it by reducing subsequent transfer amounts or by reversing
-// transfers."
+// computeAdjustedTargets and moves each payee to it: post pending transfers, reverse posted
+// transfers, and record whatever a reversal cannot recover (TGP's 2%, the non-returned
+// processing fee, a dispute fee, a reversal Stripe refused) as a PayeeRecovery that is netted
+// out of that payee's next transfers. Stripe: "It's up to your platform to reconcile any amount
+// owed back to it by reducing subsequent transfer amounts or by reversing transfers."
 //
-// Owner decision OR-111-1 (round 5): only the refunded charge's OWN transfer
-// is ever reversed; recovery of what is still owed is forward-only netting
-// from the payee's next sale(s), carried across sales until settled. No
-// payout delay, no negative-balance debit, no Account Debit and no reversal
-// of another sale's transfer. Each refund / chargeback / dispute outcome
-// writes a PayoutAdjustmentNotice with the exact amounts for the payee.
+// Owner decision OR-111-1 (round 5): only the refunded charge's OWN transfer is ever reversed;
+// recovery of what is still owed is forward-only netting from the payee's next sale(s), carried
+// across sales until settled. No payout delay, no negative-balance debit, no Account Debit and
+// no reversal of another sale's transfer. Each refund / chargeback / dispute outcome writes a
+// PayoutAdjustmentNotice with the exact amounts for the payee.
 //
-// Concurrency (round 3, B-627-2): every money movement on one charge runs
-// under that charge's lock (ChargeLock): settleCharge, applyAdjustments and
-// the refund handler's per-refund critical section. Inside the lock the
-// targets come from the CUMULATIVE state (sum of the charge's succeeded
-// ChargeRefund rows, one per Stripe refund id; the dispute's current balance
-// transactions read from Stripe), and each payee is moved from their freshly
-// read position to that target. Two refunds delivered together, a duplicate
-// delivery, or an admin refund racing its own charge.refunded webhook
-// therefore reverse exactly the difference, once. Ledger slices record the
-// absolute leg position (syncLegLedger), never an increment.
+// Concurrency (round 3, B-627-2): every money movement on one charge runs under that charge's
+// lock (ChargeLock): settleCharge, applyAdjustments and the refund handler's per-refund critical
+// section. Inside the lock the targets come from the CUMULATIVE state (sum of the charge's
+// succeeded ChargeRefund rows, one per Stripe refund id; the dispute's current balance
+// transactions read from Stripe), and each payee is moved from their freshly read position to
+// that target. Two refunds delivered together, a duplicate delivery, or an admin refund racing
+// its own charge.refunded webhook therefore reverse exactly the difference, once. Ledger slices
+// record the absolute leg position (syncLegLedger), never an increment.
 //
-// Backfill (round 3, B-627-1): the sweeper settles every paid invoice whose
-// charge has no ChargeSettlement row (matched by charge id, 35-day window,
-// resumable cursor), not only purchases that have no settlement at all; a
-// charge whose first Stripe read failed keeps an awaiting_fee row that the
-// sweeper retries; stale awaiting rows and pending transfers raise alerts.
+// Backfill (round 3, B-627-1): the sweeper settles every paid invoice whose charge has no
+// ChargeSettlement row (matched by charge id, 35-day window, resumable cursor), not only
+// purchases that have no settlement at all; a charge whose first Stripe read failed keeps an
+// awaiting_fee row that the sweeper retries; stale awaiting rows and pending transfers raise
+// alerts.
 //
-// Never settled: purchases with amount_cents <= 0 (free packages and $0
-// invite-code grants) and $0 charges. They produce no settlement row, no
-// ledger slice, no transfer and no recovery.
+// Never settled: purchases with amount_cents <= 0 (free packages and $0 invite-code grants) and
+// $0 charges. They produce no settlement row, no ledger slice, no transfer and no recovery.
 //
-// Legacy: a charge that already carries destination-charge artefacts
-// (transfer / transfer_data / application fee) was created before S-FEE (for
-// example a renewal of a subscription minted before this change). Stripe has
-// already moved the coach's share, so we record a `legacy_destination`
-// settlement for reporting and never create an S-FEE transfer for it; the
+// Legacy: a charge that already carries destination-charge artefacts (transfer / transfer_data /
+// application fee) was created before S-FEE (for example a renewal of a subscription minted
+// before this change). Stripe has already moved the coach's share, so we record a
+// `legacy_destination` settlement for reporting and never create an S-FEE transfer for it; the
 // caller runs the unchanged legacy head-coach flow.
 
 export const SETTLEMENT_MECHANISM_SCT = 'separate_charge_transfer';
@@ -120,6 +117,47 @@ export const SETTLEMENT_LOG_CODES = {
   recoveryOpen: 'SFEE_RECOVERY_OPEN',
   noticeFailed: 'SFEE_NOTICE_FAILED',
 } as const;
+
+// Round 11 (B-683-3): logs and stored reasons name a failure only by this closed
+// vocabulary, never by an error's name, message or code (free text that a library,
+// provider or caller sets, e.g. a rejected write's payload).
+export function settlementFailureCode(err: unknown): string {
+  if (err instanceof ReversalUncertainError) return MONEY_RETRY_CODES.reversalUncertain;
+  if (err instanceof DisputeStateUnavailableError) return MONEY_RETRY_CODES.disputeUnavailable;
+  if (err instanceof RefundStateUnavailableError) return err.message; // closed parts and ids
+  if (isChargeLockBusy(err)) return SETTLEMENT_LOG_CODES.lockBusy;
+  if (isChargeLockLost(err)) return 'SFEE_CHARGE_LOCK_LOST';
+  return moneyErrorDiagnostic(err); // the shared money vocabulary (F2)
+}
+
+// Round 11 (B-683-1): a converted charge's refunded cents in its SETTLEMENT currency:
+// each succeeded refund's own balance-transaction debit (Stripe converts a refund at
+// that day's rate, not the charge's), over every page. Presentment cents (callers,
+// ChargeRefund rows, amount_refunded) never mix in. Unreadable: nothing moves.
+export async function convertedRefundedCents(
+  stripe: StripeConnectApiService,
+  chargeId: string,
+  currency: string,
+): Promise<number> {
+  let total = 0;
+  let after: string | null = null;
+  for (let page = 0; page < 20; page += 1) {
+    const res = await stripe.listChargeRefunds(chargeId, after).catch((err: unknown) => {
+      throw new RefundStateUnavailableError(chargeId, settlementFailureCode(err));
+    });
+    for (const r of res.data ?? []) {
+      const bt = r.balance_transaction as StripeBalanceTransactionObject | null | undefined;
+      if (r.status !== 'succeeded') continue;
+      if (typeof bt?.amount !== 'number' || bt.currency?.toLowerCase() !== currency) {
+        throw new RefundStateUnavailableError(chargeId, 'kind=refund_balance_transaction_missing');
+      }
+      total += Math.max(0, -bt.amount);
+    }
+    after = res.data?.[res.data.length - 1]?.id ?? null;
+    if (!res.has_more || !after) return total;
+  }
+  throw new RefundStateUnavailableError(chargeId, 'kind=refund_list_incomplete');
+}
 
 export interface SweepSummary {
   retried: number;
@@ -244,10 +282,10 @@ function stateKey(adj: ChargeAdjustments): string {
 }
 
 /**
- * OR-111-1 — which payee notice an adjustment state calls for. A chargeback
- * is any state with withdrawn funds; a dispute that stops withdrawing funds
- * after a chargeback notice was won; a lost dispute is announced by the
- * dispute-closed handler (hint). Anything else with refunded cents is a refund.
+ * OR-111-1 — which payee notice an adjustment state calls for. A chargeback is any state with
+ * withdrawn funds; a dispute that stops withdrawing funds after a chargeback notice was won; a
+ * lost dispute is announced by the dispute-closed handler (hint). Anything else with refunded
+ * cents is a refund.
  */
 export function noticeEventFor(
   adj: ChargeAdjustments,
@@ -263,13 +301,12 @@ export function noticeEventFor(
 }
 
 /**
- * OR-111-1 — the exact amounts of one payee's notice, from the converged
- * rows of one charge. held_cents is every live recovery on the charge for
- * the payee (what TGP holds from their next sale(s)); its parts always sum
- * to it: the fee part (only the selling coach bears fees: -target, capped by
- * what is held) is attributed to TGP's 2% first, then Stripe's processing
- * fee, then the dispute fee; the rest is the payee's share that Stripe
- * refused to reverse (or never had to pay out).
+ * OR-111-1 — the exact amounts of one payee's notice, from the converged rows of one charge.
+ * held_cents is every live recovery on the charge for the payee (what TGP holds from their next
+ * sale(s)); its parts always sum to it: the fee part (only the selling coach bears fees: -target,
+ * capped by what is held) is attributed to TGP's 2% first, then Stripe's processing fee, then the
+ * dispute fee; the rest is the payee's share that Stripe refused to reverse (or never had to pay
+ * out).
  */
 export function adjustmentNoticeAmounts(args: {
   leg: Pick<Leg, 'leg' | 'target_cents'>;
@@ -397,11 +434,10 @@ export class ChargeSettlementService {
   }
 
   /**
-   * Settle one Stripe charge for a purchase. Idempotent on the charge id:
-   * re-delivery, the sweeper and concurrent webhooks all collapse onto the
-   * same ChargeSettlement row, and only one caller wins the claim that writes
-   * the ledger slices and transfer rows. Runs under the charge's lock; when
-   * the lock stays busy the charge is left as an awaiting_fee row for the
+   * Settle one Stripe charge for a purchase. Idempotent on the charge id: re-delivery, the
+   * sweeper and concurrent webhooks all collapse onto the same ChargeSettlement row, and only one
+   * caller wins the claim that writes the ledger slices and transfer rows. Runs under the
+   * charge's lock; when the lock stays busy the charge is left as an awaiting_fee row for the
    * sweeper (never dropped).
    */
   async settleCharge(args: {
@@ -475,7 +511,7 @@ export class ChargeSettlementService {
       return this.markAwaiting(
         row,
         chargeId,
-        `${SETTLEMENT_LOG_CODES.stripeUnavailable}: reading the charge from Stripe failed (${(err as Error).message}); the settlement sweeper retries.`,
+        `${SETTLEMENT_LOG_CODES.stripeUnavailable}: reading the charge from Stripe failed (${settlementFailureCode(err)}); the settlement sweeper retries.`,
       );
     }
     if (!(charge.amount > 0)) {
@@ -584,14 +620,23 @@ export class ChargeSettlementService {
       rail: railForPaymentMethodType(charge.payment_method_details?.type),
     });
     // A refund can land before we settle (webhook ordering). Stripe's
-    // amount_refunded is the truth at this moment.
+    // amount_refunded is the truth at this moment; B-683-1: for a converted
+    // charge, the refunds' own settlement-currency debits.
+    const currency = bt.currency.toLowerCase();
+    let refunded = Math.max(row.refunded_cents, charge.amount_refunded ?? 0);
+    if ((charge.currency ?? currency).toLowerCase() !== currency && refunded > 0) {
+      try {
+        refunded = await convertedRefundedCents(this.stripe, chargeId, currency);
+      } catch (err) {
+        return this.markAwaiting(row, chargeId, `${settlementFailureCode(err)}: retried`);
+      }
+    }
     const adj: ChargeAdjustments = {
-      refunded_cents: Math.max(row.refunded_cents, charge.amount_refunded ?? 0),
+      refunded_cents: refunded,
       dispute_withdrawn_cents: row.dispute_withdrawn_cents,
       dispute_fee_cents: row.dispute_fee_cents,
     };
     const targets = computeAdjustedTargets(split, adj);
-    const currency = bt.currency.toLowerCase();
 
     const result = await this.prisma.$transaction(async (tx) => {
       // B-627-2: a holder whose lease was taken over cannot claim (the fence
@@ -820,14 +865,14 @@ export class ChargeSettlementService {
         if (chargeId) outcomes.push(await this.settleCharge({ purchase, charge_id: chargeId }));
       }
     } catch (err) {
-      this.logger.warn(`SFEE_SETTLEMENT_FAILED purchase=${purchase.id}: ${(err as Error).message}`);
+      this.logger.warn(`SFEE_SETTLEMENT_FAILED purchase=${purchase.id}: ${settlementFailureCode(err)}`);
     }
     return outcomes;
   }
 
   /**
-   * Sweeper (every 15 minutes, and the admin endpoint). Bounded; safe to run
-   * repeatedly (every write is idempotent per charge and transfer).
+   * Sweeper (every 15 minutes, and the admin endpoint). Bounded; safe to run repeatedly (every
+   * write is idempotent per charge and transfer).
    *   1. retry settlements waiting on Stripe (fee not reported yet, Stripe
    *      unavailable on the first read, charge lock busy);
    *   2. settle recent paid purchases that have no settlement at all (first
@@ -864,7 +909,7 @@ export class ChargeSettlementService {
         if (o.status === 'settled') settled += 1;
       } catch (err) {
         this.logger.warn(
-          `SFEE_SETTLEMENT_RETRY_FAILED charge=${s.stripe_charge_id} purchase=${s.purchase_id}: ${(err as Error).message}`,
+          `SFEE_SETTLEMENT_RETRY_FAILED charge=${s.stripe_charge_id} purchase=${s.purchase_id}: ${settlementFailureCode(err)}`,
         );
       }
     }
@@ -953,7 +998,7 @@ export class ChargeSettlementService {
         resolved += 1;
       } catch (err) {
         this.logger.warn(
-          `${SETTLEMENT_LOG_CODES.reversalPending} op=${op.idempotency_key}: still unresolved (${(err as Error).message})`,
+          `${SETTLEMENT_LOG_CODES.reversalPending} op=${op.idempotency_key}: still unresolved (${settlementFailureCode(err)})`,
         );
       }
     }
@@ -987,7 +1032,7 @@ export class ChargeSettlementService {
         done += 1;
       } catch (err) {
         this.logger.warn(
-          `${SETTLEMENT_LOG_CODES.reconcilePending} charge=${s.stripe_charge_id}: retry failed (${(err as Error).message})`,
+          `${SETTLEMENT_LOG_CODES.reconcilePending} charge=${s.stripe_charge_id}: retry failed (${settlementFailureCode(err)})`,
         );
       }
     }
@@ -995,15 +1040,13 @@ export class ChargeSettlementService {
   }
 
   /**
-   * B-627-1 — walk Stripe's paid invoices of the last BACKFILL_WINDOW_DAYS
-   * (newest first, INVOICE_BACKFILL_PAGES_PER_RUN pages of 100 per run) and
-   * settle every invoice charge that has no ChargeSettlement row, matched by
-   * charge id. The position is kept in a CronLease row's `cursor`, so a large
-   * window is covered across runs instead of re-reading the newest pages; at
-   * the end of the window the cursor resets to the newest invoice.
-   * Only S-FEE purchases are backfilled: a purchase with an S-FEE settlement,
-   * or one with no settlement and no legacy ledger rows. Legacy destination
-   * subscriptions keep their pre-S-FEE flow.
+   * B-627-1 — walk Stripe's paid invoices of the last BACKFILL_WINDOW_DAYS (newest first,
+   * INVOICE_BACKFILL_PAGES_PER_RUN pages of 100 per run) and settle every invoice charge that has
+   * no ChargeSettlement row, matched by charge id. The position is kept in a CronLease row's
+   * `cursor`, so a large window is covered across runs instead of re-reading the newest pages; at
+   * the end of the window the cursor resets to the newest invoice. Only S-FEE purchases are
+   * backfilled: a purchase with an S-FEE settlement, or one with no settlement and no legacy
+   * ledger rows. Legacy destination subscriptions keep their pre-S-FEE flow.
    */
   private async backfillPaidInvoices(
     now: Date,
@@ -1019,7 +1062,7 @@ export class ChargeSettlementService {
       cursor = row?.cursor ?? null;
     } catch (err) {
       this.logger.warn(
-        `${SETTLEMENT_LOG_CODES.invoiceBackfillFailed} could not read the backfill cursor; starting from the newest invoice: ${(err as Error).message}`,
+        `${SETTLEMENT_LOG_CODES.invoiceBackfillFailed} could not read the backfill cursor; starting from the newest invoice: ${settlementFailureCode(err)}`,
       );
     }
     let scanned = 0;
@@ -1100,7 +1143,7 @@ export class ChargeSettlementService {
               if (o.status === 'settled') settled += 1;
             } catch (err) {
               this.logger.warn(
-                `${SETTLEMENT_LOG_CODES.invoiceBackfillFailed} invoice=${m.id} charge=${m.charge}: ${(err as Error).message}`,
+                `${SETTLEMENT_LOG_CODES.invoiceBackfillFailed} invoice=${m.id} charge=${m.charge}: ${settlementFailureCode(err)}`,
               );
             }
           }
@@ -1114,7 +1157,7 @@ export class ChargeSettlementService {
       }
     } catch (err) {
       this.logger.warn(
-        `${SETTLEMENT_LOG_CODES.invoiceBackfillFailed} listing paid invoices failed; the next run resumes from the saved cursor: ${(err as Error).message}`,
+        `${SETTLEMENT_LOG_CODES.invoiceBackfillFailed} listing paid invoices failed; the next run resumes from the saved cursor: ${settlementFailureCode(err)}`,
       );
     }
     await this.saveBackfillCursor(exhausted ? null : cursor, now);
@@ -1136,7 +1179,7 @@ export class ChargeSettlementService {
       });
     } catch (err) {
       this.logger.warn(
-        `${SETTLEMENT_LOG_CODES.invoiceBackfillFailed} could not save the backfill cursor; the next run re-reads from the newest invoice: ${(err as Error).message}`,
+        `${SETTLEMENT_LOG_CODES.invoiceBackfillFailed} could not save the backfill cursor; the next run re-reads from the newest invoice: ${settlementFailureCode(err)}`,
       );
     }
   }
@@ -1220,16 +1263,15 @@ export class ChargeSettlementService {
   // ---------------------------------------------------------------------
 
   /**
-   * Re-derive targets after a refund or dispute change and move each payee
-   * to their target. Returns `legacy` / `no_settlement` when the charge is
-   * not an S-FEE settlement so the caller can run the legacy reversal path.
+   * Re-derive targets after a refund or dispute change and move each payee to their target.
+   * Returns `legacy` / `no_settlement` when the charge is not an S-FEE settlement so the caller
+   * can run the legacy reversal path.
    *
-   * B-627-2: runs under the charge's lock. Inside it the refunded amount is
-   * the cumulative total of the charge's succeeded refunds (ChargeRefund rows,
-   * unique per Stripe refund id), never the caller's increment, and every
-   * payee moves from a position read under the lock. Before releasing, the
-   * holder re-reads the refunds and applies any that landed meanwhile, so a
-   * waiter that gave up (ChargeLockBusyError) loses nothing.
+   * B-627-2: runs under the charge's lock. Inside it the refunded amount is the cumulative total
+   * of the charge's succeeded refunds (ChargeRefund rows, unique per Stripe refund id), never the
+   * caller's increment, and every payee moves from a position read under the lock. Before
+   * releasing, the holder re-reads the refunds and applies any that landed meanwhile, so a waiter
+   * that gave up (ChargeLockBusyError) loses nothing.
    */
   async applyAdjustments(input: AdjustmentInput): Promise<AdjustOutcome> {
     if (!(input.purchase.amount_cents > 0)) return 'skipped_free';
@@ -1267,12 +1309,12 @@ export class ChargeSettlementService {
         data: {
           reconcile_requested_at: new Date(),
           reconcile_dispute_id: disputeId ?? row.reconcile_dispute_id ?? null,
-          reconcile_reason: String((err as Error)?.message ?? err).slice(0, 500),
+          reconcile_reason: settlementFailureCode(err),
         },
       });
     } catch (flagErr) {
       this.logger.error(
-        `${SETTLEMENT_LOG_CODES.reconcilePending} alert=true charge=${chargeId}: could not flag the settlement for the sweeper (${(flagErr as Error).message}); relying on Stripe redelivery`,
+        `${SETTLEMENT_LOG_CODES.reconcilePending} alert=true charge=${chargeId}: could not flag the settlement for the sweeper (${settlementFailureCode(flagErr)}); relying on Stripe redelivery`,
       );
     }
   }
@@ -1295,7 +1337,7 @@ export class ChargeSettlementService {
         await this.settleChargeLocked({ purchase: input.purchase, charge_id: input.charge_id });
       } catch (err) {
         this.logger.warn(
-          `applyAdjustments: settle-first failed charge=${input.charge_id}: ${(err as Error).message}`,
+          `applyAdjustments: settle-first failed charge=${input.charge_id}: ${settlementFailureCode(err)}`,
         );
       }
       row = await this.prisma.chargeSettlement.findUnique({
@@ -1312,13 +1354,20 @@ export class ChargeSettlementService {
     });
     let current: ChargeSettlement = row;
     let adjusted = false;
+    // B-683-1: a converted charge's refunds come from Stripe in the
+    // settlement currency; presentment cents are never mixed in.
+    const fx = (input.purchase.currency ?? row.currency).toLowerCase() !== row.currency;
+    const refundedNow = () =>
+      fx
+        ? convertedRefundedCents(this.stripe, input.charge_id, row.currency)
+        : this.succeededRefundCents(input.charge_id);
 
     for (let round = 0; round < 4; round += 1) {
-      const refundedOnRecord = await this.succeededRefundCents(input.charge_id);
+      const refundedOnRecord = await refundedNow();
       const next: ChargeAdjustments = {
         refunded_cents: Math.max(
           current.refunded_cents,
-          input.refunded_cents ?? 0,
+          fx ? 0 : (input.refunded_cents ?? 0),
           refundedOnRecord,
         ),
         dispute_withdrawn_cents: dispute?.withdrawn_cents ?? current.dispute_withdrawn_cents,
@@ -1420,7 +1469,7 @@ export class ChargeSettlementService {
       }
       // Drain before release: a refund recorded while we converged (its
       // webhook is waiting on this lock, or gave up) is applied now.
-      const after = await this.succeededRefundCents(input.charge_id);
+      const after = await refundedNow();
       if (after <= next.refunded_cents) {
         // OR-111-1: tell each payee exactly what changed, from the converged
         // state, still under the lock (idempotent per charge/leg/event/state).
@@ -1435,16 +1484,14 @@ export class ChargeSettlementService {
   }
 
   /**
-   * OR-111-1 — write the payee-facing record of the adjustment the charge has
-   * just converged to (one PayoutAdjustmentNotice per payee leg, event and
-   * adjustment state; a replay finds its key and writes nothing). Runs under
-   * the charge lock after every leg converged, so the amounts are the real
-   * ones: what the customer got back, what was taken back from this sale's
-   * own transfer, and what is held from the payee's next sale(s), split into
-   * TGP's 2%, Stripe's processing fee, the dispute fee and any share Stripe
-   * refused to reverse. Delivery (push / in-app / email) is done by the
-   * dispatcher after the lock is released. A failure here never undoes the
-   * money: the settlement is flagged and the sweeper re-runs it.
+   * OR-111-1 — write the payee-facing record of the adjustment the charge has just converged to
+   * (one PayoutAdjustmentNotice per payee leg, event and adjustment state; a replay finds its key
+   * and writes nothing). Runs under the charge lock after every leg converged, so the amounts are
+   * the real ones: what the customer got back, what was taken back from this sale's own transfer,
+   * and what is held from the payee's next sale(s), split into TGP's 2%, Stripe's processing fee,
+   * the dispute fee and any share Stripe refused to reverse. Delivery (push / in-app / email) is
+   * done by the dispatcher after the lock is released. A failure here never undoes the money: the
+   * settlement is flagged and the sweeper re-runs it.
    */
   private async recordAdjustmentNotices(
     row: ChargeSettlement,
@@ -1532,7 +1579,7 @@ export class ChargeSettlementService {
       return written;
     } catch (err) {
       this.logger.error(
-        `${SETTLEMENT_LOG_CODES.noticeFailed} alert=true charge=${row.stripe_charge_id}: could not record the payee notice (${(err as Error).message}); the money is converged and the sweeper retries the notice`,
+        `${SETTLEMENT_LOG_CODES.noticeFailed} alert=true charge=${row.stripe_charge_id}: could not record the payee notice (${settlementFailureCode(err)}); the money is converged and the sweeper retries the notice`,
       );
       await this.flagForReconcile(row.stripe_charge_id, null, err);
       return 0;
@@ -1567,7 +1614,7 @@ export class ChargeSettlementService {
       throw new DisputeStateUnavailableError(
         input.dispute_id,
         input.charge_id,
-        (err as Error)?.message ?? 'request failed',
+        settlementFailureCode(err),
       );
     }
     if (!fresh || !Array.isArray(fresh.balance_transactions)) {
@@ -1696,7 +1743,7 @@ export class ChargeSettlementService {
         // Definitive refusal only (insufficient balance, invalid request):
         // the rest is owed by the payee.
         this.logger.warn(
-          `transfer reversal refused transfer=${t.id} charge=${row.stripe_charge_id}: ${res.error}; recording a recovery to collect`,
+          `transfer reversal refused transfer=${t.id} charge=${row.stripe_charge_id} op=${res.op_id}: refused; recording a recovery to collect`,
         );
         break;
       }
@@ -2002,26 +2049,24 @@ export class ChargeSettlementService {
     } catch (err) {
       if (isRetryableMoneyError(err)) throw err;
       this.logger.warn(
-        `transfer attempt failed inline transfer=${transferId}: ${(err as Error).message}`,
+        `transfer attempt failed inline transfer=${transferId}: ${settlementFailureCode(err)}`,
       );
       return null;
     }
   }
 
   /**
-   * S-FEE round 8 (B-627-9 c) — post one transfer from outside a settlement
-   * critical section (the transfer sweeper, the legacy head-coach inline
-   * attempt) under the same per-charge money lock and fence the inline
-   * settlement path takes, so the common overlap (a webhook settling the
-   * charge while the sweeper retries its transfer) is serialized. The lock is
-   * a lease, not a proof: a holder paused past its TTL can overlap the next
-   * one, which is why the transfer protocol itself also holds young markers
-   * and compare-and-sets every outcome (TransferOrchestratorService.attempt).
+   * S-FEE round 8 (B-627-9 c) — post one transfer from outside a settlement critical section (the
+   * transfer sweeper, the legacy head-coach inline attempt) under the same per-charge money lock
+   * and fence the inline settlement path takes, so the common overlap (a webhook settling the
+   * charge while the sweeper retries its transfer) is serialized. The lock is a lease, not a
+   * proof: a holder paused past its TTL can overlap the next one, which is why the transfer
+   * protocol itself also holds young markers and compare-and-sets every outcome
+   * (TransferOrchestratorService.attempt).
    *
-   * Deadlock-free: the sweeper holds no other charge lock while it waits
-   * (rows are attempted one at a time), the wait is bounded
-   * (SWEEP_TRANSFER_LOCK_WAIT_MS), and no DB transaction is open across it.
-   * Busy or lost lock: nothing moved; the row stays due for the next run.
+   * Deadlock-free: the sweeper holds no other charge lock while it waits (rows are attempted one
+   * at a time), the wait is bounded (SWEEP_TRANSFER_LOCK_WAIT_MS), and no DB transaction is open
+   * across it. Busy or lost lock: nothing moved; the row stays due for the next run.
    */
   async attemptTransferUnderLock(
     row: Pick<ConnectTransfer, 'id' | 'source_stripe_charge_id' | 'settlement_id'>,
@@ -2037,7 +2082,7 @@ export class ChargeSettlementService {
     } catch (err) {
       if (!isRetryableMoneyError(err)) throw err;
       this.logger.warn(
-        `SFEE_TRANSFER_DEFERRED transfer=${row.id} charge=${chargeId}: ${(err as Error).message}; nothing moved, the next sweep retries`,
+        `SFEE_TRANSFER_DEFERRED transfer=${row.id} charge=${chargeId}: ${settlementFailureCode(err)}; nothing moved, the next sweep retries`,
       );
       return this.prisma.connectTransfer.findUniqueOrThrow({ where: { id: row.id } });
     }

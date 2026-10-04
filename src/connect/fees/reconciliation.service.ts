@@ -9,7 +9,12 @@ import type {
 } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { StripeConnectApiError, StripeConnectApiService } from '../stripe-connect-api.service';
-import { SETTLEMENT_MECHANISM_SCT, payeePositionCents } from './charge-settlement.service';
+import {
+  SETTLEMENT_MECHANISM_SCT,
+  convertedRefundedCents,
+  payeePositionCents,
+  settlementFailureCode,
+} from './charge-settlement.service';
 
 // S-FEE — per-charge identity for a separate-charge-and-transfer settlement.
 // Every check is integer cents; drift is the sum of absolute mismatches.
@@ -216,7 +221,7 @@ export class ReconciliationService {
     const settlements = await this.prisma.chargeSettlement.findMany({
       where: { purchase_id: purchase.id, mechanism: SETTLEMENT_MECHANISM_SCT, status: 'settled' },
       orderBy: { created_at: 'desc' },
-      take: 12,
+      // Every settled charge, not only the newest twelve (Opus C-683-3, round 11).
     });
     if (settlements.length > 0) {
       return this.reconcileSettlements(purchase, settlements, ledger, transfers);
@@ -329,15 +334,24 @@ export class ReconciliationService {
     let transferred = 0;
     let platformCash = 0;
     let receivableOpen = 0;
+    let pending = 0;
     const notes: string[] = [];
     for (const s of settlements) {
       let charge;
+      let stripeRefunded: number;
       try {
         charge = await this.stripe.retrieveCharge(s.stripe_charge_id, {
           expandBalanceTransaction: true,
         });
+        // B-683-1 (round 11): compare refunds in the settlement currency.
+        const btc = charge.balance_transaction;
+        const cur = (typeof btc === 'object' && btc?.currency) || s.currency;
+        stripeRefunded = charge.amount_refunded ?? 0;
+        if ((charge.currency ?? cur).toLowerCase() !== cur && stripeRefunded > 0) {
+          stripeRefunded = await convertedRefundedCents(this.stripe, s.stripe_charge_id, cur);
+        }
       } catch (err) {
-        const msg = err instanceof StripeConnectApiError ? err.message : (err as Error).message;
+        const msg = settlementFailureCode(err);
         return this.persistSnapshot(purchase.id, 'unknown', null, {
           stripe: {
             amount_cents: null,
@@ -361,18 +375,22 @@ export class ReconciliationService {
         stripe: {
           gross_cents: bt?.amount ?? charge.amount,
           fee_cents: bt?.fee ?? 0,
-          refunded_cents: charge.amount_refunded ?? 0,
+          refunded_cents: stripeRefunded,
         },
       });
       drift += result.drift_cents;
       platformCash += result.platform_cash_cents;
       receivableOpen += result.receivable_open_cents;
       gross += bt?.amount ?? charge.amount;
-      refunded += charge.amount_refunded ?? 0;
+      refunded += stripeRefunded;
       for (const n of result.notes) notes.push(`${s.stripe_charge_id} ${n}`);
       for (const t of transfers) {
-        if (t.settlement_id === s.id && t.status !== 'failed') {
+        if (t.settlement_id !== s.id || t.status === 'failed') continue;
+        // B-683-2 (round 11): a row Stripe has not executed is a promise, not cash.
+        if (t.status === 'succeeded' || t.status === 'reversed') {
           transferred += t.amount_cents - t.reversed_amount_cents;
+        } else {
+          pending += t.amount_cents;
         }
       }
     }
@@ -386,7 +404,9 @@ export class ReconciliationService {
         `SFEE_PLATFORM_CASH_NEGATIVE alert=true purchase=${purchase.id} platform_cash=${platformCash} receivable_open=${receivableOpen}`,
       );
     }
-    const status: 'ok' | 'drift' = drift === 0 ? 'ok' : 'drift';
+    // B-683-2: until Stripe executes every transfer the cash cannot be attested.
+    if (pending > 0) notes.unshift(`transfers_pending_cents=${pending}`);
+    const status = drift !== 0 ? 'drift' : pending > 0 ? 'unknown' : 'ok';
     return this.persistSnapshot(purchase.id, status, drift, {
       stripe: {
         amount_cents: gross,
