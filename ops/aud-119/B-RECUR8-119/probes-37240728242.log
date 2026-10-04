@@ -1,0 +1,1247 @@
+targeted	Set up job	﻿2026-10-04T22:37:40.8601502Z Current runner version: '2.337.0'
+targeted	Set up job	2026-10-04T22:37:40.8621702Z ##[group]Runner Image Provisioner
+targeted	Set up job	2026-10-04T22:37:40.8622589Z Hosted Compute Agent
+targeted	Set up job	2026-10-04T22:37:40.8623104Z Version: 20260901.588
+targeted	Set up job	2026-10-04T22:37:40.8623852Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	Set up job	2026-10-04T22:37:40.8624572Z Build Date: 2026-09-01T19:56:44Z
+targeted	Set up job	2026-10-04T22:37:40.8625249Z Worker ID: {5488c5ea-b84e-458f-b6e9-43fdbff95f91}
+targeted	Set up job	2026-10-04T22:37:40.8625929Z Azure Region: westus3
+targeted	Set up job	2026-10-04T22:37:40.8626529Z ##[endgroup]
+targeted	Set up job	2026-10-04T22:37:40.8627850Z ##[group]Operating System
+targeted	Set up job	2026-10-04T22:37:40.8628485Z Ubuntu
+targeted	Set up job	2026-10-04T22:37:40.8629003Z 24.04.5
+targeted	Set up job	2026-10-04T22:37:40.8629516Z LTS
+targeted	Set up job	2026-10-04T22:37:40.8630040Z ##[endgroup]
+targeted	Set up job	2026-10-04T22:37:40.8630567Z ##[group]Runner Image
+targeted	Set up job	2026-10-04T22:37:40.8631166Z Image: ubuntu-24.04
+targeted	Set up job	2026-10-04T22:37:40.8631719Z Version: 20260927.320.1
+targeted	Set up job	2026-10-04T22:37:40.8632727Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	Set up job	2026-10-04T22:37:40.8634774Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	Set up job	2026-10-04T22:37:40.8635722Z ##[endgroup]
+targeted	Set up job	2026-10-04T22:37:40.8636887Z ##[group]GITHUB_TOKEN Permissions
+targeted	Set up job	2026-10-04T22:37:40.8638815Z Contents: read
+targeted	Set up job	2026-10-04T22:37:40.8639369Z Metadata: read
+targeted	Set up job	2026-10-04T22:37:40.8639916Z Packages: read
+targeted	Set up job	2026-10-04T22:37:40.8640449Z ##[endgroup]
+targeted	Set up job	2026-10-04T22:37:40.8642268Z Secret source: Actions
+targeted	Set up job	2026-10-04T22:37:40.8643156Z Cache mode: write
+targeted	Set up job	2026-10-04T22:37:40.8644110Z Prepare workflow directory
+targeted	Set up job	2026-10-04T22:37:40.9058004Z Prepare all required actions
+targeted	Set up job	2026-10-04T22:37:40.9102976Z Getting action download info
+targeted	Set up job	2026-10-04T22:37:41.2085294Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	Set up job	2026-10-04T22:37:41.3626362Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	Set up job	2026-10-04T22:37:41.5634777Z Complete job name: targeted
+targeted	Initialize containers	﻿2026-10-04T22:37:41.6043991Z ##[group]Checking docker version
+targeted	Initialize containers	2026-10-04T22:37:41.6056014Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+targeted	Initialize containers	2026-10-04T22:37:43.5139208Z '1.48'
+targeted	Initialize containers	2026-10-04T22:37:43.5150019Z Docker daemon API version: '1.48'
+targeted	Initialize containers	2026-10-04T22:37:43.5151550Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+targeted	Initialize containers	2026-10-04T22:37:43.5391778Z '1.48'
+targeted	Initialize containers	2026-10-04T22:37:43.5401259Z Docker client API version: '1.48'
+targeted	Initialize containers	2026-10-04T22:37:43.5406871Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T22:37:43.5409279Z ##[group]Clean up resources from previous jobs
+targeted	Initialize containers	2026-10-04T22:37:43.5414720Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=5cc154"
+targeted	Initialize containers	2026-10-04T22:37:43.5585499Z ##[command]/usr/bin/docker network prune --force --filter "label=5cc154"
+targeted	Initialize containers	2026-10-04T22:37:43.5708569Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T22:37:43.5709842Z ##[group]Create local container network
+targeted	Initialize containers	2026-10-04T22:37:43.5719790Z ##[command]/usr/bin/docker network create --label 5cc154 github_network_37c4f5df8e094d83b4810292dc1755fe
+targeted	Initialize containers	2026-10-04T22:37:43.6146845Z 61972c690a4797aa1e7be193271fa679e9cbe295945d588f85e8c6eef144fb13
+targeted	Initialize containers	2026-10-04T22:37:43.6162526Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T22:37:43.6188910Z ##[group]Starting redis service container
+targeted	Initialize containers	2026-10-04T22:37:43.6209615Z ##[command]/usr/bin/docker pull redis:7-alpine
+targeted	Initialize containers	2026-10-04T22:37:44.5069027Z 7-alpine: Pulling from library/redis
+targeted	Initialize containers	2026-10-04T22:37:44.7368157Z 16333ee0c00f: Pulling fs layer
+targeted	Initialize containers	2026-10-04T22:37:44.7369290Z 83234986c742: Pulling fs layer
+targeted	Initialize containers	2026-10-04T22:37:44.7369672Z 7eb50503c2b0: Pulling fs layer
+targeted	Initialize containers	2026-10-04T22:37:44.7370023Z 1522f9c6f453: Pulling fs layer
+targeted	Initialize containers	2026-10-04T22:37:44.7370359Z 9928009b15c8: Pulling fs layer
+targeted	Initialize containers	2026-10-04T22:37:44.7370741Z 4f4fb700ef54: Pulling fs layer
+targeted	Initialize containers	2026-10-04T22:37:44.7371221Z 4eb14bae0e1d: Pulling fs layer
+targeted	Initialize containers	2026-10-04T22:37:44.7371678Z 1522f9c6f453: Waiting
+targeted	Initialize containers	2026-10-04T22:37:44.7372163Z 4f4fb700ef54: Waiting
+targeted	Initialize containers	2026-10-04T22:37:44.7372514Z 4eb14bae0e1d: Waiting
+targeted	Initialize containers	2026-10-04T22:37:44.7372848Z 9928009b15c8: Waiting
+targeted	Initialize containers	2026-10-04T22:37:44.9351210Z 83234986c742: Download complete
+targeted	Initialize containers	2026-10-04T22:37:44.9377109Z 7eb50503c2b0: Verifying Checksum
+targeted	Initialize containers	2026-10-04T22:37:44.9380539Z 7eb50503c2b0: Download complete
+targeted	Initialize containers	2026-10-04T22:37:44.9471884Z 16333ee0c00f: Download complete
+targeted	Initialize containers	2026-10-04T22:37:45.0474541Z 16333ee0c00f: Pull complete
+targeted	Initialize containers	2026-10-04T22:37:45.1104915Z 9928009b15c8: Verifying Checksum
+targeted	Initialize containers	2026-10-04T22:37:45.1105700Z 9928009b15c8: Download complete
+targeted	Initialize containers	2026-10-04T22:37:45.1305980Z 4f4fb700ef54: Verifying Checksum
+targeted	Initialize containers	2026-10-04T22:37:45.1306927Z 4f4fb700ef54: Download complete
+targeted	Initialize containers	2026-10-04T22:37:45.1591798Z 1522f9c6f453: Verifying Checksum
+targeted	Initialize containers	2026-10-04T22:37:45.1592595Z 1522f9c6f453: Download complete
+targeted	Initialize containers	2026-10-04T22:37:45.2106548Z 83234986c742: Pull complete
+targeted	Initialize containers	2026-10-04T22:37:45.2901964Z 4eb14bae0e1d: Verifying Checksum
+targeted	Initialize containers	2026-10-04T22:37:45.2902559Z 4eb14bae0e1d: Download complete
+targeted	Initialize containers	2026-10-04T22:37:45.3615074Z 7eb50503c2b0: Pull complete
+targeted	Initialize containers	2026-10-04T22:37:45.6911050Z 1522f9c6f453: Pull complete
+targeted	Initialize containers	2026-10-04T22:37:45.7019907Z 9928009b15c8: Pull complete
+targeted	Initialize containers	2026-10-04T22:37:45.7085867Z 4f4fb700ef54: Pull complete
+targeted	Initialize containers	2026-10-04T22:37:45.7175651Z 4eb14bae0e1d: Pull complete
+targeted	Initialize containers	2026-10-04T22:37:45.7219694Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+targeted	Initialize containers	2026-10-04T22:37:45.7234155Z Status: Downloaded newer image for redis:7-alpine
+targeted	Initialize containers	2026-10-04T22:37:45.7244784Z docker.io/library/redis:7-alpine
+targeted	Initialize containers	2026-10-04T22:37:45.7282754Z ##[command]/usr/bin/docker create --name 77d66b3d34ce4bf5998839e2aa3d41cd_redis7alpine_36a064 --label 5cc154 --network github_network_37c4f5df8e094d83b4810292dc1755fe --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+targeted	Initialize containers	2026-10-04T22:37:45.7527752Z 3efa58efde2e2341b8fc33b70ba7f868efe11f7b50c8ba7c6e477fd8b099f9bc
+targeted	Initialize containers	2026-10-04T22:37:45.7542457Z ##[command]/usr/bin/docker start 3efa58efde2e2341b8fc33b70ba7f868efe11f7b50c8ba7c6e477fd8b099f9bc
+targeted	Initialize containers	2026-10-04T22:37:46.7025977Z 3efa58efde2e2341b8fc33b70ba7f868efe11f7b50c8ba7c6e477fd8b099f9bc
+targeted	Initialize containers	2026-10-04T22:37:46.7050014Z ##[command]/usr/bin/docker ps --all --filter id=3efa58efde2e2341b8fc33b70ba7f868efe11f7b50c8ba7c6e477fd8b099f9bc --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+targeted	Initialize containers	2026-10-04T22:37:46.7163979Z 3efa58efde2e2341b8fc33b70ba7f868efe11f7b50c8ba7c6e477fd8b099f9bc Up Less than a second (health: starting)
+targeted	Initialize containers	2026-10-04T22:37:46.7178428Z ##[command]/usr/bin/docker port 3efa58efde2e2341b8fc33b70ba7f868efe11f7b50c8ba7c6e477fd8b099f9bc
+targeted	Initialize containers	2026-10-04T22:37:46.7329314Z 6379/tcp -> 0.0.0.0:6379
+targeted	Initialize containers	2026-10-04T22:37:46.7329778Z 6379/tcp -> [::]:6379
+targeted	Initialize containers	2026-10-04T22:37:46.7365203Z ##[endgroup]
+targeted	Initialize containers	2026-10-04T22:37:46.7373185Z ##[group]Waiting for all services to be ready
+targeted	Initialize containers	2026-10-04T22:37:46.7385253Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 3efa58efde2e2341b8fc33b70ba7f868efe11f7b50c8ba7c6e477fd8b099f9bc
+targeted	Initialize containers	2026-10-04T22:37:46.7494153Z starting
+targeted	Initialize containers	2026-10-04T22:37:46.7512903Z redis service is starting, waiting 2 seconds before checking again.
+targeted	Initialize containers	2026-10-04T22:37:48.7520104Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 3efa58efde2e2341b8fc33b70ba7f868efe11f7b50c8ba7c6e477fd8b099f9bc
+targeted	Initialize containers	2026-10-04T22:37:48.7639235Z starting
+targeted	Initialize containers	2026-10-04T22:37:48.7646939Z redis service is starting, waiting 3 seconds before checking again.
+targeted	Initialize containers	2026-10-04T22:37:52.4321583Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 3efa58efde2e2341b8fc33b70ba7f868efe11f7b50c8ba7c6e477fd8b099f9bc
+targeted	Initialize containers	2026-10-04T22:37:52.4493949Z healthy
+targeted	Initialize containers	2026-10-04T22:37:52.4505807Z redis service is healthy.
+targeted	Initialize containers	2026-10-04T22:37:52.4506592Z ##[endgroup]
+targeted	Run actions/checkout@v6	﻿2026-10-04T22:37:52.4766253Z ##[group]Run actions/checkout@v6
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.4766812Z with:
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.4767253Z   repository: BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.4769589Z   token: ***
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.4769930Z   ssh-strict: true
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.4770251Z   ssh-user: git
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.4770555Z   persist-credentials: true
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.4770921Z   clean: true
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.4771369Z   sparse-checkout-cone-mode: true
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.4771771Z   fetch-depth: 1
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.4772059Z   fetch-tags: false
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.4772348Z   show-progress: true
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.4772620Z   lfs: false
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.4772871Z   submodules: false
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.4773165Z   set-safe-directory: true
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.4773611Z   allow-unsafe-pr-checkout: false
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.4774054Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5645736Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5647191Z ##[group]Getting Git version info
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5647792Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5648587Z [command]/usr/bin/git version
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5709656Z git version 2.55.0
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5727075Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5737901Z Temporarily overriding HOME='/home/runner/work/_temp/7a2c6b21-a4c5-4207-9884-5868e40dc09b' before making global git config changes
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5741722Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5742549Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5784777Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5788428Z ##[group]Determining repository object format
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5790366Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5791036Z ##[group]Initializing the repository
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5794325Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5903655Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5904298Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5904858Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5905276Z hint: call:
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5905535Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5906047Z hint: 	git config --global init.defaultBranch <name>
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5906522Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5906972Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5907705Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5908257Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5908659Z hint: 	git branch -m <name>
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5909062Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5909542Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5910537Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5916732Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5959534Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5960211Z ##[group]Disabling automatic garbage collection
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5963220Z [command]/usr/bin/git config --local gc.auto 0
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5986299Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5986957Z ##[group]Setting up auth
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5987450Z Removing SSH command configuration
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.5992752Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.6016608Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.6312713Z Removing HTTP extra header
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.6317589Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.6341499Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.6502287Z Removing includeIf entries pointing to credentials config files
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.6508297Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.6534380Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.6702673Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-4e99689d-0f02-4895-bca9-1731b8830201.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.6729457Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-4e99689d-0f02-4895-bca9-1731b8830201.config
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.6752612Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-4e99689d-0f02-4895-bca9-1731b8830201.config
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.6778156Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-4e99689d-0f02-4895-bca9-1731b8830201.config
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.6806817Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-4e99689d-0f02-4895-bca9-1731b8830201.config
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.6826529Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.6826969Z ##[group]Fetching the repository
+targeted	Run actions/checkout@v6	2026-10-04T22:37:52.6832960Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +3ffa3de9eded655cca980355f3798e00faac1252:refs/remotes/origin/ci/B-RECUR8-119-701-probes
+targeted	Run actions/checkout@v6	2026-10-04T22:37:54.7954910Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-04T22:37:54.7956188Z  * [new ref]         3ffa3de9eded655cca980355f3798e00faac1252 -> origin/ci/B-RECUR8-119-701-probes
+targeted	Run actions/checkout@v6	2026-10-04T22:37:54.7965893Z [command]/usr/bin/git branch --list --remote origin/ci/B-RECUR8-119-701-probes
+targeted	Run actions/checkout@v6	2026-10-04T22:37:54.7987122Z   origin/ci/B-RECUR8-119-701-probes
+targeted	Run actions/checkout@v6	2026-10-04T22:37:54.7995066Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-RECUR8-119-701-probes
+targeted	Run actions/checkout@v6	2026-10-04T22:37:54.8014223Z 3ffa3de9eded655cca980355f3798e00faac1252
+targeted	Run actions/checkout@v6	2026-10-04T22:37:54.8022201Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T22:37:54.8022902Z ##[group]Determining the checkout info
+targeted	Run actions/checkout@v6	2026-10-04T22:37:54.8023832Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T22:37:54.8026238Z [command]/usr/bin/git sparse-checkout disable
+targeted	Run actions/checkout@v6	2026-10-04T22:37:54.8074383Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	Run actions/checkout@v6	2026-10-04T22:37:54.8095284Z ##[group]Checking out the ref
+targeted	Run actions/checkout@v6	2026-10-04T22:37:54.8099920Z [command]/usr/bin/git checkout --progress --force -B ci/B-RECUR8-119-701-probes refs/remotes/origin/ci/B-RECUR8-119-701-probes
+targeted	Run actions/checkout@v6	2026-10-04T22:37:54.9791783Z Switched to a new branch 'ci/B-RECUR8-119-701-probes'
+targeted	Run actions/checkout@v6	2026-10-04T22:37:54.9796371Z branch 'ci/B-RECUR8-119-701-probes' set up to track 'origin/ci/B-RECUR8-119-701-probes'.
+targeted	Run actions/checkout@v6	2026-10-04T22:37:54.9803202Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T22:37:54.9849018Z [command]/usr/bin/git log -1 --format=%H
+targeted	Run actions/checkout@v6	2026-10-04T22:37:54.9865093Z 3ffa3de9eded655cca980355f3798e00faac1252
+targeted	Run actions/setup-node@v6	﻿2026-10-04T22:37:55.0089041Z ##[group]Run actions/setup-node@v6
+targeted	Run actions/setup-node@v6	2026-10-04T22:37:55.0089407Z with:
+targeted	Run actions/setup-node@v6	2026-10-04T22:37:55.0089728Z   node-version: 20
+targeted	Run actions/setup-node@v6	2026-10-04T22:37:55.0090018Z   cache: npm
+targeted	Run actions/setup-node@v6	2026-10-04T22:37:55.0090356Z   check-latest: false
+targeted	Run actions/setup-node@v6	2026-10-04T22:37:55.0092243Z   token: ***
+targeted	Run actions/setup-node@v6	2026-10-04T22:37:55.0092516Z   package-manager-cache: true
+targeted	Run actions/setup-node@v6	2026-10-04T22:37:55.0092840Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T22:37:55.1356668Z Attempting to download 20...
+targeted	Run actions/setup-node@v6	2026-10-04T22:37:56.1096206Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+targeted	Run actions/setup-node@v6	2026-10-04T22:37:56.5644115Z Extracting ...
+targeted	Run actions/setup-node@v6	2026-10-04T22:37:56.5744772Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/22665c23-0dc2-45c3-bb68-8e60ff1fd381 -f /home/runner/work/_temp/8246bc95-80e5-491b-ae3a-a9bb68948eee
+targeted	Run actions/setup-node@v6	2026-10-04T22:37:57.5562913Z Adding to the cache ...
+targeted	Run actions/setup-node@v6	2026-10-04T22:37:59.1780679Z ##[group]Environment details
+targeted	Run actions/setup-node@v6	2026-10-04T22:37:59.3739933Z node: v20.20.2
+targeted	Run actions/setup-node@v6	2026-10-04T22:37:59.3740582Z npm: 10.8.2
+targeted	Run actions/setup-node@v6	2026-10-04T22:37:59.3740864Z yarn: 1.22.22
+targeted	Run actions/setup-node@v6	2026-10-04T22:37:59.3741498Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T22:37:59.3755065Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+targeted	Run actions/setup-node@v6	2026-10-04T22:37:59.4628786Z /home/runner/.npm
+targeted	Run actions/setup-node@v6	2026-10-04T22:37:59.7032217Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+targeted	Run actions/setup-node@v6	2026-10-04T22:38:00.9523588Z Received 46137344 of 86828135 (53.1%), 44.0 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-04T22:38:01.2124358Z Received 86828135 of 86828135 (100.0%), 65.7 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-04T22:38:01.2125449Z Cache Size: ~83 MB (86828135 B)
+targeted	Run actions/setup-node@v6	2026-10-04T22:38:01.2237650Z [command]/usr/bin/tar -xf /home/runner/work/_temp/27c62083-8204-4a16-92f2-7d158b3cf3ef/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+targeted	Run actions/setup-node@v6	2026-10-04T22:38:01.3300882Z Cache restored successfully
+targeted	Run actions/setup-node@v6	2026-10-04T22:38:01.3338799Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+targeted	Run npm ci	﻿2026-10-04T22:38:01.3491652Z ##[group]Run npm ci
+targeted	Run npm ci	2026-10-04T22:38:01.3492027Z ^[[36;1mnpm ci^[[0m
+targeted	Run npm ci	2026-10-04T22:38:01.3650471Z shell: /usr/bin/bash -e {0}
+targeted	Run npm ci	2026-10-04T22:38:01.3650921Z ##[endgroup]
+targeted	Run npm ci	2026-10-04T22:38:06.2582573Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	Run npm ci	2026-10-04T22:38:06.9020496Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+targeted	Run npm ci	2026-10-04T22:38:08.1684956Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T22:38:09.2095088Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T22:38:09.2455691Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T22:38:09.3034437Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T22:38:19.8680664Z 
+targeted	Run npm ci	2026-10-04T22:38:19.8681613Z > growth-project-backend@1.0.0 postinstall
+targeted	Run npm ci	2026-10-04T22:38:19.8682031Z > prisma generate
+targeted	Run npm ci	2026-10-04T22:38:19.8682338Z 
+targeted	Run npm ci	2026-10-04T22:38:20.6265718Z Prisma schema loaded from prisma/schema.prisma
+targeted	Run npm ci	2026-10-04T22:38:23.9957613Z ┌─────────────────────────────────────────────────────────┐
+targeted	Run npm ci	2026-10-04T22:38:23.9958535Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+targeted	Run npm ci	2026-10-04T22:38:23.9959159Z │                                                         │
+targeted	Run npm ci	2026-10-04T22:38:23.9959676Z │  This is a major update - please follow the guide at    │
+targeted	Run npm ci	2026-10-04T22:38:23.9960202Z │  https://pris.ly/d/major-version-upgrade                │
+targeted	Run npm ci	2026-10-04T22:38:23.9960720Z │                                                         │
+targeted	Run npm ci	2026-10-04T22:38:23.9961181Z │  Run the following to update                            │
+targeted	Run npm ci	2026-10-04T22:38:23.9961676Z │    npm i --save-dev prisma@latest                       │
+targeted	Run npm ci	2026-10-04T22:38:23.9962398Z │    npm i @prisma/client@latest                          │
+targeted	Run npm ci	2026-10-04T22:38:23.9962942Z └─────────────────────────────────────────────────────────┘
+targeted	Run npm ci	2026-10-04T22:38:23.9963709Z 
+targeted	Run npm ci	2026-10-04T22:38:23.9964341Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.81s
+targeted	Run npm ci	2026-10-04T22:38:23.9964690Z 
+targeted	Run npm ci	2026-10-04T22:38:23.9964997Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	Run npm ci	2026-10-04T22:38:23.9965400Z 
+targeted	Run npm ci	2026-10-04T22:38:23.9965710Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+targeted	Run npm ci	2026-10-04T22:38:23.9965994Z 
+targeted	Run npm ci	2026-10-04T22:38:24.0287963Z 
+targeted	Run npm ci	2026-10-04T22:38:24.0289022Z > growth-project-backend@1.0.0 prepare
+targeted	Run npm ci	2026-10-04T22:38:24.0289747Z > lefthook install
+targeted	Run npm ci	2026-10-04T22:38:24.0289946Z 
+targeted	Run npm ci	2026-10-04T22:38:24.0703915Z sync hooks: ✔️(pre-commit, commit-msg)
+targeted	Run npm ci	2026-10-04T22:38:24.0828177Z 
+targeted	Run npm ci	2026-10-04T22:38:24.0829381Z added 1115 packages, and audited 1116 packages in 23s
+targeted	Run npm ci	2026-10-04T22:38:24.0829682Z 
+targeted	Run npm ci	2026-10-04T22:38:24.0829932Z 202 packages are looking for funding
+targeted	Run npm ci	2026-10-04T22:38:24.0830299Z   run `npm fund` for details
+targeted	Run npm ci	2026-10-04T22:38:24.0859255Z 
+targeted	Run npm ci	2026-10-04T22:38:24.0859536Z 3 high severity vulnerabilities
+targeted	Run npm ci	2026-10-04T22:38:24.0859808Z 
+targeted	Run npm ci	2026-10-04T22:38:24.0860157Z To address all issues (including breaking changes), run:
+targeted	Run npm ci	2026-10-04T22:38:24.0860986Z   npm audit fix --force
+targeted	Run npm ci	2026-10-04T22:38:24.0861230Z 
+targeted	Run npm ci	2026-10-04T22:38:24.0861417Z Run `npm audit` for details.
+targeted	Run npx prisma generate	﻿2026-10-04T22:38:24.1183135Z ##[group]Run npx prisma generate
+targeted	Run npx prisma generate	2026-10-04T22:38:24.1189154Z ^[[36;1mnpx prisma generate^[[0m
+targeted	Run npx prisma generate	2026-10-04T22:38:24.1227909Z shell: /usr/bin/bash -e {0}
+targeted	Run npx prisma generate	2026-10-04T22:38:24.1228300Z ##[endgroup]
+targeted	Run npx prisma generate	2026-10-04T22:38:25.0918904Z Prisma schema loaded from prisma/schema.prisma
+targeted	Run npx prisma generate	2026-10-04T22:38:28.4532206Z 
+targeted	Run npx prisma generate	2026-10-04T22:38:28.4533719Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.83s
+targeted	Run npx prisma generate	2026-10-04T22:38:28.4534215Z 
+targeted	Run npx prisma generate	2026-10-04T22:38:28.4534595Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	Run npx prisma generate	2026-10-04T22:38:28.4534961Z 
+targeted	Run npx prisma generate	2026-10-04T22:38:28.4535383Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+targeted	Run npx prisma generate	2026-10-04T22:38:28.4535777Z 
+targeted	Targeted jest	﻿2026-10-04T22:38:28.5387718Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T22:38:28.5388114Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T22:38:28.5388544Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T22:38:28.5389019Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T22:38:28.5389431Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T22:38:28.5389756Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T22:38:28.5430670Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T22:38:28.5431136Z env:
+targeted	Targeted jest	2026-10-04T22:38:28.5431539Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-04T22:38:28.5431979Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-04T22:38:28.5432400Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T22:38:28.5516833Z specs: test/aud-opus-r34-119-pg-lock.spec.ts test/aud-opus-r34-119-probe.spec.ts test/aud-opus-r34d-119-probe.spec.ts test/aud-sol-r12-116-authority.spec.ts test/aud-sol-r34-119-legacy.spec.ts test/aud-sol-r34-119-pg-lock.spec.ts test/aud-sol-r34d-119-authority.spec.ts test/audit-opus-r12-119.spec.ts test/audit-opus-r12d-119-pg.spec.ts test/audit-phase10.spec.ts test/audit-sol-r12-119-coach-deletion.spec.ts test/audit-sol-r12-119-postgres-fence.spec.ts test/audit-sol-r12-119-prior.spec.ts test/audit-sol-r12-119-trial-authority.spec.ts test/audit-sol-r12d-119-list-snapshot.spec.ts test/audit-sol-r12d-119-trial-final.spec.ts test/audit-sol-r12r5-builder4.spec.ts test/audit-sol-r12r5-prior.spec.ts test/audit-sol-r12r5-r1.spec.ts test/b-recur7b-119-authority.spec.ts test/b-recur5b-117-authority.spec.ts test/b-recur6b-118-authority.spec.ts test/b-recur-subscription-webhooks.spec.ts test/b-recur3-117-webhook-order.spec.ts test/b-recur-fix-round-1-trial-card.spec.ts test/b-recur-fix-round-1.spec.ts test/b-recur-3-fix-round-2.spec.ts test/b-recur-116-fix-round-3.spec.ts test/b-recur-fix-round-1-http.spec.ts test/b-recur-fix-round-1-checkout.spec.ts test/b-recur-3-fix-round-2-checkout.spec.ts test/b-recur-fix-round-1-trial-card-checkout.spec.ts test/b-recur5a-117-moved-fix-round-4.spec.ts test/b-recur7a-119-r2.spec.ts test/b-recur7a-119-r1.spec.ts test/b-recur5a-117-trial-end-form.spec.ts test/b-recur6a-118-r1.spec.ts test/b-recur6a-118-r2.spec.ts test/checkout/subscription-checkout.service.spec.ts test/checkout/subscription-terms.spec.ts test/b-recur6a-118-fix-round-6.spec.ts test/b-recur-subscription-checkout.spec.ts test/b-recur5a-117-fix-round-5.spec.ts
+targeted	Targeted jest	2026-10-04T22:38:30.6799853Z PASS test/b-recur-subscription-checkout.spec.ts (105 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:30.6802119Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:30 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.client_plan_resumed purchase=00000000-0000-4000-8000-000000000001 superseded=false^[[39m
+targeted	Targeted jest	2026-10-04T22:38:30.9028873Z ^[[31m[Nest] 2831  - ^[[39m10/04/2026, 10:38:30 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31msubscription send/bind failed purchase=00000000-0000-4000-8000-000000000001 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:30.9033188Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:30 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T22:38:30.9035194Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:30 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T22:38:30.9036931Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:30 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T22:38:30.9038496Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:30 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T22:38:35.9269814Z ^[[31m[Nest] 2831  - ^[[39m10/04/2026, 10:38:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31msubscription sub_1 has no payable PaymentIntent or SetupIntent and is not paid; canceling it^[[39m
+targeted	Targeted jest	2026-10-04T22:38:35.9499488Z PASS test/b-recur-3-fix-round-2-checkout.spec.ts (5.265 s, 124 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:37.4686083Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:35 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=true^[[39m
+targeted	Targeted jest	2026-10-04T22:38:37.4688641Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:35 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_needs_no_sheet purchase=00000000-0000-4000-8000-000000000001 stripe_status=active^[[39m
+targeted	Targeted jest	2026-10-04T22:38:37.4690931Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:35 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_needs_no_sheet purchase=00000000-0000-4000-8000-000000000001 stripe_status=active^[[39m
+targeted	Targeted jest	2026-10-04T22:38:37.4693548Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:35 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_needs_no_sheet purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete^[[39m
+targeted	Targeted jest	2026-10-04T22:38:37.4696194Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:35 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_needs_no_sheet purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete^[[39m
+targeted	Targeted jest	2026-10-04T22:38:37.4698917Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:35 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_needs_no_sheet purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete^[[39m
+targeted	Targeted jest	2026-10-04T22:38:37.4701805Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:35 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_needs_no_sheet purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete^[[39m
+targeted	Targeted jest	2026-10-04T22:38:37.4704476Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:35 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-04T22:38:37.4706928Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:35 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-04T22:38:37.4709424Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:35 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T22:38:37.4711884Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:35 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-04T22:38:37.4714604Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcheckout state read skipped purchase=00000000-0000-4000-8000-000000000001 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:37.4716906Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:37 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mprefetchForOuterTx: subscription read failed sub=sub_n error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:37.4719029Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:37 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mprefetchForOuterTx: invoice read failed invoice=in_2 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:37.4720763Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[FirstPaymentEmitter] ^[[39mObject(3) {
+targeted	Targeted jest	2026-10-04T22:38:37.4721957Z   event: ^[[32m'first_payment_notification_emitted'^[[39m,
+targeted	Targeted jest	2026-10-04T22:38:37.4722651Z   coachId: ^[[32m'coach'^[[39m,
+targeted	Targeted jest	2026-10-04T22:38:37.4723257Z   category: ^[[32m'COACH_DIRECT'^[[39m
+targeted	Targeted jest	2026-10-04T22:38:37.4724199Z }
+targeted	Targeted jest	2026-10-04T22:38:37.4725266Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CoachFirstPaymentService] ^[[39mObject(2) {
+targeted	Targeted jest	2026-10-04T22:38:37.4726166Z   event: ^[[32m'first_payment_emitted'^[[39m,
+targeted	Targeted jest	2026-10-04T22:38:37.4726719Z   coachId: ^[[32m'coach'^[[39m
+targeted	Targeted jest	2026-10-04T22:38:37.4727271Z }
+targeted	Targeted jest	2026-10-04T22:38:37.4728185Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[FirstPaymentEmitter] ^[[39mObject(3) {
+targeted	Targeted jest	2026-10-04T22:38:37.4729144Z   event: ^[[32m'first_payment_notification_emitted'^[[39m,
+targeted	Targeted jest	2026-10-04T22:38:37.4729808Z   coachId: ^[[32m'coach'^[[39m,
+targeted	Targeted jest	2026-10-04T22:38:37.4730369Z   category: ^[[32m'COACH_DIRECT'^[[39m
+targeted	Targeted jest	2026-10-04T22:38:37.4730854Z }
+targeted	Targeted jest	2026-10-04T22:38:37.4731806Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CoachFirstPaymentService] ^[[39mObject(2) {
+targeted	Targeted jest	2026-10-04T22:38:37.4732774Z   event: ^[[32m'first_payment_emitted'^[[39m,
+targeted	Targeted jest	2026-10-04T22:38:37.4733507Z   coachId: ^[[32m'coach'^[[39m
+targeted	Targeted jest	2026-10-04T22:38:37.4734086Z }
+targeted	Targeted jest	2026-10-04T22:38:37.4734725Z PASS test/b-recur3-117-webhook-order.spec.ts (156 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:37.7872407Z ^[[31m[Nest] 2831  - ^[[39m10/04/2026, 10:38:37 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31msubscription sub_1 has no payable PaymentIntent or SetupIntent and is not paid; canceling it^[[39m
+targeted	Targeted jest	2026-10-04T22:38:37.7877109Z ^[[31m[Nest] 2831  - ^[[39m10/04/2026, 10:38:37 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31msubscription sub_1 has no payable PaymentIntent or SetupIntent and is not paid; canceling it^[[39m
+targeted	Targeted jest	2026-10-04T22:38:37.8396202Z PASS test/b-recur-116-fix-round-3.spec.ts (190 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:38.3052305Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.3054575Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.3056068Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.3057865Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.3058778Z PASS test/audit-phase10.spec.ts (229 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:38.3059925Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.3061450Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:37 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mattempt subscription lookup failed purchase=00000000-0000-4000-8000-000000000001 error=stripe:api_error:503:other^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.3062988Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.3064611Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.3065948Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:37 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_error:503:other^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.3067399Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.3069013Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.3070354Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:37 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_error:503:other^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.3071707Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.3073217Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.3074641Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:37 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_error:503:other^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.3075912Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:37 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_error:503:other^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.3077129Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:37 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_error:503:other^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.3078596Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:37 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.5169095Z PASS test/audit-sol-r12r5-prior.spec.ts (251 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:38.7289526Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:38 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.7290522Z PASS test/aud-sol-r12-116-authority.spec.ts (272 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:38.7291660Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:38 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.7292998Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:38 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.7294632Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:38 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.7296012Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:38 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mattempt subscription lookup failed purchase=00000000-0000-4000-8000-000000000001 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.7297183Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:38 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.7298603Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:38 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.7299840Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:38 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.7301182Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:38 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mstale trial attempt kept purchase=00000000-0000-4000-8000-000000000001 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.7302938Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:38 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.7304352Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:38 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.7305737Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:38 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.client_plan_resumed purchase=00000000-0000-4000-8000-000000000001 superseded=true^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.7307073Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:38 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.7308413Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:38 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.7309748Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:38 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.7311327Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:38 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.7314164Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:38 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mattempt subscription lookup failed purchase=00000000-0000-4000-8000-000000000001 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.7316312Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:38 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.7318363Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:38 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.7320820Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:38 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.7323042Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:38 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mstale trial attempt kept purchase=00000000-0000-4000-8000-000000000001 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.7325319Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:38 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.7327203Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:38 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:38.7329436Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:38 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.client_plan_resumed purchase=00000000-0000-4000-8000-000000000001 superseded=true^[[39m
+targeted	Targeted jest	2026-10-04T22:38:39.0602959Z PASS test/aud-sol-r34d-119-authority.spec.ts (313 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:39.3802992Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:39 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mbilling.trial_card_attached purchase=cp_sol_r34 via=webhook^[[39m
+targeted	Targeted jest	2026-10-04T22:38:39.3804687Z PASS test/aud-sol-r34-119-legacy.spec.ts (338 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:39.3806377Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mprefetchForOuterTx: retrieveSubscription failed for sub=sub_sol_r34 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:39.3808429Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:39 PM ^[[32m    LOG^[[39m ^[[38;5;3m[FirstPaymentEmitter] ^[[39mObject(3) {
+targeted	Targeted jest	2026-10-04T22:38:39.3809435Z   event: ^[[32m'first_payment_notification_emitted'^[[39m,
+targeted	Targeted jest	2026-10-04T22:38:39.3810091Z   coachId: ^[[32m'coach_sol_r34'^[[39m,
+targeted	Targeted jest	2026-10-04T22:38:39.3810640Z   category: ^[[32m'COACH_DIRECT'^[[39m
+targeted	Targeted jest	2026-10-04T22:38:39.3811066Z }
+targeted	Targeted jest	2026-10-04T22:38:39.3811913Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:39 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CoachFirstPaymentService] ^[[39mObject(2) {
+targeted	Targeted jest	2026-10-04T22:38:39.3812860Z   event: ^[[32m'first_payment_emitted'^[[39m,
+targeted	Targeted jest	2026-10-04T22:38:39.3813528Z   coachId: ^[[32m'coach_sol_r34'^[[39m
+targeted	Targeted jest	2026-10-04T22:38:39.3814043Z }
+targeted	Targeted jest	2026-10-04T22:38:39.3815471Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mprefetchForOuterTx: retrieveSubscription failed for sub=sub_native error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:39.3817070Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:39 PM ^[[32m    LOG^[[39m ^[[38;5;3m[FirstPaymentEmitter] ^[[39mObject(3) {
+targeted	Targeted jest	2026-10-04T22:38:39.3818015Z   event: ^[[32m'first_payment_notification_emitted'^[[39m,
+targeted	Targeted jest	2026-10-04T22:38:39.3818566Z   coachId: ^[[32m'coach'^[[39m,
+targeted	Targeted jest	2026-10-04T22:38:39.3819119Z   category: ^[[32m'COACH_DIRECT'^[[39m
+targeted	Targeted jest	2026-10-04T22:38:39.3819586Z }
+targeted	Targeted jest	2026-10-04T22:38:39.3820493Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:39 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CoachFirstPaymentService] ^[[39mObject(2) {
+targeted	Targeted jest	2026-10-04T22:38:39.3821298Z   event: ^[[32m'first_payment_emitted'^[[39m,
+targeted	Targeted jest	2026-10-04T22:38:39.3821878Z   coachId: ^[[32m'coach'^[[39m
+targeted	Targeted jest	2026-10-04T22:38:39.3822293Z }
+targeted	Targeted jest	2026-10-04T22:38:39.3823128Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:39 PM ^[[32m    LOG^[[39m ^[[38;5;3m[FirstPaymentEmitter] ^[[39mObject(3) {
+targeted	Targeted jest	2026-10-04T22:38:39.3824423Z   event: ^[[32m'first_payment_notification_emitted'^[[39m,
+targeted	Targeted jest	2026-10-04T22:38:39.3825008Z   coachId: ^[[32m'coach'^[[39m,
+targeted	Targeted jest	2026-10-04T22:38:39.3825539Z   category: ^[[32m'COACH_DIRECT'^[[39m
+targeted	Targeted jest	2026-10-04T22:38:39.3826029Z }
+targeted	Targeted jest	2026-10-04T22:38:39.3826932Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:39 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CoachFirstPaymentService] ^[[39mObject(2) {
+targeted	Targeted jest	2026-10-04T22:38:39.3827812Z   event: ^[[32m'first_payment_emitted'^[[39m,
+targeted	Targeted jest	2026-10-04T22:38:39.3828361Z   coachId: ^[[32m'coach'^[[39m
+targeted	Targeted jest	2026-10-04T22:38:39.3829538Z }
+targeted	Targeted jest	2026-10-04T22:38:39.5729086Z PASS test/b-recur-fix-round-1-checkout.spec.ts (364 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:39.7682925Z ^[[31m[Nest] 2831  - ^[[39m10/04/2026, 10:38:39 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31msubscription sub_1 has no payable PaymentIntent or SetupIntent and is not paid; canceling it^[[39m
+targeted	Targeted jest	2026-10-04T22:38:39.7777665Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:39 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.trial_attempt_retired purchase=00000000-0000-4000-8000-000000000001 stripe_status=canceled^[[39m
+targeted	Targeted jest	2026-10-04T22:38:39.7779263Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mstale trial attempt kept purchase=00000000-0000-4000-8000-000000000001 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:39.7780730Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mstale trial attempt kept purchase=00000000-0000-4000-8000-000000000001 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:39.7781976Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:39.7783620Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:39.7785577Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:39 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.trial_attempt_released purchase=00000000-0000-4000-8000-000000000001^[[39m
+targeted	Targeted jest	2026-10-04T22:38:39.7788085Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:39 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.client_plan_resumed purchase=00000000-0000-4000-8000-000000000001 superseded=true^[[39m
+targeted	Targeted jest	2026-10-04T22:38:39.7790328Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T22:38:39.7792246Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard refused subscription=sub_1 error=stripe:invalid_request_error:400:other^[[39m
+targeted	Targeted jest	2026-10-04T22:38:39.7794885Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard refused subscription=sub_1 error=stripe:invalid_request_error:400:setup_intent_unexpected_state^[[39m
+targeted	Targeted jest	2026-10-04T22:38:39.7797360Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:39 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T22:38:39.7822245Z PASS test/b-recur5a-117-moved-fix-round-4.spec.ts (383 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:40.1558127Z PASS test/b-recur6b-118-authority.spec.ts (192 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:40.3778589Z ^[[31m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31msubscription sub_1 has no payable PaymentIntent or SetupIntent and is not paid; canceling it^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.3946281Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mbilling.trial_card_attached purchase=cp_6b via=webhook^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.3948144Z PASS test/audit-sol-r12r5-builder4.spec.ts (213 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:40.3949842Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mbilling.trial_card_attached purchase=cp_6b via=webhook^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.3951742Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33msetup_intent.succeeded customer mismatch purchase=cp_6b^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.3953918Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33msetup_intent.succeeded lookup failed si=seti_AttemptOwn error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.3956417Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"cp_6b","dunning_state_id":"ds_1","step_index":0,"scheduled_for":"2026-10-04T22:38:40.150Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.3959308Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"cp_6b","dunning_state_id":"ds_1","step_index":1,"scheduled_for":"2026-10-07T22:38:40.150Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.3962212Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"cp_6b","dunning_state_id":"ds_1","step_index":2,"scheduled_for":"2026-10-11T22:38:40.150Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.3965558Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"cp_6b","dunning_state_id":"ds_1","step_index":3,"scheduled_for":"2026-10-18T22:38:40.150Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.3967979Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"cp_6b","dunning_state_id":"ds_1","invoice_id":"in_6b","amount_cents":14800,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.3970384Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mstale trial attempt kept purchase=00000000-0000-4000-8000-000000000001 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.3972418Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.3974380Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.3976111Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.trial_attempt_released purchase=00000000-0000-4000-8000-000000000001^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.3977818Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.client_plan_resumed purchase=00000000-0000-4000-8000-000000000001 superseded=true^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.3979263Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.3980706Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard refused subscription=sub_1 error=stripe:invalid_request_error:400:other^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.3982196Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard refused subscription=sub_1 error=stripe:invalid_request_error:400:setup_intent_unexpected_state^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.3983966Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.6055667Z ^[[31m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31mbilling.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete end=settled^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.6077551Z ^[[31m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31mbilling.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete end=unconfirmed^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.6126040Z PASS test/b-recur5a-117-fix-round-5.spec.ts (237 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:40.9277828Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.9279664Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.9281052Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.9282994Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.9284958Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.9286860Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.9288657Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.9290971Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.9292799Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.9294891Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.9296843Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.trial_attempt_retired purchase=00000000-0000-4000-8000-000000000001 stripe_status=canceled^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.9299154Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mresume read-back failed purchase=00000000-0000-4000-8000-000000000001 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.9301665Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.client_plan_resumed purchase=00000000-0000-4000-8000-000000000001 superseded=false^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.9303856Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.9305585Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard refused subscription=sub_1 error=stripe:invalid_request_error:400:other^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.9306851Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard refused subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.9308170Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard unconfirmed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.9309703Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33minvoice.paid resync failed for sub=sub_a error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.9310894Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mprefetchForOuterTx: retrieveSubscription failed for sub=sub_a error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.9311828Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[32m    LOG^[[39m ^[[38;5;3m[FirstPaymentEmitter] ^[[39mObject(3) {
+targeted	Targeted jest	2026-10-04T22:38:40.9312396Z   event: ^[[32m'first_payment_notification_emitted'^[[39m,
+targeted	Targeted jest	2026-10-04T22:38:40.9312842Z   coachId: ^[[32m'coach'^[[39m,
+targeted	Targeted jest	2026-10-04T22:38:40.9313228Z   category: ^[[32m'COACH_DIRECT'^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.9313764Z }
+targeted	Targeted jest	2026-10-04T22:38:40.9314411Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CoachFirstPaymentService] ^[[39mObject(2) {
+targeted	Targeted jest	2026-10-04T22:38:40.9314935Z   event: ^[[32m'first_payment_emitted'^[[39m,
+targeted	Targeted jest	2026-10-04T22:38:40.9315321Z   coachId: ^[[32m'coach'^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.9315670Z }
+targeted	Targeted jest	2026-10-04T22:38:40.9316544Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:40 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mprefetchForOuterTx: retrieveSubscription failed for sub=sub_a error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:40.9317365Z PASS test/b-recur5b-117-authority.spec.ts (271 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:41.2387736Z PASS test/b-recur-subscription-webhooks.spec.ts (300 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:42.2725712Z PASS test/b-recur-fix-round-1-http.spec.ts (382 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:45.6469573Z PASS test/audit-opus-r12d-119-pg.spec.ts (398 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:45.6574035Z   ● Console
+targeted	Targeted jest	2026-10-04T22:38:45.6574668Z 
+targeted	Targeted jest	2026-10-04T22:38:45.6574906Z     console.log
+targeted	Targeted jest	2026-10-04T22:38:45.6575579Z       OPUS_COACH_FIRST { out: 'closed', creates: 0, blockedUntilCommit: true }
+targeted	Targeted jest	2026-10-04T22:38:45.6576035Z 
+targeted	Targeted jest	2026-10-04T22:38:45.6576561Z       at Object.<anonymous> (test/audit-opus-r12d-119-pg.spec.ts:156:13)
+targeted	Targeted jest	2026-10-04T22:38:45.6576943Z 
+targeted	Targeted jest	2026-10-04T22:38:45.6577137Z     console.log
+targeted	Targeted jest	2026-10-04T22:38:45.6578214Z       OPUS_RECIPROCAL { skipped: true, a: 'sub_1', b: 'sub_1', w: 'waited' }
+targeted	Targeted jest	2026-10-04T22:38:45.6578782Z 
+targeted	Targeted jest	2026-10-04T22:38:45.6579145Z       at Object.<anonymous> (test/audit-opus-r12d-119-pg.spec.ts:227:13)
+targeted	Targeted jest	2026-10-04T22:38:45.6579591Z 
+targeted	Targeted jest	2026-10-04T22:38:45.6579739Z     console.log
+targeted	Targeted jest	2026-10-04T22:38:45.6580262Z       OPUS_COACH_GONE {
+targeted	Targeted jest	2026-10-04T22:38:45.6580662Z         body: {
+targeted	Targeted jest	2026-10-04T22:38:45.6581117Z           code: 'SUBSCRIPTION_ATTEMPT_EXPIRED',
+targeted	Targeted jest	2026-10-04T22:38:45.6581735Z           error: 'SUBSCRIPTION_ATTEMPT_EXPIRED',
+targeted	Targeted jest	2026-10-04T22:38:45.6582647Z           message: 'This checkout timed out before it was paid. Nothing was charged. Start again to see the current price.',
+targeted	Targeted jest	2026-10-04T22:38:45.6583745Z           reason: 'timed_out'
+targeted	Targeted jest	2026-10-04T22:38:45.6584218Z         },
+targeted	Targeted jest	2026-10-04T22:38:45.6584611Z         creates: 0,
+targeted	Targeted jest	2026-10-04T22:38:45.6585007Z         rows: [ 'pending' ]
+targeted	Targeted jest	2026-10-04T22:38:45.6585475Z       }
+targeted	Targeted jest	2026-10-04T22:38:45.6585657Z 
+targeted	Targeted jest	2026-10-04T22:38:45.6586029Z       at Object.<anonymous> (test/audit-opus-r12d-119-pg.spec.ts:268:13)
+targeted	Targeted jest	2026-10-04T22:38:45.6586881Z 
+targeted	Targeted jest	2026-10-04T22:38:45.9932510Z PASS test/b-recur7b-119-authority.spec.ts (427 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:46.1953513Z PASS test/b-recur-fix-round-1-trial-card-checkout.spec.ts (451 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:46.5057512Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:46 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.trial_card_attached purchase=00000000-0000-4000-8000-000000000001 via=retire^[[39m
+targeted	Targeted jest	2026-10-04T22:38:46.5058688Z FAIL test/aud-opus-r34-119-probe.spec.ts (474 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:46.5059716Z   ● Opus R34-119: renewal decline authority (controls) › control: decline read, then the paired past_due update commits, then the decline opens dunning once (no redelivery)
+targeted	Targeted jest	2026-10-04T22:38:46.5060232Z 
+targeted	Targeted jest	2026-10-04T22:38:46.5060434Z     expect(received).resolves.toMatchObject()
+targeted	Targeted jest	2026-10-04T22:38:46.5060699Z 
+targeted	Targeted jest	2026-10-04T22:38:46.5060874Z     Received promise rejected instead of resolved
+targeted	Targeted jest	2026-10-04T22:38:46.5061456Z     Rejected to value: [Error: invoice.payment_failed: purchase=cp_o changed after the invoice read; redeliver]
+targeted	Targeted jest	2026-10-04T22:38:46.5061823Z 
+targeted	Targeted jest	2026-10-04T22:38:46.5062379Z     ^[[0m ^[[90m 135 |^[[39m     ^[[36mawait^[[39m h^[[33m.^[[39mdeliver(ev(^[[32m'customer.subscription.updated'^[[39m^[[33m,^[[39m sub(^[[32m'past_due'^[[39m)))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:46.5063199Z      ^[[90m 136 |^[[39m     expect(h^[[33m.^[[39mrow()^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(^[[32m'past_due'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:46.5064441Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 137 |^[[39m     ^[[36mawait^[[39m expect(h^[[33m.^[[39msvc^[[33m.^[[39mhandle(d^[[33m,^[[39m h^[[33m.^[[39mdb^[[33m,^[[39m pre))^[[33m.^[[39mresolves^[[33m.^[[39mtoMatchObject({ claimed^[[33m:^[[39m ^[[36mtrue^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:46.5065411Z      ^[[90m     |^[[39m           ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:38:46.5066066Z      ^[[90m 138 |^[[39m     expect(h^[[33m.^[[39mdunning^[[33m.^[[39mrecordFailure)^[[33m.^[[39mtoHaveBeenCalledTimes(^[[35m1^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:46.5067052Z      ^[[90m 139 |^[[39m     expect(h^[[33m.^[[39mrow())^[[33m.^[[39mtoMatchObject({ status^[[33m:^[[39m ^[[32m'past_due'^[[39m^[[33m,^[[39m last_error^[[33m:^[[39m ^[[32m'Your card was declined.'^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:46.5067744Z      ^[[90m 140 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T22:38:46.5068214Z 
+targeted	Targeted jest	2026-10-04T22:38:46.5068437Z       at expect (node_modules/expect/build/index.js:2116:15)
+targeted	Targeted jest	2026-10-04T22:38:46.5068931Z       at Object.<anonymous> (test/aud-opus-r34-119-probe.spec.ts:137:11)
+targeted	Targeted jest	2026-10-04T22:38:46.5069178Z 
+targeted	Targeted jest	2026-10-04T22:38:46.5069895Z   ● Opus R34-119: setup_intent.succeeded attaches only the attempt-owned trial SetupIntent › C-680-13 (defence in depth): an ended attempt row is never given a card while Stripe still shows trialing
+targeted	Targeted jest	2026-10-04T22:38:46.5070504Z 
+targeted	Targeted jest	2026-10-04T22:38:46.5070656Z     expect(jest.fn()).not.toHaveBeenCalled()
+targeted	Targeted jest	2026-10-04T22:38:46.5070878Z 
+targeted	Targeted jest	2026-10-04T22:38:46.5071064Z     Expected number of calls: 0
+targeted	Targeted jest	2026-10-04T22:38:46.5071402Z     Received number of calls: 1
+targeted	Targeted jest	2026-10-04T22:38:46.5071587Z 
+targeted	Targeted jest	2026-10-04T22:38:46.5072020Z     1: {"idempotencyKey": "tgp-trial-card-sub_o-pm_own", "liftTrialEnd": true, "paymentMethodId": "pm_own", "subscriptionId": "sub_o"}
+targeted	Targeted jest	2026-10-04T22:38:46.5072414Z 
+targeted	Targeted jest	2026-10-04T22:38:46.5073218Z     ^[[0m ^[[90m 249 |^[[39m     h^[[33m.^[[39msetLive(sub(^[[32m'trialing'^[[39m^[[33m,^[[39m { trial_start^[[33m:^[[39m ^[[33mNOW^[[39m^[[33m,^[[39m default_payment_method^[[33m:^[[39m ^[[36mnull^[[39m^[[33m,^[[39m cancel_at_period_end^[[33m:^[[39m ^[[36mtrue^[[39m }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:46.5074406Z      ^[[90m 250 |^[[39m     ^[[36mawait^[[39m h^[[33m.^[[39mdeliver(setupOk(^[[32m'seti_Own'^[[39m^[[33m,^[[39m { metadata^[[33m:^[[39m ownMeta }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:46.5075358Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 251 |^[[39m     expect(h^[[33m.^[[39mstripe^[[33m.^[[39msetSubscriptionDefaultPaymentMethod)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:46.5076163Z      ^[[90m     |^[[39m                                                              ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:38:46.5076587Z      ^[[90m 252 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:46.5077060Z      ^[[90m 253 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:46.5077442Z      ^[[90m 254 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T22:38:46.5077593Z 
+targeted	Targeted jest	2026-10-04T22:38:46.5077845Z       at Object.<anonymous> (test/aud-opus-r34-119-probe.spec.ts:251:62)
+targeted	Targeted jest	2026-10-04T22:38:46.5078140Z 
+targeted	Targeted jest	2026-10-04T22:38:46.5078950Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:46 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.trial_attempt_retired purchase=00000000-0000-4000-8000-000000000001 stripe_status=canceled^[[39m
+targeted	Targeted jest	2026-10-04T22:38:46.5080267Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:46 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mstale trial attempt kept purchase=00000000-0000-4000-8000-000000000001 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:46.5081556Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:46 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mreplay secret check skipped purchase=00000000-0000-4000-8000-000000000001 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:46.5082761Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:46 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mbilling.trial_card_attached purchase=cp_o via=webhook^[[39m
+targeted	Targeted jest	2026-10-04T22:38:46.5083962Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:46 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mbilling.trial_card_attached purchase=cp_o via=webhook^[[39m
+targeted	Targeted jest	2026-10-04T22:38:46.5085163Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:46 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mbilling.trial_card_attached purchase=cp_o via=webhook^[[39m
+targeted	Targeted jest	2026-10-04T22:38:51.6950030Z ^[[31m[Nest] 2831  - ^[[39m10/04/2026, 10:38:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31mbilling.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete end=unconfirmed^[[39m
+targeted	Targeted jest	2026-10-04T22:38:51.6974911Z ^[[31m[Nest] 2831  - ^[[39m10/04/2026, 10:38:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31mbilling.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=active end=settled^[[39m
+targeted	Targeted jest	2026-10-04T22:38:51.7016043Z ^[[31m[Nest] 2831  - ^[[39m10/04/2026, 10:38:51 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31mbilling.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete end=unconfirmed^[[39m
+targeted	Targeted jest	2026-10-04T22:38:51.7189340Z PASS test/b-recur6a-118-fix-round-6.spec.ts (5.209 s, 495 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:52.0831786Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:51 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard refused subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.0832993Z PASS test/audit-sol-r12r5-r1.spec.ts (279 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:52.0834389Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:51 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard unconfirmed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.0835885Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:51 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard refused subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.0837364Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:51 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard unconfirmed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4732431Z FAIL test/aud-opus-r34d-119-probe.spec.ts (320 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:52.4734630Z   ● AUD-OPUS-R34D-119 C-680-18: post-fence dunning v2 clear on a revoked plan › EXPECTED RED (flag on): refunded + invoice.paid keeps entitlement off
+targeted	Targeted jest	2026-10-04T22:38:52.4735453Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4736101Z     expect(received).toMatchObject(expected)
+targeted	Targeted jest	2026-10-04T22:38:52.4736479Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4736683Z     - Expected  - 1
+targeted	Targeted jest	2026-10-04T22:38:52.4737194Z     + Received  + 1
+targeted	Targeted jest	2026-10-04T22:38:52.4739633Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4739832Z       Object {
+targeted	Targeted jest	2026-10-04T22:38:52.4740259Z     -   "entitlement_active": false,
+targeted	Targeted jest	2026-10-04T22:38:52.4740689Z     +   "entitlement_active": true,
+targeted	Targeted jest	2026-10-04T22:38:52.4741153Z         "status": "refunded",
+targeted	Targeted jest	2026-10-04T22:38:52.4741640Z       }
+targeted	Targeted jest	2026-10-04T22:38:52.4741791Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4742809Z     ^[[0m ^[[90m 159 |^[[39m     ^[[36mconst^[[39m h ^[[33m=^[[39m harness({ status^[[33m,^[[39m entitlement_active^[[33m:^[[39m ^[[36mfalse^[[39m }^[[33m,^[[39m { dunningState^[[33m:^[[39m ^[[36mtrue^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4744122Z      ^[[90m 160 |^[[39m     ^[[36mawait^[[39m h^[[33m.^[[39mdeliver(paid())^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4745300Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 161 |^[[39m     expect(h^[[33m.^[[39mrow())^[[33m.^[[39mtoMatchObject({ status^[[33m,^[[39m entitlement_active^[[33m:^[[39m ^[[36mfalse^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4746238Z      ^[[90m     |^[[39m                     ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4746780Z      ^[[90m 162 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4747196Z      ^[[90m 163 |^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4747856Z      ^[[90m 164 |^[[39m   it^[[33m.^[[39meach([^[[32m'refunded'^[[39m^[[33m,^[[39m ^[[32m'chargeback_lost'^[[39m^[[33m,^[[39m ^[[32m'disputed'^[[39m])(^[[0m
+targeted	Targeted jest	2026-10-04T22:38:52.4748269Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4748540Z       at test/aud-opus-r34d-119-probe.spec.ts:161:21
+targeted	Targeted jest	2026-10-04T22:38:52.4748821Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4749426Z   ● AUD-OPUS-R34D-119 C-680-18: post-fence dunning v2 clear on a revoked plan › EXPECTED RED (flag on): chargeback_lost + invoice.paid keeps entitlement off
+targeted	Targeted jest	2026-10-04T22:38:52.4749933Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4750130Z     expect(received).toMatchObject(expected)
+targeted	Targeted jest	2026-10-04T22:38:52.4750350Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4750508Z     - Expected  - 1
+targeted	Targeted jest	2026-10-04T22:38:52.4750807Z     + Received  + 1
+targeted	Targeted jest	2026-10-04T22:38:52.4750989Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4751169Z       Object {
+targeted	Targeted jest	2026-10-04T22:38:52.4751488Z     -   "entitlement_active": false,
+targeted	Targeted jest	2026-10-04T22:38:52.4751851Z     +   "entitlement_active": true,
+targeted	Targeted jest	2026-10-04T22:38:52.4752261Z         "status": "chargeback_lost",
+targeted	Targeted jest	2026-10-04T22:38:52.4752564Z       }
+targeted	Targeted jest	2026-10-04T22:38:52.4752780Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4753693Z     ^[[0m ^[[90m 159 |^[[39m     ^[[36mconst^[[39m h ^[[33m=^[[39m harness({ status^[[33m,^[[39m entitlement_active^[[33m:^[[39m ^[[36mfalse^[[39m }^[[33m,^[[39m { dunningState^[[33m:^[[39m ^[[36mtrue^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4754853Z      ^[[90m 160 |^[[39m     ^[[36mawait^[[39m h^[[33m.^[[39mdeliver(paid())^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4755746Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 161 |^[[39m     expect(h^[[33m.^[[39mrow())^[[33m.^[[39mtoMatchObject({ status^[[33m,^[[39m entitlement_active^[[33m:^[[39m ^[[36mfalse^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4756506Z      ^[[90m     |^[[39m                     ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4756965Z      ^[[90m 162 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4757322Z      ^[[90m 163 |^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4758054Z      ^[[90m 164 |^[[39m   it^[[33m.^[[39meach([^[[32m'refunded'^[[39m^[[33m,^[[39m ^[[32m'chargeback_lost'^[[39m^[[33m,^[[39m ^[[32m'disputed'^[[39m])(^[[0m
+targeted	Targeted jest	2026-10-04T22:38:52.4758520Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4758736Z       at test/aud-opus-r34d-119-probe.spec.ts:161:21
+targeted	Targeted jest	2026-10-04T22:38:52.4758965Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4759566Z   ● AUD-OPUS-R34D-119 C-680-18: post-fence dunning v2 clear on a revoked plan › EXPECTED RED (flag on): disputed + invoice.paid keeps entitlement off
+targeted	Targeted jest	2026-10-04T22:38:52.4760087Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4760263Z     expect(received).toMatchObject(expected)
+targeted	Targeted jest	2026-10-04T22:38:52.4760505Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4760661Z     - Expected  - 1
+targeted	Targeted jest	2026-10-04T22:38:52.4760961Z     + Received  + 1
+targeted	Targeted jest	2026-10-04T22:38:52.4761161Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4761273Z       Object {
+targeted	Targeted jest	2026-10-04T22:38:52.4761639Z     -   "entitlement_active": false,
+targeted	Targeted jest	2026-10-04T22:38:52.4762026Z     +   "entitlement_active": true,
+targeted	Targeted jest	2026-10-04T22:38:52.4762363Z         "status": "disputed",
+targeted	Targeted jest	2026-10-04T22:38:52.4762719Z       }
+targeted	Targeted jest	2026-10-04T22:38:52.4762844Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4763842Z     ^[[0m ^[[90m 159 |^[[39m     ^[[36mconst^[[39m h ^[[33m=^[[39m harness({ status^[[33m,^[[39m entitlement_active^[[33m:^[[39m ^[[36mfalse^[[39m }^[[33m,^[[39m { dunningState^[[33m:^[[39m ^[[36mtrue^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4764853Z      ^[[90m 160 |^[[39m     ^[[36mawait^[[39m h^[[33m.^[[39mdeliver(paid())^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4765731Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 161 |^[[39m     expect(h^[[33m.^[[39mrow())^[[33m.^[[39mtoMatchObject({ status^[[33m,^[[39m entitlement_active^[[33m:^[[39m ^[[36mfalse^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4766444Z      ^[[90m     |^[[39m                     ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4766922Z      ^[[90m 162 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4767304Z      ^[[90m 163 |^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4767949Z      ^[[90m 164 |^[[39m   it^[[33m.^[[39meach([^[[32m'refunded'^[[39m^[[33m,^[[39m ^[[32m'chargeback_lost'^[[39m^[[33m,^[[39m ^[[32m'disputed'^[[39m])(^[[0m
+targeted	Targeted jest	2026-10-04T22:38:52.4768381Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4768592Z       at test/aud-opus-r34d-119-probe.spec.ts:161:21
+targeted	Targeted jest	2026-10-04T22:38:52.4768846Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4769378Z   ● AUD-OPUS-R34D-119 C-680-18: post-fence dunning v2 clear on a revoked plan › EXPECTED RED (flag on): canceled + invoice.paid keeps entitlement off
+targeted	Targeted jest	2026-10-04T22:38:52.4769902Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4770093Z     expect(received).toMatchObject(expected)
+targeted	Targeted jest	2026-10-04T22:38:52.4770351Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4770477Z     - Expected  - 1
+targeted	Targeted jest	2026-10-04T22:38:52.4770813Z     + Received  + 1
+targeted	Targeted jest	2026-10-04T22:38:52.4770961Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4771102Z       Object {
+targeted	Targeted jest	2026-10-04T22:38:52.4771416Z     -   "entitlement_active": false,
+targeted	Targeted jest	2026-10-04T22:38:52.4771836Z     +   "entitlement_active": true,
+targeted	Targeted jest	2026-10-04T22:38:52.4772156Z         "status": "canceled",
+targeted	Targeted jest	2026-10-04T22:38:52.4772607Z       }
+targeted	Targeted jest	2026-10-04T22:38:52.4772772Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4773681Z     ^[[0m ^[[90m 159 |^[[39m     ^[[36mconst^[[39m h ^[[33m=^[[39m harness({ status^[[33m,^[[39m entitlement_active^[[33m:^[[39m ^[[36mfalse^[[39m }^[[33m,^[[39m { dunningState^[[33m:^[[39m ^[[36mtrue^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4774549Z      ^[[90m 160 |^[[39m     ^[[36mawait^[[39m h^[[33m.^[[39mdeliver(paid())^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4775478Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 161 |^[[39m     expect(h^[[33m.^[[39mrow())^[[33m.^[[39mtoMatchObject({ status^[[33m,^[[39m entitlement_active^[[33m:^[[39m ^[[36mfalse^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4776196Z      ^[[90m     |^[[39m                     ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4776713Z      ^[[90m 162 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4777081Z      ^[[90m 163 |^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4777783Z      ^[[90m 164 |^[[39m   it^[[33m.^[[39meach([^[[32m'refunded'^[[39m^[[33m,^[[39m ^[[32m'chargeback_lost'^[[39m^[[33m,^[[39m ^[[32m'disputed'^[[39m])(^[[0m
+targeted	Targeted jest	2026-10-04T22:38:52.4778208Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4778420Z       at test/aud-opus-r34d-119-probe.spec.ts:161:21
+targeted	Targeted jest	2026-10-04T22:38:52.4778626Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4779332Z   ● AUD-OPUS-R34D-119 C-680-18: post-fence dunning v2 clear on a revoked plan › EXPECTED RED (flag on): refunded + invoice.paid then sub.updated(active) never reopens the plan
+targeted	Targeted jest	2026-10-04T22:38:52.4779876Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4780111Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T22:38:52.4780347Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4780504Z     Expected: "refunded"
+targeted	Targeted jest	2026-10-04T22:38:52.4780845Z     Received: "active"
+targeted	Targeted jest	2026-10-04T22:38:52.4781032Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4781640Z     ^[[0m ^[[90m 170 |^[[39m       h^[[33m.^[[39mrow()^[[33m.^[[39mupdated_at ^[[33m=^[[39m ^[[36mnew^[[39m ^[[33mDate^[[39m(^[[33mDate^[[39m^[[33m.^[[39mnow() ^[[33m-^[[39m ^[[35m30^[[39m_000)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4782697Z      ^[[90m 171 |^[[39m       ^[[36mawait^[[39m h^[[33m.^[[39mdeliver(ev(^[[32m'customer.subscription.updated'^[[39m^[[33m,^[[39m sub(^[[32m'active'^[[39m)))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4783844Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 172 |^[[39m       expect(h^[[33m.^[[39mrow()^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(status)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4784756Z      ^[[90m     |^[[39m                              ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4785746Z      ^[[90m 173 |^[[39m       expect(h^[[33m.^[[39mrow()^[[33m.^[[39mentitlement_active)^[[33m.^[[39mtoBe(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4786603Z      ^[[90m 174 |^[[39m     }^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4787266Z      ^[[90m 175 |^[[39m   )^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T22:38:52.4787572Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4787827Z       at test/aud-opus-r34d-119-probe.spec.ts:172:30
+targeted	Targeted jest	2026-10-04T22:38:52.4788223Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4789057Z   ● AUD-OPUS-R34D-119 C-680-18: post-fence dunning v2 clear on a revoked plan › EXPECTED RED (flag on): chargeback_lost + invoice.paid then sub.updated(active) never reopens the plan
+targeted	Targeted jest	2026-10-04T22:38:52.4789841Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4790045Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T22:38:52.4790542Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4790787Z     Expected: "chargeback_lost"
+targeted	Targeted jest	2026-10-04T22:38:52.4791188Z     Received: "active"
+targeted	Targeted jest	2026-10-04T22:38:52.4791448Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4792254Z     ^[[0m ^[[90m 170 |^[[39m       h^[[33m.^[[39mrow()^[[33m.^[[39mupdated_at ^[[33m=^[[39m ^[[36mnew^[[39m ^[[33mDate^[[39m(^[[33mDate^[[39m^[[33m.^[[39mnow() ^[[33m-^[[39m ^[[35m30^[[39m_000)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4793968Z      ^[[90m 171 |^[[39m       ^[[36mawait^[[39m h^[[33m.^[[39mdeliver(ev(^[[32m'customer.subscription.updated'^[[39m^[[33m,^[[39m sub(^[[32m'active'^[[39m)))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4795318Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 172 |^[[39m       expect(h^[[33m.^[[39mrow()^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(status)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4796029Z      ^[[90m     |^[[39m                              ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4796706Z      ^[[90m 173 |^[[39m       expect(h^[[33m.^[[39mrow()^[[33m.^[[39mentitlement_active)^[[33m.^[[39mtoBe(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4797336Z      ^[[90m 174 |^[[39m     }^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4797723Z      ^[[90m 175 |^[[39m   )^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T22:38:52.4797943Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4798112Z       at test/aud-opus-r34d-119-probe.spec.ts:172:30
+targeted	Targeted jest	2026-10-04T22:38:52.4798441Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4799128Z   ● AUD-OPUS-R34D-119 C-680-18: post-fence dunning v2 clear on a revoked plan › EXPECTED RED (flag on): disputed + invoice.paid then sub.updated(active) never reopens the plan
+targeted	Targeted jest	2026-10-04T22:38:52.4799654Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4799910Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T22:38:52.4800195Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4800363Z     Expected: "disputed"
+targeted	Targeted jest	2026-10-04T22:38:52.4800686Z     Received: "active"
+targeted	Targeted jest	2026-10-04T22:38:52.4801000Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4801637Z     ^[[0m ^[[90m 170 |^[[39m       h^[[33m.^[[39mrow()^[[33m.^[[39mupdated_at ^[[33m=^[[39m ^[[36mnew^[[39m ^[[33mDate^[[39m(^[[33mDate^[[39m^[[33m.^[[39mnow() ^[[33m-^[[39m ^[[35m30^[[39m_000)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4802783Z      ^[[90m 171 |^[[39m       ^[[36mawait^[[39m h^[[33m.^[[39mdeliver(ev(^[[32m'customer.subscription.updated'^[[39m^[[33m,^[[39m sub(^[[32m'active'^[[39m)))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4804078Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 172 |^[[39m       expect(h^[[33m.^[[39mrow()^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(status)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4804766Z      ^[[90m     |^[[39m                              ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4805437Z      ^[[90m 173 |^[[39m       expect(h^[[33m.^[[39mrow()^[[33m.^[[39mentitlement_active)^[[33m.^[[39mtoBe(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4806007Z      ^[[90m 174 |^[[39m     }^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4806447Z      ^[[90m 175 |^[[39m   )^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T22:38:52.4806632Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4806847Z       at test/aud-opus-r34d-119-probe.spec.ts:172:30
+targeted	Targeted jest	2026-10-04T22:38:52.4807119Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4808006Z   ● AUD-OPUS-R34D-119 C-680-19: dispute won writes paid (refund-dispute-handler.service.ts:952-956) › EXPECTED RED: a disputed plan without access, then won (status paid as the handler writes), never regains access from sub.updated
+targeted	Targeted jest	2026-10-04T22:38:52.4808712Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4808922Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T22:38:52.4809210Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4809326Z     Expected: false
+targeted	Targeted jest	2026-10-04T22:38:52.4809680Z     Received: true
+targeted	Targeted jest	2026-10-04T22:38:52.4809810Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4810698Z     ^[[0m ^[[90m 197 |^[[39m     ^[[33mObject^[[39m^[[33m.^[[39massign(h^[[33m.^[[39mrow()^[[33m,^[[39m { status^[[33m:^[[39m ^[[32m'paid'^[[39m^[[33m,^[[39m updated_at^[[33m:^[[39m ^[[36mnew^[[39m ^[[33mDate^[[39m(^[[33mDate^[[39m^[[33m.^[[39mnow() ^[[33m-^[[39m ^[[35m30^[[39m_000) })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4811987Z      ^[[90m 198 |^[[39m     ^[[36mawait^[[39m h^[[33m.^[[39mdeliver(ev(^[[32m'customer.subscription.updated'^[[39m^[[33m,^[[39m sub(^[[32m'active'^[[39m)))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4812932Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 199 |^[[39m     expect(h^[[33m.^[[39mrow()^[[33m.^[[39mentitlement_active)^[[33m.^[[39mtoBe(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4813752Z      ^[[90m     |^[[39m                                        ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4814182Z      ^[[90m 200 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4814585Z      ^[[90m 201 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.4814972Z      ^[[90m 202 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T22:38:52.4815117Z 
+targeted	Targeted jest	2026-10-04T22:38:52.4815457Z       at Object.<anonymous> (test/aud-opus-r34d-119-probe.spec.ts:199:40)
+targeted	Targeted jest	2026-10-04T22:38:52.4815760Z 
+targeted	Targeted jest	2026-10-04T22:38:52.7031615Z ^[[31m[Nest] 2831  - ^[[39m10/04/2026, 10:38:52 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31mbilling.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete end=unconfirmed^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.7380353Z FAIL test/audit-sol-r12-119-prior.spec.ts (333 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:52.7382898Z   ● C-679-3 follow-up: same-key trial replay after provider resource absence › acceptance: a missing trial and SetupIntent never return their stored dead sheet secret
+targeted	Targeted jest	2026-10-04T22:38:52.7384193Z 
+targeted	Targeted jest	2026-10-04T22:38:52.7385120Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T22:38:52.7385606Z 
+targeted	Targeted jest	2026-10-04T22:38:52.7386000Z     - Expected  - 2
+targeted	Targeted jest	2026-10-04T22:38:52.7386436Z     + Received  + 2
+targeted	Targeted jest	2026-10-04T22:38:52.7386696Z 
+targeted	Targeted jest	2026-10-04T22:38:52.7386835Z       Object {
+targeted	Targeted jest	2026-10-04T22:38:52.7387443Z     -   "error": "SUBSCRIPTION_ATTEMPT_EXPIRED",
+targeted	Targeted jest	2026-10-04T22:38:52.7388032Z     -   "returnedSecret": undefined,
+targeted	Targeted jest	2026-10-04T22:38:52.7388556Z     +   "error": undefined,
+targeted	Targeted jest	2026-10-04T22:38:52.7389145Z     +   "returnedSecret": "seti_1_secret_x",
+targeted	Targeted jest	2026-10-04T22:38:52.7389655Z       }
+targeted	Targeted jest	2026-10-04T22:38:52.7389900Z 
+targeted	Targeted jest	2026-10-04T22:38:52.7390636Z     ^[[0m ^[[90m 206 |^[[39m     ^[[36mconst^[[39m out ^[[33m=^[[39m ^[[36mawait^[[39m resultOf(intent(f))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.7392563Z      ^[[90m 207 |^[[39m     expect({ error^[[33m:^[[39m out^[[33m.^[[39mbody^[[33m?^[[39m^[[33m.^[[39mcode^[[33m,^[[39m returnedSecret^[[33m:^[[39m out^[[33m.^[[39mvalue^[[33m?^[[39m^[[33m.^[[39mclient_secret })
+targeted	Targeted jest	2026-10-04T22:38:52.7394643Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 208 |^[[39m       ^[[33m.^[[39mtoEqual({ error^[[33m:^[[39m ^[[32m'SUBSCRIPTION_ATTEMPT_EXPIRED'^[[39m^[[33m,^[[39m returnedSecret^[[33m:^[[39m undefined })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.7395923Z      ^[[90m     |^[[39m        ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.7396616Z      ^[[90m 209 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.7397186Z      ^[[90m 210 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.7397758Z      ^[[90m 211 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T22:38:52.7397996Z 
+targeted	Targeted jest	2026-10-04T22:38:52.7398409Z       at Object.<anonymous> (test/audit-sol-r12-119-prior.spec.ts:208:8)
+targeted	Targeted jest	2026-10-04T22:38:52.7398886Z 
+targeted	Targeted jest	2026-10-04T22:38:52.9279379Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:52 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard refused subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.9280524Z PASS test/b-recur7a-119-r2.spec.ts (357 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:52.9281558Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:52 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard unconfirmed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.9283091Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:52 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mreplay secret check skipped purchase=00000000-0000-4000-8000-000000000001 error=stripe:invalid_request_error:404:resource_missing^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.9285028Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:52 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.9286791Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:52 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-04T22:38:52.9288171Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:52 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-04T22:38:53.0705000Z PASS test/b-recur6a-118-r1.spec.ts (366 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:54.0003478Z PASS test/audit-sol-r12-119-postgres-fence.spec.ts (308 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:54.0005961Z   ● Console
+targeted	Targeted jest	2026-10-04T22:38:54.0006301Z 
+targeted	Targeted jest	2026-10-04T22:38:54.0006441Z     console.log
+targeted	Targeted jest	2026-10-04T22:38:54.0007284Z       SOL_COACH_FENCE { skipped: true, collected: [], creates: 1, status: 'pending' }
+targeted	Targeted jest	2026-10-04T22:38:54.0007809Z 
+targeted	Targeted jest	2026-10-04T22:38:54.0008286Z       at Object.<anonymous> (test/audit-sol-r12-119-postgres-fence.spec.ts:161:11)
+targeted	Targeted jest	2026-10-04T22:38:54.0008650Z 
+targeted	Targeted jest	2026-10-04T22:38:54.9595561Z PASS test/aud-sol-r34-119-pg-lock.spec.ts (334 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:54.9597512Z   ● Console
+targeted	Targeted jest	2026-10-04T22:38:54.9597736Z 
+targeted	Targeted jest	2026-10-04T22:38:54.9597917Z     console.log
+targeted	Targeted jest	2026-10-04T22:38:54.9598282Z       SOL_LOCK_PROOF {
+targeted	Targeted jest	2026-10-04T22:38:54.9598716Z         claimed: true,
+targeted	Targeted jest	2026-10-04T22:38:54.9599180Z         purchaseStatus: 'past_due',
+targeted	Targeted jest	2026-10-04T22:38:54.9599614Z         windows: 1,
+targeted	Targeted jest	2026-10-04T22:38:54.9599926Z         failureWasCaught: false,
+targeted	Targeted jest	2026-10-04T22:38:54.9600263Z         errorCode: undefined,
+targeted	Targeted jest	2026-10-04T22:38:54.9600587Z         dbCode: undefined,
+targeted	Targeted jest	2026-10-04T22:38:54.9600896Z         warningCount: 0
+targeted	Targeted jest	2026-10-04T22:38:54.9601221Z       }
+targeted	Targeted jest	2026-10-04T22:38:54.9601344Z 
+targeted	Targeted jest	2026-10-04T22:38:54.9601623Z       at Object.<anonymous> (test/aud-sol-r34-119-pg-lock.spec.ts:117:13)
+targeted	Targeted jest	2026-10-04T22:38:54.9601969Z 
+targeted	Targeted jest	2026-10-04T22:38:55.1456176Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:54 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"cp_lock","dunning_state_id":"d_first_failure","step_index":0,"scheduled_for":"2026-10-04T22:38:54.835Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-04T22:38:55.1458450Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:54 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"cp_lock","dunning_state_id":"d_first_failure","step_index":1,"scheduled_for":"2026-10-07T22:38:54.835Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-04T22:38:55.1460383Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:54 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"cp_lock","dunning_state_id":"d_first_failure","step_index":2,"scheduled_for":"2026-10-11T22:38:54.835Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-04T22:38:55.1462180Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:54 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"cp_lock","dunning_state_id":"d_first_failure","step_index":3,"scheduled_for":"2026-10-18T22:38:54.835Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-04T22:38:55.1464313Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:54 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"cp_lock","dunning_state_id":"d_first_failure","invoice_id":"in_lock","amount_cents":4900,"attempt_number":null}^[[39m
+targeted	Targeted jest	2026-10-04T22:38:55.1465914Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:55 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-04T22:38:55.1467805Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:55 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-04T22:38:55.1478806Z FAIL test/audit-opus-r12-119.spec.ts (355 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:55.1480408Z   ● C-679-4 attemptSettled: a subscription default with the trial end still set and no SetupIntent › evidence: no secret was stored and the trial end is still set (no own card)
+targeted	Targeted jest	2026-10-04T22:38:55.1481316Z 
+targeted	Targeted jest	2026-10-04T22:38:55.1481604Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T22:38:55.1481871Z 
+targeted	Targeted jest	2026-10-04T22:38:55.1482043Z     - Expected  - 1
+targeted	Targeted jest	2026-10-04T22:38:55.1482361Z     + Received  + 1
+targeted	Targeted jest	2026-10-04T22:38:55.1482541Z 
+targeted	Targeted jest	2026-10-04T22:38:55.1482657Z       Array [
+targeted	Targeted jest	2026-10-04T22:38:55.1483013Z     -   "trialing",
+targeted	Targeted jest	2026-10-04T22:38:55.1483392Z     +   "canceled",
+targeted	Targeted jest	2026-10-04T22:38:55.1483701Z         true,
+targeted	Targeted jest	2026-10-04T22:38:55.1483983Z       ]
+targeted	Targeted jest	2026-10-04T22:38:55.1484147Z 
+targeted	Targeted jest	2026-10-04T22:38:55.1484676Z     ^[[0m ^[[90m 83 |^[[39m     expect(first^[[33m.^[[39mbody^[[33m?^[[39m^[[33m.^[[39mcode)^[[33m.^[[39mtoBe(^[[32m'STRIPE_CHECKOUT_ERROR'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:55.1485637Z      ^[[90m 84 |^[[39m     expect(row^[[33m.^[[39mstripe_client_secret ^[[33m?^[[39m^[[33m?^[[39m ^[[36mnull^[[39m)^[[33m.^[[39mtoBeNull()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:55.1486730Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 85 |^[[39m     expect([sub^[[33m.^[[39mstatus^[[33m,^[[39m sub^[[33m.^[[39mcancel_at_period_end])^[[33m.^[[39mtoEqual([^[[32m'trialing'^[[39m^[[33m,^[[39m ^[[36mtrue^[[39m])^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:55.1487572Z      ^[[90m    |^[[39m                                                    ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:38:55.1488054Z      ^[[90m 86 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:55.1488407Z      ^[[90m 87 |^[[39m
+targeted	Targeted jest	2026-10-04T22:38:55.1489299Z      ^[[90m 88 |^[[39m   it(^[[32m'(should fail at head) the replay never answers SUBSCRIPTION_ALREADY_ACTIVE for a trial that ends with no card'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T22:38:55.1489863Z 
+targeted	Targeted jest	2026-10-04T22:38:55.1490106Z       at Object.<anonymous> (test/audit-opus-r12-119.spec.ts:85:52)
+targeted	Targeted jest	2026-10-04T22:38:55.1490429Z 
+targeted	Targeted jest	2026-10-04T22:38:55.1491177Z   ● deletion collector edge cases (R1 #678 account-deletion.billing.ts) › (should fail at head) a Stripe "No such customer" (404 resource_missing) is proven absence, not a deletion that fails every night
+targeted	Targeted jest	2026-10-04T22:38:55.1491928Z 
+targeted	Targeted jest	2026-10-04T22:38:55.1492114Z     expect(received).resolves.toEqual()
+targeted	Targeted jest	2026-10-04T22:38:55.1492374Z 
+targeted	Targeted jest	2026-10-04T22:38:55.1492562Z     Received promise rejected instead of resolved
+targeted	Targeted jest	2026-10-04T22:38:55.1493051Z     Rejected to value: [StripeConnectApiError: No such customer]
+targeted	Targeted jest	2026-10-04T22:38:55.1493385Z 
+targeted	Targeted jest	2026-10-04T22:38:55.1493647Z     ^[[0m ^[[90m 126 |^[[39m       })^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T22:38:55.1494057Z      ^[[90m 127 |^[[39m     }^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:55.1494555Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 128 |^[[39m     ^[[36mawait^[[39m expect(
+targeted	Targeted jest	2026-10-04T22:38:55.1495056Z      ^[[90m     |^[[39m           ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:38:55.1495865Z      ^[[90m 129 |^[[39m       (billing(stripe) ^[[36mas^[[39m any)^[[33m.^[[39mcollectUnboundAttemptSubscriptionIds(tx([row()])^[[33m,^[[39m ^[[33mCLIENT^[[39m)^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T22:38:55.1496691Z      ^[[90m 130 |^[[39m     )^[[33m.^[[39mresolves^[[33m.^[[39mtoEqual([])^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:55.1497149Z      ^[[90m 131 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T22:38:55.1497399Z 
+targeted	Targeted jest	2026-10-04T22:38:55.1497575Z       at expect (node_modules/expect/build/index.js:2116:15)
+targeted	Targeted jest	2026-10-04T22:38:55.1498108Z       at Object.<anonymous> (test/audit-opus-r12-119.spec.ts:128:11)
+targeted	Targeted jest	2026-10-04T22:38:55.1498393Z 
+targeted	Targeted jest	2026-10-04T22:38:55.2718290Z PASS test/b-recur7a-119-r1.spec.ts (365 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:55.5564740Z PASS test/b-recur-fix-round-1-trial-card.spec.ts (395 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:56.0956346Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:55 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mbilling.trial_card_attached purchase=cp_trial via=webhook^[[39m
+targeted	Targeted jest	2026-10-04T22:38:56.0958601Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:55 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33msetup_intent.succeeded trial card attach failed purchase=cp_trial error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:56.0962027Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:55 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33msetup_intent.succeeded customer mismatch purchase=cp_trial^[[39m
+targeted	Targeted jest	2026-10-04T22:38:58.5457646Z PASS test/aud-opus-r34-119-pg-lock.spec.ts (411 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:58.7215680Z PASS test/audit-sol-r12d-119-trial-final.spec.ts (428 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:58.7218034Z   ● Console
+targeted	Targeted jest	2026-10-04T22:38:58.7218305Z 
+targeted	Targeted jest	2026-10-04T22:38:58.7218652Z     console.log
+targeted	Targeted jest	2026-10-04T22:38:58.7219275Z       SOL_TRIAL_DEFAULT_AFTER_SETUP_FAILURE {
+targeted	Targeted jest	2026-10-04T22:38:58.7219813Z         change: 'trial removed',
+targeted	Targeted jest	2026-10-04T22:38:58.7220390Z         code: 'SUBSCRIPTION_ATTEMPT_EXPIRED',
+targeted	Targeted jest	2026-10-04T22:38:58.7220934Z         status: 'canceled',
+targeted	Targeted jest	2026-10-04T22:38:58.7221410Z         safetyEnd: true,
+targeted	Targeted jest	2026-10-04T22:38:58.7221880Z         hasOwnSecret: false,
+targeted	Targeted jest	2026-10-04T22:38:58.7222426Z         entitled: false
+targeted	Targeted jest	2026-10-04T22:38:58.7222855Z       }
+targeted	Targeted jest	2026-10-04T22:38:58.7223056Z 
+targeted	Targeted jest	2026-10-04T22:38:58.7223511Z       at test/audit-sol-r12d-119-trial-final.spec.ts:78:13
+targeted	Targeted jest	2026-10-04T22:38:58.7223960Z 
+targeted	Targeted jest	2026-10-04T22:38:58.7224180Z     console.log
+targeted	Targeted jest	2026-10-04T22:38:58.7224814Z       SOL_TRIAL_DEFAULT_AFTER_SETUP_FAILURE {
+targeted	Targeted jest	2026-10-04T22:38:58.7225880Z         change: 'price changed',
+targeted	Targeted jest	2026-10-04T22:38:58.7226441Z         code: 'SUBSCRIPTION_ATTEMPT_EXPIRED',
+targeted	Targeted jest	2026-10-04T22:38:58.7226929Z         status: 'canceled',
+targeted	Targeted jest	2026-10-04T22:38:58.7227426Z         safetyEnd: true,
+targeted	Targeted jest	2026-10-04T22:38:58.7227861Z         hasOwnSecret: false,
+targeted	Targeted jest	2026-10-04T22:38:58.7228322Z         entitled: false
+targeted	Targeted jest	2026-10-04T22:38:58.7228724Z       }
+targeted	Targeted jest	2026-10-04T22:38:58.7228947Z 
+targeted	Targeted jest	2026-10-04T22:38:58.7229284Z       at test/audit-sol-r12d-119-trial-final.spec.ts:78:13
+targeted	Targeted jest	2026-10-04T22:38:58.7229693Z 
+targeted	Targeted jest	2026-10-04T22:38:58.7229886Z     console.log
+targeted	Targeted jest	2026-10-04T22:38:58.7230509Z       SOL_LIST_COMPLETENESS { returnedPlans: 1, billablePlan: 'pur_paid_old' }
+targeted	Targeted jest	2026-10-04T22:38:58.7231049Z 
+targeted	Targeted jest	2026-10-04T22:38:58.7231511Z       at Object.<anonymous> (test/audit-sol-r12d-119-trial-final.spec.ts:110:11)
+targeted	Targeted jest	2026-10-04T22:38:58.7232010Z 
+targeted	Targeted jest	2026-10-04T22:38:58.8890384Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:58 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-04T22:38:58.8892794Z PASS test/audit-sol-r12-119-trial-authority.spec.ts (438 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:58.8895229Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:58 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-04T22:38:58.8897930Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:58 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-04T22:38:58.8900609Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:58 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-04T22:38:58.8902080Z   ● Console
+targeted	Targeted jest	2026-10-04T22:38:58.8902298Z 
+targeted	Targeted jest	2026-10-04T22:38:58.8902507Z     console.log
+targeted	Targeted jest	2026-10-04T22:38:58.8902992Z       SOL_TRIAL_DEFAULT_AFTER_SETUP_FAILURE {
+targeted	Targeted jest	2026-10-04T22:38:58.8903864Z         change: 'trial removed',
+targeted	Targeted jest	2026-10-04T22:38:58.8904501Z         code: 'SUBSCRIPTION_ATTEMPT_EXPIRED',
+targeted	Targeted jest	2026-10-04T22:38:58.8905046Z         status: 'canceled',
+targeted	Targeted jest	2026-10-04T22:38:58.8905579Z         safetyEnd: true,
+targeted	Targeted jest	2026-10-04T22:38:58.8906038Z         hasOwnSecret: false,
+targeted	Targeted jest	2026-10-04T22:38:58.8906551Z         entitled: false
+targeted	Targeted jest	2026-10-04T22:38:58.8907625Z       }
+targeted	Targeted jest	2026-10-04T22:38:58.8907805Z 
+targeted	Targeted jest	2026-10-04T22:38:58.8908228Z       at test/audit-sol-r12-119-trial-authority.spec.ts:78:13
+targeted	Targeted jest	2026-10-04T22:38:58.8908979Z 
+targeted	Targeted jest	2026-10-04T22:38:58.8909142Z     console.log
+targeted	Targeted jest	2026-10-04T22:38:58.8909728Z       SOL_TRIAL_DEFAULT_AFTER_SETUP_FAILURE {
+targeted	Targeted jest	2026-10-04T22:38:58.8910354Z         change: 'price changed',
+targeted	Targeted jest	2026-10-04T22:38:58.8910868Z         code: 'SUBSCRIPTION_ATTEMPT_EXPIRED',
+targeted	Targeted jest	2026-10-04T22:38:58.8911426Z         status: 'canceled',
+targeted	Targeted jest	2026-10-04T22:38:58.8911885Z         safetyEnd: true,
+targeted	Targeted jest	2026-10-04T22:38:58.8912340Z         hasOwnSecret: false,
+targeted	Targeted jest	2026-10-04T22:38:58.8912918Z         entitled: false
+targeted	Targeted jest	2026-10-04T22:38:58.8913543Z       }
+targeted	Targeted jest	2026-10-04T22:38:58.8913862Z 
+targeted	Targeted jest	2026-10-04T22:38:58.8914232Z       at test/audit-sol-r12-119-trial-authority.spec.ts:78:13
+targeted	Targeted jest	2026-10-04T22:38:58.8914723Z 
+targeted	Targeted jest	2026-10-04T22:38:58.8914933Z     console.log
+targeted	Targeted jest	2026-10-04T22:38:58.8915662Z       SOL_LIST_COMPLETENESS { returnedPlans: 1, billablePlan: 'pur_paid_old' }
+targeted	Targeted jest	2026-10-04T22:38:58.8916194Z 
+targeted	Targeted jest	2026-10-04T22:38:58.8916632Z       at Object.<anonymous> (test/audit-sol-r12-119-trial-authority.spec.ts:110:11)
+targeted	Targeted jest	2026-10-04T22:38:58.8917200Z 
+targeted	Targeted jest	2026-10-04T22:38:59.1462189Z PASS test/b-recur-fix-round-1.spec.ts (470 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:59.4265635Z PASS test/b-recur-3-fix-round-2.spec.ts (497 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:59.5446365Z ^[[33m[Nest] 2831  - ^[[39m10/04/2026, 10:38:59 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33msetup_intent.succeeded lookup failed si=seti_T1 error=Error^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.5447402Z PASS test/audit-sol-r12-119-coach-deletion.spec.ts (505 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:59.5448406Z ^[[32m[Nest] 2831  - ^[[39m10/04/2026, 10:38:59 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mbilling.trial_card_attached purchase=cp_trial via=webhook^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.7019463Z PASS test/audit-sol-r12d-119-list-snapshot.spec.ts (519 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:59.7020501Z   ● Console
+targeted	Targeted jest	2026-10-04T22:38:59.7020813Z 
+targeted	Targeted jest	2026-10-04T22:38:59.7020978Z     console.log
+targeted	Targeted jest	2026-10-04T22:38:59.7021584Z       SOL_LIST_CANCEL_SNAPSHOT { ids: [ 'pur_0', 'pur_0' ], states: [ 'active', 'canceled' ] }
+targeted	Targeted jest	2026-10-04T22:38:59.7021991Z 
+targeted	Targeted jest	2026-10-04T22:38:59.7022297Z       at Object.<anonymous> (test/audit-sol-r12d-119-list-snapshot.spec.ts:58:11)
+targeted	Targeted jest	2026-10-04T22:38:59.7022571Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8010648Z PASS test/b-recur5a-117-trial-end-form.spec.ts (529 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:59.8030168Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8030856Z Summary of all failing tests
+targeted	Targeted jest	2026-10-04T22:38:59.8034602Z FAIL test/aud-opus-r34-119-probe.spec.ts (474 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:59.8040879Z   ● Opus R34-119: renewal decline authority (controls) › control: decline read, then the paired past_due update commits, then the decline opens dunning once (no redelivery)
+targeted	Targeted jest	2026-10-04T22:38:59.8042005Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8042525Z     expect(received).resolves.toMatchObject()
+targeted	Targeted jest	2026-10-04T22:38:59.8043022Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8043407Z     Received promise rejected instead of resolved
+targeted	Targeted jest	2026-10-04T22:38:59.8045613Z     Rejected to value: [Error: invoice.payment_failed: purchase=cp_o changed after the invoice read; redeliver]
+targeted	Targeted jest	2026-10-04T22:38:59.8046293Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8051601Z     ^[[0m ^[[90m 135 |^[[39m     ^[[36mawait^[[39m h^[[33m.^[[39mdeliver(ev(^[[32m'customer.subscription.updated'^[[39m^[[33m,^[[39m sub(^[[32m'past_due'^[[39m)))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8054618Z      ^[[90m 136 |^[[39m     expect(h^[[33m.^[[39mrow()^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(^[[32m'past_due'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8063033Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 137 |^[[39m     ^[[36mawait^[[39m expect(h^[[33m.^[[39msvc^[[33m.^[[39mhandle(d^[[33m,^[[39m h^[[33m.^[[39mdb^[[33m,^[[39m pre))^[[33m.^[[39mresolves^[[33m.^[[39mtoMatchObject({ claimed^[[33m:^[[39m ^[[36mtrue^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8064603Z      ^[[90m     |^[[39m           ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8068487Z      ^[[90m 138 |^[[39m     expect(h^[[33m.^[[39mdunning^[[33m.^[[39mrecordFailure)^[[33m.^[[39mtoHaveBeenCalledTimes(^[[35m1^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8095517Z      ^[[90m 139 |^[[39m     expect(h^[[33m.^[[39mrow())^[[33m.^[[39mtoMatchObject({ status^[[33m:^[[39m ^[[32m'past_due'^[[39m^[[33m,^[[39m last_error^[[33m:^[[39m ^[[32m'Your card was declined.'^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8124295Z      ^[[90m 140 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T22:38:59.8143703Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8154390Z       at expect (node_modules/expect/build/index.js:2116:15)
+targeted	Targeted jest	2026-10-04T22:38:59.8155561Z       at Object.<anonymous> (test/aud-opus-r34-119-probe.spec.ts:137:11)
+targeted	Targeted jest	2026-10-04T22:38:59.8156344Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8157888Z   ● Opus R34-119: setup_intent.succeeded attaches only the attempt-owned trial SetupIntent › C-680-13 (defence in depth): an ended attempt row is never given a card while Stripe still shows trialing
+targeted	Targeted jest	2026-10-04T22:38:59.8159108Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8159527Z     expect(jest.fn()).not.toHaveBeenCalled()
+targeted	Targeted jest	2026-10-04T22:38:59.8160012Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8160375Z     Expected number of calls: 0
+targeted	Targeted jest	2026-10-04T22:38:59.8161080Z     Received number of calls: 1
+targeted	Targeted jest	2026-10-04T22:38:59.8161540Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8162375Z     1: {"idempotencyKey": "tgp-trial-card-sub_o-pm_own", "liftTrialEnd": true, "paymentMethodId": "pm_own", "subscriptionId": "sub_o"}
+targeted	Targeted jest	2026-10-04T22:38:59.8163479Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8165132Z     ^[[0m ^[[90m 249 |^[[39m     h^[[33m.^[[39msetLive(sub(^[[32m'trialing'^[[39m^[[33m,^[[39m { trial_start^[[33m:^[[39m ^[[33mNOW^[[39m^[[33m,^[[39m default_payment_method^[[33m:^[[39m ^[[36mnull^[[39m^[[33m,^[[39m cancel_at_period_end^[[33m:^[[39m ^[[36mtrue^[[39m }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8167249Z      ^[[90m 250 |^[[39m     ^[[36mawait^[[39m h^[[33m.^[[39mdeliver(setupOk(^[[32m'seti_Own'^[[39m^[[33m,^[[39m { metadata^[[33m:^[[39m ownMeta }))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8169236Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 251 |^[[39m     expect(h^[[33m.^[[39mstripe^[[33m.^[[39msetSubscriptionDefaultPaymentMethod)^[[33m.^[[39mnot^[[33m.^[[39mtoHaveBeenCalled()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8170799Z      ^[[90m     |^[[39m                                                              ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8171735Z      ^[[90m 252 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8172446Z      ^[[90m 253 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8173078Z      ^[[90m 254 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T22:38:59.8173646Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8174207Z       at Object.<anonymous> (test/aud-opus-r34-119-probe.spec.ts:251:62)
+targeted	Targeted jest	2026-10-04T22:38:59.8174903Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8175428Z FAIL test/aud-opus-r34d-119-probe.spec.ts (320 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:59.8177307Z   ● AUD-OPUS-R34D-119 C-680-18: post-fence dunning v2 clear on a revoked plan › EXPECTED RED (flag on): refunded + invoice.paid keeps entitlement off
+targeted	Targeted jest	2026-10-04T22:38:59.8178215Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8178541Z     expect(received).toMatchObject(expected)
+targeted	Targeted jest	2026-10-04T22:38:59.8178978Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8179323Z     - Expected  - 1
+targeted	Targeted jest	2026-10-04T22:38:59.8179853Z     + Received  + 1
+targeted	Targeted jest	2026-10-04T22:38:59.8180199Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8180486Z       Object {
+targeted	Targeted jest	2026-10-04T22:38:59.8181332Z     -   "entitlement_active": false,
+targeted	Targeted jest	2026-10-04T22:38:59.8182088Z     +   "entitlement_active": true,
+targeted	Targeted jest	2026-10-04T22:38:59.8182573Z         "status": "refunded",
+targeted	Targeted jest	2026-10-04T22:38:59.8183043Z       }
+targeted	Targeted jest	2026-10-04T22:38:59.8183428Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8184696Z     ^[[0m ^[[90m 159 |^[[39m     ^[[36mconst^[[39m h ^[[33m=^[[39m harness({ status^[[33m,^[[39m entitlement_active^[[33m:^[[39m ^[[36mfalse^[[39m }^[[33m,^[[39m { dunningState^[[33m:^[[39m ^[[36mtrue^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8185976Z      ^[[90m 160 |^[[39m     ^[[36mawait^[[39m h^[[33m.^[[39mdeliver(paid())^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8187392Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 161 |^[[39m     expect(h^[[33m.^[[39mrow())^[[33m.^[[39mtoMatchObject({ status^[[33m,^[[39m entitlement_active^[[33m:^[[39m ^[[36mfalse^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8188504Z      ^[[90m     |^[[39m                     ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8189108Z      ^[[90m 162 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8189603Z      ^[[90m 163 |^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8190561Z      ^[[90m 164 |^[[39m   it^[[33m.^[[39meach([^[[32m'refunded'^[[39m^[[33m,^[[39m ^[[32m'chargeback_lost'^[[39m^[[33m,^[[39m ^[[32m'disputed'^[[39m])(^[[0m
+targeted	Targeted jest	2026-10-04T22:38:59.8191201Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8191512Z       at test/aud-opus-r34d-119-probe.spec.ts:161:21
+targeted	Targeted jest	2026-10-04T22:38:59.8192118Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8193142Z   ● AUD-OPUS-R34D-119 C-680-18: post-fence dunning v2 clear on a revoked plan › EXPECTED RED (flag on): chargeback_lost + invoice.paid keeps entitlement off
+targeted	Targeted jest	2026-10-04T22:38:59.8194112Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8194352Z     expect(received).toMatchObject(expected)
+targeted	Targeted jest	2026-10-04T22:38:59.8194678Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8194850Z     - Expected  - 1
+targeted	Targeted jest	2026-10-04T22:38:59.8195273Z     + Received  + 1
+targeted	Targeted jest	2026-10-04T22:38:59.8195495Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8195813Z       Object {
+targeted	Targeted jest	2026-10-04T22:38:59.8196127Z     -   "entitlement_active": false,
+targeted	Targeted jest	2026-10-04T22:38:59.8196459Z     +   "entitlement_active": true,
+targeted	Targeted jest	2026-10-04T22:38:59.8196810Z         "status": "chargeback_lost",
+targeted	Targeted jest	2026-10-04T22:38:59.8197106Z       }
+targeted	Targeted jest	2026-10-04T22:38:59.8197221Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8197889Z     ^[[0m ^[[90m 159 |^[[39m     ^[[36mconst^[[39m h ^[[33m=^[[39m harness({ status^[[33m,^[[39m entitlement_active^[[33m:^[[39m ^[[36mfalse^[[39m }^[[33m,^[[39m { dunningState^[[33m:^[[39m ^[[36mtrue^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8198697Z      ^[[90m 160 |^[[39m     ^[[36mawait^[[39m h^[[33m.^[[39mdeliver(paid())^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8199480Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 161 |^[[39m     expect(h^[[33m.^[[39mrow())^[[33m.^[[39mtoMatchObject({ status^[[33m,^[[39m entitlement_active^[[33m:^[[39m ^[[36mfalse^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8200164Z      ^[[90m     |^[[39m                     ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8200543Z      ^[[90m 162 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8200868Z      ^[[90m 163 |^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8201507Z      ^[[90m 164 |^[[39m   it^[[33m.^[[39meach([^[[32m'refunded'^[[39m^[[33m,^[[39m ^[[32m'chargeback_lost'^[[39m^[[33m,^[[39m ^[[32m'disputed'^[[39m])(^[[0m
+targeted	Targeted jest	2026-10-04T22:38:59.8201856Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8202058Z       at test/aud-opus-r34d-119-probe.spec.ts:161:21
+targeted	Targeted jest	2026-10-04T22:38:59.8202291Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8202808Z   ● AUD-OPUS-R34D-119 C-680-18: post-fence dunning v2 clear on a revoked plan › EXPECTED RED (flag on): disputed + invoice.paid keeps entitlement off
+targeted	Targeted jest	2026-10-04T22:38:59.8203246Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8203653Z     expect(received).toMatchObject(expected)
+targeted	Targeted jest	2026-10-04T22:38:59.8203911Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8204039Z     - Expected  - 1
+targeted	Targeted jest	2026-10-04T22:38:59.8204348Z     + Received  + 1
+targeted	Targeted jest	2026-10-04T22:38:59.8204515Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8204850Z       Object {
+targeted	Targeted jest	2026-10-04T22:38:59.8205255Z     -   "entitlement_active": false,
+targeted	Targeted jest	2026-10-04T22:38:59.8205747Z     +   "entitlement_active": true,
+targeted	Targeted jest	2026-10-04T22:38:59.8206084Z         "status": "disputed",
+targeted	Targeted jest	2026-10-04T22:38:59.8206360Z       }
+targeted	Targeted jest	2026-10-04T22:38:59.8206509Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8207212Z     ^[[0m ^[[90m 159 |^[[39m     ^[[36mconst^[[39m h ^[[33m=^[[39m harness({ status^[[33m,^[[39m entitlement_active^[[33m:^[[39m ^[[36mfalse^[[39m }^[[33m,^[[39m { dunningState^[[33m:^[[39m ^[[36mtrue^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8207990Z      ^[[90m 160 |^[[39m     ^[[36mawait^[[39m h^[[33m.^[[39mdeliver(paid())^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8208757Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 161 |^[[39m     expect(h^[[33m.^[[39mrow())^[[33m.^[[39mtoMatchObject({ status^[[33m,^[[39m entitlement_active^[[33m:^[[39m ^[[36mfalse^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8209431Z      ^[[90m     |^[[39m                     ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8209806Z      ^[[90m 162 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8210163Z      ^[[90m 163 |^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8210764Z      ^[[90m 164 |^[[39m   it^[[33m.^[[39meach([^[[32m'refunded'^[[39m^[[33m,^[[39m ^[[32m'chargeback_lost'^[[39m^[[33m,^[[39m ^[[32m'disputed'^[[39m])(^[[0m
+targeted	Targeted jest	2026-10-04T22:38:59.8211140Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8211291Z       at test/aud-opus-r34d-119-probe.spec.ts:161:21
+targeted	Targeted jest	2026-10-04T22:38:59.8211545Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8212065Z   ● AUD-OPUS-R34D-119 C-680-18: post-fence dunning v2 clear on a revoked plan › EXPECTED RED (flag on): canceled + invoice.paid keeps entitlement off
+targeted	Targeted jest	2026-10-04T22:38:59.8212501Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8212647Z     expect(received).toMatchObject(expected)
+targeted	Targeted jest	2026-10-04T22:38:59.8212861Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8213027Z     - Expected  - 1
+targeted	Targeted jest	2026-10-04T22:38:59.8213429Z     + Received  + 1
+targeted	Targeted jest	2026-10-04T22:38:59.8213825Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8213956Z       Object {
+targeted	Targeted jest	2026-10-04T22:38:59.8214280Z     -   "entitlement_active": false,
+targeted	Targeted jest	2026-10-04T22:38:59.8214585Z     +   "entitlement_active": true,
+targeted	Targeted jest	2026-10-04T22:38:59.8214958Z         "status": "canceled",
+targeted	Targeted jest	2026-10-04T22:38:59.8215263Z       }
+targeted	Targeted jest	2026-10-04T22:38:59.8215395Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8216025Z     ^[[0m ^[[90m 159 |^[[39m     ^[[36mconst^[[39m h ^[[33m=^[[39m harness({ status^[[33m,^[[39m entitlement_active^[[33m:^[[39m ^[[36mfalse^[[39m }^[[33m,^[[39m { dunningState^[[33m:^[[39m ^[[36mtrue^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8216768Z      ^[[90m 160 |^[[39m     ^[[36mawait^[[39m h^[[33m.^[[39mdeliver(paid())^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8217604Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 161 |^[[39m     expect(h^[[33m.^[[39mrow())^[[33m.^[[39mtoMatchObject({ status^[[33m,^[[39m entitlement_active^[[33m:^[[39m ^[[36mfalse^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8218239Z      ^[[90m     |^[[39m                     ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8218651Z      ^[[90m 162 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8218972Z      ^[[90m 163 |^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8219551Z      ^[[90m 164 |^[[39m   it^[[33m.^[[39meach([^[[32m'refunded'^[[39m^[[33m,^[[39m ^[[32m'chargeback_lost'^[[39m^[[33m,^[[39m ^[[32m'disputed'^[[39m])(^[[0m
+targeted	Targeted jest	2026-10-04T22:38:59.8220025Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8220260Z       at test/aud-opus-r34d-119-probe.spec.ts:161:21
+targeted	Targeted jest	2026-10-04T22:38:59.8220460Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8221077Z   ● AUD-OPUS-R34D-119 C-680-18: post-fence dunning v2 clear on a revoked plan › EXPECTED RED (flag on): refunded + invoice.paid then sub.updated(active) never reopens the plan
+targeted	Targeted jest	2026-10-04T22:38:59.8221553Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8221788Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T22:38:59.8221997Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8222138Z     Expected: "refunded"
+targeted	Targeted jest	2026-10-04T22:38:59.8222416Z     Received: "active"
+targeted	Targeted jest	2026-10-04T22:38:59.8222636Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8223187Z     ^[[0m ^[[90m 170 |^[[39m       h^[[33m.^[[39mrow()^[[33m.^[[39mupdated_at ^[[33m=^[[39m ^[[36mnew^[[39m ^[[33mDate^[[39m(^[[33mDate^[[39m^[[33m.^[[39mnow() ^[[33m-^[[39m ^[[35m30^[[39m_000)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8224232Z      ^[[90m 171 |^[[39m       ^[[36mawait^[[39m h^[[33m.^[[39mdeliver(ev(^[[32m'customer.subscription.updated'^[[39m^[[33m,^[[39m sub(^[[32m'active'^[[39m)))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8225184Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 172 |^[[39m       expect(h^[[33m.^[[39mrow()^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(status)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8225866Z      ^[[90m     |^[[39m                              ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8226618Z      ^[[90m 173 |^[[39m       expect(h^[[33m.^[[39mrow()^[[33m.^[[39mentitlement_active)^[[33m.^[[39mtoBe(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8227203Z      ^[[90m 174 |^[[39m     }^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8227582Z      ^[[90m 175 |^[[39m   )^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T22:38:59.8227833Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8228035Z       at test/aud-opus-r34d-119-probe.spec.ts:172:30
+targeted	Targeted jest	2026-10-04T22:38:59.8228251Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8229054Z   ● AUD-OPUS-R34D-119 C-680-18: post-fence dunning v2 clear on a revoked plan › EXPECTED RED (flag on): chargeback_lost + invoice.paid then sub.updated(active) never reopens the plan
+targeted	Targeted jest	2026-10-04T22:38:59.8229610Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8229805Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T22:38:59.8230071Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8230240Z     Expected: "chargeback_lost"
+targeted	Targeted jest	2026-10-04T22:38:59.8230549Z     Received: "active"
+targeted	Targeted jest	2026-10-04T22:38:59.8230738Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8231365Z     ^[[0m ^[[90m 170 |^[[39m       h^[[33m.^[[39mrow()^[[33m.^[[39mupdated_at ^[[33m=^[[39m ^[[36mnew^[[39m ^[[33mDate^[[39m(^[[33mDate^[[39m^[[33m.^[[39mnow() ^[[33m-^[[39m ^[[35m30^[[39m_000)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8232374Z      ^[[90m 171 |^[[39m       ^[[36mawait^[[39m h^[[33m.^[[39mdeliver(ev(^[[32m'customer.subscription.updated'^[[39m^[[33m,^[[39m sub(^[[32m'active'^[[39m)))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8233238Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 172 |^[[39m       expect(h^[[33m.^[[39mrow()^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(status)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8233873Z      ^[[90m     |^[[39m                              ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8234634Z      ^[[90m 173 |^[[39m       expect(h^[[33m.^[[39mrow()^[[33m.^[[39mentitlement_active)^[[33m.^[[39mtoBe(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8235172Z      ^[[90m 174 |^[[39m     }^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8235530Z      ^[[90m 175 |^[[39m   )^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T22:38:59.8235841Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8236009Z       at test/aud-opus-r34d-119-probe.spec.ts:172:30
+targeted	Targeted jest	2026-10-04T22:38:59.8236246Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8236865Z   ● AUD-OPUS-R34D-119 C-680-18: post-fence dunning v2 clear on a revoked plan › EXPECTED RED (flag on): disputed + invoice.paid then sub.updated(active) never reopens the plan
+targeted	Targeted jest	2026-10-04T22:38:59.8237351Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8237576Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T22:38:59.8237821Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8237951Z     Expected: "disputed"
+targeted	Targeted jest	2026-10-04T22:38:59.8238266Z     Received: "active"
+targeted	Targeted jest	2026-10-04T22:38:59.8238436Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8238973Z     ^[[0m ^[[90m 170 |^[[39m       h^[[33m.^[[39mrow()^[[33m.^[[39mupdated_at ^[[33m=^[[39m ^[[36mnew^[[39m ^[[33mDate^[[39m(^[[33mDate^[[39m^[[33m.^[[39mnow() ^[[33m-^[[39m ^[[35m30^[[39m_000)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8239955Z      ^[[90m 171 |^[[39m       ^[[36mawait^[[39m h^[[33m.^[[39mdeliver(ev(^[[32m'customer.subscription.updated'^[[39m^[[33m,^[[39m sub(^[[32m'active'^[[39m)))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8240798Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 172 |^[[39m       expect(h^[[33m.^[[39mrow()^[[33m.^[[39mstatus)^[[33m.^[[39mtoBe(status)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8241385Z      ^[[90m     |^[[39m                              ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8242009Z      ^[[90m 173 |^[[39m       expect(h^[[33m.^[[39mrow()^[[33m.^[[39mentitlement_active)^[[33m.^[[39mtoBe(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8242526Z      ^[[90m 174 |^[[39m     }^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8242945Z      ^[[90m 175 |^[[39m   )^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T22:38:59.8243110Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8243369Z       at test/aud-opus-r34d-119-probe.spec.ts:172:30
+targeted	Targeted jest	2026-10-04T22:38:59.8243701Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8244527Z   ● AUD-OPUS-R34D-119 C-680-19: dispute won writes paid (refund-dispute-handler.service.ts:952-956) › EXPECTED RED: a disputed plan without access, then won (status paid as the handler writes), never regains access from sub.updated
+targeted	Targeted jest	2026-10-04T22:38:59.8245275Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8245483Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-04T22:38:59.8245723Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8245818Z     Expected: false
+targeted	Targeted jest	2026-10-04T22:38:59.8246170Z     Received: true
+targeted	Targeted jest	2026-10-04T22:38:59.8246306Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8247121Z     ^[[0m ^[[90m 197 |^[[39m     ^[[33mObject^[[39m^[[33m.^[[39massign(h^[[33m.^[[39mrow()^[[33m,^[[39m { status^[[33m:^[[39m ^[[32m'paid'^[[39m^[[33m,^[[39m updated_at^[[33m:^[[39m ^[[36mnew^[[39m ^[[33mDate^[[39m(^[[33mDate^[[39m^[[33m.^[[39mnow() ^[[33m-^[[39m ^[[35m30^[[39m_000) })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8248250Z      ^[[90m 198 |^[[39m     ^[[36mawait^[[39m h^[[33m.^[[39mdeliver(ev(^[[32m'customer.subscription.updated'^[[39m^[[33m,^[[39m sub(^[[32m'active'^[[39m)))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8249109Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 199 |^[[39m     expect(h^[[33m.^[[39mrow()^[[33m.^[[39mentitlement_active)^[[33m.^[[39mtoBe(^[[36mfalse^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8249798Z      ^[[90m     |^[[39m                                        ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8250235Z      ^[[90m 200 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8250603Z      ^[[90m 201 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8250970Z      ^[[90m 202 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T22:38:59.8251118Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8251348Z       at Object.<anonymous> (test/aud-opus-r34d-119-probe.spec.ts:199:40)
+targeted	Targeted jest	2026-10-04T22:38:59.8251676Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8251895Z FAIL test/audit-sol-r12-119-prior.spec.ts (333 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:59.8252761Z   ● C-679-3 follow-up: same-key trial replay after provider resource absence › acceptance: a missing trial and SetupIntent never return their stored dead sheet secret
+targeted	Targeted jest	2026-10-04T22:38:59.8253214Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8253719Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T22:38:59.8254027Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8254166Z     - Expected  - 2
+targeted	Targeted jest	2026-10-04T22:38:59.8254458Z     + Received  + 2
+targeted	Targeted jest	2026-10-04T22:38:59.8254637Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8254739Z       Object {
+targeted	Targeted jest	2026-10-04T22:38:59.8255065Z     -   "error": "SUBSCRIPTION_ATTEMPT_EXPIRED",
+targeted	Targeted jest	2026-10-04T22:38:59.8255444Z     -   "returnedSecret": undefined,
+targeted	Targeted jest	2026-10-04T22:38:59.8255754Z     +   "error": undefined,
+targeted	Targeted jest	2026-10-04T22:38:59.8256134Z     +   "returnedSecret": "seti_1_secret_x",
+targeted	Targeted jest	2026-10-04T22:38:59.8256439Z       }
+targeted	Targeted jest	2026-10-04T22:38:59.8256591Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8256922Z     ^[[0m ^[[90m 206 |^[[39m     ^[[36mconst^[[39m out ^[[33m=^[[39m ^[[36mawait^[[39m resultOf(intent(f))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8257871Z      ^[[90m 207 |^[[39m     expect({ error^[[33m:^[[39m out^[[33m.^[[39mbody^[[33m?^[[39m^[[33m.^[[39mcode^[[33m,^[[39m returnedSecret^[[33m:^[[39m out^[[33m.^[[39mvalue^[[33m?^[[39m^[[33m.^[[39mclient_secret })
+targeted	Targeted jest	2026-10-04T22:38:59.8258922Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 208 |^[[39m       ^[[33m.^[[39mtoEqual({ error^[[33m:^[[39m ^[[32m'SUBSCRIPTION_ATTEMPT_EXPIRED'^[[39m^[[33m,^[[39m returnedSecret^[[33m:^[[39m undefined })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8259621Z      ^[[90m     |^[[39m        ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8259991Z      ^[[90m 209 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8260336Z      ^[[90m 210 |^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8260701Z      ^[[90m 211 |^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T22:38:59.8260851Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8261101Z       at Object.<anonymous> (test/audit-sol-r12-119-prior.spec.ts:208:8)
+targeted	Targeted jest	2026-10-04T22:38:59.8261404Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8261602Z FAIL test/audit-opus-r12-119.spec.ts (355 MB heap size)
+targeted	Targeted jest	2026-10-04T22:38:59.8262456Z   ● C-679-4 attemptSettled: a subscription default with the trial end still set and no SetupIntent › evidence: no secret was stored and the trial end is still set (no own card)
+targeted	Targeted jest	2026-10-04T22:38:59.8262966Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8263149Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-04T22:38:59.8263440Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8263608Z     - Expected  - 1
+targeted	Targeted jest	2026-10-04T22:38:59.8263889Z     + Received  + 1
+targeted	Targeted jest	2026-10-04T22:38:59.8264071Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8264172Z       Array [
+targeted	Targeted jest	2026-10-04T22:38:59.8264484Z     -   "trialing",
+targeted	Targeted jest	2026-10-04T22:38:59.8264774Z     +   "canceled",
+targeted	Targeted jest	2026-10-04T22:38:59.8265054Z         true,
+targeted	Targeted jest	2026-10-04T22:38:59.8265346Z       ]
+targeted	Targeted jest	2026-10-04T22:38:59.8265527Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8266006Z     ^[[0m ^[[90m 83 |^[[39m     expect(first^[[33m.^[[39mbody^[[33m?^[[39m^[[33m.^[[39mcode)^[[33m.^[[39mtoBe(^[[32m'STRIPE_CHECKOUT_ERROR'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8266815Z      ^[[90m 84 |^[[39m     expect(row^[[33m.^[[39mstripe_client_secret ^[[33m?^[[39m^[[33m?^[[39m ^[[36mnull^[[39m)^[[33m.^[[39mtoBeNull()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8267857Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 85 |^[[39m     expect([sub^[[33m.^[[39mstatus^[[33m,^[[39m sub^[[33m.^[[39mcancel_at_period_end])^[[33m.^[[39mtoEqual([^[[32m'trialing'^[[39m^[[33m,^[[39m ^[[36mtrue^[[39m])^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8268610Z      ^[[90m    |^[[39m                                                    ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8269078Z      ^[[90m 86 |^[[39m   })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8269414Z      ^[[90m 87 |^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8270197Z      ^[[90m 88 |^[[39m   it(^[[32m'(should fail at head) the replay never answers SUBSCRIPTION_ALREADY_ACTIVE for a trial that ends with no card'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+targeted	Targeted jest	2026-10-04T22:38:59.8270729Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8270986Z       at Object.<anonymous> (test/audit-opus-r12-119.spec.ts:85:52)
+targeted	Targeted jest	2026-10-04T22:38:59.8271248Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8271931Z   ● deletion collector edge cases (R1 #678 account-deletion.billing.ts) › (should fail at head) a Stripe "No such customer" (404 resource_missing) is proven absence, not a deletion that fails every night
+targeted	Targeted jest	2026-10-04T22:38:59.8272535Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8272701Z     expect(received).resolves.toEqual()
+targeted	Targeted jest	2026-10-04T22:38:59.8272913Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8273071Z     Received promise rejected instead of resolved
+targeted	Targeted jest	2026-10-04T22:38:59.8273884Z     Rejected to value: [StripeConnectApiError: No such customer]
+targeted	Targeted jest	2026-10-04T22:38:59.8274193Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8274520Z     ^[[0m ^[[90m 126 |^[[39m       })^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8274922Z      ^[[90m 127 |^[[39m     }^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8275426Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 128 |^[[39m     ^[[36mawait^[[39m expect(
+targeted	Targeted jest	2026-10-04T22:38:59.8275882Z      ^[[90m     |^[[39m           ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8276733Z      ^[[90m 129 |^[[39m       (billing(stripe) ^[[36mas^[[39m any)^[[33m.^[[39mcollectUnboundAttemptSubscriptionIds(tx([row()])^[[33m,^[[39m ^[[33mCLIENT^[[39m)^[[33m,^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8277526Z      ^[[90m 130 |^[[39m     )^[[33m.^[[39mresolves^[[33m.^[[39mtoEqual([])^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T22:38:59.8278013Z      ^[[90m 131 |^[[39m   })^[[33m;^[[39m^[[0m
+targeted	Targeted jest	2026-10-04T22:38:59.8278232Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8278454Z       at expect (node_modules/expect/build/index.js:2116:15)
+targeted	Targeted jest	2026-10-04T22:38:59.8278925Z       at Object.<anonymous> (test/audit-opus-r12-119.spec.ts:128:11)
+targeted	Targeted jest	2026-10-04T22:38:59.8279240Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8279246Z 
+targeted	Targeted jest	2026-10-04T22:38:59.8279438Z Test Suites: 4 failed, 36 passed, 40 total
+targeted	Targeted jest	2026-10-04T22:38:59.8279864Z Tests:       13 failed, 564 passed, 577 total
+targeted	Targeted jest	2026-10-04T22:38:59.8280246Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T22:38:59.8280659Z Time:        30.576 s
+targeted	Targeted jest	2026-10-04T22:38:59.8291787Z Ran all test suites matching test/aud-opus-r34-119-pg-lock.spec.ts|test/aud-opus-r34-119-probe.spec.ts|test/aud-opus-r34d-119-probe.spec.ts|test/aud-sol-r12-116-authority.spec.ts|test/aud-sol-r34-119-legacy.spec.ts|test/aud-sol-r34-119-pg-lock.spec.ts|test/aud-sol-r34d-119-authority.spec.ts|test/audit-opus-r12-119.spec.ts|test/audit-opus-r12d-119-pg.spec.ts|test/audit-phase10.spec.ts|test/audit-sol-r12-119-coach-deletion.spec.ts|test/audit-sol-r12-119-postgres-fence.spec.ts|test/audit-sol-r12-119-prior.spec.ts|test/audit-sol-r12-119-trial-authority.spec.ts|test/audit-sol-r12d-119-list-snapshot.spec.ts|test/audit-sol-r12d-119-trial-final.spec.ts|test/audit-sol-r12r5-builder4.spec.ts|test/audit-sol-r12r5-prior.spec.ts|test/audit-sol-r12r5-r1.spec.ts|test/b-recur7b-119-authority.spec.ts|test/b-recur5b-117-authority.spec.ts|test/b-recur6b-118-authority.spec.ts|test/b-recur-subscription-webhooks.spec.ts|test/b-recur3-117-webhook-order.spec.ts|test/b-recur-fix-round-1-trial-card.spec.ts|test/b-recur-fix-round-1.spec.ts|test/b-recur-3-fix-round-2.spec.ts|test/b-recur-116-fix-round-3.spec.ts|test/b-recur-fix-round-1-http.spec.ts|test/b-recur-fix-round-1-checkout.spec.ts|test/b-recur-3-fix-round-2-checkout.spec.ts|test/b-recur-fix-round-1-trial-card-checkout.spec.ts|test/b-recur5a-117-moved-fix-round-4.spec.ts|test/b-recur7a-119-r2.spec.ts|test/b-recur7a-119-r1.spec.ts|test/b-recur5a-117-trial-end-form.spec.ts|test/b-recur6a-118-r1.spec.ts|test/b-recur6a-118-r2.spec.ts|test/checkout/subscription-checkout.service.spec.ts|test/checkout/subscription-terms.spec.ts|test/b-recur6a-118-fix-round-6.spec.ts|test/b-recur-subscription-checkout.spec.ts|test/b-recur5a-117-fix-round-5.spec.ts.
+targeted	Targeted jest	2026-10-04T22:38:59.9124450Z ##[error]Process completed with exit code 1.
+targeted	Post Run actions/checkout@v6	﻿2026-10-04T22:38:59.9233066Z Post job cleanup.
+targeted	Post Run actions/checkout@v6	2026-10-04T22:38:59.9970248Z [command]/usr/bin/git version
+targeted	Post Run actions/checkout@v6	2026-10-04T22:38:59.9998450Z git version 2.55.0
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0028371Z Temporarily overriding HOME='/home/runner/work/_temp/9dd0cbc6-1c65-493c-b648-548b64227b3b' before making global git config changes
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0029126Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0032861Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0057820Z Removing SSH command configuration
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0062892Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0092256Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0259654Z Removing HTTP extra header
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0263030Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0287765Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0447563Z Removing includeIf entries pointing to credentials config files
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0452677Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0477710Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0478697Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0479499Z includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0479970Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0484058Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0501491Z /home/runner/work/_temp/git-credentials-4e99689d-0f02-4895-bca9-1731b8830201.config
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0509644Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-4e99689d-0f02-4895-bca9-1731b8830201.config
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0537865Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0555466Z /home/runner/work/_temp/git-credentials-4e99689d-0f02-4895-bca9-1731b8830201.config
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0563738Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-4e99689d-0f02-4895-bca9-1731b8830201.config
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0589435Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0605094Z /github/runner_temp/git-credentials-4e99689d-0f02-4895-bca9-1731b8830201.config
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0610694Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-4e99689d-0f02-4895-bca9-1731b8830201.config
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0634549Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0650654Z /github/runner_temp/git-credentials-4e99689d-0f02-4895-bca9-1731b8830201.config
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0655855Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-4e99689d-0f02-4895-bca9-1731b8830201.config
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0686632Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Post Run actions/checkout@v6	2026-10-04T22:39:00.0855710Z Removing credentials config '/home/runner/work/_temp/git-credentials-4e99689d-0f02-4895-bca9-1731b8830201.config'
+targeted	Stop containers	﻿2026-10-04T22:39:00.0944827Z Print service container logs: 77d66b3d34ce4bf5998839e2aa3d41cd_redis7alpine_36a064
+targeted	Stop containers	2026-10-04T22:39:00.0949592Z ##[command]/usr/bin/docker logs --details 3efa58efde2e2341b8fc33b70ba7f868efe11f7b50c8ba7c6e477fd8b099f9bc
+targeted	Stop containers	2026-10-04T22:39:00.1068772Z  1:C 04 Oct 2026 22:37:46.705 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+targeted	Stop containers	2026-10-04T22:39:00.1070434Z  1:C 04 Oct 2026 22:37:46.705 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+targeted	Stop containers	2026-10-04T22:39:00.1071014Z  1:C 04 Oct 2026 22:37:46.705 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+targeted	Stop containers	2026-10-04T22:39:00.1071995Z  1:C 04 Oct 2026 22:37:46.705 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+targeted	Stop containers	2026-10-04T22:39:00.1072817Z  1:M 04 Oct 2026 22:37:46.705 * monotonic clock: POSIX clock_gettime
+targeted	Stop containers	2026-10-04T22:39:00.1073439Z  1:M 04 Oct 2026 22:37:46.705 * Running mode=standalone, port=6379.
+targeted	Stop containers	2026-10-04T22:39:00.1073929Z  1:M 04 Oct 2026 22:37:46.706 * Server initialized
+targeted	Stop containers	2026-10-04T22:39:00.1074332Z  1:M 04 Oct 2026 22:37:46.706 * Ready to accept connections tcp
+targeted	Stop containers	2026-10-04T22:39:00.1087732Z Stop and remove container: 77d66b3d34ce4bf5998839e2aa3d41cd_redis7alpine_36a064
+targeted	Stop containers	2026-10-04T22:39:00.1091590Z ##[command]/usr/bin/docker rm --force 3efa58efde2e2341b8fc33b70ba7f868efe11f7b50c8ba7c6e477fd8b099f9bc
+targeted	Stop containers	2026-10-04T22:39:01.2399685Z 3efa58efde2e2341b8fc33b70ba7f868efe11f7b50c8ba7c6e477fd8b099f9bc
+targeted	Stop containers	2026-10-04T22:39:01.2421664Z Remove container network: github_network_37c4f5df8e094d83b4810292dc1755fe
+targeted	Stop containers	2026-10-04T22:39:01.2425608Z ##[command]/usr/bin/docker network rm github_network_37c4f5df8e094d83b4810292dc1755fe
+targeted	Stop containers	2026-10-04T22:39:01.3316246Z github_network_37c4f5df8e094d83b4810292dc1755fe
+targeted	Complete job	﻿2026-10-04T22:39:01.3386872Z Cleaning up orphan processes

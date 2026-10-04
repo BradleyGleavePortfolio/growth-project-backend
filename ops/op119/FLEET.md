@@ -69,3 +69,53 @@ AUD-OPUS-R34D-119 DONE 14:00: #680 APPROVE 0/0/7 5984321005; #696 APPROVE 0/0/0 
 AUD-OPUS-S123-119 launched 14:00. Running 5 (HC5, Sol FL, FEES19, Sol R34D, Opus S123).
 AUD-SOL-FL-119 DONE 14:00: #684 RC 0/2/1 5984278756; #697 APPROVE 5984279038; #685 APPROVE 5984279275; #686 APPROVE 5984279478 -> #697/#685/#686 DUAL APPROVE at c2585c97/a61d50f4/30a118dd (will need restack deltas after B-FEES19).
 AUD-SOL-S123-119 launched 14:00. Running 5 (HC5, FEES19, Sol R34D, Opus S123, Sol S123).
+B-HC5-119 DONE 14:03: m#362 FR3 READY 73dbefbc (2,913) 5984342112; m#363 f62f1bbe (1,385) 5984342255; m#364 b261f218 (2,937, merge-only) 5984342400. H46D entry written.
+AUD-SOL-T23D-119 launched 14:03. Running 5 (FEES19, Sol R34D, Opus S123, Sol S123, Sol T23D).
+AUD-SOL-R34D-119 DONE 14:05: #680 APPROVE 0/0/2 5984362085; #696 APPROVE 0/0/0 5984362422; #701 APPROVE 0/0/0 5984362680. => #680/#696 DUAL APPROVE at f267417a/13c9a6c8; #701 Opus RC B-701-1 (fix in the fees-top restack pass, Opus default).
+AUD-OPUS-H46D-119 launched 14:05. Running 5 (FEES19, Opus S123, Sol S123, Sol T23D, Opus H46D). Next: Sol H46D, coach pair.
+AUD-SOL-T23D-119 DONE 14:13: #672 APPROVE 0/0/1 5984411900 (=> DUAL APPROVE 62c2c066); #673 RC 0/1/2 5984422742 (residual B-673-1 paid-conversion race; absorbs C-673-6); #706 APPROVE 0/0/1 5984412097 (=> DUAL APPROVE a3f01163). B-TR5-119 entry written (queued).
+AUD-SOL-H46D-119 launched 14:13. Running 5 (FEES19, Opus S123, Sol S123, Opus H46D, Sol H46D). Queue: B-TR5, coach pair, dunning pairs, B-LOCK2, B-WIZ2, B-DUNB.
+AUD-OPUS-S123-119 DONE 14:15: m#342 APPROVE 0/0/7 5984450490; m#343 APPROVE 0/0/6 5984450738; m#344 RC 0/1/9 5984450917 (B-344-7: ending a free trial says 'period paid for'). Sheet builder waits for Sol S123.
+B-TR5-119 launched 14:15. Running 5 (FEES19, Sol S123, Opus H46D, Sol H46D, TR5).
+AUD-SOL-S123-119 DONE 14:17: m#342 APPROVE 0/0/6 5984430347 (=> DUAL APPROVE e3226f3b); m#343 APPROVE 0/0/6 5984457482 (=> DUAL APPROVE 691e0cf0); m#344 RC 0/2/3 5984430303 (B-344-2/3 residuals).
+B-SHEET5-119 launched 14:17 (#344 only: B-344-7, B-344-2, B-344-3). Running 5 (FEES19, Opus H46D, Sol H46D, TR5, SHEET5).
+AUD-SOL-H46D-119 DONE 14:24: m#362 RC 0/1/1 5984526636 (B-362-2 partial: in-flight async native removal can delete a newer grant); m#363 APPROVE 0/0/1 5984515362; m#364 APPROVE 0/0/1 5984516963. HC builder waits for Opus H46D.
+B-WIZ2-119 launched 14:24. Running 5 (FEES19, Opus H46D, TR5, SHEET5, WIZ2).
+AUD-OPUS-H46D-119 DONE 14:26: m#362 APPROVE 0/0/1 5984555005 (C-362-11 = Sol's residual mechanism); m#363 APPROVE 5984556343; m#364 APPROVE 5984556566. => #363/#364 DUAL APPROVE at f62f1bbe/b261f218; #362 Sol RC.
+B-HC6-119 launched 14:26 (narrow: serial JS chain for native grant writes/removals). Running 5 (FEES19, TR5, SHEET5, WIZ2, HC6).
+B-FEES19-119 DONE: #684 FR19 c1a07d9c (2,843) 5984587880; #697 be7efc09 (2,791) 5984588195; #685 f0c48049 (2,959; restack + 1 test line) 5984588479; #686 85683135 (top, merge-only) 5984588783. Scratch 37235329330 tree e4f86d6e green.
+Operator 14:31: B-WIZ2-119 cancelled before first push (fees priority; relaunch later). New landing candidate wip/op119/land-fees d8d062ff (tree e4f86d6e == scratch; branch force-updated, operator scratch branch only). AUD-OPUS-FL2-119 + AUD-SOL-FL2-119 launched 14:31. Running 5 (TR5, SHEET5, HC6, Opus FL2, Sol FL2).
+B-SHEET5-119 DONE 14:34: m#344 FR5 READY bc4387ac (2,958) 5984615650 (B-344-7, B-344-2, B-344-3).
+AUD-OPUS-S3D-119 launched 14:34. Running 5 (TR5, HC6, Opus FL2, Sol FL2, Opus S3D). Next: Sol S3D, then B-WIZ2 relaunch.
+AUD-OPUS-S3D-119 DONE 14:43: m#344 APPROVE 0/0/11 5984695452.
+AUD-SOL-S3D-119 launched 14:43. Running 5 (TR5, HC6, Opus FL2, Sol FL2, Sol S3D).
+B-HC6-119 DONE 14:48: m#362 FR4 df44285d (2,940) 5984727521; m#363 51a8dc33 (1,626, tests) 5984738125; m#364 c084f8df (merge-only) 5984738407.
+AUD-OPUS-H46E-119 launched 14:48. Running 5 (TR5, Opus FL2, Sol FL2, Sol S3D, Opus H46E). Next: Sol H46E, B-WIZ2 relaunch.
+AUD-SOL-S3D-119 DONE 14:55: m#344 RC 0/1/3 5984798322 (B-344-3 residual: receipt date/trial facts vs newer view). B-SHEET6-119 entry queued.
+AUD-SOL-H46E-119 launched 14:55. Running 5 (TR5, Opus FL2, Sol FL2, Opus H46E, Sol H46E). Queue: B-SHEET6, B-WIZ2, coach pair, dunning pairs, B-LOCK2, B-DUNB.
+B-TR5-119 DONE 14:57: #673 FR11 dcf095b8 (2,999) 5984801190; #706 FR2 3d95f96e (940, tests) 5984822601. T3E entry queued.
+B-SHEET6-119 launched 14:57. Running 5 (Opus FL2, Sol FL2, Opus H46E, Sol H46E, SHEET6). Queue: T3E pair, B-WIZ2, coach, dunning, B-LOCK2, B-DUNB.
+AUD-OPUS-H46E-119 DONE 14:58: m#362 APPROVE 0/0/2 5984831539; m#363 APPROVE 5984831702; m#364 APPROVE 5984831909.
+AUD-OPUS-T3E-119 launched 14:58. Running 5 (Opus FL2, Sol FL2, Sol H46E, SHEET6, Opus T3E).
+AUD-SOL-H46E-119 DONE 15:08: m#362 RC 0/1/1 5984939067 (B-362-7 = C-362-12 promoted: sign-out sweep outside queue); m#363 APPROVE 5984891656; m#364 APPROVE 5984891975.
+B-HC7-119 launched 15:08. Running 5 (Opus FL2, Sol FL2, SHEET6, Opus T3E, HC7). Queue: Sol T3E, B-WIZ2, coach, dunning, B-LOCK2, B-DUNB.
+Operator 15:09: fees DUAL APPROVE all heads + both lenses APPROVE landing candidate. land_fees.sh A done 15:08: piece branches ff to 85683135, #681 head -> d8d062ff. Lenses messaged (45-min window) to verdict #681.
+AUD-OPUS-T3E-119 DONE 15:09: #673 APPROVE 0/0/7 5984958541; #706 APPROVE 0/0/2 5984958823.
+AUD-SOL-T3E-119 launched 15:09. Running 5 (Opus FL2, Sol FL2, SHEET6, HC7, Sol T3E). Recurring merge-tree onto landed fees d8d062ff: clean for all 5; overlap files checkout-webhook-handler.service.ts, charge-settlement.service.ts -> short deltas after restack.
+B-SHEET6-119 DONE 15:12: m#344 FR6 88659e21 (2,973) 5984986376 (B-344-3).
+AUD-OPUS-S3E-119 launched 15:12. Running 5 (Opus FL2, Sol FL2, HC7, Sol T3E, Opus S3E). Next: B-RECUR8 at fees merge, Sol S3E.
+AUD-SOL-T3E-119 DONE 15:17: #673 RC 0/1/3 5985038558 (B-673-1: uncollectible invoice omitted from void domain can pay -> cancel -> paid access lost; needs new runtime piece <1,500); #706 APPROVE 0/0/1 5985038771.
+AUD-OPUS-S3E-119 DONE 15:20: m#344 APPROVE 0/0/11 5985073660 (D6 retired).
+AUD-SOL-S3E-119 launched 15:20. Running 4 (Opus FL2, Sol FL2, HC7, Sol S3E); 1 slot held for B-RECUR8 at fees merge.
+AUD-SOL-FL2-119 DONE: #684 APPROVE 0/0/3 5984659155; #697 5984659331; #685 5984659492; #686 5984659700; candidate + #681 APPROVE 0/0/7 5985084146. AUD-OPUS-FL2-119 DONE: #684 APPROVE 0/0/4 5984698895; #697 5984699013; #685 5984700382; #686 5984700478; #681 APPROVE 0/0/0 5985105612.
+MERGE 15:23: fees stack landed: #681 @ d8d062ff merged -> main f48267f9 (#682-#686 + #697 merged into piece branches by fast-forward at 15:08).
+DEPLOY attempt 15:23 run 37239857438 FAILED at release-evidence gate (main ci.yml run 37239853217 still in progress); redeploy after it completes.
+AUD-SOL-S3E-119 DONE: m#344 APPROVE 0/0/3 5985129073 => m#342-#344 DUAL APPROVE (e3226f3b/691e0cf0/88659e21).
+B-HC7-119 DONE: m#362 FR5 261e7d4c (2,983) 5985130217; m#363 5266d658 (1,944) 5985132233; m#364 1266038c 5985132396.
+15:28: #678 base retargeted to main. Launched B-RECUR8-119, AUD-OPUS-H46F-119, AUD-SOL-H46F-119, B-TR6-119, B-WIZ2-119 (relaunch). Running 5.
+AUD-OPUS-H46F-119 DONE 15:39: m#362 APPROVE 0/0/2 5985217014; m#363 APPROVE 5985217271; m#364 APPROVE 5985217588.
+DEPLOY 15:39: run 37240806383 (release f48267f9, apply-migrations) approved.
+B-CM6-119 launched 15:39 (coach main refresh: 5 conflict files vs fees). Running 5 (RECUR8, Sol H46F, TR6, WIZ2, CM6).
+DEPLOY DONE 15:43: run 37240806383 success; release f48267f9; /health ok, /readyz db up; migration 20270210000000_s_fee_charge_settlement applied 15:42 PDT; 188 applied (+2 rolled-back rows), 0 pending.
+AUD-SOL-H46F-119 DONE: m#362 RC 0/2/2 5985235823 (B-362-8 restart resurrection after failed cleanup; B-362-9 signOut resolves early on other cleanup rejection); m#363 APPROVE 5985221184; m#364 APPROVE 5985221349.
+B-HC8-119 launched 15:43 (new piece H7 on #364). Running 5 (RECUR8, TR6, WIZ2, CM6, HC8).

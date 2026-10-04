@@ -1,0 +1,32 @@
+AUDIT GPT-6.1 Sol — growth-project-mobile#342 @ e3226f3b50a1f609aea7805600ec124324cd12aa — VERDICT: APPROVE
+
+A/B/C = 0/0/6
+
+Independent T4 lens: AUD-SOL-S123-119, agent 119; P1 round-3 delta and same-key recovery review, not merge/deploy approval. [Exact candidate](https://github.com/BradleyGleavePortfolio/growth-project-mobile/commit/e3226f3b50a1f609aea7805600ec124324cd12aa).
+
+## Prior findings first
+
+**B-342-1 closed:** `e3226f3` removes both PACKAGE_NOT_FOUND false-unpaid claims, preserves the attempt key, uses its reference, and provides support plus plan-status recovery; `ab41a59` adds failing-before cases for both payment/subscription and share surfaces. [Fix round](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/342#issuecomment-5984292430). Independently inspected the builder's failing-before logs (six failures, including the old Sol refusal probes); the fresh exact-runtime replay passes the refusal probes and all selected payment-core/currency controls: **7 suites, 72/72**. [Failing before](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37232648574), [fresh core replay](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37234634400). The actual unknown-native-outcome → same-key retry → package archived flows for one-time and renewing also pass on the integrated top, without retiring the key or asserting no charge. [Independent integrated replay](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37234402193).
+
+Prior B-342-2/3 and the original Sol diagnostic C are still closed; the round changes only owning copy/mapping and its regression tests, with no dependency/configuration change. [Prior Sol disposition](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/342#issuecomment-5983977653), [current candidate](https://github.com/BradleyGleavePortfolio/growth-project-mobile/commit/e3226f3b50a1f609aea7805600ec124324cd12aa).
+
+G09: reuses unchanged prior test/source evidence only where inputs remain byte-identical; every new delta was read, reply flags traced into the hook/surfaces, and prior probes re-executed on candidate runtime. It does not inherit the other lens's verdict or treat the prior REQUEST CHANGES as an approval. [Prior Sol evidence](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/342#issuecomment-5983977653), [fresh replay](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37234634400).
+
+## Carried optional Cs — freeze/ticket, not expansion
+
+The following six retain their prior counterexamples and fix rules; none is folded into this round. [Prior six-C verdict](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/342#issuecomment-5983977653).
+
+| ID | Current file:line | Counterexample / minimal fix |
+|---|---|---|
+| C-342-1 | `src/lib/planTerms.ts:90-93` | Legacy zero-recurring-price combo routes as a subscription; require `recurringAmount > 0`. |
+| C-342-2 | `src/api/clientPaymentsApi.ts:347-353` | Trial fields arrive before P3 consumer wiring; land P1–P3 together. |
+| C-342-4 | `src/lib/packagePayment.ts:1008-1020` | Trial-used/in-progress replies need trial-specific next actions; keep same key and neutral money truth. |
+| C-342-5 | `src/lib/packagePayment.ts:516-517` | Free-trial card setup called a payment; step-aware setup wording. |
+| C-342-7, outside diff | `src/screens/coach/payments/CoachPackageEditScreen.tsx:110,133,299` | JPY input still parsed through two-decimal editor logic; currency-aware form round trip with zero/three-decimal and ISK/UGX controls. |
+| C-342-8 | `src/lib/packagePayment.ts:459-460,795-799` | No response does not prove unreachable/offline; neutral no-answer wording and sanitized unknown-exception reporting. |
+
+## CI, limitations and operator default
+
+Required ordinary CI and both Analyze contexts are green at this head; 2,207 changed lines is grandfathered and under 3,000. [Ordinary CI](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37232747197), [Analyze](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37232747242), [size/fix record](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/342#issuecomment-5984292430). Initial probe lane had a misplaced P2 theme harness, not a candidate failure; core probes passed there and the correctly scoped P1 replay is the cited evidence. [Initial harness result](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37234411781), [correct replay](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37234634400).
+
+Default: accept one availability-refusal wording for fresh and replayed attempts, keep the currency fix, ticket Cs, and hold integrated landing until every piece has dual approval, final-main Analyze, recurring backend deployment and native card-update composition; P3's separate must-fix findings remain. No native-device/live Stripe acceptance, local heavy work, merge or deployment is claimed. [Builder decision](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/342#issuecomment-5984292430), [integrated synthetic execution](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37234402193), [P3 adversarial execution](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37234565354).

@@ -1,0 +1,669 @@
+targeted	Set up job	﻿2026-10-04T20:48:05.8690557Z Current runner version: '2.337.0'
+targeted	Set up job	2026-10-04T20:48:05.8728701Z ##[group]Runner Image Provisioner
+targeted	Set up job	2026-10-04T20:48:05.8730187Z Hosted Compute Agent
+targeted	Set up job	2026-10-04T20:48:05.8731191Z Version: 20260901.588
+targeted	Set up job	2026-10-04T20:48:05.8732460Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	Set up job	2026-10-04T20:48:05.8733675Z Build Date: 2026-09-01T19:56:44Z
+targeted	Set up job	2026-10-04T20:48:05.8734868Z Worker ID: {a1ef31eb-0ed6-41ac-bdde-39b96cf366cc}
+targeted	Set up job	2026-10-04T20:48:05.8736352Z Azure Region: eastus2
+targeted	Set up job	2026-10-04T20:48:05.8737545Z ##[endgroup]
+targeted	Set up job	2026-10-04T20:48:05.8740415Z ##[group]Operating System
+targeted	Set up job	2026-10-04T20:48:05.8741448Z Ubuntu
+targeted	Set up job	2026-10-04T20:48:05.8742304Z 24.04.5
+targeted	Set up job	2026-10-04T20:48:05.8743197Z LTS
+targeted	Set up job	2026-10-04T20:48:05.8744034Z ##[endgroup]
+targeted	Set up job	2026-10-04T20:48:05.8744973Z ##[group]Runner Image
+targeted	Set up job	2026-10-04T20:48:05.8745975Z Image: ubuntu-24.04
+targeted	Set up job	2026-10-04T20:48:05.8747082Z Version: 20260927.320.1
+targeted	Set up job	2026-10-04T20:48:05.8749194Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	Set up job	2026-10-04T20:48:05.8752167Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	Set up job	2026-10-04T20:48:05.8753917Z ##[endgroup]
+targeted	Set up job	2026-10-04T20:48:05.8756567Z ##[group]GITHUB_TOKEN Permissions
+targeted	Set up job	2026-10-04T20:48:05.8759717Z Contents: read
+targeted	Set up job	2026-10-04T20:48:05.8760765Z Metadata: read
+targeted	Set up job	2026-10-04T20:48:05.8761653Z Packages: read
+targeted	Set up job	2026-10-04T20:48:05.8762693Z ##[endgroup]
+targeted	Set up job	2026-10-04T20:48:05.8765987Z Secret source: Actions
+targeted	Set up job	2026-10-04T20:48:05.8767869Z Cache mode: write
+targeted	Set up job	2026-10-04T20:48:05.8769425Z Prepare workflow directory
+targeted	Set up job	2026-10-04T20:48:05.9239090Z Prepare all required actions
+targeted	Set up job	2026-10-04T20:48:05.9311684Z Getting action download info
+targeted	Set up job	2026-10-04T20:48:06.1587652Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	Set up job	2026-10-04T20:48:06.2802730Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	Set up job	2026-10-04T20:48:06.4653647Z Complete job name: targeted
+targeted	Run actions/checkout@v6	﻿2026-10-04T20:48:06.5534567Z ##[group]Run actions/checkout@v6
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.5535491Z with:
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.5536073Z   repository: BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.5540572Z   token: ***
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.5541050Z   ssh-strict: true
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.5541486Z   ssh-user: git
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.5541933Z   persist-credentials: true
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.5542423Z   clean: true
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.5542882Z   sparse-checkout-cone-mode: true
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.5543421Z   fetch-depth: 1
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.5543860Z   fetch-tags: false
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.5544299Z   show-progress: true
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.5544752Z   lfs: false
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.5545164Z   submodules: false
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.5545616Z   set-safe-directory: true
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.5546127Z   allow-unsafe-pr-checkout: false
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.5546909Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6518475Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6520464Z ##[group]Getting Git version info
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6521428Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6522600Z [command]/usr/bin/git version
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6602643Z git version 2.55.0
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6625583Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6640209Z Temporarily overriding HOME='/home/runner/work/_temp/fac2101a-1f8c-4380-8392-a0f4a8bb7592' before making global git config changes
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6641687Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6645816Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6698861Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6702954Z ##[group]Determining repository object format
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6705791Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6706604Z ##[group]Initializing the repository
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6710244Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6846484Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6848413Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6849474Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6850746Z hint: call:
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6851401Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6851951Z hint: 	git config --global init.defaultBranch <name>
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6853121Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6853808Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6854828Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6855912Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6856745Z hint: 	git branch -m <name>
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6857573Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6858275Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6859571Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6862482Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6910354Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6911179Z ##[group]Disabling automatic garbage collection
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6913664Z [command]/usr/bin/git config --local gc.auto 0
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6943551Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6944822Z ##[group]Setting up auth
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6945635Z Removing SSH command configuration
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6951209Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.6981257Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.7346969Z Removing HTTP extra header
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.7352372Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.7382359Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.7598646Z Removing includeIf entries pointing to credentials config files
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.7604282Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.7634345Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.7853653Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-39f3e81d-325d-49ae-a34a-2d9b215b2ab2.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.7888971Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-39f3e81d-325d-49ae-a34a-2d9b215b2ab2.config
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.7917651Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-39f3e81d-325d-49ae-a34a-2d9b215b2ab2.config
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.7953501Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-39f3e81d-325d-49ae-a34a-2d9b215b2ab2.config
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.7984489Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-39f3e81d-325d-49ae-a34a-2d9b215b2ab2.config
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.8017953Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.8019200Z ##[group]Fetching the repository
+targeted	Run actions/checkout@v6	2026-10-04T20:48:06.8025739Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +1cf971aa715d9fc433a47ddfeb898e6cd36b6fdf:refs/remotes/origin/ci/B-HC5-119-362-replay
+targeted	Run actions/checkout@v6	2026-10-04T20:48:07.5924605Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T20:48:07.5926213Z  * [new ref]         1cf971aa715d9fc433a47ddfeb898e6cd36b6fdf -> origin/ci/B-HC5-119-362-replay
+targeted	Run actions/checkout@v6	2026-10-04T20:48:07.5935264Z [command]/usr/bin/git branch --list --remote origin/ci/B-HC5-119-362-replay
+targeted	Run actions/checkout@v6	2026-10-04T20:48:07.5959308Z   origin/ci/B-HC5-119-362-replay
+targeted	Run actions/checkout@v6	2026-10-04T20:48:07.5970531Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-HC5-119-362-replay
+targeted	Run actions/checkout@v6	2026-10-04T20:48:07.5995179Z 1cf971aa715d9fc433a47ddfeb898e6cd36b6fdf
+targeted	Run actions/checkout@v6	2026-10-04T20:48:07.6011626Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:48:07.6012814Z ##[group]Determining the checkout info
+targeted	Run actions/checkout@v6	2026-10-04T20:48:07.6013856Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:48:07.6014401Z [command]/usr/bin/git sparse-checkout disable
+targeted	Run actions/checkout@v6	2026-10-04T20:48:07.6064386Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	Run actions/checkout@v6	2026-10-04T20:48:07.6092162Z ##[group]Checking out the ref
+targeted	Run actions/checkout@v6	2026-10-04T20:48:07.6096632Z [command]/usr/bin/git checkout --progress --force -B ci/B-HC5-119-362-replay refs/remotes/origin/ci/B-HC5-119-362-replay
+targeted	Run actions/checkout@v6	2026-10-04T20:48:07.7168269Z Switched to a new branch 'ci/B-HC5-119-362-replay'
+targeted	Run actions/checkout@v6	2026-10-04T20:48:07.7173293Z branch 'ci/B-HC5-119-362-replay' set up to track 'origin/ci/B-HC5-119-362-replay'.
+targeted	Run actions/checkout@v6	2026-10-04T20:48:07.7181941Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T20:48:07.7225219Z [command]/usr/bin/git log -1 --format=%H
+targeted	Run actions/checkout@v6	2026-10-04T20:48:07.7249744Z 1cf971aa715d9fc433a47ddfeb898e6cd36b6fdf
+targeted	Run actions/setup-node@v6	﻿2026-10-04T20:48:07.7556638Z ##[group]Run actions/setup-node@v6
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:07.7557654Z with:
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:07.7558125Z   node-version: 22.13
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:07.7558638Z   cache: npm
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:07.7559100Z   check-latest: false
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:07.7564386Z   token: ***
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:07.7564877Z   package-manager-cache: true
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:07.7565465Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:07.8953015Z Attempting to download 22.13...
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:08.3000368Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:08.8348169Z Extracting ...
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:08.8469991Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/74e659e8-280f-44c1-9aa0-cd7e805c2f65 -f /home/runner/work/_temp/c9953628-2510-4063-970e-d2dc2777b98f
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:10.0391142Z Adding to the cache ...
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:12.1792229Z ##[group]Environment details
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:12.3986379Z node: v22.13.1
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:12.3987145Z npm: 10.9.2
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:12.3987930Z yarn: 1.22.22
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:12.3988453Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:12.4010030Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:12.4928508Z /home/runner/.npm
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:12.5695444Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:13.5511227Z Received 241027159 of 241027159 (100.0%), 246.9 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:13.5512629Z Cache Size: ~230 MB (241027159 B)
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:13.5550556Z [command]/usr/bin/tar -xf /home/runner/work/_temp/5a555993-be71-441c-ba5f-a3655b0f2ac8/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:14.3461832Z Cache restored successfully
+targeted	Run actions/setup-node@v6	2026-10-04T20:48:14.3573136Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+targeted	Run npm ci	﻿2026-10-04T20:48:14.3835153Z ##[group]Run npm ci
+targeted	Run npm ci	2026-10-04T20:48:14.3835491Z ^[[36;1mnpm ci^[[0m
+targeted	Run npm ci	2026-10-04T20:48:14.4136363Z shell: /usr/bin/bash -e {0}
+targeted	Run npm ci	2026-10-04T20:48:14.4136678Z ##[endgroup]
+targeted	Run npm ci	2026-10-04T20:48:20.0058653Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	Run npm ci	2026-10-04T20:48:20.2369113Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+targeted	Run npm ci	2026-10-04T20:48:20.2512432Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+targeted	Run npm ci	2026-10-04T20:48:20.2558972Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+targeted	Run npm ci	2026-10-04T20:48:20.2853346Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+targeted	Run npm ci	2026-10-04T20:48:20.4241719Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+targeted	Run npm ci	2026-10-04T20:48:20.4284325Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T20:48:20.4292739Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T20:48:20.4317493Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T20:48:20.4331160Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T20:48:20.4343111Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T20:48:20.4683823Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T20:48:20.5236765Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+targeted	Run npm ci	2026-10-04T20:48:20.9872388Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+targeted	Run npm ci	2026-10-04T20:48:21.8013265Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+targeted	Run npm ci	2026-10-04T20:48:25.2905628Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+targeted	Run npm ci	2026-10-04T20:49:16.4564376Z 
+targeted	Run npm ci	2026-10-04T20:49:16.4565471Z added 1108 packages, and audited 1109 packages in 1m
+targeted	Run npm ci	2026-10-04T20:49:16.4565970Z 
+targeted	Run npm ci	2026-10-04T20:49:16.4566279Z 187 packages are looking for funding
+targeted	Run npm ci	2026-10-04T20:49:16.4566794Z   run `npm fund` for details
+targeted	Run npm ci	2026-10-04T20:49:16.8284421Z 
+targeted	Run npm ci	2026-10-04T20:49:16.8285258Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+targeted	Run npm ci	2026-10-04T20:49:16.8285902Z 
+targeted	Run npm ci	2026-10-04T20:49:16.8286597Z To address issues that do not require attention, run:
+targeted	Run npm ci	2026-10-04T20:49:16.8287222Z   npm audit fix
+targeted	Run npm ci	2026-10-04T20:49:16.8288558Z 
+targeted	Run npm ci	2026-10-04T20:49:16.8289019Z To address all issues (including breaking changes), run:
+targeted	Run npm ci	2026-10-04T20:49:16.8289797Z   npm audit fix --force
+targeted	Run npm ci	2026-10-04T20:49:16.8290075Z 
+targeted	Run npm ci	2026-10-04T20:49:16.8290305Z Run `npm audit` for details.
+targeted	Targeted jest	﻿2026-10-04T20:49:17.0197957Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T20:49:17.0198315Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T20:49:17.0198711Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T20:49:17.0199406Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T20:49:17.0199767Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T20:49:17.0200029Z ^[[36;1mnpx jest --ci "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T20:49:17.0265647Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T20:49:17.0266014Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T20:49:17.0370724Z specs: src/hooks/useWearableConnections.sol119.test.tsx src/hooks/useWearableConnections.transportSol119.test.tsx src/hooks/useWearableConnections.opus119.test.tsx src/hooks/useWearableConnections.sol118.test.tsx src/hooks/useWearableConnections.disconnect.test.tsx src/hooks/useWearableConnections.test.tsx src/screens/client/wearables/__tests__/ConnectionsScreen.sol118.test.tsx src/screens/client/wearables/__tests__/ConnectionsScreen.emptyImport.probe.test.tsx src/screens/client/wearables/__tests__/WearablesShell.settingsReturn.probe.test.tsx src/screens/client/wearables/__tests__/ConnectionsScreen.test.tsx src/screens/client/wearables/__tests__/ConnectionsScreen.emptyImport.test.tsx src/screens/client/wearables/__tests__/WearablesShell.test.tsx
+targeted	Targeted jest	2026-10-04T20:49:24.1219950Z PASS src/hooks/useWearableConnections.sol119.test.tsx (5.117 s)
+targeted	Targeted jest	2026-10-04T20:49:24.1892474Z   ● Console
+targeted	Targeted jest	2026-10-04T20:49:24.1917850Z 
+targeted	Targeted jest	2026-10-04T20:49:24.1923478Z     console.error
+targeted	Targeted jest	2026-10-04T20:49:24.1934421Z       An update to HookContainer inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-04T20:49:24.1935333Z       
+targeted	Targeted jest	2026-10-04T20:49:24.1936331Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-04T20:49:24.1937585Z       
+targeted	Targeted jest	2026-10-04T20:49:24.2008329Z       act(() => {
+targeted	Targeted jest	2026-10-04T20:49:24.2016324Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-04T20:49:24.2037869Z       });
+targeted	Targeted jest	2026-10-04T20:49:24.2038407Z       /* assert on the output */
+targeted	Targeted jest	2026-10-04T20:49:24.2038914Z       
+targeted	Targeted jest	2026-10-04T20:49:24.2040051Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-04T20:49:24.2041029Z 
+targeted	Targeted jest	2026-10-04T20:49:24.2041561Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-04T20:49:24.2042783Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T20:49:24.2044304Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-04T20:49:24.2045851Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T20:49:24.2047552Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+targeted	Targeted jest	2026-10-04T20:49:24.2048813Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+targeted	Targeted jest	2026-10-04T20:49:24.2049885Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:73:11
+targeted	Targeted jest	2026-10-04T20:49:24.2050836Z       at notifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:21:5)
+targeted	Targeted jest	2026-10-04T20:49:24.2051757Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:44:13
+targeted	Targeted jest	2026-10-04T20:49:24.2052409Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-04T20:49:24.2053083Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:43:25
+targeted	Targeted jest	2026-10-04T20:49:24.2054047Z       at batchNotifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:24:5)
+targeted	Targeted jest	2026-10-04T20:49:24.2055127Z       at Timeout._onTimeout (node_modules/@tanstack/query-core/src/notifyManager.ts:42:9)
+targeted	Targeted jest	2026-10-04T20:49:24.2055755Z 
+targeted	Targeted jest	2026-10-04T20:49:24.2055921Z     console.error
+targeted	Targeted jest	2026-10-04T20:49:24.2056578Z       An update to HookContainer inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-04T20:49:24.2057230Z       
+targeted	Targeted jest	2026-10-04T20:49:24.2058218Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-04T20:49:24.2059452Z       
+targeted	Targeted jest	2026-10-04T20:49:24.2059805Z       act(() => {
+targeted	Targeted jest	2026-10-04T20:49:24.2060265Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-04T20:49:24.2060982Z       });
+targeted	Targeted jest	2026-10-04T20:49:24.2061355Z       /* assert on the output */
+targeted	Targeted jest	2026-10-04T20:49:24.2061748Z       
+targeted	Targeted jest	2026-10-04T20:49:24.2062805Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-04T20:49:24.2063724Z 
+targeted	Targeted jest	2026-10-04T20:49:24.2064236Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-04T20:49:24.2065500Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T20:49:24.2067024Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-04T20:49:24.2099090Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T20:49:24.2100617Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+targeted	Targeted jest	2026-10-04T20:49:24.2101930Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+targeted	Targeted jest	2026-10-04T20:49:24.2102930Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:73:11
+targeted	Targeted jest	2026-10-04T20:49:24.2103910Z       at notifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:21:5)
+targeted	Targeted jest	2026-10-04T20:49:24.2104846Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:44:13
+targeted	Targeted jest	2026-10-04T20:49:24.2105537Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-04T20:49:24.2106233Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:43:25
+targeted	Targeted jest	2026-10-04T20:49:24.2107205Z       at batchNotifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:24:5)
+targeted	Targeted jest	2026-10-04T20:49:24.2108768Z       at Timeout._onTimeout (node_modules/@tanstack/query-core/src/notifyManager.ts:42:9)
+targeted	Targeted jest	2026-10-04T20:49:24.2109381Z 
+targeted	Targeted jest	2026-10-04T20:49:24.2109554Z     console.error
+targeted	Targeted jest	2026-10-04T20:49:24.2110198Z       An update to HookContainer inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-04T20:49:24.2110834Z       
+targeted	Targeted jest	2026-10-04T20:49:24.2111533Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-04T20:49:24.2112297Z       
+targeted	Targeted jest	2026-10-04T20:49:24.2112630Z       act(() => {
+targeted	Targeted jest	2026-10-04T20:49:24.2113152Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-04T20:49:24.2113649Z       });
+targeted	Targeted jest	2026-10-04T20:49:24.2114040Z       /* assert on the output */
+targeted	Targeted jest	2026-10-04T20:49:24.2114467Z       
+targeted	Targeted jest	2026-10-04T20:49:24.2115547Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-04T20:49:24.2116490Z 
+targeted	Targeted jest	2026-10-04T20:49:24.2117016Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-04T20:49:24.2118568Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T20:49:24.2138106Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-04T20:49:24.2139756Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T20:49:24.2141222Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+targeted	Targeted jest	2026-10-04T20:49:24.2142568Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+targeted	Targeted jest	2026-10-04T20:49:24.2143552Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:73:11
+targeted	Targeted jest	2026-10-04T20:49:24.2144518Z       at notifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:21:5)
+targeted	Targeted jest	2026-10-04T20:49:24.2145468Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:44:13
+targeted	Targeted jest	2026-10-04T20:49:24.2146197Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-04T20:49:24.2146975Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:43:25
+targeted	Targeted jest	2026-10-04T20:49:24.2148706Z       at batchNotifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:24:5)
+targeted	Targeted jest	2026-10-04T20:49:24.2149929Z       at Timeout._onTimeout (node_modules/@tanstack/query-core/src/notifyManager.ts:42:9)
+targeted	Targeted jest	2026-10-04T20:49:24.2150846Z 
+targeted	Targeted jest	2026-10-04T20:49:24.2151043Z     console.error
+targeted	Targeted jest	2026-10-04T20:49:24.2151735Z       An update to HookContainer inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-04T20:49:24.2152361Z       
+targeted	Targeted jest	2026-10-04T20:49:24.2153037Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-04T20:49:24.2153743Z       
+targeted	Targeted jest	2026-10-04T20:49:24.2154069Z       act(() => {
+targeted	Targeted jest	2026-10-04T20:49:24.2154537Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-04T20:49:24.2155023Z       });
+targeted	Targeted jest	2026-10-04T20:49:24.2155412Z       /* assert on the output */
+targeted	Targeted jest	2026-10-04T20:49:24.2155817Z       
+targeted	Targeted jest	2026-10-04T20:49:24.2156842Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-04T20:49:24.2158089Z 
+targeted	Targeted jest	2026-10-04T20:49:24.2158580Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-04T20:49:24.2159811Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T20:49:24.2161322Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-04T20:49:24.2162809Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T20:49:24.2164148Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+targeted	Targeted jest	2026-10-04T20:49:24.2165372Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+targeted	Targeted jest	2026-10-04T20:49:24.2166322Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:73:11
+targeted	Targeted jest	2026-10-04T20:49:24.2167204Z       at notifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:21:5)
+targeted	Targeted jest	2026-10-04T20:49:24.2168529Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:44:13
+targeted	Targeted jest	2026-10-04T20:49:24.2169249Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-04T20:49:24.2169966Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:43:25
+targeted	Targeted jest	2026-10-04T20:49:24.2170947Z       at batchNotifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:24:5)
+targeted	Targeted jest	2026-10-04T20:49:24.2172071Z       at Timeout._onTimeout (node_modules/@tanstack/query-core/src/notifyManager.ts:42:9)
+targeted	Targeted jest	2026-10-04T20:49:24.2172653Z 
+targeted	Targeted jest	2026-10-04T20:49:24.2172817Z     console.error
+targeted	Targeted jest	2026-10-04T20:49:24.2173463Z       An update to HookContainer inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-04T20:49:24.2174119Z       
+targeted	Targeted jest	2026-10-04T20:49:24.2174817Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-04T20:49:24.2175547Z       
+targeted	Targeted jest	2026-10-04T20:49:24.2175864Z       act(() => {
+targeted	Targeted jest	2026-10-04T20:49:24.2176303Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-04T20:49:24.2176798Z       });
+targeted	Targeted jest	2026-10-04T20:49:24.2177210Z       /* assert on the output */
+targeted	Targeted jest	2026-10-04T20:49:24.2177971Z       
+targeted	Targeted jest	2026-10-04T20:49:24.2179100Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-04T20:49:24.2180017Z 
+targeted	Targeted jest	2026-10-04T20:49:24.2180611Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-04T20:49:24.2181856Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T20:49:24.2183386Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-04T20:49:24.2184935Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T20:49:24.2186363Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+targeted	Targeted jest	2026-10-04T20:49:24.2187961Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+targeted	Targeted jest	2026-10-04T20:49:24.2189343Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:73:11
+targeted	Targeted jest	2026-10-04T20:49:24.2190524Z       at notifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:21:5)
+targeted	Targeted jest	2026-10-04T20:49:24.2191460Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:44:13
+targeted	Targeted jest	2026-10-04T20:49:24.2192183Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-04T20:49:24.2192896Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:43:25
+targeted	Targeted jest	2026-10-04T20:49:24.2193859Z       at batchNotifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:24:5)
+targeted	Targeted jest	2026-10-04T20:49:24.2194970Z       at Timeout._onTimeout (node_modules/@tanstack/query-core/src/notifyManager.ts:42:9)
+targeted	Targeted jest	2026-10-04T20:49:24.2195555Z 
+targeted	Targeted jest	2026-10-04T20:49:24.2195721Z     console.error
+targeted	Targeted jest	2026-10-04T20:49:24.2196374Z       An update to HookContainer inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-04T20:49:24.2197030Z       
+targeted	Targeted jest	2026-10-04T20:49:24.2202884Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-04T20:49:24.2203691Z       
+targeted	Targeted jest	2026-10-04T20:49:24.2204044Z       act(() => {
+targeted	Targeted jest	2026-10-04T20:49:24.2204525Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-04T20:49:24.2205035Z       });
+targeted	Targeted jest	2026-10-04T20:49:24.2205443Z       /* assert on the output */
+targeted	Targeted jest	2026-10-04T20:49:24.2205878Z       
+targeted	Targeted jest	2026-10-04T20:49:24.2206961Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-04T20:49:24.2208172Z 
+targeted	Targeted jest	2026-10-04T20:49:24.2208741Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-04T20:49:24.2210042Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T20:49:24.2211609Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-04T20:49:24.2213176Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T20:49:24.2214627Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+targeted	Targeted jest	2026-10-04T20:49:24.2215821Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+targeted	Targeted jest	2026-10-04T20:49:24.2216776Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:73:11
+targeted	Targeted jest	2026-10-04T20:49:24.2217987Z       at notifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:21:5)
+targeted	Targeted jest	2026-10-04T20:49:24.2218856Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:44:13
+targeted	Targeted jest	2026-10-04T20:49:24.2219563Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-04T20:49:24.2220260Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:43:25
+targeted	Targeted jest	2026-10-04T20:49:24.2221196Z       at batchNotifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:24:5)
+targeted	Targeted jest	2026-10-04T20:49:24.2222270Z       at Timeout._onTimeout (node_modules/@tanstack/query-core/src/notifyManager.ts:42:9)
+targeted	Targeted jest	2026-10-04T20:49:24.2222899Z 
+targeted	Targeted jest	2026-10-04T20:49:24.2223061Z     console.error
+targeted	Targeted jest	2026-10-04T20:49:24.2223719Z       An update to HookContainer inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-04T20:49:24.2224376Z       
+targeted	Targeted jest	2026-10-04T20:49:24.2225082Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-04T20:49:24.2225819Z       
+targeted	Targeted jest	2026-10-04T20:49:24.2226191Z       act(() => {
+targeted	Targeted jest	2026-10-04T20:49:24.2226661Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-04T20:49:24.2227149Z       });
+targeted	Targeted jest	2026-10-04T20:49:24.2227935Z       /* assert on the output */
+targeted	Targeted jest	2026-10-04T20:49:24.2228389Z       
+targeted	Targeted jest	2026-10-04T20:49:24.2229468Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-04T20:49:24.2230356Z 
+targeted	Targeted jest	2026-10-04T20:49:24.2230855Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-04T20:49:24.2232086Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T20:49:24.2233895Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-04T20:49:24.2235607Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T20:49:24.2237036Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+targeted	Targeted jest	2026-10-04T20:49:24.2238579Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+targeted	Targeted jest	2026-10-04T20:49:24.2239600Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:73:11
+targeted	Targeted jest	2026-10-04T20:49:24.2240551Z       at notifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:21:5)
+targeted	Targeted jest	2026-10-04T20:49:24.2241492Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:44:13
+targeted	Targeted jest	2026-10-04T20:49:24.2242212Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-04T20:49:24.2242926Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:43:25
+targeted	Targeted jest	2026-10-04T20:49:24.2243917Z       at batchNotifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:24:5)
+targeted	Targeted jest	2026-10-04T20:49:24.2245049Z       at Timeout._onTimeout (node_modules/@tanstack/query-core/src/notifyManager.ts:42:9)
+targeted	Targeted jest	2026-10-04T20:49:24.2245674Z 
+targeted	Targeted jest	2026-10-04T20:49:24.2245845Z     console.error
+targeted	Targeted jest	2026-10-04T20:49:24.2246524Z       An update to HookContainer inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-04T20:49:24.2247190Z       
+targeted	Targeted jest	2026-10-04T20:49:24.2248144Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-04T20:49:24.2248908Z       
+targeted	Targeted jest	2026-10-04T20:49:24.2249249Z       act(() => {
+targeted	Targeted jest	2026-10-04T20:49:24.2249704Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-04T20:49:24.2250194Z       });
+targeted	Targeted jest	2026-10-04T20:49:24.2250613Z       /* assert on the output */
+targeted	Targeted jest	2026-10-04T20:49:24.2251104Z       
+targeted	Targeted jest	2026-10-04T20:49:24.2252193Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-04T20:49:24.2253136Z 
+targeted	Targeted jest	2026-10-04T20:49:24.2253675Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-04T20:49:24.2254968Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T20:49:24.2256558Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-04T20:49:24.2258474Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T20:49:24.2259927Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+targeted	Targeted jest	2026-10-04T20:49:24.2261176Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+targeted	Targeted jest	2026-10-04T20:49:24.2262153Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:73:11
+targeted	Targeted jest	2026-10-04T20:49:24.2263088Z       at notifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:21:5)
+targeted	Targeted jest	2026-10-04T20:49:24.2264045Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:44:13
+targeted	Targeted jest	2026-10-04T20:49:24.2264741Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-04T20:49:24.2265437Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:43:25
+targeted	Targeted jest	2026-10-04T20:49:24.2266391Z       at batchNotifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:24:5)
+targeted	Targeted jest	2026-10-04T20:49:24.2267786Z       at Timeout._onTimeout (node_modules/@tanstack/query-core/src/notifyManager.ts:42:9)
+targeted	Targeted jest	2026-10-04T20:49:24.2268407Z 
+targeted	Targeted jest	2026-10-04T20:49:24.8872135Z PASS src/hooks/useWearableConnections.disconnect.test.tsx
+targeted	Targeted jest	2026-10-04T20:49:24.8904486Z   ● Console
+targeted	Targeted jest	2026-10-04T20:49:24.8927832Z 
+targeted	Targeted jest	2026-10-04T20:49:24.8957991Z     console.error
+targeted	Targeted jest	2026-10-04T20:49:24.8988227Z       An update to HookContainer inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-04T20:49:24.9017900Z       
+targeted	Targeted jest	2026-10-04T20:49:24.9018857Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-04T20:49:24.9048026Z       
+targeted	Targeted jest	2026-10-04T20:49:24.9077919Z       act(() => {
+targeted	Targeted jest	2026-10-04T20:49:24.9107982Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-04T20:49:24.9109260Z       });
+targeted	Targeted jest	2026-10-04T20:49:24.9137987Z       /* assert on the output */
+targeted	Targeted jest	2026-10-04T20:49:24.9167883Z       
+targeted	Targeted jest	2026-10-04T20:49:24.9169327Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-04T20:49:24.9197741Z 
+targeted	Targeted jest	2026-10-04T20:49:24.9228330Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-04T20:49:24.9258444Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T20:49:24.9260247Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-04T20:49:24.9288524Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T20:49:24.9318504Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+targeted	Targeted jest	2026-10-04T20:49:24.9348308Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+targeted	Targeted jest	2026-10-04T20:49:24.9349547Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:73:11
+targeted	Targeted jest	2026-10-04T20:49:24.9392775Z       at notifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:21:5)
+targeted	Targeted jest	2026-10-04T20:49:24.9418085Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:44:13
+targeted	Targeted jest	2026-10-04T20:49:24.9448028Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-04T20:49:24.9454422Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:43:25
+targeted	Targeted jest	2026-10-04T20:49:24.9455656Z       at batchNotifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:24:5)
+targeted	Targeted jest	2026-10-04T20:49:24.9456833Z       at Timeout._onTimeout (node_modules/@tanstack/query-core/src/notifyManager.ts:42:9)
+targeted	Targeted jest	2026-10-04T20:49:24.9457843Z 
+targeted	Targeted jest	2026-10-04T20:49:24.9458214Z     console.error
+targeted	Targeted jest	2026-10-04T20:49:24.9459082Z       An update to HookContainer inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-04T20:49:24.9459878Z       
+targeted	Targeted jest	2026-10-04T20:49:24.9460745Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-04T20:49:24.9461540Z       
+targeted	Targeted jest	2026-10-04T20:49:24.9461951Z       act(() => {
+targeted	Targeted jest	2026-10-04T20:49:24.9462586Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-04T20:49:24.9463273Z       });
+targeted	Targeted jest	2026-10-04T20:49:24.9463880Z       /* assert on the output */
+targeted	Targeted jest	2026-10-04T20:49:24.9464584Z       
+targeted	Targeted jest	2026-10-04T20:49:24.9465860Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-04T20:49:24.9467007Z 
+targeted	Targeted jest	2026-10-04T20:49:24.9467966Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-04T20:49:24.9469489Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T20:49:24.9471241Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-04T20:49:24.9472962Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T20:49:24.9474543Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+targeted	Targeted jest	2026-10-04T20:49:24.9475920Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+targeted	Targeted jest	2026-10-04T20:49:24.9477056Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:73:11
+targeted	Targeted jest	2026-10-04T20:49:24.9478356Z       at notifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:21:5)
+targeted	Targeted jest	2026-10-04T20:49:24.9479384Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:44:13
+targeted	Targeted jest	2026-10-04T20:49:24.9480157Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-04T20:49:24.9480953Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:43:25
+targeted	Targeted jest	2026-10-04T20:49:24.9482276Z       at batchNotifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:24:5)
+targeted	Targeted jest	2026-10-04T20:49:24.9483452Z       at Timeout._onTimeout (node_modules/@tanstack/query-core/src/notifyManager.ts:42:9)
+targeted	Targeted jest	2026-10-04T20:49:24.9484371Z 
+targeted	Targeted jest	2026-10-04T20:49:27.5060801Z PASS src/screens/client/wearables/__tests__/WearablesShell.settingsReturn.probe.test.tsx
+targeted	Targeted jest	2026-10-04T20:49:27.8795382Z PASS src/screens/client/wearables/__tests__/WearablesShell.test.tsx (9.009 s)
+targeted	Targeted jest	2026-10-04T20:49:27.9933363Z PASS src/hooks/useWearableConnections.sol118.test.tsx
+targeted	Targeted jest	2026-10-04T20:49:27.9982656Z   ● Console
+targeted	Targeted jest	2026-10-04T20:49:28.0007897Z 
+targeted	Targeted jest	2026-10-04T20:49:28.0038143Z     console.error
+targeted	Targeted jest	2026-10-04T20:49:28.0048278Z       An update to HookContainer inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-04T20:49:28.0078119Z       
+targeted	Targeted jest	2026-10-04T20:49:28.0079040Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-04T20:49:28.0079938Z       
+targeted	Targeted jest	2026-10-04T20:49:28.0080437Z       act(() => {
+targeted	Targeted jest	2026-10-04T20:49:28.0081079Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-04T20:49:28.0081715Z       });
+targeted	Targeted jest	2026-10-04T20:49:28.0082250Z       /* assert on the output */
+targeted	Targeted jest	2026-10-04T20:49:28.0082892Z       
+targeted	Targeted jest	2026-10-04T20:49:28.0084125Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-04T20:49:28.0085352Z 
+targeted	Targeted jest	2026-10-04T20:49:28.0086111Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-04T20:49:28.0087888Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T20:49:28.0089790Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-04T20:49:28.0091662Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T20:49:28.0093425Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+targeted	Targeted jest	2026-10-04T20:49:28.0094988Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+targeted	Targeted jest	2026-10-04T20:49:28.0096305Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:73:11
+targeted	Targeted jest	2026-10-04T20:49:28.0097819Z       at notifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:21:5)
+targeted	Targeted jest	2026-10-04T20:49:28.0099094Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:44:13
+targeted	Targeted jest	2026-10-04T20:49:28.0100144Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-04T20:49:28.0101108Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:43:25
+targeted	Targeted jest	2026-10-04T20:49:28.0102325Z       at batchNotifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:24:5)
+targeted	Targeted jest	2026-10-04T20:49:28.0103628Z       at Timeout._onTimeout (node_modules/@tanstack/query-core/src/notifyManager.ts:42:9)
+targeted	Targeted jest	2026-10-04T20:49:28.0104453Z 
+targeted	Targeted jest	2026-10-04T20:49:28.2058838Z PASS src/hooks/useWearableConnections.opus119.test.tsx
+targeted	Targeted jest	2026-10-04T20:49:28.2238646Z   ● Console
+targeted	Targeted jest	2026-10-04T20:49:28.2277932Z 
+targeted	Targeted jest	2026-10-04T20:49:28.2285946Z     console.error
+targeted	Targeted jest	2026-10-04T20:49:28.2308274Z       An update to HookContainer inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-04T20:49:28.2337757Z       
+targeted	Targeted jest	2026-10-04T20:49:28.2368180Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-04T20:49:28.2369009Z       
+targeted	Targeted jest	2026-10-04T20:49:28.2391388Z       act(() => {
+targeted	Targeted jest	2026-10-04T20:49:28.2391883Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-04T20:49:28.2392364Z       });
+targeted	Targeted jest	2026-10-04T20:49:28.2392746Z       /* assert on the output */
+targeted	Targeted jest	2026-10-04T20:49:28.2393449Z       
+targeted	Targeted jest	2026-10-04T20:49:28.2451819Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-04T20:49:28.2452794Z 
+targeted	Targeted jest	2026-10-04T20:49:28.2453331Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-04T20:49:28.2454598Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T20:49:28.2456648Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-04T20:49:28.2458807Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T20:49:28.2460263Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+targeted	Targeted jest	2026-10-04T20:49:28.2461517Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+targeted	Targeted jest	2026-10-04T20:49:28.2462498Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:73:11
+targeted	Targeted jest	2026-10-04T20:49:28.2463438Z       at notifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:21:5)
+targeted	Targeted jest	2026-10-04T20:49:28.2464370Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:44:13
+targeted	Targeted jest	2026-10-04T20:49:28.2465070Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-04T20:49:28.2465786Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:43:25
+targeted	Targeted jest	2026-10-04T20:49:28.2466768Z       at batchNotifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:24:5)
+targeted	Targeted jest	2026-10-04T20:49:28.2468112Z       at Timeout._onTimeout (node_modules/@tanstack/query-core/src/notifyManager.ts:42:9)
+targeted	Targeted jest	2026-10-04T20:49:28.2468750Z 
+targeted	Targeted jest	2026-10-04T20:49:28.2468912Z     console.error
+targeted	Targeted jest	2026-10-04T20:49:28.2469570Z       An update to HookContainer inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-04T20:49:28.2470220Z       
+targeted	Targeted jest	2026-10-04T20:49:28.2470927Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-04T20:49:28.2471668Z       
+targeted	Targeted jest	2026-10-04T20:49:28.2471985Z       act(() => {
+targeted	Targeted jest	2026-10-04T20:49:28.2472442Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-04T20:49:28.2472947Z       });
+targeted	Targeted jest	2026-10-04T20:49:28.2473364Z       /* assert on the output */
+targeted	Targeted jest	2026-10-04T20:49:28.2473800Z       
+targeted	Targeted jest	2026-10-04T20:49:28.2474884Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-04T20:49:28.2475846Z 
+targeted	Targeted jest	2026-10-04T20:49:28.2476378Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-04T20:49:28.2502069Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T20:49:28.2504055Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-04T20:49:28.2505653Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T20:49:28.2507136Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+targeted	Targeted jest	2026-10-04T20:49:28.2508575Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+targeted	Targeted jest	2026-10-04T20:49:28.2509542Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:73:11
+targeted	Targeted jest	2026-10-04T20:49:28.2510476Z       at notifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:21:5)
+targeted	Targeted jest	2026-10-04T20:49:28.2511433Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:44:13
+targeted	Targeted jest	2026-10-04T20:49:28.2512139Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-04T20:49:28.2512885Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:43:25
+targeted	Targeted jest	2026-10-04T20:49:28.2513866Z       at batchNotifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:24:5)
+targeted	Targeted jest	2026-10-04T20:49:28.2514983Z       at Timeout._onTimeout (node_modules/@tanstack/query-core/src/notifyManager.ts:42:9)
+targeted	Targeted jest	2026-10-04T20:49:28.2515608Z 
+targeted	Targeted jest	2026-10-04T20:49:28.2515773Z     console.error
+targeted	Targeted jest	2026-10-04T20:49:28.2516437Z       An update to HookContainer inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-04T20:49:28.2517096Z       
+targeted	Targeted jest	2026-10-04T20:49:28.2518052Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-04T20:49:28.2518810Z       
+targeted	Targeted jest	2026-10-04T20:49:28.2519136Z       act(() => {
+targeted	Targeted jest	2026-10-04T20:49:28.2519588Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-04T20:49:28.2520411Z       });
+targeted	Targeted jest	2026-10-04T20:49:28.2521014Z       /* assert on the output */
+targeted	Targeted jest	2026-10-04T20:49:28.2521451Z       
+targeted	Targeted jest	2026-10-04T20:49:28.2522539Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-04T20:49:28.2523692Z 
+targeted	Targeted jest	2026-10-04T20:49:28.2524237Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-04T20:49:28.2525499Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T20:49:28.2527010Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-04T20:49:28.2572848Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T20:49:28.2574332Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+targeted	Targeted jest	2026-10-04T20:49:28.2575650Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+targeted	Targeted jest	2026-10-04T20:49:28.2576631Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:73:11
+targeted	Targeted jest	2026-10-04T20:49:28.2577820Z       at notifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:21:5)
+targeted	Targeted jest	2026-10-04T20:49:28.2578765Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:44:13
+targeted	Targeted jest	2026-10-04T20:49:28.2579475Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-04T20:49:28.2580229Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:43:25
+targeted	Targeted jest	2026-10-04T20:49:28.2581233Z       at batchNotifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:24:5)
+targeted	Targeted jest	2026-10-04T20:49:28.2582356Z       at Timeout._onTimeout (node_modules/@tanstack/query-core/src/notifyManager.ts:42:9)
+targeted	Targeted jest	2026-10-04T20:49:28.2582994Z 
+targeted	Targeted jest	2026-10-04T20:49:29.2802420Z PASS src/screens/client/wearables/__tests__/ConnectionsScreen.emptyImport.probe.test.tsx
+targeted	Targeted jest	2026-10-04T20:49:29.5989517Z PASS src/screens/client/wearables/__tests__/ConnectionsScreen.emptyImport.test.tsx
+targeted	Targeted jest	2026-10-04T20:49:29.7218740Z PASS src/hooks/useWearableConnections.test.tsx
+targeted	Targeted jest	2026-10-04T20:49:29.7258260Z   ● Console
+targeted	Targeted jest	2026-10-04T20:49:29.7297737Z 
+targeted	Targeted jest	2026-10-04T20:49:29.7316233Z     console.error
+targeted	Targeted jest	2026-10-04T20:49:29.7317227Z       An update to HookContainer inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-04T20:49:29.7318597Z       
+targeted	Targeted jest	2026-10-04T20:49:29.7319716Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-04T20:49:29.7320765Z       
+targeted	Targeted jest	2026-10-04T20:49:29.7321400Z       act(() => {
+targeted	Targeted jest	2026-10-04T20:49:29.7322174Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-04T20:49:29.7322995Z       });
+targeted	Targeted jest	2026-10-04T20:49:29.7323678Z       /* assert on the output */
+targeted	Targeted jest	2026-10-04T20:49:29.7324398Z       
+targeted	Targeted jest	2026-10-04T20:49:29.7325797Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-04T20:49:29.7326998Z 
+targeted	Targeted jest	2026-10-04T20:49:29.7328054Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-04T20:49:29.7329684Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T20:49:29.7331876Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-04T20:49:29.7343374Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T20:49:29.7344871Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+targeted	Targeted jest	2026-10-04T20:49:29.7345751Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+targeted	Targeted jest	2026-10-04T20:49:29.7346464Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:73:11
+targeted	Targeted jest	2026-10-04T20:49:29.7347116Z       at notifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:21:5)
+targeted	Targeted jest	2026-10-04T20:49:29.7348353Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:44:13
+targeted	Targeted jest	2026-10-04T20:49:29.7349738Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-04T20:49:29.7350432Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:43:25
+targeted	Targeted jest	2026-10-04T20:49:29.7351558Z       at batchNotifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:24:5)
+targeted	Targeted jest	2026-10-04T20:49:29.7352474Z       at Timeout._onTimeout (node_modules/@tanstack/query-core/src/notifyManager.ts:42:9)
+targeted	Targeted jest	2026-10-04T20:49:29.7352838Z 
+targeted	Targeted jest	2026-10-04T20:49:29.7352939Z     console.error
+targeted	Targeted jest	2026-10-04T20:49:29.7353313Z       An update to HookContainer inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-04T20:49:29.7353694Z       
+targeted	Targeted jest	2026-10-04T20:49:29.7354084Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-04T20:49:29.7354490Z       
+targeted	Targeted jest	2026-10-04T20:49:29.7354671Z       act(() => {
+targeted	Targeted jest	2026-10-04T20:49:29.7354930Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-04T20:49:29.7355203Z       });
+targeted	Targeted jest	2026-10-04T20:49:29.7355426Z       /* assert on the output */
+targeted	Targeted jest	2026-10-04T20:49:29.7355677Z       
+targeted	Targeted jest	2026-10-04T20:49:29.7356283Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-04T20:49:29.7356817Z 
+targeted	Targeted jest	2026-10-04T20:49:29.7357096Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-04T20:49:29.7358082Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T20:49:29.7358913Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-04T20:49:29.7359769Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T20:49:29.7360537Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+targeted	Targeted jest	2026-10-04T20:49:29.7361191Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+targeted	Targeted jest	2026-10-04T20:49:29.7361731Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:73:11
+targeted	Targeted jest	2026-10-04T20:49:29.7362233Z       at notifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:21:5)
+targeted	Targeted jest	2026-10-04T20:49:29.7362733Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:44:13
+targeted	Targeted jest	2026-10-04T20:49:29.7363128Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-04T20:49:29.7363513Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:43:25
+targeted	Targeted jest	2026-10-04T20:49:29.7364029Z       at batchNotifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:24:5)
+targeted	Targeted jest	2026-10-04T20:49:29.7364630Z       at Timeout._onTimeout (node_modules/@tanstack/query-core/src/notifyManager.ts:42:9)
+targeted	Targeted jest	2026-10-04T20:49:29.7364967Z 
+targeted	Targeted jest	2026-10-04T20:49:29.9157167Z PASS src/hooks/useWearableConnections.transportSol119.test.tsx
+targeted	Targeted jest	2026-10-04T20:49:29.9658932Z PASS src/screens/client/wearables/__tests__/ConnectionsScreen.test.tsx (11.056 s)
+targeted	Targeted jest	2026-10-04T20:49:31.8500513Z PASS src/screens/client/wearables/__tests__/ConnectionsScreen.sol118.test.tsx
+targeted	Targeted jest	2026-10-04T20:49:32.3911244Z A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+targeted	Targeted jest	2026-10-04T20:49:32.3931096Z 
+targeted	Targeted jest	2026-10-04T20:49:32.3937646Z Test Suites: 12 passed, 12 total
+targeted	Targeted jest	2026-10-04T20:49:32.3938531Z Tests:       104 passed, 104 total
+targeted	Targeted jest	2026-10-04T20:49:32.3939056Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T20:49:32.3939364Z Time:        14.206 s
+targeted	Targeted jest	2026-10-04T20:49:32.3944158Z Ran all test suites matching /src\/hooks\/useWearableConnections.sol119.test.tsx|src\/hooks\/useWearableConnections.transportSol119.test.tsx|src\/hooks\/useWearableConnections.opus119.test.tsx|src\/hooks\/useWearableConnections.sol118.test.tsx|src\/hooks\/useWearableConnections.disconnect.test.tsx|src\/hooks\/useWearableConnections.test.tsx|src\/screens\/client\/wearables\/__tests__\/ConnectionsScreen.sol118.test.tsx|src\/screens\/client\/wearables\/__tests__\/ConnectionsScreen.emptyImport.probe.test.tsx|src\/screens\/client\/wearables\/__tests__\/WearablesShell.settingsReturn.probe.test.tsx|src\/screens\/client\/wearables\/__tests__\/ConnectionsScreen.test.tsx|src\/screens\/client\/wearables\/__tests__\/ConnectionsScreen.emptyImport.test.tsx|src\/screens\/client\/wearables\/__tests__\/WearablesShell.test.tsx/i.
+targeted	Post Run actions/setup-node@v6	﻿2026-10-04T20:49:32.4183466Z Post job cleanup.
+targeted	Post Run actions/setup-node@v6	2026-10-04T20:49:32.5329019Z Cache hit occurred on the primary key node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06, not saving cache.
+targeted	Post Run actions/checkout@v6	﻿2026-10-04T20:49:32.5479592Z Post job cleanup.
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.6292718Z [command]/usr/bin/git version
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.6328936Z git version 2.55.0
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.6368430Z Temporarily overriding HOME='/home/runner/work/_temp/ecb36972-4fe8-427e-b48c-9857b00d2873' before making global git config changes
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.6369635Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.6373569Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.6403260Z Removing SSH command configuration
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.6409729Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.6443956Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.6668287Z Removing HTTP extra header
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.6673135Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.6706930Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.6922276Z Removing includeIf entries pointing to credentials config files
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.6928356Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.6956491Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.6958113Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.6959261Z includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.6960094Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.6966936Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.6988288Z /home/runner/work/_temp/git-credentials-39f3e81d-325d-49ae-a34a-2d9b215b2ab2.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.6999654Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-39f3e81d-325d-49ae-a34a-2d9b215b2ab2.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.7065416Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.7087658Z /home/runner/work/_temp/git-credentials-39f3e81d-325d-49ae-a34a-2d9b215b2ab2.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.7097953Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-39f3e81d-325d-49ae-a34a-2d9b215b2ab2.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.7137079Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.7162589Z /github/runner_temp/git-credentials-39f3e81d-325d-49ae-a34a-2d9b215b2ab2.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.7173837Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-39f3e81d-325d-49ae-a34a-2d9b215b2ab2.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.7207656Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.7229034Z /github/runner_temp/git-credentials-39f3e81d-325d-49ae-a34a-2d9b215b2ab2.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.7237165Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-39f3e81d-325d-49ae-a34a-2d9b215b2ab2.config
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.7278896Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Post Run actions/checkout@v6	2026-10-04T20:49:32.7522573Z Removing credentials config '/home/runner/work/_temp/git-credentials-39f3e81d-325d-49ae-a34a-2d9b215b2ab2.config'
+targeted	Complete job	﻿2026-10-04T20:49:32.7660140Z Cleaning up orphan processes

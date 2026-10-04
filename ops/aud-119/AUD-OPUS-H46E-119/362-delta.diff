@@ -1,0 +1,102 @@
+diff --git a/src/services/health/onDeviceState.ts b/src/services/health/onDeviceState.ts
+index c89410b..88f65ad 100644
+--- a/src/services/health/onDeviceState.ts
++++ b/src/services/health/onDeviceState.ts
+@@ -97,6 +97,24 @@ async function readJson(key: string): Promise<unknown> {
+ let authWriteSeq = 0;
+ const authWrittenAt = new Map<string, number>();
+ 
++/**
++ * Sol B-362-2 / Opus C-362-11: Android AsyncStorage runs each native call on
++ * its own IO coroutine, so JS call order is not commit order. Every write and
++ * removal in this module runs through this one chain: each native operation
++ * starts only after the previous one settled (resolved or rejected), and a
++ * rejection never stalls the operations behind it.
++ */
++let storageTail: Promise<void> = Promise.resolve();
++
++function serialStorage<T>(op: () => Promise<T>): Promise<T> {
++  const run = storageTail.then(op);
++  storageTail = run.then(
++    () => undefined,
++    () => undefined,
++  );
++  return run;
++}
++
+ /** The local authorization write sequence now (capture it before any await). */
+ export function localAuthorizationSeq(): number {
+   return authWriteSeq;
+@@ -117,7 +135,7 @@ export async function recordLocalAuthorization(
+   const key = authKey(scope.userId, scope.source);
+   authWriteSeq += 1; // before the await: a retirement already running sees it (Sol B-362-2)
+   authWrittenAt.set(key, authWriteSeq);
+-  await AsyncStorage.setItem(key, JSON.stringify(record));
++  await serialStorage(() => AsyncStorage.setItem(key, JSON.stringify(record)));
+   return record;
+ }
+ 
+@@ -126,6 +144,7 @@ export async function getLocalAuthorization(
+   userId: string,
+   source: OnDeviceSource,
+ ): Promise<LocalAuthorization | null> {
++  await storageTail; // every write already queued has settled
+   const parsed = await readJson(authKey(userId, source));
+   if (!isRecord(parsed)) return null;
+   if (
+@@ -153,6 +172,7 @@ export async function getLocalAuthorization(
+  * everything this module wrote (sign-out sweeps the same prefix).
+  */
+ export async function retireOnDeviceState(source?: OnDeviceSource): Promise<void> {
++  await storageTail;
+   const keys = await AsyncStorage.getAllKeys();
+   const doomed = keys.filter((k) => {
+     if (!k.startsWith(ON_DEVICE_STATE_PREFIX)) return false;
+@@ -162,7 +182,7 @@ export async function retireOnDeviceState(source?: OnDeviceSource): Promise<void
+       k.startsWith(`${ON_DEVICE_STATE_PREFIX}progress:${source}:`)
+     );
+   });
+-  if (doomed.length > 0) await AsyncStorage.removeMany(doomed);
++  if (doomed.length > 0) await serialStorage(() => AsyncStorage.removeMany(doomed));
+ }
+ 
+ /**
+@@ -172,9 +192,10 @@ export async function retireOnDeviceState(source?: OnDeviceSource): Promise<void
+  * authorization seen when the disconnect started (null for none): when a
+  * different one is stored now, nothing is removed. `since` is
+  * {@link localAuthorizationSeq} at that start: a grant written after it, and
+- * that person's progress, are kept. The check and the removal run with no
+- * await between them, and storage applies writes in call order, so a newer
+- * Connect is never removed by an older Disconnect.
++ * that person's progress, are kept. Enumeration waits for every write already
++ * queued; the sequence check and the queueing of the removal run with no await
++ * between them, and the queue starts a later Connect's native write only after
++ * this removal settled, so an older Disconnect never removes a newer Connect.
+  */
+ export async function retireOnDeviceSource(
+   userId: string | null,
+@@ -182,6 +203,7 @@ export async function retireOnDeviceSource(
+   grantedAt: string | null,
+   since: number = authWriteSeq,
+ ): Promise<void> {
++  await storageTail;
+   if (userId != null) {
+     const current = await getLocalAuthorization(userId, source);
+     if ((current?.grantedAt ?? null) !== grantedAt) return;
+@@ -201,7 +223,7 @@ export async function retireOnDeviceSource(
+     if (owner == null || (userId != null && owner !== userId)) return false;
+     return (authWrittenAt.get(authKey(owner, source)) ?? 0) <= since;
+   });
+-  if (doomed.length > 0) await AsyncStorage.removeMany(doomed);
++  if (doomed.length > 0) await serialStorage(() => AsyncStorage.removeMany(doomed));
+ }
+ 
+ /** Read the progress for a scope (empty when none or unreadable). */
+@@ -233,5 +255,6 @@ export async function getSyncProgress(scope: OnDeviceScope): Promise<SyncProgres
+ 
+ /** Persist the progress for a scope. */
+ export async function setSyncProgress(scope: OnDeviceScope, progress: SyncProgress): Promise<void> {
+-  await AsyncStorage.setItem(progressKey(scope), JSON.stringify(progress));
++  const value = JSON.stringify(progress);
++  await serialStorage(() => AsyncStorage.setItem(progressKey(scope), value));
+ }

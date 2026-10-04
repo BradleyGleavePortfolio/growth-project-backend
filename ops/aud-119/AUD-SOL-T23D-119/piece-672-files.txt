@@ -1,0 +1,15 @@
+M	src/email/email.service.ts
+M	src/email/email.types.ts
+A	src/email/templates/trial-ending.hbs
+M	src/notifications/notification-kind.ts
+M	src/notifications/notifications.service.ts
+M	src/packages/packages.controller.ts
+M	src/packages/packages.dto.ts
+M	src/packages/packages.module.ts
+M	src/packages/packages.service.ts
+A	src/packages/trials/trial-notice.service.ts
+M	test/b-trials-one-trial-rule.spec.ts
+A	test/b-trials-package-rules.spec.ts
+A	test/b-trials-t2-fix-round-6.spec.ts
+A	test/b-trials-t2-fix-round-8.spec.ts
+A	test/b-trials-t2-idempotent-create-http.spec.ts

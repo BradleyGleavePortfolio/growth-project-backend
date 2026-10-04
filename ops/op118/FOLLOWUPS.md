@@ -82,3 +82,15 @@
   re-grants access to a refunded/lost/disputed plan and the next subscription update reopens it (flag stays off until fixed, whichever of
   recurring/dunning lands second carries it); C-680-19 a won dispute sets the plan to paid -> access returns automatically, against
   R-DISPUTE-PAUSE (fix in the R-DISPUTE-PAUSE build). C-680-16 full refund on recurring keeps billing (owner decision; default pause).
+- HC Cs (B-HC5-119): C-362-8 unreadable grant at start skips cleanup; C-362-9 api.ts:266 overwrites error message without response; C-362-10 retireOnDeviceState unused by H4.
+- Trials Cs (Sol T23D-119): C-673-7 malformed money reads none (fold into B-TR5 if fits); C-706-1 snapshot fixture fidelity; C-672-1/C-673-1 integration qualification carried.
+- Sheet Cs (Opus S123-119): C-342-8 'nothing was charged' when account not found; C-344-12 dispute-paused plan shows 'Confirming with Stripe' (cause backend #679) -> GATE before deploying #705: panel must show access ended, billing paused, coach decides; C-344-13 end-plan dialog promises period end while backend ends now (out-of-order webhooks); C-344-14 timeouts told as 'could not reach the server'.
+- Fees Cs (B-FEES19-119): missing Resend Idempotency-Key; possible repeat push when abort lands after Expo accepts; C-684-11 old refund snapshot can end access after refund failed (next round after landing, alert only).
+- Sheet C (B-SHEET5-119): C-SH5-1 no Email support when plans shown over a failed read.
+- Sheet Cs (Opus S3D-119): C-344-15 trial end-plan dialog says 'nothing more is charged'; C-344-16 trial cancel with no date falls back to paid wording (unreachable); C-344-17 refresh dialog dismiss reads 'Keep plan'. C-344-12 GATES the #705 deploy.
+- HC C (B-HC6-119): C-362-12 sign-out clears health keys outside the serial queue (authActions.ts:116; pre-existing).
+- Trials Cs (B-TR5-119): C-673-8 void moves past_due->active; cancel failure/webhook-first leaves one unpaid period + false refund alert (ticket for #680 round with C-673-4); C-673-9 >=2 open invoices exceed lease -> retry + support alert; uncollectible not voided.
+- HC C (Opus H46E-119): C-362-13 a failed grant save still counts as newer, so an earlier Disconnect keeps the old grant.
+- Trials Cs (Opus T3E-119): C-673-10 incomplete cancelled without void; C-706-2 two missing tests. All trials Cs -> #680 round.
+- Fees Cs (FL2): C-684-13 push accepted by Expo can be re-sent; C-684-14 payout-notice email no Resend Idempotency-Key -> one round after landing. Recurring dispute copy (C-684-3, C-686-5) gated behind R-DISPUTE-PAUSE before recurring takes disputes in production.
+- HC Cs (Opus H46F-119): C-362-14 failed sign-out key removal -> same account regains grant after restart; C-362-15 two failed overlapping grant writes -> older Disconnect keeps old grant.

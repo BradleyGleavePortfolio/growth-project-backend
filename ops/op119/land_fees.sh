@@ -5,9 +5,9 @@
 # candidate and all required checks are green): merge #681 with --match-head-commit.
 set -euo pipefail
 R=BradleyGleavePortfolio/growth-project-backend
-TOP=30a118ddfd75339375ea4f6f6288669f3cbebfd5
-CAND=0bc3696d2bd1a25a4e963776db6f7f531881e4eb
-declare -A HEAD=([681]=e9650dc4 [682]=70f879a2 [683]=cc183e0a [684]=9fb9c48f [697]=c2585c97 [685]=a61d50f4 [686]=30a118dd)
+TOP=856831354270725f651b1a26a54cdc4750271108
+CAND=d8d062ffea56d5c3d75f479fdc8e62e9cdfedf82
+declare -A HEAD=([681]=e9650dc4 [682]=70f879a2 [683]=cc183e0a [684]=c1a07d9c [697]=be7efc09 [685]=f0c48049 [686]=85683135)
 step=${1:-}
 cd /home/user/workspace/repos/growth-project-backend
 git fetch -q origin
@@ -23,7 +23,7 @@ if [ "$step" = A ]; then
     git push -q origin $TOP:refs/heads/$b && echo "ff $b -> ${TOP:0:8}"
   done
   git merge-base --is-ancestor origin/agent115/fee-split-1-ledger-foundation $CAND || { echo "cand not ff"; exit 1; }
-  test "$(git rev-parse $CAND^{tree})" = 317ea5ca8fb132892f02cf9d81ef9511a81c882d || { echo "tree mismatch"; exit 1; }
+  test "$(git rev-parse $CAND^{tree})" = e4f86d6e931495a4a229311fdf19c8443d427b99 || { echo "tree mismatch"; exit 1; }
   git push -q origin $CAND:refs/heads/agent115/fee-split-1-ledger-foundation && echo "#681 head -> ${CAND:0:8}"
 fi
 if [ "$step" = B ]; then

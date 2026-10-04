@@ -1,0 +1,688 @@
+diff --git a/src/api/wearablesConnectionsApi.test.ts b/src/api/wearablesConnectionsApi.test.ts
+index da19bee..28d0e33 100644
+--- a/src/api/wearablesConnectionsApi.test.ts
++++ b/src/api/wearablesConnectionsApi.test.ts
+@@ -30,6 +30,7 @@ jest.mock('../services/api', () => ({
+     get: jest.fn(),
+     post: jest.fn(),
+     delete: jest.fn(),
++    defaults: { transformRequest: [] },
+   },
+ }));
+ 
+@@ -163,7 +164,10 @@ describe('wearablesConnectionsApi.disconnect', () => {
+     const res = await wearablesConnectionsApi.disconnect('OURA');
+ 
+     expect(api.delete).toHaveBeenCalledTimes(1);
+-    expect(api.delete).toHaveBeenCalledWith('/v1/wearables/connections/OURA');
++    // Sol B-362-6: the session fence rides on the request (B-HC5-119 tests in H5 cover it).
++    expect(api.delete).toHaveBeenCalledWith('/v1/wearables/connections/OURA', {
++      transformRequest: [expect.any(Function)],
++    });
+     expect(res).toEqual({ success: true, provider: 'OURA' });
+   });
+ 
+diff --git a/src/api/wearablesConnectionsApi.ts b/src/api/wearablesConnectionsApi.ts
+index cdb2827..c60cd6a 100644
+--- a/src/api/wearablesConnectionsApi.ts
++++ b/src/api/wearablesConnectionsApi.ts
+@@ -36,6 +36,7 @@
+ 
+ import { z } from 'zod';
+ import api from '../services/api';
++import { currentAuthGeneration, OnDeviceSessionChangedError } from '../services/health/sessionFence';
+ 
+ // ─── Provider enum (mirror of backend `WearableProvider`) ────────────────────
+ 
+@@ -369,10 +370,22 @@ export const wearablesConnectionsApi = {
+    * Soft-disconnect the caller's connection for a provider. Idempotent from the
+    * UI's perspective: a 404 (no connection) is surfaced as a thrown error so
+    * the caller never mistakes a no-op for success.
++   *
++   * Sol B-362-6: the request leaves only for the session it started in. The
++   * fence runs after the auth interceptor attached the token, synchronously
++   * before dispatch (also on a 401 retry); after any auth event nothing is sent.
++   * @throws OnDeviceSessionChangedError when the session changed first.
+    * @throws ZodError on a drifted response.
+    */
+   async disconnect(provider: WearableProvider): Promise<DisconnectResult> {
+-    const res = await api.delete<unknown>(`${BASE}/${provider}`);
++    const generation = currentAuthGeneration();
++    const sameSession = (data: unknown) => {
++      if (currentAuthGeneration() !== generation) throw new OnDeviceSessionChangedError();
++      return data;
++    };
++    const res = await api.delete<unknown>(`${BASE}/${provider}`, {
++      transformRequest: [sameSession, ...[api.defaults.transformRequest ?? []].flat()],
++    });
+     return disconnectResultSchema.parse(res.data);
+   },
+ };
+diff --git a/src/hooks/useWearableConnections.sessionEpoch.test.tsx b/src/hooks/useWearableConnections.sessionEpoch.test.tsx
+new file mode 100644
+index 0000000..8dd404b
+--- /dev/null
++++ b/src/hooks/useWearableConnections.sessionEpoch.test.tsx
+@@ -0,0 +1,245 @@
++/**
++ * B-HC5-119 (Sol B-362-2, B-362-6): Disconnect against account switches and newer Connects
++ * during every storage await. The four Sol119 cases are the AUD-SOL-H46-119 probe (run
++ * 37229474471) unchanged; the rest pin the error class, the newer connection's progress and
++ * another account's grant. Only the network and native edges are doubles.
++ */
++import React from 'react';
++import { Platform } from 'react-native';
++import AsyncStorage from '@react-native-async-storage/async-storage';
++import { act, renderHook, waitFor } from '@testing-library/react-native';
++import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
++
++jest.mock('expo-constants', () => ({
++  __esModule: true,
++  default: { expoConfig: { extra: { healthConnectEnabled: true } } },
++}));
++jest.mock('../utils/logger', () => ({ logger: { warn: jest.fn(), log: jest.fn(), error: jest.fn() } }));
++let mockSignedIn: string | null = 'user-a';
++jest.mock('../lib/userCache', () => ({
++  readUserCache: jest.fn(async () => (mockSignedIn == null ? null : { id: mockSignedIn })),
++}));
++const mockDisconnect = jest.fn();
++jest.mock('../api/wearablesConnectionsApi', () => ({
++  wearablesConnectionsApi: { disconnect: (...args: unknown[]) => mockDisconnect(...args) },
++}));
++const mockReadRecords = jest.fn();
++jest.mock('react-native-health-connect', () => ({
++  readRecords: (...args: unknown[]) => mockReadRecords(...args),
++}));
++
++import { useDisconnectProvider } from './useWearableConnections';
++import { isOnDeviceStop } from '../services/health/sessionFence';
++import { authEvents } from '../utils/authEvents';
++import {
++  getLocalAuthorization,
++  getSyncProgress,
++  emptyProgress,
++  recordLocalAuthorization,
++  retireOnDeviceSource,
++  setSyncProgress,
++} from '../services/health/onDeviceState';
++import { readUserCache } from '../lib/userCache';
++
++const scope = { userId: 'user-a', connectionId: 'conn-a', source: 'HEALTH_CONNECT' as const };
++const oldOS = Platform.OS;
++const clients: QueryClient[] = [];
++async function disconnectHook() {
++  const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
++  clients.push(qc);
++  const invalidate = jest.spyOn(qc, 'invalidateQueries');
++  const wrapper = ({ children }: { children: React.ReactNode }) => (
++    <QueryClientProvider client={qc}>{children}</QueryClientProvider>
++  );
++  const { result } = await renderHook(() => useDisconnectProvider(), { wrapper });
++  return { result, invalidate };
++}
++function deferred<T>() {
++  let resolve: (x: T) => void = () => undefined;
++  const promise = new Promise<T>((yes) => (resolve = yes));
++  return { resolve, promise };
++}
++beforeEach(async () => {
++  jest.clearAllMocks();
++  await AsyncStorage.clear();
++  mockSignedIn = 'user-a';
++  Object.defineProperty(Platform, 'OS', { configurable: true, value: 'android' });
++  mockDisconnect.mockReset().mockImplementation(async (provider: string) => ({ provider }));
++  mockReadRecords.mockReset();
++});
++afterEach(() => {
++  jest.restoreAllMocks();
++  clients.splice(0).forEach((qc) => qc.clear());
++  Object.defineProperty(Platform, 'OS', { configurable: true, value: oldOS });
++});
++
++describe('useDisconnectProvider: session epoch and grant generation', () => {
++  it.each([false, true])(
++    'Sol119 identity capture held, switch=%p: an obsolete action never sends a new-session Disconnect',
++    async (switchAccount) => {
++      await recordLocalAuthorization(scope);
++      const identity = deferred<{ id: string }>();
++      jest.mocked(readUserCache).mockImplementationOnce(() => identity.promise as never);
++      const { result } = await disconnectHook();
++      let pending: Promise<unknown> = Promise.resolve();
++      await act(async () => {
++        pending = result.current.mutateAsync('HEALTH_CONNECT').catch(() => undefined);
++      });
++      await waitFor(() => expect(readUserCache).toHaveBeenCalled());
++      expect(mockDisconnect).not.toHaveBeenCalled();
++      if (switchAccount) {
++        mockSignedIn = 'user-b';
++        authEvents.emit('login');
++        await recordLocalAuthorization({ ...scope, userId: 'user-b', connectionId: 'conn-b' });
++      }
++      await act(async () => {
++        identity.resolve({ id: 'user-a' });
++        await pending;
++      });
++      expect(mockDisconnect).toHaveBeenCalledTimes(switchAccount ? 0 : 1);
++      if (switchAccount) {
++        expect((await getLocalAuthorization('user-b', scope.source))?.connectionId).toBe('conn-b');
++      }
++    },
++  );
++
++  it.each([false, true])(
++    'Sol119 local grant capture held, switch=%p: an obsolete action never sends a new-session Disconnect',
++    async (switchAccount) => {
++      await recordLocalAuthorization(scope);
++      const old = await AsyncStorage.getItem('wearables_on_device:auth:HEALTH_CONNECT:user-a');
++      const stored = deferred<string | null>();
++      jest.spyOn(AsyncStorage, 'getItem').mockClear().mockImplementationOnce(() => stored.promise);
++      const { result } = await disconnectHook();
++      let pending: Promise<unknown> = Promise.resolve();
++      await act(async () => {
++        pending = result.current.mutateAsync('HEALTH_CONNECT').catch(() => undefined);
++      });
++      await waitFor(() => expect(AsyncStorage.getItem).toHaveBeenCalled());
++      expect(mockDisconnect).not.toHaveBeenCalled();
++      if (switchAccount) {
++        mockSignedIn = 'user-b';
++        authEvents.emit('login');
++        await recordLocalAuthorization({ ...scope, userId: 'user-b', connectionId: 'conn-b' });
++      }
++      await act(async () => {
++        stored.resolve(old);
++        await pending;
++      });
++      expect(mockDisconnect).toHaveBeenCalledTimes(switchAccount ? 0 : 1);
++    },
++  );
++
++  it.each([false, true])(
++    'Sol119 cleanup enumeration held, new Connect=%p: retirement cannot delete a newer consent',
++    async (reconnect) => {
++      const prior = await recordLocalAuthorization(scope, new Date('2026-10-01T00:00:00.000Z'));
++      const keys = await AsyncStorage.getAllKeys();
++      const enumeration = deferred<string[]>();
++      jest.spyOn(AsyncStorage, 'getAllKeys').mockClear().mockImplementationOnce(() => enumeration.promise);
++      const retiring = retireOnDeviceSource(scope.userId, scope.source, prior.grantedAt);
++      await waitFor(() => expect(AsyncStorage.getAllKeys).toHaveBeenCalled());
++      if (reconnect) {
++        await recordLocalAuthorization(
++          { ...scope, connectionId: 'conn-new' },
++          new Date('2026-10-02T00:00:00.000Z'),
++        );
++      }
++      enumeration.resolve(keys);
++      await retiring;
++      expect((await getLocalAuthorization(scope.userId, scope.source))?.connectionId ?? null).toBe(
++        reconnect ? 'conn-new' : null,
++      );
++    },
++  );
++
++  it.each([false, true])(
++    'Sol119 no-session cleanup held, switch=%p: late cleanup must not retire the next account',
++    async (switchAccount) => {
++      await recordLocalAuthorization({ ...scope, userId: 'user-b', connectionId: 'old-b' });
++      mockSignedIn = null;
++      const keys = await AsyncStorage.getAllKeys();
++      const enumeration = deferred<string[]>();
++      jest.spyOn(AsyncStorage, 'getAllKeys').mockClear().mockImplementationOnce(() => enumeration.promise);
++      const { result } = await disconnectHook();
++      await act(async () => {
++        await result.current.mutateAsync('HEALTH_CONNECT');
++      });
++      await waitFor(() => expect(AsyncStorage.getAllKeys).toHaveBeenCalled());
++      if (switchAccount) {
++        mockSignedIn = 'user-b';
++        authEvents.emit('login');
++        await recordLocalAuthorization({ ...scope, userId: 'user-b', connectionId: 'new-b' });
++      }
++      await act(async () => {
++        enumeration.resolve(keys);
++      });
++      await new Promise((resolve) => setTimeout(resolve, 0));
++      expect((await getLocalAuthorization('user-b', scope.source))?.connectionId ?? null).toBe(
++        switchAccount ? 'new-b' : null,
++      );
++    },
++  );
++
++  it('an account switch during identity capture rejects with the session-change class and sends nothing', async () => {
++    await recordLocalAuthorization(scope);
++    const identity = deferred<{ id: string }>();
++    jest.mocked(readUserCache).mockImplementationOnce(() => identity.promise as never);
++    const { result } = await disconnectHook();
++    let outcome: unknown = 'pending';
++    let pending: Promise<unknown> = Promise.resolve();
++    await act(async () => {
++      pending = result.current.mutateAsync('SAMSUNG_HEALTH').then(
++        () => (outcome = 'resolved'),
++        (err: unknown) => (outcome = err),
++      );
++    });
++    await waitFor(() => expect(readUserCache).toHaveBeenCalled());
++    mockSignedIn = 'user-b';
++    authEvents.emit('login');
++    await act(async () => {
++      identity.resolve({ id: 'user-a' });
++      await pending;
++    });
++    expect(isOnDeviceStop(outcome)).toBe(true);
++    expect(mockDisconnect).not.toHaveBeenCalled();
++    expect((await getLocalAuthorization('user-a', scope.source))?.connectionId).toBe('conn-a');
++  });
++
++  it('a newer Connect during enumeration keeps its grant and its import progress', async () => {
++    const prior = await recordLocalAuthorization(scope, new Date('2026-10-01T00:00:00.000Z'));
++    await setSyncProgress(scope, { ...emptyProgress(), completedThrough: { Steps: '2026-10-01T00:00:00.000Z' } });
++    const enumeration = deferred<string[]>();
++    jest.spyOn(AsyncStorage, 'getAllKeys').mockClear().mockImplementationOnce(() => enumeration.promise);
++    const retiring = retireOnDeviceSource(scope.userId, scope.source, prior.grantedAt);
++    await waitFor(() => expect(AsyncStorage.getAllKeys).toHaveBeenCalled());
++    const fresh = { ...scope, connectionId: 'conn-new' };
++    await recordLocalAuthorization(fresh, new Date('2026-10-02T00:00:00.000Z'));
++    await setSyncProgress(fresh, { ...emptyProgress(), completedThrough: { Steps: '2026-10-02T00:00:00.000Z' } });
++    enumeration.resolve(await AsyncStorage.getAllKeys());
++    await retiring;
++    expect((await getLocalAuthorization(scope.userId, scope.source))?.connectionId).toBe('conn-new');
++    expect((await getSyncProgress(fresh)).completedThrough.Steps).toBe('2026-10-02T00:00:00.000Z');
++  });
++
++  it('no-session Disconnect retires every older grant but keeps one written after it started', async () => {
++    await recordLocalAuthorization({ ...scope, userId: 'user-b', connectionId: 'old-b' });
++    await recordLocalAuthorization({ ...scope, userId: 'user-c', connectionId: 'old-c' });
++    mockSignedIn = null;
++    const enumeration = deferred<string[]>();
++    jest.spyOn(AsyncStorage, 'getAllKeys').mockClear().mockImplementationOnce(() => enumeration.promise);
++    const { result } = await disconnectHook();
++    await act(async () => {
++      await result.current.mutateAsync('HEALTH_CONNECT');
++    });
++    await waitFor(() => expect(AsyncStorage.getAllKeys).toHaveBeenCalled());
++    await recordLocalAuthorization({ ...scope, userId: 'user-b', connectionId: 'new-b' });
++    const keys = await AsyncStorage.getAllKeys();
++    await act(async () => {
++      enumeration.resolve(keys);
++    });
++    await new Promise((resolve) => setTimeout(resolve, 0));
++    expect((await getLocalAuthorization('user-b', scope.source))?.connectionId).toBe('new-b');
++    expect(await getLocalAuthorization('user-c', scope.source)).toBeNull();
++  });
++});
+diff --git a/src/hooks/useWearableConnections.transport.test.tsx b/src/hooks/useWearableConnections.transport.test.tsx
+new file mode 100644
+index 0000000..6d55c57
+--- /dev/null
++++ b/src/hooks/useWearableConnections.transport.test.tsx
+@@ -0,0 +1,146 @@
++/**
++ * B-HC5-119 (Sol B-362-6): real hook -> real provider API -> real Axios interceptor ->
++ * synthetic adapter. No network. The first case is the AUD-SOL-H46-119 transport probe (run
++ * 37229689090) unchanged; the second holds the interceptor's token read instead.
++ */
++import React from 'react';
++import { Platform } from 'react-native';
++import AsyncStorage from '@react-native-async-storage/async-storage';
++import { act, renderHook, waitFor } from '@testing-library/react-native';
++import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
++
++let mockUser = 'user-a';
++let mockToken = 'synthetic-session-a';
++jest.mock('../lib/userCache', () => ({
++  readUserCache: jest.fn(async () => ({ id: mockUser })),
++}));
++let mockTokenGate: Promise<void> | null = null;
++jest.mock('../services/secureStorage', () => ({
++  secureStorage: {
++    getItem: jest.fn(async (key: string) => {
++      if (key === 'supabase_token' && mockTokenGate) await mockTokenGate;
++      return key === 'supabase_token' ? mockToken : null;
++    }),
++    setItem: jest.fn(async () => undefined),
++    removeItem: jest.fn(async () => undefined),
++  },
++}));
++jest.mock('../utils/logger', () => ({
++  logger: { warn: jest.fn(), log: jest.fn(), error: jest.fn() },
++}));
++
++import api from '../services/api';
++import { secureStorage } from '../services/secureStorage';
++import { useDisconnectProvider } from './useWearableConnections';
++import { readUserCache } from '../lib/userCache';
++import { authEvents } from '../utils/authEvents';
++import { recordLocalAuthorization } from '../services/health/onDeviceState';
++import { isOnDeviceStop } from '../services/health/sessionFence';
++
++const oldOS = Platform.OS;
++const oldAdapter = api.defaults.adapter;
++afterEach(() => {
++  mockTokenGate = null;
++  api.defaults.adapter = oldAdapter;
++  Object.defineProperty(Platform, 'OS', { configurable: true, value: oldOS });
++});
++
++it.each([false, true])(
++  'Sol119 real transport switch=%p: A Disconnect cannot leave with B Authorization',
++  async (switchAccount) => {
++    jest.clearAllMocks();
++    await AsyncStorage.clear();
++    mockUser = 'user-a';
++    mockToken = 'synthetic-session-a';
++    Object.defineProperty(Platform, 'OS', { configurable: true, value: 'android' });
++    await recordLocalAuthorization({
++      userId: 'user-a', source: 'HEALTH_CONNECT', connectionId: 'conn-a',
++    });
++    const dispatched: { authorization: string; url?: string }[] = [];
++    api.defaults.adapter = async (config) => {
++      dispatched.push({ authorization: String(config.headers.get('Authorization')), url: config.url });
++      return {
++        status: 200, statusText: 'OK', config, headers: {},
++        data: { success: true, provider: 'HEALTH_CONNECT' },
++      };
++    };
++    let release: (value: { id: string }) => void = () => undefined;
++    jest.mocked(readUserCache).mockImplementationOnce(
++      () => new Promise((resolve) => { release = resolve as (value: { id: string }) => void; }),
++    );
++    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
++    const wrapper = ({ children }: { children: React.ReactNode }) => (
++      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
++    );
++    const view = await renderHook(() => useDisconnectProvider(), { wrapper });
++    let pending: Promise<unknown> = Promise.resolve();
++    await act(async () => {
++      pending = view.result.current.mutateAsync('HEALTH_CONNECT').catch(() => undefined);
++    });
++    await waitFor(() => expect(readUserCache).toHaveBeenCalledTimes(1));
++    expect(dispatched).toEqual([]);
++    if (switchAccount) {
++      mockUser = 'user-b';
++      mockToken = 'synthetic-session-b';
++      authEvents.emit('login');
++    }
++    await act(async () => {
++      release({ id: 'user-a' });
++      await pending;
++    });
++    await view.unmount();
++    qc.clear();
++    expect(dispatched).toEqual(switchAccount ? [] : [{
++      authorization: 'Bearer synthetic-session-a',
++      url: '/v1/wearables/connections/HEALTH_CONNECT',
++    }]);
++  },
++);
++
++it.each([false, true])(
++  'B-HC5-119 token attachment held, switch=%p: the request leaves only for the session it started in',
++  async (switchAccount) => {
++    jest.clearAllMocks();
++    await AsyncStorage.clear();
++    mockUser = 'user-a';
++    mockToken = 'synthetic-session-a';
++    Object.defineProperty(Platform, 'OS', { configurable: true, value: 'android' });
++    const dispatched: string[] = [];
++    api.defaults.adapter = async (config) => {
++      dispatched.push(String(config.headers.get('Authorization')));
++      return {
++        status: 200, statusText: 'OK', config, headers: {},
++        data: { success: true, provider: 'OURA' },
++      };
++    };
++    let openGate: () => void = () => undefined;
++    mockTokenGate = new Promise((resolve) => { openGate = resolve; });
++    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
++    const wrapper = ({ children }: { children: React.ReactNode }) => (
++      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
++    );
++    const view = await renderHook(() => useDisconnectProvider(), { wrapper });
++    let outcome: unknown = 'pending';
++    let pending: Promise<unknown> = Promise.resolve();
++    await act(async () => {
++      pending = view.result.current.mutateAsync('OURA').then(
++        () => (outcome = 'resolved'),
++        (err: unknown) => (outcome = err),
++      );
++    });
++    await waitFor(() => expect(jest.mocked(secureStorage.getItem)).toHaveBeenCalledWith('supabase_token'));
++    if (switchAccount) {
++      mockUser = 'user-b';
++      mockToken = 'synthetic-session-b';
++      authEvents.emit('login');
++    }
++    await act(async () => {
++      openGate();
++      await pending;
++    });
++    await view.unmount();
++    qc.clear();
++    expect(dispatched).toEqual(switchAccount ? [] : ['Bearer synthetic-session-a']);
++    expect(switchAccount ? isOnDeviceStop(outcome) : outcome).toBe(switchAccount ? true : 'resolved');
++  },
++);
+diff --git a/src/hooks/useWearableConnections.ts b/src/hooks/useWearableConnections.ts
+index 53d78f9..a941a43 100644
+--- a/src/hooks/useWearableConnections.ts
++++ b/src/hooks/useWearableConnections.ts
+@@ -22,12 +22,13 @@ import { WEARABLE_SAMPLES_ROOT_KEY } from './useWearableSamples';
+ import { Platform } from 'react-native';
+ import {
+   getLocalAuthorization,
++  localAuthorizationSeq,
+   retireOnDeviceSource,
+-  retireOnDeviceState,
+   type OnDeviceSource,
+ } from '../services/health/onDeviceState';
+ import {
+   currentAuthGeneration,
++  OnDeviceSessionChangedError,
+   readSignedInUserId,
+   stopOnDeviceHealthWork,
+ } from '../services/health/sessionFence';
+@@ -129,18 +130,22 @@ function phoneSource(): OnDeviceSource | null {
+  *
+  * On-device sources (A-317-1 / B-317-1) also retire this phone's local
+  * authorization and progress, so nothing is read again until Connect:
+- * - Sol B-362-2: the person and auth generation are captured before the
+- *   first await. Cleanup removes only that person's records, and only while
+- *   the authorization seen at the start is still the stored one. A response
+- *   that lands after a sign-out or account switch refetches and reports
+- *   nothing for the next person.
++ * - Sol B-362-6: the auth generation is captured before the first await and
++ *   re-checked after each one; when it moved, nothing is sent (the error is
++ *   {@link OnDeviceSessionChangedError}). The provider API checks it again
++ *   after the token is attached, immediately before the request leaves.
++ * - Sol B-362-2: cleanup removes only the originating person's records, only
++ *   while the authorization seen at the start is still the stored one, and
++ *   never a grant written after the Disconnect started. A response that lands
++ *   after a sign-out or account switch retires the originating person's
++ *   records only, invalidates nothing and reports nothing for the next person.
+  * - Sol B-362-3 / C-362-3: on a current success for this phone's source,
+  *   every running on-device read stops synchronously, before any cleanup
+  *   await: no further native page, ingest request or progress write.
+  * - Sol B-362-1 / C-362-1: a failed cleanup logs a fixed class only.
+  * - Sol H6 probe: when the person is unknown (no readable session cache), a
+  *   current Disconnect retires the source for every account on this phone,
+- *   so Disconnect still stops reading.
++ *   except a grant written after it started, so Disconnect still stops reading.
+  */
+ export function useDisconnectProvider() {
+   const qc = useQueryClient();
+@@ -148,15 +153,21 @@ export function useDisconnectProvider() {
+     mutationFn: async (requested) => {
+       const provider = connectionProviderFor(requested);
+       const generation = currentAuthGeneration();
++      const since = localAuthorizationSeq();
++      const assertSession = () => {
++        if (currentAuthGeneration() !== generation) throw new OnDeviceSessionChangedError();
++      };
+       const source: OnDeviceSource | null =
+         provider === 'APPLE_HEALTHKIT' || provider === 'HEALTH_CONNECT' ? provider : null;
+       const userId = source != null ? await readSignedInUserId() : null;
++      assertSession();
+       const grant =
+         userId != null && source != null ? await getLocalAuthorization(userId, source) : null;
++      assertSession();
+       const result = await wearablesConnectionsApi.disconnect(provider);
+       const retireOwn = () =>
+         userId != null && source != null
+-          ? retireOnDeviceSource(userId, source, grant?.grantedAt ?? null)
++          ? retireOnDeviceSource(userId, source, grant?.grantedAt ?? null, since)
+           : Promise.resolve();
+       if (currentAuthGeneration() !== generation) {
+         // Stale: only the originating person's own records are retired.
+@@ -166,7 +177,9 @@ export function useDisconnectProvider() {
+       if (source != null && source === phoneSource()) stopOnDeviceHealthWork();
+       const live = currentAuthGeneration(); // the stop above moves it
+       const retire = () =>
+-        source != null && userId == null ? retireOnDeviceState(source) : retireOwn();
++        source != null && userId == null
++          ? retireOnDeviceSource(null, source, null, since)
++          : retireOwn();
+       void retire()
+         .catch((err: unknown) => {
+           if (currentAuthGeneration() !== live) return;
+diff --git a/src/screens/client/wearables/ConnectionsScreen.tsx b/src/screens/client/wearables/ConnectionsScreen.tsx
+index e7d7ce4..189cddc 100644
+--- a/src/screens/client/wearables/ConnectionsScreen.tsx
++++ b/src/screens/client/wearables/ConnectionsScreen.tsx
+@@ -55,6 +55,7 @@ import {
+ import { notSyncingHereCopy } from './onDeviceCopy';
+ import DisconnectConfirmDialog from './DisconnectConfirmDialog';
+ import { disconnectFailureMessage } from './disconnectCopy';
++import { isOnDeviceStop } from '../../../services/health/sessionFence';
+ 
+ // ─── Status presentation ──────────────────────────────────────────────────────
+ 
+@@ -354,6 +355,11 @@ export default function ConnectionsScreen() {
+         setConfirmProvider(null);
+       },
+       onError: (err: unknown) => {
++        // Sol B-362-6: the account changed first and nothing was sent; nothing to report.
++        if (isOnDeviceStop(err)) {
++          setConfirmProvider(null);
++          return;
++        }
+         const failure = disconnectFailureMessage(err, name);
+         if (failure.kind === 'already') {
+           setConfirmProvider(null);
+diff --git a/src/screens/client/wearables/__tests__/ConnectionsScreen.test.tsx b/src/screens/client/wearables/__tests__/ConnectionsScreen.test.tsx
+index 0ee8756..c90258c 100644
+--- a/src/screens/client/wearables/__tests__/ConnectionsScreen.test.tsx
++++ b/src/screens/client/wearables/__tests__/ConnectionsScreen.test.tsx
+@@ -66,6 +66,7 @@ import ConnectionsScreen, { buildRows } from '../ConnectionsScreen';
+ import { configFor, WEARABLE_PROVIDERS } from '../../../../api/wearablesConnectionsApi';
+ import { disconnectConfirmCopy } from '../disconnectCopy';
+ import { emptyImportMessage } from '../onDeviceCopy';
++import { OnDeviceSessionChangedError } from '../../../../services/health/sessionFence';
+ 
+ function connection(
+   provider: string,
+@@ -291,6 +292,17 @@ describe('ConnectionsScreen — disconnect confirm (C-317-4)', () => {
+       expect.objectContaining({ status: 500, code: 'internal_error', requestId: 'req12345-abcd' }),
+     );
+   });
++
++  it('Sol B-362-6: an account change before the request closes the dialog, with no copy or report', async () => {
++    mockDisconnectMutate.mockImplementation((_p: string, opts: { onError: (e: unknown) => void }) =>
++      opts.onError(new OnDeviceSessionChangedError()),
++    );
++    await openConfirm();
++    await fireEvent.press(screen.getByLabelText('Disconnect Oura now'));
++    expect(screen.queryByText('Disconnect Oura?')).toBeNull();
++    expect(screen.queryByText(/still connected/)).toBeNull();
++    expect(mockReportUnexpected).not.toHaveBeenCalled();
++  });
+ });
+ 
+ describe('ConnectionsScreen — loading + error states', () => {
+diff --git a/src/services/health/onDeviceState.ts b/src/services/health/onDeviceState.ts
+index b9d573e..c89410b 100644
+--- a/src/services/health/onDeviceState.ts
++++ b/src/services/health/onDeviceState.ts
+@@ -88,6 +88,20 @@ async function readJson(key: string): Promise<unknown> {
+   }
+ }
+ 
++/**
++ * Sol B-362-2: every local authorization written in this app run gets the
++ * next sequence number, set synchronously when the write starts. A Disconnect
++ * captures the sequence when it starts, and its retirement never removes a
++ * grant (or that person's progress) written after that point.
++ */
++let authWriteSeq = 0;
++const authWrittenAt = new Map<string, number>();
++
++/** The local authorization write sequence now (capture it before any await). */
++export function localAuthorizationSeq(): number {
++  return authWriteSeq;
++}
++
+ /** Record that the current user authorized this phone's source (Connect tap). */
+ export async function recordLocalAuthorization(
+   scope: OnDeviceScope,
+@@ -100,7 +114,10 @@ export async function recordLocalAuthorization(
+     connectionId: scope.connectionId,
+     grantedAt: now.toISOString(),
+   };
+-  await AsyncStorage.setItem(authKey(scope.userId, scope.source), JSON.stringify(record));
++  const key = authKey(scope.userId, scope.source);
++  authWriteSeq += 1; // before the await: a retirement already running sees it (Sol B-362-2)
++  authWrittenAt.set(key, authWriteSeq);
++  await AsyncStorage.setItem(key, JSON.stringify(record));
+   return record;
+ }
+ 
+@@ -149,22 +166,41 @@ export async function retireOnDeviceState(source?: OnDeviceSource): Promise<void
+ }
+ 
+ /**
+- * Disconnect cleanup for ONE person and source (Sol B-362-2): removes that
+- * person's local authorization and progress for `source`, never another
+- * account's. `grantedAt` is the authorization seen when the disconnect
+- * started (null for none): when a different one is stored now (a newer
+- * Connect), nothing is removed.
++ * Disconnect cleanup for `source` (Sol B-362-2): removes `userId`'s local
++ * authorization and progress, never another account's; with `userId` null
++ * (no readable session), every account's on this phone. `grantedAt` is the
++ * authorization seen when the disconnect started (null for none): when a
++ * different one is stored now, nothing is removed. `since` is
++ * {@link localAuthorizationSeq} at that start: a grant written after it, and
++ * that person's progress, are kept. The check and the removal run with no
++ * await between them, and storage applies writes in call order, so a newer
++ * Connect is never removed by an older Disconnect.
+  */
+ export async function retireOnDeviceSource(
+-  userId: string,
++  userId: string | null,
+   source: OnDeviceSource,
+   grantedAt: string | null,
++  since: number = authWriteSeq,
+ ): Promise<void> {
+-  const current = await getLocalAuthorization(userId, source);
+-  if ((current?.grantedAt ?? null) !== grantedAt) return;
+-  const progressPrefix = `${ON_DEVICE_STATE_PREFIX}progress:${source}:${userId}:`;
++  if (userId != null) {
++    const current = await getLocalAuthorization(userId, source);
++    if ((current?.grantedAt ?? null) !== grantedAt) return;
++  }
+   const keys = await AsyncStorage.getAllKeys();
+-  const doomed = keys.filter((k) => k === authKey(userId, source) || k.startsWith(progressPrefix));
++  const authPrefix = `${ON_DEVICE_STATE_PREFIX}auth:${source}:`;
++  const progressPrefix = `${ON_DEVICE_STATE_PREFIX}progress:${source}:`;
++  const ownerOf = (k: string): string | null => {
++    if (k.startsWith(authPrefix)) return k.slice(authPrefix.length);
++    if (!k.startsWith(progressPrefix)) return null;
++    const rest = k.slice(progressPrefix.length);
++    const cut = rest.lastIndexOf(':');
++    return cut > 0 ? rest.slice(0, cut) : null;
++  };
++  const doomed = keys.filter((k) => {
++    const owner = ownerOf(k);
++    if (owner == null || (userId != null && owner !== userId)) return false;
++    return (authWrittenAt.get(authKey(owner, source)) ?? 0) <= since;
++  });
+   if (doomed.length > 0) await AsyncStorage.removeMany(doomed);
+ }
+ 

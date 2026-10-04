@@ -1,0 +1,76 @@
+          `applySubscriptionUpdated: race-lost binding for purchase ${pending.id}`,
+        );
+        return { claimed: false, reason: 'race_lost' };
+      }
+      return this.applySubscriptionUpdated(event, tx, prefetched);
+    }
+
+    const pkg = await db.coachPackage.findUnique({
+      where: { id: purchase.package_id },
+    });
+
+    const status = this.normalizeSubscriptionStatus(sub.status);
+    const currentPeriodEnd = this.toDate(sub.current_period_end);
+    const canceledAt = this.toDate(sub.canceled_at);
+
+    const accessExpiresAt = this.computeAccessExpiry(
+      pkg,
+      purchase,
+      true,
+      currentPeriodEnd,
+    );
+
+    // B1 pricing-lock serialization (PR-18). This path can flip
+    // entitlement_active=true for a recurring purchase (active/trialing/
+    // past_due), so it must serialize against PackagesService.update()'s
+    // CoachPackage row lock. We take the same `SELECT id ... FOR UPDATE`
+    // before the update. See applyCheckoutCompleted for the full argument.
+    // When BillingService threads its outer tx through handle(event, tx) the
+    // lock + activation run on that tx (no nested $transaction); otherwise
+    // the helper opens its own short $transaction.
+    // B-680-1 — the deletion takes the same lock, and the decision is made
+    // on the purchase as it is under the lock, never on the earlier read.
+    const outcome = await this.activateUnderPackageLock(tx, purchase.package_id, async (client) => {
+      const fresh = (await this.lockPurchase(client, purchase.id)) ?? purchase;
+      if (STRIPE_ENDED_STATUSES.has(status)) {
+        await this.endSubscriptionPurchase(
+          fresh,
+          sub,
+          status === 'incomplete_expired' ? 'incomplete_expired' : 'canceled',
+          client,
+        );
+        return { skipped: 'subscription_ended' };
+      }
+      if (purchaseHasEnded(fresh)) return { skipped: 'subscription_already_ended' };
+      const entitled = subscriptionGrantsAccess(fresh, sub);
+      if (live && live.revision !== null && lifecycleRevision(fresh) !== live.revision) {
+        // Another delivery wrote the purchase after the Stripe read: a
+        // matching state needs no write, anything else is read again.
+        const same =
+          fresh.status === status &&
+          fresh.entitlement_active === entitled &&
+          !!fresh.cancel_at_period_end === !!sub.cancel_at_period_end;
+        if (same) return { skipped: 'subscription_unchanged' };
+        throw new WebhookRedeliverError(
+          `${event.type}: purchase=${fresh.id} changed during the Stripe read; redeliver`,
+        );
+      }
+      // Stripe never returns a subscription to incomplete: a late snapshot
+      // never revokes a paid or started plan.
+      if ((status === 'incomplete' || status === 'pending') && purchaseLeftIncomplete(fresh)) {
+        return { skipped: 'stale_incomplete_snapshot' };
+      }
+      const updated = await client.clientPurchase.update({
+        where: { id: fresh.id },
+        data: {
+          status,
+          entitlement_active: entitled,
+          cancel_at_period_end: !!sub.cancel_at_period_end,
+          current_period_end: currentPeriodEnd,
+          canceled_at: canceledAt,
+          access_expires_at: accessExpiresAt,
+          ...trialStartPatch(fresh, sub, entitled),
+          updated_at: nextVersion(fresh),
+        },
+      });
+      return { updated, firstGrant: entitled && !fresh.entitlement_active };

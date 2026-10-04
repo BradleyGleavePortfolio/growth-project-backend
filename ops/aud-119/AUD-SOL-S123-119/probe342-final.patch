@@ -1,0 +1,249 @@
+diff --git a/src/lib/__tests__/audSolP12117.paymentContract.test.ts b/src/lib/__tests__/audSolP12117.paymentContract.test.ts
+new file mode 100644
+index 0000000..596f85e
+--- /dev/null
++++ b/src/lib/__tests__/audSolP12117.paymentContract.test.ts
+@@ -0,0 +1,65 @@
++import {
++  describeBackendFailure,
++} from '../packagePayment';
++import { scrubEvent } from '../../services/sentryPrivacy';
++import { scrubEvent as scrubCredentials } from '../../services/sentryScrub';
++
++jest.mock('../../services/api', () => ({ __esModule: true, default: {} }));
++const mockCapture = jest.fn();
++jest.mock('../../services/sentry', () => ({
++  captureError: (...args: unknown[]) => mockCapture(...args),
++}));
++
++function failed(status: number, code: string) {
++  return { response: { status, data: { code, request_id: 'aabbccdd-1234' } } };
++}
++
++beforeEach(() => jest.clearAllMocks());
++
++describe('AUD-SOL-P12-117 P1 actual mapper / current contract', () => {
++  it.each(['PAYMENT_RETRY', 'STRIPE_CHECKOUT_ERROR', 'SUBSCRIPTION_SETUP_UNAVAILABLE'])(
++    '%s cannot erase backend uncertainty with a categorical no-charge claim',
++    (code) => {
++      // Current backend #679 @ 0e1cfde0 explicitly does NOT guarantee no charge
++      // for these machine codes (subscription-errors.ts B-679-6).
++      const n = describeBackendFailure(failed(503, code), 'subscription_intent', '1234abcd');
++      expect(n.message).not.toMatch(/nothing was charged|not charged|did not go through/i);
++      expect(n.message).toMatch(/check|confirm|Membership|plan/i);
++    },
++  );
++
++  it('an unknown 500 after a retry is not proof that an earlier confirmation did not commit', () => {
++    const n = describeBackendFailure(failed(500, 'INTERNAL'), 'subscription_intent', '1234abcd');
++    expect(n.message).not.toMatch(/nothing was charged|did not go through/i);
++    expect(n.support).toBe(true);
++    expect(n.reference).toBe('aabbccdd');
++  });
++
++  it.each([
++    ['PAYMENT_ALREADY_COMPLETE', /already|complete/i],
++    ['PAYMENT_CHECKOUT_CLOSED', /closed|checkout.*ended/i],
++    ['PAYMENT_REFUNDED_OR_IN_REVIEW', /refunded|review/i],
++  ])('%s has its specific current #661 replay disposition', (code, copy) => {
++    const n = describeBackendFailure(failed(409, code as string), 'payment_intent', '1234abcd');
++    expect(n.message).toMatch(copy as RegExp);
++    expect(n.message).not.toContain('The payment did not go through and nothing was charged');
++  });
++
++  it('optional diagnostic hardening: free-form unknown code cannot enter a scrubbed Sentry event', () => {
++    const marker = 'synthetic-person@example.invalid private coaching note';
++    describeBackendFailure(failed(500, marker), 'subscription_intent', '1234abcd');
++    const [err, extra] = mockCapture.mock.calls[0];
++    const event = scrubCredentials(scrubEvent({
++      exception: { values: [{ value: String(err.message) }] },
++      extra,
++    }));
++    expect(JSON.stringify(event)).not.toContain('synthetic-person');
++    expect(JSON.stringify(event)).not.toContain('private coaching note');
++  });
++
++  it('control: definitive decline-before-create account refusal stays specific', () => {
++    const n = describeBackendFailure(failed(409, 'COACH_NOT_CONNECTED'), 'subscription_intent', null);
++    expect(n.message).toContain('has not set up card payments');
++    expect(n.support).toBe(false);
++  });
++});
+diff --git a/src/lib/__tests__/audSolP12117.paymentTheme.test.tsx b/src/lib/__tests__/audSolP12117.paymentTheme.test.tsx
+new file mode 100644
+index 0000000..4808186
+--- /dev/null
++++ b/src/lib/__tests__/audSolP12117.paymentTheme.test.tsx
+@@ -0,0 +1,54 @@
++import React from 'react';
++import { StyleSheet } from 'react-native';
++import { fireEvent, render, waitFor } from '@testing-library/react-native';
++
++jest.mock('../../theme/ThemeProvider', () => {
++  const t = jest.requireActual('../../theme/tokens');
++  return { useTheme: () => ({ tokens: t.default, semanticColors: t.darkTokens, colorScheme: 'dark' }) };
++});
++jest.mock('../../storage/mmkv', () => ({
++  prefsStorage: { getStringAsync: jest.fn(async () => null), set: jest.fn(async () => undefined) },
++}));
++jest.mock('../../hooks/useCurrentUser', () => ({
++  useCurrentUser: () => ({ id: 'synthetic-client', role: 'student' }),
++}));
++jest.mock('../../services/api', () => ({
++  __esModule: true,
++  default: { get: jest.fn(async () => ({ data: { packages: [{
++    id: '11111111-2222-4333-8444-555555555555', name: 'Synthetic recurring',
++    amount_cents: 4900, currency: 'usd', billing_type: 'recurring', interval: 'month',
++  }] } })) },
++}));
++jest.mock('../../hooks/usePackagePurchase', () => ({
++  usePackagePurchase: () => ({
++    busy: false, state: { phase: 'idle' }, clearNotice: jest.fn(), start: jest.fn(),
++  }),
++}));
++jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => true) }));
++
++const Sheet: typeof import('../PackageSelectionSheet').default = require('../PackageSelectionSheet').default;
++
++function luminance(hex: string) {
++  const channels = [1, 3, 5].map((i) => {
++    const s = parseInt(hex.slice(i, i + 2), 16) / 255;
++    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
++  });
++  return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
++}
++
++it('AUD-SOL-P12-117: actual selected card must keep the newly added payment terms AA-readable in dark mode', async () => {
++  const r = await render(<Sheet visible onDismiss={jest.fn()} onPaymentSuccess={jest.fn()} />);
++  const id = 'package-card-11111111-2222-4333-8444-555555555555';
++  await waitFor(() => expect(r.getByTestId(id)).toBeTruthy());
++  await fireEvent.press(r.getByTestId(id));
++  const background = StyleSheet.flatten(r.getByTestId(id).props.style).backgroundColor;
++  const foreground = StyleSheet.flatten(r.getByTestId('plan-terms-first-charge').props.style).color;
++  const a = luminance(background);
++  const b = luminance(foreground);
++  const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
++  // Body-sized first-charge / renewal consent text must be >= 4.5:1.
++  expect({ foreground, background, ratio }).toEqual(expect.objectContaining({
++    ratio: expect.any(Number),
++  }));
++  expect(ratio).toBeGreaterThanOrEqual(4.5);
++});
+diff --git a/src/lib/__tests__/audSolS12119.replayRefusal.test.ts b/src/lib/__tests__/audSolS12119.replayRefusal.test.ts
+new file mode 100644
+index 0000000..916cb8e
+--- /dev/null
++++ b/src/lib/__tests__/audSolS12119.replayRefusal.test.ts
+@@ -0,0 +1,43 @@
++/**
++ * AUD-SOL-S12-119: current-request refusal cannot prove the result of an
++ * earlier native confirmation. The production backend checks package
++ * availability before replay lookup (checkout.service.ts:465-508).
++ */
++import { describeBackendFailure, PACKAGE_PAYMENT_COPY } from '../packagePayment';
++jest.mock('../../services/api', () => ({ __esModule: true, default: {} }));
++jest.mock('../../services/sentry', () => ({ captureError: jest.fn() }));
++
++const unpaidClaim = /nothing was charged|not charged|did not go through/i;
++describe('AUD-SOL-S12-119 refusal after an unresolved payment', () => {
++  it('an archived package refusal says nothing about the earlier same-key charge', () => {
++    const n = describeBackendFailure(
++      { response: { status: 404, data: { error: 'PACKAGE_NOT_FOUND', request_id: 'abc01234-5678' } } },
++      'payment_intent', 'def01234',
++    );
++    expect(n.message).toMatch(/no longer offered/i);
++    expect(n.message).not.toMatch(unpaidClaim);
++  });
++
++  it('share-link package availability also cannot prove an earlier attempt unpaid', () => {
++    const n = describeBackendFailure(
++      { response: { status: 404, data: { error: 'PACKAGE_NOT_FOUND' } } },
++      'payment_intent', 'def01234', { surface: 'share_link' },
++    );
++    expect(n.message).not.toMatch(unpaidClaim);
++  });
++
++  it('control: unknown transport keeps the repaired uncertainty and reference', () => {
++    const n = describeBackendFailure(new Error('Synthetic missing response'), 'payment_intent', 'def01234');
++    expect(n.message).toBe(PACKAGE_PAYMENT_COPY.noAnswer('def01234'));
++    expect(n).toEqual(expect.objectContaining({ support: true, openPlan: true, reference: 'def01234' }));
++    expect(n.retireKey).toBeUndefined();
++  });
++
++  it('control: authoritative completed replay remains completed, not unpaid', () => {
++    const n = describeBackendFailure(
++      { response: { status: 409, data: { error: 'PAYMENT_ALREADY_COMPLETE' } } }, 'payment_intent', 'def01234',
++    );
++    expect(n.completed).toBe(true);
++    expect(n.message).toBe(PACKAGE_PAYMENT_COPY.alreadyComplete);
++  });
++});
+diff --git a/src/lib/__tests__/audSolSh118.minorUnits.test.ts b/src/lib/__tests__/audSolSh118.minorUnits.test.ts
+new file mode 100644
+index 0000000..5b8408b
+--- /dev/null
++++ b/src/lib/__tests__/audSolSh118.minorUnits.test.ts
+@@ -0,0 +1,28 @@
++import { money, planTerms, purchasableFromCoachPackage } from '../planTerms';
++
++function numeric(text: string) {
++  return Number(text.replace(/[^\d.-]/g, ''));
++}
++
++describe('AUD-SOL-SH-118 package terms use Stripe presentment minor units', () => {
++  it('JPY 4900 minor units are 4900 yen, not 49 yen', () => {
++    // Backend accepts a three-letter currency and sends the stored amount
++    // unchanged as Stripe's unit_amount/amount.
++    const p = purchasableFromCoachPackage({
++      id: '11111111-2222-4333-8444-555555555555',
++      name: 'Synthetic yen plan', billing_type: 'recurring',
++      amount_cents: 4900, currency: 'jpy', interval: 'month',
++    });
++    expect(p).not.toBeNull();
++    expect(numeric(money(p!.amountCents, p!.currency))).toBe(4900);
++    expect(planTerms(p!).cta).toContain(money(4900, 'jpy'));
++  });
++
++  it('KWD 4900 minor units are 4.900 dinars, not 49 dinars', () => {
++    expect(numeric(money(4900, 'kwd'))).toBe(4.9);
++  });
++
++  it('control: USD 4900 minor units remain 49 dollars', () => {
++    expect(numeric(money(4900, 'usd'))).toBe(49);
++  });
++});
+diff --git a/src/lib/__tests__/audSolSh118.transportUnknown.test.ts b/src/lib/__tests__/audSolSh118.transportUnknown.test.ts
+new file mode 100644
+index 0000000..1706105
+--- /dev/null
++++ b/src/lib/__tests__/audSolSh118.transportUnknown.test.ts
+@@ -0,0 +1,29 @@
++import { describeBackendFailure } from '../packagePayment';
++
++jest.mock('../../services/api', () => ({ __esModule: true, default: {} }));
++jest.mock('../../services/sentry', () => ({ captureError: jest.fn() }));
++
++describe('AUD-SOL-SH-118 B-342-1 remaining uncoded transport uncertainty', () => {
++  it.each(['payment_intent', 'subscription_intent'] as const)(
++    '%s timeout on a replay cannot prove the prior payment was unpaid',
++    (step) => {
++      const error = Object.assign(new Error('Synthetic request timeout'), {
++        code: 'ECONNABORTED',
++        request: {},
++      });
++      const n = describeBackendFailure(error, step, '1234abcd');
++      expect(n.message).not.toMatch(/nothing was charged|not charged|did not go through/i);
++      expect(n.message).toMatch(/check|confirm|Membership|plan/i);
++    },
++  );
++
++  it('control: the missing production subscription route remains specific', () => {
++    const n = describeBackendFailure({
++      response: {
++        status: 404,
++        data: { error: 'Not Found', message: 'Cannot POST /v1/checkout/subscription-intent' },
++      },
++    }, 'subscription_intent', '1234abcd');
++    expect(n.cause).toBe('renewing_unavailable');
++  });
++});

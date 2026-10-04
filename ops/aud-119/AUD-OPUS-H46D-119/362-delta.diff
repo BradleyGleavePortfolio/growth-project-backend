@@ -1,0 +1,255 @@
+diff --git a/src/api/wearablesConnectionsApi.test.ts b/src/api/wearablesConnectionsApi.test.ts
+index da19bee..28d0e33 100644
+--- a/src/api/wearablesConnectionsApi.test.ts
++++ b/src/api/wearablesConnectionsApi.test.ts
+@@ -30,6 +30,7 @@ jest.mock('../services/api', () => ({
+     get: jest.fn(),
+     post: jest.fn(),
+     delete: jest.fn(),
++    defaults: { transformRequest: [] },
+   },
+ }));
+ 
+@@ -163,7 +164,10 @@ describe('wearablesConnectionsApi.disconnect', () => {
+     const res = await wearablesConnectionsApi.disconnect('OURA');
+ 
+     expect(api.delete).toHaveBeenCalledTimes(1);
+-    expect(api.delete).toHaveBeenCalledWith('/v1/wearables/connections/OURA');
++    // Sol B-362-6: the session fence rides on the request (B-HC5-119 tests in H5 cover it).
++    expect(api.delete).toHaveBeenCalledWith('/v1/wearables/connections/OURA', {
++      transformRequest: [expect.any(Function)],
++    });
+     expect(res).toEqual({ success: true, provider: 'OURA' });
+   });
+ 
+diff --git a/src/api/wearablesConnectionsApi.ts b/src/api/wearablesConnectionsApi.ts
+index cdb2827..c60cd6a 100644
+--- a/src/api/wearablesConnectionsApi.ts
++++ b/src/api/wearablesConnectionsApi.ts
+@@ -36,6 +36,7 @@
+ 
+ import { z } from 'zod';
+ import api from '../services/api';
++import { currentAuthGeneration, OnDeviceSessionChangedError } from '../services/health/sessionFence';
+ 
+ // ─── Provider enum (mirror of backend `WearableProvider`) ────────────────────
+ 
+@@ -369,10 +370,22 @@ export const wearablesConnectionsApi = {
+    * Soft-disconnect the caller's connection for a provider. Idempotent from the
+    * UI's perspective: a 404 (no connection) is surfaced as a thrown error so
+    * the caller never mistakes a no-op for success.
++   *
++   * Sol B-362-6: the request leaves only for the session it started in. The
++   * fence runs after the auth interceptor attached the token, synchronously
++   * before dispatch (also on a 401 retry); after any auth event nothing is sent.
++   * @throws OnDeviceSessionChangedError when the session changed first.
+    * @throws ZodError on a drifted response.
+    */
+   async disconnect(provider: WearableProvider): Promise<DisconnectResult> {
+-    const res = await api.delete<unknown>(`${BASE}/${provider}`);
++    const generation = currentAuthGeneration();
++    const sameSession = (data: unknown) => {
++      if (currentAuthGeneration() !== generation) throw new OnDeviceSessionChangedError();
++      return data;
++    };
++    const res = await api.delete<unknown>(`${BASE}/${provider}`, {
++      transformRequest: [sameSession, ...[api.defaults.transformRequest ?? []].flat()],
++    });
+     return disconnectResultSchema.parse(res.data);
+   },
+ };
+diff --git a/src/hooks/useWearableConnections.ts b/src/hooks/useWearableConnections.ts
+index 53d78f9..a941a43 100644
+--- a/src/hooks/useWearableConnections.ts
++++ b/src/hooks/useWearableConnections.ts
+@@ -22,12 +22,13 @@ import { WEARABLE_SAMPLES_ROOT_KEY } from './useWearableSamples';
+ import { Platform } from 'react-native';
+ import {
+   getLocalAuthorization,
++  localAuthorizationSeq,
+   retireOnDeviceSource,
+-  retireOnDeviceState,
+   type OnDeviceSource,
+ } from '../services/health/onDeviceState';
+ import {
+   currentAuthGeneration,
++  OnDeviceSessionChangedError,
+   readSignedInUserId,
+   stopOnDeviceHealthWork,
+ } from '../services/health/sessionFence';
+@@ -129,18 +130,22 @@ function phoneSource(): OnDeviceSource | null {
+  *
+  * On-device sources (A-317-1 / B-317-1) also retire this phone's local
+  * authorization and progress, so nothing is read again until Connect:
+- * - Sol B-362-2: the person and auth generation are captured before the
+- *   first await. Cleanup removes only that person's records, and only while
+- *   the authorization seen at the start is still the stored one. A response
+- *   that lands after a sign-out or account switch refetches and reports
+- *   nothing for the next person.
++ * - Sol B-362-6: the auth generation is captured before the first await and
++ *   re-checked after each one; when it moved, nothing is sent (the error is
++ *   {@link OnDeviceSessionChangedError}). The provider API checks it again
++ *   after the token is attached, immediately before the request leaves.
++ * - Sol B-362-2: cleanup removes only the originating person's records, only
++ *   while the authorization seen at the start is still the stored one, and
++ *   never a grant written after the Disconnect started. A response that lands
++ *   after a sign-out or account switch retires the originating person's
++ *   records only, invalidates nothing and reports nothing for the next person.
+  * - Sol B-362-3 / C-362-3: on a current success for this phone's source,
+  *   every running on-device read stops synchronously, before any cleanup
+  *   await: no further native page, ingest request or progress write.
+  * - Sol B-362-1 / C-362-1: a failed cleanup logs a fixed class only.
+  * - Sol H6 probe: when the person is unknown (no readable session cache), a
+  *   current Disconnect retires the source for every account on this phone,
+- *   so Disconnect still stops reading.
++ *   except a grant written after it started, so Disconnect still stops reading.
+  */
+ export function useDisconnectProvider() {
+   const qc = useQueryClient();
+@@ -148,15 +153,21 @@ export function useDisconnectProvider() {
+     mutationFn: async (requested) => {
+       const provider = connectionProviderFor(requested);
+       const generation = currentAuthGeneration();
++      const since = localAuthorizationSeq();
++      const assertSession = () => {
++        if (currentAuthGeneration() !== generation) throw new OnDeviceSessionChangedError();
++      };
+       const source: OnDeviceSource | null =
+         provider === 'APPLE_HEALTHKIT' || provider === 'HEALTH_CONNECT' ? provider : null;
+       const userId = source != null ? await readSignedInUserId() : null;
++      assertSession();
+       const grant =
+         userId != null && source != null ? await getLocalAuthorization(userId, source) : null;
++      assertSession();
+       const result = await wearablesConnectionsApi.disconnect(provider);
+       const retireOwn = () =>
+         userId != null && source != null
+-          ? retireOnDeviceSource(userId, source, grant?.grantedAt ?? null)
++          ? retireOnDeviceSource(userId, source, grant?.grantedAt ?? null, since)
+           : Promise.resolve();
+       if (currentAuthGeneration() !== generation) {
+         // Stale: only the originating person's own records are retired.
+@@ -166,7 +177,9 @@ export function useDisconnectProvider() {
+       if (source != null && source === phoneSource()) stopOnDeviceHealthWork();
+       const live = currentAuthGeneration(); // the stop above moves it
+       const retire = () =>
+-        source != null && userId == null ? retireOnDeviceState(source) : retireOwn();
++        source != null && userId == null
++          ? retireOnDeviceSource(null, source, null, since)
++          : retireOwn();
+       void retire()
+         .catch((err: unknown) => {
+           if (currentAuthGeneration() !== live) return;
+diff --git a/src/screens/client/wearables/ConnectionsScreen.tsx b/src/screens/client/wearables/ConnectionsScreen.tsx
+index e7d7ce4..189cddc 100644
+--- a/src/screens/client/wearables/ConnectionsScreen.tsx
++++ b/src/screens/client/wearables/ConnectionsScreen.tsx
+@@ -55,6 +55,7 @@ import {
+ import { notSyncingHereCopy } from './onDeviceCopy';
+ import DisconnectConfirmDialog from './DisconnectConfirmDialog';
+ import { disconnectFailureMessage } from './disconnectCopy';
++import { isOnDeviceStop } from '../../../services/health/sessionFence';
+ 
+ // ─── Status presentation ──────────────────────────────────────────────────────
+ 
+@@ -354,6 +355,11 @@ export default function ConnectionsScreen() {
+         setConfirmProvider(null);
+       },
+       onError: (err: unknown) => {
++        // Sol B-362-6: the account changed first and nothing was sent; nothing to report.
++        if (isOnDeviceStop(err)) {
++          setConfirmProvider(null);
++          return;
++        }
+         const failure = disconnectFailureMessage(err, name);
+         if (failure.kind === 'already') {
+           setConfirmProvider(null);
+diff --git a/src/services/health/onDeviceState.ts b/src/services/health/onDeviceState.ts
+index b9d573e..c89410b 100644
+--- a/src/services/health/onDeviceState.ts
++++ b/src/services/health/onDeviceState.ts
+@@ -88,6 +88,20 @@ async function readJson(key: string): Promise<unknown> {
+   }
+ }
+ 
++/**
++ * Sol B-362-2: every local authorization written in this app run gets the
++ * next sequence number, set synchronously when the write starts. A Disconnect
++ * captures the sequence when it starts, and its retirement never removes a
++ * grant (or that person's progress) written after that point.
++ */
++let authWriteSeq = 0;
++const authWrittenAt = new Map<string, number>();
++
++/** The local authorization write sequence now (capture it before any await). */
++export function localAuthorizationSeq(): number {
++  return authWriteSeq;
++}
++
+ /** Record that the current user authorized this phone's source (Connect tap). */
+ export async function recordLocalAuthorization(
+   scope: OnDeviceScope,
+@@ -100,7 +114,10 @@ export async function recordLocalAuthorization(
+     connectionId: scope.connectionId,
+     grantedAt: now.toISOString(),
+   };
+-  await AsyncStorage.setItem(authKey(scope.userId, scope.source), JSON.stringify(record));
++  const key = authKey(scope.userId, scope.source);
++  authWriteSeq += 1; // before the await: a retirement already running sees it (Sol B-362-2)
++  authWrittenAt.set(key, authWriteSeq);
++  await AsyncStorage.setItem(key, JSON.stringify(record));
+   return record;
+ }
+ 
+@@ -149,22 +166,41 @@ export async function retireOnDeviceState(source?: OnDeviceSource): Promise<void
+ }
+ 
+ /**
+- * Disconnect cleanup for ONE person and source (Sol B-362-2): removes that
+- * person's local authorization and progress for `source`, never another
+- * account's. `grantedAt` is the authorization seen when the disconnect
+- * started (null for none): when a different one is stored now (a newer
+- * Connect), nothing is removed.
++ * Disconnect cleanup for `source` (Sol B-362-2): removes `userId`'s local
++ * authorization and progress, never another account's; with `userId` null
++ * (no readable session), every account's on this phone. `grantedAt` is the
++ * authorization seen when the disconnect started (null for none): when a
++ * different one is stored now, nothing is removed. `since` is
++ * {@link localAuthorizationSeq} at that start: a grant written after it, and
++ * that person's progress, are kept. The check and the removal run with no
++ * await between them, and storage applies writes in call order, so a newer
++ * Connect is never removed by an older Disconnect.
+  */
+ export async function retireOnDeviceSource(
+-  userId: string,
++  userId: string | null,
+   source: OnDeviceSource,
+   grantedAt: string | null,
++  since: number = authWriteSeq,
+ ): Promise<void> {
+-  const current = await getLocalAuthorization(userId, source);
+-  if ((current?.grantedAt ?? null) !== grantedAt) return;
+-  const progressPrefix = `${ON_DEVICE_STATE_PREFIX}progress:${source}:${userId}:`;
++  if (userId != null) {
++    const current = await getLocalAuthorization(userId, source);
++    if ((current?.grantedAt ?? null) !== grantedAt) return;
++  }
+   const keys = await AsyncStorage.getAllKeys();
+-  const doomed = keys.filter((k) => k === authKey(userId, source) || k.startsWith(progressPrefix));
++  const authPrefix = `${ON_DEVICE_STATE_PREFIX}auth:${source}:`;
++  const progressPrefix = `${ON_DEVICE_STATE_PREFIX}progress:${source}:`;
++  const ownerOf = (k: string): string | null => {
++    if (k.startsWith(authPrefix)) return k.slice(authPrefix.length);
++    if (!k.startsWith(progressPrefix)) return null;
++    const rest = k.slice(progressPrefix.length);
++    const cut = rest.lastIndexOf(':');
++    return cut > 0 ? rest.slice(0, cut) : null;
++  };
++  const doomed = keys.filter((k) => {
++    const owner = ownerOf(k);
++    if (owner == null || (userId != null && owner !== userId)) return false;
++    return (authWrittenAt.get(authKey(owner, source)) ?? 0) <= since;
++  });
+   if (doomed.length > 0) await AsyncStorage.removeMany(doomed);
+ }
+ 

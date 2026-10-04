@@ -1,0 +1,7 @@
+The bundle contains these 2 refs:
+2f59f4938fa5a9db1fdb245f4cfef1e225924c3a refs/remotes/origin/audit/AUD-SOL-S3E-119/344-receipt
+1f1c7c8ef644076bb5e8c245494cc57bba7c0506 refs/remotes/origin/audit/AUD-SOL-S3E-119/344-receipt2
+The bundle requires this ref:
+88659e21806ace4fc0c883d624de1abc07413b6d 
+The bundle uses this hash algorithm: sha1
+/home/user/workspace/ops/aud-119/AUD-SOL-S3E-119/probes.bundle is okay

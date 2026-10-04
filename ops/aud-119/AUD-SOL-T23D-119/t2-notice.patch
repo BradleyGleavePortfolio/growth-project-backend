@@ -1,0 +1,35 @@
+diff --git a/src/packages/trials/trial-notice.service.ts b/src/packages/trials/trial-notice.service.ts
+index d5755e05..281a36e7 100644
+--- a/src/packages/trials/trial-notice.service.ts
++++ b/src/packages/trials/trial-notice.service.ts
+@@ -481,16 +481,23 @@ export class TrialNoticeService {
+    * B-672-3 — the truth one channel is sent on: the notice must describe the
+    * purchase's current started, unended trial (else it is retired) and the
+    * card state must be known (else it stays pending). null: send nothing.
+-   * B-TR3-118: the zone and the customer card are read first and the purchase
+-   * last, so no read of this preparation can outdate the purchase truth.
++   * B-TR4-119 (Sol B-672-3): the zone is read first; the purchase and the
++   * customer card then come from one REPEATABLE READ snapshot, so neither
++   * authority can outdate the other (a later commit is a post-admission change).
+    */
+   private async prepare(notice: PackageTrialNotice, clock: () => Date): Promise<Prepared | null> {
+     const zone = await this.noticeZone(notice.client_user_id);
+-    const customerCard = await this.customerHasDefaultCard(notice.client_user_id);
+-    const purchase = await this.prisma.clientPurchase.findUnique({
+-      where: { id: notice.purchase_id },
+-      select: DELIVERY_PURCHASE_SELECT,
+-    });
++    const [purchase, customerCard] = await this.prisma.$transaction(
++      async (tx) =>
++        [
++          await tx.clientPurchase.findUnique({
++            where: { id: notice.purchase_id },
++            select: DELIVERY_PURCHASE_SELECT,
++          }),
++          await this.customerHasDefaultCard(notice.client_user_id, tx),
++        ] as const,
++      { isolationLevel: 'RepeatableRead' },
++    );
+     const skip = trialNoticeSkipCode(notice, purchase, clock());
+     if (skip || !purchase) {
+       await this.settleSkipped(notice.id, skip ?? 'purchase_missing');

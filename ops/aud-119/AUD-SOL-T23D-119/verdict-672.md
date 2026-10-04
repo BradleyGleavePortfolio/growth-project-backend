@@ -1,0 +1,19 @@
+AUDIT GPT-6.1 Sol — growth-project-backend#672 @ 62c2c066a9347dcf16ad45d010f5434e85ae1a60 — VERDICT: APPROVE
+
+A/B/C = 0/0/1
+
+Agent 119 · AUD-SOL-T23D-119 · independent T4 delta audit, not a borrowed Opus verdict.
+
+**Prior Sol B-672-3 CLOSED.** Purchase and customer-default-card reads now use the same transaction client in one `RepeatableRead` snapshot; the complete +14/-7 delta and both channel admission callers were read. [Exact-head code](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/62c2c066a9347dcf16ad45d010f5434e85ae1a60/src/packages/trials/trial-notice.service.ts#L480-L528).
+
+All 18 retained Sol notice probes pass, including the customer-removal probe with its assertion narrowed from ambiguous `will be charged` to the affirmative `Your card will be charged`, plus the required correct no-card phrase; no product copy changed. [Independent exact-source replay, 20/20](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37234712578).
+Two additional frozen-transaction controls independently establish that the card read uses the same snapshot as the purchase on push and email, and a commit after that snapshot is a post-admission change; the next channel uses a fresh snapshot. [Frozen-snapshot controls](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37234712578).
+The builder's failing-before receipt is consistent with the prior exposed behavior, but #706's live fake alone is not proof of snapshot isolation. [Before proof](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37230366374).
+
+**C-672-1 — retained integration qualification (outside this delta).** `src/packages/packages.module.ts:49-68`: qualify #680 plus the complete trials stack with one reservation/release authority, native capability and typed trial parameters, unified webhook state, mobile #338's push-tap route, and configured `customer.subscription.trial_will_end`; do not deploy the inert middle piece alone. [Prior Sol qualification](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/672#issuecomment-5983682719).
+Other-lens optional follow-ups remain recorded in the audit report, not silently closed by this verdict. [Separate Opus follow-up evidence](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/672#issuecomment-5984213235).
+
+**G09 / boundary / CI.** No prior Sol APPROVE is reused: this is a risk-scoped delta against the prior fully reviewed REQUEST CHANGES head `2690c07c`, with retained behavioral proofs independently replayed and the changed snapshot logic deeply reviewed. [Prior Sol verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/672#issuecomment-5983682719), [Independent replay](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37234712578).
+Size is 2,968 changed lines, within the grandfathered 3,000 ceiling; 10 distinct applicable checks succeed at this exact head, `deploy-readiness-gate` is skipped, and main-only CodeQL/danger/banned-casts/SBOM remain operator landing gates. [Exact-head checks](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/672/checks).
+No heavy local work, production actions, or candidate source edits were performed; the probes are synthetic DB/transport proofs, not live PostgreSQL or real Stripe charge acceptance. [Independent one-job lane](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37234712578).
+Recommended default: retain the whole-stack-after-recurring landing order and integration/mobile/configuration gates; this piece's approval does not approve a later piece's unresolved money risk. [Standing stack contract](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/672#issuecomment-5984032484).

@@ -1,0 +1,25 @@
+diff --git a/src/services/health/__tests__/retireNativeOrder.sol119.test.ts b/src/services/health/__tests__/retireNativeOrder.sol119.test.ts
+index 8c7c8d9..1d77a4c 100644
+--- a/src/services/health/__tests__/retireNativeOrder.sol119.test.ts
++++ b/src/services/health/__tests__/retireNativeOrder.sol119.test.ts
+@@ -65,14 +65,16 @@ it.each([old.userId, null])(
+     const retiring = retireOnDeviceSource(userId, source, prior.grantedAt, since);
+     await invoked.promise;
+     // This write starts AFTER both the sequence test and the native remove call.
+-    await recordLocalAuthorization(fresh, new Date('2026-10-02T00:00:00.000Z'));
+-    await setSyncProgress(fresh, {
++    const authorizing = recordLocalAuthorization(fresh, new Date('2026-10-02T00:00:00.000Z'));
++    const progressing = setSyncProgress(fresh, {
+       ...emptyProgress(),
+       completedThrough: { Steps: '2026-10-02T00:00:00.000Z' },
+     });
+-    expect((await getLocalAuthorization(old.userId, source))?.connectionId).toBe(fresh.connectionId);
++    // Let any unqueued newer write commit first. Do NOT await it before opening
++    // the old gate: a correct application queue may intentionally delay it.
++    await new Promise((resolve) => setTimeout(resolve, 0));
+     nativeCommit.resolve();
+-    await retiring;
++    await Promise.all([retiring, authorizing, progressing]);
+     // A new grant cannot be revoked by cleanup belonging to the old Disconnect.
+     expect((await getLocalAuthorization(old.userId, source))?.connectionId).toBe(fresh.connectionId);
+     expect((await getSyncProgress(fresh)).completedThrough.Steps).toBe('2026-10-02T00:00:00.000Z');

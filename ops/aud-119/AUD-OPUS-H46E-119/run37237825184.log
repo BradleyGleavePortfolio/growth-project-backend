@@ -1,0 +1,717 @@
+targeted	Set up job	﻿2026-10-04T21:52:33.6119577Z Current runner version: '2.337.0'
+targeted	Set up job	2026-10-04T21:52:33.6156505Z ##[group]Runner Image Provisioner
+targeted	Set up job	2026-10-04T21:52:33.6158458Z Hosted Compute Agent
+targeted	Set up job	2026-10-04T21:52:33.6159618Z Version: 20260901.588
+targeted	Set up job	2026-10-04T21:52:33.6160882Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	Set up job	2026-10-04T21:52:33.6162511Z Build Date: 2026-09-01T19:56:44Z
+targeted	Set up job	2026-10-04T21:52:33.6163732Z Worker ID: {c47e4aca-70ca-4cbd-972e-848ea534ff9a}
+targeted	Set up job	2026-10-04T21:52:33.6164974Z Azure Region: eastus2
+targeted	Set up job	2026-10-04T21:52:33.6166066Z ##[endgroup]
+targeted	Set up job	2026-10-04T21:52:33.6169187Z ##[group]Operating System
+targeted	Set up job	2026-10-04T21:52:33.6170389Z Ubuntu
+targeted	Set up job	2026-10-04T21:52:33.6171311Z 24.04.5
+targeted	Set up job	2026-10-04T21:52:33.6172706Z LTS
+targeted	Set up job	2026-10-04T21:52:33.6173650Z ##[endgroup]
+targeted	Set up job	2026-10-04T21:52:33.6174661Z ##[group]Runner Image
+targeted	Set up job	2026-10-04T21:52:33.6175693Z Image: ubuntu-24.04
+targeted	Set up job	2026-10-04T21:52:33.6176694Z Version: 20260927.320.1
+targeted	Set up job	2026-10-04T21:52:33.6178505Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	Set up job	2026-10-04T21:52:33.6181493Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	Set up job	2026-10-04T21:52:33.6183492Z ##[endgroup]
+targeted	Set up job	2026-10-04T21:52:33.6185626Z ##[group]GITHUB_TOKEN Permissions
+targeted	Set up job	2026-10-04T21:52:33.6188414Z Contents: read
+targeted	Set up job	2026-10-04T21:52:33.6189513Z Metadata: read
+targeted	Set up job	2026-10-04T21:52:33.6190442Z Packages: read
+targeted	Set up job	2026-10-04T21:52:33.6191408Z ##[endgroup]
+targeted	Set up job	2026-10-04T21:52:33.6194544Z Secret source: Actions
+targeted	Set up job	2026-10-04T21:52:33.6196263Z Cache mode: write
+targeted	Set up job	2026-10-04T21:52:33.6197695Z Prepare workflow directory
+targeted	Set up job	2026-10-04T21:52:33.6687549Z Prepare all required actions
+targeted	Set up job	2026-10-04T21:52:33.6760057Z Getting action download info
+targeted	Set up job	2026-10-04T21:52:33.8305899Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	Set up job	2026-10-04T21:52:33.9231058Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	Set up job	2026-10-04T21:52:34.1505679Z Complete job name: targeted
+targeted	Run actions/checkout@v6	﻿2026-10-04T21:52:34.2267675Z ##[group]Run actions/checkout@v6
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.2268638Z with:
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.2269212Z   repository: BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.2273627Z   token: ***
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.2274083Z   ssh-strict: true
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.2274524Z   ssh-user: git
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.2274969Z   persist-credentials: true
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.2275445Z   clean: true
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.2275897Z   sparse-checkout-cone-mode: true
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.2276425Z   fetch-depth: 1
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.2276857Z   fetch-tags: false
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.2277304Z   show-progress: true
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.2277758Z   lfs: false
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.2278170Z   submodules: false
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.2278623Z   set-safe-directory: true
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.2279130Z   allow-unsafe-pr-checkout: false
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.2279921Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3288675Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3290592Z ##[group]Getting Git version info
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3291544Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3292950Z [command]/usr/bin/git version
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3416853Z git version 2.55.0
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3440489Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3454094Z Temporarily overriding HOME='/home/runner/work/_temp/c3321b98-e627-44c6-85b8-c392691753c3' before making global git config changes
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3456165Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3459255Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3507753Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3511499Z ##[group]Determining repository object format
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3514249Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3515008Z ##[group]Initializing the repository
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3518496Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3634165Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3635495Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3636485Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3637250Z hint: call:
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3637966Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3638794Z hint: 	git config --global init.defaultBranch <name>
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3639431Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3640022Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3640970Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3641979Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3642840Z hint: 	git branch -m <name>
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3643699Z hint:
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3644766Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3645968Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3648783Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3693149Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3694011Z ##[group]Disabling automatic garbage collection
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3696820Z [command]/usr/bin/git config --local gc.auto 0
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3724577Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3725701Z ##[group]Setting up auth
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3726315Z Removing SSH command configuration
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3732130Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.3761987Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.4107062Z Removing HTTP extra header
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.4113117Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.4145888Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.4352387Z Removing includeIf entries pointing to credentials config files
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.4357887Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.4387981Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.4608427Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-b735e02b-1409-4d52-9a2f-f5f60e038d19.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.4646321Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-b735e02b-1409-4d52-9a2f-f5f60e038d19.config
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.4677354Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-b735e02b-1409-4d52-9a2f-f5f60e038d19.config
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.4710548Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-b735e02b-1409-4d52-9a2f-f5f60e038d19.config
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.4741437Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-b735e02b-1409-4d52-9a2f-f5f60e038d19.config
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.4773633Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.4775069Z ##[group]Fetching the repository
+targeted	Run actions/checkout@v6	2026-10-04T21:52:34.4783632Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +22433aea920677a27108e516aa9614003740109e:refs/remotes/origin/audit/AUD-OPUS-H46E-119/364-probes
+targeted	Run actions/checkout@v6	2026-10-04T21:52:35.2122151Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-04T21:52:35.2126022Z  * [new ref]         22433aea920677a27108e516aa9614003740109e -> origin/audit/AUD-OPUS-H46E-119/364-probes
+targeted	Run actions/checkout@v6	2026-10-04T21:52:35.2132918Z [command]/usr/bin/git branch --list --remote origin/audit/AUD-OPUS-H46E-119/364-probes
+targeted	Run actions/checkout@v6	2026-10-04T21:52:35.2156996Z   origin/audit/AUD-OPUS-H46E-119/364-probes
+targeted	Run actions/checkout@v6	2026-10-04T21:52:35.2166701Z [command]/usr/bin/git rev-parse refs/remotes/origin/audit/AUD-OPUS-H46E-119/364-probes
+targeted	Run actions/checkout@v6	2026-10-04T21:52:35.2188042Z 22433aea920677a27108e516aa9614003740109e
+targeted	Run actions/checkout@v6	2026-10-04T21:52:35.2193465Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T21:52:35.2194855Z ##[group]Determining the checkout info
+targeted	Run actions/checkout@v6	2026-10-04T21:52:35.2196456Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T21:52:35.2197799Z [command]/usr/bin/git sparse-checkout disable
+targeted	Run actions/checkout@v6	2026-10-04T21:52:35.2246431Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	Run actions/checkout@v6	2026-10-04T21:52:35.2273409Z ##[group]Checking out the ref
+targeted	Run actions/checkout@v6	2026-10-04T21:52:35.2277106Z [command]/usr/bin/git checkout --progress --force -B audit/AUD-OPUS-H46E-119/364-probes refs/remotes/origin/audit/AUD-OPUS-H46E-119/364-probes
+targeted	Run actions/checkout@v6	2026-10-04T21:52:35.3324269Z Switched to a new branch 'audit/AUD-OPUS-H46E-119/364-probes'
+targeted	Run actions/checkout@v6	2026-10-04T21:52:35.3329549Z branch 'audit/AUD-OPUS-H46E-119/364-probes' set up to track 'origin/audit/AUD-OPUS-H46E-119/364-probes'.
+targeted	Run actions/checkout@v6	2026-10-04T21:52:35.3375925Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-04T21:52:35.3380324Z [command]/usr/bin/git log -1 --format=%H
+targeted	Run actions/checkout@v6	2026-10-04T21:52:35.3402901Z 22433aea920677a27108e516aa9614003740109e
+targeted	Run actions/setup-node@v6	﻿2026-10-04T21:52:35.3790501Z ##[group]Run actions/setup-node@v6
+targeted	Run actions/setup-node@v6	2026-10-04T21:52:35.3791944Z with:
+targeted	Run actions/setup-node@v6	2026-10-04T21:52:35.3792854Z   node-version: 22.13
+targeted	Run actions/setup-node@v6	2026-10-04T21:52:35.3793838Z   cache: npm
+targeted	Run actions/setup-node@v6	2026-10-04T21:52:35.3794754Z   check-latest: false
+targeted	Run actions/setup-node@v6	2026-10-04T21:52:35.3805345Z   token: ***
+targeted	Run actions/setup-node@v6	2026-10-04T21:52:35.3806319Z   package-manager-cache: true
+targeted	Run actions/setup-node@v6	2026-10-04T21:52:35.3807435Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T21:52:35.5263283Z Attempting to download 22.13...
+targeted	Run actions/setup-node@v6	2026-10-04T21:52:35.9093443Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+targeted	Run actions/setup-node@v6	2026-10-04T21:52:36.4171150Z Extracting ...
+targeted	Run actions/setup-node@v6	2026-10-04T21:52:36.4289999Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/b728f24b-e1b3-4864-957c-6cba101de79a -f /home/runner/work/_temp/169113ce-bdf8-4183-ae83-b33149d7b4e5
+targeted	Run actions/setup-node@v6	2026-10-04T21:52:37.5847181Z Adding to the cache ...
+targeted	Run actions/setup-node@v6	2026-10-04T21:52:40.1547993Z ##[group]Environment details
+targeted	Run actions/setup-node@v6	2026-10-04T21:52:40.3698772Z node: v22.13.1
+targeted	Run actions/setup-node@v6	2026-10-04T21:52:40.3699619Z npm: 10.9.2
+targeted	Run actions/setup-node@v6	2026-10-04T21:52:40.3699864Z yarn: 1.22.22
+targeted	Run actions/setup-node@v6	2026-10-04T21:52:40.3700394Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-04T21:52:40.3717718Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+targeted	Run actions/setup-node@v6	2026-10-04T21:52:40.4629662Z /home/runner/.npm
+targeted	Run actions/setup-node@v6	2026-10-04T21:52:40.5288473Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+targeted	Run actions/setup-node@v6	2026-10-04T21:52:41.5217737Z Received 241027159 of 241027159 (100.0%), 240.7 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-04T21:52:41.5218901Z Cache Size: ~230 MB (241027159 B)
+targeted	Run actions/setup-node@v6	2026-10-04T21:52:41.5273831Z [command]/usr/bin/tar -xf /home/runner/work/_temp/e6ea51a4-0bdf-40d2-8500-aa36e8ad73c7/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+targeted	Run actions/setup-node@v6	2026-10-04T21:52:42.2232303Z Cache restored successfully
+targeted	Run actions/setup-node@v6	2026-10-04T21:52:42.2343550Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+targeted	Run npm ci	﻿2026-10-04T21:52:42.2563360Z ##[group]Run npm ci
+targeted	Run npm ci	2026-10-04T21:52:42.2563697Z ^[[36;1mnpm ci^[[0m
+targeted	Run npm ci	2026-10-04T21:52:42.2830603Z shell: /usr/bin/bash -e {0}
+targeted	Run npm ci	2026-10-04T21:52:42.2830926Z ##[endgroup]
+targeted	Run npm ci	2026-10-04T21:52:47.3910495Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	Run npm ci	2026-10-04T21:52:47.6489842Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+targeted	Run npm ci	2026-10-04T21:52:47.6597861Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+targeted	Run npm ci	2026-10-04T21:52:47.6634622Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+targeted	Run npm ci	2026-10-04T21:52:47.7020207Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+targeted	Run npm ci	2026-10-04T21:52:47.8447274Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+targeted	Run npm ci	2026-10-04T21:52:47.8489732Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T21:52:47.8497036Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T21:52:47.8520421Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T21:52:47.8526039Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T21:52:47.8547359Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T21:52:47.8924261Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-04T21:52:47.9460503Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+targeted	Run npm ci	2026-10-04T21:52:48.4123655Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+targeted	Run npm ci	2026-10-04T21:52:49.1974469Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+targeted	Run npm ci	2026-10-04T21:52:52.7300405Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+targeted	Run npm ci	2026-10-04T21:53:43.1111221Z 
+targeted	Run npm ci	2026-10-04T21:53:43.1115210Z added 1108 packages, and audited 1109 packages in 1m
+targeted	Run npm ci	2026-10-04T21:53:43.1115765Z 
+targeted	Run npm ci	2026-10-04T21:53:43.1116094Z 187 packages are looking for funding
+targeted	Run npm ci	2026-10-04T21:53:43.1116689Z   run `npm fund` for details
+targeted	Run npm ci	2026-10-04T21:53:43.4875620Z 
+targeted	Run npm ci	2026-10-04T21:53:43.4876639Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+targeted	Run npm ci	2026-10-04T21:53:43.4877185Z 
+targeted	Run npm ci	2026-10-04T21:53:43.4877482Z To address issues that do not require attention, run:
+targeted	Run npm ci	2026-10-04T21:53:43.4877906Z   npm audit fix
+targeted	Run npm ci	2026-10-04T21:53:43.4878563Z 
+targeted	Run npm ci	2026-10-04T21:53:43.4878862Z To address all issues (including breaking changes), run:
+targeted	Run npm ci	2026-10-04T21:53:43.4879318Z   npm audit fix --force
+targeted	Run npm ci	2026-10-04T21:53:43.4879510Z 
+targeted	Run npm ci	2026-10-04T21:53:43.4879664Z Run `npm audit` for details.
+targeted	Targeted jest	﻿2026-10-04T21:53:43.6815043Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-04T21:53:43.6815438Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-04T21:53:43.6816020Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-04T21:53:43.6816510Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-04T21:53:43.6816879Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-04T21:53:43.6817148Z ^[[36;1mnpx jest --ci "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-04T21:53:43.6882550Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-04T21:53:43.6882922Z ##[endgroup]
+targeted	Targeted jest	2026-10-04T21:53:43.6990275Z specs: src/services/health/__tests__/onDeviceState.opus119e.test.ts src/services/health/__tests__/onDeviceState.test.ts src/services/health/__tests__/onDeviceSync.test.ts src/services/health/__tests__/onDeviceConnect.test.ts src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts src/services/__tests__/authActions.signOut.test.ts src/services/health/__tests__/hcPrivacyTemplate.opus119.test.ts src/services/health/__tests__/healthConnectRationale.opus118.test.ts src/hooks/useWearableConnections.opus119.test.tsx src/hooks/useWearableConnections.opus119d.test.tsx src/hooks/useWearableConnections.disconnect.test.tsx src/screens/client/wearables/__tests__/ConnectionsScreen.samsungRow.opus118.test.tsx src/screens/client/wearables/__tests__/ConnectionsScreen.emptyImport.probe.test.tsx src/screens/client/wearables/__tests__/WearablesShell.settingsReturn.probe.test.tsx src/services/health/__tests__/onDeviceState.serialQueue.test.ts src/services/health/__tests__/retireNativeOrder.sol119.test.ts src/hooks/useWearableConnections.sessionEpoch.test.tsx src/hooks/useWearableConnections.transport.test.tsx
+targeted	Targeted jest	2026-10-04T21:53:49.9056211Z PASS src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts
+targeted	Targeted jest	2026-10-04T21:53:50.1063491Z PASS src/hooks/useWearableConnections.sessionEpoch.test.tsx
+targeted	Targeted jest	2026-10-04T21:53:50.1290703Z   ● Console
+targeted	Targeted jest	2026-10-04T21:53:50.1291299Z 
+targeted	Targeted jest	2026-10-04T21:53:50.1292236Z     console.error
+targeted	Targeted jest	2026-10-04T21:53:50.1293421Z       An update to HookContainer inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-04T21:53:50.1294408Z       
+targeted	Targeted jest	2026-10-04T21:53:50.1304410Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-04T21:53:50.1305426Z       
+targeted	Targeted jest	2026-10-04T21:53:50.1306076Z       act(() => {
+targeted	Targeted jest	2026-10-04T21:53:50.1306860Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-04T21:53:50.1307404Z       });
+targeted	Targeted jest	2026-10-04T21:53:50.1307823Z       /* assert on the output */
+targeted	Targeted jest	2026-10-04T21:53:50.1308251Z       
+targeted	Targeted jest	2026-10-04T21:53:50.1309392Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-04T21:53:50.1310361Z 
+targeted	Targeted jest	2026-10-04T21:53:50.1310911Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-04T21:53:50.1312517Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T21:53:50.1314120Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-04T21:53:50.1315911Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T21:53:50.1317426Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+targeted	Targeted jest	2026-10-04T21:53:50.1318700Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+targeted	Targeted jest	2026-10-04T21:53:50.1319725Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:73:11
+targeted	Targeted jest	2026-10-04T21:53:50.1320652Z       at notifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:21:5)
+targeted	Targeted jest	2026-10-04T21:53:50.1321562Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:44:13
+targeted	Targeted jest	2026-10-04T21:53:50.1322514Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:50.1323257Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:43:25
+targeted	Targeted jest	2026-10-04T21:53:50.1324251Z       at batchNotifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:24:5)
+targeted	Targeted jest	2026-10-04T21:53:50.1325987Z       at Timeout._onTimeout (node_modules/@tanstack/query-core/src/notifyManager.ts:42:9)
+targeted	Targeted jest	2026-10-04T21:53:50.1326635Z 
+targeted	Targeted jest	2026-10-04T21:53:50.1326795Z     console.error
+targeted	Targeted jest	2026-10-04T21:53:50.1327456Z       An update to HookContainer inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-04T21:53:50.1328171Z       
+targeted	Targeted jest	2026-10-04T21:53:50.1328877Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-04T21:53:50.1329640Z       
+targeted	Targeted jest	2026-10-04T21:53:50.1329957Z       act(() => {
+targeted	Targeted jest	2026-10-04T21:53:50.1330402Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-04T21:53:50.1330900Z       });
+targeted	Targeted jest	2026-10-04T21:53:50.1331452Z       /* assert on the output */
+targeted	Targeted jest	2026-10-04T21:53:50.1332076Z       
+targeted	Targeted jest	2026-10-04T21:53:50.1333209Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-04T21:53:50.1334174Z 
+targeted	Targeted jest	2026-10-04T21:53:50.1334730Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-04T21:53:50.1336058Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T21:53:50.1337724Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-04T21:53:50.1339354Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T21:53:50.1340837Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+targeted	Targeted jest	2026-10-04T21:53:50.1342378Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+targeted	Targeted jest	2026-10-04T21:53:50.1343389Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:73:11
+targeted	Targeted jest	2026-10-04T21:53:50.1344399Z       at notifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:21:5)
+targeted	Targeted jest	2026-10-04T21:53:50.1345382Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:44:13
+targeted	Targeted jest	2026-10-04T21:53:50.1346137Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:50.1346902Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:43:25
+targeted	Targeted jest	2026-10-04T21:53:50.1347921Z       at batchNotifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:24:5)
+targeted	Targeted jest	2026-10-04T21:53:50.1349116Z       at Timeout._onTimeout (node_modules/@tanstack/query-core/src/notifyManager.ts:42:9)
+targeted	Targeted jest	2026-10-04T21:53:50.1349795Z 
+targeted	Targeted jest	2026-10-04T21:53:50.1349989Z     console.error
+targeted	Targeted jest	2026-10-04T21:53:50.1350668Z       An update to HookContainer inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-04T21:53:50.1351325Z       
+targeted	Targeted jest	2026-10-04T21:53:50.1352296Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-04T21:53:50.1353038Z       
+targeted	Targeted jest	2026-10-04T21:53:50.1353365Z       act(() => {
+targeted	Targeted jest	2026-10-04T21:53:50.1353808Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-04T21:53:50.1354320Z       });
+targeted	Targeted jest	2026-10-04T21:53:50.1354724Z       /* assert on the output */
+targeted	Targeted jest	2026-10-04T21:53:50.1355154Z       
+targeted	Targeted jest	2026-10-04T21:53:50.1356262Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-04T21:53:50.1357195Z 
+targeted	Targeted jest	2026-10-04T21:53:50.1357749Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-04T21:53:50.1359089Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T21:53:50.1360753Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-04T21:53:50.1362700Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T21:53:50.1364293Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+targeted	Targeted jest	2026-10-04T21:53:50.1365680Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+targeted	Targeted jest	2026-10-04T21:53:50.1367006Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:73:11
+targeted	Targeted jest	2026-10-04T21:53:50.1368220Z       at notifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:21:5)
+targeted	Targeted jest	2026-10-04T21:53:50.1369210Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:44:13
+targeted	Targeted jest	2026-10-04T21:53:50.1369974Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:50.1370737Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:43:25
+targeted	Targeted jest	2026-10-04T21:53:50.1372001Z       at batchNotifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:24:5)
+targeted	Targeted jest	2026-10-04T21:53:50.1373218Z       at Timeout._onTimeout (node_modules/@tanstack/query-core/src/notifyManager.ts:42:9)
+targeted	Targeted jest	2026-10-04T21:53:50.1373869Z 
+targeted	Targeted jest	2026-10-04T21:53:50.1374057Z     console.error
+targeted	Targeted jest	2026-10-04T21:53:50.1374758Z       An update to HookContainer inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-04T21:53:50.1375470Z       
+targeted	Targeted jest	2026-10-04T21:53:50.1376185Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-04T21:53:50.1376964Z       
+targeted	Targeted jest	2026-10-04T21:53:50.1377332Z       act(() => {
+targeted	Targeted jest	2026-10-04T21:53:50.1377786Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-04T21:53:50.1378279Z       });
+targeted	Targeted jest	2026-10-04T21:53:50.1378687Z       /* assert on the output */
+targeted	Targeted jest	2026-10-04T21:53:50.1379162Z       
+targeted	Targeted jest	2026-10-04T21:53:50.1380333Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-04T21:53:50.1381341Z 
+targeted	Targeted jest	2026-10-04T21:53:50.1382153Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-04T21:53:50.1383522Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T21:53:50.1385142Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-04T21:53:50.1386826Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T21:53:50.1388326Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+targeted	Targeted jest	2026-10-04T21:53:50.1389573Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+targeted	Targeted jest	2026-10-04T21:53:50.1390579Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:73:11
+targeted	Targeted jest	2026-10-04T21:53:50.1391514Z       at notifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:21:5)
+targeted	Targeted jest	2026-10-04T21:53:50.1392708Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:44:13
+targeted	Targeted jest	2026-10-04T21:53:50.1393435Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:50.1394172Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:43:25
+targeted	Targeted jest	2026-10-04T21:53:50.1395159Z       at batchNotifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:24:5)
+targeted	Targeted jest	2026-10-04T21:53:50.1396315Z       at Timeout._onTimeout (node_modules/@tanstack/query-core/src/notifyManager.ts:42:9)
+targeted	Targeted jest	2026-10-04T21:53:50.1396932Z 
+targeted	Targeted jest	2026-10-04T21:53:50.1397368Z PASS src/services/health/__tests__/onDeviceConnect.test.ts
+targeted	Targeted jest	2026-10-04T21:53:50.2293852Z PASS src/services/health/__tests__/onDeviceSync.test.ts
+targeted	Targeted jest	2026-10-04T21:53:50.4123528Z PASS src/services/health/__tests__/onDeviceState.opus119e.test.ts
+targeted	Targeted jest	2026-10-04T21:53:50.8330643Z PASS src/hooks/useWearableConnections.disconnect.test.tsx
+targeted	Targeted jest	2026-10-04T21:53:50.8382069Z   ● Console
+targeted	Targeted jest	2026-10-04T21:53:50.8382630Z 
+targeted	Targeted jest	2026-10-04T21:53:50.8383040Z     console.error
+targeted	Targeted jest	2026-10-04T21:53:50.8383948Z       An update to HookContainer inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-04T21:53:50.8384806Z       
+targeted	Targeted jest	2026-10-04T21:53:50.8385729Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-04T21:53:50.8386731Z       
+targeted	Targeted jest	2026-10-04T21:53:50.8387257Z       act(() => {
+targeted	Targeted jest	2026-10-04T21:53:50.8387894Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-04T21:53:50.8388568Z       });
+targeted	Targeted jest	2026-10-04T21:53:50.8389164Z       /* assert on the output */
+targeted	Targeted jest	2026-10-04T21:53:50.8389805Z       
+targeted	Targeted jest	2026-10-04T21:53:50.8391485Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-04T21:53:50.8393204Z 
+targeted	Targeted jest	2026-10-04T21:53:50.8393921Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-04T21:53:50.8395442Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T21:53:50.8397382Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-04T21:53:50.8399299Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T21:53:50.8401059Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+targeted	Targeted jest	2026-10-04T21:53:50.8402941Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+targeted	Targeted jest	2026-10-04T21:53:50.8404158Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:73:11
+targeted	Targeted jest	2026-10-04T21:53:50.8405357Z       at notifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:21:5)
+targeted	Targeted jest	2026-10-04T21:53:50.8406521Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:44:13
+targeted	Targeted jest	2026-10-04T21:53:50.8407403Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:50.8408305Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:43:25
+targeted	Targeted jest	2026-10-04T21:53:50.8409448Z       at batchNotifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:24:5)
+targeted	Targeted jest	2026-10-04T21:53:50.8410707Z       at Timeout._onTimeout (node_modules/@tanstack/query-core/src/notifyManager.ts:42:9)
+targeted	Targeted jest	2026-10-04T21:53:50.8411466Z 
+targeted	Targeted jest	2026-10-04T21:53:50.8412048Z     console.error
+targeted	Targeted jest	2026-10-04T21:53:50.8412950Z       An update to HookContainer inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-04T21:53:50.8413915Z       
+targeted	Targeted jest	2026-10-04T21:53:50.8414864Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-04T21:53:50.8415837Z       
+targeted	Targeted jest	2026-10-04T21:53:50.8416401Z       act(() => {
+targeted	Targeted jest	2026-10-04T21:53:50.8417087Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-04T21:53:50.8417777Z       });
+targeted	Targeted jest	2026-10-04T21:53:50.8418413Z       /* assert on the output */
+targeted	Targeted jest	2026-10-04T21:53:50.8419069Z       
+targeted	Targeted jest	2026-10-04T21:53:50.8420412Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-04T21:53:50.8421644Z 
+targeted	Targeted jest	2026-10-04T21:53:50.8432027Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-04T21:53:50.8433762Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T21:53:50.8463054Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-04T21:53:50.8493174Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T21:53:50.8503041Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+targeted	Targeted jest	2026-10-04T21:53:50.8504380Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+targeted	Targeted jest	2026-10-04T21:53:50.8505368Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:73:11
+targeted	Targeted jest	2026-10-04T21:53:50.8506351Z       at notifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:21:5)
+targeted	Targeted jest	2026-10-04T21:53:50.8507309Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:44:13
+targeted	Targeted jest	2026-10-04T21:53:50.8508025Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:50.8508778Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:43:25
+targeted	Targeted jest	2026-10-04T21:53:50.8509777Z       at batchNotifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:24:5)
+targeted	Targeted jest	2026-10-04T21:53:50.8510897Z       at Timeout._onTimeout (node_modules/@tanstack/query-core/src/notifyManager.ts:42:9)
+targeted	Targeted jest	2026-10-04T21:53:50.8511522Z 
+targeted	Targeted jest	2026-10-04T21:53:51.0059926Z PASS src/services/__tests__/authActions.signOut.test.ts
+targeted	Targeted jest	2026-10-04T21:53:51.0374208Z   ● Console
+targeted	Targeted jest	2026-10-04T21:53:51.0402334Z 
+targeted	Targeted jest	2026-10-04T21:53:51.0432367Z     console.warn
+targeted	Targeted jest	2026-10-04T21:53:51.0462900Z       [AuthActions] clearUserScopedKeys: storage sweep failed TypeError: storage.getAllKeys is not a function
+targeted	Targeted jest	2026-10-04T21:53:51.0464838Z           at getAllKeys (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:208:45)
+targeted	Targeted jest	2026-10-04T21:53:51.0492447Z           at Generator.next (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.0523254Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T21:53:51.0525616Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T21:53:51.0553264Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-04T21:53:51.0582452Z           at new Promise (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.0613162Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-04T21:53:51.0642889Z           at _loop (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:217:8)
+targeted	Targeted jest	2026-10-04T21:53:51.0644228Z           at _loop.next (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.0673012Z           at _loop (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:199:42)
+targeted	Targeted jest	2026-10-04T21:53:51.0697094Z           at Generator.next (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.0723172Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T21:53:51.0743317Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T21:53:51.0746069Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-04T21:53:51.0747292Z           at new Promise (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.0748583Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-04T21:53:51.0750299Z           at apply (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:240:2)
+targeted	Targeted jest	2026-10-04T21:53:51.0752121Z           at apply (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:195:42)
+targeted	Targeted jest	2026-10-04T21:53:51.0753823Z           at clearUserScopedKeys (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:402:7)
+targeted	Targeted jest	2026-10-04T21:53:51.0754949Z           at Generator.next (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.0756357Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T21:53:51.0758439Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T21:53:51.0759941Z           at processTicksAndRejections (node:internal/process/task_queues:105:5)
+targeted	Targeted jest	2026-10-04T21:53:51.0760528Z 
+targeted	Targeted jest	2026-10-04T21:53:51.0762209Z     ^[[0m ^[[90m 16 |^[[39m ^[[36mfunction^[[39m log(level^[[33m:^[[39m ^[[33mLogLevel^[[39m^[[33m,^[[39m context^[[33m:^[[39m string^[[33m,^[[39m ^[[33m...^[[39margs^[[33m:^[[39m unknown[]) {
+targeted	Targeted jest	2026-10-04T21:53:51.0800117Z      ^[[90m 17 |^[[39m   ^[[36mif^[[39m (__DEV__) {
+targeted	Targeted jest	2026-10-04T21:53:51.0823533Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 18 |^[[39m     console[level](^[[32m`[${context}]`^[[39m^[[33m,^[[39m ^[[33m...^[[39margs)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T21:53:51.0832720Z      ^[[90m    |^[[39m                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T21:53:51.0833540Z      ^[[90m 19 |^[[39m   }
+targeted	Targeted jest	2026-10-04T21:53:51.0834463Z      ^[[90m 20 |^[[39m   ^[[90m// In production, could forward to Sentry breadcrumbs here^[[39m
+targeted	Targeted jest	2026-10-04T21:53:51.0835895Z      ^[[90m 21 |^[[39m }^[[0m
+targeted	Targeted jest	2026-10-04T21:53:51.0836168Z 
+targeted	Targeted jest	2026-10-04T21:53:51.0836416Z       at log (src/utils/logger.ts:18:19)
+targeted	Targeted jest	2026-10-04T21:53:51.0837079Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+targeted	Targeted jest	2026-10-04T21:53:51.0837776Z       at warn (src/services/authActions.ts:215:18)
+targeted	Targeted jest	2026-10-04T21:53:51.0838741Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T21:53:51.0839849Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T21:53:51.0840801Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-04T21:53:51.0841700Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-04T21:53:51.0842694Z       at _loop (src/services/authActions.ts:217:8)
+targeted	Targeted jest	2026-10-04T21:53:51.0843293Z           at _loop.next (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.0843897Z       at _loop (src/services/authActions.ts:199:42)
+targeted	Targeted jest	2026-10-04T21:53:51.0844871Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T21:53:51.0845990Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T21:53:51.0846939Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-04T21:53:51.0847884Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-04T21:53:51.0872581Z       at apply (src/services/authActions.ts:240:2)
+targeted	Targeted jest	2026-10-04T21:53:51.0882904Z       at apply (src/services/authActions.ts:195:42)
+targeted	Targeted jest	2026-10-04T21:53:51.0912554Z       at clearUserScopedKeys (src/services/authActions.ts:402:7)
+targeted	Targeted jest	2026-10-04T21:53:51.0923608Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T21:53:51.0929851Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T21:53:51.0930432Z 
+targeted	Targeted jest	2026-10-04T21:53:51.0930591Z     console.warn
+targeted	Targeted jest	2026-10-04T21:53:51.0931577Z       [AuthActions] clearUserScopedKeys: storage sweep failed TypeError: storage.getAllKeys is not a function
+targeted	Targeted jest	2026-10-04T21:53:51.0933686Z           at getAllKeys (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:208:45)
+targeted	Targeted jest	2026-10-04T21:53:51.0934770Z           at Generator.next (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.0936174Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T21:53:51.0937974Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T21:53:51.0939661Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-04T21:53:51.0940739Z           at new Promise (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.0942147Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-04T21:53:51.0943803Z           at _loop (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:217:8)
+targeted	Targeted jest	2026-10-04T21:53:51.0944774Z           at _loop.next (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.0945800Z           at _loop (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:199:42)
+targeted	Targeted jest	2026-10-04T21:53:51.0946815Z           at Generator.next (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.0948219Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T21:53:51.0950261Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T21:53:51.0981669Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-04T21:53:51.0983285Z           at new Promise (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.0984187Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-04T21:53:51.0985150Z           at apply (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:240:2)
+targeted	Targeted jest	2026-10-04T21:53:51.0986014Z           at apply (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:195:42)
+targeted	Targeted jest	2026-10-04T21:53:51.0986933Z           at clearUserScopedKeys (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:402:7)
+targeted	Targeted jest	2026-10-04T21:53:51.0987579Z           at Generator.next (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.0988372Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T21:53:51.0989510Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T21:53:51.0990327Z           at processTicksAndRejections (node:internal/process/task_queues:105:5)
+targeted	Targeted jest	2026-10-04T21:53:51.0990643Z 
+targeted	Targeted jest	2026-10-04T21:53:51.0991495Z     ^[[0m ^[[90m 16 |^[[39m ^[[36mfunction^[[39m log(level^[[33m:^[[39m ^[[33mLogLevel^[[39m^[[33m,^[[39m context^[[33m:^[[39m string^[[33m,^[[39m ^[[33m...^[[39margs^[[33m:^[[39m unknown[]) {
+targeted	Targeted jest	2026-10-04T21:53:51.0992546Z      ^[[90m 17 |^[[39m   ^[[36mif^[[39m (__DEV__) {
+targeted	Targeted jest	2026-10-04T21:53:51.0993201Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 18 |^[[39m     console[level](^[[32m`[${context}]`^[[39m^[[33m,^[[39m ^[[33m...^[[39margs)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T21:53:51.0993795Z      ^[[90m    |^[[39m                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T21:53:51.0994185Z      ^[[90m 19 |^[[39m   }
+targeted	Targeted jest	2026-10-04T21:53:51.0994667Z      ^[[90m 20 |^[[39m   ^[[90m// In production, could forward to Sentry breadcrumbs here^[[39m
+targeted	Targeted jest	2026-10-04T21:53:51.0995105Z      ^[[90m 21 |^[[39m }^[[0m
+targeted	Targeted jest	2026-10-04T21:53:51.0995256Z 
+targeted	Targeted jest	2026-10-04T21:53:51.0995402Z       at log (src/utils/logger.ts:18:19)
+targeted	Targeted jest	2026-10-04T21:53:51.0995772Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+targeted	Targeted jest	2026-10-04T21:53:51.0996162Z       at warn (src/services/authActions.ts:215:18)
+targeted	Targeted jest	2026-10-04T21:53:51.0996690Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T21:53:51.0997287Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T21:53:51.0997798Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-04T21:53:51.0998289Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-04T21:53:51.0998707Z       at _loop (src/services/authActions.ts:217:8)
+targeted	Targeted jest	2026-10-04T21:53:51.0999044Z           at _loop.next (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.0999389Z       at _loop (src/services/authActions.ts:199:42)
+targeted	Targeted jest	2026-10-04T21:53:51.0999900Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T21:53:51.1000503Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T21:53:51.1001017Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-04T21:53:51.1001497Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-04T21:53:51.1002281Z       at apply (src/services/authActions.ts:240:2)
+targeted	Targeted jest	2026-10-04T21:53:51.1002919Z       at apply (src/services/authActions.ts:195:42)
+targeted	Targeted jest	2026-10-04T21:53:51.1003603Z       at clearUserScopedKeys (src/services/authActions.ts:402:7)
+targeted	Targeted jest	2026-10-04T21:53:51.1004560Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T21:53:51.1005591Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T21:53:51.1006089Z 
+targeted	Targeted jest	2026-10-04T21:53:51.1006225Z     console.warn
+targeted	Targeted jest	2026-10-04T21:53:51.1007078Z       [AuthActions] clearUserScopedKeys: storage sweep failed TypeError: storage.getAllKeys is not a function
+targeted	Targeted jest	2026-10-04T21:53:51.1008582Z           at getAllKeys (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:208:45)
+targeted	Targeted jest	2026-10-04T21:53:51.1010476Z           at Generator.next (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.1012047Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T21:53:51.1013981Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T21:53:51.1015769Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-04T21:53:51.1016874Z           at new Promise (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.1017991Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-04T21:53:51.1019653Z           at _loop (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:217:8)
+targeted	Targeted jest	2026-10-04T21:53:51.1020595Z           at _loop.next (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.1021589Z           at _loop (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:199:42)
+targeted	Targeted jest	2026-10-04T21:53:51.1022783Z           at Generator.next (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.1024118Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T21:53:51.1026087Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T21:53:51.1027978Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-04T21:53:51.1029220Z           at new Promise (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.1030435Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-04T21:53:51.1035640Z           at apply (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:195:42)
+targeted	Targeted jest	2026-10-04T21:53:51.1037430Z           at clearUserScopedKeys (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:402:7)
+targeted	Targeted jest	2026-10-04T21:53:51.1038601Z           at Generator.next (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.1040027Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T21:53:51.1042368Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T21:53:51.1043847Z           at processTicksAndRejections (node:internal/process/task_queues:105:5)
+targeted	Targeted jest	2026-10-04T21:53:51.1044440Z 
+targeted	Targeted jest	2026-10-04T21:53:51.1045728Z     ^[[0m ^[[90m 16 |^[[39m ^[[36mfunction^[[39m log(level^[[33m:^[[39m ^[[33mLogLevel^[[39m^[[33m,^[[39m context^[[33m:^[[39m string^[[33m,^[[39m ^[[33m...^[[39margs^[[33m:^[[39m unknown[]) {
+targeted	Targeted jest	2026-10-04T21:53:51.1047028Z      ^[[90m 17 |^[[39m   ^[[36mif^[[39m (__DEV__) {
+targeted	Targeted jest	2026-10-04T21:53:51.1047696Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 18 |^[[39m     console[level](^[[32m`[${context}]`^[[39m^[[33m,^[[39m ^[[33m...^[[39margs)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T21:53:51.1048308Z      ^[[90m    |^[[39m                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T21:53:51.1048644Z      ^[[90m 19 |^[[39m   }
+targeted	Targeted jest	2026-10-04T21:53:51.1049124Z      ^[[90m 20 |^[[39m   ^[[90m// In production, could forward to Sentry breadcrumbs here^[[39m
+targeted	Targeted jest	2026-10-04T21:53:51.1049557Z      ^[[90m 21 |^[[39m }^[[0m
+targeted	Targeted jest	2026-10-04T21:53:51.1049805Z 
+targeted	Targeted jest	2026-10-04T21:53:51.1050017Z       at log (src/utils/logger.ts:18:19)
+targeted	Targeted jest	2026-10-04T21:53:51.1050588Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+targeted	Targeted jest	2026-10-04T21:53:51.1051170Z       at warn (src/services/authActions.ts:215:18)
+targeted	Targeted jest	2026-10-04T21:53:51.1052156Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T21:53:51.1053874Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T21:53:51.1054862Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-04T21:53:51.1055666Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-04T21:53:51.1056386Z       at _loop (src/services/authActions.ts:217:8)
+targeted	Targeted jest	2026-10-04T21:53:51.1056976Z           at _loop.next (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.1057566Z       at _loop (src/services/authActions.ts:199:42)
+targeted	Targeted jest	2026-10-04T21:53:51.1162320Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T21:53:51.1163889Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T21:53:51.1164926Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-04T21:53:51.1165804Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-04T21:53:51.1166659Z       at apply (src/services/authActions.ts:195:42)
+targeted	Targeted jest	2026-10-04T21:53:51.1167473Z       at clearUserScopedKeys (src/services/authActions.ts:402:7)
+targeted	Targeted jest	2026-10-04T21:53:51.1168544Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T21:53:51.1169723Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T21:53:51.1170312Z 
+targeted	Targeted jest	2026-10-04T21:53:51.1170509Z     console.warn
+targeted	Targeted jest	2026-10-04T21:53:51.1171511Z       [AuthActions] clearUserScopedKeys: storage sweep failed TypeError: storage.getAllKeys is not a function
+targeted	Targeted jest	2026-10-04T21:53:51.1181275Z           at getAllKeys (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:208:45)
+targeted	Targeted jest	2026-10-04T21:53:51.1182801Z           at Generator.next (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.1184294Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T21:53:51.1186517Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T21:53:51.1188541Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-04T21:53:51.1189797Z           at new Promise (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.1191117Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-04T21:53:51.1333606Z           at _loop (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:217:8)
+targeted	Targeted jest	2026-10-04T21:53:51.1334748Z           at _loop.next (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.1335858Z           at _loop (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:199:42)
+targeted	Targeted jest	2026-10-04T21:53:51.1336910Z           at Generator.next (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.1338389Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T21:53:51.1340468Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T21:53:51.1342643Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-04T21:53:51.1343918Z           at new Promise (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.1345246Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-04T21:53:51.1347059Z           at apply (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:195:42)
+targeted	Targeted jest	2026-10-04T21:53:51.1348875Z           at clearUserScopedKeys (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:402:7)
+targeted	Targeted jest	2026-10-04T21:53:51.1350714Z           at Generator.next (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.1352854Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T21:53:51.1355038Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T21:53:51.1356610Z           at processTicksAndRejections (node:internal/process/task_queues:105:5)
+targeted	Targeted jest	2026-10-04T21:53:51.1357215Z 
+targeted	Targeted jest	2026-10-04T21:53:51.1358689Z     ^[[0m ^[[90m 16 |^[[39m ^[[36mfunction^[[39m log(level^[[33m:^[[39m ^[[33mLogLevel^[[39m^[[33m,^[[39m context^[[33m:^[[39m string^[[33m,^[[39m ^[[33m...^[[39margs^[[33m:^[[39m unknown[]) {
+targeted	Targeted jest	2026-10-04T21:53:51.1360115Z      ^[[90m 17 |^[[39m   ^[[36mif^[[39m (__DEV__) {
+targeted	Targeted jest	2026-10-04T21:53:51.1361373Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 18 |^[[39m     console[level](^[[32m`[${context}]`^[[39m^[[33m,^[[39m ^[[33m...^[[39margs)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T21:53:51.1473275Z      ^[[90m    |^[[39m                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T21:53:51.1474033Z      ^[[90m 19 |^[[39m   }
+targeted	Targeted jest	2026-10-04T21:53:51.1474902Z      ^[[90m 20 |^[[39m   ^[[90m// In production, could forward to Sentry breadcrumbs here^[[39m
+targeted	Targeted jest	2026-10-04T21:53:51.1475705Z      ^[[90m 21 |^[[39m }^[[0m
+targeted	Targeted jest	2026-10-04T21:53:51.1475990Z 
+targeted	Targeted jest	2026-10-04T21:53:51.1476244Z       at log (src/utils/logger.ts:18:19)
+targeted	Targeted jest	2026-10-04T21:53:51.1476908Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+targeted	Targeted jest	2026-10-04T21:53:51.1477630Z       at warn (src/services/authActions.ts:215:18)
+targeted	Targeted jest	2026-10-04T21:53:51.1478607Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T21:53:51.1479783Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T21:53:51.1480687Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-04T21:53:51.1481608Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-04T21:53:51.1482737Z       at _loop (src/services/authActions.ts:217:8)
+targeted	Targeted jest	2026-10-04T21:53:51.1483405Z           at _loop.next (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.1484050Z       at _loop (src/services/authActions.ts:199:42)
+targeted	Targeted jest	2026-10-04T21:53:51.1485070Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T21:53:51.1486237Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T21:53:51.1487205Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-04T21:53:51.1488143Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-04T21:53:51.1488971Z       at apply (src/services/authActions.ts:195:42)
+targeted	Targeted jest	2026-10-04T21:53:51.1489787Z       at clearUserScopedKeys (src/services/authActions.ts:402:7)
+targeted	Targeted jest	2026-10-04T21:53:51.1490854Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T21:53:51.1492229Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T21:53:51.1492830Z 
+targeted	Targeted jest	2026-10-04T21:53:51.1493018Z     console.warn
+targeted	Targeted jest	2026-10-04T21:53:51.1493758Z       [AuthActions] resetUserScopedStores: coachStore reset failed Error: boom
+targeted	Targeted jest	2026-10-04T21:53:51.1495404Z           at Object.reset (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/__tests__/authActions.signOut.test.ts:166:15)
+targeted	Targeted jest	2026-10-04T21:53:51.1497247Z           at reset (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:460:51)
+targeted	Targeted jest	2026-10-04T21:53:51.1498813Z           at reset (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:467:7)
+targeted	Targeted jest	2026-10-04T21:53:51.1603494Z           at resetUserScopedStores (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:432:3)
+targeted	Targeted jest	2026-10-04T21:53:51.1604759Z           at Generator.next (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.1606253Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T21:53:51.1608970Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T21:53:51.1610452Z           at processTicksAndRejections (node:internal/process/task_queues:105:5)
+targeted	Targeted jest	2026-10-04T21:53:51.1611051Z 
+targeted	Targeted jest	2026-10-04T21:53:51.1612607Z     ^[[0m ^[[90m 16 |^[[39m ^[[36mfunction^[[39m log(level^[[33m:^[[39m ^[[33mLogLevel^[[39m^[[33m,^[[39m context^[[33m:^[[39m string^[[33m,^[[39m ^[[33m...^[[39margs^[[33m:^[[39m unknown[]) {
+targeted	Targeted jest	2026-10-04T21:53:51.1613930Z      ^[[90m 17 |^[[39m   ^[[36mif^[[39m (__DEV__) {
+targeted	Targeted jest	2026-10-04T21:53:51.1615113Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 18 |^[[39m     console[level](^[[32m`[${context}]`^[[39m^[[33m,^[[39m ^[[33m...^[[39margs)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T21:53:51.1616173Z      ^[[90m    |^[[39m                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T21:53:51.1616761Z      ^[[90m 19 |^[[39m   }
+targeted	Targeted jest	2026-10-04T21:53:51.1617625Z      ^[[90m 20 |^[[39m   ^[[90m// In production, could forward to Sentry breadcrumbs here^[[39m
+targeted	Targeted jest	2026-10-04T21:53:51.1618427Z      ^[[90m 21 |^[[39m }^[[0m
+targeted	Targeted jest	2026-10-04T21:53:51.1618700Z 
+targeted	Targeted jest	2026-10-04T21:53:51.1618932Z       at log (src/utils/logger.ts:18:19)
+targeted	Targeted jest	2026-10-04T21:53:51.1619605Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+targeted	Targeted jest	2026-10-04T21:53:51.1620324Z       at warn (src/services/authActions.ts:469:14)
+targeted	Targeted jest	2026-10-04T21:53:51.1642889Z       at resetUserScopedStores (src/services/authActions.ts:432:3)
+targeted	Targeted jest	2026-10-04T21:53:51.1644005Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-04T21:53:51.1645131Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-04T21:53:51.1645685Z 
+targeted	Targeted jest	2026-10-04T21:53:51.1645840Z     console.warn
+targeted	Targeted jest	2026-10-04T21:53:51.1646659Z       [AuthActions] resetUserScopedStores: coachStore reset failed Error: coach reset boom
+targeted	Targeted jest	2026-10-04T21:53:51.1648382Z           at Object.reset (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/__tests__/authActions.signOut.test.ts:183:15)
+targeted	Targeted jest	2026-10-04T21:53:51.1650233Z           at reset (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:460:51)
+targeted	Targeted jest	2026-10-04T21:53:51.1723576Z           at reset (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:467:7)
+targeted	Targeted jest	2026-10-04T21:53:51.1725623Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/src/services/__tests__/authActions.signOut.test.ts:187:39
+targeted	Targeted jest	2026-10-04T21:53:51.1727679Z           at Object.<anonymous> (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/expect/build/toThrowMatchers.js:74:11)
+targeted	Targeted jest	2026-10-04T21:53:51.1729879Z           at Object.throwingMatcher [as toThrow] (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/expect/build/index.js:320:21)
+targeted	Targeted jest	2026-10-04T21:53:51.1732184Z           at Object.toThrow (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/__tests__/authActions.signOut.test.ts:187:47)
+targeted	Targeted jest	2026-10-04T21:53:51.1734253Z           at Promise.then.completed (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/utils.js:298:28)
+targeted	Targeted jest	2026-10-04T21:53:51.1735514Z           at new Promise (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.1736838Z           at callAsyncCircusFn (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/utils.js:231:10)
+targeted	Targeted jest	2026-10-04T21:53:51.1745299Z           at _callCircusTest (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/run.js:316:40)
+targeted	Targeted jest	2026-10-04T21:53:51.1746697Z           at processTicksAndRejections (node:internal/process/task_queues:105:5)
+targeted	Targeted jest	2026-10-04T21:53:51.1748057Z           at _runTest (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/run.js:252:3)
+targeted	Targeted jest	2026-10-04T21:53:51.1749928Z           at _runTestsForDescribeBlock (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/run.js:126:9)
+targeted	Targeted jest	2026-10-04T21:53:51.1808972Z           at _runTestsForDescribeBlock (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/run.js:121:9)
+targeted	Targeted jest	2026-10-04T21:53:51.1811361Z           at run (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/run.js:71:3)
+targeted	Targeted jest	2026-10-04T21:53:51.1813407Z           at runAndTransformResultsToJestFormat (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)
+targeted	Targeted jest	2026-10-04T21:53:51.1814831Z           at jestAdapter (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)
+targeted	Targeted jest	2026-10-04T21:53:51.1815990Z           at runTestInternal (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-runner/build/runTest.js:367:16)
+targeted	Targeted jest	2026-10-04T21:53:51.1817015Z           at runTest (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-runner/build/runTest.js:444:34)
+targeted	Targeted jest	2026-10-04T21:53:51.1818033Z           at Object.worker (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-runner/build/testWorker.js:106:12)
+targeted	Targeted jest	2026-10-04T21:53:51.1818577Z 
+targeted	Targeted jest	2026-10-04T21:53:51.1819433Z     ^[[0m ^[[90m 16 |^[[39m ^[[36mfunction^[[39m log(level^[[33m:^[[39m ^[[33mLogLevel^[[39m^[[33m,^[[39m context^[[33m:^[[39m string^[[33m,^[[39m ^[[33m...^[[39margs^[[33m:^[[39m unknown[]) {
+targeted	Targeted jest	2026-10-04T21:53:51.1820156Z      ^[[90m 17 |^[[39m   ^[[36mif^[[39m (__DEV__) {
+targeted	Targeted jest	2026-10-04T21:53:51.1820801Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 18 |^[[39m     console[level](^[[32m`[${context}]`^[[39m^[[33m,^[[39m ^[[33m...^[[39margs)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-04T21:53:51.1821409Z      ^[[90m    |^[[39m                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-04T21:53:51.1821995Z      ^[[90m 19 |^[[39m   }
+targeted	Targeted jest	2026-10-04T21:53:51.1822541Z      ^[[90m 20 |^[[39m   ^[[90m// In production, could forward to Sentry breadcrumbs here^[[39m
+targeted	Targeted jest	2026-10-04T21:53:51.1822990Z      ^[[90m 21 |^[[39m }^[[0m
+targeted	Targeted jest	2026-10-04T21:53:51.1823151Z 
+targeted	Targeted jest	2026-10-04T21:53:51.1823292Z       at log (src/utils/logger.ts:18:19)
+targeted	Targeted jest	2026-10-04T21:53:51.1823681Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+targeted	Targeted jest	2026-10-04T21:53:51.1824071Z       at warn (src/services/authActions.ts:469:14)
+targeted	Targeted jest	2026-10-04T21:53:51.1824509Z       at src/services/__tests__/authActions.signOut.test.ts:187:39
+targeted	Targeted jest	2026-10-04T21:53:51.1825045Z       at Object.<anonymous> (node_modules/expect/build/toThrowMatchers.js:74:11)
+targeted	Targeted jest	2026-10-04T21:53:51.1825651Z       at Object.throwingMatcher [as toThrow] (node_modules/expect/build/index.js:320:21)
+targeted	Targeted jest	2026-10-04T21:53:51.1826258Z       at Object.toThrow (src/services/__tests__/authActions.signOut.test.ts:187:47)
+targeted	Targeted jest	2026-10-04T21:53:51.1826580Z 
+targeted	Targeted jest	2026-10-04T21:53:51.2243050Z PASS src/hooks/useWearableConnections.opus119d.test.tsx
+targeted	Targeted jest	2026-10-04T21:53:51.4328367Z PASS src/services/health/__tests__/onDeviceState.serialQueue.test.ts
+targeted	Targeted jest	2026-10-04T21:53:51.5854524Z PASS src/hooks/useWearableConnections.transport.test.tsx
+targeted	Targeted jest	2026-10-04T21:53:51.7991170Z PASS src/services/health/__tests__/retireNativeOrder.sol119.test.ts
+targeted	Targeted jest	2026-10-04T21:53:51.9193603Z PASS src/hooks/useWearableConnections.opus119.test.tsx
+targeted	Targeted jest	2026-10-04T21:53:51.9286554Z   ● Console
+targeted	Targeted jest	2026-10-04T21:53:51.9353021Z 
+targeted	Targeted jest	2026-10-04T21:53:51.9366742Z     console.error
+targeted	Targeted jest	2026-10-04T21:53:51.9432673Z       An update to HookContainer inside a test was not wrapped in act(...).
+targeted	Targeted jest	2026-10-04T21:53:51.9472443Z       
+targeted	Targeted jest	2026-10-04T21:53:51.9502841Z       When testing, code that causes React state updates should be wrapped into act(...):
+targeted	Targeted jest	2026-10-04T21:53:51.9522503Z       
+targeted	Targeted jest	2026-10-04T21:53:51.9527082Z       act(() => {
+targeted	Targeted jest	2026-10-04T21:53:51.9527824Z         /* fire events that update state */
+targeted	Targeted jest	2026-10-04T21:53:51.9528591Z       });
+targeted	Targeted jest	2026-10-04T21:53:51.9529187Z       /* assert on the output */
+targeted	Targeted jest	2026-10-04T21:53:51.9529790Z       
+targeted	Targeted jest	2026-10-04T21:53:51.9531042Z       This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+targeted	Targeted jest	2026-10-04T21:53:51.9532772Z 
+targeted	Targeted jest	2026-10-04T21:53:51.9533462Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:16307:19
+targeted	Targeted jest	2026-10-04T21:53:51.9535095Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+targeted	Targeted jest	2026-10-04T21:53:51.9536791Z       at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:16306:9)
+targeted	Targeted jest	2026-10-04T21:53:51.9538560Z       at scheduleUpdateOnFiber (node_modules/react-reconciler/cjs/react-reconciler.development.js:14070:11)
+targeted	Targeted jest	2026-10-04T21:53:51.9540276Z       at forceStoreRerender (node_modules/react-reconciler/cjs/react-reconciler.development.js:5935:24)
+targeted	Targeted jest	2026-10-04T21:53:51.9542006Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:5920:11
+targeted	Targeted jest	2026-10-04T21:53:51.9543193Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:73:11
+targeted	Targeted jest	2026-10-04T21:53:51.9544289Z       at notifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:21:5)
+targeted	Targeted jest	2026-10-04T21:53:51.9545423Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:44:13
+targeted	Targeted jest	2026-10-04T21:53:51.9546344Z           at Array.forEach (<anonymous>)
+targeted	Targeted jest	2026-10-04T21:53:51.9547245Z       at node_modules/@tanstack/query-core/src/notifyManager.ts:43:25
+targeted	Targeted jest	2026-10-04T21:53:51.9548382Z       at batchNotifyFn (node_modules/@tanstack/query-core/src/notifyManager.ts:24:5)
+targeted	Targeted jest	2026-10-04T21:53:51.9549684Z       at Timeout._onTimeout (node_modules/@tanstack/query-core/src/notifyManager.ts:42:9)
+targeted	Targeted jest	2026-10-04T21:53:51.9550487Z 
+targeted	Targeted jest	2026-10-04T21:53:56.0553596Z PASS src/screens/client/wearables/__tests__/WearablesShell.settingsReturn.probe.test.tsx (5.634 s)
+targeted	Targeted jest	2026-10-04T21:53:56.3950437Z PASS src/screens/client/wearables/__tests__/ConnectionsScreen.samsungRow.opus118.test.tsx
+targeted	Targeted jest	2026-10-04T21:53:56.4333415Z PASS src/services/health/__tests__/hcPrivacyTemplate.opus119.test.ts
+targeted	Targeted jest	2026-10-04T21:53:56.5853402Z PASS src/services/health/__tests__/healthConnectRationale.opus118.test.ts
+targeted	Targeted jest	2026-10-04T21:53:56.5914583Z PASS src/services/health/__tests__/onDeviceState.test.ts
+targeted	Targeted jest	2026-10-04T21:53:57.2909359Z PASS src/screens/client/wearables/__tests__/ConnectionsScreen.emptyImport.probe.test.tsx (5.353 s)
+targeted	Targeted jest	2026-10-04T21:53:57.8358298Z A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+targeted	Targeted jest	2026-10-04T21:53:57.8392860Z 
+targeted	Targeted jest	2026-10-04T21:53:57.8398136Z Test Suites: 18 passed, 18 total
+targeted	Targeted jest	2026-10-04T21:53:57.8398853Z Tests:       162 passed, 162 total
+targeted	Targeted jest	2026-10-04T21:53:57.8399428Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-04T21:53:57.8399901Z Time:        12.943 s
+targeted	Targeted jest	2026-10-04T21:53:57.8411220Z Ran all test suites matching /src\/services\/health\/__tests__\/onDeviceState.opus119e.test.ts|src\/services\/health\/__tests__\/onDeviceState.test.ts|src\/services\/health\/__tests__\/onDeviceSync.test.ts|src\/services\/health\/__tests__\/onDeviceConnect.test.ts|src\/services\/health\/healthConnect\/__tests__\/healthConnectSyncService.test.ts|src\/services\/__tests__\/authActions.signOut.test.ts|src\/services\/health\/__tests__\/hcPrivacyTemplate.opus119.test.ts|src\/services\/health\/__tests__\/healthConnectRationale.opus118.test.ts|src\/hooks\/useWearableConnections.opus119.test.tsx|src\/hooks\/useWearableConnections.opus119d.test.tsx|src\/hooks\/useWearableConnections.disconnect.test.tsx|src\/screens\/client\/wearables\/__tests__\/ConnectionsScreen.samsungRow.opus118.test.tsx|src\/screens\/client\/wearables\/__tests__\/ConnectionsScreen.emptyImport.probe.test.tsx|src\/screens\/client\/wearables\/__tests__\/WearablesShell.settingsReturn.probe.test.tsx|src\/services\/health\/__tests__\/onDeviceState.serialQueue.test.ts|src\/services\/health\/__tests__\/retireNativeOrder.sol119.test.ts|src\/hooks\/useWearableConnections.sessionEpoch.test.tsx|src\/hooks\/useWearableConnections.transport.test.tsx/i.
+targeted	Post Run actions/setup-node@v6	﻿2026-10-04T21:53:57.8647015Z Post job cleanup.
+targeted	Post Run actions/setup-node@v6	2026-10-04T21:53:57.9796781Z Cache hit occurred on the primary key node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06, not saving cache.
+targeted	Post Run actions/checkout@v6	﻿2026-10-04T21:53:57.9942195Z Post job cleanup.
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.0766961Z [command]/usr/bin/git version
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.0803800Z git version 2.55.0
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.0846180Z Temporarily overriding HOME='/home/runner/work/_temp/66a2af67-8ade-40e0-a0ef-b1af2f3b0203' before making global git config changes
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.0847838Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.0853150Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.0885061Z Removing SSH command configuration
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.0891566Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.0923695Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.1142938Z Removing HTTP extra header
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.1147708Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.1180285Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.1395804Z Removing includeIf entries pointing to credentials config files
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.1402599Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.1432945Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.1434575Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.1435743Z includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.1436572Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.1443483Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.1467593Z /home/runner/work/_temp/git-credentials-b735e02b-1409-4d52-9a2f-f5f60e038d19.config
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.1479026Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-b735e02b-1409-4d52-9a2f-f5f60e038d19.config
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.1513827Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.1534083Z /home/runner/work/_temp/git-credentials-b735e02b-1409-4d52-9a2f-f5f60e038d19.config
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.1543875Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-b735e02b-1409-4d52-9a2f-f5f60e038d19.config
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.1578344Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.1605014Z /github/runner_temp/git-credentials-b735e02b-1409-4d52-9a2f-f5f60e038d19.config
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.1615291Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-b735e02b-1409-4d52-9a2f-f5f60e038d19.config
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.1652365Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.1675732Z /github/runner_temp/git-credentials-b735e02b-1409-4d52-9a2f-f5f60e038d19.config
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.1686382Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-b735e02b-1409-4d52-9a2f-f5f60e038d19.config
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.1725811Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Post Run actions/checkout@v6	2026-10-04T21:53:58.1972779Z Removing credentials config '/home/runner/work/_temp/git-credentials-b735e02b-1409-4d52-9a2f-f5f60e038d19.config'
+targeted	Complete job	﻿2026-10-04T21:53:58.2130602Z Cleaning up orphan processes

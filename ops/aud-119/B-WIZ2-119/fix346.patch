@@ -1,0 +1,226 @@
+diff --git a/src/components/coach/setup/FirstPackageForm.tsx b/src/components/coach/setup/FirstPackageForm.tsx
+index 70ec9ea..3065362 100644
+--- a/src/components/coach/setup/FirstPackageForm.tsx
++++ b/src/components/coach/setup/FirstPackageForm.tsx
+@@ -4,7 +4,13 @@
+  * it live, and for a free package attaches it to the coach's invite link so
+  * a client who joins with the link gets it straight away.
+  */
+-import React, { useEffect, useMemo, useRef, useState } from "react";
++import React, {
++  useCallback,
++  useEffect,
++  useMemo,
++  useRef,
++  useState,
++} from "react";
+ import {
+   ActivityIndicator,
+   StyleSheet,
+@@ -112,10 +118,30 @@ export default function FirstPackageForm({
+ }: Props) {
+   const { colors } = useTheme();
+   const styles = useMemo(() => makeStyles(colors), [colors]);
+-  const [title, setTitle] = useState(defaultTitle);
+-  const [free, setFree] = useState(false);
+-  const [priceText, setPriceText] = useState(DEFAULT_PRICE_TEXT);
+-  const [monthly, setMonthly] = useState(true);
++  const [title, setTitleState] = useState(defaultTitle);
++  const [free, setFreeState] = useState(false);
++  const [priceText, setPriceTextState] = useState(DEFAULT_PRICE_TEXT);
++  const [monthly, setMonthlyState] = useState(true);
++  // B-346-3 (agent 119): what the form shows right now. Every field write
++  // goes through show(), so a submit that waited for hydration reads the
++  // package the coach sees, not the values of the render it started in.
++  const shown = useRef({
++    title: defaultTitle,
++    free: false,
++    priceText: DEFAULT_PRICE_TEXT,
++    monthly: true,
++  });
++  const show = useCallback((next: Partial<typeof shown.current>) => {
++    Object.assign(shown.current, next);
++    if (next.title !== undefined) setTitleState(next.title);
++    if (next.free !== undefined) setFreeState(next.free);
++    if (next.priceText !== undefined) setPriceTextState(next.priceText);
++    if (next.monthly !== undefined) setMonthlyState(next.monthly);
++  }, []);
++  // B-346-3: false until this account's saved intent has been read and, if
++  // there is one, shown. Fields take no edits until then, and a tap made
++  // earlier waits for it, then uses what is shown.
++  const [ready, setReady] = useState(false);
+   const [busy, setBusy] = useState(false);
+   const [invalid, setInvalid] = useState<string | null>(null);
+   const [error, setError] = useState<FriendlyError | null>(null);
+@@ -155,6 +181,7 @@ export default function FirstPackageForm({
+ 
+   useEffect(() => {
+     let live = true;
++    setReady(false);
+     if (shownFor.current !== coachId) {
+       // A different account: nothing from the earlier one stays on screen
+       // or in memory, and its running create can no longer write here.
+@@ -166,56 +193,76 @@ export default function FirstPackageForm({
+       setError(null);
+       setInvalid(null);
+       setResumed(false);
+-      setTitle(resetTitle.current);
+-      setFree(false);
+-      setPriceText(DEFAULT_PRICE_TEXT);
+-      setMonthly(true);
++      show({
++        title: resetTitle.current,
++        free: false,
++        priceText: DEFAULT_PRICE_TEXT,
++        monthly: true,
++      });
+     }
+     hydrated.current = loadIntent(coachId).then((read) => {
+-      if (!live || read.kind !== "found" || intent.current) return;
++      if (!live) return;
++      // An unreadable read still ends hydration: submit reads storage again
++      // and stops with specific copy if it is still unreadable.
++      setReady(true);
++      if (read.kind !== "found" || intent.current) return;
+       const stored = read.intent;
+       intent.current = stored;
+       // Show the coach the package that was on its way, as it was sent.
+-      setTitle(stored.input.title);
+-      setFree(stored.input.priceCents === 0);
+-      if (stored.input.priceCents > 0)
+-        setPriceText((stored.input.priceCents / 100).toFixed(2));
+-      setMonthly(stored.input.billingInterval !== "one_time");
++      show({
++        title: stored.input.title,
++        free: stored.input.priceCents === 0,
++        monthly: stored.input.billingInterval !== "one_time",
++        ...(stored.input.priceCents > 0
++          ? { priceText: (stored.input.priceCents / 100).toFixed(2) }
++          : {}),
++      });
+       setResumed(true);
+     });
+     return () => {
+       live = false;
+     };
+-  }, [coachId]);
++  }, [coachId, show]);
+ 
+   const submit = async () => {
+-    const problem = validatePackage({ title, free, priceText });
+-    setInvalid(problem);
+     setError(null);
+-    if (problem || inFlight.current) return;
++    if (inFlight.current) return;
+     inFlight.current = true;
+     setBusy(true);
+-    const owner = coachId;
++    const owner = coachRef.current;
+     const myGeneration = generation.current;
+     const stillOwner = () =>
+       mounted.current &&
+       coachRef.current === owner &&
+       generation.current === myGeneration;
+-    const priceCents = free ? 0 : (parsePriceCents(priceText) ?? 0);
+-    const billingInterval: PackageBillingInterval =
+-      free || !monthly ? "one_time" : "monthly";
+-    const input: PackageCreateInput = {
+-      title: title.trim(),
+-      description: defaultDescription ?? null,
+-      priceCents,
+-      currency: "usd",
+-      billingInterval,
+-      intervalCount: 1,
+-      trialDays: 0,
+-      features: [],
+-    };
+     try {
+-      if (hydrated.current) await hydrated.current;
++      // B-346-3 (agent 119): wait until this account's saved intent is read
++      // and shown, then take the package exactly as the form shows it. A tap
++      // made before that never sends the earlier defaults.
++      let hydrating = hydrated.current;
++      while (hydrating) {
++        await hydrating;
++        if (!stillOwner()) return;
++        if (hydrated.current === hydrating) break;
++        hydrating = hydrated.current;
++      }
++      const snap = { ...shown.current };
++      const problem = validatePackage(snap);
++      setInvalid(problem);
++      if (problem) return;
++      const priceCents = snap.free ? 0 : (parsePriceCents(snap.priceText) ?? 0);
++      const billingInterval: PackageBillingInterval =
++        snap.free || !snap.monthly ? "one_time" : "monthly";
++      const input: PackageCreateInput = {
++        title: snap.title.trim(),
++        description: defaultDescription ?? null,
++        priceCents,
++        currency: "usd",
++        billingInterval,
++        intervalCount: 1,
++        trialDays: 0,
++        features: [],
++      };
+       let earlier = intent.current;
+       if (!earlier) {
+         // B-329-1: read storage again before any fresh create. A failed read
+@@ -305,12 +352,18 @@ export default function FirstPackageForm({
+           to finish that same package.
+         </Text>
+       ) : null}
++      {ready ? null : (
++        <Text style={styles.help} testID={`${testID}-hydrating`}>
++          Checking this device for a package saved earlier.
++        </Text>
++      )}
+       <Text style={styles.label} nativeID={`${testID}-name-label`}>
+         Package name
+       </Text>
+       <TextInput
+         value={title}
+-        onChangeText={setTitle}
++        onChangeText={(v) => show({ title: v })}
++        editable={ready}
+         style={styles.input}
+         accessibilityLabel="Package name"
+         accessibilityLabelledBy={`${testID}-name-label`}
+@@ -328,10 +381,11 @@ export default function FirstPackageForm({
+         ].map((o) => (
+           <TouchableOpacity
+             key={o.key}
+-            onPress={() => setFree(o.key === "free")}
++            onPress={() => show({ free: o.key === "free" })}
++            disabled={!ready}
+             style={[styles.segmentItem, o.on && styles.segmentOn]}
+             accessibilityRole="radio"
+-            accessibilityState={{ checked: o.on }}
++            accessibilityState={{ checked: o.on, disabled: !ready }}
+             accessibilityLabel={o.label}
+             testID={`${testID}-${o.key}`}
+           >
+@@ -353,7 +407,8 @@ export default function FirstPackageForm({
+           </Text>
+           <TextInput
+             value={priceText}
+-            onChangeText={setPriceText}
++            onChangeText={(v) => show({ priceText: v })}
++            editable={ready}
+             style={styles.input}
+             keyboardType="decimal-pad"
+             accessibilityLabel="Price in US dollars"
+@@ -371,10 +426,11 @@ export default function FirstPackageForm({
+             ].map((o) => (
+               <TouchableOpacity
+                 key={o.key}
+-                onPress={() => setMonthly(o.key === "monthly")}
++                onPress={() => show({ monthly: o.key === "monthly" })}
++                disabled={!ready}
+                 style={[styles.segmentItem, o.on && styles.segmentOn]}
+                 accessibilityRole="radio"
+-                accessibilityState={{ checked: o.on }}
++                accessibilityState={{ checked: o.on, disabled: !ready }}
+                 accessibilityLabel={o.label}
+                 testID={`${testID}-${o.key}`}
+               >

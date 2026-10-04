@@ -1,0 +1,420 @@
+diff --git a/src/checkout/payout-notice.service.ts b/src/checkout/payout-notice.service.ts
+index 84ec24d5..80db7234 100644
+--- a/src/checkout/payout-notice.service.ts
++++ b/src/checkout/payout-notice.service.ts
+@@ -10,6 +10,7 @@ import { EmailService } from '../email/email.service';
+ import { EmailTemplateKey } from '../email/email.types';
+ import { NotificationKind } from '../notifications/notification-kind';
+ import { NotificationsService } from '../notifications/notifications.service';
++import { PushAbortedError } from '../notifications/push-delivery.types';
+ import { PrismaService } from '../prisma.service';
+ 
+ // S-FEE round 5 (owner decision OR-111-1) — delivery and read side of the
+@@ -42,6 +43,13 @@ const INAPP_DONE = new Set(['sent', 'off']);
+ const PUSH_DONE = new Set(['sent', 'off', 'no_token', 'invalid_token']);
+ const EMAIL_DONE = new Set(['sent', 'logged', 'no_address', 'disabled']);
+ 
++// The limits one claim's channels are sent within (Sol B-684-3).
++interface SendWindow {
++  canSend: () => Promise<boolean>;
++  stopAt: number;
++  claimedAt: Date;
++}
++
+ interface ChannelResult {
+   status: string;
+   notification_id?: string;
+@@ -97,6 +105,45 @@ export interface PayoutAdjustmentsView {
+ const pastDeadline = (deadlineAt?: number): boolean =>
+   deadlineAt !== undefined && Date.now() >= deadlineAt;
+ 
++/** The email provider call was refused because the notice's send window closed. */
++class NoticeSendWindowClosed extends Error {
++  constructor() {
++    super('SFEE_NOTICE_SEND_WINDOW_CLOSED');
++    this.name = 'NoticeSendWindowClosed';
++  }
++}
++
++/**
++ * Round 19 (Sol B-684-3): the AbortSignal handed to a push / email provider call. It aborts at
++ * `stopAt` (the run deadline or the end of this worker's claim, whichever comes first) on a
++ * timer, and any read of `aborted` at or past `stopAt` aborts it on the spot: a provider's check
++ * right before it sends reads the clock, so a late timer (busy event loop) never lets a send
++ * start after the limit.
++ */
++export function noticeSendSignal(
++  stopAt: number,
++  reason: () => Error,
++): { signal: AbortSignal; release: () => void } {
++  const controller = new AbortController();
++  const { signal } = controller;
++  let aborted = false;
++  const expire = (): void => {
++    if (aborted) return;
++    aborted = true;
++    controller.abort(reason());
++  };
++  const timer = setTimeout(expire, Math.max(0, stopAt - Date.now()));
++  timer.unref?.();
++  Object.defineProperty(signal, 'aborted', {
++    configurable: true,
++    get: (): boolean => {
++      if (!aborted && Date.now() >= stopAt) expire();
++      return aborted;
++    },
++  });
++  return { signal, release: () => clearTimeout(timer) };
++}
++
+ function amountsOf(n: PayoutAdjustmentNotice): PayoutNoticeAmounts {
+   return {
+     currency: n.currency,
+@@ -216,6 +263,13 @@ export class PayoutNoticeService {
+         claimedAt.getTime() + PAYOUT_NOTICE_CLAIM_TTL_MS - PAYOUT_NOTICE_SEND_MARGIN_MS;
+       return fence.count === 1 && !pastDeadline(deadlineAt) && Date.now() < sendBy;
+     };
++    // Round 19 (Sol B-684-3): a provider call in flight is aborted at the run deadline or when
++    // this worker's claim ends, and none starts at or after that point (noticeSendSignal).
++    const stopAt = Math.min(
++      deadlineAt ?? Number.POSITIVE_INFINITY,
++      claimedAt.getTime() + PAYOUT_NOTICE_CLAIM_TTL_MS,
++    );
++    const window = { canSend, stopAt, claimedAt };
+     const stop = async (): Promise<false> => {
+       await this.prisma.payoutAdjustmentNotice.updateMany({
+         where: { id: n.id, dispatched_at: null, dispatch_claimed_at: claimedAt },
+@@ -262,7 +316,7 @@ export class PayoutNoticeService {
+     if (!PUSH_DONE.has(row.push_status) && !(await canSend())) return stop();
+     const push: ChannelResult = PUSH_DONE.has(row.push_status)
+       ? { status: row.push_status }
+-      : await this.deliverPush(row, payload, canSend);
++      : await this.deliverPush(row, payload, window);
+     if (push.status !== row.push_status || push.notification_id) {
+       await this.saveChannel(row.id, {
+         push_status: push.status,
+@@ -273,7 +327,7 @@ export class PayoutNoticeService {
+     if (!EMAIL_DONE.has(row.email_status) && !(await canSend())) return stop();
+     const mailOutcome: ChannelResult = EMAIL_DONE.has(row.email_status)
+       ? { status: row.email_status }
+-      : await this.deliverEmail(row, claimedAt, canSend);
++      : await this.deliverEmail(row, window);
+     if (mailOutcome.stopped) return stop();
+     if (mailOutcome.status !== row.email_status) {
+       await this.saveChannel(row.id, { email_status: mailOutcome.status });
+@@ -368,7 +422,7 @@ export class PayoutNoticeService {
+   private async deliverPush(
+     n: PayoutAdjustmentNotice,
+     payload: Record<string, unknown>,
+-    canSend: () => Promise<boolean>,
++    { canSend, stopAt }: SendWindow,
+   ): Promise<ChannelResult> {
+     const unchanged = (rowId?: string | null): ChannelResult => ({
+       status: n.push_status,
+@@ -408,11 +462,25 @@ export class PayoutNoticeService {
+         rowId = pushRow.id;
+       }
+       if (!(await canSend())) return unchanged(rowId);
+-      const res = await this.notifications.pushToUser(n.payee_user_id, n.title, n.body, {
+-        type: 'payout_adjustment',
+-        notice_id: n.id,
+-        deep_link: PAYOUT_NOTICE_DEEP_LINK,
+-      });
++      // Round 19 (Sol B-684-3): pushToUser re-checks the signal after its token read and right
++      // before Expo; an abort there leaves the push pending for the next run.
++      const sendWindow = noticeSendSignal(
++        stopAt,
++        () => new PushAbortedError('SFEE_NOTICE_SEND_WINDOW_CLOSED'),
++      );
++      let res: Awaited<ReturnType<NotificationsService['pushToUser']>>;
++      try {
++        res = await this.notifications.pushToUser(
++          n.payee_user_id,
++          n.title,
++          n.body,
++          { type: 'payout_adjustment', notice_id: n.id, deep_link: PAYOUT_NOTICE_DEEP_LINK },
++          sendWindow.signal,
++        );
++      } finally {
++        sendWindow.release();
++      }
++      if (res.code === 'aborted') return unchanged(rowId);
+       if (res.delivered) return { status: 'sent', notification_id: rowId };
+       if (res.code === 'no-token') return { status: 'no_token', notification_id: rowId };
+       // The device token is dead: a retry cannot reach it (done, not failed).
+@@ -441,8 +509,7 @@ export class PayoutNoticeService {
+    */
+   private async deliverEmail(
+     n: PayoutAdjustmentNotice,
+-    now: Date,
+-    canSend: () => Promise<boolean>,
++    { canSend, stopAt, claimedAt: now }: SendWindow,
+   ): Promise<ChannelResult> {
+     if (!this.email) return { status: 'disabled' };
+     try {
+@@ -470,15 +537,36 @@ export class PayoutNoticeService {
+       if (!(await canSend())) return { status: n.email_status, stopped: true };
+       const attempt = n.email_attempts + 1;
+       // Recorded before the send: a crash after it never reuses this key.
+-      await this.prisma.payoutAdjustmentNotice.updateMany({
++      const taken = await this.prisma.payoutAdjustmentNotice.updateMany({
+         where: { id: n.id, email_attempts: n.email_attempts },
+         data: { email_attempts: attempt },
+       });
+-      const status = await this.sendEmail(
+-        n,
+-        user,
+-        payoutNoticeEmailKey(n.idempotency_key, attempt),
+-      );
++      // Round 19 (Sol B-684-3): another worker took this attempt number, so this one sends
++      // nothing. After the write the claim and the budget are proved again; a stop returns the
++      // unused attempt number (only while this worker still holds the claim) and sends nothing.
++      if (taken.count !== 1) return { status: n.email_status, stopped: true };
++      if (!(await canSend())) {
++        await this.prisma.payoutAdjustmentNotice.updateMany({
++          where: { id: n.id, email_attempts: attempt, dispatch_claimed_at: now },
++          data: { email_attempts: n.email_attempts },
++        });
++        return { status: n.email_status, stopped: true };
++      }
++      const sendWindow = noticeSendSignal(stopAt, () => new NoticeSendWindowClosed());
++      let status: string;
++      try {
++        status = await this.sendEmail(
++          n,
++          user,
++          payoutNoticeEmailKey(n.idempotency_key, attempt),
++          sendWindow.signal,
++        );
++      } finally {
++        sendWindow.release();
++      }
++      // The provider was never called (EmailService checked the signal right before it): the
++      // email stays as it was and the next run uses the next attempt number.
++      if (status === 'not_started') return { status: n.email_status, stopped: true };
+       // 'skipped' means the key is already in the log (another sender):
+       // the next attempt reads that row instead of sending.
+       return { status: status === 'skipped' ? 'pending' : status };
+@@ -494,6 +582,7 @@ export class PayoutNoticeService {
+     n: PayoutAdjustmentNotice,
+     user: { email: string; name: string | null },
+     idempotencyKey: string,
++    signal?: AbortSignal,
+   ): Promise<string> {
+     if (!this.email) return 'disabled';
+     const a = amountsOf(n);
+@@ -503,6 +592,7 @@ export class PayoutNoticeService {
+       to: user.email,
+       template: EmailTemplateKey.COACH_PAYOUT_ADJUSTMENT,
+       idempotencyKey,
++      signal,
+       data: {
+         subject: n.title,
+         title: n.title,
+@@ -522,6 +612,7 @@ export class PayoutNoticeService {
+         has_hold: n.held_cents > 0,
+       },
+     });
++    if (res.notStarted) return 'not_started';
+     if (res.status === 'failed') {
+       this.logger.warn(
+         `SFEE_NOTICE_EMAIL_FAILED notice=${n.id} payee=${n.payee_user_id}: provider_failed`,
+diff --git a/src/checkout/refund-dispute-handler.service.ts b/src/checkout/refund-dispute-handler.service.ts
+index 4d1ab390..04c8b051 100644
+--- a/src/checkout/refund-dispute-handler.service.ts
++++ b/src/checkout/refund-dispute-handler.service.ts
+@@ -36,6 +36,8 @@ const COACH_DISPUTE_DEEP_LINK = 'tgp://coach/billing/disputes';
+ 
+ // Round 17 (Opus B-684-8): Stripe refund statuses that never change again.
+ const FAILED_REFUND_STATUSES = new Set(['failed', 'canceled']);
++// Round 19 (B-684-12): status compare-and-set retries before the delivery fails closed.
++const REFUND_STATUS_CAS_ATTEMPTS = 5;
+ 
+ /** A refund's status only moves forward; an older event never rewrites a newer outcome. */
+ function nextRefundStatus(current: string, incoming: string): string {
+@@ -435,12 +437,15 @@ export class RefundDisputeHandlerService {
+       // No-op: we'll see the parent charge.refunded shortly.
+       return { claimed: false, reason: 'no_known_refund' };
+     }
+-    await this.prisma.chargeRefund.update({
+-      where: { stripe_refund_id: refund.id },
+-      data: {
+-        status: refund.status ?? existing.status,
+-        failure_reason: refund.failure_reason ?? null,
+-      },
++    // Round 19 (B-684-12): the same monotonic compare-and-set as every other refund writer.
++    await this.writeRefundStatus(existing, existing.stripe_charge_id, (current) => {
++      const status = nextRefundStatus(current.status, refund.status ?? current.status);
++      // A refused (older) event keeps the stored failure reason with the stored status.
++      const moved = status === (refund.status ?? current.status);
++      return {
++        status,
++        failure_reason: moved ? (refund.failure_reason ?? null) : current.failure_reason,
++      };
+     });
+     return { claimed: true, purchase_id: existing.purchase_id };
+   }
+@@ -547,20 +552,20 @@ export class RefundDisputeHandlerService {
+     // Round 17 (Opus B-684-8): a refund's status only moves forward. failed and canceled are
+     // terminal, and succeeded never goes back to pending / requires_action, so a stale or
+     // redelivered older event (or snapshot) never rewrites a newer outcome.
+-    const updateExisting = (existing: ChargeRefund) => {
+-      const status = nextRefundStatus(existing.status, args.status);
+-      return this.prisma.chargeRefund.update({
+-        where: { stripe_refund_id: args.stripe_refund_id },
+-        data: {
++    // Round 19 (B-684-12): the transition is a compare-and-set on the status this writer read,
++    // so a newer outcome written between the read and the write is never overwritten.
++    const updateExisting = (existing: ChargeRefund) =>
++      this.writeRefundStatus(existing, args.stripe_charge_id, (current) => {
++        const status = nextRefundStatus(current.status, args.status);
++        return {
+           status,
+           amount_cents: args.amount_cents,
+-          reason: args.reason ?? existing.reason,
+-          note: args.note ?? existing.note,
+-          initiated_by_user_id: args.initiated_by_user_id ?? existing.initiated_by_user_id,
+-          posted_at: status === 'succeeded' ? new Date() : existing.posted_at,
+-        },
++          reason: args.reason ?? current.reason,
++          note: args.note ?? current.note,
++          initiated_by_user_id: args.initiated_by_user_id ?? current.initiated_by_user_id,
++          posted_at: status === 'succeeded' ? new Date() : current.posted_at,
++        };
+       });
+-    };
+     const existing = await this.prisma.chargeRefund.findUnique({
+       where: { stripe_refund_id: args.stripe_refund_id },
+     });
+@@ -655,6 +660,40 @@ export class RefundDisputeHandlerService {
+     return { row: updated, ledger_just_reversed: true };
+   }
+ 
++  /**
++   * Round 19 (B-684-12, both lenses): write a refund row's status as a compare-and-set on the
++   * status it was read with. The update matches only while the row still has that status; when
++   * it matches nothing (Prisma P2025) because another writer changed the status in between, the
++   * row is re-read and the next status is decided again from what is stored now.
++   * nextRefundStatus depends only on the stored status, so a match on it is enough. Bounded:
++   * after REFUND_STATUS_CAS_ATTEMPTS misses it fails closed (RefundStateUnavailableError, nothing
++   * moved; the delivery fails and Stripe redelivers).
++   */
++  private async writeRefundStatus(
++    read: ChargeRefund,
++    chargeId: string,
++    next: (current: ChargeRefund) => Prisma.ChargeRefundUpdateInput & { status: string },
++  ): Promise<ChargeRefund> {
++    let current = read;
++    for (let attempt = 1; ; attempt += 1) {
++      try {
++        return await this.prisma.chargeRefund.update({
++          where: { stripe_refund_id: current.stripe_refund_id, status: current.status },
++          data: next(current),
++        });
++      } catch (err) {
++        const now = await this.prisma.chargeRefund.findUnique({
++          where: { stripe_refund_id: current.stripe_refund_id },
++        });
++        if (!now || now.status === current.status) throw err;
++        if (attempt >= REFUND_STATUS_CAS_ATTEMPTS) {
++          throw new RefundStateUnavailableError(chargeId, 'kind=refund_status_contended');
++        }
++        current = now;
++      }
++    }
++  }
++
+   // C-684-4 / Opus B-684-8: the payout was already reduced for a refund Stripe now reports
+   // failed or canceled. Runs under the charge lock; nothing is re-credited automatically.
+   private async flagFailedAfterApply(rowId: string, chargeId: string): Promise<void> {
+diff --git a/src/email/email.service.ts b/src/email/email.service.ts
+index 19bb9691..3789c56e 100644
+--- a/src/email/email.service.ts
++++ b/src/email/email.service.ts
+@@ -25,6 +25,7 @@ interface EmailTransport {
+     subject: string;
+     html: string;
+     replyTo?: string;
++    signal?: AbortSignal;
+   }): Promise<{ providerMessageId: string }>;
+ }
+ 
+@@ -136,6 +137,9 @@ export class EmailService {
+       );
+     }
+ 
++    // An aborted caller sends nothing and leaves its key unused.
++    if (input.signal?.aborted) return this.notStarted(input.idempotencyKey);
++
+     // Idempotency: try to INSERT a 'sending' row. On unique violation
+     // (P2002) the same key was already used — return 'skipped'. The row
+     // is updated to 'sent' / 'failed' / 'logged' once the transport
+@@ -190,6 +194,12 @@ export class EmailService {
+       };
+     }
+ 
++    // Checked again right before the transport: the key is spent ('failed'), nothing is sent.
++    if (input.signal?.aborted) {
++      await this._finalize(logRow.id, 'failed', null, 'aborted before send');
++      return this.notStarted(input.idempotencyKey);
++    }
++
+     // 'log' transport: structured log instead of an HTTP call. Used in
+     // dev/test only — `_initTransport` enforces that production never
+     // accidentally lands here.
+@@ -212,6 +222,7 @@ export class EmailService {
+         subject,
+         html,
+         replyTo: input.replyTo,
++        signal: input.signal,
+       });
+       await this._finalize(logRow.id, 'sent', providerMessageId, null);
+       this.logger.log(
+@@ -239,6 +250,10 @@ export class EmailService {
+ 
+   // ── internal ────────────────────────────────────────────────────────────
+ 
++  private notStarted(idempotencyKey: string): SendEmailResult {
++    return { status: 'failed', providerMessageId: null, idempotencyKey, notStarted: true };
++  }
++
+   private async _finalize(
+     rowId: string,
+     status: 'sent' | 'failed' | 'logged',
+@@ -337,6 +352,7 @@ class ResendTransport implements EmailTransport {
+     subject: string;
+     html: string;
+     replyTo?: string;
++    signal?: AbortSignal;
+   }): Promise<{ providerMessageId: string }> {
+     const body: Record<string, unknown> = {
+       from: args.from,
+@@ -353,6 +369,7 @@ class ResendTransport implements EmailTransport {
+         'Content-Type': 'application/json',
+       },
+       body: JSON.stringify(body),
++      signal: args.signal,
+     });
+     if (!res.ok) {
+       const text = await res.text().catch(() => '<no body>');
+diff --git a/src/email/email.types.ts b/src/email/email.types.ts
+index 50fba2b7..17d231f4 100644
+--- a/src/email/email.types.ts
++++ b/src/email/email.types.ts
+@@ -51,6 +51,9 @@ export interface SendEmailInput {
+   from?: string;
+   // Optional reply-to header; falls back to provider default if unset.
+   replyTo?: string;
++  // Optional cancellation: checked before the send-log row, again right before the transport,
++  // and passed to the provider request. An abort before the transport returns notStarted.
++  signal?: AbortSignal;
+ }
+ 
+ export interface SendEmailResult {
+@@ -63,4 +66,6 @@ export interface SendEmailResult {
+   // Human-readable error text on 'failed'. Never contains the provider
+   // API key. Safe to surface up to the operator.
+   error?: string;
++  // True when input.signal aborted before the provider was called: nothing was sent.
++  notStarted?: boolean;
+ }
