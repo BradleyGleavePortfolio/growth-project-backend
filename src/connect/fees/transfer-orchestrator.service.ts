@@ -1200,13 +1200,32 @@ export class TransferOrchestratorService {
           'another worker started a reversal on this transfer at the same time',
         );
       }
+      // B-CM6-1: the slot row is locked now. The base and the cap are read
+      // here, not from the caller's earlier read: an operation that started
+      // or finished after that read would otherwise be overwritten by this
+      // one's absolute completion (max(recorded, base + amount)).
+      const fresh = await tx.connectTransfer.findUniqueOrThrow({ where: { id: row.id } });
+      const open = await tx.transferReversalOp.findMany({
+        where: { transfer_id: row.id, status: 'pending' },
+        take: 1,
+      });
+      const left = fresh.amount_cents - fresh.reversed_amount_cents;
+      if (open.length > 0 || left <= 0) {
+        throw new ReversalUncertainError(
+          row.id,
+          key,
+          open.length > 0
+            ? 'another reversal on this transfer is still pending'
+            : 'nothing left to reverse',
+        );
+      }
       return tx.transferReversalOp.create({
         data: {
           transfer_id: row.id,
           seq,
           idempotency_key: key,
-          amount_cents: amount,
-          base_reversed_cents: row.reversed_amount_cents,
+          amount_cents: Math.min(amount, left),
+          base_reversed_cents: fresh.reversed_amount_cents,
           purpose,
           status: 'pending',
         },
