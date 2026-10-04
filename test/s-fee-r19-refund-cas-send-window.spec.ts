@@ -154,7 +154,7 @@ function pauseWrite(
   status: string,
   between: () => Promise<unknown>,
 ) {
-  const tbl = c.prisma.chargeRefund as unknown as Table;
+  const tbl = c.prisma.chargeRefund;
   const real = tbl[method].getMockImplementation() as (a: { data: Row }) => Promise<Row>;
   let fired = false;
   tbl[method].mockImplementation(async (args: { where?: Row; data: Row }) => {
@@ -278,7 +278,7 @@ describe('B-684-12: a refund status write never overwrites a newer outcome', () 
   it('a status that keeps changing under the writer fails closed after bounded retries; nothing moves', async () => {
     const c = setup();
     await settledWithPending(c);
-    const tbl = c.prisma.chargeRefund as unknown as Table;
+    const tbl = c.prisma.chargeRefund;
     let flips = 0;
     tbl.update.mockImplementation(async () => {
       flips += 1;
@@ -358,7 +358,7 @@ describe('Sol B-684-3: no provider call starts past the run deadline or the noti
     const started = Date.now();
     const clock = clockAt(started);
     await notice(c, started, { inapp_status: 'sent', push_status: 'off' });
-    const tbl = c.prisma.payoutAdjustmentNotice as unknown as Table;
+    const tbl = c.prisma.payoutAdjustmentNotice;
     const real = tbl.updateMany.getMockImplementation() as (a: {
       where: Row;
       data: Row;
@@ -388,7 +388,7 @@ describe('Sol B-684-3: no provider call starts past the run deadline or the noti
     const started = Date.now();
     clockAt(started);
     await notice(c, started, { inapp_status: 'sent', push_status: 'off' });
-    const tbl = c.prisma.payoutAdjustmentNotice as unknown as Table;
+    const tbl = c.prisma.payoutAdjustmentNotice;
     const real = tbl.updateMany.getMockImplementation() as (a: {
       where: Row;
       data: Row;
