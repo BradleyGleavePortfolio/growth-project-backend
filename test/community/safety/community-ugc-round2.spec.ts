@@ -621,19 +621,19 @@ describe('#610 round 2: wins safety reach, durable bans, notices, recording eras
       });
     });
 
-    it('the erasure is recorded before the note is soft-deleted (a crash in between still erases)', async () => {
+    it('the erasure is recorded with the soft delete, in one commit (C-610-10: a crash cannot split them)', async () => {
       const n = seedNote(bob);
-      let recordedAtSoftDelete: unknown = 'soft delete never ran';
-      const spy = jest
-        .spyOn(CommunityVoiceRepository.prototype, 'softDelete')
-        .mockImplementationOnce(async function (this: CommunityVoiceRepository, id, at) {
-          recordedAtSoftDelete = erasureFor(n.key)?.completed_at;
-          await prisma.communityVoiceNote.update({ where: { id }, data: { soft_deleted_at: at } });
-        });
+      let atCommit: { work: unknown; softDeleted: unknown } | null = null;
+      db.beforeCommit = () => {
+        atCommit = {
+          work: erasureFor(n.key)?.completed_at,
+          softDeleted: db.table('communityVoiceNote').find((x) => x.id === n.id)?.soft_deleted_at,
+        };
+      };
       await voice.delete(bob, n.id);
-      spy.mockRestore();
-      // The open work row already existed when the soft delete ran.
-      expect(recordedAtSoftDelete).toBeNull();
+      db.beforeCommit = null;
+      // The open work row and the soft delete are in the same transaction.
+      expect(atCommit).toEqual({ work: null, softDeleted: expect.any(Date) });
     });
 
     it('two concurrent cron runs never process the same row twice (lease)', async () => {

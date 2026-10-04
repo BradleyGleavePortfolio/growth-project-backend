@@ -1,3 +1,5 @@
+import { policyFooterLinks } from './trust-pages.html';
+
 export type DownloadPlatform = 'ios' | 'android';
 
 // Quiet-luxury, mobile-first HTML. Mirrors the aesthetic of the invite
@@ -90,9 +92,7 @@ export function renderSignupPage(inviteCode?: string | null): string {
         'If you run into trouble, email us with the code below and we will ' +
         'help you finish setup.',
       cta_label: 'Email us',
-      cta_href:
-        `mailto:${SUPPORT_EMAIL}` +
-        `?subject=${encodeURIComponent('Invite ' + code)}`,
+      cta_href: `mailto:${SUPPORT_EMAIL}` + `?subject=${encodeURIComponent('Invite ' + code)}`,
       invite_code: code,
     });
   }
@@ -142,6 +142,7 @@ function baseDocument(p: PageContent): string {
   a.cta { display: inline-block; padding: 14px 22px; border-radius: 999px; background: #1F1B16; color: #FBF8F3; text-decoration: none; font-weight: 500; font-size: 15px; }
   a.cta:hover { background: #3A332B; }
   footer { margin-top: 40px; font-size: 13px; color: #8A7F6E; }
+  footer a { color: #8A7F6E; text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -149,7 +150,7 @@ function baseDocument(p: PageContent): string {
   <h1>${headline}</h1>
   <p>${body}</p>${codeBlock}
   <a class="cta" href="${ctaHref}">${ctaLabel}</a>
-  <footer>The Growth Project</footer>
+  <footer>The Growth Project · ${policyFooterLinks()}</footer>
 </main>
 </body>
 </html>`;

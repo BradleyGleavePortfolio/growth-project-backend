@@ -55,13 +55,16 @@ interface LegacyEntryArgs {
 
 /**
  * Round 11 (B-681-2) — the durable identity of one legacy per-purchase ledger
- * row: purchase, kind and the payee's Stripe account (`platform` for TGP's
- * own slice). Ids only, no user id: the key lives in a free-text column.
+ * row: purchase, kind and the payee user (`platform` for TGP's own slice).
+ * Round 13: this is exactly the identity upsertEntry looks up. The payee's
+ * Stripe account is routing that a reconnection may change, so it is never
+ * part of the key. Ids only; the payee user id is the row's own
+ * payee_user_id, retained under FINANCE in the deletion manifest.
  */
 export function legacyLedgerKey(
-  args: Pick<LegacyEntryArgs, 'purchase_id' | 'kind' | 'payee_stripe_account_id'>,
+  args: Pick<LegacyEntryArgs, 'purchase_id' | 'kind' | 'payee_user_id'>,
 ): string {
-  return `sfee-legacy-ledger:${args.purchase_id}:${args.kind}:${args.payee_stripe_account_id ?? 'platform'}`;
+  return `sfee-legacy-ledger:${args.purchase_id}:${args.kind}:${args.payee_user_id ?? 'platform'}`;
 }
 
 @Injectable()
