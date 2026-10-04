@@ -41,6 +41,12 @@ function makePrismaStub() {
         Object.assign(row, data);
         return { ...row };
       }),
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        const row = transfers.find((r) => Object.entries(where).every(([k, v]) => r[k] === v));
+        if (!row) return { count: 0 };
+        Object.assign(row, data);
+        return { count: 1 };
+      }),
       findMany: jest.fn(async () => transfers.filter((t) => t.status === 'pending')),
     },
     splitLedgerEntry: {
@@ -53,6 +59,12 @@ function makePrismaStub() {
         const row = ledger.find((e) => e.id === where.id);
         Object.assign(row, data);
         return { ...row };
+      }),
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        const row = ledger.find((r) => Object.entries(where).every(([k, v]) => r[k] === v));
+        if (!row) return { count: 0 };
+        Object.assign(row, data);
+        return { count: 1 };
       }),
     },
   };

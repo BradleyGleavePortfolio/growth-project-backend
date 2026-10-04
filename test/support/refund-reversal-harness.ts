@@ -109,6 +109,7 @@ export function harness() {
     transfer_reversal_stripe_id: null,
   }));
   db.model('splitLedgerEntry');
+  db.model('splitLedgerReversal', [['id'], ['entry_id', 'source_kind', 'source_id']]);
   db.model('connectTransfer');
   db.model('connectAccount', [['id'], ['coach_user_id']]);
   db.model('guestCheckout');

@@ -1,6 +1,23 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
+import { Prisma } from '@prisma/client';
+import * as Sentry from '@sentry/node';
+import { LedgerWriteConflictError } from '../connect/fees/split-ledger.service';
+import { StripeConnectApiError } from '../connect/stripe-connect-api.service';
+import {
+  REFUND_TRANSFER_REVERSAL_RUNBOOK,
+  RefundDisputeHandlerService,
+} from './refund-dispute-handler.service';
+
+// B-674-4 (B-CM1-116): a failed sweep reports a closed code and a closed error
+// class only. The exception object, its name, message, code or any provider
+// or database text never reaches a log line or Sentry.
+export const REFUND_TRANSFER_SWEEP_FAILED_CODE = 'REFUND_TRANSFER_REVERSAL_SWEEP_FAILED';
+export function refundTransferSweepErrorClass(err: unknown): string {
+  if (err instanceof LedgerWriteConflictError) return 'ledger_write_conflict';
+  if (err instanceof StripeConnectApiError) return 'stripe';
+  return err instanceof Prisma.PrismaClientKnownRequestError ? 'database' : 'unknown';
+}
 
 /**
  * B-641-7 — retries head-coach transfer reversals still owed for succeeded
@@ -25,8 +42,18 @@ export class RefundTransferReversalScheduler {
         );
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.error(`refund transfer reversal retry failed: ${message}`);
+      const errorClass = refundTransferSweepErrorClass(err);
+      this.logger.error(
+        `refund transfer reversal retry failed code=${REFUND_TRANSFER_SWEEP_FAILED_CODE} error_class=${errorClass}`,
+      );
+      // The next run (15 minutes) retries the same rows; the alert tells the
+      // operator the sweep itself is failing, with the runbook to follow.
+      Sentry.captureMessage('refund transfer reversal retry sweep failed', {
+        level: 'error',
+        fingerprint: ['refund-transfer-reversal-sweep-failed', errorClass],
+        tags: { code: REFUND_TRANSFER_SWEEP_FAILED_CODE, error_class: errorClass },
+        extra: { runbook: REFUND_TRANSFER_REVERSAL_RUNBOOK },
+      });
     }
   }
 }

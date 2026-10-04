@@ -126,19 +126,52 @@ export function deriveConnectState(a: {
   return 'pending_verification';
 }
 
-/**
- * C-332-14 (Opus): what the mobile Money page shows under a payout. A failed
- * payout's line is its reason, so Stripe's failure_message wins there; any
- * other payout shows its description.
- */
+// C-676-2 (B-CM1-116): a failed payout's reason is app copy picked by Stripe's
+// failure_code, with the coach's next step (an unknown code shows it as a
+// reference). Stripe's description and failure_message are never the reason.
+const BANK_DETAILS_WRONG = 'The bank details on file are wrong. Correct them in Stripe.';
+const BANK_ACCOUNT_UNUSABLE =
+  'This bank account cannot take payouts. Add a different bank account in Stripe.';
+const BANK_REFUSED =
+  'The bank refused this payout. Contact the bank, then check the account in Stripe.';
+// Stripe payout failure codes (docs.stripe.com/api/payouts/failures).
+const PAYOUT_FAILURE_COPY: Record<string, string> = {
+  incorrect_account_holder_address: BANK_DETAILS_WRONG,
+  incorrect_account_holder_name: BANK_DETAILS_WRONG,
+  incorrect_account_holder_tax_id: BANK_DETAILS_WRONG,
+  incorrect_account_type: BANK_DETAILS_WRONG,
+  invalid_account_number: BANK_DETAILS_WRONG,
+  invalid_account_number_length: BANK_DETAILS_WRONG,
+  no_account: BANK_DETAILS_WRONG,
+  account_closed: BANK_ACCOUNT_UNUSABLE,
+  account_frozen: BANK_ACCOUNT_UNUSABLE,
+  bank_account_restricted: BANK_ACCOUNT_UNUSABLE,
+  bank_account_unusable: BANK_ACCOUNT_UNUSABLE,
+  bank_ownership_changed: BANK_ACCOUNT_UNUSABLE,
+  debit_not_authorized: BANK_ACCOUNT_UNUSABLE,
+  invalid_currency: BANK_ACCOUNT_UNUSABLE,
+  unsupported_card: BANK_ACCOUNT_UNUSABLE,
+  declined: BANK_REFUSED,
+  could_not_process: BANK_REFUSED,
+  insufficient_funds:
+    'The Stripe balance was too low for this payout. Check the balance in Stripe.',
+};
+
+/** What the mobile Money page shows under a payout (C-332-14, C-676-2). */
 export function payoutReason(
   status: string,
   description: unknown,
-  failureMessage: string | null | undefined,
+  failureCode: unknown,
 ): string | null {
-  const desc = typeof description === 'string' && description.length > 0 ? description : null;
-  const failure = failureMessage && failureMessage.length > 0 ? failureMessage : null;
-  return status === 'failed' ? (failure ?? desc) : (desc ?? failure);
+  if (status !== 'failed') {
+    return typeof description === 'string' && description.length > 0 ? description : null;
+  }
+  const code =
+    typeof failureCode === 'string' && /^[a-z_]{1,64}$/.test(failureCode) ? failureCode : null;
+  if (code && Object.prototype.hasOwnProperty.call(PAYOUT_FAILURE_COPY, code)) {
+    return PAYOUT_FAILURE_COPY[code];
+  }
+  return `The payout failed. Open Stripe for details.${code ? ` Reference: ${code}.` : ''}`;
 }
 
 @Injectable()
@@ -218,8 +251,10 @@ export class CoachConnectService {
         const synced = await this.connect.syncFromStripe(row.stripe_account_id);
         refreshed = !!synced && synced.updated_at.getTime() !== row.updated_at.getTime();
       } catch (err) {
+        // B-676-2: closed code and error class only (provider text is free text).
+        const cls = err instanceof StripeConnectApiError ? 'stripe' : 'other';
         this.logger.warn(
-          `refreshStatus: sync failed for coach=${coachUserId}: ${(err as Error)?.message ?? err}`,
+          `refreshStatus: sync failed for coach=${coachUserId} code=CONNECT_REFRESH_FAILED class=${cls}`,
         );
       }
     }
@@ -284,7 +319,12 @@ export class CoachConnectService {
           created_at:
             snap.last_payout_arrival_at?.toISOString() ??
             new Date(0).toISOString(),
-          description: snap.last_payout_failure_message ?? null,
+          // C-676-2: the mirror keeps no failure_code, so no free text either.
+          description: payoutReason(
+            this.normalizePayoutStatus(snap.last_payout_status),
+            null,
+            null,
+          ),
         },
       ];
     }
@@ -308,13 +348,12 @@ export class CoachConnectService {
                 ((p as Record<string, unknown>)['created'] as number) * 1000,
               ).toISOString()
             : new Date(0).toISOString(),
-        // C-332-14 (Opus): the app shows a failed payout's description as its
-        // reason, so a failed payout carries Stripe's failure_message first;
-        // other payouts keep their own description.
+        // C-332-14 / C-676-2: the app shows a failed payout's description as
+        // its reason, so it carries app copy for Stripe's failure_code.
         description: payoutReason(
           this.normalizePayoutStatus(p.status),
           (p as Record<string, unknown>)['description'],
-          p.failure_message,
+          p.failure_code,
         ),
       }));
     } catch (err) {

@@ -17,7 +17,8 @@ refund (fingerprint `refund-transfer-reversal-review` + the refund id). Extra fi
 ## Runbook line
 
 Within one business day: `GET /v1/admin/payments/refund-reversals/review` (owner), then for each row
-`POST /v1/admin/payments/refund-reversals/<charge_refund_id>/reconcile` with an empty body. Stripe is the truth:
+`POST /v1/admin/payments/refund-reversals/<charge_refund_id>/reconcile` with an empty body. Both routes take the owner's
+Supabase JWT as the bearer (the owner-console service token is refused). Stripe is the truth:
 
 | Response `outcome` / `code`                      | Meaning                                                                                                                                              | Next action                                                                                                                                                                                                                                           |
 | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -33,3 +34,7 @@ Within one business day: `GET /v1/admin/payments/refund-reversals/review` (owner
 
 Never reverse a head-coach transfer by hand in the Dashboard for a row in review without recording it here afterwards
 (`stripe_transfer_reversal_id`), or the books and Stripe disagree. Never reverse any other transfer of that coach (OR-111-1).
+
+The `transfer.reversed` webhook never changes the recorded totals. When Stripe's total on a transfer is higher than what
+the backend recorded, it logs `TRANSFER_REVERSAL_NOT_YET_RECORDED` with the transfer id and both totals: a reversal still
+being recorded (the sweep or this runbook settles it) or one made by hand in the Dashboard (record it here).
