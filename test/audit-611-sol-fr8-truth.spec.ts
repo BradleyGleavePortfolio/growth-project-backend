@@ -64,4 +64,17 @@ describe('independent #611 FR8 truth checks', () => {
     expect(help).toContain('then the code is discarded');
     expect(help).toContain('within 30 days of the deletion');
   });
+
+  it('manual Apple unlink recovery uses Apple’s current iPhone path, not its web path', () => {
+    // Apple support 102571, re-read 2026-10-04 with caching disabled:
+    // iPhone: Settings > [name] > Sign in with Apple > app > Delete.
+    // Sign-In & Security belongs to the account.apple.com instructions.
+    // https://support.apple.com/en-us/102571
+    for (const html of [renderTrustPage('privacy'), renderHelpPage('delete-account')]) {
+      const paragraph = html.match(/<p>[^<]*on your iPhone open Settings[^<]*<\/p>/)?.[0];
+      expect(paragraph).toBeDefined();
+      expect(paragraph).not.toContain('then Sign-In &amp; Security');
+      expect(paragraph).toContain('then Sign in with Apple');
+    }
+  });
 });
