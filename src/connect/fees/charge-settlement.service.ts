@@ -15,13 +15,13 @@ import {
   type ChargeSplit,
 } from '../../payouts-v2/platform-fee.service';
 import {
-  StripeConnectApiError,
   StripeConnectApiService,
   type StripeBalanceTransactionObject,
   type StripeChargeObject,
 } from '../stripe-connect-api.service';
 import { ChargeLock, isChargeLockBusy, isChargeLockLost } from './charge-lock';
 import { FeePolicyService } from './fee-policy.service';
+import { moneyErrorDiagnostic } from './money-diagnostics';
 import {
   DisputeStateUnavailableError,
   MONEY_RETRY_CODES,
@@ -37,7 +37,6 @@ import {
 import { SplitLedgerService } from './split-ledger.service';
 import {
   TransferOrchestratorService,
-  parkFailureKind,
   type MoneyFence,
   type SettlementTransferKind,
 } from './transfer-orchestrator.service';
@@ -128,12 +127,7 @@ export function settlementFailureCode(err: unknown): string {
   if (err instanceof RefundStateUnavailableError) return err.message; // closed parts and ids
   if (isChargeLockBusy(err)) return SETTLEMENT_LOG_CODES.lockBusy;
   if (isChargeLockLost(err)) return 'SFEE_CHARGE_LOCK_LOST';
-  const http = err instanceof StripeConnectApiError ? err.httpStatus : null;
-  if (http !== null) {
-    return Number.isInteger(http) && http > 99 && http < 600 ? `stripe_http_${http}` : 'stripe_unreachable';
-  }
-  const kind = parkFailureKind(err);
-  return kind === 'unknown' ? 'unknown_failure' : kind;
+  return moneyErrorDiagnostic(err); // the shared money vocabulary (F2)
 }
 
 // Round 11 (B-683-1): a converted charge's refunded cents in its SETTLEMENT currency:
@@ -155,14 +149,14 @@ export async function convertedRefundedCents(
       const bt = r.balance_transaction as StripeBalanceTransactionObject | null | undefined;
       if (r.status !== 'succeeded') continue;
       if (typeof bt?.amount !== 'number' || bt.currency?.toLowerCase() !== currency) {
-        throw new RefundStateUnavailableError(chargeId, 'refund_balance_transaction_missing');
+        throw new RefundStateUnavailableError(chargeId, 'kind=refund_balance_transaction_missing');
       }
       total += Math.max(0, -bt.amount);
     }
     after = res.data?.[res.data.length - 1]?.id ?? null;
     if (!res.has_more || !after) return total;
   }
-  throw new RefundStateUnavailableError(chargeId, 'refund_list_incomplete');
+  throw new RefundStateUnavailableError(chargeId, 'kind=refund_list_incomplete');
 }
 
 export interface SweepSummary {
