@@ -63,8 +63,11 @@ export interface SendEmailResult {
   providerMessageId: string | null;
   // Mirrored from input.idempotencyKey for caller convenience.
   idempotencyKey: string;
-  // Human-readable error text on 'failed'. Never contains the provider
-  // API key. Safe to surface up to the operator.
+  // Diagnostic on 'failed': server-owned parts only, e.g.
+  // `provider=resend status=422 code=validation_error` or
+  // `render: error=Error` (B-700-1: never the provider body or an exception
+  // message, which can hold an address or a name). Safe to surface up to
+  // the operator.
   error?: string;
   // True when input.signal aborted before the provider was called: nothing was sent.
   notStarted?: boolean;
