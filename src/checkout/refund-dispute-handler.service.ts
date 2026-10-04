@@ -406,15 +406,10 @@ export class RefundDisputeHandlerService {
       // No-op: we'll see the parent charge.refunded shortly.
       return { claimed: false, reason: 'no_known_refund' };
     }
-    // B-641-6 (S-COACH-BE-4): a refund that was pending when charge.refunded
-    // arrived completes through THIS event (Stripe does not resend
-    // charge.refunded). Book it exactly like a succeeded refund on
-    // charge.refunded: stamp the first success time (posted_at, which the
-    // coach Money page and tax export window by), apply the ledger reversal
-    // once, and alert the coach once. Without this the refund kept
-    // posted_at = null (booked at request time) and never reversed the ledger.
-    // B-641-7: also re-enter when the books are reversed but the head-coach
-    // transfer is still owed; the claims inside make re-entry harmless.
+    // B-641-6 (S-COACH-BE-4): a refund pending on charge.refunded completes
+    // through THIS event (never resent): book it like charge.refunded (first
+    // success time in posted_at, ledger reversal once, coach alert once).
+    // B-641-7: also re-enter while the head-coach transfer is still owed.
     if (refund.status === 'succeeded' && !(existing.ledger_reversed && existing.transfer_reversed)) {
       const purchase = await this.prisma.clientPurchase.findUnique({
         where: { id: existing.purchase_id },
@@ -531,12 +526,9 @@ export class RefundDisputeHandlerService {
       return { row, ledger_just_reversed: false };
     }
 
-    // B-641-7: three paths can complete one refund (charge.refunded,
-    // charge.refund.updated, the admin refund) and they can overlap. The
-    // flag is CLAIMED, not read: the false -> true update and the local
-    // ledger reversal commit in one transaction, so exactly one caller
-    // reverses the books (a concurrent claimer waits on the row lock and then
-    // matches nothing) and a crash rolls both back for the redelivery.
+    // B-641-7: three paths can complete one refund and overlap. The flag is
+    // CLAIMED (false -> true) in one transaction with the ledger reversal, so
+    // one caller reverses the books and a crash rolls both back.
     const ledgerJustReversed = await this.prisma.$transaction(async (tx) => {
       const claim = await tx.chargeRefund.updateMany({
         where: { id: row.id, ledger_reversed: false },
@@ -562,20 +554,12 @@ export class RefundDisputeHandlerService {
   }
 
   // B-641-7: reverse the head-coach transfer for ONE refund exactly once.
-  // Every attempt for this refund (racing webhooks, the admin path, the
-  // retry sweep) sends the same refund-scoped Stripe idempotency key with
-  // the same amount, so Stripe makes one reversal; the local record is gated
-  // by claiming transfer_reversed false -> true in the same transaction, so
-  // it is written once. A Stripe failure leaves transfer_reversed = false
-  // (nothing recorded) for the retry sweep instead of marking it done.
-  //
-  // B-641-7 (narrowed, B-COACH-5): Stripe forgets a key 24 hours after its
-  // first request, so a resend after that could make a SECOND reversal. The
-  // retry admission therefore lives HERE, on the one shared path, for every
-  // caller: the first attempt is stamped before Stripe sees the key, a resend
-  // is admitted only while that stamp is inside the 23-hour window, and a
-  // reversal still owed past it moves to operator review (alerted once,
-  // reconciled by an owner) instead of being sent again.
+  // Every caller sends the same refund-scoped key and amount (one Stripe
+  // reversal); the local record claims transfer_reversed false -> true (one
+  // record). A Stripe failure leaves it owed for the retry sweep.
+  // B-641-7 (B-COACH-5): Stripe forgets a key after 24 hours, so a resend is
+  // admitted only within 23 hours of the first attempt (stamped before the
+  // call); past that the reversal moves to owner review, alerted once.
   private async applyRefundTransferReversalOnce(
     refundRowId: string,
     purchaseId: string,
@@ -718,14 +702,9 @@ export class RefundDisputeHandlerService {
     return true;
   }
 
-  // B-641-7 recovery: a succeeded refund whose books are reversed but whose
-  // head-coach transfer is not (Stripe failed, or the process stopped between
-  // Stripe and the local record). Retried with the same refund-scoped key.
-  //
-  // B-641-8 (B-COACH-5): rows past the window first LEAVE the retry set (each
-  // moves to review and alerts once), so they can never occupy a retry batch;
-  // the retry pass then selects only admissible rows and pages through all of
-  // them (bounded per run), so fresh refunds are reached behind any backlog.
+  // B-641-7 recovery: books reversed, head-coach transfer still owed; retried
+  // with the same refund-scoped key. B-641-8: rows past the window first move
+  // to review, then the pass pages (bounded) through admissible rows only.
   async retryPendingTransferReversals(
     now: Date = new Date(),
     limit = 50,
@@ -757,12 +736,9 @@ export class RefundDisputeHandlerService {
 
     let retried = 0;
     let reversed = 0;
-    // B-641-8 (narrowed, Sol): fair across runs. Never-attempted rows come
-    // first, then the least recently attempted, so rows that keep failing go
-    // to the back of the next run instead of filling its bounded pages again.
-    // Every row a run touches either leaves the owed set (reversed, nothing
-    // owed, review) or is stamped with this run's `now` on admission, so the
-    // `last attempt before now` filter moves each page past it (no cursor).
+    // B-641-8 (Sol): never-attempted rows first, then least recently tried.
+    // Each touched row leaves the owed set or is stamped with `now`, so the
+    // `last attempt before now` filter pages past it (no cursor).
     for (let page = 0; page < REFUND_TRANSFER_SWEEP_MAX_PAGES; page++) {
       const rows = await this.prisma.chargeRefund.findMany({
         where: {

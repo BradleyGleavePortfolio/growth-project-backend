@@ -1,11 +1,6 @@
--- B-CM1-116 (#674 B-674-3, #676 B-676-1). Additive only.
--- SplitLedgerReversal: one immutable row per reversal event and slice (what
--- THIS refund or lost chargeback took back from THIS slice, and when), written
--- with the reversed_cents increase; unique per (entry, kind, event). No user
--- id or free text (source_id is a ChargeRefund / ChargeDispute id), so the
--- deletion manifest is unchanged; rows cascade with their slice. No backfill:
--- production has no ledger reversal yet (a legacy one keeps the old split).
--- Server-only like SplitLedgerEntry: RLS forced, deny-all policy.
+-- B-CM1-116 (B-674-3, B-676-1). Additive. One immutable row per reversal
+-- event and slice. No user id or free text (deletion manifest unchanged); no
+-- backfill (legacy reversals keep the old split). Server-only, RLS deny-all.
 CREATE TABLE IF NOT EXISTS "SplitLedgerReversal" (
     "id" TEXT NOT NULL,
     "entry_id" TEXT NOT NULL,

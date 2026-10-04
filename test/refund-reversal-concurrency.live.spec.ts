@@ -1,11 +1,7 @@
-// B-674-1 (= B-641-12) live proof on real Postgres: two DIFFERENT refunds
-// reversing one ledger slice or one head-coach transfer at once both count.
-// A third transaction holds the row lock (SELECT ... FOR UPDATE) until BOTH
-// writers wait on it (pg_stat_activity wait_event_type = 'Lock'). At 9a512028
-// each writer had read the row with a plain SELECT and wrote an absolute
-// value, so the second commit overwrote the first; the compare-and-set makes
-// Postgres re-check the read value after the first commit, and the loser
-// re-reads. Real services, Stripe stubbed. mwb-3-live-tests job only.
+// B-674-1 (= B-641-12) on real Postgres: two DIFFERENT refunds reversing one
+// slice or one head-coach transfer at once both count. A third transaction
+// holds the row lock until BOTH writers wait on it (pg_stat_activity); at
+// 9a512028 the second absolute write overwrote the first. mwb-3-live-tests.
 import 'reflect-metadata';
 import { PrismaService } from '../src/prisma.service';
 import { RefundDisputeHandlerService } from '../src/checkout/refund-dispute-handler.service';
