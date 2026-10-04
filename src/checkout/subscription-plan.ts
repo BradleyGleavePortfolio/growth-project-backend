@@ -9,6 +9,7 @@ import {
   StripeConnectApiError,
   type StripeSubscriptionCheckoutObject,
 } from '../connect/stripe-connect-api.service';
+import { parseCheckoutTerms } from './subscription-terms';
 
 /** pg_advisory_xact_lock namespace: ASCII 'subc'. */
 export const ADVISORY_LOCK_NAMESPACE_SUBSCRIPTION_CHECKOUT = 0x73_75_62_63;
@@ -279,6 +280,14 @@ export function expandedId(v: { id?: string } | string | null | undefined): stri
   return typeof v === 'string' ? v : (v.id ?? null);
 }
 
+/**
+ * B-679-8 / B-679-10 — a trial carries the attempt's own card once the
+ * trial-card attach set the default and lifted the create-time end.
+ */
+export function ownTrialCardOn(sub: StripeSubscriptionCheckoutObject): boolean {
+  return !!sub.default_payment_method && !sub.cancel_at_period_end;
+}
+
 /** B-654-6 — a subscription with no sheet secret: paid/processing, ended, or stuck. */
 export function classifyWithoutSheet(
   sub: StripeSubscriptionCheckoutObject,
@@ -287,7 +296,10 @@ export function classifyWithoutSheet(
   if (sub.status === 'active' || sub.status === 'past_due' || sub.status === 'unpaid') {
     return 'complete';
   }
-  if (sub.status === 'trialing') return sub.default_payment_method ? 'complete' : 'unavailable';
+  // Sol/Opus B-679-10 — a trial is complete only on the attempt's own card
+  // (the attach lifted the create-time end); a default Stripe set itself
+  // (the customer's card) still needs the attempt's own setup sheet.
+  if (sub.status === 'trialing') return ownTrialCardOn(sub) ? 'complete' : 'unavailable';
   const inv =
     sub.latest_invoice && typeof sub.latest_invoice === 'object' ? sub.latest_invoice : null;
   if (inv?.status === 'paid') return 'complete';
@@ -300,7 +312,7 @@ export function classifyWithoutSheet(
 /** True while no payment of this subscription succeeded or is in flight. */
 export function subscriptionUnpaid(sub: StripeSubscriptionCheckoutObject): boolean {
   if (sub.status !== 'incomplete' && sub.status !== 'trialing') return false;
-  if (sub.status === 'trialing' && sub.default_payment_method) return false;
+  if (sub.status === 'trialing' && ownTrialCardOn(sub)) return false;
   const inv =
     sub.latest_invoice && typeof sub.latest_invoice === 'object' ? sub.latest_invoice : null;
   const pi = inv && typeof inv.payment_intent === 'object' ? inv.payment_intent : null;
@@ -313,7 +325,13 @@ export function sheetSecret(
   if (sub.status === 'canceled' || sub.status === 'incomplete_expired') return null;
   const si = sub.pending_setup_intent;
   if (sub.status === 'trialing') {
-    if (si && typeof si === 'object' && typeof si.client_secret === 'string') {
+    // C-679-1 — a SetupIntent canceled before a trial's cancel is never a sheet.
+    if (
+      si &&
+      typeof si === 'object' &&
+      typeof si.client_secret === 'string' &&
+      si.status !== 'canceled'
+    ) {
       return { mode: 'setup', client_secret: si.client_secret };
     }
     return null;
@@ -343,15 +361,23 @@ export function planView(row: ClientPurchase, pkg: CoachPackage | null): ClientP
   else if (status === 'payment_failed') state = 'payment_failed';
   else state = 'confirming';
   const live = state === 'active' || state === 'trialing' || state === 'past_due';
-  const interval = pkg
-    ? asInterval(pkg.billing_type === 'recurring' ? pkg.interval : pkg.recurring_interval)
-    : null;
-  const intervalCount = pkg
-    ? Math.max(
-        1,
-        (pkg.billing_type === 'recurring' ? pkg.interval_count : pkg.recurring_interval_count) ?? 1,
-      )
-    : 1;
+  // B-679-5 — the cadence bought is the attempt's pinned terms; the package's
+  // current cadence is only the fallback for a row without a pin.
+  const pinned = parseCheckoutTerms(row.checkout_terms);
+  const interval = pinned
+    ? pinned.interval
+    : pkg
+      ? asInterval(pkg.billing_type === 'recurring' ? pkg.interval : pkg.recurring_interval)
+      : null;
+  const intervalCount = pinned
+    ? pinned.interval_count
+    : pkg
+      ? Math.max(
+          1,
+          (pkg.billing_type === 'recurring' ? pkg.interval_count : pkg.recurring_interval_count) ??
+            1,
+        )
+      : 1;
   const periodEnd = row.current_period_end;
   return {
     purchase_id: row.id,

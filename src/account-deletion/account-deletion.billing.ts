@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { StripeApiError, StripeApiService } from '../billing/stripe-api.service';
+import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
 
 /**
  * Account-deletion billing stop (B-608-5, operator policy 3).
@@ -19,6 +20,9 @@ import { StripeApiError, StripeApiService } from '../billing/stripe-api.service'
  * kept as a mirror of the Stripe record.
  */
 
+/** Sol B-679-7 — a native checkout attempt touched this recently may still be finishing on Stripe. */
+export const UNBOUND_ATTEMPT_SETTLE_MS = 120_000;
+
 export interface BillingStopResult {
   canceled: number;
   alreadyInactive: number;
@@ -34,7 +38,11 @@ function isAlreadyGone(err: unknown): boolean {
 export class AccountDeletionBillingService {
   private readonly logger = new Logger(AccountDeletionBillingService.name);
 
-  constructor(private readonly stripe: StripeApiService) {}
+  constructor(
+    private readonly stripe: StripeApiService,
+    // Sol B-679-7 — the client that creates native checkout subscriptions.
+    @Optional() private readonly checkoutStripe?: StripeConnectApiService,
+  ) {}
 
   async collectSubscriptionIds(tx: Prisma.TransactionClient, userId: string): Promise<string[]> {
     const ids = new Set<string>();
@@ -62,6 +70,54 @@ export class AccountDeletionBillingService {
       if (row.stripe_subscription_id) ids.add(row.stripe_subscription_id);
     }
     return [...ids];
+  }
+
+  /**
+   * Sol B-679-7 — subscriptions of native checkout attempts that Stripe may
+   * have created but that are not bound to their row (a create that timed
+   * out, or a request that died before its bind). The send itself is fenced:
+   * the checkout holds this user FOR KEY SHARE from its claim through its
+   * bind and finalization holds FOR UPDATE, so no send runs now. Stripe is
+   * asked for each attempt's own subscription (metadata.tgp_purchase_id,
+   * created after the attempt). Fails closed: an attempt touched in the last
+   * two minutes (Stripe may still be finishing its create), an unreadable or
+   * an incomplete list throws, and the deletion retries on the next run.
+   */
+  async collectUnboundAttemptSubscriptionIds(
+    tx: Prisma.TransactionClient,
+    userId: string,
+  ): Promise<string[]> {
+    const rows = await tx.clientPurchase.findMany({
+      where: {
+        client_user_id: userId,
+        billing_type: 'recurring',
+        status: 'pending',
+        stripe_subscription_id: null,
+        stripe_customer_id: { not: null },
+        idempotency_key: { startsWith: `sub-${userId}-` },
+        stripe_checkout_session_id: { startsWith: 'sub-' },
+      },
+      select: { id: true, stripe_customer_id: true, created_at: true, updated_at: true },
+    });
+    const ids: string[] = [];
+    for (const row of rows) {
+      if (!this.checkoutStripe || Date.now() - row.updated_at.getTime() < UNBOUND_ATTEMPT_SETTLE_MS) {
+        throw new Error(
+          `account deletion: subscription checkout purchase=${row.id} is still finishing; retry after two minutes`,
+        );
+      }
+      const list = await this.checkoutStripe.listSubscriptionsForCustomer(row.stripe_customer_id ?? '', {
+        createdGte: Math.floor(row.created_at.getTime() / 1000) - 300,
+      });
+      if (list.has_more) {
+        throw new Error(`account deletion: subscription list incomplete purchase=${row.id}`);
+      }
+      for (const sub of list.data ?? []) {
+        const ended = sub.status === 'canceled' || sub.status === 'incomplete_expired';
+        if (sub.metadata?.tgp_purchase_id === row.id && !ended) ids.push(sub.id);
+      }
+    }
+    return ids;
   }
 
   async cancelAll(subscriptionIds: string[]): Promise<BillingStopResult> {
