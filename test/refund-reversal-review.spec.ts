@@ -272,5 +272,8 @@ describe('B-641-11 — reversal failure logs carry ids and closed codes only', (
     expect(await failOnce(new StripeConnectApiError('x', 500, null, null))).toContain(
       'code=stripe_500_none',
     );
+    // C-674-5: the client timeout (stripe-connect-api handleFetchError) is cataloged.
+    const timeout = new StripeConnectApiError('x', 503, 'request_timeout', 'api_connection_error');
+    expect(await failOnce(timeout)).toContain('code=stripe_503_request_timeout');
   });
 });

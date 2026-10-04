@@ -241,7 +241,7 @@ describe('B-674-3 — one Stripe reversal is recorded once, wherever the webhook
     h.reverseTransfer.mockImplementationOnce(async (args) => {
       await made(args);
       await h.svc.handle(transferReversed(args.transfer_id, h.stripeTotal(args.transfer_id)));
-      throw new StripeConnectApiError('timed out', 503, null, 'request_timeout');
+      throw new StripeConnectApiError('timed out', 503, 'request_timeout', null);
     });
     await h.svc.retryPendingTransferReversals();
     expect(h.refund('r-to')).toMatchObject({
