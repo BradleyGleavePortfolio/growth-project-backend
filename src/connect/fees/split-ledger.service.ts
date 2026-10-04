@@ -29,6 +29,12 @@ import type { SplitPlan } from './fee-policy.service';
 // Legacy (pre-S-FEE destination charges, ensurePendingEntries): one set of
 // rows per purchase keyed on (purchase_id, kind, payee_user_id), exactly as
 // before; renewals of a legacy subscription collapse onto that set.
+// Round 11 (B-681-2): the 4-column unique no longer makes that set
+// exactly-once (stripe_charge_id is null when a legacy row is created, and
+// Postgres treats NULLs as distinct), so every legacy row is created with a
+// durable identity in the unique idempotency_key column
+// (legacyLedgerKey). Two planners that both find no row race on one INSERT;
+// the database lets exactly one win, and the loser adopts the winner's row.
 
 export interface SplitLedgerInputs {
   purchase: ClientPurchase;
@@ -36,6 +42,26 @@ export interface SplitLedgerInputs {
   platform_account_id: string | null; // for audit only; null fine
   seller_stripe_account_id: string;
   head_coach_stripe_account_id: string | null;
+}
+
+interface LegacyEntryArgs {
+  purchase_id: string;
+  kind: string;
+  payee_user_id: string | null;
+  payee_stripe_account_id: string | null;
+  amount_cents: number;
+  currency: string;
+}
+
+/**
+ * Round 11 (B-681-2) — the durable identity of one legacy per-purchase ledger
+ * row: purchase, kind and the payee's Stripe account (`platform` for TGP's
+ * own slice). Ids only, no user id: the key lives in a free-text column.
+ */
+export function legacyLedgerKey(
+  args: Pick<LegacyEntryArgs, 'purchase_id' | 'kind' | 'payee_stripe_account_id'>,
+): string {
+  return `sfee-legacy-ledger:${args.purchase_id}:${args.kind}:${args.payee_stripe_account_id ?? 'platform'}`;
 }
 
 @Injectable()
@@ -194,25 +220,6 @@ export class SplitLedgerService {
     });
   }
 
-  // S-FEE — undo part of a reversal (a won dispute reinstated the payee).
-  async undoReversal(args: {
-    entry_id: string;
-    reinstated_cents: number;
-  }): Promise<SplitLedgerEntry> {
-    const current = await this.prisma.splitLedgerEntry.findUniqueOrThrow({
-      where: { id: args.entry_id },
-    });
-    const newReversed = Math.max(0, current.reversed_cents - args.reinstated_cents);
-    return this.prisma.splitLedgerEntry.update({
-      where: { id: args.entry_id },
-      data: {
-        reversed_cents: newReversed,
-        status: current.status === 'reversed' ? 'posted' : current.status,
-        reversed_at: newReversed === 0 ? null : current.reversed_at,
-      },
-    });
-  }
-
   // Mark an entry as posted with the Stripe ids that locate it in Stripe's
   // books. Safe to re-call (idempotent on the ledger row).
   async markPosted(args: {
@@ -322,19 +329,10 @@ export class SplitLedgerService {
     });
   }
 
-  private async upsertEntry(args: {
-    purchase_id: string;
-    kind: string;
-    payee_user_id: string | null;
-    payee_stripe_account_id: string | null;
-    amount_cents: number;
-    currency: string;
-  }): Promise<SplitLedgerEntry> {
-    // Legacy per-purchase rows. S-FEE moved the unique to include
-    // stripe_charge_id (nullable), so the per-purchase dedupe is explicit:
-    // findFirst on (purchase_id, kind, payee_user_id), then create or update.
-    // Postgres NULL != NULL, so this also covers the payee-null
-    // application_fee row exactly as before.
+  private async upsertEntry(args: LegacyEntryArgs): Promise<SplitLedgerEntry> {
+    // Legacy per-purchase rows. An existing row for (purchase_id, kind,
+    // payee_user_id) is the set every renewal collapses onto; Postgres
+    // NULL != NULL, so this also covers the payee-null application_fee row.
     const existing = await this.prisma.splitLedgerEntry.findFirst({
       where: {
         purchase_id: args.purchase_id,
@@ -343,25 +341,45 @@ export class SplitLedgerService {
       },
       orderBy: { created_at: 'asc' },
     });
-    if (existing) {
-      if (args.payee_user_id === null) return existing;
-      return this.prisma.splitLedgerEntry.update({
-        where: { id: existing.id },
+    if (existing) return this.refreshLegacyEntry(existing, args);
+    const key = legacyLedgerKey(args);
+    try {
+      return await this.prisma.splitLedgerEntry.create({
         data: {
-          amount_cents: args.amount_cents,
+          purchase_id: args.purchase_id,
+          kind: args.kind,
+          payee_user_id: args.payee_user_id,
           payee_stripe_account_id: args.payee_stripe_account_id,
+          amount_cents: args.amount_cents,
+          currency: args.currency,
+          status: 'pending',
+          idempotency_key: key,
         },
       });
+    } catch (err) {
+      // B-681-2: another planner created this row first (the unique key let
+      // exactly one INSERT win). Adopt its row; never write a second one.
+      if ((err as { code?: unknown } | null)?.code !== 'P2002') throw err;
+      const winner = await this.prisma.splitLedgerEntry.findUnique({
+        where: { idempotency_key: key },
+      });
+      if (!winner) throw err;
+      return this.refreshLegacyEntry(winner, args);
     }
-    return this.prisma.splitLedgerEntry.create({
+  }
+
+  // A legacy renewal may carry a new amount or a reconnected payee account;
+  // the platform row (payee null) is never rewritten, exactly as before.
+  private async refreshLegacyEntry(
+    existing: SplitLedgerEntry,
+    args: LegacyEntryArgs,
+  ): Promise<SplitLedgerEntry> {
+    if (args.payee_user_id === null) return existing;
+    return this.prisma.splitLedgerEntry.update({
+      where: { id: existing.id },
       data: {
-        purchase_id: args.purchase_id,
-        kind: args.kind,
-        payee_user_id: args.payee_user_id,
-        payee_stripe_account_id: args.payee_stripe_account_id,
         amount_cents: args.amount_cents,
-        currency: args.currency,
-        status: 'pending',
+        payee_stripe_account_id: args.payee_stripe_account_id,
       },
     });
   }
