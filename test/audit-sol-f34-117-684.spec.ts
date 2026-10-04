@@ -1,4 +1,6 @@
 import type { ClientPurchase } from '@prisma/client';
+import { PayoutNoticeService } from '../src/checkout/payout-notice.service';
+import { PurchaseSplitHandlerService } from '../src/checkout/purchase-split-handler.service';
 import { RefundDisputeHandlerService } from '../src/checkout/refund-dispute-handler.service';
 import { ChargeSettlementService } from '../src/connect/fees/charge-settlement.service';
 import { FeePolicyService } from '../src/connect/fees/fee-policy.service';
@@ -42,4 +44,49 @@ it('all canonical refund identities and amounts are retained when the embedded p
   console.log('OBSERVATION_CANONICAL_REFUNDS', JSON.stringify({ refund_rows: db.refunds, settlement_refunded: db.settlements[0].refunded_cents }));
   expect(db.refunds.map((r) => r.stripe_refund_id)).toContain('re_older');
   expect(db.refunds.reduce((n, r) => n + Number(r.amount_cents), 0)).toBe(4_900);
+});
+
+it('the sweep never starts more notices after its 8-minute run budget expires', async () => {
+  const { prisma, db } = makeSettlementPrisma();
+  const stripe = new FakeStripe();
+  const ledger = new SplitLedgerService(asPrisma(prisma));
+  const fee = new FeePolicyService(asPrisma(prisma));
+  const transfers = new TransferOrchestratorService(asPrisma(prisma), stripe, ledger);
+  const settlements = new ChargeSettlementService(asPrisma(prisma), stripe, fee, ledger, transfers);
+  jest.spyOn(settlements, 'runSettlementSweep').mockResolvedValue({
+    retried: 0, backfilled: 0, settled: 0, invoices_scanned: 0, invoices_backfilled: 0,
+    stale_awaiting: 0, stale_transfers: 0, reversals_resolved: 0, reconciled: 0, open_recovery_payees: 0,
+  });
+  const started = Date.now();
+  let clock = started;
+  const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => clock);
+  const createNotification = jest.fn(async (..._args: unknown[]) => ({ id: 'n_1' }));
+  const pushToUser = jest.fn(async (..._args: unknown[]) => {
+    clock += 30_000;
+    return { delivered: true, code: 'delivered' };
+  });
+  const stub: object = { createNotification, pushToUser, channelGate: jest.fn(async () => 'enabled') };
+  const notices = new PayoutNoticeService(asPrisma(prisma), stub as NotificationsService);
+  for (let i = 0; i < 25; i += 1) {
+    await prisma.payoutAdjustmentNotice.create({ data: {
+      id: `pan_budget_${i}`, idempotency_key: `budget_${i}`, payee_user_id: 'coach_1',
+      settlement_id: `cs_budget_${i}`, stripe_charge_id: `ch_budget_${i}`, purchase_id: 'cp_1',
+      title: 'Refund payout update', body: 'A synthetic refund notice', event: 'refund',
+      created_at: new Date(started - 120_000), email_status: 'disabled',
+    } });
+  }
+  const splits = new PurchaseSplitHandlerService(asPrisma(prisma), stripe, fee, ledger, transfers, settlements, notices);
+  try {
+    await splits.runTransferSweeper(new Date(started), { deadlineAt: started + 8 * 60_000 });
+    console.log('OBSERVATION_NOTICE_BUDGET', JSON.stringify({
+      elapsed_minutes: (clock - started) / 60_000,
+      calls: pushToUser.mock.calls.length,
+      notices: db.notices?.map((n) => ({ id: n.id, dispatch_attempts: n.dispatch_attempts, dispatched_at: n.dispatched_at })),
+    }));
+    expect(pushToUser).toHaveBeenCalledTimes(16);
+    expect(db.notices?.[16].dispatch_attempts).toBe(0);
+  } finally {
+    nowSpy.mockRestore();
+    jest.restoreAllMocks();
+  }
 });
