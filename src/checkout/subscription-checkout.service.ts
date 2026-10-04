@@ -19,6 +19,7 @@ import { errorLabel } from './error-label';
 import {
   CreateFailed,
   type Fenced,
+  findAttemptSubscription,
   holdUnresolved,
   ownTrialSheet,
   sendFenced,
@@ -661,7 +662,7 @@ export class SubscriptionCheckoutService {
     // window the same key still guards the resend.
     let sub: StripeSubscriptionCheckoutObject | null = null;
     if (!firstTry) {
-      const found = await this.findAttemptSubscription(reservation);
+      const found = await findAttemptSubscription(this.stripe, this.logger, reservation);
       if (found === 'unreadable') {
         await this.markRetryable(reservation);
         throw inProgress(true);
@@ -698,7 +699,7 @@ export class SubscriptionCheckoutService {
           else await this.markRetryable(reservation);
           throw stripeFailure(err, refused);
         }
-        const found = await this.findAttemptSubscription(reservation);
+        const found = await findAttemptSubscription(this.stripe, this.logger, reservation);
         if (found === 'unreadable') {
           await this.markRetryable(reservation);
           throw inProgress(true);
@@ -977,39 +978,6 @@ export class SubscriptionCheckoutService {
   }
 
   /**
-   * B-654-5 — the subscription Stripe made for this attempt, found by
-   * metadata.tgp_purchase_id among the customer's subscriptions. null =
-   * Stripe has none; 'unreadable' = Stripe could not be read now.
-   */
-  private async findAttemptSubscription(
-    row: ClientPurchase,
-  ): Promise<StripeSubscriptionCheckoutObject | null | 'unreadable'> {
-    if (!row.stripe_customer_id) return null;
-    try {
-      let list = await this.stripe.listSubscriptionsForCustomer(row.stripe_customer_id);
-      const own = (l: typeof list) =>
-        (l.data ?? []).find((s) => s.metadata?.tgp_purchase_id === row.id);
-      let hit = own(list);
-      if (!hit && list.has_more) {
-        // C-679-2 — a full page without it: read only what was created since
-        // this attempt began (5 min clock margin); its own subscription is newer.
-        const createdGte = Math.floor(row.created_at.getTime() / 1000) - 300;
-        list = await this.stripe.listSubscriptionsForCustomer(row.stripe_customer_id, {
-          createdGte,
-        });
-        hit = own(list);
-      }
-      if (!hit) return list.has_more ? 'unreadable' : null;
-      return await this.stripe.retrieveSubscriptionForCheckout(hit.id);
-    } catch (err) {
-      this.logger.warn(
-        `attempt subscription lookup failed purchase=${row.id} error=${errorLabel(err)}`,
-      );
-      return 'unreadable';
-    }
-  }
-
-  /**
    * B-654-7 — retire an attempt whose terms are no longer offered. Its
    * subscription (bound, or found by metadata when its create was uncertain)
    * is read first: paid, processing or a saved trial card answers 'settled'
@@ -1027,7 +995,7 @@ export class SubscriptionCheckoutService {
         if (!isResourceMissing(err)) throw stripeFailure(err);
       }
     } else if (parseCheckoutTerms(row.checkout_terms)) {
-      const found = await this.findAttemptSubscription(row);
+      const found = await findAttemptSubscription(this.stripe, this.logger, row);
       if (found === 'unreadable') {
         await this.markRetryable(row);
         throw inProgress(true);
@@ -1408,7 +1376,7 @@ export class SubscriptionCheckoutService {
       Date.now() - row.updated_at.getTime() <= STALE_RESERVATION_MS;
     if (inFlight || row.status !== 'pending') return null;
     const found = parseCheckoutTerms(row.checkout_terms)
-      ? await this.findAttemptSubscription(row)
+      ? await findAttemptSubscription(this.stripe, this.logger, row)
       : null;
     if (found === 'unreadable') return null;
     if (!found) {
