@@ -281,14 +281,16 @@ export class FakePrisma {
     const specs = (Array.isArray(orderBy) ? orderBy : [orderBy]) as Row[];
     return [...rows].sort((a, b) => {
       for (const spec of specs) {
-        for (const [k, dir] of Object.entries(spec)) {
+        for (const [k, raw] of Object.entries(spec)) {
           const av = a[k];
           const bv = b[k];
           if (av == null && bv == null) continue;
-          // Nulls sort last in either direction (callers here never depend
-          // on null placement).
-          if (av == null) return 1;
-          if (bv == null) return -1;
+          // `{ sort, nulls }` as Prisma takes it; plain 'asc' / 'desc' sorts
+          // nulls last (Postgres ASC default; callers never rely on DESC).
+          const dir = isPlainObject(raw) ? raw.sort : raw;
+          const nullsFirst = isPlainObject(raw) && raw.nulls === 'first';
+          if (av == null) return nullsFirst ? -1 : 1;
+          if (bv == null) return nullsFirst ? 1 : -1;
           const c = cmp(av, bv);
           if (c !== 0) return dir === 'desc' ? -c : c;
         }

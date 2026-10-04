@@ -34,7 +34,7 @@ export function normalizeCurrency(currency: string | null | undefined): string {
   return /^[a-z]{3}$/.test(c) ? c : 'usd';
 }
 
-/** Sum integer amounts per currency, in first-seen currency order. */
+/** Sum integer amounts per currency; one entry per currency, sorted by currency code. */
 export function totalsByCurrency(
   items: Array<{ currency: string; amount_cents: number }>,
 ): MoneyTotal[] {
