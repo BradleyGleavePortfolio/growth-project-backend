@@ -301,13 +301,13 @@ describe('OR-111-1 worked example 1: $100 full refund', () => {
       held_not_reversed_cents: 0,
       held_open_cents: 520,
       title: 'A client was refunded',
-      body: "A client got $100.00 back. We took $94.80 back from that sale's payout. We will hold $5.20 from your next sale.",
+      body: "A client got $100.00 back. $94.80 was taken back from that sale's payout. $5.20 is held from your next sale.",
     });
     // Delivered once: in-app + push + email (log transport = provider not live).
     expect(ctx.notifications.pushToUser).toHaveBeenCalledWith(
       COACH,
       'A client was refunded',
-      "A client got $100.00 back. We took $94.80 back from that sale's payout. We will hold $5.20 from your next sale.",
+      "A client got $100.00 back. $94.80 was taken back from that sale's payout. $5.20 is held from your next sale.",
       expect.objectContaining({ type: 'payout_adjustment', notice_id: ctx.db.notices![0].id }),
     );
     expect(ctx.emails).toHaveLength(1);
@@ -398,7 +398,7 @@ describe('OR-111-1 worked example 2: $100 lost dispute with a $15 fee', () => {
       held_dispute_fee_cents: 1_500,
       held_not_reversed_cents: 0,
       title: 'A client disputed a charge',
-      body: "A client's bank took back $100.00 in a dispute. We took $94.80 back from that sale's payout. We will hold $20.20 from your next sale.",
+      body: "A client's bank took back $100.00 in a dispute. $94.80 was taken back from that sale's payout. $20.20 is held from your next sale.",
     });
     expect(ctx.notifications.pushToUser).toHaveBeenCalledTimes(1);
 
@@ -457,7 +457,7 @@ describe('OR-111-1 worked example 3: refused reversal after payout, then a $49 s
       held_stripe_fee_cents: 320,
       held_dispute_fee_cents: 0,
       held_not_reversed_cents: 9_480,
-      body: 'A client got $100.00 back. We will hold $100.00 from your next sale.',
+      body: 'A client got $100.00 back. $100.00 is held from your next sale.',
     });
 
     // $49 sale: fee 172, TGP 98, coach net 4630 — all of it is netted.
@@ -527,7 +527,7 @@ describe('OR-111-1 won dispute, Money API and delivery', () => {
       customer_refunded_cents: 0,
     });
     expect(won.body).toBe(
-      'You won the dispute on a $100.00 charge. We paid $79.80 back to you and released the $20.20 hold. Nothing is held from your next sale.',
+      'You won the dispute on a $100.00 charge. $79.80 was paid back to you and the $20.20 hold was released. Nothing is held from your next sale.',
     );
     expect(ctx.identity('ch_100')).toMatchObject({ drift_cents: 0, platform_net_cents: 200 });
   });
@@ -540,7 +540,7 @@ describe('OR-111-1 won dispute, Money API and delivery', () => {
     expect(ctx.db.notices![0]).toMatchObject({
       reversed_cents: 4_000,
       held_cents: 0,
-      body: "A client got $40.00 back. We took $40.00 back from that sale's payout. Nothing is held from your next sale.",
+      body: "A client got $40.00 back. $40.00 was taken back from that sale's payout. Nothing is held from your next sale.",
     });
     ctx.stripe.failReversals = true;
     await ctx.refundViaWebhook('ch_100', 10_000, 10_000);
@@ -924,7 +924,7 @@ describe('round 6 B-627-7 / C-627-5: the forward-looking sentence uses the amoun
     // $99 of $100 refunded: 94.80 reversed, 4.20 held (TGP 2.00 + Stripe 3.20 - 1.00 kept).
     await ctx.refundViaWebhook('ch_100', 10_000, 9_900);
     expect(ctx.openHeld()).toBe(420);
-    expect(ctx.db.notices![0].body).toContain('We will hold $4.20 from your next sale.');
+    expect(ctx.db.notices![0].body).toContain('$4.20 is held from your next sale.');
     // The next sale nets the 4.20.
     await ctx.sell(ctx.p100b, 'ch_100b', 10_000, 320);
     expect(ctx.openHeld()).toBe(0);
@@ -934,7 +934,7 @@ describe('round 6 B-627-7 / C-627-5: the forward-looking sentence uses the amoun
     const notices = ctx.db.notices!.filter((n) => n.stripe_charge_id === 'ch_100');
     const last = notices[notices.length - 1];
     expect(last).toMatchObject({ held_cents: 520, held_open_cents: 100 });
-    expect(last.body).toContain('We will hold $1.00 from your next sale.');
+    expect(last.body).toContain('$1.00 is held from your next sale.');
     expect(last.body).not.toContain('$5.20');
     // The Money read model agrees with what the coach is told.
     const view = await ctx.notices.listForPayee(COACH);
@@ -959,10 +959,10 @@ describe('round 6 B-627-7 / C-627-5: the forward-looking sentence uses the amoun
       held_open_cents: 100,
     };
     expect(payoutNoticeCopy('refund', 'coach', a).body).toContain(
-      'We will hold $1.00 from your next sale.',
+      '$1.00 is held from your next sale.',
     );
     expect(payoutNoticeCopy('chargeback', 'coach', a).body).toContain(
-      'We will hold $1.00 from your next sale.',
+      '$1.00 is held from your next sale.',
     );
     expect(payoutNoticeCopy('refund', 'coach', { ...a, held_open_cents: 0 }).body).toContain(
       'Nothing is held from your next sale.',
