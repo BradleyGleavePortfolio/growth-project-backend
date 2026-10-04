@@ -501,7 +501,29 @@ export function reversedInWindow(slice: ReversedSliceRow, window: MoneyWindow): 
     .reduce((acc, p) => acc + p.cents, 0);
 }
 
+/**
+ * B-676-3: a succeeded refund or lost chargeback of the coach's own sale,
+ * loaded on its own (not through ledger slices), so it has its CSV row with
+ * what the client got back even when no ledger cent moved (every portion
+ * rounded to zero).
+ */
+export interface MoneyOccurrence {
+  kind: 'refund' | 'chargeback';
+  /** ChargeRefund / ChargeDispute id (matches ReversalPortion.source_id). */
+  source_id: string;
+  purchase_id: string;
+  stripe_charge_id: string;
+  currency: string;
+  /** The event's own time (refund success / chargeback close). */
+  at: Date;
+  amount_cents: number;
+  client_name: string | null;
+  package_name: string | null;
+}
+
 export interface WindowSlices {
+  /** B-676-3: refund / chargeback occurrences (the tax export loads them). */
+  occurrences?: MoneyOccurrence[];
   /** Slices of the coach's own sales posted in the window. */
   salesSeller: TimedSliceRow[];
   /** head_coach_split slices paid to the coach, posted in the window. */
@@ -787,6 +809,13 @@ function displayName(u: { name?: string | null } | null | undefined): string {
 /** Ledger rows per query the CSV export accepts before asking for a shorter period. */
 export const MONEY_EXPORT_MAX_ROWS = 20_000;
 
+function exportTooLarge(limit: number): BadRequestException {
+  return new BadRequestException({
+    code: 'MONEY_EXPORT_TOO_LARGE',
+    message: `This period has more than ${limit} ledger rows, which is too many for one file. Choose a shorter period, for example one quarter, and export each part.`,
+  });
+}
+
 export const MONEY_CSV_COLUMNS = [
   'date_utc',
   'type',
@@ -837,7 +866,12 @@ export function csvText(value: string): string {
   return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
 }
 
-function emptyCsvRow(s: TimedSliceRow, at: Date, type: CsvRow['type'], withNames: boolean): CsvRow {
+type CsvRowSource = Pick<
+  TimedSliceRow,
+  'purchase_id' | 'stripe_charge_id' | 'currency' | 'client_name' | 'package_name'
+>;
+
+function emptyCsvRow(s: CsvRowSource, at: Date, type: CsvRow['type'], withNames: boolean): CsvRow {
   return {
     at,
     type,
@@ -891,8 +925,22 @@ export function buildMoneyCsv(coachId: string, window: MoneyWindow, slices: Wind
   // time, so they share a row; a later head-coach recovery (the sweep) is its
   // own row, dated when it happened. What the client got back shows once, on
   // the row at the event's own time, so it never repeats across rows or files.
+  // Every succeeded refund / lost chargeback in the window seeds its row from
+  // the event itself, so a refund whose portions all rounded to zero is
+  // still exported with what the client got back.
+  const eventKey = (type: string, purchaseId: string, sourceId: string, at: Date) =>
+    `${type}|${purchaseId}|id:${sourceId}|${at.toISOString()}`;
   const reversalKey = (type: string, s: TimedSliceRow, p: ReversalPortion) =>
-    `${type}|${s.purchase_id}|${s.stripe_charge_id ?? ''}|${p.source_id ?? ''}|${p.at.toISOString()}`;
+    p.source_id
+      ? eventKey(type, s.purchase_id, p.source_id, p.at)
+      : `${type}|${s.purchase_id}|${s.stripe_charge_id ?? ''}||${p.at.toISOString()}`;
+  for (const o of slices.occurrences ?? []) {
+    if (!inWindow(o.at, window)) continue;
+    const r = row(eventKey(o.kind, o.purchase_id, o.source_id, o.at), () =>
+      emptyCsvRow(o, o.at, o.kind, true),
+    );
+    r.client_refunded = o.amount_cents;
+  }
   for (const s of slices.reversedSeller) {
     for (const p of allocateReversal(s)) {
       if (!inWindow(p.at, window)) continue;
@@ -1212,10 +1260,7 @@ export class CoachMoneyService {
       limit !== undefined &&
       [salesSeller, salesIncome, reversedSeller, reversedIncome].some((rows) => rows.length > limit)
     ) {
-      throw new BadRequestException({
-        code: 'MONEY_EXPORT_TOO_LARGE',
-        message: `This period has more than ${limit} ledger rows, which is too many for one file. Choose a shorter period, for example one quarter, and export each part.`,
-      });
+      throw exportTooLarge(limit);
     }
     // B-641-3 belt and braces: even if a query ever loses its currency
     // scope, a total never adds a row in another currency.
@@ -1227,6 +1272,85 @@ export class CoachMoneyService {
       reversedSeller: reversedSeller.filter(sameCurrency).map((r) => this.toTimed(r, true)),
       reversedIncome: reversedIncome.filter(sameCurrency).map((r) => this.toTimed(r, false)),
     };
+  }
+
+  /**
+   * B-676-3: the coach's own succeeded refunds (completion time) and lost
+   * chargebacks (close time) in the window, each read once from its own row
+   * and scoped like the seller slices: the authenticated coach's sales in
+   * the export's currency (the sale's currency; ChargeRefund rows do not
+   * carry their own), at most `limit` rows per kind.
+   */
+  async loadOccurrences(
+    coachId: string,
+    window: MoneyWindow,
+    opts: { currency?: string; limit: number },
+  ): Promise<MoneyOccurrence[]> {
+    const range = this.windowRange(window);
+    const scope = {
+      purchase: {
+        coach_user_id: coachId,
+        source: null,
+        ...(opts.currency ? { currency: opts.currency } : {}),
+      },
+    };
+    const common = {
+      id: true,
+      purchase_id: true,
+      stripe_charge_id: true,
+      amount_cents: true,
+      purchase: {
+        select: {
+          currency: true,
+          client: { select: { name: true } },
+          package: { select: { name: true } },
+        },
+      },
+    } as const;
+    const [refunds, disputes] = await Promise.all([
+      this.prisma.chargeRefund.findMany({
+        where: {
+          ...scope,
+          status: 'succeeded',
+          OR: [{ posted_at: range }, { posted_at: null, created_at: range }],
+        },
+        select: { ...common, posted_at: true, created_at: true },
+        orderBy: { id: 'asc' },
+        take: opts.limit + 1,
+      }),
+      this.prisma.chargeDispute.findMany({
+        where: {
+          ...scope,
+          status: { in: LOST_DISPUTE_STATUS_LIST },
+          OR: [{ closed_at: range }, { closed_at: null, updated_at: range }],
+        },
+        select: { ...common, closed_at: true, updated_at: true },
+        orderBy: { id: 'asc' },
+        take: opts.limit + 1,
+      }),
+    ]);
+    if (refunds.length > opts.limit || disputes.length > opts.limit) {
+      throw exportTooLarge(opts.limit);
+    }
+    const occurrence = (
+      kind: MoneyOccurrence['kind'],
+      x: (typeof refunds)[number] | (typeof disputes)[number],
+      at: Date,
+    ): MoneyOccurrence => ({
+      kind,
+      source_id: x.id,
+      purchase_id: x.purchase_id,
+      stripe_charge_id: x.stripe_charge_id,
+      currency: x.purchase.currency,
+      at,
+      amount_cents: x.amount_cents,
+      client_name: displayName(x.purchase.client),
+      package_name: x.purchase.package?.name ?? null,
+    });
+    return [
+      ...refunds.map((x) => occurrence('refund', x, x.posted_at ?? x.created_at)),
+      ...disputes.map((x) => occurrence('chargeback', x, x.closed_at ?? x.updated_at)),
+    ].filter((o) => !opts.currency || o.currency.toLowerCase() === opts.currency);
   }
 
   async totalsFor(coachId: string, window: MoneyWindow, currency: string): Promise<MoneyTotals> {
@@ -1248,11 +1372,12 @@ export class CoachMoneyService {
   ): Promise<string> {
     // C-641-6 (S-COACH-3): `?currency=` limits the file to one currency, so
     // a spreadsheet sum of net_to_you is one meaningful number.
-    const slices = await this.loadWindow(coachId, window, {
-      limit: MONEY_EXPORT_MAX_ROWS,
-      ...(currency ? { currency } : {}),
-    });
-    return buildMoneyCsv(coachId, window, slices);
+    const scope = { limit: MONEY_EXPORT_MAX_ROWS, ...(currency ? { currency } : {}) };
+    const [slices, occurrences] = await Promise.all([
+      this.loadWindow(coachId, window, scope),
+      this.loadOccurrences(coachId, window, scope),
+    ]);
+    return buildMoneyCsv(coachId, window, { ...slices, occurrences });
   }
 
   /**
