@@ -1,0 +1,497 @@
+﻿2026-10-04T18:02:12.2012871Z Current runner version: '2.337.0'
+2026-10-04T18:02:12.2037268Z ##[group]Runner Image Provisioner
+2026-10-04T18:02:12.2038116Z Hosted Compute Agent
+2026-10-04T18:02:12.2038790Z Version: 20260901.588
+2026-10-04T18:02:12.2039530Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-04T18:02:12.2040314Z Build Date: 2026-09-01T19:56:44Z
+2026-10-04T18:02:12.2041115Z Worker ID: {3cc7d107-18f0-406c-abd5-d59cf21b2a64}
+2026-10-04T18:02:12.2041904Z Azure Region: westus2
+2026-10-04T18:02:12.2042531Z ##[endgroup]
+2026-10-04T18:02:12.2044347Z ##[group]Operating System
+2026-10-04T18:02:12.2045086Z Ubuntu
+2026-10-04T18:02:12.2045750Z 24.04.5
+2026-10-04T18:02:12.2046314Z LTS
+2026-10-04T18:02:12.2046864Z ##[endgroup]
+2026-10-04T18:02:12.2047561Z ##[group]Runner Image
+2026-10-04T18:02:12.2048215Z Image: ubuntu-24.04
+2026-10-04T18:02:12.2048922Z Version: 20260927.320.1
+2026-10-04T18:02:12.2050205Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-04T18:02:12.2051856Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-04T18:02:12.2052842Z ##[endgroup]
+2026-10-04T18:02:12.2054322Z ##[group]GITHUB_TOKEN Permissions
+2026-10-04T18:02:12.2056213Z Contents: read
+2026-10-04T18:02:12.2057172Z Metadata: read
+2026-10-04T18:02:12.2057842Z Packages: read
+2026-10-04T18:02:12.2058477Z ##[endgroup]
+2026-10-04T18:02:12.2061429Z Secret source: Actions
+2026-10-04T18:02:12.2062413Z Cache mode: write
+2026-10-04T18:02:12.2063404Z Prepare workflow directory
+2026-10-04T18:02:12.3616610Z Prepare all required actions
+2026-10-04T18:02:12.3668487Z Getting action download info
+2026-10-04T18:02:12.7078400Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-04T18:02:12.8506178Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-04T18:02:13.3022270Z Complete job name: build-and-test
+2026-10-04T18:02:13.4091317Z ##[group]Checking docker version
+2026-10-04T18:02:13.4105169Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-04T18:02:13.5169291Z '1.48'
+2026-10-04T18:02:13.5187237Z Docker daemon API version: '1.48'
+2026-10-04T18:02:13.5188028Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-04T18:02:13.5356012Z '1.48'
+2026-10-04T18:02:13.5369299Z Docker client API version: '1.48'
+2026-10-04T18:02:13.5375291Z ##[endgroup]
+2026-10-04T18:02:13.5378214Z ##[group]Clean up resources from previous jobs
+2026-10-04T18:02:13.5384096Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=76c027"
+2026-10-04T18:02:13.5537755Z ##[command]/usr/bin/docker network prune --force --filter "label=76c027"
+2026-10-04T18:02:13.5675829Z ##[endgroup]
+2026-10-04T18:02:13.5676368Z ##[group]Create local container network
+2026-10-04T18:02:13.5687390Z ##[command]/usr/bin/docker network create --label 76c027 github_network_c9c36cc94d6d4990a6c3d65c09c17c3c
+2026-10-04T18:02:13.6191655Z 193654dea49664d5ff1b580efb746872e886f56274ded35e52855e40e9a93a2e
+2026-10-04T18:02:13.6213391Z ##[endgroup]
+2026-10-04T18:02:13.6239190Z ##[group]Starting redis service container
+2026-10-04T18:02:13.6261109Z ##[command]/usr/bin/docker pull redis:7-alpine
+2026-10-04T18:02:14.5405060Z 7-alpine: Pulling from library/redis
+2026-10-04T18:02:14.8036018Z 16333ee0c00f: Pulling fs layer
+2026-10-04T18:02:14.8037706Z 83234986c742: Pulling fs layer
+2026-10-04T18:02:14.8039226Z 7eb50503c2b0: Pulling fs layer
+2026-10-04T18:02:14.8040539Z 1522f9c6f453: Pulling fs layer
+2026-10-04T18:02:14.8041823Z 9928009b15c8: Pulling fs layer
+2026-10-04T18:02:14.8043238Z 4f4fb700ef54: Pulling fs layer
+2026-10-04T18:02:14.8044597Z 4eb14bae0e1d: Pulling fs layer
+2026-10-04T18:02:14.8045799Z 1522f9c6f453: Waiting
+2026-10-04T18:02:14.8046791Z 9928009b15c8: Waiting
+2026-10-04T18:02:14.8047883Z 4f4fb700ef54: Waiting
+2026-10-04T18:02:15.0796202Z 83234986c742: Verifying Checksum
+2026-10-04T18:02:15.0800195Z 83234986c742: Download complete
+2026-10-04T18:02:15.0988072Z 7eb50503c2b0: Download complete
+2026-10-04T18:02:15.1608700Z 16333ee0c00f: Download complete
+2026-10-04T18:02:15.2690480Z 16333ee0c00f: Pull complete
+2026-10-04T18:02:15.3331671Z 9928009b15c8: Verifying Checksum
+2026-10-04T18:02:15.3332703Z 9928009b15c8: Download complete
+2026-10-04T18:02:15.5212356Z 4f4fb700ef54: Verifying Checksum
+2026-10-04T18:02:15.5235298Z 4f4fb700ef54: Download complete
+2026-10-04T18:02:15.5799959Z 4eb14bae0e1d: Verifying Checksum
+2026-10-04T18:02:15.6174433Z 1522f9c6f453: Verifying Checksum
+2026-10-04T18:02:15.6175329Z 1522f9c6f453: Download complete
+2026-10-04T18:02:17.8687392Z 83234986c742: Pull complete
+2026-10-04T18:02:18.0055215Z 7eb50503c2b0: Pull complete
+2026-10-04T18:02:18.1943549Z 1522f9c6f453: Pull complete
+2026-10-04T18:02:18.2044982Z 9928009b15c8: Pull complete
+2026-10-04T18:02:18.2126482Z 4f4fb700ef54: Pull complete
+2026-10-04T18:02:18.2227779Z 4eb14bae0e1d: Pull complete
+2026-10-04T18:02:18.2292803Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+2026-10-04T18:02:18.2303304Z Status: Downloaded newer image for redis:7-alpine
+2026-10-04T18:02:18.2313886Z docker.io/library/redis:7-alpine
+2026-10-04T18:02:18.2357943Z ##[command]/usr/bin/docker create --name d08982acaf934ee499ef5a868a09e97b_redis7alpine_763c8f --label 76c027 --network github_network_c9c36cc94d6d4990a6c3d65c09c17c3c --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+2026-10-04T18:02:18.2617079Z c52dd103e58b639472ac2b3cf7297e6cec6c2d51b51857c22ea5b83e1e8970b8
+2026-10-04T18:02:18.2640677Z ##[command]/usr/bin/docker start c52dd103e58b639472ac2b3cf7297e6cec6c2d51b51857c22ea5b83e1e8970b8
+2026-10-04T18:02:18.4835723Z c52dd103e58b639472ac2b3cf7297e6cec6c2d51b51857c22ea5b83e1e8970b8
+2026-10-04T18:02:18.4883088Z ##[command]/usr/bin/docker ps --all --filter id=c52dd103e58b639472ac2b3cf7297e6cec6c2d51b51857c22ea5b83e1e8970b8 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-04T18:02:18.5019387Z c52dd103e58b639472ac2b3cf7297e6cec6c2d51b51857c22ea5b83e1e8970b8 Up Less than a second (health: starting)
+2026-10-04T18:02:18.5050646Z ##[command]/usr/bin/docker port c52dd103e58b639472ac2b3cf7297e6cec6c2d51b51857c22ea5b83e1e8970b8
+2026-10-04T18:02:18.5169042Z 6379/tcp -> 0.0.0.0:6379
+2026-10-04T18:02:18.5169355Z 6379/tcp -> [::]:6379
+2026-10-04T18:02:18.5214669Z ##[endgroup]
+2026-10-04T18:02:18.5223055Z ##[group]Waiting for all services to be ready
+2026-10-04T18:02:18.5236459Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" c52dd103e58b639472ac2b3cf7297e6cec6c2d51b51857c22ea5b83e1e8970b8
+2026-10-04T18:02:18.5356489Z starting
+2026-10-04T18:02:18.5375605Z redis service is starting, waiting 2 seconds before checking again.
+2026-10-04T18:02:20.5380944Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" c52dd103e58b639472ac2b3cf7297e6cec6c2d51b51857c22ea5b83e1e8970b8
+2026-10-04T18:02:20.5502572Z starting
+2026-10-04T18:02:20.5514995Z redis service is starting, waiting 4 seconds before checking again.
+2026-10-04T18:02:24.9417554Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" c52dd103e58b639472ac2b3cf7297e6cec6c2d51b51857c22ea5b83e1e8970b8
+2026-10-04T18:02:24.9538757Z healthy
+2026-10-04T18:02:24.9554157Z redis service is healthy.
+2026-10-04T18:02:24.9554924Z ##[endgroup]
+2026-10-04T18:02:25.3314581Z ##[group]Run actions/checkout@v6
+2026-10-04T18:02:25.3315241Z with:
+2026-10-04T18:02:25.3315558Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T18:02:25.3318444Z   token: ***
+2026-10-04T18:02:25.3318658Z   ssh-strict: true
+2026-10-04T18:02:25.3318869Z   ssh-user: git
+2026-10-04T18:02:25.3319088Z   persist-credentials: true
+2026-10-04T18:02:25.3319339Z   clean: true
+2026-10-04T18:02:25.3319570Z   sparse-checkout-cone-mode: true
+2026-10-04T18:02:25.3319835Z   fetch-depth: 1
+2026-10-04T18:02:25.3320272Z   fetch-tags: false
+2026-10-04T18:02:25.3320484Z   show-progress: true
+2026-10-04T18:02:25.3320730Z   lfs: false
+2026-10-04T18:02:25.3320920Z   submodules: false
+2026-10-04T18:02:25.3321130Z   set-safe-directory: true
+2026-10-04T18:02:25.3321383Z   allow-unsafe-pr-checkout: false
+2026-10-04T18:02:25.3321885Z ##[endgroup]
+2026-10-04T18:02:25.4316802Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T18:02:25.4318315Z ##[group]Getting Git version info
+2026-10-04T18:02:25.4318816Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T18:02:25.4319474Z [command]/usr/bin/git version
+2026-10-04T18:02:25.4415130Z git version 2.55.0
+2026-10-04T18:02:25.4438419Z ##[endgroup]
+2026-10-04T18:02:25.4452869Z Temporarily overriding HOME='/home/runner/work/_temp/9f2a8172-9cb9-4ce1-9fef-4eda426e7728' before making global git config changes
+2026-10-04T18:02:25.4458574Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T18:02:25.4459393Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T18:02:25.4515484Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T18:02:25.4518935Z ##[group]Determining repository object format
+2026-10-04T18:02:25.4521185Z ##[endgroup]
+2026-10-04T18:02:25.4521833Z ##[group]Initializing the repository
+2026-10-04T18:02:25.4525861Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T18:02:25.4664795Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-04T18:02:25.4665796Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-04T18:02:25.4666920Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-04T18:02:25.4667724Z hint: call:
+2026-10-04T18:02:25.4668076Z hint:
+2026-10-04T18:02:25.4668597Z hint: 	git config --global init.defaultBranch <name>
+2026-10-04T18:02:25.4669192Z hint:
+2026-10-04T18:02:25.4669772Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-04T18:02:25.4670701Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-04T18:02:25.4671417Z hint:
+2026-10-04T18:02:25.4671778Z hint: 	git branch -m <name>
+2026-10-04T18:02:25.4672210Z hint:
+2026-10-04T18:02:25.4672777Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-04T18:02:25.4673658Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-04T18:02:25.4679707Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T18:02:25.4729352Z ##[endgroup]
+2026-10-04T18:02:25.4729783Z ##[group]Disabling automatic garbage collection
+2026-10-04T18:02:25.4734634Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-04T18:02:25.4764088Z ##[endgroup]
+2026-10-04T18:02:25.4764806Z ##[group]Setting up auth
+2026-10-04T18:02:25.4765682Z Removing SSH command configuration
+2026-10-04T18:02:25.4772371Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T18:02:25.4804547Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T18:02:25.5182385Z Removing HTTP extra header
+2026-10-04T18:02:25.5188481Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T18:02:25.5219956Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T18:02:25.5442252Z Removing includeIf entries pointing to credentials config files
+2026-10-04T18:02:25.5443222Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T18:02:25.5474485Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T18:02:25.5702482Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-fc7e48c2-8be7-496c-a431-fc51f1a433ea.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-04T18:02:25.5740135Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-fc7e48c2-8be7-496c-a431-fc51f1a433ea.config
+2026-10-04T18:02:25.5771081Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-fc7e48c2-8be7-496c-a431-fc51f1a433ea.config
+2026-10-04T18:02:25.5813488Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-fc7e48c2-8be7-496c-a431-fc51f1a433ea.config
+2026-10-04T18:02:25.5845374Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-fc7e48c2-8be7-496c-a431-fc51f1a433ea.config
+2026-10-04T18:02:25.5871491Z ##[endgroup]
+2026-10-04T18:02:25.5872132Z ##[group]Fetching the repository
+2026-10-04T18:02:25.5880681Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +f278b0cb97abbd6479ec2c097ceb48779cc7f872:refs/remotes/pull/688/merge
+2026-10-04T18:02:26.9625541Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T18:02:26.9626572Z  * [new ref]         f278b0cb97abbd6479ec2c097ceb48779cc7f872 -> pull/688/merge
+2026-10-04T18:02:26.9632556Z ##[endgroup]
+2026-10-04T18:02:26.9633250Z ##[group]Determining the checkout info
+2026-10-04T18:02:26.9634404Z ##[endgroup]
+2026-10-04T18:02:26.9640945Z [command]/usr/bin/git sparse-checkout disable
+2026-10-04T18:02:26.9694386Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-04T18:02:26.9724441Z ##[group]Checking out the ref
+2026-10-04T18:02:26.9728785Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/688/merge
+2026-10-04T18:02:27.1896428Z Note: switching to 'refs/remotes/pull/688/merge'.
+2026-10-04T18:02:27.1896727Z 
+2026-10-04T18:02:27.1897091Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-10-04T18:02:27.1897652Z changes and commit them, and you can discard any commits you make in this
+2026-10-04T18:02:27.1898200Z state without impacting any branches by switching back to a branch.
+2026-10-04T18:02:27.1898513Z 
+2026-10-04T18:02:27.1898960Z If you want to create a new branch to retain commits you create, you may
+2026-10-04T18:02:27.1899819Z do so (now or later) by using -c with the switch command. Example:
+2026-10-04T18:02:27.1900314Z 
+2026-10-04T18:02:27.1900462Z   git switch -c <new-branch-name>
+2026-10-04T18:02:27.1900696Z 
+2026-10-04T18:02:27.1900814Z Or undo this operation with:
+2026-10-04T18:02:27.1901006Z 
+2026-10-04T18:02:27.1901104Z   git switch -
+2026-10-04T18:02:27.1901376Z 
+2026-10-04T18:02:27.1901767Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-10-04T18:02:27.1902386Z 
+2026-10-04T18:02:27.1903111Z HEAD is now at f278b0c Merge f8a1a7057cdd0f9d24b544c0e253f9edeae9d43d into 38d9b3ab0be5bb39df8eb0986293b9d62f04ba37
+2026-10-04T18:02:27.1910303Z ##[endgroup]
+2026-10-04T18:02:27.1956369Z [command]/usr/bin/git log -1 --format=%H
+2026-10-04T18:02:27.1978894Z f278b0cb97abbd6479ec2c097ceb48779cc7f872
+2026-10-04T18:02:27.3063502Z ##[group]Run if [ -n "$(git ls-files dist/ 2>/dev/null)" ]; then
+2026-10-04T18:02:27.3064257Z if [ -n "$(git ls-files dist/ 2>/dev/null)" ]; then
+2026-10-04T18:02:27.3064708Z   echo "ERROR: dist/ is committed. Run: git rm -r --cached dist/"
+2026-10-04T18:02:27.3065083Z   exit 1
+2026-10-04T18:02:27.3065504Z fi
+2026-10-04T18:02:27.3307638Z shell: /usr/bin/bash -e {0}
+2026-10-04T18:02:27.3307972Z ##[endgroup]
+2026-10-04T18:02:27.4284970Z ##[group]Run if git grep -nI 'tgp\.app' -- ':(exclude)package-lock.json' ':(exclude)node_modules'; then
+2026-10-04T18:02:27.4285770Z if git grep -nI 'tgp\.app' -- ':(exclude)package-lock.json' ':(exclude)node_modules'; then
+2026-10-04T18:02:27.4286369Z   echo "ERROR: R45 violation — the banned hostname appears in source."
+2026-10-04T18:02:27.4286773Z   exit 1
+2026-10-04T18:02:27.4286971Z fi
+2026-10-04T18:02:27.4349421Z shell: /usr/bin/bash -e {0}
+2026-10-04T18:02:27.4349695Z ##[endgroup]
+2026-10-04T18:02:27.7524351Z ##[group]Run actions/setup-node@v6
+2026-10-04T18:02:27.7524676Z with:
+2026-10-04T18:02:27.7524877Z   node-version: 20
+2026-10-04T18:02:27.7525084Z   cache: npm
+2026-10-04T18:02:27.7525280Z   check-latest: false
+2026-10-04T18:02:27.7528018Z   token: ***
+2026-10-04T18:02:27.7528242Z   package-manager-cache: true
+2026-10-04T18:02:27.7528514Z ##[endgroup]
+2026-10-04T18:02:27.9191410Z Attempting to download 20...
+2026-10-04T18:02:28.4028729Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-04T18:02:28.8250710Z Extracting ...
+2026-10-04T18:02:28.8388628Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/cc929c76-f147-4f3b-9ff9-b18e07f76bbe -f /home/runner/work/_temp/008e05dc-61f0-4ed3-b92f-f3163fbd93b4
+2026-10-04T18:02:29.8673684Z Adding to the cache ...
+2026-10-04T18:02:31.7020669Z ##[group]Environment details
+2026-10-04T18:02:31.9259640Z node: v20.20.2
+2026-10-04T18:02:31.9260159Z npm: 10.8.2
+2026-10-04T18:02:31.9260476Z yarn: 1.22.22
+2026-10-04T18:02:31.9261094Z ##[endgroup]
+2026-10-04T18:02:31.9280574Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+2026-10-04T18:02:32.0334552Z /home/runner/.npm
+2026-10-04T18:02:32.2738060Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T18:02:33.5825104Z Received 0 of 86828135 (0.0%), 0.0 MBs/sec
+2026-10-04T18:02:34.3576716Z Received 86828135 of 86828135 (100.0%), 46.6 MBs/sec
+2026-10-04T18:02:34.3578118Z Cache Size: ~83 MB (86828135 B)
+2026-10-04T18:02:34.3612690Z [command]/usr/bin/tar -xf /home/runner/work/_temp/1fee0d81-3b7d-493a-b6d5-83f37d0fabd1/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+2026-10-04T18:02:34.5392567Z Cache restored successfully
+2026-10-04T18:02:34.5438721Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T18:02:34.5792364Z ##[group]Run npm ci
+2026-10-04T18:02:34.5792649Z npm ci
+2026-10-04T18:02:34.5859343Z shell: /usr/bin/bash -e {0}
+2026-10-04T18:02:34.5859610Z ##[endgroup]
+2026-10-04T18:02:40.7762620Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-04T18:02:41.6408986Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-04T18:02:42.9612694Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T18:02:44.3378512Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T18:02:44.3626945Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T18:02:44.4109171Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T18:02:57.1603936Z 
+2026-10-04T18:02:57.1604645Z > growth-project-backend@1.0.0 postinstall
+2026-10-04T18:02:57.1605243Z > prisma generate
+2026-10-04T18:02:57.1607442Z 
+2026-10-04T18:02:58.1078923Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T18:03:01.9255829Z ┌─────────────────────────────────────────────────────────┐
+2026-10-04T18:03:01.9257261Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+2026-10-04T18:03:01.9257862Z 
+2026-10-04T18:03:01.9258740Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.10s
+2026-10-04T18:03:01.9259628Z 
+2026-10-04T18:03:01.9260869Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T18:03:01.9262221Z │                                                         │
+2026-10-04T18:03:01.9262595Z 
+2026-10-04T18:03:01.9263482Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+2026-10-04T18:03:01.9264554Z 
+2026-10-04T18:03:01.9265219Z │  This is a major update - please follow the guide at    │
+2026-10-04T18:03:01.9266243Z │  https://pris.ly/d/major-version-upgrade                │
+2026-10-04T18:03:01.9267212Z │                                                         │
+2026-10-04T18:03:01.9268108Z │  Run the following to update                            │
+2026-10-04T18:03:01.9269055Z │    npm i --save-dev prisma@latest                       │
+2026-10-04T18:03:01.9269941Z │    npm i @prisma/client@latest                          │
+2026-10-04T18:03:01.9270846Z └─────────────────────────────────────────────────────────┘
+2026-10-04T18:03:01.9817089Z 
+2026-10-04T18:03:01.9817950Z > growth-project-backend@1.0.0 prepare
+2026-10-04T18:03:01.9818676Z > lefthook install
+2026-10-04T18:03:01.9819026Z 
+2026-10-04T18:03:02.0326402Z sync hooks: ✔️(commit-msg, pre-commit)
+2026-10-04T18:03:02.0490828Z 
+2026-10-04T18:03:02.0492038Z added 1115 packages, and audited 1116 packages in 27s
+2026-10-04T18:03:02.0492498Z 
+2026-10-04T18:03:02.0492784Z 202 packages are looking for funding
+2026-10-04T18:03:02.0493128Z   run `npm fund` for details
+2026-10-04T18:03:02.0525477Z 
+2026-10-04T18:03:02.0525830Z 3 high severity vulnerabilities
+2026-10-04T18:03:02.0526535Z 
+2026-10-04T18:03:02.0526837Z To address all issues (including breaking changes), run:
+2026-10-04T18:03:02.0527410Z   npm audit fix --force
+2026-10-04T18:03:02.0527567Z 
+2026-10-04T18:03:02.0527701Z Run `npm audit` for details.
+2026-10-04T18:03:02.1455388Z ##[group]Run npm run guard:vendors
+2026-10-04T18:03:02.1455998Z npm run guard:vendors
+2026-10-04T18:03:02.1549554Z shell: /usr/bin/bash -e {0}
+2026-10-04T18:03:02.1550046Z ##[endgroup]
+2026-10-04T18:03:02.2707647Z 
+2026-10-04T18:03:02.2708437Z > growth-project-backend@1.0.0 guard:vendors
+2026-10-04T18:03:02.2709003Z > node scripts/vendor-name-guard.mjs
+2026-10-04T18:03:02.2709266Z 
+2026-10-04T18:03:02.4699447Z .vendor-name-guard.json: 6 hit(s) — Guard configuration names the quarantined oracle path.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4702414Z src/scout/**/*.spec.ts: 6 hit(s) — Importer unit tests preserve legacy source-contract evidence.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4705668Z src/extension-pair/**/__tests__/**: 47 hit(s) — Importer pairing tests preserve legacy source-contract evidence.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4708438Z test/scout/**: 349 hit(s) — Importer tests preserve legacy source-contract evidence.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4711359Z docs/importer/NORTH_STAR.md: 3 hit(s) — Current importer governance record states the retired legacy oracle.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4713421Z src/scout/reconstruct/sources/truecoach.json: 1 hit(s) — Quarantined legacy oracle.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4715121Z README.md: 4 hit(s) — non-importer domain; retire: n/a (other domain)
+2026-10-04T18:03:02.4716907Z prisma/migrations/20260513000000_food_logger_trainerize_floor/migration.sql: 2 hit(s) — non-importer domain; retire: n/a (other domain)
+2026-10-04T18:03:02.4718902Z src/common/env-validation.ts: 1 hit(s) — non-importer domain; retire: n/a (other domain)
+2026-10-04T18:03:02.4720762Z src/food/food-density.ts: 1 hit(s) — non-importer domain; retire: n/a (other domain)
+2026-10-04T18:03:02.4722383Z src/food/food-query-parser.ts: 1 hit(s) — non-importer domain; retire: n/a (other domain)
+2026-10-04T18:03:02.4723336Z src/log/log.dto.ts: 1 hit(s) — non-importer domain; retire: n/a (other domain)
+2026-10-04T18:03:02.4724902Z docs/decisions/2026-07-16-importer-f-scout-reconstruct.md: 4 hit(s) — Historical importer decision record.; retire: Historical record retained
+2026-10-04T18:03:02.4726398Z docs/decisions/2026-07-19-importer-h-multi-family-reconstruction.md: 2 hit(s) — Historical importer decision record.; retire: Historical record retained
+2026-10-04T18:03:02.4727878Z docs/decisions/2026-09-18-g2-transition-writer-cursors.md: 1 hit(s) — Historical importer decision record.; retire: Historical record retained
+2026-10-04T18:03:02.4729286Z docs/decisions/2026-09-24-s8-native-contract.md: 10 hit(s) — Historical importer decision record.; retire: Historical record retained
+2026-10-04T18:03:02.4730383Z test/env-validation.spec.ts: 1 hit(s) — non-importer domain; retire: n/a (other domain)
+2026-10-04T18:03:02.4731533Z test/fixtures/conformance/conformance-alpha.json.raw: 1 hit(s) — Importer fixture.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4732865Z test/fixtures/truecoach/client-history.golden.json: 5 hit(s) — Importer fixture.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4734790Z test/fixtures/truecoach/clients.golden.json: 5 hit(s) — Importer fixture.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4735732Z test/fixtures/truecoach/workouts.golden.json: 5 hit(s) — Importer fixture.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4736564Z test/rls-c1-setup.spec.ts: 36 hit(s) — Importer RLS test.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4737313Z test/rls-g2-b-drain.spec.ts: 16 hit(s) — Importer RLS test.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4738077Z test/rls-g2-c-contract.spec.ts: 48 hit(s) — Importer RLS test.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4738877Z test/rls-g2-ledger-expand.spec.ts: 10 hit(s) — Importer RLS test.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4739623Z test/rls-g2-nq1.spec.ts: 26 hit(s) — Importer RLS test.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4741395Z test/rls-g2-pg17-etq0.spec.ts: 63 hit(s) — Importer RLS test.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4742702Z test/rls-g2-r-ready.spec.ts: 21 hit(s) — Importer RLS test.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4744388Z test/rls-g2-s8b.spec.ts: 5 hit(s) — Importer RLS test.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4745877Z test/rls-g2-s8c.spec.ts: 2 hit(s) — Importer RLS test.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4747329Z test/rls-g2-s8f.spec.ts: 5 hit(s) — Importer RLS test.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4748782Z test/rls-g2-tq0.spec.ts: 24 hit(s) — Importer RLS test.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4750383Z test/truecoach-golden-fixture.spec.ts: 5 hit(s) — Importer fixture test.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4752039Z test/utils/g2-b-drain-pg-harness.ts: 3 hit(s) — Importer test harness.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4753613Z test/utils/g2-c-harness.ts: 1 hit(s) — Importer test harness.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4755691Z test/utils/g2-c-pg-harness.ts: 3 hit(s) — Importer test harness.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4757226Z test/utils/g2-nq1-pg-harness.ts: 3 hit(s) — Importer test harness.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4758783Z test/utils/g2-pg17-harness.ts: 3 hit(s) — Importer test harness.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4760381Z test/utils/g2-r-ready-pg-harness.ts: 3 hit(s) — Importer test harness.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4762072Z test/utils/g2-s10b-harness.ts: 1 hit(s) — Importer test harness.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4763558Z test/utils/g2-s7l-harness.ts: 2 hit(s) — Importer test harness.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4764779Z test/utils/g2-s7l-worker.cjs: 1 hit(s) — Importer test harness.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4765596Z test/utils/g2-s8b-harness.ts: 4 hit(s) — Importer test harness.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4766406Z test/utils/g2-s8f-pg-harness.ts: 3 hit(s) — Importer test harness.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4767189Z test/utils/g2-s8g-harness.ts: 1 hit(s) — Importer test harness.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4767955Z test/utils/g2-s9c-harness.ts: 1 hit(s) — Importer test harness.; retire: V1 learned-path parity
+2026-10-04T18:03:02.4768426Z vendor-name guard: passed
+2026-10-04T18:03:02.4983540Z ##[group]Run npm run test:guard:vendors
+2026-10-04T18:03:02.4984219Z npm run test:guard:vendors
+2026-10-04T18:03:02.5044432Z shell: /usr/bin/bash -e {0}
+2026-10-04T18:03:02.5044701Z ##[endgroup]
+2026-10-04T18:03:02.6214984Z 
+2026-10-04T18:03:02.6215990Z > growth-project-backend@1.0.0 test:guard:vendors
+2026-10-04T18:03:02.6217017Z > node scripts/vendor-name-guard.self-test.mjs
+2026-10-04T18:03:02.6217550Z 
+2026-10-04T18:03:02.8543209Z vendor-name guard self-test: passed
+2026-10-04T18:03:02.8857786Z ##[group]Run npx prisma generate
+2026-10-04T18:03:02.8858150Z npx prisma generate
+2026-10-04T18:03:02.8918236Z shell: /usr/bin/bash -e {0}
+2026-10-04T18:03:02.8918505Z ##[endgroup]
+2026-10-04T18:03:04.1504032Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T18:03:08.0493142Z 
+2026-10-04T18:03:08.0494622Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.13s
+2026-10-04T18:03:08.0495018Z 
+2026-10-04T18:03:08.0495398Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T18:03:08.0495756Z 
+2026-10-04T18:03:08.0496059Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+2026-10-04T18:03:08.0496375Z 
+2026-10-04T18:03:08.1395792Z ##[group]Run npm run lint --if-present
+2026-10-04T18:03:08.1396211Z npm run lint --if-present
+2026-10-04T18:03:08.1457622Z shell: /usr/bin/bash -e {0}
+2026-10-04T18:03:08.1457894Z ##[endgroup]
+2026-10-04T18:03:08.2640011Z 
+2026-10-04T18:03:08.2640809Z > growth-project-backend@1.0.0 lint
+2026-10-04T18:03:08.2641466Z > eslint "src/**/*.ts"
+2026-10-04T18:03:08.2641703Z 
+2026-10-04T18:03:22.0054505Z 
+2026-10-04T18:03:22.0055823Z /home/runner/work/growth-project-backend/growth-project-backend/src/admin/reports/reports.controller.ts
+2026-10-04T18:03:22.0095232Z ##[warning]  5:3  warning  'Header' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-04T18:03:22.0105877Z 
+2026-10-04T18:03:22.0106465Z /home/runner/work/growth-project-backend/growth-project-backend/src/ai/client-ai-context.service.ts
+2026-10-04T18:03:22.0108341Z ##[warning]  17:3  warning  'NextSessionSummary' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-04T18:03:22.0110512Z ##[warning]  19:3  warning  'LeaderboardSummary' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-04T18:03:22.0111574Z 
+2026-10-04T18:03:22.0112081Z /home/runner/work/growth-project-backend/growth-project-backend/src/ai/gateway/ai-gateway.controller.ts
+2026-10-04T18:03:22.0114131Z ##[warning]  52:30  warning  'req' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-04T18:03:22.0115309Z 
+2026-10-04T18:03:22.0116160Z /home/runner/work/growth-project-backend/growth-project-backend/src/build-week/build-week.dto.ts
+2026-10-04T18:03:22.0118108Z ##[warning]  2:3  warning  'IsArray' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-04T18:03:22.0119499Z 
+2026-10-04T18:03:22.0120518Z /home/runner/work/growth-project-backend/growth-project-backend/src/coach/command-center/ltv-metrics.service.ts
+2026-10-04T18:03:22.0123459Z ##[warning]  77:11  warning  'startOfLastMonth' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-04T18:03:22.0125655Z 
+2026-10-04T18:03:22.0126211Z /home/runner/work/growth-project-backend/growth-project-backend/src/contracts/checkout-contract-gate.service.ts
+2026-10-04T18:03:22.0127766Z ##[warning]  8:10  warning  'sampleMergeData' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-04T18:03:22.0128812Z 
+2026-10-04T18:03:22.0129320Z /home/runner/work/growth-project-backend/growth-project-backend/src/contracts/contract-envelope.service.ts
+2026-10-04T18:03:22.0130728Z ##[warning]  3:3  warning  'ForbiddenException' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-04T18:03:22.0131808Z 
+2026-10-04T18:03:22.0132643Z /home/runner/work/growth-project-backend/growth-project-backend/src/landing-pages/landing-pages.service.ts
+2026-10-04T18:03:22.0135575Z ##[warning]  13:3  warning  'LandingPageStatus' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-04T18:03:22.0137614Z 
+2026-10-04T18:03:22.0138219Z /home/runner/work/growth-project-backend/growth-project-backend/src/lists/lists.dto.ts
+2026-10-04T18:03:22.0139522Z ##[warning]  6:3  warning  'IsIn' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-04T18:03:22.0140603Z 
+2026-10-04T18:03:22.0141036Z /home/runner/work/growth-project-backend/growth-project-backend/src/macros/macros.service.ts
+2026-10-04T18:03:22.0142448Z ##[warning]  1:10  warning  'ForbiddenException' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-04T18:03:22.0143483Z 
+2026-10-04T18:03:22.0144220Z /home/runner/work/growth-project-backend/growth-project-backend/src/meal-plans/meal-plans.dto.ts
+2026-10-04T18:03:22.0145891Z ##[warning]  7:3  warning  'IsObject' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-04T18:03:22.0146989Z 
+2026-10-04T18:03:22.0147531Z /home/runner/work/growth-project-backend/growth-project-backend/src/notifications/nudges/nudge-detector.service.ts
+2026-10-04T18:03:22.0149045Z ##[warning]  384:10  warning  'floorDays' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-04T18:03:22.0150056Z 
+2026-10-04T18:03:22.0150570Z /home/runner/work/growth-project-backend/growth-project-backend/src/notifications/nudges/nudge-engine.service.ts
+2026-10-04T18:03:22.0151931Z ##[warning]  381:5  warning  'prefs' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-04T18:03:22.0152924Z 
+2026-10-04T18:03:22.0153388Z /home/runner/work/growth-project-backend/growth-project-backend/src/prep-guide/prep-guide.service.ts
+2026-10-04T18:03:22.0155242Z ##[warning]  32:7  warning  'DAYS' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-04T18:03:22.0156674Z 
+2026-10-04T18:03:22.0157464Z /home/runner/work/growth-project-backend/growth-project-backend/src/real-meal-plans/real-meal-plans.service.ts
+2026-10-04T18:03:22.0158991Z ##[warning]  3:3  warning  'ForbiddenException' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-04T18:03:22.0160324Z 
+2026-10-04T18:03:22.0160836Z /home/runner/work/growth-project-backend/growth-project-backend/src/regimes/__tests__/regimes.service.spec.ts
+2026-10-04T18:03:22.0162367Z ##[warning]  14:15  warning  'PrismaService' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-04T18:03:22.0163469Z 
+2026-10-04T18:03:22.0164542Z /home/runner/work/growth-project-backend/growth-project-backend/src/storefront/guest-checkout-pii-scrub.service.ts
+2026-10-04T18:03:22.0167224Z ##[warning]  3:16  warning  'CronExpression' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-04T18:03:22.0169123Z 
+2026-10-04T18:03:22.0170015Z /home/runner/work/growth-project-backend/growth-project-backend/src/talent-marketplace/apply.service.ts
+2026-10-04T18:03:22.0172817Z ##[warning]   6:3   warning  'ForbiddenException' is defined but never used. Allowed unused vars must match /^_/u                  @typescript-eslint/no-unused-vars
+2026-10-04T18:03:22.0176222Z ##[warning]  10:22  warning  'randomUUID' is defined but never used. Allowed unused vars must match /^_/u                          @typescript-eslint/no-unused-vars
+2026-10-04T18:03:22.0178309Z ##[warning]  15:3   warning  'MARKETPLACE_CLAIM_STATUS_COMPLETED' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-04T18:03:22.0179378Z 
+2026-10-04T18:03:22.0179875Z ✖ 21 problems (0 errors, 21 warnings)
+2026-10-04T18:03:22.0180084Z 
+2026-10-04T18:03:22.1212568Z ##[group]Run npx --no-install eslint --max-warnings 0 scripts/check-r75.js test/ci/r75-gate.spec.ts test/ci/r75-boundaries.spec.ts test/ci/r75-wiring.spec.ts test/ci/r75-enforcement.spec.ts test/ci/r100-pathspec.spec.ts test/ci/dependency-audit.spec.ts
+2026-10-04T18:03:22.1214544Z npx --no-install eslint --max-warnings 0 scripts/check-r75.js test/ci/r75-gate.spec.ts test/ci/r75-boundaries.spec.ts test/ci/r75-wiring.spec.ts test/ci/r75-enforcement.spec.ts test/ci/r100-pathspec.spec.ts test/ci/dependency-audit.spec.ts
+2026-10-04T18:03:22.1282241Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T18:03:22.1282613Z ##[endgroup]
+2026-10-04T18:03:23.7288461Z ##[group]Run npx tsc --noEmit
+2026-10-04T18:03:23.7288798Z npx tsc --noEmit
+2026-10-04T18:03:23.7349699Z shell: /usr/bin/bash -e {0}
+2026-10-04T18:03:23.7349969Z env:
+2026-10-04T18:03:23.7350202Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-04T18:03:23.7350500Z ##[endgroup]
+2026-10-04T18:04:14.8169677Z ##[error]test/dunning-v2-service-fixes.spec.ts(321,75): error TS2345: Argument of type 'string' is not assignable to parameter of type '"user" | "stripeProcessedEvent" | "notificationPreferences" | "notification" | "coachPackage" | "connectCustomer" | "clientPurchase" | "connectTransfer" | "dunningState" | ... 7 more ... | "chargeDispute"'.
+2026-10-04T18:04:15.0800840Z ##[error]Process completed with exit code 2.
+2026-10-04T18:04:15.2312303Z Post job cleanup.
+2026-10-04T18:04:15.3283601Z [command]/usr/bin/git version
+2026-10-04T18:04:15.3328064Z git version 2.55.0
+2026-10-04T18:04:15.3372926Z Temporarily overriding HOME='/home/runner/work/_temp/31297bee-211b-4259-aab2-36b0793f7e87' before making global git config changes
+2026-10-04T18:04:15.3374807Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T18:04:15.3379916Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T18:04:15.3417062Z Removing SSH command configuration
+2026-10-04T18:04:15.3424405Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T18:04:15.3463265Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T18:04:15.3704730Z Removing HTTP extra header
+2026-10-04T18:04:15.3709424Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T18:04:15.3745251Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T18:04:15.3969470Z Removing includeIf entries pointing to credentials config files
+2026-10-04T18:04:15.3976802Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T18:04:15.4007646Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T18:04:15.4008639Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T18:04:15.4009316Z includeif.gitdir:/github/workspace/.git.path
+2026-10-04T18:04:15.4009807Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T18:04:15.4018123Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T18:04:15.4040215Z /home/runner/work/_temp/git-credentials-fc7e48c2-8be7-496c-a431-fc51f1a433ea.config
+2026-10-04T18:04:15.4051613Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-fc7e48c2-8be7-496c-a431-fc51f1a433ea.config
+2026-10-04T18:04:15.4088634Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T18:04:15.4111265Z /home/runner/work/_temp/git-credentials-fc7e48c2-8be7-496c-a431-fc51f1a433ea.config
+2026-10-04T18:04:15.4122965Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-fc7e48c2-8be7-496c-a431-fc51f1a433ea.config
+2026-10-04T18:04:15.4154865Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-04T18:04:15.4176106Z /github/runner_temp/git-credentials-fc7e48c2-8be7-496c-a431-fc51f1a433ea.config
+2026-10-04T18:04:15.4185062Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-fc7e48c2-8be7-496c-a431-fc51f1a433ea.config
+2026-10-04T18:04:15.4218006Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T18:04:15.4239301Z /github/runner_temp/git-credentials-fc7e48c2-8be7-496c-a431-fc51f1a433ea.config
+2026-10-04T18:04:15.4250243Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-fc7e48c2-8be7-496c-a431-fc51f1a433ea.config
+2026-10-04T18:04:15.4292236Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T18:04:15.4523477Z Removing credentials config '/home/runner/work/_temp/git-credentials-fc7e48c2-8be7-496c-a431-fc51f1a433ea.config'
+2026-10-04T18:04:15.4723416Z Print service container logs: d08982acaf934ee499ef5a868a09e97b_redis7alpine_763c8f
+2026-10-04T18:04:15.4728118Z ##[command]/usr/bin/docker logs --details c52dd103e58b639472ac2b3cf7297e6cec6c2d51b51857c22ea5b83e1e8970b8
+2026-10-04T18:04:15.4871187Z  1:C 04 Oct 2026 18:02:18.490 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+2026-10-04T18:04:15.4874680Z  1:C 04 Oct 2026 18:02:18.490 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+2026-10-04T18:04:15.4876065Z  1:C 04 Oct 2026 18:02:18.490 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+2026-10-04T18:04:15.4877616Z  1:C 04 Oct 2026 18:02:18.490 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+2026-10-04T18:04:15.4878998Z  1:M 04 Oct 2026 18:02:18.490 * monotonic clock: POSIX clock_gettime
+2026-10-04T18:04:15.4879799Z  1:M 04 Oct 2026 18:02:18.491 * Running mode=standalone, port=6379.
+2026-10-04T18:04:15.4880448Z  1:M 04 Oct 2026 18:02:18.491 * Server initialized
+2026-10-04T18:04:15.4881094Z  1:M 04 Oct 2026 18:02:18.491 * Ready to accept connections tcp
+2026-10-04T18:04:15.4893102Z Stop and remove container: d08982acaf934ee499ef5a868a09e97b_redis7alpine_763c8f
+2026-10-04T18:04:15.4898407Z ##[command]/usr/bin/docker rm --force c52dd103e58b639472ac2b3cf7297e6cec6c2d51b51857c22ea5b83e1e8970b8
+2026-10-04T18:04:15.6116159Z c52dd103e58b639472ac2b3cf7297e6cec6c2d51b51857c22ea5b83e1e8970b8
+2026-10-04T18:04:15.6142669Z Remove container network: github_network_c9c36cc94d6d4990a6c3d65c09c17c3c
+2026-10-04T18:04:15.6148551Z ##[command]/usr/bin/docker network rm github_network_c9c36cc94d6d4990a6c3d65c09c17c3c
+2026-10-04T18:04:15.7078082Z github_network_c9c36cc94d6d4990a6c3d65c09c17c3c
+2026-10-04T18:04:15.7154457Z Cleaning up orphan processes

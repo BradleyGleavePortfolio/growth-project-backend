@@ -1,0 +1,410 @@
+﻿2026-10-04T17:58:27.7660885Z Current runner version: '2.337.0'
+2026-10-04T17:58:27.7695903Z ##[group]Runner Image Provisioner
+2026-10-04T17:58:27.7697183Z Hosted Compute Agent
+2026-10-04T17:58:27.7698323Z Version: 20260901.588
+2026-10-04T17:58:27.7699556Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-04T17:58:27.7700706Z Build Date: 2026-09-01T19:56:44Z
+2026-10-04T17:58:27.7701920Z Worker ID: {9ef60575-3449-4fb1-a59e-ccc59d872ea8}
+2026-10-04T17:58:27.7703041Z Azure Region: westcentralus
+2026-10-04T17:58:27.7704468Z ##[endgroup]
+2026-10-04T17:58:27.7706881Z ##[group]Operating System
+2026-10-04T17:58:27.7708113Z Ubuntu
+2026-10-04T17:58:27.7709121Z 24.04.5
+2026-10-04T17:58:27.7709943Z LTS
+2026-10-04T17:58:27.7710712Z ##[endgroup]
+2026-10-04T17:58:27.7711749Z ##[group]Runner Image
+2026-10-04T17:58:27.7712774Z Image: ubuntu-24.04
+2026-10-04T17:58:27.7713759Z Version: 20260927.320.1
+2026-10-04T17:58:27.7715846Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-04T17:58:27.7718779Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-04T17:58:27.7720332Z ##[endgroup]
+2026-10-04T17:58:27.7722327Z ##[group]GITHUB_TOKEN Permissions
+2026-10-04T17:58:27.7725375Z Contents: read
+2026-10-04T17:58:27.7726425Z Metadata: read
+2026-10-04T17:58:27.7727541Z Packages: read
+2026-10-04T17:58:27.7728417Z ##[endgroup]
+2026-10-04T17:58:27.7732055Z Secret source: Actions
+2026-10-04T17:58:27.7733577Z Cache mode: write
+2026-10-04T17:58:27.7735064Z Prepare workflow directory
+2026-10-04T17:58:27.8246671Z Prepare all required actions
+2026-10-04T17:58:27.8315977Z Getting action download info
+2026-10-04T17:58:28.1213512Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-04T17:58:28.1975034Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-04T17:58:28.3937574Z Complete job name: targeted
+2026-10-04T17:58:28.4455104Z ##[group]Checking docker version
+2026-10-04T17:58:28.4468571Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-04T17:58:28.5081287Z '1.48'
+2026-10-04T17:58:28.5099249Z Docker daemon API version: '1.48'
+2026-10-04T17:58:28.5100045Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-04T17:58:28.5258691Z '1.48'
+2026-10-04T17:58:28.5270354Z Docker client API version: '1.48'
+2026-10-04T17:58:28.5275849Z ##[endgroup]
+2026-10-04T17:58:28.5279241Z ##[group]Clean up resources from previous jobs
+2026-10-04T17:58:28.5284400Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=ee9fd4"
+2026-10-04T17:58:28.5429143Z ##[command]/usr/bin/docker network prune --force --filter "label=ee9fd4"
+2026-10-04T17:58:28.5562034Z ##[endgroup]
+2026-10-04T17:58:28.5562591Z ##[group]Create local container network
+2026-10-04T17:58:28.5573166Z ##[command]/usr/bin/docker network create --label ee9fd4 github_network_045a318b9e9341a999eae8ac9eeafccf
+2026-10-04T17:58:28.6074483Z ba30d0ecf0dd36fc918caef703e86bc2b35ae87492c12223c9d38d8ec95f165a
+2026-10-04T17:58:28.6090824Z ##[endgroup]
+2026-10-04T17:58:28.6115296Z ##[group]Starting redis service container
+2026-10-04T17:58:28.6136379Z ##[command]/usr/bin/docker pull redis:7-alpine
+2026-10-04T17:58:29.2852963Z 7-alpine: Pulling from library/redis
+2026-10-04T17:58:29.4863863Z 16333ee0c00f: Pulling fs layer
+2026-10-04T17:58:29.4865477Z 83234986c742: Pulling fs layer
+2026-10-04T17:58:29.4866633Z 7eb50503c2b0: Pulling fs layer
+2026-10-04T17:58:29.4867911Z 1522f9c6f453: Pulling fs layer
+2026-10-04T17:58:29.4869282Z 9928009b15c8: Pulling fs layer
+2026-10-04T17:58:29.4870441Z 4f4fb700ef54: Pulling fs layer
+2026-10-04T17:58:29.4871410Z 4eb14bae0e1d: Pulling fs layer
+2026-10-04T17:58:29.4872354Z 9928009b15c8: Waiting
+2026-10-04T17:58:29.4873125Z 4f4fb700ef54: Waiting
+2026-10-04T17:58:29.4873922Z 4eb14bae0e1d: Waiting
+2026-10-04T17:58:29.4874708Z 1522f9c6f453: Waiting
+2026-10-04T17:58:29.6772506Z 83234986c742: Verifying Checksum
+2026-10-04T17:58:29.6774368Z 83234986c742: Download complete
+2026-10-04T17:58:29.7149709Z 7eb50503c2b0: Download complete
+2026-10-04T17:58:29.8308299Z 16333ee0c00f: Verifying Checksum
+2026-10-04T17:58:29.8308922Z 16333ee0c00f: Download complete
+2026-10-04T17:58:29.8928936Z 9928009b15c8: Verifying Checksum
+2026-10-04T17:58:29.8929615Z 9928009b15c8: Download complete
+2026-10-04T17:58:29.9384201Z 16333ee0c00f: Pull complete
+2026-10-04T17:58:29.9573657Z 83234986c742: Pull complete
+2026-10-04T17:58:30.0168620Z 4f4fb700ef54: Verifying Checksum
+2026-10-04T17:58:30.0169199Z 4f4fb700ef54: Download complete
+2026-10-04T17:58:30.0943176Z 1522f9c6f453: Verifying Checksum
+2026-10-04T17:58:30.0943778Z 1522f9c6f453: Download complete
+2026-10-04T17:58:30.1027236Z 4eb14bae0e1d: Download complete
+2026-10-04T17:58:30.1088294Z 7eb50503c2b0: Pull complete
+2026-10-04T17:58:30.3073736Z 1522f9c6f453: Pull complete
+2026-10-04T17:58:30.3134223Z 9928009b15c8: Pull complete
+2026-10-04T17:58:30.3206151Z 4f4fb700ef54: Pull complete
+2026-10-04T17:58:30.3297085Z 4eb14bae0e1d: Pull complete
+2026-10-04T17:58:30.3337033Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+2026-10-04T17:58:30.3348450Z Status: Downloaded newer image for redis:7-alpine
+2026-10-04T17:58:30.3357261Z docker.io/library/redis:7-alpine
+2026-10-04T17:58:30.3400063Z ##[command]/usr/bin/docker create --name 28e80a6f9eda4522ae229f3ec838e3ee_redis7alpine_485169 --label ee9fd4 --network github_network_045a318b9e9341a999eae8ac9eeafccf --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+2026-10-04T17:58:30.3640237Z fdaeda015170603e39636ae1b66d185f5a6e7135eefcdd114e77045703523c21
+2026-10-04T17:58:30.3661770Z ##[command]/usr/bin/docker start fdaeda015170603e39636ae1b66d185f5a6e7135eefcdd114e77045703523c21
+2026-10-04T17:58:30.5469880Z fdaeda015170603e39636ae1b66d185f5a6e7135eefcdd114e77045703523c21
+2026-10-04T17:58:30.5492024Z ##[command]/usr/bin/docker ps --all --filter id=fdaeda015170603e39636ae1b66d185f5a6e7135eefcdd114e77045703523c21 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-04T17:58:30.5618580Z fdaeda015170603e39636ae1b66d185f5a6e7135eefcdd114e77045703523c21 Up Less than a second (health: starting)
+2026-10-04T17:58:30.5636960Z ##[command]/usr/bin/docker port fdaeda015170603e39636ae1b66d185f5a6e7135eefcdd114e77045703523c21
+2026-10-04T17:58:30.5753579Z 6379/tcp -> 0.0.0.0:6379
+2026-10-04T17:58:30.5764823Z 6379/tcp -> [::]:6379
+2026-10-04T17:58:30.5799891Z ##[endgroup]
+2026-10-04T17:58:30.5809970Z ##[group]Waiting for all services to be ready
+2026-10-04T17:58:30.5824362Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" fdaeda015170603e39636ae1b66d185f5a6e7135eefcdd114e77045703523c21
+2026-10-04T17:58:30.5941905Z starting
+2026-10-04T17:58:30.5962994Z redis service is starting, waiting 2 seconds before checking again.
+2026-10-04T17:58:32.5957885Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" fdaeda015170603e39636ae1b66d185f5a6e7135eefcdd114e77045703523c21
+2026-10-04T17:58:32.6077973Z starting
+2026-10-04T17:58:32.6091220Z redis service is starting, waiting 4 seconds before checking again.
+2026-10-04T17:58:36.6696110Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" fdaeda015170603e39636ae1b66d185f5a6e7135eefcdd114e77045703523c21
+2026-10-04T17:58:36.6823312Z healthy
+2026-10-04T17:58:36.6839531Z redis service is healthy.
+2026-10-04T17:58:36.6840278Z ##[endgroup]
+2026-10-04T17:58:36.7118969Z ##[group]Run actions/checkout@v6
+2026-10-04T17:58:36.7119509Z with:
+2026-10-04T17:58:36.7119819Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T17:58:36.7122680Z   token: ***
+2026-10-04T17:58:36.7122905Z   ssh-strict: true
+2026-10-04T17:58:36.7123127Z   ssh-user: git
+2026-10-04T17:58:36.7123358Z   persist-credentials: true
+2026-10-04T17:58:36.7123624Z   clean: true
+2026-10-04T17:58:36.7124085Z   sparse-checkout-cone-mode: true
+2026-10-04T17:58:36.7124343Z   fetch-depth: 1
+2026-10-04T17:58:36.7124550Z   fetch-tags: false
+2026-10-04T17:58:36.7124789Z   show-progress: true
+2026-10-04T17:58:36.7125042Z   lfs: false
+2026-10-04T17:58:36.7125236Z   submodules: false
+2026-10-04T17:58:36.7125448Z   set-safe-directory: true
+2026-10-04T17:58:36.7125710Z   allow-unsafe-pr-checkout: false
+2026-10-04T17:58:36.7126186Z ##[endgroup]
+2026-10-04T17:58:36.8194623Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-04T17:58:36.8196655Z ##[group]Getting Git version info
+2026-10-04T17:58:36.8197175Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T17:58:36.8198208Z [command]/usr/bin/git version
+2026-10-04T17:58:36.8198584Z git version 2.55.0
+2026-10-04T17:58:36.8199917Z ##[endgroup]
+2026-10-04T17:58:36.8210809Z Temporarily overriding HOME='/home/runner/work/_temp/10e9c3c3-6f87-4516-8c01-b8f3e8ea503f' before making global git config changes
+2026-10-04T17:58:36.8216853Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T17:58:36.8217915Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T17:58:36.8261668Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-04T17:58:36.8266091Z ##[group]Determining repository object format
+2026-10-04T17:58:36.8268680Z ##[endgroup]
+2026-10-04T17:58:36.8269259Z ##[group]Initializing the repository
+2026-10-04T17:58:36.8274536Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T17:58:36.8348807Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-04T17:58:36.8349686Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-04T17:58:36.8350495Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-04T17:58:36.8351136Z hint: call:
+2026-10-04T17:58:36.8351442Z hint:
+2026-10-04T17:58:36.8351903Z hint: 	git config --global init.defaultBranch <name>
+2026-10-04T17:58:36.8352410Z hint:
+2026-10-04T17:58:36.8352840Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-04T17:58:36.8353596Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-04T17:58:36.8354217Z hint:
+2026-10-04T17:58:36.8354590Z hint: 	git branch -m <name>
+2026-10-04T17:58:36.8354945Z hint:
+2026-10-04T17:58:36.8355478Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-04T17:58:36.8356485Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-04T17:58:36.8361801Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T17:58:36.8402396Z ##[endgroup]
+2026-10-04T17:58:36.8402993Z ##[group]Disabling automatic garbage collection
+2026-10-04T17:58:36.8406487Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-04T17:58:36.8436643Z ##[endgroup]
+2026-10-04T17:58:36.8437192Z ##[group]Setting up auth
+2026-10-04T17:58:36.8438045Z Removing SSH command configuration
+2026-10-04T17:58:36.8444148Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T17:58:36.8476240Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T17:58:36.8776149Z Removing HTTP extra header
+2026-10-04T17:58:36.8781387Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T17:58:36.8812920Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T17:58:36.9041642Z Removing includeIf entries pointing to credentials config files
+2026-10-04T17:58:36.9047696Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T17:58:36.9080220Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T17:58:36.9316549Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-e38f8121-b954-4abf-9389-594ff4757b49.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-04T17:58:36.9353784Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-e38f8121-b954-4abf-9389-594ff4757b49.config
+2026-10-04T17:58:36.9385235Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-e38f8121-b954-4abf-9389-594ff4757b49.config
+2026-10-04T17:58:36.9419293Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-e38f8121-b954-4abf-9389-594ff4757b49.config
+2026-10-04T17:58:36.9450003Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-e38f8121-b954-4abf-9389-594ff4757b49.config
+2026-10-04T17:58:36.9484491Z ##[endgroup]
+2026-10-04T17:58:36.9484887Z ##[group]Fetching the repository
+2026-10-04T17:58:36.9492592Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +9c070da549ba42323bc7761c5ec61e873b7c954f:refs/remotes/origin/ci/B-DUNA-118-688-d34-compose
+2026-10-04T17:58:38.8416858Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-04T17:58:38.8418279Z  * [new ref]         9c070da549ba42323bc7761c5ec61e873b7c954f -> origin/ci/B-DUNA-118-688-d34-compose
+2026-10-04T17:58:38.8430286Z [command]/usr/bin/git branch --list --remote origin/ci/B-DUNA-118-688-d34-compose
+2026-10-04T17:58:38.8475943Z   origin/ci/B-DUNA-118-688-d34-compose
+2026-10-04T17:58:38.8485104Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-DUNA-118-688-d34-compose
+2026-10-04T17:58:38.8507678Z 9c070da549ba42323bc7761c5ec61e873b7c954f
+2026-10-04T17:58:38.8512129Z ##[endgroup]
+2026-10-04T17:58:38.8512734Z ##[group]Determining the checkout info
+2026-10-04T17:58:38.8513469Z ##[endgroup]
+2026-10-04T17:58:38.8518462Z [command]/usr/bin/git sparse-checkout disable
+2026-10-04T17:58:38.8567172Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-04T17:58:38.8597138Z ##[group]Checking out the ref
+2026-10-04T17:58:38.8601332Z [command]/usr/bin/git checkout --progress --force -B ci/B-DUNA-118-688-d34-compose refs/remotes/origin/ci/B-DUNA-118-688-d34-compose
+2026-10-04T17:58:39.0806219Z Switched to a new branch 'ci/B-DUNA-118-688-d34-compose'
+2026-10-04T17:58:39.0809986Z branch 'ci/B-DUNA-118-688-d34-compose' set up to track 'origin/ci/B-DUNA-118-688-d34-compose'.
+2026-10-04T17:58:39.0820330Z ##[endgroup]
+2026-10-04T17:58:39.0871423Z [command]/usr/bin/git log -1 --format=%H
+2026-10-04T17:58:39.0894869Z 9c070da549ba42323bc7761c5ec61e873b7c954f
+2026-10-04T17:58:39.1162139Z ##[group]Run actions/setup-node@v6
+2026-10-04T17:58:39.1162427Z with:
+2026-10-04T17:58:39.1162625Z   node-version: 20
+2026-10-04T17:58:39.1162836Z   cache: npm
+2026-10-04T17:58:39.1163039Z   check-latest: false
+2026-10-04T17:58:39.1165703Z   token: ***
+2026-10-04T17:58:39.1165923Z   package-manager-cache: true
+2026-10-04T17:58:39.1166176Z ##[endgroup]
+2026-10-04T17:58:39.2564129Z Attempting to download 20...
+2026-10-04T17:58:40.1269787Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-04T17:58:40.7384035Z Extracting ...
+2026-10-04T17:58:40.7492320Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/1b0015d3-554f-48e5-9616-630429399632 -f /home/runner/work/_temp/105855ed-d43f-4296-be2b-088df5e75aab
+2026-10-04T17:58:41.8359139Z Adding to the cache ...
+2026-10-04T17:58:43.3347144Z ##[group]Environment details
+2026-10-04T17:58:43.5525515Z node: v20.20.2
+2026-10-04T17:58:43.5525886Z npm: 10.8.2
+2026-10-04T17:58:43.5526175Z yarn: 1.22.22
+2026-10-04T17:58:43.5526853Z ##[endgroup]
+2026-10-04T17:58:43.5543821Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+2026-10-04T17:58:43.6601859Z /home/runner/.npm
+2026-10-04T17:58:43.8377672Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T17:58:45.0569572Z Received 46137344 of 86828135 (53.1%), 44.0 MBs/sec
+2026-10-04T17:58:45.2636088Z Received 86828135 of 86828135 (100.0%), 68.5 MBs/sec
+2026-10-04T17:58:45.2637062Z Cache Size: ~83 MB (86828135 B)
+2026-10-04T17:58:45.2748838Z [command]/usr/bin/tar -xf /home/runner/work/_temp/d721744b-0c5f-40b6-9634-1842849c736b/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+2026-10-04T17:58:45.4498202Z Cache restored successfully
+2026-10-04T17:58:45.4552093Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-04T17:58:45.4745671Z ##[group]Run npm ci
+2026-10-04T17:58:45.4745979Z npm ci
+2026-10-04T17:58:45.4934977Z shell: /usr/bin/bash -e {0}
+2026-10-04T17:58:45.4935312Z ##[endgroup]
+2026-10-04T17:58:51.3992863Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-04T17:58:52.1075602Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-04T17:58:53.5072116Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:58:54.7303605Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:58:54.7423147Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:58:54.7876831Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-04T17:59:06.6760148Z 
+2026-10-04T17:59:06.6761074Z > growth-project-backend@1.0.0 postinstall
+2026-10-04T17:59:06.6761493Z > prisma generate
+2026-10-04T17:59:06.6761639Z 
+2026-10-04T17:59:07.5879365Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T17:59:11.4079070Z ┌─────────────────────────────────────────────────────────┐
+2026-10-04T17:59:11.4080198Z │  Update available 6.19.3 -> 8.0.0-rc.19                 │
+2026-10-04T17:59:11.4080805Z │                                                         │
+2026-10-04T17:59:11.4081358Z │  This is a major update - please follow the guide at    │
+2026-10-04T17:59:11.4081931Z │  https://pris.ly/d/major-version-upgrade                │
+2026-10-04T17:59:11.4082453Z │                                                         │
+2026-10-04T17:59:11.4082919Z │  Run the following to update                            │
+2026-10-04T17:59:11.4083400Z │    npm i --save-dev prisma@latest                       │
+2026-10-04T17:59:11.4084337Z │    npm i @prisma/client@latest                          │
+2026-10-04T17:59:11.4084807Z └─────────────────────────────────────────────────────────┘
+2026-10-04T17:59:11.4085299Z 
+2026-10-04T17:59:11.4086123Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.06s
+2026-10-04T17:59:11.4086585Z 
+2026-10-04T17:59:11.4087155Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T17:59:11.4087841Z 
+2026-10-04T17:59:11.4088326Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+2026-10-04T17:59:11.4088796Z 
+2026-10-04T17:59:11.4675412Z 
+2026-10-04T17:59:11.4676476Z > growth-project-backend@1.0.0 prepare
+2026-10-04T17:59:11.4677039Z > lefthook install
+2026-10-04T17:59:11.4677265Z 
+2026-10-04T17:59:11.5215969Z sync hooks: ✔️(pre-commit, commit-msg)
+2026-10-04T17:59:11.5399269Z 
+2026-10-04T17:59:11.5400104Z added 1115 packages, and audited 1116 packages in 26s
+2026-10-04T17:59:11.5400449Z 
+2026-10-04T17:59:11.5400629Z 202 packages are looking for funding
+2026-10-04T17:59:11.5400982Z   run `npm fund` for details
+2026-10-04T17:59:11.5432511Z 
+2026-10-04T17:59:11.5432823Z 3 high severity vulnerabilities
+2026-10-04T17:59:11.5433086Z 
+2026-10-04T17:59:11.5434048Z To address all issues (including breaking changes), run:
+2026-10-04T17:59:11.5434641Z   npm audit fix --force
+2026-10-04T17:59:11.5434847Z 
+2026-10-04T17:59:11.5435032Z Run `npm audit` for details.
+2026-10-04T17:59:11.6116035Z ##[group]Run npx prisma generate
+2026-10-04T17:59:11.6116428Z npx prisma generate
+2026-10-04T17:59:11.6195283Z shell: /usr/bin/bash -e {0}
+2026-10-04T17:59:11.6195575Z ##[endgroup]
+2026-10-04T17:59:12.9805687Z Prisma schema loaded from prisma/schema.prisma
+2026-10-04T17:59:16.8909425Z 
+2026-10-04T17:59:16.8910625Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.06s
+2026-10-04T17:59:16.8911016Z 
+2026-10-04T17:59:16.8911391Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-04T17:59:16.8911772Z 
+2026-10-04T17:59:16.8912269Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+2026-10-04T17:59:16.8912680Z 
+2026-10-04T17:59:17.0141474Z ##[group]Run set -euo pipefail
+2026-10-04T17:59:17.0141809Z set -euo pipefail
+2026-10-04T17:59:17.0142219Z test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+2026-10-04T17:59:17.0142720Z mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+2026-10-04T17:59:17.0143096Z echo "specs: ${SPECS[*]}"
+2026-10-04T17:59:17.0143398Z npx jest --ci --runInBand "${SPECS[@]}"
+2026-10-04T17:59:17.0213302Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-04T17:59:17.0213660Z env:
+2026-10-04T17:59:17.0213898Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-04T17:59:17.0214261Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-04T17:59:17.0214611Z ##[endgroup]
+2026-10-04T17:59:17.0320638Z specs: test/zz-opus-d34-690-probe.spec.ts
+2026-10-04T17:59:21.4057118Z [Nest] 3139  - 10/05/2026, 4:00:00 PM     LOG [DunningService] {"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":0,"scheduled_for":"2026-10-05T16:00:00.000Z","kind":"soft"}
+2026-10-04T17:59:21.4061175Z [Nest] 3139  - 10/05/2026, 4:00:00 PM     LOG [DunningService] {"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":1,"scheduled_for":"2026-10-08T16:00:00.000Z","kind":"urgent"}
+2026-10-04T17:59:21.4064798Z [Nest] 3139  - 10/05/2026, 4:00:00 PM     LOG [DunningService] {"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":2,"scheduled_for":"2026-10-12T16:00:00.000Z","kind":"final"}
+2026-10-04T17:59:21.4069185Z [Nest] 3139  - 10/05/2026, 4:00:00 PM     LOG [DunningService] {"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":3,"scheduled_for":"2026-10-19T16:00:00.000Z","kind":"cancelled"}
+2026-10-04T17:59:21.4072720Z [Nest] 3139  - 10/05/2026, 4:00:00 PM     LOG [DunningService] {"event":"dunning.opened","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","invoice_id":"in_dv2_renewal_1","amount_cents":15000,"attempt_number":1}
+2026-10-04T17:59:21.4223027Z [Nest] 3139  - 10/05/2026, 4:00:00 PM     LOG [DunningService] {"event":"dunning.recovered","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index_at_recovery":0}
+2026-10-04T17:59:21.4305813Z [Nest] 3139  - 10/19/2026, 4:00:00 PM     LOG [CheckoutWebhookHandlerService] {"event":"checkout_webhook.dispute_cycle_kept_on_paid","purchase_id":"purchase-1"}
+2026-10-04T17:59:21.4372056Z [Nest] 3139  - 10/05/2026, 4:00:00 PM     LOG [DunningService] {"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":0,"scheduled_for":"2026-10-05T16:00:00.000Z","kind":"soft"}
+2026-10-04T17:59:21.4375971Z [Nest] 3139  - 10/05/2026, 4:00:00 PM     LOG [DunningService] {"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":1,"scheduled_for":"2026-10-08T16:00:00.000Z","kind":"urgent"}
+2026-10-04T17:59:21.4378519Z [Nest] 3139  - 10/05/2026, 4:00:00 PM     LOG [DunningService] {"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":2,"scheduled_for":"2026-10-12T16:00:00.000Z","kind":"final"}
+2026-10-04T17:59:21.4381277Z [Nest] 3139  - 10/05/2026, 4:00:00 PM     LOG [DunningService] {"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":3,"scheduled_for":"2026-10-19T16:00:00.000Z","kind":"cancelled"}
+2026-10-04T17:59:21.4383518Z [Nest] 3139  - 10/05/2026, 4:00:00 PM     LOG [DunningService] {"event":"dunning.opened","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","invoice_id":"in_dv2_renewal_1","amount_cents":15000,"attempt_number":1}
+2026-10-04T17:59:21.4405586Z [Nest] 3139  - 10/05/2026, 4:00:00 PM     LOG [DunningService] {"event":"dunning.recovered","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index_at_recovery":0}
+2026-10-04T17:59:21.4504573Z [Nest] 3139  - 10/19/2026, 4:00:00 PM    WARN [CheckoutWebhookHandlerService] dunningV2.isDisputeCycleOpen failed purchase=purchase-1: db_P2024
+2026-10-04T17:59:21.4520706Z [Nest] 3139  - 10/19/2026, 4:00:00 PM     LOG [CheckoutWebhookHandlerService] {"event":"checkout_webhook.dispute_cycle_kept_on_paid","purchase_id":"purchase-1"}
+2026-10-04T17:59:21.4548347Z [Nest] 3139  - 10/24/2026, 4:10:00 PM     LOG [DunningV2Service] {"event":"dunning_v2.locked","dunning_state_id":"dunningState_1","purchase_id":"purchase-1","entered_at":"2026-10-14T16:00:00.000Z"}
+2026-10-04T17:59:21.4637237Z   console.log
+2026-10-04T17:59:21.4638397Z     PROBE W1 observed {"webhook_threw":true,"state_status":"active","state_reason":"charge_disputed","dispute_cycle_open":true,"locked_on_dispute_day":1}
+2026-10-04T17:59:21.4638952Z 
+2026-10-04T17:59:21.4639249Z       at Object.<anonymous> (test/zz-opus-d34-690-probe.spec.ts:434:13)
+2026-10-04T17:59:21.4639549Z 
+2026-10-04T17:59:21.4687559Z [Nest] 3139  - 10/05/2026, 4:00:00 PM     LOG [DunningService] {"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":0,"scheduled_for":"2026-10-05T16:00:00.000Z","kind":"soft"}
+2026-10-04T17:59:21.4690538Z [Nest] 3139  - 10/05/2026, 4:00:00 PM     LOG [DunningService] {"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":1,"scheduled_for":"2026-10-08T16:00:00.000Z","kind":"urgent"}
+2026-10-04T17:59:21.4692867Z [Nest] 3139  - 10/05/2026, 4:00:00 PM     LOG [DunningService] {"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":2,"scheduled_for":"2026-10-12T16:00:00.000Z","kind":"final"}
+2026-10-04T17:59:21.4695264Z [Nest] 3139  - 10/05/2026, 4:00:00 PM     LOG [DunningService] {"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":3,"scheduled_for":"2026-10-19T16:00:00.000Z","kind":"cancelled"}
+2026-10-04T17:59:21.4697507Z [Nest] 3139  - 10/05/2026, 4:00:00 PM     LOG [DunningService] {"event":"dunning.opened","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","invoice_id":"in_dv2_renewal_1","amount_cents":15000,"attempt_number":1}
+2026-10-04T17:59:21.4726328Z [Nest] 3139  - 10/06/2026, 5:00:00 PM     LOG [DunningService] {"event":"dunning.failure_recorded","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","failure_count":3}
+2026-10-04T17:59:21.4919975Z [Nest] 3139  - 10/09/2026, 4:00:00 PM     LOG [ClientBillingService] {"event":"billing.client_cancel_in_dunning","purchase_id":"purchase-1","voided_invoice_count":1,"voided_amount_cents":15000}
+2026-10-04T17:59:21.4948316Z   console.log
+2026-10-04T17:59:21.4949292Z     PROBE W2 observed {"purchase_status":"canceled","entitlement_active":false,"state_status":"abandoned","last_error":"card_declined"}
+2026-10-04T17:59:21.4949799Z 
+2026-10-04T17:59:21.4950499Z       at Object.<anonymous> (test/zz-opus-d34-690-probe.spec.ts:459:13)
+2026-10-04T17:59:21.4950797Z 
+2026-10-04T17:59:21.4980871Z [Nest] 3139  - 10/05/2026, 4:00:00 PM     LOG [DunningService] {"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":0,"scheduled_for":"2026-10-05T16:00:00.000Z","kind":"soft"}
+2026-10-04T17:59:21.4984147Z [Nest] 3139  - 10/05/2026, 4:00:00 PM     LOG [DunningService] {"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":1,"scheduled_for":"2026-10-08T16:00:00.000Z","kind":"urgent"}
+2026-10-04T17:59:21.4986122Z [Nest] 3139  - 10/05/2026, 4:00:00 PM     LOG [DunningService] {"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":2,"scheduled_for":"2026-10-12T16:00:00.000Z","kind":"final"}
+2026-10-04T17:59:21.4988370Z [Nest] 3139  - 10/05/2026, 4:00:00 PM     LOG [DunningService] {"event":"dunning.attempt_scheduled","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index":3,"scheduled_for":"2026-10-19T16:00:00.000Z","kind":"cancelled"}
+2026-10-04T17:59:21.4990313Z [Nest] 3139  - 10/05/2026, 4:00:00 PM     LOG [DunningService] {"event":"dunning.opened","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","invoice_id":"in_dv2_renewal_1","amount_cents":15000,"attempt_number":1}
+2026-10-04T17:59:21.5008488Z [Nest] 3139  - 10/07/2026, 4:01:00 PM     LOG [DunningService] {"event":"dunning.recovered","purchase_id":"purchase-1","dunning_state_id":"dunningState_1","step_index_at_recovery":0}
+2026-10-04T17:59:21.5094389Z [Nest] 3139  - 10/17/2026, 4:00:00 PM     LOG [DunningV2Service] {"event":"dunning_v2.locked","dunning_state_id":"dunningState_1","purchase_id":"purchase-1","entered_at":"2026-10-04T16:05:00.000Z"}
+2026-10-04T17:59:21.5105368Z   console.log
+2026-10-04T17:59:21.5106520Z     PROBE W4 observed {"state_after_paid":"resolved","state_status":"active","obligation_status":"open","dispute_cycle_open":true,"locked_by_day_12":1,"entitlement":402}
+2026-10-04T17:59:21.5107600Z 
+2026-10-04T17:59:21.5107971Z       at Object.<anonymous> (test/zz-opus-d34-690-probe.spec.ts:499:13)
+2026-10-04T17:59:21.5108403Z 
+2026-10-04T17:59:21.5162277Z [Nest] 3139  - 10/05/2026, 4:00:00 PM    WARN [DunningV2Service] dunning v2 dispute purchase resolution failed: db_P2024
+2026-10-04T17:59:21.5164899Z [Nest] 3139  - 10/05/2026, 4:00:00 PM    WARN [CheckoutWebhookHandlerService] dunningV2 dispute effect failed event=evt_won_w3 type=charge.dispute.closed: db_P2024
+2026-10-04T17:59:21.5187604Z [Nest] 3139  - 10/05/2026, 4:00:00 PM     LOG [BillingService] Ignoring unhandled Stripe event type: charge.dispute.closed
+2026-10-04T17:59:21.5191293Z   console.log
+2026-10-04T17:59:21.5192497Z     PROBE W3 observed {"fault_injected":1,"first_delivery_threw":true,"processed_rows":1,"second_delivery":{"processed":true},"state_status":"resolved","still_locked":false}
+2026-10-04T17:59:21.5193461Z 
+2026-10-04T17:59:21.5193837Z       at Object.<anonymous> (test/zz-opus-d34-690-probe.spec.ts:622:13)
+2026-10-04T17:59:21.5194297Z 
+2026-10-04T17:59:21.5242877Z PASS test/zz-opus-d34-690-probe.spec.ts (158 MB heap size)
+2026-10-04T17:59:21.5244668Z   AUDIT PROBE 118 #690: webhook dispute / cancel paths
+2026-10-04T17:59:21.5247033Z     ✓ W0 control: invoice.paid during an open dispute keeps the dispute cycle (FIX ROUND 8) (40 ms)
+2026-10-04T17:59:21.5248551Z     ✓ W1: one failed dispute read on invoice.paid must not settle the dispute cycle (fail closed) (32 ms)
+2026-10-04T17:59:21.5250317Z     ✓ W2: a late invoice.payment_failed after a 2A cancel does not flip the ended plan back to past_due (31 ms)
+2026-10-04T17:59:21.5251330Z     ✓ W4: a dispute created during a payment cycle has the same effect whichever webhook is processed first (15 ms)
+2026-10-04T17:59:21.5251978Z   AUDIT PROBE 118 #690: dispute closure through BillingService
+2026-10-04T17:59:21.5252663Z     ✓ W3: a won dispute.closed whose purchase lookup fails once is redelivered, never acknowledged (8 ms)
+2026-10-04T17:59:21.5253053Z 
+2026-10-04T17:59:21.5273869Z Test Suites: 1 passed, 1 total
+2026-10-04T17:59:21.5274345Z Tests:       5 passed, 5 total
+2026-10-04T17:59:21.5274629Z Snapshots:   0 total
+2026-10-04T17:59:21.5274874Z Time:        3.641 s
+2026-10-04T17:59:21.5275260Z Ran all test suites matching test/zz-opus-d34-690-probe.spec.ts.
+2026-10-04T17:59:21.6752900Z Post job cleanup.
+2026-10-04T17:59:21.7924501Z Cache hit occurred on the primary key node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12, not saving cache.
+2026-10-04T17:59:21.8055590Z Post job cleanup.
+2026-10-04T17:59:21.8899358Z [command]/usr/bin/git version
+2026-10-04T17:59:21.8937511Z git version 2.55.0
+2026-10-04T17:59:21.8975219Z Temporarily overriding HOME='/home/runner/work/_temp/f971b78a-36ed-4612-815a-1f51e4c68b73' before making global git config changes
+2026-10-04T17:59:21.8976151Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-04T17:59:21.8981175Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-04T17:59:21.9014997Z Removing SSH command configuration
+2026-10-04T17:59:21.9021944Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-04T17:59:21.9058818Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-04T17:59:21.9304075Z Removing HTTP extra header
+2026-10-04T17:59:21.9310901Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-04T17:59:21.9345018Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-04T17:59:21.9583389Z Removing includeIf entries pointing to credentials config files
+2026-10-04T17:59:21.9590520Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-04T17:59:21.9619172Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T17:59:21.9620528Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T17:59:21.9621516Z includeif.gitdir:/github/workspace/.git.path
+2026-10-04T17:59:21.9622199Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T17:59:21.9628351Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-04T17:59:21.9651534Z /home/runner/work/_temp/git-credentials-e38f8121-b954-4abf-9389-594ff4757b49.config
+2026-10-04T17:59:21.9662139Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-e38f8121-b954-4abf-9389-594ff4757b49.config
+2026-10-04T17:59:21.9732081Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-04T17:59:21.9756847Z /home/runner/work/_temp/git-credentials-e38f8121-b954-4abf-9389-594ff4757b49.config
+2026-10-04T17:59:21.9767561Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-e38f8121-b954-4abf-9389-594ff4757b49.config
+2026-10-04T17:59:21.9806021Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-04T17:59:21.9829218Z /github/runner_temp/git-credentials-e38f8121-b954-4abf-9389-594ff4757b49.config
+2026-10-04T17:59:21.9836944Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-e38f8121-b954-4abf-9389-594ff4757b49.config
+2026-10-04T17:59:21.9871105Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-04T17:59:21.9896047Z /github/runner_temp/git-credentials-e38f8121-b954-4abf-9389-594ff4757b49.config
+2026-10-04T17:59:21.9903393Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-e38f8121-b954-4abf-9389-594ff4757b49.config
+2026-10-04T17:59:21.9940322Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-04T17:59:22.0203396Z Removing credentials config '/home/runner/work/_temp/git-credentials-e38f8121-b954-4abf-9389-594ff4757b49.config'
+2026-10-04T17:59:22.0340126Z Print service container logs: 28e80a6f9eda4522ae229f3ec838e3ee_redis7alpine_485169
+2026-10-04T17:59:22.0344419Z ##[command]/usr/bin/docker logs --details fdaeda015170603e39636ae1b66d185f5a6e7135eefcdd114e77045703523c21
+2026-10-04T17:59:22.0473711Z  1:C 04 Oct 2026 17:58:30.553 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+2026-10-04T17:59:22.0476372Z  1:C 04 Oct 2026 17:58:30.553 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+2026-10-04T17:59:22.0476956Z  1:C 04 Oct 2026 17:58:30.553 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+2026-10-04T17:59:22.0478119Z  1:C 04 Oct 2026 17:58:30.553 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+2026-10-04T17:59:22.0478798Z  1:M 04 Oct 2026 17:58:30.554 * monotonic clock: POSIX clock_gettime
+2026-10-04T17:59:22.0479231Z  1:M 04 Oct 2026 17:58:30.554 * Running mode=standalone, port=6379.
+2026-10-04T17:59:22.0479596Z  1:M 04 Oct 2026 17:58:30.555 * Server initialized
+2026-10-04T17:59:22.0479940Z  1:M 04 Oct 2026 17:58:30.555 * Ready to accept connections tcp
+2026-10-04T17:59:22.0496564Z Stop and remove container: 28e80a6f9eda4522ae229f3ec838e3ee_redis7alpine_485169
+2026-10-04T17:59:22.0501800Z ##[command]/usr/bin/docker rm --force fdaeda015170603e39636ae1b66d185f5a6e7135eefcdd114e77045703523c21
+2026-10-04T17:59:22.1855929Z fdaeda015170603e39636ae1b66d185f5a6e7135eefcdd114e77045703523c21
+2026-10-04T17:59:22.1884272Z Remove container network: github_network_045a318b9e9341a999eae8ac9eeafccf
+2026-10-04T17:59:22.1888829Z ##[command]/usr/bin/docker network rm github_network_045a318b9e9341a999eae8ac9eeafccf
+2026-10-04T17:59:22.2853196Z github_network_045a318b9e9341a999eae8ac9eeafccf
+2026-10-04T17:59:22.2926713Z Cleaning up orphan processes

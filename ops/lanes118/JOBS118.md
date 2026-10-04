@@ -283,14 +283,69 @@ predicate: check it is exported and correct), webhook order independence, curren
 20270317116000 (operator: keep). M4 #677 (4799c6af, merge-only/test move) gets its own pair later. Reports:
 ops/reports/AUD-OPUS-CM-118.md, AUD-SOL-CM-118.md.
 
-## QUEUED (operator launches as slots free, in this order)
-B-DUNB-118 (after B-DUNA-118 ends): D3 #689 bb992fed + D4 #690 06307883 (both 2,913 lines). Sol RC #689 0/4/0 (5982476834: post-lock
+## AUD-OPUS-F23-118 / AUD-SOL-F23-118 — fees F2 #682 + F3 #683 (T4: platform fees, settlement, refunds, currency) — JOB ONE
+Heads: #682 70f879a29f06815d15a48c3c42483667a474d507 (2,999 lines; operator SIZE ASSESSMENT KEEP 5982690647; red by design with exactly
+4 tests `connectTransfer.updateMany is not a function`, carried green by F4 #684), #683 438d29e64f24e6f803a578dae56e0140a44d1c52 (2,835;
+red by design with exactly 3 suites / 9 tests, carried by F4). F1 #681 e9650dc4 is dual-APPROVED (base). B-FEES15-118 FIX ROUND 15 +
+READY (#682 5982655903, #683 5982656134); report ops/reports/B-FEES15-118.md (verify every claim). Findings to check closed:
+#682 Opus B-682-9 (5977756869: round-14 R75 tokens in test/s-fee-r11-reversal-admission-diagnostics.spec.ts; prove with
+`node scripts/check-r75.js --mode=range --base=b644198b90bb9ab1dc62a78794e12cf09f8ace7c --head=<sha>` at F2 and at the fees top #686
+b002ec21); #683 Sol B-683-1 (both lenses; deferred-fee awaiting->settled currency switch compared presentment with settlement cents;
+the CAD->USD deferred cases must pay USD 56.40, store 2000 USD, zero drift after retry/replay), Sol B-683-5 (never clear a retry flag
+raised by the current run), and every earlier verdict in both threads (Sol 5977674117/5977674319, Opus 5977756869/5977756981).
+Red-by-design proof: the failing tests at F2/F3 must be exactly the stated ones and green at F4. Money list: webhook order and
+redelivery, concurrency, terminal states, list pagination and completeness, currency, copy truth. C-683-7 (failed flag write answers the
+webhook 2xx) is logged as a C: judge whether it is really a B. Reports: ops/reports/AUD-OPUS-F23-118.md, AUD-SOL-F23-118.md.
+
+## AUD-OPUS-F4-118 / AUD-SOL-F4-118 — fees F4 #684 + F4b #697 (restack deltas + operator R75 test fix)
+Heads: #684 bbf2eac677b01c07222cd49baf2e13d3da1c0ae0 (merge-only restack onto the new F3), #697 1807d4cc5bdcb7b89cdec57e0deb59e03815499f
+(restack 45ebb1e1 + operator FIX ROUND 16 5982690240: test-only, the Sol B-683-4 reader called directly instead of `settlementModule as
+unknown as Record<...>`; R75). Verify: the restack merges carry no own-diff change except conflict resolutions (name each), F4 turns
+F2/F3's red-by-design tests green, FR16 keeps every assertion, R75 range check is clean at #697 and at #686 b002ec21. Re-check the latest
+verdicts in each thread are still true at these heads. Reports: ops/reports/AUD-OPUS-F4-118.md, AUD-SOL-F4-118.md.
+
+## AUD-OPUS-F56-118 / AUD-SOL-F56-118 — fees F5 #685 + F6 #686 (restack deltas, top of the fees stack)
+Heads: #685 b62eebe12be6062fad8a9fc27abbf30882edb480, #686 b002ec21583e4e7053deacbe064e2c35f0f2865d (merge-only restacks: 07fd1389 ->
+b62eebe1 and 5937064f -> b002ec21 merge the #697 FR16 fix; earlier round-15 restacks by B-FEES15-118 5982658088/5982658386). Verify no
+own-diff change, all required checks green, and judge the integrated fees top (#686's tree is what lands): R75 range check clean
+from b644198b, money list end to end on the composed tree, migrations ordered and unreleased-only. Re-check the latest verdicts in each
+thread hold. Reports: ops/reports/AUD-OPUS-F56-118.md, AUD-SOL-F56-118.md.
+
+## B-RECUR6B-118 (builder, Claude Opus 5.5, T4: recurring packages — MOST CRITICAL OF ALL) — R3 #680 (+ restack R4 #696, R5 #701)
+Heads: #680 9621457e9df1eef8f3f2bb24e8f5637b66d2b608 (base #679's branch agent115/recur-split-2-subscription-checkout, now 8bbf4a41 after
+B-RECUR6A FIX ROUND 6; 2,529 lines), #696 5225e0789befdfa55a49f2381d3e11ebc02565d7 (tests only, 1,654), #701
+67905b43 (tests only, 416). Take lock `recur`. Do, bottom-up:
+1. Merge #679 8bbf4a41 into #680 (merge-tree is clean per B-RECUR6A). Read ops/reports/B-RECUR6A-118.md "## HANDOFF": R1's
+   setSubscriptionDefaultPaymentMethod lifts the trial end only with `liftTrialEnd: true` (test/b-recur-fix-round-1-trial-card.spec.ts:172
+   needs it); the own trial SetupIntent (metadata tgp_purchase_id, tgp_subscription_id, tgp_checkout: native_subscription_trial) is not
+   tied to the subscription by Stripe: the #680 setup_intent.succeeded handler must attach it via attachTrialCard when it sees that metadata.
+2. Close every open B on #680: Sol RC at 8e05ad0e (5977195657) as answered by FIX ROUND 5 (9621457e, 5977718408): verify each closure;
+   the dead Sol lens AUD-SOL-R34R5-117 left unposted probes on branch audit/AUD-SOL-R34R5-117/680-authority (run 37187197172): B-680-2
+   residual and B-680-5 (two cases): reproduce, fix, keep the probes as failing-before tests. Opus APPROVE at 8e05ad0e (5977283278).
+3. Report-only (do not build unless it is your code): AUD-OPUS-SH3-118 says a plan locked out at Day 10 shows "confirming" with no End my
+   plan; say whether recurring or dunning owns it. C-673-3 (coach MRR counts never-billed trials) needs #676's BILLED_WHERE: not here.
+   #661 (hosted checkout, lands after fees) conflicts with the recurring top: list the conflicting files and the resolution you expect.
+4. Money self-check per _COMMON_118 6 (webhook order and redelivery, concurrency, terminal states, pagination, currency, copy truth).
+   Recurring is never one-time-only.
+5. FIX ROUND + READY on #680; merge-only restack #696 and #701 with READY (restack) comments (new tests go to #696/#701 if #680 nears
+   3,000). Write notify/recur.txt "recur top: #701 @ <sha> (B-RECUR6B-118, <time>)"; release the lock. Report: ops/reports/B-RECUR6B-118.md.
+
+## QUEUED (operator launches as slots free; STOP-AND-DRAIN: hold 5 concurrent since 10:32 PDT; strict order)
+1. AUD-OPUS-F23-118 + AUD-SOL-F23-118 (entry above).
+2. [LAUNCHED 11:1x] B-RECUR6B-118: #680 + #696/#701 (B-RECUR6A done 10:36; R2 top #679 8bbf4a41; its handoff notes: one #680 test needs
+   liftTrialEnd: true; setup_intent.succeeded should attach the attempt's own SetupIntent; dead Sol lens AUD-SOL-R34R5-117 probes on
+   audit/AUD-SOL-R34R5-117/680-authority, run 37187197172: B-680-2 residual, B-680-5 x2; #661 conflicts with the recurring top).
+3. AUD-OPUS-F4-118 + AUD-SOL-F4-118; 4. AUD-OPUS-F56-118 + AUD-SOL-F56-118.
+5. Recurring lens pairs R1+R2 (#678 77bce450, #679 8bbf4a41), then R3-R5, after B-RECUR6B READY.
+6. B-SHEET2-118 (m#342 Sol 2 Bs; m#343 Opus B-343-6 + Sol 3 Bs; m#344 Sol B-344-1..4 + Opus B-344-5/6; see FOLLOWUPS).
+7. B-CM5-118 coach: #674 f9e21a87 B-674-13 (sweep checks 23-hour window against its start time; resend after Stripe forgot the key) + B-674-14 (has_more with empty page authorizes a second dispute reversal) [Sol 5982716289, Opus 5982843273, probe run 37222417496]; #676 ccd60bbc B-676-5 (MRR and paying clients count a never-billed trial after its first invoice fails; export BILLED_WHERE for C-673-3) [Sol 5982716659, Opus 5982843389, run 37221623024]; merge main into #674 first; restack #676 and #677; sizes 2,948/2,981/2,918: tests to #677.
+8. B-DUNB-118 (after B-DUNA-118 ends): D3 #689 bb992fed + D4 #690 06307883 (both 2,913 lines). Sol RC #689 0/4/0 (5982476834: post-lock
 dispute resolution, cancellation authority, out-of-band selection, lock order) and #690 0/5/1 (5982476848: invoice resurrection, dispute
 serialization, unpaid grace, failure/cancel race, acknowledged persistence failure); Opus RC #689 0/1/2 (5982575687: B-689-5
 client-billing.service.ts:323-330 reversed amount from the last failed renewal, not the disputed charge; minimal fix show no amount, probe
 P3 failing-before) and APPROVE #690 0/0/3 (5982575812). Same-line Cs: C-690-6 lock-order inversion checkout-webhook-handler:891-904 (same
 as Sol lock order B), C-690-7 payment-failed check/write not atomic (same as Sol failure/cancel race). Others to report: C-689-3, C-689-4,
 C-690-5, C-690-2 (Sol). Restack on B-DUNA's D2 top first. Then dunning lens pairs on D1-D4 + D5 (#691 + #642).
-B-RECUR6B-118 (#680 + #696/#701 after B-RECUR6A ends; dead Sol lens AUD-SOL-R34R5-117 probes on audit/AUD-SOL-R34R5-117/680-authority,
-run 37187197172: B-680-2 residual, B-680-5 x2); fees lens pairs (F2+F3, F4+F4b,
-F5+F6 deltas) after B-FEES15; recurring lens pairs after B-RECUR6B; coach M4 #677 pair (4799c6af merge-only/test move); AUD pair D5 (#691 + #642); HC pair H6 (mobile #360-#364); wizard pair m#345 97c9005e + m#346 2baea5b8 (B-WIZ-118 READY 5982572052/5982579141; then #347 3beab160 merge-only pair; then a W3 #347 fix round for its first-person and isLive issues); N1-N4.
+9. Lens pairs: trials after B-TR3; privacy after B-PRIVFU2; HC after B-HC4; lockout m#352+m#353 (B-LOCK READY) then m#354; wizard
+   m#345+m#346 then #347 + W3 fix round; coach M4 #677; dunning D1-D4 + D5 (#691 + #642).
+10. Remainder: programs #355-#358, N1-N4.

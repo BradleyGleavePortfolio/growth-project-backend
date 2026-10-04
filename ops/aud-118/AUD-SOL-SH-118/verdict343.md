@@ -1,5 +1,5 @@
 AUDIT GPT-6.1 Sol — growth-project-mobile#343 @ fd739d5819c232764e0389afd778860bf452b41c — VERDICT: REQUEST CHANGES
-A/B/C = 0/2/2
+A/B/C = 0/3/2
 
 Job AUD-SOL-SH-118, agent 118. Independent T4 native purchase/lifecycle/consent audit; no candidate runtime edits.
 
@@ -24,6 +24,14 @@ The original Sol-approved `PlanTermsBlock`, publishable-key test and unchanged p
 **Executed counterexample:** an unknown-500 notice in the real rendered sheet, using the actual caller's omitted-`onOpenPlan` configuration, shows Open your plan; pressing it executes the success/exit callback despite no success state, while an explicit plan-navigation callback control passes. This proves the sheet's callback disposition; the main-app/logger destination is established by the actual source call chain, not a claimed device navigation run. ([One rendered-action failure / 23 passes](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37220573241/job/111489893288))
 
 **Minimal fix rule:** wire a real Membership/existing-plan recovery destination for every live caller, including the outside-navigation onboarding handoff; do not label a plain dismissal “Open your plan.” Preserve the completed-refresh, closed-key rotation and refunded/review support behavior, and prove the real Day 1 action rather than only an injected callback.
+
+## B-343-6 — an ended subscription is falsely described as never charged
+
+**File:line:** `src/hooks/usePackagePurchase.ts:623–631`. After an unclear native confirmation, either `plan.state === 'ended'` or `plan.checkoutState === 'ended'` retires the key and shows “This checkout closed before the payment finished, so nothing was charged,” although the backend maps a canceled row to `ended` independently of earlier payment, and its Stripe reader checks canceled subscription status before checking the invoice/PaymentIntent. ([Mobile uncertainty/terminal decision](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/fd739d5819c232764e0389afd778860bf452b41c/src/hooks/usePackagePurchase.ts#L623-L631), [canonical state mapping](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/76aa84b8350ea56e8dac65757efe6ebac6579569/src/checkout/subscription-plan.ts#L352-L362), [Stripe terminal-state reader](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/76aa84b8350ea56e8dac65757efe6ebac6579569/src/checkout/subscription-checkout.service.ts#L374-L400))
+
+**Executed counterexample:** a subscription whose native payment response was lost subsequently ends/cancels, and reconciliation returns `{state:'ended',checkout_state:null}` or `{state:'confirming',checkout_state:'ended'}`; both actual-hook cases emit the categorical no-charge sentence, while the authoritative `awaiting_payment` control passes. These are two deterministic client/contract failures, not a claimed executed real-provider charge; they expose a terminal-state case not covered by the original B-334-3 controls. ([Two exact-runtime terminal failures / one passing control](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37221348486/job/111492169288))
+
+**Minimal fix rule:** ending/closure proves no future checkout completion, not that no prior payment succeeded; use neutral ended-plan/status/support copy with the attempt reference unless a separate authoritative unpaid disposition exists. The already available `endedWhileConfirming` copy is suitable; keep safe dead-key retirement, preserve the awaiting-payment/card controls, and prove canceled-after-unclear-payment reconciliation without a new charge or categorical unpaid claim.
 
 ## Follow-ups C (freeze)
 
