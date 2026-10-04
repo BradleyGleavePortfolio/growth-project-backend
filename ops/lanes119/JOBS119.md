@@ -131,7 +131,8 @@ amounts, reverse that charge's own transfer, forward-only netting). Cancel durin
 the dispute.
 Do, in order:
 1. Merge origin/main into #687 (merge-only) and #687 into #688 so both are current.
-2. SPLIT #688 into stacked pieces under 1,500 changed lines where possible (MODEL_ROUTING 8.2: each piece compiles, passes CI, carries
+2. SPLIT #688 into stacked pieces; every NEW piece at or under 1,500 changed lines (owner 12:33 rule: new PRs over 1,500 fail
+   automatically; add pieces rather than exceed it) (MODEL_ROUTING 8.2: each piece compiles, passes CI, carries
    its own tests, inert or flag-gated (FEATURE_DUNNING_V2 stays off) until the last lands). Shape: #688 keeps D2a; new PR D2b on
    #688's branch takes the rest of today's #688 content (byte-identical moves); new PR D2c on D2b's branch BUILDS R-DISPUTE-PAUSE.
    Write the seams and line counts in each PR body and FIX ROUND.
@@ -164,7 +165,7 @@ Heads: #674 f9e21a87bf47502458a6ae21c2393010a1279198 (base main, BEHIND; 2,948 l
 - #676 Sol RC 0/1/1 (5982716659) and Opus RC 0/1/1 (5982843389): B-676-5 MRR and paying-client counts include a never-billed trial after
   its first invoice fails (probe run 37221623024). Export the billed predicate (BILLED_WHERE) so C-673-3 can use it.
 Do: merge origin/main into #674 first (merge-only), fix B-674-13/14 in #674 and B-676-5 in #676, restack #676 and #677 merge-only. SIZE:
-new tests go to #677; if #677 would pass 3,000, open a tests-only piece M5 on #677's branch (byte-identical moves, tier header) and say
+new tests go to #677; if #677 would pass 3,000, open a tests-only piece M5 on #677's branch (at or under 1,500 lines; byte-identical moves, tier header) and say
 so. Never push a PR over 3,000. Replay every prior probe from both lenses (threads, ops/aud-118/AUD-*-CM-118/); money self-check per
 _COMMON_119 6 (owner-only authz, reversal idempotency under redelivery and concurrency, coach-visible money equals the ledger to the cent,
 MRR rule). FIX ROUND + READY on #674 and #676, READY (restack) on #677 (and M5 if opened) at green heads; write notify/coach.txt; release

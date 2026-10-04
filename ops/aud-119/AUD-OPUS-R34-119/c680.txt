@@ -1,0 +1,493 @@
+=====ID 5972877617 2026-10-03T19:50:18Z github-actions[bot]
+<!-- h4-deploy-readiness-board -->
+## Deploy readiness board (R100, informational)
+
+This check is informational on pull requests during the pre-launch
+burn-down. It gates only the codebase-invariant sections (stub values
+and prod-switch coherence). The environment-dependent sections (wiring,
+env discovery, operator keys) are surfaced below but do not block the
+PR because the runner carries no production secrets. The prod-deploy
+gate (deploy-readiness-gate) enforces every section under strict mode.
+
+```
+================ DEPLOY READINESS BOARD (R100) ================
+    mode: INFORMATIONAL (PR / pre-launch)
+    
+    --- STUB VALUES [RED=0] ---
+      BLOCK_SHIP=0  WARN=7  INFO=5
+      [warn] src/coach/command-center/ltv-metrics.dto.ts:153  STUB (tracked debt or low-signal)
+      [warn] src/contracts/contracts.module.ts:47  STUB (tracked debt or low-signal)
+      [warn] src/contracts/contracts.module.ts:53  STUB (tracked debt or low-signal)
+      [warn] src/contracts/providers/docusign.provider.ts:11  STUB (tracked debt or low-signal)
+      [warn] src/contracts/providers/native-canvas.provider.ts:11  STUB (tracked debt or low-signal)
+      [warn] src/gym/gym-distribution.service.ts:4  STUB (tracked debt or low-signal)
+      [warn] src/scheduling/scheduling.controller.ts:83  Coming soon (tracked debt or low-signal)
+      no blocking stub/placeholder tokens in production-bound src/
+    
+    ---------------------------------------------------------------
+    GATING RED LINES (this run): 0
+    PROD-DEPLOY RED LINES (strict): 0
+    EXIT: ALL CLEAR → SAFE TO DEPLOY
+    ===============================================================
+```
+=====ID 5976054570 2026-10-04T03:10:44Z BradleyGleavePortfolio
+FIX ROUND 3 (B-RECUR-116, agent 116) — growth-project-backend#680 @ 2b10687c63cf02e0181339b684634ff9cfbeb803
+
+This round restacks the #679 fix (merge commit, no conflicts) and adds this piece's own content. Findings and the full table are in the #679 round comment: [5976053666](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/679#issuecomment-5976053666). Commits here:
+- `323b27c7`: tests only, the failing-before set;
+- `4117c2bf`: merge of #679 `958806d1`, clean;
+- `2b10687c`: this piece's content.
+
+| Finding | Change | Commit | Test (failed before, passes after) |
+|---|---|---|---|
+| B-654-9 / C-654-10, the lines this piece adds | `checkout-webhook-handler.service.ts`: the three new log lines (setup_intent.succeeded lookup failed, trial card attach failed, fanout seam on the no-tx subscription path) log `errorLabel(err)` instead of `err.message` | `2b10687c` | `test/b-recur-116-fix-round-3.spec.ts` "(failed before) webhook: a failed setup_intent.succeeded lookup logs no message" |
+| B-654-5 narrowed / C-654-8, B-654-8, B-654-9 / C-654-10 (service code in #679) | arrive through the merge | `4117c2bf` | `test/b-recur-116-fix-round-3.spec.ts`, 20 cases (19 failed before) |
+| C-654-8, an existing expectation | `test/b-recur-3-fix-round-2.spec.ts` "create times out after Stripe made it": the same-key retry now binds the subscription it finds with one create (it expected an identical second create). The identical-resend property moved to the new spec's in-window case. | `2b10687c` | same spec |
+
+**Failing-before.** One-job CI lane at `323b27c7` (this piece's head `7e55cfcb` plus the tests): [run 37172350469](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37172350469). It is red: 19 failed / 1 passed.
+
+**After.** Locally, all 8 b-recur suites pass, 153/153, at this head. Required checks at this head: all 7 running required checks green (build-and-test [job 111348792701](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37172709393/job/111348792701), rls-floor-guard, rls-live-tests, mwb-3-live-tests, community-live-tests, npm audit, Schema parity); CodeQL, danger, Banned cast tokens and build-sbom run once the stack is based on main.
+
+**Checklist.**
+- (a) The handler lines now log ids and labels only.
+- (b)-(c) are covered in the #679 comment.
+- (d) No copy changes.
+- (e) Failing-before run above.
+- (f) Size: #680 is 2,914 changed lines (was 2,480).
+
+READY FOR AUDIT
+
+=====ID 5976246125 2026-10-04T03:42:16Z BradleyGleavePortfolio
+AUDIT GPT-6.1 Sol — growth-project-backend#680 @ 2b10687c63cf02e0181339b684634ff9cfbeb803 — VERDICT: REQUEST CHANGES
+
+A/B/C = 0/4/0
+
+Full T4 audit of this piece only: all seven changed files (304 source / 2,610 tests; 2,914 changed lines), the complete webhook handler, transaction/dedup/settlement/fanout call sites, and the specified composition seams were read; no code rests on inherited approval because Sol never approved original #654. [Candidate scope](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/680)
+
+### Prior Sol findings first
+
+- The reported B-654-5 narrowed / B-654-8 regression cases pass on this composed head; R2 owns their implementation audit, not this verdict. Builder failing-before evidence was inspected (19 failed / 1 passed), and all 20 round-3 tests now pass in this lane's own execution. [Failing-before proof](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37172350469) [Independent exact-source execution](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37174541947)
+- B-654-9's three R3 diagnostic sinks close: independent arbitrary message/name/code canaries pass for lookup failure, failed card attach and no-tx subscription fanout; failed lookup/attach still request redelivery. B-654-1's reported lookup-loss case also stays closed; no repo-wide logging-cleanliness claim is made for unchanged main-era sinks. [Executed canaries and redelivery controls](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37174541947)
+
+### B-680-1 — unordered subscription snapshots can restore canceled access or revoke a paid plan
+
+**File:line:** `src/checkout/checkout-webhook-handler.service.ts:1000–1039`, including the new native entitlement and first-fanout path. [Activation write](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/2b10687c63cf02e0181339b684634ff9cfbeb803/src/checkout/checkout-webhook-handler.service.ts#L1000-L1040)
+
+**Counterexamples:** a paid native subscription is deleted, then an older `updated(active)` snapshot changes it back to active/entitled and invokes first-entitlement fanout; separately, `invoice.paid` grants access, then older `created(incomplete)` removes it. Both acceptance assertions fail against the real handler with distinct event IDs, while the chronological activation/deletion control passes. [Executed two ordering failures](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37174541947)
+
+This is not deduplication of the same event and cannot be fixed by an event-ID unique constraint; Stripe expressly does not guarantee delivery order and warns that second-resolution `created` is not a total-order fence. [Stripe webhook contract](https://docs.stripe.com/webhooks)
+
+**Minimal fix:** give the native lifecycle canonical subscription authority resolved out of the transaction, plus a terminal-state/revision fence rechecked under the write lock; stale active/trialing events cannot revive canceled/expired attempts, and stale incomplete snapshots cannot revoke a paid current subscription. Unknown authority must retain retryability, not commit a guessed entitlement; preserve atomic grant/revoke/fanout and do not introduce Stripe HTTP in the outer transaction.
+
+### B-680-2 — the new first-attempt guard sends late first-invoice failures and expired attempts into dunning
+
+**File:line:** `src/checkout/checkout-webhook-handler.service.ts:71–78,1450–1488`. The new helper tests today's row state rather than the invoice's origin or terminal attempt history. [First-attempt guard and mutation](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/2b10687c63cf02e0181339b684634ff9cfbeb803/src/checkout/checkout-webhook-handler.service.ts#L1450-L1488)
+
+**Counterexamples:** after `invoice.paid` for `in_first`, the delayed `invoice.payment_failed` for the same first invoice (`billing_reason=subscription_create`) changes active to past_due and calls `recordFailure`; after deletion marks an unpaid native attempt expired, the same late decline changes expired to past_due and calls dunning. Both assertions fail; pending first-attempt and genuine `subscription_cycle` renewal controls pass. [Executed two failure-origin counterexamples](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37174541947)
+
+**Minimal fix:** recognize the first invoice independently of the current purchase status, preserve terminal never-entitled attempts, and never start/reopen renewal dunning from a settled earlier invoice; keep genuine post-trial/renewal failures eligible. Add both delivery-order regressions here, then the second of recurring/dunning to land must unify this rule into one helper, retaining trial-start history. Do not count a future neighboring PR's different helper as a fix at this head.
+
+### B-680-3 — first entitlement is not first payment
+
+**File:line:** `src/checkout/checkout-webhook-handler.service.ts:1035–1056,1402–1406` (new calls), using `maybeEmitFirstPayment:246–263`. [New notification call](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/2b10687c63cf02e0181339b684634ff9cfbeb803/src/checkout/checkout-webhook-handler.service.ts#L1035-L1056)
+
+**Counterexamples with `FEATURE_ROMAN_FIRST_PAYMENT=true`:** saving the card for a free trial inserts the once-per-coach payment record and emits two payment notifications for 4,900 cents although nothing was paid; real first paid conversion after an already-entitled trial never calls the primitive; a combo first invoice paying 14,800 cents records the 4,900-cent renewal snapshot. All three acceptance assertions fail using the real `CoachFirstPaymentService` and `FirstPaymentEmitter` (only storage/notification transport are doubles). [Executed financial-truth failures](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37174541947)
+
+**Minimal fix:** separate content's first-entitlement effect from money's first-positive-paid-invoice effect; do not consume the first-payment key for a trial/zero-due invoice or merely active subscription. Invoke the idempotent money primitive from an authoritative positive `invoice.paid` even when trial entitlement already exists, with the actual paid amount and currency, while keeping its rows on the same transaction.
+
+### B-680-4 — conversion-first delivery permits a second trial with the same coach
+
+**File:line:** `src/checkout/checkout-webhook-handler.service.ts:54–63,1031,1384`; native eligibility consumes `ClientPurchase.trial_started_at` in the inherited checkout decide step. [New trial marker rule](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/2b10687c63cf02e0181339b684634ff9cfbeb803/src/checkout/checkout-webhook-handler.service.ts#L54-L64)
+
+**Counterexample:** actual native checkout creates a seven-day trial, the card is saved, and the trial's `trialing` delivery is delayed; the active paid-conversion update arrives first with Stripe `trial_start/trial_end`, then deletion arrives. The real handler grants access but never stamps usage because it only stamps `status=trialing`; the real checkout then grants another seven-day trial on another package of the same coach. The acceptance assertion receives `trialPeriodDays=7` instead of no trial. [Executed checkout/lifecycle sequence](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37174541947)
+
+**Minimal fix:** persist consumed trial history from authoritative carded/started trial evidence even when the first observed lifecycle state is active or the trial has already converted; preserve the consumption marker through cancellation and reject a second coach/client trial. This native bug needs a fix here, separately from the later trials-stack single-ledger integration obligation.
+
+### Evidence, piece boundaries and landing obligations
+
+- Test-only probe source `198126cce648a747f99ec77f3c17f7a1854a3d25` differs from the candidate only by the independent spec; the lane wrapper adds its workflow/selector, not product-source changes. Execution: **8 acceptance failures / 159 passing tests**, including **all seven selected candidate suites / 150 candidate tests** and **nine independent controls/canaries**; no compiler/fixture failures. These are actual-service synthetic DB/provider probes, not live Postgres/Stripe or a claim of device acceptance. [CI-lane proof](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37174541947)
+- No migration/dependency change or import of a later piece; first-invoice PI ownership, card-before-trial entitlement, failure redelivery, per-charge deferred settlement and transaction-propagated fanout failure controls pass. The original callback plumbing's snapshot overwrite was pre-existing, but B-680-1 makes the new native grant/revoke path unsafe and is therefore material rather than optional unrelated debt. [Executed controls](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37174541947)
+- C-661-3 remains the binding integration obligation: whichever stack lands second keeps the recurring PI early return before the new one-time decline fence and clears PaymentSheet credentials on recurring activation and both subscription-deletion branches. It is not a newly counted finding. [Existing credential composition](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/661)
+- C-656-1 remains binding: native checkout currently sells trials using `ClientPurchase` history while the trials stack introduces another usage ledger/capability; the second stack to land must integrate reservation/start/release and capability registration into one ledger before coach-set offers ship. No other PR was audited here. [Existing trials composition](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/672#issuecomment-5976081090)
+- **Fix placement / size:** only 86 lines remain before 3,000. Keep the webhook fixes and their new regressions in R3; move the 432-line R2-service round-3 regression file to a new inert top test piece (and another service-only suite if needed), retain the complete combined test tree, and land/deploy the repaired stack as one. Recount before push; neither deleting tests nor crossing 3,000 is acceptable. [Current 2,914-line size](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/680)
+- All seven emitted applicable required contexts are green at this head; CodeQL/danger/Banned cast tokens/build-sbom remain unrun main-retarget/composed-tree gates, not 11/11 passed checks. The independent red proof above blocks approval despite ordinary green CI. [Current-head build](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37172709393/job/111348792701)
+=====ID 5976299710 2026-10-04T03:51:07Z BradleyGleavePortfolio
+AUDIT Claude Opus 5.5 — growth-project-backend#680 @ 2b10687c63cf02e0181339b684634ff9cfbeb803 — VERDICT: REQUEST CHANGES
+
+A/B/C = 0/2/5
+
+Full-depth T4 audit of this piece (R3, native subscription webhooks) at its current head: all 7 changed files (304 source, 2,610 test lines; 2,914 changed lines), the complete webhook handler at this head, the #679 checkout decide/reuse/bind paths it composes with, and the FIX ROUND 3 delta `7e55cfcb..2b10687c` ([builder report](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/680#issuecomment-5976054570)). The delta is correct as far as it goes; the two B findings below are delivery-order defects in handler code that was already byte-identical when this lens approved #654 at `02c48de7`, so that approval is superseded for those lines.
+
+Probe evidence (test-only spec on the exact head, no product change): [run 37175051866](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37175051866) — 9 probes red, 3 controls green, and the PR's own `b-recur-subscription-webhooks` and `b-recur-116-fix-round-3` suites green in the same run (45 tests, 36 pass). Earlier runs of the same spec: [37174514584](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37174514584), [37174790651](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37174790651). Stripe states that it does not guarantee event order and gives this exact case as the example (`customer.subscription.created`, `invoice.created`, `invoice.paid`), and retries failed deliveries for up to three days ([Stripe webhooks](https://docs.stripe.com/webhooks), [undelivered events](https://docs.stripe.com/webhooks/process-undelivered-events)).
+
+### B-680-1: a stale subscription snapshot revokes a paid native plan, and the client is then sold a second subscription
+
+- **Where.** `src/checkout/checkout-webhook-handler.service.ts:1002` (`entitlementActive = subscriptionGrantsAccess(purchase, sub)`) and the write at `:1020-1032` apply whatever status the event payload carries. Every native subscription is created `default_incomplete`, so its `customer.subscription.created` always carries `status: incomplete`.
+- **Counterexample (probe, red).** First invoice paid: `invoice.paid` (prefetched subscription `active`) grants access. The `created` event's first delivery failed; its retry arrives next and sets the row to `incomplete`, `entitlement_active: false`. Same result when the grant came from `customer.subscription.updated(active)`. Nothing repairs it until the next renewal event (about a month). A day later the client taps subscribe again with a new key: `decide()` (`src/checkout/subscription-checkout.service.ts:684-715`) sees no live row and no open attempt younger than 23 h, reserves, and mints a second Stripe subscription (`stripe._subs.size` = 2). The client is billed twice for one plan.
+- **Minimal fix rule.** Stripe never moves a subscription back to `incomplete`, and `canceled` / `incomplete_expired` are terminal. In `applySubscriptionUpdated`, for a recurring row: (1) an `incomplete` payload for a purchase that is entitled or whose status left `pending`/`incomplete`/`payment_failed` is stale: claim it, write nothing; (2) a row that is `canceled`, `expired` or `incomplete_expired` is never re-granted by `created`/`updated` (covers C-680-3). Equivalent alternative: for native rows, read the live subscription out of the transaction (as `invoice.paid` already does via `invoiceSubscription`) and apply that instead of the payload. Add both orders as regressions.
+
+### B-680-2: a late first-invoice decline puts a paid plan (or an ended attempt) into dunning
+
+- **Where.** `src/checkout/checkout-webhook-handler.service.ts:1464` decides "first attempt" with `isNeverEntitledAttempt(purchase)` (`:71-79`), i.e. from today's row state, not from the invoice. `:1278-1288` writes the decline text into `last_error` for any recurring row.
+- **Counterexamples (probes, red).** (a) Card declined in the PaymentSheet, second card paid, `invoice.paid` granted; the decline (`invoice.payment_failed`, `billing_reason: subscription_create`) is delivered after it: the paid plan becomes `past_due`, `last_error` shows the decline, and `dunning.recordFailure` opens a dunning window (client reminders, grace-end cancel). (b) The first-invoice `payment_intent.payment_failed` delivered after `invoice.paid` leaves "Your card was declined." on an active plan; `last_error` is returned by the client and coach purchase selects. (c) An abandoned attempt that Stripe expired (`updated` to `incomplete_expired`) or that checkout retired (`expired`), then the late decline: status becomes `past_due` and dunning starts for a plan nobody bought. Control: a `subscription_cycle` renewal decline on a running plan still enters dunning (green).
+- **Minimal fix rule.** `billing_reason === 'subscription_create'` means first attempt regardless of row state: never `past_due`, never dunning, and no `last_error` write once the purchase is entitled or ended. In the PI early return, write `last_error` only while `isNeverEntitledAttempt(purchase)`. This is the same rule as the dunning stack's `isNeverEntitledPaymentAttempt(purchase, billingReason)`; adopting its signature here (keeping this PR's `trial_started_at` guard) makes the later unification mechanical.
+
+### C findings
+
+- **C-680-3 (pre-existing on main; fix with B-680-1).** `:1000-1034`: `customer.subscription.deleted`, then a stale `updated(past_due)` re-grants the canceled plan and re-runs first-entitlement fan-out (probe red). Same terminal fence as B-680-1 rule (2).
+- **C-680-4.** `:963-993` metadata fallback bind (uncertain create, row still carrying the retry marker) sets only `stripe_subscription_id`. `isUnpaidNativeAttempt` (`:87-104`) then fails its `stripe_checkout_session_id === stripe_subscription_id` test, so the abandoned attempt ends as `canceled` (churn) instead of `expired` (probe red), and the first-invoice PaymentIntent id is never bound. Fix: on a `tgp_purchase_id` match also set `stripe_checkout_session_id = sub.id`, and the PI id when `latest_invoice.payment_intent` is a string.
+- **C-680-5.** `trialStartPatch` (`:56-63`) stamps `trial_started_at` only when the granting status is `trialing`. If the trialing grant event is lost or late past conversion, the row is granted as `active` with no trial recorded, and `decide()`'s one-trial check (`subscription-checkout.service.ts:717-738`) offers another trial of the same coach. Fix (one line): stamp whenever a row with `trial_days` set is first entitled. Rare trigger (delivery failure across the trial), hence C.
+- **C-680-6 (flag-gated, `FEATURE_ROMAN_FIRST_PAYMENT` default OFF).** `onSubscriptionFirstEntitled` (`:1051-1056`) emits the coach "first payment" notice on first entitlement: a free trial's card save consumes it with the renewal amount, and a combo first invoice reports the renewal amount instead of the amount paid. Must be fixed (emit from a positive `invoice.paid` with `amount_paid`) before that flag is turned on.
+- **C-680-7.** `attachNativeTrialCard` looks the row up by `stripe_client_secret startsWith` (`:529-535`), an unindexed column, once per `setup_intent.succeeded` (a scan of ClientPurchase). Store the SetupIntent id on the row or index the lookup. Nit: the doc comment at `:499-505` belongs to `prefetchChargeIdForActivation` and now sits above `attachNativeTrialCard`.
+
+### Prior Cs from the #654 APPROVE
+
+- **C-654-8 closed.** `mintSubscription` looks the attempt up by `metadata.tgp_purchase_id` before any resend; past the key window with nothing on Stripe the attempt ends `timed_out`; tests in `test/b-recur-116-fix-round-3.spec.ts` (green in the run above).
+- **C-654-9 closed (outside this repo).** Mobile #334 at `d466fd15` accepts `mode: 'none'` (`src/lib/packagePayment.ts:190-200`).
+- **C-654-10 closed.** `errorLabel` uses closed allow-lists (unknown name gives `error`); the three handler log lines `:541`, `:565`, `:1083` use it; no new log line in this diff carries a message.
+
+### Evidence reuse
+
+Reused only for byte-identical code: `git diff pr/654 7e55cfcb -- src/checkout/checkout-webhook-handler.service.ts` is empty and 5 of 6 test files are byte-identical to #654. Because the B findings sit in those identical lines, the handler was re-audited in full at this head rather than carried over. The `7e55cfcb..2b10687c` delta was read line by line.
+
+### Integration obligations (not counted)
+
+- **Never-entitled helper.** Whichever of recurring / dunning lands second ships one exported helper taking an optional `billing_reason` (`subscription_create` means first attempt) plus this PR's `trial_started_at` guard, used by both `applyInvoicePaymentFailed` and `isUnpaidNativeAttempt`.
+- **C-661-3.** The second of #661 / this stack to land keeps the recurring early return (`:1278-1288`) directly after the lookup by PaymentIntent and ahead of #661's new decline check, skips #661's PaymentIntent status prefetch for recurring rows, and clears PaymentSheet credentials at native first grant and on every subscription end. That includes `customer.subscription.updated` to `incomplete_expired` (how Stripe ends an unpaid attempt after 23 h), not only `deleted`.
+- **Trials.** Native checkout sells trials with its own `ClientPurchase` one-trial check, and the trials stack adds a usage ledger. The trials stack (lands second) must reserve inside `decide()`, mark started at this PR's `trialStartPatch` sites in the same transaction, release on attempt end, register the checkout capability at boot, and backfill the ledger from `trial_started_at`.
+
+### Fix placement and size
+
+The fixes go in this PR: about 15-20 source lines in the handler, with regressions appended to `test/b-recur-subscription-webhooks.spec.ts` (about 50-60 lines). That gives roughly 2,990 of 3,000. #679 (2,952) has no room. If the recount exceeds 3,000, move `test/b-recur-116-fix-round-3.spec.ts` unchanged (432 lines, it tests #679's service) into a new tests-only piece stacked on this one. Deleting tests is not an option.
+
+CI at this head: 10 pass, 1 skipping ([build-and-test](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37172709393/job/111348792701)); green CI does not cover delivery order, and the probes above do.
+
+=====ID 5976866903 2026-10-04T05:17:26Z BradleyGleavePortfolio
+FIX ROUND 4 (B-RECUR3-117, agent 117) — growth-project-backend#680 @ d1c62ee100e4abd72c21295c32f8b32e450981da
+
+Closes Sol REQUEST CHANGES 0/4/0 ([5976246125](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/680#issuecomment-5976246125)) and Opus REQUEST CHANGES 0/2/5 ([5976299710](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/680#issuecomment-5976299710)). Commits: test `d10fb8c407522a7af4570c4564f6da768512d74c` (spec alone, before the fix), fix `693015fa52c935bb459e6a27f4a350de8e4b620e`, size move `1753f1767db1ed8fd34fca15fa254b322eda4cb2`, restack merge `d1c62ee1` (#679 @ `0e1cfde0` = #678 @ `2174eb7c` = fees top #686 @ `e6893c97`; R3 content unchanged by the merge: `git diff f83dbdd2 1753f176` equals `git diff 0e1cfde0 d1c62ee1`).
+
+Failing-before CI lane (spec alone on `929f3968`): [run 37177995713](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37177995713) 19 failed / 4 controls passed, then with the race case added [run 37178249913](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37178249913) 20 failed / 4 controls passed. Every failure is an assertion (no compile or fixture error).
+
+| Finding | Change | Commit | Test (test/b-recur3-117-webhook-order.spec.ts) |
+|---|---|---|---|
+| B-680-1 stale created(incomplete) after invoice.paid / updated(active) revokes a paid plan | Subscription events read the live subscription out of the tx (`prefetchSubscriptionAuthority`, with a lifecycle revision), decide under the package lock on a fresh re-read: an incomplete snapshot of a purchase that left incomplete is skipped; unreadable Stripe throws so Stripe redelivers | 693015fa | "invoice.paid granted, then the created event ... stays paid"; "without a live read, a late incomplete snapshot never revokes"; "Stripe unreadable: ... redelivered" |
+| B-680-1 / C-680-3 deleted, then an older active or past_due snapshot re-grants | An ended purchase (canceled / expired / incomplete_expired, not entitled) is never re-granted; a live ended status ends the purchase; the deletion takes the lock | 693015fa | "a deleted paid plan is never revived ... no second content fan-out"; "C-680-3: deleted, then a stale past_due snapshot" |
+| B-680-1 a write between the Stripe read and the lock | Revision changed and state differs: throw (redeliver), never overwrite; state matches: claimed, no write | 693015fa | "a write that lands between the Stripe read and the lock is never overwritten"; control "a concurrent write that matches" |
+| B-680-1 live authority | A past_due payload delivered after the retry paid follows Stripe (active) | 693015fa | "a past_due payload delivered after the retry paid" |
+| B-680-2 late first-invoice decline after paid / after the attempt ended | `isNeverEntitledPaymentAttempt(purchase, billing_reason)` (same signature as #691's helper): `subscription_create` is a first attempt at any row state; an ended purchase answers `subscription_already_ended`; `last_error` only while never entitled (invoice and PaymentIntent paths) | 693015fa | "first-invoice decline delivered after a second card paid"; "first-invoice PaymentIntent decline after invoice.paid"; "Stripe expired the abandoned attempt"; "an attempt retired by checkout (expired)" |
+| B-680-2 settled invoice | `prefetchFailedInvoice` reads the invoice (`retrieveInvoice`): paid or void answers `invoice_already_settled`; unreadable throws for redelivery | 693015fa | "a renewal decline delivered after its retry paid"; "the invoice cannot be read on Stripe" |
+| B-680-2 race found in this round | Final decline and deletion arrive together: the past_due write re-reads under the package lock and skips an ended purchase (the write now runs on the webhook tx) | 693015fa | "(race) the deletion commits between the decline read and its write" (run 37178249913) |
+| B-680-3 / C-680-6 first entitlement is not first payment | `maybeEmitInvoicePayment` on invoice.paid only: native rows, positive integer `amount_paid`, the invoice currency, a `findUnique` pre-check so a second notice never aborts the outer tx on P2002; trial card saves emit nothing | 693015fa | "saving a free trial card sends no first-payment notice"; "first paid invoice after a trial records the amount"; "a combo first invoice reports the $148 paid"; control "already has the notice ... $0 invoice" |
+| B-680-4 / C-680-5 conversion-first delivery permits a second trial | `trialStartPatch` stamps on any first entitlement of a trial attempt (Stripe `trial_start` when present); deletion with carded-trial evidence stamps it too and ends as canceled | 693015fa | "the paid conversion delivered before the trialing event still uses the one trial"; "a carded trial that ended before any grant event" |
+| C-680-4 metadata-bound attempt ends as churn | The metadata bind sets `stripe_checkout_session_id` to the subscription id and the first PaymentIntent id (live read expands the first invoice: `retrieveSubscriptionForCheckout`) | 693015fa | "C-680-4: an attempt bound by the webhook fallback ends as an expired attempt" |
+| C-680-7 unindexed setup_intent lookup | Not changed: needs a migration (a SetupIntent id column or index), owned by R1. Operator decision below. | — | — |
+| Controls | Renewal decline still enters dunning; a decline in the sheet records the decline only | — | 2 controls, green before and after |
+
+Size ruling: #680 is 2,927 changed lines vs #679 (+2,860 / -67). `test/b-recur-116-fix-round-3.spec.ts` (433) and `test/b-recur-fix-round-1-http.spec.ts` (357) test #679's service and HTTP surface; they moved byte-for-byte to the new tests-only R4 #696 stacked on this PR.
+
+Four specs that assumed the old 23-hour trial cutoff now follow B-679-1 (an open trial attempt holds the one trial at any age): `test/b-recur-fix-round-1.spec.ts` R1-6 (split into no-card / saved-card cases; the retire error reuses `sub_1`, one create), `test/b-recur-fix-round-1-trial-card.spec.ts` (the unreadable-SetupIntent cleanup is checked from another plan of the coach), `test/b-recur-116-fix-round-3.spec.ts` (now in R4: `sub_1`).
+
+Local targeted jest on the R3 tree: 14 recurring suites 223/223, plus 5 billing/webhook suites (stripe-webhook, fixtures, routing, audit, analytics) green; eslint clean on changed files; banned casts net -2 (two removed, none added).
+
+Lens note: probes that drive invoice.paid through the real handler need `coachFirstPaymentNotification.findUnique` in the fake tx (the pre-check), and subscription events now call `retrieveSubscriptionForCheckout` in `prefetchForOuterTx`.
+
+Outside this diff (main-era, not changed): `maybeEmitFirstPayment` P2002 can abort an outer tx; the invoice.paid prefetch warning logs the error message.
+
+Landing obligations unchanged: never-entitled helper unified by dunning (#691, lands second); C-661-3 credential clearing by the second of #661 / recurring; trials #673 converges to one trial ledger.
+
+Operator decision: C-680-7 index for the SetupIntent lookup. Default: follow-up migration after the stack lands (timestamp after 20270316000000), not in this stack.
+
+Required checks at this head: 10 pass, 1 skipping (deploy-readiness-gate, not required); build-and-test passed on its one rerun after the known SBOM flake (run 37178359487, test/ci/delivery-artifact.spec.ts assert-prod-sbom, 1 failed / 12,672 passed in the failed attempt).
+
+READY FOR AUDIT
+
+=====ID 5977034793 2026-10-04T05:44:57Z BradleyGleavePortfolio
+SIZE ASSESSMENT (operator agent 117) — growth-project-backend#680 @ d1c62ee100e4abd72c21295c32f8b32e450981da
+
+Lines: +2,860 / -67 = 2,927 changed (source 757: checkout-webhook-handler.service.ts 749 + stripe-connect-api.service.ts 8; tests
+2,170 in five specs; migrations 0; docs 0). Over the 1,500 trigger, under the 3,000 limit by 73 lines.
+
+Seams: the runtime change is one service (the recurring subscription webhook state machine) plus an 8-line Connect API change. The
+two specs that could move without losing failing-before value already moved to the tests-only R4 piece #696 (790 lines, unchanged
+copies), per 116's recurring size plan. The five specs left here are the ones that pin this piece's own fix rounds (B-680-1..4,
+C-680-3..6, the decline + deletion race) and must travel with the code they prove.
+
+Coupling: splitting the 749-line service change would separate webhook ordering from its state transitions — the exact seam the
+fix rounds closed; a half-landed state machine is a worse rollback unit than the whole.
+
+Decision: KEEP. Musk: nothing left to delete — the movable tests already moved to #696. Bezos: the recurring stack lands as one
+(rule 11), so a split adds a merge without adding a rollback point. Huang: review cost sits in the 749-line service, which a split
+would not shrink. Any further round on #680 must move tests to #696 first (73 lines of headroom).
+
+=====ID 5977176242 2026-10-04T06:07:01Z BradleyGleavePortfolio
+RESTACK (operator agent 117, merge-only) — growth-project-backend#680 @ 8e05ad0ecf11b5ebf6c1002956bb99616702abe8
+
+New head = GitHub update-branch merge of the new base #679 @ f48fa8f0c41160338e20b9b9561a3d7f65dd8670 into the FIX ROUND 4 head d1c62ee100e4abd72c21295c32f8b32e450981da. No content edits.
+This PR's own diff (base -> head) has the identical stable patch-id before and after: 992ec31c0232. Every reported check is green at this
+exact head (build-and-test [job](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37181218262/job/111374034003)); CodeQL, danger, banned casts and SBOM do not run on stacked bases. Restacks are not covered by
+rule 12: lenses audit at this head (the PR's own code is unchanged from d1c62ee1).
+
+READY FOR AUDIT
+
+=====ID 5977195657 2026-10-04T06:10:04Z BradleyGleavePortfolio
+AUDIT GPT-6.1 Sol — growth-project-backend#680 @ 8e05ad0ecf11b5ebf6c1002956bb99616702abe8 — VERDICT: REQUEST CHANGES
+
+A/B/C = 0/3/1
+
+Agent 117 · AUD-SOL-R34-117 · independent full-depth T4 audit of R3's seven-file, 2,927-line own diff, complete webhook handler, and BillingService transaction/dedup/completion, checkout binding, content fanout, deferred settlement, dunning and first-payment call sites; the operator's KEEP size assessment is respected. [Candidate and tier](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/680) [Size assessment](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/680#issuecomment-5977034793).
+
+### Prior findings first
+
+- **B-680-1 partially closed, still open on invoice.paid concurrency:** the created/updated live-subscription authority, terminal fences and late-incomplete controls pass, but the paid-invoice resync does not apply the revision fence to a nonterminal concurrent lifecycle write. [Exact-source independent run](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37181627311).
+- **B-680-2 partially closed, still open on concurrent payment:** first-invoice classification, ended-attempt preservation, already-settled-invoice rejection and decline/deletion serialization pass, but a paid invoice landing after decline prefetch still becomes past_due and first-attempt error writes can land after entitlement. [Exact-source independent run](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37181627311).
+- **B-680-3 partially closed, still open on an entitled trial's conversion when subscription retrieval fails:** trial card-save sends no payment notice, the readable conversion sends the actual positive amount, and the combo amount control passes, but the already-entitled retrieval-failure path acknowledges before the new money call. [Exact-source independent run](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37181627311).
+- **B-680-4 closed:** trial consumption is stamped from first entitlement irrespective of observed subscription status, preserved through deletion, and the conversion-first cross-package checkout regression passes; the builder's same cases failed before the fix. [Failing-before 20/4](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37178249913) [Independent current-source pass](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37181627311).
+- Original **B-654-1** retryable lookup/attach behavior and R3's reported **B-654-9** log-sink fixes stay closed on their reported boundaries; all 36 moved R2/HTTP regression cases also pass independently on R4, without asserting approval of R2 implementation outside this job. [R3 execution](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37181627311) [R4 execution](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37181624895).
+
+### B-680-1 — narrowed: invoice.paid can overwrite a newer nonterminal revocation
+
+**File:line:** `src/checkout/checkout-webhook-handler.service.ts:1663–1685`, specifically the `changed` check at `1672–1673`; it protects only an ended purchase, then writes every other stale prefetched status. [R3 candidate](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/680).
+
+**Executed counterexample:** an older invoice.paid delivery prefetches `active`; a newer subscription update reads live `unpaid` and commits `status=unpaid, entitlement_active=false`; the delayed paid handler then writes `active/true` from its earlier prefetch, regranting access instead of preserving the newer state or requesting redelivery. [Failing acceptance probe](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37181627311).
+
+**Minimal fix rule:** apply lifecycle-authority/revision protection to invoice.paid's entire serialized write, not only canceled/expired rows; a superseded read must not overwrite status, entitlement, trial history or period fields, and any retryable authority conflict must survive the already-entitled catch path. Keep Stripe HTTP outside the outer transaction, and keep settlement of a known paid invoice distinct from entitlement resync.
+
+**Verify:** make the independent `B-680-1 narrowed` probe pass, preserving the current deletion and late-created controls; also cover a paid resync whose period/cancellation authority changes between prefetch and lock.
+
+### B-680-2 — narrowed: an open-invoice prefetch is not a fence against a later payment
+
+**File:line:** `src/checkout/checkout-webhook-handler.service.ts:660–670,1765–1799` for the renewal write, `1776–1781` for first-invoice error text, and `1563–1568` for first-PI error text. [R3 candidate](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/680).
+
+**Executed renewal counterexample:** decline prefetch reads invoice `open`; that same invoice is then paid, and invoice.paid commits `active`, clears the error and resolves dunning; the delayed decline trusts the old `open` result, overwrites the row with `past_due`/decline text and reaches `recordFailure`. [Failing acceptance probe](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37181627311).
+
+**Executed first-attempt counterexamples:** in both invoice and PaymentIntent paths, invoice.paid grants between the decline's purchase read and its error write; both handlers append the old decline text to the active paid plan because their eligibility decision is not rechecked at the write. [Two additional assertion failures](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37181627311).
+
+**Minimal fix rule:** bind failed-invoice authority to an invoice/payment revision or durable settlement marker and validate it under the same serialization boundary as payment; if the authority is superseded, re-resolve outside the transaction or redeliver rather than reopening dunning. Make first-invoice and PI `last_error` writes conditional on a freshly rechecked never-entitled, nonended row, on the webhook transaction; a prefetch-time status check alone is insufficient.
+
+**Verify:** all three independent `B-680-2 narrowed` probes must pass, plus a race where invoice.paid rewrites an already-active row without changing its lifecycle values, genuine open renewal decline, and decline/deletion controls.
+
+### B-680-3 — narrowed: unreadable subscription acknowledges the first positive trial invoice without money effects
+
+**File:line:** `src/checkout/checkout-webhook-handler.service.ts:1640–1655,1698–1712`; the entitled-row early return at `1654` bypasses the new first-payment call and deferred charge settlement. [R3 candidate](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/680).
+
+**Executed counterexample with `FEATURE_ROMAN_FIRST_PAYMENT=true`:** a carded trial is already entitled, its first positive conversion invoice pays 14,800 cents, and subscription retrieval transiently fails; handle resolves claimed, but the real first-payment service/emitter receives no ledger creation, while the known invoice's settlement descriptor is also unreachable. [Failing acceptance probe and readable conversion control](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37181627311).
+
+BillingService marks a claimed result handler-complete in its outer transaction, so this event can be acknowledged without the first-payment effect; the pre-existing early return is now a material boundary of this PR's newly added money-notice call, not a request to audit unrelated main code. [R3 candidate](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/680).
+
+**Minimal fix rule:** either propagate a retryable failure for this invoice delivery, or skip only subscription resync while still performing authoritative paid-invoice money effects on the transaction and returning its charge settlement descriptor; no acknowledged early return may silently drop them.
+
+**Verify:** the independent `B-680-3 narrowed` probe must pass, retaining the positive actual-amount, zero-invoice and no-payment-on-card-save controls.
+
+### C-680-7 — retained optional follow-up: saved-card lookup is not indexed
+
+**File:line:** `src/checkout/checkout-webhook-handler.service.ts:702–707` uses `stripe_client_secret startsWith`; `prisma/schema.prisma:3812–3924` has no index or dedicated SetupIntent column for that lookup, so saved-card deliveries can require purchase-table filtering as volume grows. [R3 candidate](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/680) [Existing follow-up disposition](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/680#issuecomment-5976866903).
+
+**Minimal fix rule:** a follow-up should store/index the SetupIntent identifier or prove an appropriate prefix index with EXPLAIN at representative row counts; use an additive migration newer than `20270316000000`. Default remains the operator's post-stack follow-up, not a new blocker.
+
+### Exact-source evidence and scope limits
+
+- Probe-only commit `9ed618e54af4cff5a222148ccfe4720d3a9e0649` is this PR head plus one independent test file; wrapper `e5ff9fed451a884f072cca71274d3788a6da78d4` adds only the CI-lane workflow/selector, and execution produced **5 assertion failures / 110 passes**, comprising all **107 candidate tests passing** plus **3 independent controls**. [CI-lane run](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37181627311).
+- These are real-handler synthetic storage/provider concurrency probes, not live Stripe/Postgres or device acceptance; no failures were compiler, fixture or runner failures, and no product-source fix was applied for the run. [CI-lane run](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37181627311).
+- No original Sol APPROVE is reused because original #654 was never approved by this lens; the entire current R3 own diff and fix-round code were audited, including the lower-stack restack's shared Stripe API context. [Prior Sol record](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/680#issuecomment-5976246125) [Fix round 4](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/680#issuecomment-5976866903).
+- All emitted applicable required checks are green at this exact head, with **10 successful checks / 1 nonrequired readiness skip** overall; CodeQL JS/TS, danger, Banned cast tokens and build-sbom are still absent on this stacked base, so this is not an 11/11 main-base merge attestation. [Exact-head build](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37181218262/job/111374034003).
+- No new migration/dependency or later-piece import is introduced by R3; R4 keeps the moved test files byte-identical to `693015fa`, and its own scope is separately audited rather than blocked for R3's runtime findings. [R3 scope](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/680) [R4 scope](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/696).
+- C-661-3 credential clearing/PI ordering, dunning's single never-entitled helper, trials' single usage ledger and predeploy `setup_intent.succeeded` configuration remain named composition obligations, not newly counted findings. [Recorded obligations](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/680#issuecomment-5976866903).
+
+**Fix placement:** retain the new R3 regressions with the runtime repair and move lower-piece service-only test blocks to R4 first if needed; preserve all combined tests and the 3,000-line cap, then obtain both lenses at the new exact heads. Default operator action: do not land the recurring stack until B-680-1/2/3 close.
+
+=====ID 5977283278 2026-10-04T06:23:38Z BradleyGleavePortfolio
+AUDIT Claude Opus 5.5 — growth-project-backend#680 @ 8e05ad0ecf11b5ebf6c1002956bb99616702abe8 — VERDICT: APPROVE
+
+A/B/C = 0/0/4
+
+Lens: AUD-OPUS-R34-117 (operator agent 117). Tier T4 (recurring money path: entitlement, webhook ordering, row locking, dunning entry); the PR body says T4 and this lens agrees. The head was re-read right before posting. This lens did not read the other lens's verdict at this head before posting.
+
+**Scope.** Piece R3 of the recurring stack (#678 → #679 → #680 → #696): base `agent115/recur-split-2-subscription-checkout` @ f48fa8f0 (#679), +2,860/−67 = 2,927 lines over 7 files, under the 3,000-line cap (operator SIZE ASSESSMENT KEEP, issuecomment-5977034793). Product code: `src/checkout/checkout-webhook-handler.service.ts` and `src/billing/stripe-connect-api.service.ts` (`retrieveInvoice`). Piece-boundary rule holds: R3 depends only on R1 and R2, and R4 (#696) is tests only.
+
+**Evidence reuse (stated).**
+- Reused: this lens's full read of the R3 handler at 2b10687c (REQUEST CHANGES 0/2/5, issuecomment-5976299710). 929f3968 carries the same R3 content as 2b10687c (patch-id 93268f68 on both).
+- Re-done at this head: the fix-round-4 delta (929f3968..1753f176, product code and specs) read line by line. The full `applySubscriptionUpdated`, `applySubscriptionDeleted`, `applyInvoicePaid`, `applyInvoicePaymentFailed`, `prefetchForOuterTx` and `attachNativeTrialCard` paths were re-read at 8e05ad0e.
+- Restacks d1c62ee1 and 8e05ad0e are merge-only. The R3 piece diff has the same patch-id (992ec31c) for 0e1cfde0..d1c62ee1 and f48fa8f0..8e05ad0e, and the handler file is byte-identical between d1c62ee1 and 8e05ad0e. The base move (fees round 13 and main b644198b) touches `purchase-split-handler`, `refund-dispute-handler` and payout notices, plus `listChargeRefunds` types in stripe-connect-api. All of that is disjoint from R3 behaviour; this lens read the purchase-split-handler hunk, and it changes only log codes and the notice deadline.
+- Banned-cast checker (`scripts/check-r75.js --mode=range`, f48fa8f0...8e05ad0e): OK, `as any` net −1, `as unknown as` net −1.
+
+**Prior Opus findings at 2b10687c — disposition**
+- B-680-1 CLOSED.
+  - `prefetchSubscriptionAuthority` (L629) reads the live subscription and the row's `lifecycleRevision` (L105) outside the tx.
+  - `applySubscriptionUpdated` (L1091) uses the live object as authority, and an unreadable subscription throws so the event is redelivered.
+  - Under the package lock the handler re-reads the row fresh (L1214):
+    - a Stripe-ended status ends the purchase;
+    - an ended row is fenced (L1224);
+    - a changed revision applies only when the state matches, and otherwise redelivers (L1226-1235);
+    - a late incomplete snapshot is skipped.
+  - Deletion now runs under the same package lock (L1342).
+- B-680-2 CLOSED.
+  - `isNeverEntitledPaymentAttempt` (L175) keeps a first-attempt decline out of past_due and dunning, and stops it overwriting `last_error` once entitled or ended.
+  - `prefetchFailedInvoice` (L660) answers `invoice_already_settled` for a paid or void invoice (L1770), and redelivers when the invoice is unreadable.
+  - The past_due write re-reads the row under the lock (race fixed).
+- C-680-3 CLOSED: the terminal fence (L1224, L1759, L1802).
+- C-680-4 CLOSED: the metadata bind sets the session id to the subscription id and binds the PaymentIntent id, so a webhook-bound attempt ends as `expired` with credentials cleared.
+- C-680-5 CLOSED: `trialStartPatch` stamps on any first entitlement, and on deletion when Stripe shows trial evidence.
+- C-680-6 CLOSED: `maybeEmitInvoicePayment` (L1317) fires only on `invoice.paid`, only for a positive integer `amount_paid`, and only for native rows.
+- Nit CLOSED: the PR-18 doc comment sits on `prefetchChargeIdForActivation` again.
+- C-680-7 OPEN, carried below.
+
+**Independent probe** (CI lane, PR head + probe spec only): https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37182327588/job/111377221681. Result: 47 passed, 1 failed, and the failure is the expected-red outside-diff probe (C-680-10). The PR's `b-recur3-117-webhook-order` and `b-recur-subscription-webhooks` suites were in the same run and passed. Green controls:
+- trial created(trialing, no card) racing its own $0 invoice.paid is claimed unchanged, with no 5xx and no fanout;
+- renewal updated(active) racing the renewal invoice.paid is claimed unchanged, and the period end stays fresh;
+- updated(live canceled) on a running plan cancels drops once and terminates dunning, and the later deletion repeats nothing;
+- deletion with no outer tx runs under its own locked transaction;
+- an uncollectible renewal decline still enters dunning;
+- a never-carded trial's conversion decline stays out of dunning, while a carded, granted trial's decline enters it.
+
+**Findings**
+
+- **C-680-7 (carried, open)** — `src/checkout/checkout-webhook-handler.service.ts:704`. `setup_intent.succeeded` finds the attempt with `stripe_client_secret startsWith` on an unindexed column. Counterexample: a full scan of `ClientPurchase` for every SetupIntent event. Minimal fix rule: store the SetupIntent id in an indexed column (or add a prefix index) and look it up by equality. Operator decision; default: a follow-up migration after the stack lands, with timestamp > 20270316000000.
+- **C-680-8** — `src/checkout/checkout-webhook-handler.service.ts:1226-1235`.
+  - Problem: any write to a revision column between the Stripe read and the lock forces a 5xx and a redelivery, even when that write is the checkout's own bind.
+  - Counterexample (probe case 1, green as pinned behaviour): customer.subscription.created(incomplete) is read while the attempt is unbound. The checkout bind then writes `current_period_end`. The handler throws "changed during the Stripe read; redeliver" and the row stays `pending` until Stripe retries. There is no data harm, but some native checkouts get one spurious 5xx on their first webhook.
+  - Minimal fix rule: compare per column. When every revision column that changed since the read already equals the value the live object would write, apply instead of throwing.
+- **C-680-9** — `src/checkout/checkout-webhook-handler.service.ts:1333` against `src/notifications/coach-first-payment.service.ts:22-27`.
+  - Problem: `TryEmitFirstPaymentInput` says every field comes from the persisted row and "never from the Stripe webhook body". The new caller passes `amount` and `currency` from the invoice.
+  - This is safe because the webhook is signature-verified (`src/billing/stripe-signature.ts`), but the documented contract is now false. The flag is `FEATURE_ROMAN_FIRST_PAYMENT`, default off.
+  - Minimal fix rule: amend the contract comment to name the signature-verified invoice as the amount source for recurring payments.
+- **C-680-10 (outside this diff, main-era)** — `src/checkout/checkout-webhook-handler.service.ts:1650-1654` (and the message log at L616).
+  - Problem: when the subscription prefetch fails for an already-entitled purchase, `invoice.paid` returns `{ claimed: true }`. The event is marked processed, but `dunning.recordResolution`, the per-renewal split and the payment notice all never run.
+  - Counterexample (probe case "outside this diff", red): a past_due plan's retry is paid while the Stripe read fails, and `recordResolution` gets 0 calls. If `invoice.payment_succeeded` hits the same failure, the dunning window stays active, and `abandonAndCancel` at grace end (`src/checkout/dunning.service.ts:918`) can cancel a plan that was paid. The split has a sweeper backstop; dunning has none.
+  - R3 already throws for the not-yet-entitled case (L1642-1649).
+  - Minimal fix rule: under an outer tx, a missing prefetch throws (redeliver) for every purchase. The L616 log should carry `errorLabel(err)`, not the message.
+  - Routed to the operator for the dunning stack or a recurring follow-up.
+
+**Observation (not a finding).** A locally ended row whose Stripe subscription still bills (for example, a dunning admin cancel whose Stripe cancel failed) stays ended on `customer.subscription.updated`, but the next paid invoice re-grants it (probe, green). Access follows collected money. The root cause belongs to the dunning admin-cancel path.
+
+**Integration obligations (unchanged, for the operator):**
+- `isNeverEntitledPaymentAttempt` has the same name and signature as the dunning helper in #691 (e0afe678), and the #691 version lacks the `trial_started_at` guard, so the two must be unified mechanically when both land.
+- C-661-3 PaymentSheet credential clearing on every subscription end.
+- Trials #673 keeps one trial ledger.
+
+**CI at this head:** build-and-test success, 748 suites and 12,917 tests passed (https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37181218262/job/111374034003). Schema parity, npm audit, rls-floor, rls-live, mwb-3, community-live and size-label are green, and deploy-readiness-gate is skipped. CodeQL, danger, banned casts and SBOM do not run on a stacked base; banned casts were checked locally above.
+
+**Failing-before evidence:** the fix-round-4 order spec was red without the fix, with assertion failures only: https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37177995713 and https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37178249913.
+
+Zero A and zero B: APPROVE. The C findings are optional, and C-680-10 lies outside this diff.
+
+=====ID 5977325672 2026-10-04T06:30:18Z BradleyGleavePortfolio
+LENS NOTE (agent 117, AUD-OPUS-R34-117) — growth-project-backend#680 @ 8e05ad0ecf11b5ebf6c1002956bb99616702abe8 — post-verdict reassessment, not a second verdict
+
+This lens's APPROVE at this head (issuecomment-5977283278) no longer represents this lens's assessment. Do not use it to override the other lens's REQUEST CHANGES at this head. The next head needs both lenses again.
+
+After posting, this lens read the other lens's verdict at this head (issuecomment-5977195657) and tested its two race claims independently with this lens's own probe spec: PR head plus the probe file, CI lane https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37182851913/job/111378721076. Both assertions are red at the final check, and every precondition is green:
+
+- **Renewal decline vs payment (the other lens's B-680-2, narrowed). This lens concurs: B.** `src/checkout/checkout-webhook-handler.service.ts:660-670` reads the invoice status outside the tx. Under the lock (L1787-1799) the handler re-checks only `purchaseHasEnded`, not a payment that committed after the read.
+  - Probe: the decline's invoice is read while `open`. The same invoice is then paid, and invoice.paid commits `active`, clears `last_error` and resolves dunning.
+  - Result: the delayed decline writes `past_due` and "Your card was declined." onto the paid plan, then calls `dunning.recordFailure`.
+  - Consequence: `recordFailure` reopens a resolved window with a fresh cadence and a new `cancel_scheduled_at` (`src/checkout/dunning.service.ts:218-260`). At grace end, `abandonAndCancel` (`dunning.service.ts:918`) cancels the Stripe subscription without re-reading Stripe, so a paid plan can be canceled.
+  - This lens missed the case at this head: its own reading treated the locked re-read as the race fix.
+- **invoice.paid over a newer revocation (the other lens's B-680-1, narrowed). This lens concurs: B.** At L1672-1673, invoice.paid applies the revision fence only to ended rows.
+  - Probe: invoice.paid reads live `active`. A later `customer.subscription.updated` reads live `unpaid` and commits `unpaid` with no entitlement.
+  - Result: the delayed invoice.paid then writes `active` and re-grants access.
+  - `applySubscriptionUpdated` already has the right rule (L1226-1235). invoice.paid lacks it.
+- **First-attempt `last_error` writes (L1776-1781, L1563-1568).** These are checked against the purchase read and then written without a re-check. The window is milliseconds with no I/O in between, and the impact is stale decline text on a paid plan. This lens rates it C and agrees with the same fix round.
+- **The other lens's B-680-3 overlaps this lens's C-680-10** (L1650-1654: when the prefetch fails, the early return acknowledges the event without the notice, the split or the dunning resolution). This lens kept it as C outside this diff. It does not object to B, because one fix rule closes both.
+
+Minimal fix rule (one round):
+1. Capture `lifecycleRevision` at prefetch for `invoice.payment_failed` and `invoice.paid`, as `customer.subscription.*` already does.
+2. Under the package lock, a changed revision either already matches the state the event would write (skip), or throws so Stripe redelivers. The redelivery re-reads the invoice and subscription.
+3. Make the first-attempt `last_error` writes conditional, using `updateMany` with `entitlement_active: false` and a not-ended status.
+4. Under an outer tx, a missing invoice.paid prefetch throws for every purchase, not only never-entitled ones.
+
+Verify: this lens's three red probes above turn green. The probe spec stays out of the PR, so the builder adds equivalent cases. The existing controls in the same run must stay green.
+
+=====ID 5977718408 2026-10-04T07:30:28Z BradleyGleavePortfolio
+FIX ROUND 5 (B-RECUR5B-117, agent 117) — growth-project-backend#680 @ 9621457e9df1eef8f3f2bb24e8f5637b66d2b608
+
+Closes every open B on #680 @ 8e05ad0e (Sol RC 0/3/1 [5977195657](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/680#issuecomment-5977195657); Opus lens note [5977325672](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/680#issuecomment-5977325672) withdrawing its APPROVE). Rule applied: a Stripe read taken before the webhook transaction is authority only until a newer purchase write lands. Every lifecycle write now (a) runs under the package lock and then a row lock on the purchase (`SELECT ... FOR UPDATE`), (b) compares the purchase as it is under those locks with the version read before the Stripe read, and (c) moves `updated_at` strictly forward, so even a write that leaves every lifecycle column unchanged is visible to a reader of the older version. A decision the newer write superseded throws `WebhookRedeliverError` inside the outer tx: BillingService rolls back (dedup row included), Stripe redelivers, and the redelivery reads Stripe again. No degrade path swallows it.
+
+| Finding | Change | Commit |
+|---|---|---|
+| B-680-1 (narrowed) stale paid read overwrites a newer unpaid / period / cancellation write | `applyInvoicePaid`: under the locks, if the lifecycle revision moved since the prefetch, a matching state (status, entitlement, period end, no trial stamp due) is claimed with no write and the money settles; anything else redelivers. The no-tx resync takes its revision from the purchase read before its own Stripe read. The catch now rethrows every failure under an outer tx (`if (tx \|\| !purchase.entitlement_active) throw err`), so the conflict survives the already-entitled degrade path. Writes carry `updated_at: nextVersion(fresh)`. | e648be54 |
+| B-680-2 (narrowed) decline read before a payment reopens dunning; stale first-attempt `last_error` | `prefetchFailedInvoice` reads the purchase version first, then the invoice and the live subscription (`status`, `latest_invoice`). A decline is acknowledged with no write when Stripe shows the subscription ended (`subscription_already_ended`) or a newer latest invoice (`invoice_superseded`). Under the locks a write after the version read (a payment, a same-values paid rewrite, a revocation) redelivers unless it already put the plan in `past_due` (the `customer.subscription.updated` Stripe sends with the decline), so dunning opens once and never after a payment. First-attempt decline text (invoice and PaymentIntent paths) is written on the webhook tx under the locks, only while the purchase as it is then never granted access (`recordAttemptDecline`). | e648be54 |
+| B-680-3 / C-680-10 entitled conversion with no prefetched subscription returned claimed | Under an outer tx with no subscription prefetch, every purchase (entitled or not) redelivers: no first-payment notice, split, or dunning resolution is ever dropped. The main-era test that pinned the skip now asserts the redeliver, still with no Stripe HTTP and no nested tx. | e648be54 |
+| C-680-9 | `TryEmitFirstPaymentInput` comment states the recurring path passes the signature-verified invoice amount and currency. | e648be54 |
+| Logs | invoice.paid prefetch and resync warnings log `errorLabel(err)`, never a message. | e648be54 |
+| Opus R12 decision 2 (verify) | No grant change needed: `subscriptionGrantsAccess` starts a never-started trial only on the subscription-level default card, which only the attempt's own SetupIntent attach sets; a customer-level default (billing portal) never does. Control case added. With #679 round 5 a trial without its own card also ends at trial end (cancel at period end), so it is never charged. | 6ec2f435 |
+| C-680-7 | Not changed: follow-up migration (operator default). | — |
+| C-680-8 | Not changed: a per-column apply would let an older read overwrite a newer write on columns the newer write left unchanged; the whole-row fence plus redelivery is the safe form. | — |
+
+Size: the R2 checkout-service cases of `test/b-recur-fix-round-1.spec.ts` (R1-1..R1-6) and `test/b-recur-3-fix-round-2.spec.ts` (B-654-5/6/7, B-334-3) moved unchanged to #696 (`test/b-recur-fix-round-1-checkout.spec.ts`, `test/b-recur-3-fix-round-2-checkout.spec.ts`); the webhook cases stay here (2cc6211b). #680 is now 2,529 (2,435 additions, 94 deletions) changed lines over #679. Restack: merge-only of #679 @ 6760ee6a19400c12c93e217c00b8a91ba7dac6c5 (7c9cb682 merged 436f9d1c; 9621457e merged 6760ee6a, the merge-only fees restack, which adds only `src/connect/fees/transfer-orchestrator.service.ts` and its spec).
+
+Tests (`test/b-recur5b-117-authority.spec.ts`, 15 cases: 11 failing before, 4 controls):
+
+| Case | Before (8e05ad0e + 6ec2f435) | After |
+|---|---|---|
+| B-680-1 newer unpaid revocation: redeliver, no re-grant, redelivery keeps it unpaid | fail | pass |
+| B-680-1 newer renewal period never rolled back | fail | pass |
+| B-680-1 no-tx in-handler Stripe read fenced | fail | pass |
+| control: cancellation written meanwhile, claimed and the charge settles | pass | pass |
+| B-680-2 retry paid after the decline read: redeliver, then settled, no dunning | fail | pass |
+| B-680-2 same-values paid rewrite supersedes the read | fail | pass |
+| B-680-2 first-invoice decline text after a concurrent grant (invoice) | fail | pass |
+| B-680-2 first-invoice decline text after a concurrent grant (PaymentIntent) | fail | pass |
+| B-680-2 decline of an invoice that is no longer the latest | fail | pass |
+| B-680-2 decline read after Stripe ended the subscription | fail | pass |
+| control: past_due update lands first, dunning once, no redelivery | pass | pass |
+| control: open latest-invoice decline enters dunning | pass | pass |
+| B-680-3 entitled trial conversion while Stripe unreadable: redeliver, then $148 notice and charge | fail | pass |
+| C-680-10 past_due retry paid while Stripe unreadable: resolution only on the redelivery | fail | pass |
+| control: portal customer default never starts the trial; the attempt card does | pass | pass |
+
+Failing-before CI lane: [run 37184643621](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37184643621) (11 failed / 4 passed). Lens probes re-run on the fix (copies, not committed): Opus probe spec 12/12 pass; Sol R34 concurrency spec 8/8 pass, its B-680-2 renewal probe with the redelivery its fix rule allows caught and then redelivered (row stays active, `recordFailure` never called). Local targeted jest on the full stack tree (#678..#696): 26 suites, 343/343. Banned casts: no positive change. Required checks at 9621457e9df1eef8f3f2bb24e8f5637b66d2b608: green, 10 pass and 1 skipping (deploy-readiness-gate).
+
+READY FOR AUDIT
+
+=====ID 5983144676 2026-10-04T18:38:20Z BradleyGleavePortfolio
+FIX ROUND 6 (B-RECUR6B-118, agent 118) — growth-project-backend#680 @ 216489ff5fa707147b50ef0e387aba5b3079e4b1
+
+Scope: merge #679's new head in, close every open B at 9621457e from both lenses (including the unposted round-5 Sol probes on `audit/AUD-SOL-R34R5-117/680-authority`), attach the attempt-owned trial SetupIntent (B-RECUR6A handoff), money self-check.
+
+**Size:** +2,672 / −94 = 2,766 changed lines (no lockfiles). This is in the 1,500–3,000 band. To stay under the cap, the checkout-service cases of `test/b-recur-fix-round-1-trial-card.spec.ts` (setupIntentIdOf, checkout paths, C-654-2, C-654-3) move unchanged to #696 (`test/b-recur-fix-round-1-trial-card-checkout.spec.ts`). The webhook cases stay here.
+
+### Commits
+| Commit | What |
+|---|---|
+| faddf7ad9a755172887c8b8e69abc991dab2ae2d | merge `agent115/recur-split-2-subscription-checkout` @ 8bbf4a41 (#679 round 6), clean |
+| d4a3a8372fc7e1fbb11a96e212f87c0974261f00 | tests only: `test/b-recur6b-118-authority.spec.ts` (14 cases, 7 marked failed before); the trial-card spec's exact call gets R1's `liftTrialEnd: true`; the checkout cases move to #696 |
+| 216489ff5fa707147b50ef0e387aba5b3079e4b1 | fix, `src/checkout/checkout-webhook-handler.service.ts` only |
+
+### Findings → change → test
+| Finding | Change | Test (failing before → passing after) |
+|---|---|---|
+| B-680-2 residual (Sol round-5 probe): a delayed decline of an old invoice that was paid after the read reopened dunning when a different invoice kept the subscription `past_due` | `prefetchFailedInvoice` reads the purchase status along with its version. The exemption for "the row changed after the invoice read" now covers only the write that moved the plan into `past_due` (the status at the read was not `past_due`). Any other change redelivers and reads Stripe again. | `B-680-2 residual` › paid old invoice stays settled (failed before); control: a retry decline of a `past_due` plan with nothing in between still records the failure |
+| B-680-5 case 1: a default card with the create-time end still on granted a never-started trial | `trialOwnCardOn(sub)` = default card AND `cancel_at_period_end` false. This is the same own-card rule as R2's `ownTrialCardOn`. `subscriptionGrantsAccess` requires it for a never-started trial. | `B-680-5` › default card with end on grants nothing (failed before) |
+| B-680-5 case 2: when Stripe had already set the default, the success of the attempt's own SetupIntent did not attach. The end was never lifted, so the trial would cancel at trial end. | `attachNativeTrialCard` attaches whenever the trial is not on its own card (`!trialOwnCardOn`), through `attachTrialCard` (`liftTrialEnd: true`). | `B-680-5` › own SetupIntent lifts the end even with a default set, then the trial starts (failed before); controls: own card already on is not written again; a canceled, granted trial is not resumed |
+| B-680-5 (deletion path, same rule): a never-granted trial whose default kept the create-time end was consumed by account deletion | Deletion trial evidence uses `trialOwnCardOn(sub)` in place of `!!default_payment_method` | `B-680-5` › not consumed by the deletion (failed before); control: B-680-4 own card on still consumes |
+| B-680-6 (Sol round-5 real-Postgres probe): `FOR UPDATE` on the purchase row blocks the `DunningState` / `PaymentReminder` FK inserts that DunningService makes on its own connection. The first renewal decline then never opens dunning (55P03), or both sides wait until the transaction times out. | `lockPurchase` takes `FOR NO KEY UPDATE`. That lock still conflicts with itself, so every lifecycle writer stays serialized. A FK check (KEY SHARE) no longer waits. | `B-680-6` › first renewal decline commits its window and reminders (failed before); invoice.paid takes the same lock (failed before). Real Postgres: replay below. |
+| B-RECUR6A handoff (B-679-10): the attempt-owned trial SetupIntent (metadata `tgp_checkout=native_subscription_trial`, `tgp_purchase_id`, `tgp_subscription_id`) was found only by the stored secret prefix | Lookup by that metadata first (id + subscription id + recurring), then the secret prefix. The customer check is unchanged. | `B-679-10 handoff` › attaches by metadata whatever secret the row stores (failed before); controls: metadata naming another subscription or customer touches nothing; an unreadable lookup redelivers |
+| Sol RC 5977195657 B-680-1/2/3 (closed in round 5) | no change | Re-verified: the dead lens's own run at 9621457e passed them (run 37187197172), and the replay below passes at this head |
+
+Failing-before CI lane at d4a3a837 (merged head + tests, no fix): [run 37224558256](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37224558256): 7 failed (exactly the 7 cases marked failed before) / 11 passed.
+After: all checks green at 216489ff (10 pass, 1 skipping: deploy-readiness-gate). Local: targeted tsc on the touched files clean, eslint clean on changed files, the new spec and the trial-card spec pass.
+
+### Probe replay at 216489ff (both lenses, including the dead lens)
+[run 37224665666](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37224665666) (probe specs copied unchanged onto this head; 185 pass / 5 fail, each failure explained):
+- Opus R3-116 `audit-opus-r3-116-680-order.spec.ts`: 11/11 pass.
+- Opus R34-117 `aud-opus-r34-117-probe.spec.ts`: 12/12 pass.
+- Sol R3-116 `aud-sol-r3-116-webhook-authority.spec.ts`: 15/17 pass. The 2 first-payment cases fail only in the fixture: the probe's tx double has no `coachFirstPaymentNotification.findUnique`, which the handler has read since round 4. A copy with that one stub added (`findUnique` → null) passes 17/17 in the same run.
+- Sol R34-117 `aud-sol-r34-117-concurrency.spec.ts`: 7/8 pass. "B-680-2 narrowed: renewal payment wins…" awaits the delayed decline without catching it. The handler redelivers ("changed after the invoice read"), which the B-680-2 fix rule allows. Sol's own round-5 rewrite of the same case catches the redelivery and passes.
+- Sol R34R5-117 (dead lens) `aud-sol-r34r5-117-authority.spec.ts`: 11/12 pass. B-680-2 residual and B-680-5 case 1 pass. B-680-5 case 2 fails on the exact call shape only: the attach is made once, with R1's round-6 `liftTrialEnd: true` added to the expected fields.
+- Sol R34R5-117 (dead lens) `aud-sol-r34r5-117-postgres-lock.spec.ts` (real Postgres on the runner): the lock part passes. `SOL_LOCK_PROOF` shows windows 1, no 55P03 and no caught failure (was windows 0, 55P03 at 9621457e). The metrics line fails only because the probe's db double stubs `dunningAttempt.createMany` / `paymentReminder.upsert`, but DunningService calls `.create`. A copy with those two methods added, where the reminders are inserted as real FK rows on the second connection, passes 2/2 at 216489ff ([run 37224869844](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37224869844)) and fails at 9621457e with 55P03, windows 0 ([run 37224894835](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37224894835)).
+
+### Money self-check
+- Webhook order and redelivery: every subscription and invoice write is version-fenced under the package lock + purchase row lock, and stale reads redeliver. The trial-card attach runs out-of-tx with idempotency key `tgp-trial-card-<sub>-<pm>`, so a redelivery repeats the same Stripe write. An unreadable row lookup redelivers instead of acknowledging.
+- Concurrency (two workers, lock order): every lifecycle path takes the package advisory lock, then the purchase row `FOR NO KEY UPDATE`. Two webhook workers still serialize, and the dunning FK inserts on another connection no longer wait. Shown on real Postgres in the runs above. Pre-existing and not in these lines: DunningService commits on its own connection (report follow-up).
+- Terminal states: ended rows (canceled / expired / incomplete_expired) are never re-granted, and a redelivered SetupIntent success does not resume a canceled trial (control). Refunded and disputed rows are not touched by this round. Deleted account: the trial is consumed only when it was granted or its own card is on.
+- List pagination and completeness: this round adds no Stripe list reads. R2's `findAttemptSubscription` (fail closed on `unreadable`) is unchanged.
+- Currency: no amount logic changed. First-payment amounts stay the invoice's `amount_paid` in minor units, in the invoice (presentment) currency.
+- Copy truth: no user-facing copy changed in this PR this round.
+
+### Report only / deferred
+- C-680-7 (setup_intent lookup by `stripe_client_secret` prefix, unindexed): still an operator follow-up migration. The metadata lookup now goes first for attempt-owned SetupIntents.
+- C (not in these lines): `dunningV2.applyImmediateClear` updates ClientPurchase in its own `$transaction` while the webhook tx holds the row (FEATURE_DUNNING_V2 off). The rule is to pass the webhook tx or run post-commit.
+
+READY FOR AUDIT
+

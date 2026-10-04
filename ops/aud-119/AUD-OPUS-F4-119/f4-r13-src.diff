@@ -1,0 +1,397 @@
+diff --git a/src/checkout/payout-notice.service.ts b/src/checkout/payout-notice.service.ts
+index 9b8e1407..4644601d 100644
+--- a/src/checkout/payout-notice.service.ts
++++ b/src/checkout/payout-notice.service.ts
+@@ -68,6 +68,9 @@ export interface PayoutNoticeView {
+   body: string;
+   charge_gross_cents: number;
+   customer_refunded_cents: number;
++  // Round 13 (B-683-1): set on a converted charge's refund notice (the client's own currency).
++  client_currency: string | null;
++  client_refunded_cents: number | null;
+   reversed_cents: number;
+   reinstated_cents: number;
+   held_cents: number;
+@@ -86,11 +89,16 @@ export interface PayoutAdjustmentsView {
+   next_cursor: string | null;
+ }
+ 
++const pastDeadline = (deadlineAt?: number): boolean =>
++  deadlineAt !== undefined && Date.now() >= deadlineAt;
++
+ function amountsOf(n: PayoutAdjustmentNotice): PayoutNoticeAmounts {
+   return {
+     currency: n.currency,
+     charge_gross_cents: n.charge_gross_cents,
+     customer_refunded_cents: n.customer_refunded_cents,
++    client_currency: n.client_currency,
++    client_refunded_cents: n.client_refunded_cents,
+     reversed_cents: n.reversed_cents,
+     reinstated_cents: n.reinstated_cents,
+     released_cents: 0,
+@@ -142,8 +150,12 @@ export class PayoutNoticeService {
+     return n > 0;
+   }
+ 
+-  /** Sweeper: notices still undelivered a minute after they were written. */
+-  async dispatchPending(now: Date = new Date(), limit = 25): Promise<number> {
++  /**
++   * Sweeper: notices still undelivered a minute after they were written. Round 13 (Sol
++   * B-684-3): no new notice or channel starts once `deadlineAt` passes; an unfinished
++   * channel stays pending and the next run sends only that channel.
++   */
++  async dispatchPending(now: Date = new Date(), limit = 25, deadlineAt?: number): Promise<number> {
+     const rows = await this.prisma.payoutAdjustmentNotice.findMany({
+       where: {
+         dispatched_at: null,
+@@ -154,11 +166,18 @@ export class PayoutNoticeService {
+       take: limit,
+     });
+     let sent = 0;
+-    for (const n of rows) if (await this.dispatchOne(n, now)) sent += 1;
++    for (const n of rows) {
++      if (pastDeadline(deadlineAt)) break;
++      if (await this.dispatchOne(n, now, deadlineAt)) sent += 1;
++    }
+     return sent;
+   }
+ 
+-  private async dispatchOne(n: PayoutAdjustmentNotice, now: Date = new Date()): Promise<boolean> {
++  private async dispatchOne(
++    n: PayoutAdjustmentNotice,
++    now: Date = new Date(),
++    deadlineAt?: number,
++  ): Promise<boolean> {
+     if (n.dispatched_at) return false;
+     const claim = await this.prisma.payoutAdjustmentNotice.updateMany({
+       where: {
+@@ -206,6 +225,7 @@ export class PayoutNoticeService {
+         ...(inapp.notification_id ? { inapp_notification_id: inapp.notification_id } : {}),
+       });
+     }
++    if (pastDeadline(deadlineAt)) return false; // push and email wait for the next run
+     const push: ChannelResult = PUSH_DONE.has(row.push_status)
+       ? { status: row.push_status }
+       : await this.deliverPush(row, payload);
+@@ -215,6 +235,7 @@ export class PayoutNoticeService {
+         ...(push.notification_id ? { push_notification_id: push.notification_id } : {}),
+       });
+     }
++    if (pastDeadline(deadlineAt)) return false; // email waits for the next run
+     const email: ChannelResult = EMAIL_DONE.has(row.email_status)
+       ? { status: row.email_status }
+       : await this.deliverEmail(row, now);
+@@ -437,7 +458,10 @@ export class PayoutNoticeService {
+         recipient_name: user.name,
+         summary: n.body,
+         charge_display: m(n.charge_gross_cents),
+-        customer_refunded_display: m(n.customer_refunded_cents),
++        customer_refunded_display:
++          n.client_currency && n.client_refunded_cents !== null
++            ? `${formatMoney(n.client_refunded_cents, n.client_currency)} (${m(n.customer_refunded_cents)} after conversion)`
++            : m(n.customer_refunded_cents),
+         reversed_display: m(n.reversed_cents),
+         reinstated_display: n.reinstated_cents > 0 ? m(n.reinstated_cents) : null,
+         held_display: m(n.held_cents),
+@@ -496,7 +520,9 @@ export class PayoutNoticeService {
+     const latest = openIds.length
+       ? await this.prisma.payoutAdjustmentNotice.findMany({
+           where: { payee_user_id: payeeUserId, settlement_id: { in: openIds } },
+-          orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
++          orderBy: [{ settlement_id: 'asc' }, { created_at: 'desc' }, { id: 'desc' }],
++          // Sol C-684-4: one row per settlement (DISTINCT ON), never every historical notice.
++          distinct: ['settlement_id'],
+           select: { id: true, settlement_id: true },
+         })
+       : [];
+@@ -515,6 +541,8 @@ export class PayoutNoticeService {
+         body: n.body,
+         charge_gross_cents: n.charge_gross_cents,
+         customer_refunded_cents: n.customer_refunded_cents,
++        client_currency: n.client_currency,
++        client_refunded_cents: n.client_refunded_cents,
+         reversed_cents: n.reversed_cents,
+         reinstated_cents: n.reinstated_cents,
+         held_cents: n.held_cents,
+diff --git a/src/checkout/purchase-split-handler.service.ts b/src/checkout/purchase-split-handler.service.ts
+index e5ec1346..c6800859 100644
+--- a/src/checkout/purchase-split-handler.service.ts
++++ b/src/checkout/purchase-split-handler.service.ts
+@@ -62,8 +62,9 @@ export class PurchaseSplitHandlerService {
+         null;
+       return charge ?? null;
+     } catch (err) {
++      // Round 13 (G12): a closed code only, never the error's free text.
+       this.logger.warn(
+-        `resolveChargeIdForPurchase failed pi=${purchase.stripe_payment_intent_id}: ${(err as Error).message}`,
++        `resolveChargeIdForPurchase failed pi=${purchase.stripe_payment_intent_id}: ${settlementFailureCode(err)}`,
+       );
+       return null;
+     }
+@@ -194,7 +195,7 @@ export class PurchaseSplitHandlerService {
+             await this.settlements.attemptTransferUnderLock(transfer);
+           } catch (err) {
+             this.logger.warn(
+-              `transfer.attempt failed inline purchase=${purchase.id}: ${(err as Error).message}`,
++              `transfer.attempt failed inline purchase=${purchase.id}: ${settlementFailureCode(err)}`,
+             );
+           }
+         }
+@@ -233,7 +234,8 @@ export class PurchaseSplitHandlerService {
+     let noticesDelivered = 0;
+     if (this.payoutNotices && !(opts.deadlineAt !== undefined && Date.now() >= opts.deadlineAt)) {
+       try {
+-        noticesDelivered = await this.payoutNotices.dispatchPending(now);
++        // Sol B-684-3 (round 13): notice delivery keeps the sweep's deadline too.
++        noticesDelivered = await this.payoutNotices.dispatchPending(now, 25, opts.deadlineAt);
+       } catch (err) {
+         this.logger.warn(
+           `SFEE_NOTICE_DISPATCH_DEFERRED sweep: ${settlementFailureCode(err)}; the next run retries`,
+@@ -244,7 +246,8 @@ export class PurchaseSplitHandlerService {
+     let attempted = 0;
+     let succeeded = 0;
+     let failed = 0;
+-    let deadlineReached = false;
++    // Notice delivery or settlements stopped on the deadline (Sol B-684-3).
++    let deadlineReached = opts.deadlineAt !== undefined && Date.now() >= opts.deadlineAt;
+     for (const row of due) {
+       if (opts.deadlineAt !== undefined && Date.now() >= opts.deadlineAt) {
+         deadlineReached = true;
+@@ -278,7 +281,9 @@ export class PurchaseSplitHandlerService {
+       if (!purchase || !(purchase.amount_cents > 0)) return;
+       await this.settlements.settlePurchase(purchase);
+     } catch (err) {
+-      this.logger.warn(`guest settlement failed pi=${paymentIntentId}: ${settlementFailureCode(err)}`);
++      this.logger.warn(
++        `guest settlement failed pi=${paymentIntentId}: ${settlementFailureCode(err)}`,
++      );
+     }
+   }
+ }
+diff --git a/src/checkout/refund-dispute-handler.service.ts b/src/checkout/refund-dispute-handler.service.ts
+index ef62e495..79f3bbbd 100644
+--- a/src/checkout/refund-dispute-handler.service.ts
++++ b/src/checkout/refund-dispute-handler.service.ts
+@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger, Optional } from '@nestjs/commo
+ import type { ChargeDispute, ChargeRefund, ClientPurchase, Prisma } from '@prisma/client';
+ import {
+   ChargeSettlementService,
++  chargeRefundsFromStripe,
+   disputeAmountsFrom,
+   isLegacyDestinationCharge,
+   settlementFailureCode,
+@@ -174,6 +175,7 @@ export class RefundDisputeHandlerService {
+       case 'charge.refunded':
+         return this.onChargeRefunded(event, tx);
+       case 'charge.refund.updated':
++      case 'refund.updated':
+         return this.onRefundUpdated(event);
+       case 'charge.dispute.created':
+         return this.onDisputeOpened(event);
+@@ -215,6 +217,7 @@ export class RefundDisputeHandlerService {
+       refunded?: boolean;
+       refunds?: {
+         data?: Array<{ id?: string; amount?: number; status?: string; reason?: string | null }>;
++        has_more?: boolean;
+       };
+     };
+     if (!charge?.id) return { claimed: false, reason: 'no_charge_id' };
+@@ -226,7 +229,7 @@ export class RefundDisputeHandlerService {
+     // upsertAndApplyRefund returns { ledger_just_reversed: boolean } so
+     // we know which refund ids transitioned this delivery; redeliveries
+     // see ledger_reversed already true and skip.
+-    const refunds = charge.refunds?.data ?? [];
++    const refunds = await this.completeRefunds(charge);
+     const newlyAppliedRefunds: Array<{
+       id: string;
+       amount_cents: number;
+@@ -376,22 +379,62 @@ export class RefundDisputeHandlerService {
+       });
+     }
+ 
+-    // B-684-1 (round 11): a Charge embeds only its latest ten refunds, so the settlement also
+-    // converges once, under the charge lock, on Stripe's cumulative amount_refunded, even when
+-    // every embedded row was applied before (an older refund missing from the page). It runs
+-    // last, after the per-refund alerts, so a retried delivery loses none of them. A converted
+-    // charge reads each refund's settlement-currency debit from Stripe instead (B-683-1).
+-    if (this.settlements && refundedCents > 0) {
++    // B-684-1 (round 11): the settlement also converges once more, under the charge lock,
++    // after the per-refund alerts, so a retried delivery loses none of them. Round 13 (Opus
++    // B-684-3): on the SUCCEEDED refunds of the complete list, never amount_refunded (it also
++    // counts pending refunds). A converted charge reads its own debits from Stripe (B-683-1).
++    const succeededCents = refunds.reduce(
++      (n, r) => n + (r.status === 'succeeded' && typeof r.amount === 'number' ? r.amount : 0),
++      0,
++    );
++    if (this.settlements && succeededCents > 0) {
+       await this.settlements.applyAdjustments({
+         purchase,
+         charge_id: charge.id,
+-        refunded_cents: refundedCents,
++        refunded_cents: succeededCents,
+       });
+     }
+ 
+     return { claimed: true, purchase_id: purchase.id };
+   }
+ 
++  /**
++   * Round 13 (Sol B-684-1, Opus B-684-3): every refund on the charge. The event embeds at most
++   * the latest ten (none on current API versions), so unless the embedded list is explicitly
++   * complete and accounts for amount_refunded, it is read from Stripe to the last page. An
++   * incomplete read throws RefundStateUnavailableError (the webhook fails, Stripe redelivers);
++   * nothing moves.
++   */
++  private async completeRefunds(charge: {
++    id?: string;
++    amount_refunded?: number;
++    refunds?: {
++      data?: Array<{ id?: string; amount?: number; status?: string; reason?: string | null }>;
++      has_more?: boolean;
++    };
++  }): Promise<Array<{ id?: string; amount?: number; status?: string; reason?: string | null }>> {
++    const embedded = charge.refunds?.data ?? [];
++    const live = embedded.reduce(
++      (n, r) =>
++        n +
++        (r.status !== 'failed' && r.status !== 'canceled' && typeof r.amount === 'number'
++          ? r.amount
++          : 0),
++      0,
++    );
++    const complete = charge.refunds?.has_more !== true && live >= (charge.amount_refunded ?? 0);
++    if (complete || !this.settlements || !charge.id) return embedded;
++    // Ids, statuses and the client's own amounts; the settlement debits are read under the lock.
++    const list = await chargeRefundsFromStripe(this.stripe, charge.id, null);
++    const reasons = new Map(embedded.map((r) => [r.id, r.reason ?? null]));
++    return list.refunds.map((r) => ({
++      id: r.id,
++      amount: r.amount_cents,
++      status: r.status,
++      reason: reasons.get(r.id) ?? null,
++    }));
++  }
++
+   private async onRefundUpdated(event: {
+     data: { object: Record<string, unknown> };
+   }): Promise<{ claimed: boolean; reason?: string; purchase_id?: string }> {
+@@ -400,12 +443,18 @@ export class RefundDisputeHandlerService {
+       charge?: string | null;
+       amount?: number;
+       status?: string;
++      reason?: string | null;
+       failure_reason?: string | null;
+     };
+     if (!refund?.id) return { claimed: false };
+     const existing = await this.prisma.chargeRefund.findUnique({
+       where: { stripe_refund_id: refund.id },
+     });
++    const chargeId =
++      existing?.stripe_charge_id ?? (typeof refund.charge === 'string' ? refund.charge : null);
++    if (this.settlements && chargeId) {
++      return this.applyRefundUpdate(refund, existing, chargeId);
++    }
+     if (!existing) {
+       // No-op: we'll see the parent charge.refunded shortly.
+       return { claimed: false, reason: 'no_known_refund' };
+@@ -420,6 +469,77 @@ export class RefundDisputeHandlerService {
+     return { claimed: true, purchase_id: existing.purchase_id };
+   }
+ 
++  /**
++   * Round 13 (Opus B-684-3): a refund's terminal status moves its money. One that becomes
++   * succeeded is applied now (once, under the charge lock, idempotent on ledger_reversed) and
++   * the coach is told; a pending one moves nothing. One that fails or is canceled after its
++   * money was applied raises an alert and flags the settlement for review (C-684-4; nothing is
++   * re-credited automatically). A refund this service has not seen yet is recorded too.
++   */
++  private async applyRefundUpdate(
++    refund: {
++      id?: string;
++      amount?: number;
++      status?: string;
++      reason?: string | null;
++      failure_reason?: string | null;
++    },
++    existing: ChargeRefund | null,
++    chargeId: string,
++  ): Promise<{ claimed: boolean; reason?: string; purchase_id?: string }> {
++    const purchase = existing
++      ? await this.prisma.clientPurchase.findUnique({ where: { id: existing.purchase_id } })
++      : await this.resolvePurchaseByCharge(chargeId);
++    if (!purchase || !refund.id) return { claimed: false, reason: 'no_matching_purchase' };
++    const status = refund.status ?? existing?.status ?? 'pending';
++    if (existing?.ledger_reversed && (status === 'failed' || status === 'canceled')) {
++      this.logger.error(
++        `SFEE_REFUND_FAILED_AFTER_APPLY alert=true charge=${chargeId} refund=${refund.id} status=${status}: the payout was already reduced for this refund; the settlement is flagged for review and nothing is re-credited automatically`,
++      );
++      await this.prisma.chargeSettlement.updateMany({
++        where: { stripe_charge_id: chargeId },
++        data: {
++          reconcile_requested_at: new Date(),
++          reconcile_reason: 'SFEE_REFUND_FAILED_AFTER_APPLY',
++        },
++      });
++    }
++    const outcome = await this.upsertAndApplyRefund({
++      purchase,
++      stripe_refund_id: refund.id,
++      stripe_charge_id: chargeId,
++      amount_cents:
++        typeof refund.amount === 'number' ? refund.amount : (existing?.amount_cents ?? 0),
++      status,
++      reason: refund.reason ?? existing?.reason ?? null,
++    });
++    if (refund.failure_reason !== undefined) {
++      await this.prisma.chargeRefund.update({
++        where: { stripe_refund_id: refund.id },
++        data: { failure_reason: refund.failure_reason ?? null },
++      });
++    }
++    if (outcome.ledger_just_reversed && this.partialRefundDecisions) {
++      const fresh = await this.prisma.clientPurchase.findUnique({ where: { id: purchase.id } });
++      if (fresh && fresh.status !== 'refunded') {
++        await this.partialRefundDecisions.onPartialRefund({
++          client_purchase_id: purchase.id,
++          stripe_refund_id: refund.id,
++        });
++      }
++    }
++    if (outcome.ledger_just_reversed) {
++      await this.emitRefundCoachAlert({
++        purchase,
++        amount_cents: outcome.row.amount_cents,
++        stripe_refund_id: refund.id,
++        stripe_charge_id: chargeId,
++        reason: outcome.row.reason ?? null,
++      });
++    }
++    return { claimed: true, purchase_id: purchase.id };
++  }
++
+   // Idempotently create a refund row + apply ledger reversals. Safe to
+   // re-run with the same payload — composite-unique on stripe_refund_id
+   // + ledger.applyReversal monotonically increases reversed_cents.
+diff --git a/src/checkout/payout-notice.service.ts b/src/checkout/payout-notice.service.ts
+index 4644601d..af1adfd3 100644
+--- a/src/checkout/payout-notice.service.ts
++++ b/src/checkout/payout-notice.service.ts
+@@ -225,7 +225,8 @@ export class PayoutNoticeService {
+         ...(inapp.notification_id ? { inapp_notification_id: inapp.notification_id } : {}),
+       });
+     }
+-    if (pastDeadline(deadlineAt)) return false; // push and email wait for the next run
++    // Push and email wait for the next run once the deadline passes (Sol B-684-3).
++    if (!PUSH_DONE.has(row.push_status) && pastDeadline(deadlineAt)) return false;
+     const push: ChannelResult = PUSH_DONE.has(row.push_status)
+       ? { status: row.push_status }
+       : await this.deliverPush(row, payload);
+@@ -235,7 +236,7 @@ export class PayoutNoticeService {
+         ...(push.notification_id ? { push_notification_id: push.notification_id } : {}),
+       });
+     }
+-    if (pastDeadline(deadlineAt)) return false; // email waits for the next run
++    if (!EMAIL_DONE.has(row.email_status) && pastDeadline(deadlineAt)) return false;
+     const email: ChannelResult = EMAIL_DONE.has(row.email_status)
+       ? { status: row.email_status }
+       : await this.deliverEmail(row, now);

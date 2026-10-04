@@ -1,0 +1,3345 @@
+diff --git a/src/billing/billing.service.ts b/src/billing/billing.service.ts
+index d50d3519..1a457eee 100644
+--- a/src/billing/billing.service.ts
++++ b/src/billing/billing.service.ts
+@@ -233,6 +233,9 @@ export class BillingService {
+     // sweeper-backed, so a rolled-back tx simply skips this (the descriptor
+     // is captured but never executed) and Stripe's redelivery reconciles.
+     let deferredSplit: DeferredSplitTask | null = null;
++    // S-FEE round 6 (#627 C-627-7) — payout notices recorded inside the tx
++    // are delivered after it commits (no push / email HTTP inside the tx).
++    let deferredPayoutNoticeChargeId: string | null = null;
+ 
+     // PR-14 R2 P0-1 — recurring/combo guest subscription backstop. The
+     // PI-succeeded route is the primary trigger for converting a guest
+@@ -243,6 +246,10 @@ export class BillingService {
+     const guestSubFallbackRef: { value: { guest_checkout_id: string; payment_intent_id: string } | null } = {
+       value: null,
+     };
++    // S-FEE — guest PaymentIntent whose conversion this delivery drove. The
++    // coach payout for it is settled post-commit (Stripe HTTP never runs
++    // inside the tx); the settlement sweeper is the backstop.
++    const guestSettlementPiRef: { value: string | null } = { value: null };
+ 
+     try {
+       await this.prisma.$transaction(async (tx) => {
+@@ -287,6 +294,9 @@ export class BillingService {
+           if (result.deferredSplit) {
+             deferredSplit = result.deferredSplit;
+           }
++          if (result.deferredPayoutNoticeChargeId) {
++            deferredPayoutNoticeChargeId = result.deferredPayoutNoticeChargeId;
++          }
+         }
+ 
+         // Stream 1 — give the AI credit-pack handler first refusal on
+@@ -425,10 +435,12 @@ export class BillingService {
+                 chargeId = chargeId ?? preResolved.chargeId;
+                 preResolveAttempted = true;
+               }
+-              await this.guestCheckout.handlePaymentSucceeded(
+-                pi.id,
+-                { chargeId, receiptUrl, preResolveAttempted },
+-              );
++              await this.guestCheckout.handlePaymentSucceeded(pi.id, {
++                chargeId,
++                receiptUrl,
++                preResolveAttempted,
++              });
++              guestSettlementPiRef.value = pi.id;
+             }
+             break;
+           }
+@@ -666,6 +678,7 @@ export class BillingService {
+       if (piId) {
+         try {
+           await this.guestCheckout.handlePaymentSucceeded(piId);
++          guestSettlementPiRef.value = guestSettlementPiRef.value ?? piId;
+         } catch (err) {
+           this.logger.warn(
+             `guest subscription fallback handlePaymentSucceeded failed pi=${piId}: ${(err as Error).message}`,
+@@ -673,6 +686,27 @@ export class BillingService {
+         }
+       }
+     }
++
++    // S-FEE round 6 (C-627-7) — deliver the refund / chargeback payout
++    // notices now that the webhook tx committed. Never throws; the notice
++    // sweeper re-delivers anything undelivered.
++    if (
++      deferredPayoutNoticeChargeId &&
++      this.checkoutWebhooks &&
++      typeof this.checkoutWebhooks.deliverPayoutNotices === 'function'
++    ) {
++      await this.checkoutWebhooks.deliverPayoutNotices(deferredPayoutNoticeChargeId);
++    }
++
++    // S-FEE — settle the guest purchase's charge(s) now that the conversion
++    // committed. Failure-isolated (never throws); the sweeper retries.
++    if (
++      guestSettlementPiRef.value &&
++      this.checkoutWebhooks &&
++      typeof this.checkoutWebhooks.settleGuestPurchase === 'function'
++    ) {
++      await this.checkoutWebhooks.settleGuestPurchase(guestSettlementPiRef.value);
++    }
+     return { processed: true };
+   }
+ 
+diff --git a/src/checkout/admin-analytics.service.ts b/src/checkout/admin-analytics.service.ts
+index 6292eb84..ecafcddb 100644
+--- a/src/checkout/admin-analytics.service.ts
++++ b/src/checkout/admin-analytics.service.ts
+@@ -1,4 +1,5 @@
+ import { Injectable } from '@nestjs/common';
++import { COUNTED_RECOVERY_STATUSES, coachNetCents } from '../connect/fees/coach-net';
+ import { PrismaService } from '../prisma.service';
+ 
+ // AdminAnalyticsService — Phase 7 enterprise rollups.
+@@ -69,6 +70,12 @@ export interface CoachEarningsSummary {
+     pending_cents: number;
+     reversed_cents: number;
+     refunds_cents: number;
++    // S-FEE: owed back on refunded / disputed charges beyond what a transfer
++    // reversal recovered (netted from future payouts).
++    recoveries_cents: number;
++    // S-FEE: coachNetCents(posted, recoveries) — same figure as
++    // /coach/connect/metrics net_30d and the earnings summary.
++    net_cents: number;
+     purchases_count: number;
+   };
+   // Earnings this coach received as a HEAD COACH (head_coach_split kind).
+@@ -77,6 +84,8 @@ export interface CoachEarningsSummary {
+     posted_cents: number;
+     pending_cents: number;
+     reversed_cents: number;
++    recoveries_cents: number;
++    net_cents: number;
+     sub_coaches_count: number; // # of distinct selling sub-coaches contributing
+   };
+   // Most-recent payout from PayoutSnapshot (last_payout_*).
+@@ -325,6 +334,36 @@ export class AdminAnalyticsService {
+     const sellerSums = bucketByStatus(asSellerLedger);
+     const headCoachSums = bucketByStatus(asHeadCoachLedger);
+ 
++    // S-FEE — recoveries owed by this payee in the window, split by the leg
++    // they came from (seller vs head coach) through their settlement.
++    const recoveryRows = await this.prisma.payeeRecovery.findMany({
++      where: {
++        payee_user_id: coachUserId,
++        status: { in: [...COUNTED_RECOVERY_STATUSES] },
++        created_at: { gte: from, lte: to },
++      },
++      select: { amount_cents: true, settlement_id: true },
++    });
++    const sellerSettlementIds = new Set(
++      recoveryRows.length === 0
++        ? []
++        : (
++            await this.prisma.chargeSettlement.findMany({
++              where: {
++                id: { in: [...new Set(recoveryRows.map((r) => r.settlement_id))] },
++                coach_user_id: coachUserId,
++              },
++              select: { id: true },
++            })
++          ).map((x) => x.id),
++    );
++    let sellerRecoveries = 0;
++    let headCoachRecoveries = 0;
++    for (const r of recoveryRows) {
++      if (sellerSettlementIds.has(r.settlement_id)) sellerRecoveries += r.amount_cents;
++      else headCoachRecoveries += r.amount_cents;
++    }
++
+     const subCoaches = new Set<string>();
+     if (asHeadCoachLedger.length) {
+       const purchaseIdsHC = asHeadCoachLedger.map((l) => l.purchase_id);
+@@ -348,6 +387,8 @@ export class AdminAnalyticsService {
+         pending_cents: sellerSums.pending_cents,
+         reversed_cents: sellerSums.reversed_cents,
+         refunds_cents: sumBy(refundRows, (r) => r.amount_cents),
++        recoveries_cents: sellerRecoveries,
++        net_cents: coachNetCents(sellerSums.posted_cents, sellerRecoveries),
+         purchases_count: sellerPurchases.length,
+       },
+       as_head_coach: {
+@@ -356,6 +397,8 @@ export class AdminAnalyticsService {
+         posted_cents: headCoachSums.posted_cents,
+         pending_cents: headCoachSums.pending_cents,
+         reversed_cents: headCoachSums.reversed_cents,
++        recoveries_cents: headCoachRecoveries,
++        net_cents: coachNetCents(headCoachSums.posted_cents, headCoachRecoveries),
+         sub_coaches_count: subCoaches.size,
+       },
+       last_payout: {
+diff --git a/src/checkout/checkout-webhook-handler.service.ts b/src/checkout/checkout-webhook-handler.service.ts
+index c0374678..81b63279 100644
+--- a/src/checkout/checkout-webhook-handler.service.ts
++++ b/src/checkout/checkout-webhook-handler.service.ts
+@@ -79,6 +79,10 @@ export interface CheckoutWebhookResult {
+   // because the caller held an outer $transaction. BillingService runs these
+   // after the outer tx commits (see runDeferredSplit below).
+   deferredSplit?: DeferredSplitTask;
++  // S-FEE round 6 (#627 C-627-7) — present when a refund / dispute recorded
++  // payout notices for this charge inside the caller's $transaction.
++  // BillingService delivers them after the tx commits (deliverPayoutNotices).
++  deferredPayoutNoticeChargeId?: string;
+ }
+ 
+ // PR-18 B1 — state that the checkout handler needs from Stripe HTTP but that
+@@ -686,9 +690,26 @@ export class CheckoutWebhookHandlerService {
+     }
+   }
+ 
+-  private async applyCheckoutExpired(
+-    event: StripeEvent,
+-  ): Promise<CheckoutWebhookResult> {
++  /**
++   * S-FEE round 6 (C-627-7) — deliver a charge's payout notices after
++   * BillingService committed its webhook transaction. Never throws; the
++   * notice sweeper is the backstop.
++   */
++  async deliverPayoutNotices(chargeId: string): Promise<void> {
++    if (!this.refundDispute) return;
++    await this.refundDispute.deliverPayoutNotices(chargeId);
++  }
++
++  /**
++   * S-FEE — settle a guest-storefront purchase after BillingService committed
++   * its conversion. Never throws; the settlement sweeper is the backstop.
++   */
++  async settleGuestPurchase(paymentIntentId: string): Promise<void> {
++    if (!this.splits) return;
++    await this.splits.settleGuestPurchaseByPaymentIntent(paymentIntentId);
++  }
++
++  private async applyCheckoutExpired(event: StripeEvent): Promise<CheckoutWebhookResult> {
+     const session = event.data.object as { id?: string };
+     if (!session?.id) return { claimed: false, reason: 'no_session_id' };
+     const purchase = await this.prisma.clientPurchase.findUnique({
+diff --git a/src/checkout/checkout.module.ts b/src/checkout/checkout.module.ts
+index cba6bd07..1e37c1f7 100644
+--- a/src/checkout/checkout.module.ts
++++ b/src/checkout/checkout.module.ts
+@@ -18,7 +18,10 @@ import {
+   CoachPaymentOpsController,
+ } from './payment-ops.controller';
+ import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
++import { CronLeaseService } from './cron-lease.service';
++import { SettlementSweepCron } from './settlement-sweep.cron';
+ import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
++import { PayoutNoticeService } from './payout-notice.service';
+ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
+ 
+ // CheckoutModule — Stripe Checkout session minting and ClientPurchase
+@@ -83,6 +86,11 @@ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
+     DunningService,
+     RefundDisputeHandlerService,
+     AdminAnalyticsService,
++    // S-FEE — scheduled payout / settlement sweep (single runner via CronLease).
++    CronLeaseService,
++    SettlementSweepCron,
++    // S-FEE round 5 (OR-111-1) — payout notice delivery + Money read side.
++    PayoutNoticeService,
+   ],
+   exports: [
+     CheckoutService,
+diff --git a/src/checkout/payment-ops.controller.ts b/src/checkout/payment-ops.controller.ts
+index 6ae95c0e..60aec20b 100644
+--- a/src/checkout/payment-ops.controller.ts
++++ b/src/checkout/payment-ops.controller.ts
+@@ -21,6 +21,7 @@ import { ServiceTokenGuard } from '../auth/service-token.guard';
+ import { RolesGuard } from '../auth/roles.guard';
+ import { Roles } from '../common/decorators/roles.decorator';
+ import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
++import { COUNTED_RECOVERY_STATUSES, coachNetCents } from '../connect/fees/coach-net';
+ import { FeePolicyService } from '../connect/fees/fee-policy.service';
+ import { PayoutReadinessService } from '../connect/fees/payout-readiness.service';
+ import { ReconciliationService } from '../connect/fees/reconciliation.service';
+@@ -29,6 +30,7 @@ import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
+ import { PrismaService } from '../prisma.service';
+ import { AdminAnalyticsService, type RollupGroupBy } from './admin-analytics.service';
+ import { DunningService } from './dunning.service';
++import { PAYOUT_NOTICE_PAGE_MAX, PayoutNoticeService } from './payout-notice.service';
+ import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
+ import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
+ import {
+@@ -625,8 +627,38 @@ export class CoachPaymentOpsController {
+     private ledger: SplitLedgerService,
+     private payoutReadiness: PayoutReadinessService,
+     private analytics: AdminAnalyticsService,
++    private payoutNotices: PayoutNoticeService,
+   ) {}
+ 
++  // S-FEE round 5 (owner decision OR-111-1) — the Money page's "needs
++  // attention" read: the caller's open held balance per currency (what will
++  // be taken from their next sale(s)) and their refund / chargeback notices
++  // with the exact breakdown (what the client got back, what came back from
++  // that sale's payout, and the held amount split into TGP's 2%, Stripe's
++  // processing fee, the dispute fee and any share Stripe could not reverse).
++  // Always scoped to req.user.id (never a coach_id argument).
++  @Roles('coach', 'owner')
++  @Get('adjustments')
++  @ApiOperation({
++    summary: "The calling coach's held balance and refund / chargeback payout notices",
++  })
++  async listAdjustments(@Request() req: AuthedRequest, @Query() query: CursorPageQueryDto) {
++    return this.payoutNotices.listForPayee(req.user.id, {
++      cursor: query.cursor ?? null,
++      limit: Math.min(query.limit ?? 20, PAYOUT_NOTICE_PAGE_MAX),
++    });
++  }
++
++  // The coach has read a payout notice. Scoped to the caller: another
++  // coach's notice id is indistinguishable from a missing one (404).
++  @Roles('coach', 'owner')
++  @Post('adjustments/:id/acknowledge')
++  @ApiOperation({ summary: "Mark one of the calling coach's payout notices as read" })
++  @ApiResponse({ status: 404, description: 'PAYOUT_NOTICE_NOT_FOUND' })
++  async acknowledgeAdjustment(@Request() req: AuthedRequest, @Param('id') noticeId: string) {
++    return this.payoutNotices.acknowledge(req.user.id, noticeId);
++  }
++
+   // Coach's own purchases — same data the OWNER drill-down view exposes,
+   // but scoped to this coach.
+   //
+@@ -849,17 +881,39 @@ export class CoachPaymentOpsController {
+   //   posted   = sum(amount) - sum(reversed)  on posted rows
+   //   pending  = sum(amount)                  on pending rows
+   //   reversed = sum(amount)                  on reversed rows
++  //
++  // S-FEE: `recoveries_cents` is what this payee owes back on refunded /
++  // disputed charges beyond what a transfer reversal recovered, and
++  // `net_cents` is the shared coach-net definition (coachNetCents), the same
++  // figure /coach/connect/metrics reports.
+   private async computeEarningsSummary(payeeUserId: string): Promise<{
+     posted_cents: number;
+     pending_cents: number;
+     reversed_cents: number;
++    recoveries_cents: number;
++    net_cents: number;
+   }> {
+-    const grouped = await this.prisma.splitLedgerEntry.groupBy({
+-      by: ['status'],
+-      where: { payee_user_id: payeeUserId },
+-      _sum: { amount_cents: true, reversed_cents: true },
+-    });
+-    const summary = { posted_cents: 0, pending_cents: 0, reversed_cents: 0 };
++    const [grouped, recoveries] = await Promise.all([
++      this.prisma.splitLedgerEntry.groupBy({
++        by: ['status'],
++        where: { payee_user_id: payeeUserId },
++        _sum: { amount_cents: true, reversed_cents: true },
++      }),
++      this.prisma.payeeRecovery.aggregate({
++        where: {
++          payee_user_id: payeeUserId,
++          status: { in: [...COUNTED_RECOVERY_STATUSES] },
++        },
++        _sum: { amount_cents: true },
++      }),
++    ]);
++    const summary = {
++      posted_cents: 0,
++      pending_cents: 0,
++      reversed_cents: 0,
++      recoveries_cents: recoveries._sum.amount_cents ?? 0,
++      net_cents: 0,
++    };
+     for (const g of grouped) {
+       const amount = g._sum.amount_cents ?? 0;
+       const reversed = g._sum.reversed_cents ?? 0;
+@@ -867,6 +921,7 @@ export class CoachPaymentOpsController {
+       else if (g.status === 'pending') summary.pending_cents += amount;
+       else if (g.status === 'reversed') summary.reversed_cents += amount;
+     }
++    summary.net_cents = coachNetCents(summary.posted_cents, summary.recoveries_cents);
+     return summary;
+   }
+ 
+diff --git a/src/checkout/payout-notice.service.ts b/src/checkout/payout-notice.service.ts
+new file mode 100644
+index 00000000..af1adfd3
+--- /dev/null
++++ b/src/checkout/payout-notice.service.ts
+@@ -0,0 +1,589 @@
++import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
++import type { PayoutAdjustmentNotice } from '@prisma/client';
++import {
++  formatMoney,
++  heldBreakdownLines,
++  type PayoutNoticeAmounts,
++} from '../connect/fees/payout-notice-copy';
++import { settlementFailureCode } from '../connect/fees/charge-settlement.service';
++import { EmailService } from '../email/email.service';
++import { EmailTemplateKey } from '../email/email.types';
++import { NotificationKind } from '../notifications/notification-kind';
++import { NotificationsService } from '../notifications/notifications.service';
++import { PrismaService } from '../prisma.service';
++
++// S-FEE round 5 (owner decision OR-111-1) — delivery and read side of the
++// payee notices ChargeSettlementService writes after a refund / chargeback /
++// dispute outcome converges.
++//
++// Delivery (at least once, never blocking the money path): an in-app
++// Notification row (kind coach_alert), a push when the payee's coach-alert
++// push preference is on, and the coach-payout-adjustment email through
++// EmailService (EMAIL_TRANSPORT=log records it only; once the provider is
++// live it is sent, keyed by the notice's idempotency key so a retry never
++// sends twice). A notice is claimed with a CAS on dispatch_claimed_at before
++// anything is sent, so two workers never deliver the same notice together;
++// an expired claim (crash mid-delivery) is retried by the sweeper.
++//
++// Read side (Money page): the payee's open held balance per currency (every
++// open PayeeRecovery: amount - collected) and their notices with the full
++// breakdown, newest first, cursor-paginated, scoped to the caller.
++
++export const PAYOUT_NOTICE_DEEP_LINK = 'tgp://coach/money';
++export const PAYOUT_NOTICE_CLAIM_TTL_MS = 5 * 60_000;
++export const PAYOUT_NOTICE_MAX_ATTEMPTS = 6;
++export const PAYOUT_NOTICE_PAGE_MAX = 50;
++
++// Channel outcomes that are final: a retry never repeats them (B-627-6).
++const INAPP_DONE = new Set(['sent', 'off']);
++const PUSH_DONE = new Set(['sent', 'off', 'no_token', 'invalid_token']);
++const EMAIL_DONE = new Set(['sent', 'logged', 'no_address', 'disabled']);
++
++interface ChannelResult {
++  status: string;
++  notification_id?: string;
++  // The channel's receipt was already written with the delivery itself.
++  receipt_saved?: boolean;
++}
++
++class InAppAlreadyRecorded extends Error {
++  constructor() {
++    super('in-app receipt already recorded by another attempt');
++  }
++}
++
++/** The EmailService idempotency key of one email attempt of a notice. */
++export function payoutNoticeEmailKey(noticeKey: string, attempt: number): string {
++  return attempt <= 1 ? noticeKey : `${noticeKey}:e${attempt}`;
++}
++
++export interface PayoutNoticeView {
++  id: string;
++  event: string;
++  role: string;
++  purchase_id: string;
++  stripe_charge_id: string;
++  currency: string;
++  title: string;
++  body: string;
++  charge_gross_cents: number;
++  customer_refunded_cents: number;
++  // Round 13 (B-683-1): set on a converted charge's refund notice (the client's own currency).
++  client_currency: string | null;
++  client_refunded_cents: number | null;
++  reversed_cents: number;
++  reinstated_cents: number;
++  held_cents: number;
++  held_open_cents: number;
++  held_now_open_cents: number;
++  held_breakdown: Array<{ code: string; label: string; cents: number; display: string }>;
++  needs_attention: boolean;
++  acknowledged_at: string | null;
++  created_at: string;
++}
++
++export interface PayoutAdjustmentsView {
++  open_balance: Array<{ currency: string; held_cents: number; display: string; charges: number }>;
++  needs_attention_count: number;
++  notices: PayoutNoticeView[];
++  next_cursor: string | null;
++}
++
++const pastDeadline = (deadlineAt?: number): boolean =>
++  deadlineAt !== undefined && Date.now() >= deadlineAt;
++
++function amountsOf(n: PayoutAdjustmentNotice): PayoutNoticeAmounts {
++  return {
++    currency: n.currency,
++    charge_gross_cents: n.charge_gross_cents,
++    customer_refunded_cents: n.customer_refunded_cents,
++    client_currency: n.client_currency,
++    client_refunded_cents: n.client_refunded_cents,
++    reversed_cents: n.reversed_cents,
++    reinstated_cents: n.reinstated_cents,
++    released_cents: 0,
++    held_cents: n.held_cents,
++    held_tgp_fee_cents: n.held_tgp_fee_cents,
++    held_stripe_fee_cents: n.held_stripe_fee_cents,
++    held_dispute_fee_cents: n.held_dispute_fee_cents,
++    held_not_reversed_cents: n.held_not_reversed_cents,
++    held_open_cents: n.held_open_cents,
++  };
++}
++
++@Injectable()
++export class PayoutNoticeService {
++  private readonly logger = new Logger(PayoutNoticeService.name);
++
++  constructor(
++    private readonly prisma: PrismaService,
++    private readonly notifications: NotificationsService,
++    @Optional() private readonly email?: EmailService,
++  ) {}
++
++  /**
++   * Deliver every undelivered notice of one charge (after its adjustment).
++   * `recorded` counts the charge's notices of any state, so a caller can tell
++   * a settlement charge (exact-amount notice exists) from a legacy one.
++   */
++  async dispatchForCharge(chargeId: string): Promise<{ recorded: number; sent: number }> {
++    const rows = await this.prisma.payoutAdjustmentNotice.findMany({
++      where: { stripe_charge_id: chargeId },
++      orderBy: { created_at: 'asc' },
++    });
++    let sent = 0;
++    for (const n of rows) {
++      if (n.dispatched_at) continue;
++      if (await this.dispatchOne(n)) sent += 1;
++    }
++    return { recorded: rows.length, sent };
++  }
++
++  /**
++   * Whether a charge has exact-amount notices (a settlement charge). Sends
++   * nothing, so it is safe inside the webhook transaction (C-627-7).
++   */
++  async hasNotices(chargeId: string): Promise<boolean> {
++    const n = await this.prisma.payoutAdjustmentNotice.count({
++      where: { stripe_charge_id: chargeId },
++    });
++    return n > 0;
++  }
++
++  /**
++   * Sweeper: notices still undelivered a minute after they were written. Round 13 (Sol
++   * B-684-3): no new notice or channel starts once `deadlineAt` passes; an unfinished
++   * channel stays pending and the next run sends only that channel.
++   */
++  async dispatchPending(now: Date = new Date(), limit = 25, deadlineAt?: number): Promise<number> {
++    const rows = await this.prisma.payoutAdjustmentNotice.findMany({
++      where: {
++        dispatched_at: null,
++        dispatch_attempts: { lt: PAYOUT_NOTICE_MAX_ATTEMPTS },
++        created_at: { lte: new Date(now.getTime() - 60_000) },
++      },
++      orderBy: { created_at: 'asc' },
++      take: limit,
++    });
++    let sent = 0;
++    for (const n of rows) {
++      if (pastDeadline(deadlineAt)) break;
++      if (await this.dispatchOne(n, now, deadlineAt)) sent += 1;
++    }
++    return sent;
++  }
++
++  private async dispatchOne(
++    n: PayoutAdjustmentNotice,
++    now: Date = new Date(),
++    deadlineAt?: number,
++  ): Promise<boolean> {
++    if (n.dispatched_at) return false;
++    const claim = await this.prisma.payoutAdjustmentNotice.updateMany({
++      where: {
++        id: n.id,
++        dispatched_at: null,
++        OR: [
++          { dispatch_claimed_at: null },
++          { dispatch_claimed_at: { lte: new Date(now.getTime() - PAYOUT_NOTICE_CLAIM_TTL_MS) } },
++        ],
++      },
++      data: { dispatch_claimed_at: now, dispatch_attempts: { increment: 1 } },
++    });
++    if (claim.count !== 1) return false;
++    // Re-read under the claim: the channels a previous attempt finished are
++    // never repeated (B-627-6, round 6).
++    const row = await this.prisma.payoutAdjustmentNotice.findUnique({ where: { id: n.id } });
++    if (!row || row.dispatched_at) return false;
++    const payload = {
++      event: 'payout_adjustment',
++      notice_id: row.id,
++      notice_event: row.event,
++      purchase_id: row.purchase_id,
++      stripe_charge_id: row.stripe_charge_id,
++      currency: row.currency,
++      customer_refunded_cents: row.customer_refunded_cents,
++      reversed_cents: row.reversed_cents,
++      held_cents: row.held_cents,
++      held_open_cents: row.held_open_cents,
++      held_tgp_fee_cents: row.held_tgp_fee_cents,
++      held_stripe_fee_cents: row.held_stripe_fee_cents,
++      held_dispute_fee_cents: row.held_dispute_fee_cents,
++      held_not_reversed_cents: row.held_not_reversed_cents,
++    };
++    // Each channel's outcome is written as soon as it is known, so a channel
++    // whose receipt was persisted is never repeated. The in-app row and its
++    // receipt commit together (C-627-8 Sol, round 7); push and email are
++    // at least once across a receipt write that fails after the provider
++    // accepted them (email additionally dedupes on its own attempt key).
++    const inapp: ChannelResult = INAPP_DONE.has(row.inapp_status)
++      ? { status: row.inapp_status }
++      : await this.deliverInApp(row, payload);
++    if (!inapp.receipt_saved && (inapp.status !== row.inapp_status || inapp.notification_id)) {
++      await this.saveChannel(row.id, {
++        inapp_status: inapp.status,
++        ...(inapp.notification_id ? { inapp_notification_id: inapp.notification_id } : {}),
++      });
++    }
++    // Push and email wait for the next run once the deadline passes (Sol B-684-3).
++    if (!PUSH_DONE.has(row.push_status) && pastDeadline(deadlineAt)) return false;
++    const push: ChannelResult = PUSH_DONE.has(row.push_status)
++      ? { status: row.push_status }
++      : await this.deliverPush(row, payload);
++    if (push.status !== row.push_status || push.notification_id) {
++      await this.saveChannel(row.id, {
++        push_status: push.status,
++        ...(push.notification_id ? { push_notification_id: push.notification_id } : {}),
++      });
++    }
++    if (!EMAIL_DONE.has(row.email_status) && pastDeadline(deadlineAt)) return false;
++    const email: ChannelResult = EMAIL_DONE.has(row.email_status)
++      ? { status: row.email_status }
++      : await this.deliverEmail(row, now);
++    if (email.status !== row.email_status) {
++      await this.saveChannel(row.id, { email_status: email.status });
++    }
++    const failed =
++      !INAPP_DONE.has(inapp.status) || !PUSH_DONE.has(push.status) || !EMAIL_DONE.has(email.status);
++    // A channel that is not done leaves the notice undelivered (the claim
++    // expires and the sweeper retries only that channel, up to
++    // PAYOUT_NOTICE_MAX_ATTEMPTS); the Money page shows it either way.
++    const finalAttempt = row.dispatch_attempts >= PAYOUT_NOTICE_MAX_ATTEMPTS;
++    if (!failed || finalAttempt) {
++      await this.prisma.payoutAdjustmentNotice.updateMany({
++        where: { id: row.id, dispatched_at: null },
++        data: { dispatched_at: new Date() },
++      });
++    }
++    if (failed && finalAttempt) {
++      this.logger.error(
++        `SFEE_NOTICE_UNDELIVERED alert=true notice=${row.id} payee=${row.payee_user_id} inapp=${inapp.status} push=${push.status} email=${email.status}: gave up after ${PAYOUT_NOTICE_MAX_ATTEMPTS} attempts; the payee still sees it on the Money page`,
++      );
++    }
++    return !failed;
++  }
++
++  private async saveChannel(
++    id: string,
++    data: {
++      inapp_status?: string;
++      inapp_notification_id?: string;
++      push_status?: string;
++      push_notification_id?: string;
++      email_status?: string;
++    },
++  ): Promise<void> {
++    await this.prisma.payoutAdjustmentNotice.updateMany({ where: { id }, data });
++  }
++
++  private async deliverInApp(
++    n: PayoutAdjustmentNotice,
++    payload: Record<string, unknown>,
++  ): Promise<ChannelResult> {
++    // C-627-8 (Sol, round 7): the inbox row and the notice's in-app receipt
++    // are one transaction. A receipt write that fails rolls the inbox row
++    // back, so the retry creates exactly one inbox row for the notice.
++    try {
++      return await this.prisma.$transaction(async (tx) => {
++        const created = await this.notifications.createNotification(
++          {
++            user_id: n.payee_user_id,
++            kind: NotificationKind.COACH_ALERT,
++            body: n.body,
++            payload,
++            deep_link: PAYOUT_NOTICE_DEEP_LINK,
++            channel: 'inapp',
++          },
++          tx,
++        );
++        const result: ChannelResult = created
++          ? { status: 'sent', notification_id: created.id }
++          : { status: 'off' };
++        const receipt = await tx.payoutAdjustmentNotice.updateMany({
++          where: { id: n.id, inapp_status: n.inapp_status },
++          data: {
++            inapp_status: result.status,
++            ...(result.notification_id ? { inapp_notification_id: result.notification_id } : {}),
++          },
++        });
++        if (receipt.count !== 1) {
++          // Another worker recorded this channel first: roll this row back.
++          throw new InAppAlreadyRecorded();
++        }
++        return { ...result, receipt_saved: true };
++      });
++    } catch (err) {
++      if (err instanceof InAppAlreadyRecorded) {
++        const fresh = await this.prisma.payoutAdjustmentNotice.findUnique({ where: { id: n.id } });
++        return { status: fresh?.inapp_status ?? 'failed', receipt_saved: true };
++      }
++      this.logger.warn(
++        `SFEE_NOTICE_INAPP_FAILED notice=${n.id} payee=${n.payee_user_id}: ${settlementFailureCode(err)}`,
++      );
++      return { status: 'failed' };
++    }
++  }
++
++  // The push honours the payee's coach-alert push preference and mute ('off',
++  // done). The 60 s limiter is keyed by the notice (C-627-7), so a second
++  // notice to the same coach is never suppressed; a suppressed push of the
++  // same notice is 'rate_limited' and retried, never mistaken for a mute.
++  private async deliverPush(
++    n: PayoutAdjustmentNotice,
++    payload: Record<string, unknown>,
++  ): Promise<ChannelResult> {
++    try {
++      let rowId = n.push_notification_id;
++      if (!rowId) {
++        // Hand-built wiring without channelGate falls back to
++        // createNotification's own gate (a null then reads as rate_limited).
++        const gate =
++          typeof this.notifications.channelGate === 'function'
++            ? await this.notifications.channelGate(
++                n.payee_user_id,
++                NotificationKind.COACH_ALERT,
++                'push',
++              )
++            : 'enabled';
++        if (gate !== 'enabled') return { status: 'off' };
++        const pushRow = await this.notifications.createNotification({
++          user_id: n.payee_user_id,
++          kind: NotificationKind.COACH_ALERT,
++          body: n.body,
++          payload,
++          deep_link: PAYOUT_NOTICE_DEEP_LINK,
++          channel: 'push',
++          throttle_key: n.id,
++        });
++        if (!pushRow) {
++          this.logger.warn(
++            `SFEE_NOTICE_PUSH_DEFERRED notice=${n.id} payee=${n.payee_user_id}: push suppressed by the rate limit; the sweeper retries`,
++          );
++          return { status: 'rate_limited' };
++        }
++        rowId = pushRow.id;
++      }
++      const res = await this.notifications.pushToUser(n.payee_user_id, n.title, n.body, {
++        type: 'payout_adjustment',
++        notice_id: n.id,
++        deep_link: PAYOUT_NOTICE_DEEP_LINK,
++      });
++      if (res.delivered) return { status: 'sent', notification_id: rowId };
++      if (res.code === 'no-token') return { status: 'no_token', notification_id: rowId };
++      // The device token is dead: a retry cannot reach it (done, not failed).
++      if (res.code === 'invalid-token') return { status: 'invalid_token', notification_id: rowId };
++      // A returned provider failure is a failure (B-627-6): retried.
++      this.logger.warn(
++        `SFEE_NOTICE_PUSH_FAILED notice=${n.id} payee=${n.payee_user_id}: ${res.code}`,
++      );
++      return { status: 'failed', notification_id: rowId };
++    } catch (err) {
++      this.logger.warn(
++        `SFEE_NOTICE_PUSH_FAILED notice=${n.id} payee=${n.payee_user_id}: ${settlementFailureCode(err)}`,
++      );
++      return { status: 'failed', notification_id: n.push_notification_id ?? undefined };
++    }
++  }
++
++  /**
++   * Email retry protocol (B-627-6, round 6). EmailService keys every send
++   * and never re-sends a key, even one whose log row ended 'failed' (a reuse
++   * answers 'skipped'). So attempt k uses its own key (attempt 1 the notice
++   * key, attempt k > 1 `${key}:e${k}`), and before a new attempt the previous
++   * attempt's EmailSendLog row decides: sent / logged = done (nothing is
++   * sent again); sending and younger than the claim TTL = still in flight
++   * (wait); failed, missing or a stale sending row = send the next attempt.
++   */
++  private async deliverEmail(n: PayoutAdjustmentNotice, now: Date): Promise<ChannelResult> {
++    if (!this.email) return { status: 'disabled' };
++    try {
++      const user = await this.prisma.user.findUnique({
++        where: { id: n.payee_user_id },
++        select: { email: true, name: true },
++      });
++      if (!user?.email) return { status: 'no_address' };
++      if (n.email_attempts > 0) {
++        const prev = await this.prisma.emailSendLog.findUnique({
++          where: { idempotency_key: payoutNoticeEmailKey(n.idempotency_key, n.email_attempts) },
++          select: { status: true, created_at: true },
++        });
++        if (prev && (prev.status === 'sent' || prev.status === 'logged')) {
++          return { status: prev.status };
++        }
++        if (
++          prev &&
++          prev.status === 'sending' &&
++          prev.created_at.getTime() > now.getTime() - PAYOUT_NOTICE_CLAIM_TTL_MS
++        ) {
++          return { status: 'pending' };
++        }
++      }
++      const attempt = n.email_attempts + 1;
++      // Recorded before the send: a crash after it never reuses this key.
++      await this.prisma.payoutAdjustmentNotice.updateMany({
++        where: { id: n.id, email_attempts: n.email_attempts },
++        data: { email_attempts: attempt },
++      });
++      const status = await this.sendEmail(
++        n,
++        user,
++        payoutNoticeEmailKey(n.idempotency_key, attempt),
++      );
++      // 'skipped' means the key is already in the log (another sender):
++      // the next attempt reads that row instead of sending.
++      return { status: status === 'skipped' ? 'pending' : status };
++    } catch (err) {
++      this.logger.warn(
++        `SFEE_NOTICE_EMAIL_FAILED notice=${n.id} payee=${n.payee_user_id}: ${settlementFailureCode(err)}`,
++      );
++      return { status: 'failed' };
++    }
++  }
++
++  private async sendEmail(
++    n: PayoutAdjustmentNotice,
++    user: { email: string; name: string | null },
++    idempotencyKey: string,
++  ): Promise<string> {
++    if (!this.email) return 'disabled';
++    const a = amountsOf(n);
++    const m = (cents: number) => formatMoney(cents, n.currency);
++    const collected = Math.max(0, n.held_cents - n.held_open_cents);
++    const res = await this.email.send({
++      to: user.email,
++      template: EmailTemplateKey.COACH_PAYOUT_ADJUSTMENT,
++      idempotencyKey,
++      data: {
++        subject: n.title,
++        title: n.title,
++        recipient_name: user.name,
++        summary: n.body,
++        charge_display: m(n.charge_gross_cents),
++        customer_refunded_display:
++          n.client_currency && n.client_refunded_cents !== null
++            ? `${formatMoney(n.client_refunded_cents, n.client_currency)} (${m(n.customer_refunded_cents)} after conversion)`
++            : m(n.customer_refunded_cents),
++        reversed_display: m(n.reversed_cents),
++        reinstated_display: n.reinstated_cents > 0 ? m(n.reinstated_cents) : null,
++        held_display: m(n.held_cents),
++        held_open_display: m(n.held_open_cents),
++        held_collected_display: collected > 0 ? m(collected) : null,
++        held_lines: heldBreakdownLines(a),
++        has_hold: n.held_cents > 0,
++      },
++    });
++    if (res.status === 'failed') {
++      this.logger.warn(
++        `SFEE_NOTICE_EMAIL_FAILED notice=${n.id} payee=${n.payee_user_id}: provider_failed`,
++      );
++    }
++    return res.status;
++  }
++
++  /** Money page: open held balance + notices for one payee (newest first). */
++  async listForPayee(
++    payeeUserId: string,
++    opts: { cursor?: string | null; limit?: number } = {},
++  ): Promise<PayoutAdjustmentsView> {
++    const limit = Math.max(1, Math.min(PAYOUT_NOTICE_PAGE_MAX, opts.limit ?? 20));
++    const [open, page, unacknowledged] = await Promise.all([
++      this.prisma.payeeRecovery.findMany({
++        where: { payee_user_id: payeeUserId, status: 'open' },
++        select: { settlement_id: true, currency: true, amount_cents: true, collected_cents: true },
++      }),
++      this.prisma.payoutAdjustmentNotice.findMany({
++        where: { payee_user_id: payeeUserId },
++        orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
++        take: limit + 1,
++        ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
++      }),
++      this.prisma.payoutAdjustmentNotice.count({
++        where: { payee_user_id: payeeUserId, acknowledged_at: null },
++      }),
++    ]);
++    const byCurrency = new Map<string, { cents: number; settlements: Set<string> }>();
++    const openBySettlement = new Map<string, number>();
++    for (const r of open) {
++      const left = Math.max(0, r.amount_cents - r.collected_cents);
++      if (left <= 0) continue;
++      const e = byCurrency.get(r.currency) ?? { cents: 0, settlements: new Set<string>() };
++      e.cents += left;
++      e.settlements.add(r.settlement_id);
++      byCurrency.set(r.currency, e);
++      openBySettlement.set(r.settlement_id, (openBySettlement.get(r.settlement_id) ?? 0) + left);
++    }
++    const rows = page.slice(0, limit);
++    // Only the newest notice of a charge carries its live open amount, on any page (C-684-2).
++    const openIds = [...new Set(rows.map((n) => n.settlement_id))].filter((id) =>
++      openBySettlement.has(id),
++    );
++    const newest = new Map<string, string>();
++    const latest = openIds.length
++      ? await this.prisma.payoutAdjustmentNotice.findMany({
++          where: { payee_user_id: payeeUserId, settlement_id: { in: openIds } },
++          orderBy: [{ settlement_id: 'asc' }, { created_at: 'desc' }, { id: 'desc' }],
++          // Sol C-684-4: one row per settlement (DISTINCT ON), never every historical notice.
++          distinct: ['settlement_id'],
++          select: { id: true, settlement_id: true },
++        })
++      : [];
++    for (const n of latest) if (!newest.has(n.settlement_id)) newest.set(n.settlement_id, n.id);
++    const notices = rows.map((n): PayoutNoticeView => {
++      const live =
++        newest.get(n.settlement_id) === n.id ? (openBySettlement.get(n.settlement_id) ?? 0) : 0;
++      return {
++        id: n.id,
++        event: n.event,
++        role: n.role,
++        purchase_id: n.purchase_id,
++        stripe_charge_id: n.stripe_charge_id,
++        currency: n.currency,
++        title: n.title,
++        body: n.body,
++        charge_gross_cents: n.charge_gross_cents,
++        customer_refunded_cents: n.customer_refunded_cents,
++        client_currency: n.client_currency,
++        client_refunded_cents: n.client_refunded_cents,
++        reversed_cents: n.reversed_cents,
++        reinstated_cents: n.reinstated_cents,
++        held_cents: n.held_cents,
++        held_open_cents: n.held_open_cents,
++        held_now_open_cents: live,
++        held_breakdown: heldBreakdownLines(amountsOf(n)),
++        needs_attention: n.acknowledged_at === null || live > 0,
++        acknowledged_at: n.acknowledged_at ? n.acknowledged_at.toISOString() : null,
++        created_at: n.created_at.toISOString(),
++      };
++    });
++    return {
++      open_balance: [...byCurrency.entries()]
++        .sort(([a], [b]) => a.localeCompare(b))
++        .map(([currency, e]) => ({
++          currency,
++          held_cents: e.cents,
++          display: formatMoney(e.cents, currency),
++          charges: e.settlements.size,
++        })),
++      needs_attention_count: unacknowledged,
++      notices,
++      next_cursor: page.length > limit ? (rows[rows.length - 1]?.id ?? null) : null,
++    };
++  }
++
++  /** The payee has seen a notice (its open amount, if any, still shows). */
++  async acknowledge(payeeUserId: string, noticeId: string): Promise<{ acknowledged_at: string }> {
++    const now = new Date();
++    const res = await this.prisma.payoutAdjustmentNotice.updateMany({
++      where: { id: noticeId, payee_user_id: payeeUserId },
++      data: { acknowledged_at: now },
++    });
++    if (res.count !== 1) {
++      throw new NotFoundException({
++        code: 'PAYOUT_NOTICE_NOT_FOUND',
++        message:
++          'That payout notice is not on this account. Refresh Money to see the current notices.',
++      });
++    }
++    return { acknowledged_at: now.toISOString() };
++  }
++}
+diff --git a/src/checkout/purchase-split-handler.service.ts b/src/checkout/purchase-split-handler.service.ts
+index 969226b8..c6800859 100644
+--- a/src/checkout/purchase-split-handler.service.ts
++++ b/src/checkout/purchase-split-handler.service.ts
+@@ -1,10 +1,16 @@
+-import { Injectable, Logger } from '@nestjs/common';
++import { Injectable, Logger, Optional } from '@nestjs/common';
+ import type { ClientPurchase } from '@prisma/client';
++import {
++  ChargeSettlementService,
++  settlementFailureCode,
++  type SweepSummary,
++} from '../connect/fees/charge-settlement.service';
+ import { FeePolicyService } from '../connect/fees/fee-policy.service';
+ import { SplitLedgerService } from '../connect/fees/split-ledger.service';
+ import { TransferOrchestratorService } from '../connect/fees/transfer-orchestrator.service';
+ import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
+ import { PrismaService } from '../prisma.service';
++import { PayoutNoticeService } from './payout-notice.service';
+ 
+ // PurchaseSplitHandlerService — bridges the lifecycle webhook handler
+ // and the Phase 4 split machinery. Responsibilities:
+@@ -20,6 +26,12 @@ import { PrismaService } from '../prisma.service';
+ //
+ // The handler is idempotent — every step uses composite-unique upserts
+ // or stable Stripe idempotency keys.
++//
++// S-FEE: every successful coach-package charge is handed to
++// ChargeSettlementService, which pays the coach price - actual Stripe fee -
++// TGP 2% (- head-coach split) by Transfer. Only a legacy destination charge
++// (minted before S-FEE, Stripe already moved the coach's share) still runs
++// the original head-coach-only flow below (legacyOnChargeSucceeded).
+ 
+ @Injectable()
+ export class PurchaseSplitHandlerService {
+@@ -31,39 +43,78 @@ export class PurchaseSplitHandlerService {
+     private feePolicy: FeePolicyService,
+     private ledger: SplitLedgerService,
+     private transfers: TransferOrchestratorService,
++    private settlements: ChargeSettlementService,
++    // S-FEE round 5 (OR-111-1): re-delivers payout notices a webhook could
++    // not deliver. @Optional() for legacy hand-built wiring.
++    @Optional() private payoutNotices?: PayoutNoticeService,
+   ) {}
+ 
+   // Resolve the charge id from a PaymentIntent (one-time) or Invoice
+   // (recurring). Returns null when not yet known (rare race; the webhook
+   // pipeline will re-invoke us on the next event).
+-  async resolveChargeIdForPurchase(
+-    purchase: ClientPurchase,
+-  ): Promise<string | null> {
++  async resolveChargeIdForPurchase(purchase: ClientPurchase): Promise<string | null> {
+     if (!purchase.stripe_payment_intent_id) return null;
+     try {
+-      const pi = await this.stripe.retrievePaymentIntent(
+-        purchase.stripe_payment_intent_id,
+-      );
++      const pi = await this.stripe.retrievePaymentIntent(purchase.stripe_payment_intent_id);
+       const charge =
+         (typeof pi.latest_charge === 'string' ? pi.latest_charge : null) ??
+         pi.charges?.data?.[0]?.id ??
+         null;
+       return charge ?? null;
+     } catch (err) {
++      // Round 13 (G12): a closed code only, never the error's free text.
+       this.logger.warn(
+-        `resolveChargeIdForPurchase failed pi=${purchase.stripe_payment_intent_id}: ${(err as Error).message}`,
++        `resolveChargeIdForPurchase failed pi=${purchase.stripe_payment_intent_id}: ${settlementFailureCode(err)}`,
+       );
+       return null;
+     }
+   }
+ 
+-  // Called from the webhook handler after a successful payment. Builds
+-  // the ledger and queues the head-coach transfer (if applicable).
+-  // Returns the resolved Stripe charge id for telemetry.
++  // Called from the webhook handler after a successful payment. Settles the
++  // charge (S-FEE) or, for a legacy destination charge, builds the legacy
++  // ledger and queues the head-coach transfer. Returns the resolved Stripe
++  // charge id for telemetry.
+   async onChargeSucceeded(args: {
+     purchase: ClientPurchase;
+     invoice_amount_cents?: number; // for recurring renewals, may differ from snapshot
+     invoice_charge_id?: string | null; // for recurring renewals, when known
++  }): Promise<{ charge_id: string | null; ledger_entries: number; transfer_enqueued: boolean }> {
++    const purchase = args.purchase;
++    // Free packages and $0 grants never settle, transfer or post revenue.
++    if (!(purchase.amount_cents > 0) || args.invoice_amount_cents === 0) {
++      return { charge_id: null, ledger_entries: 0, transfer_enqueued: false };
++    }
++    const chargeId = args.invoice_charge_id ?? (await this.resolveChargeIdForPurchase(purchase));
++    if (!chargeId) {
++      // Subscription-mode Checkout completion carries no PaymentIntent: settle
++      // every paid invoice of the subscription instead (idempotent per charge).
++      const outcomes = await this.settlements.settlePurchase(purchase);
++      return {
++        charge_id: outcomes.find((o) => o.charge_id)?.charge_id ?? null,
++        ledger_entries: outcomes.reduce((n, o) => n + o.ledger_entries, 0),
++        transfer_enqueued: outcomes.some((o) => o.transfers_enqueued > 0),
++      };
++    }
++    const outcome = await this.settlements.settleCharge({
++      purchase,
++      charge_id: chargeId,
++    });
++    if (outcome.status !== 'legacy_destination') {
++      return {
++        charge_id: chargeId,
++        ledger_entries: outcome.ledger_entries,
++        transfer_enqueued: outcome.transfers_enqueued > 0,
++      };
++    }
++    return this.legacyOnChargeSucceeded({ ...args, invoice_charge_id: chargeId });
++  }
++
++  // Pre-S-FEE flow, unchanged, for destination charges minted before S-FEE
++  // (Stripe already routed `amount - application_fee` to the seller).
++  private async legacyOnChargeSucceeded(args: {
++    purchase: ClientPurchase;
++    invoice_amount_cents?: number;
++    invoice_charge_id?: string | null;
+   }): Promise<{ charge_id: string | null; ledger_entries: number; transfer_enqueued: boolean }> {
+     const purchase = args.purchase;
+     const seller = await this.prisma.connectAccount.findUnique({
+@@ -98,15 +149,13 @@ export class PurchaseSplitHandlerService {
+       plan,
+       platform_account_id: null,
+       seller_stripe_account_id: seller.stripe_account_id,
+-      head_coach_stripe_account_id:
+-        headCoachAccount?.stripe_account_id ?? null,
++      head_coach_stripe_account_id: headCoachAccount?.stripe_account_id ?? null,
+     });
+ 
+     // Resolve the parent charge id so we can mark the application_fee +
+     // destination slices as posted and (for sub-coach) enqueue a transfer
+     // with source_transaction set.
+-    const chargeId =
+-      args.invoice_charge_id ?? (await this.resolveChargeIdForPurchase(purchase));
++    const chargeId = args.invoice_charge_id ?? (await this.resolveChargeIdForPurchase(purchase));
+ 
+     // Mark application_fee + destination as posted now that we know the
+     // charge id. These slices moved synchronously at Stripe-charge time
+@@ -124,11 +173,7 @@ export class PurchaseSplitHandlerService {
+     }
+ 
+     let transferEnqueued = false;
+-    if (
+-      plan.head_coach_id &&
+-      plan.head_coach_split_cents > 0 &&
+-      headCoachAccount
+-    ) {
++    if (plan.head_coach_id && plan.head_coach_split_cents > 0 && headCoachAccount) {
+       const headCoachEntry = entries.find((e) => e.kind === 'head_coach_split');
+       if (headCoachEntry) {
+         const transfer = await this.transfers.enqueueHeadCoachTransfer({
+@@ -146,10 +191,11 @@ export class PurchaseSplitHandlerService {
+         // and the sweeper picks it up.
+         if (transfer.source_stripe_charge_id) {
+           try {
+-            await this.transfers.attempt(transfer.id);
++            // B-627-9 (c): under the charge's money lock, like the sweeper.
++            await this.settlements.attemptTransferUnderLock(transfer);
+           } catch (err) {
+             this.logger.warn(
+-              `transfer.attempt failed inline purchase=${purchase.id}: ${(err as Error).message}`,
++              `transfer.attempt failed inline purchase=${purchase.id}: ${settlementFailureCode(err)}`,
+             );
+           }
+         }
+@@ -163,20 +209,81 @@ export class PurchaseSplitHandlerService {
+     };
+   }
+ 
+-  // Run all due-but-pending transfers (sweeper entry point).
+-  async runTransferSweeper(now: Date = new Date()): Promise<{
++  // Run all due-but-pending transfers (sweeper entry point). S-FEE: first
++  // retry settlements waiting on Stripe's fee and settle any recent paid
++  // purchase no webhook settled, then post due transfers.
++  //
++  // Bounded: at most `batch` transfers per run (settlements use their own
++  // limit), and it stops starting new work once `deadlineAt` passes so a run
++  // always ends inside its single-runner lease. Whatever is left is due on
++  // the next run. Each transfer row is retried with its own backoff
++  // (TransferOrchestratorService.BACKOFF_MINUTES) under its Stripe
++  // idempotency key, so a repeated or overlapping run cannot pay twice.
++  async runTransferSweeper(
++    now: Date = new Date(),
++    opts: { batch?: number; deadlineAt?: number } = {},
++  ): Promise<{
+     attempted: number;
+     succeeded: number;
+     failed: number;
++    deadline_reached?: boolean;
++    settlements?: SweepSummary;
++    notices_delivered?: number;
+   }> {
+-    const due = await this.transfers.findDueTransfers(now);
++    const settlements = await this.settlements.runSettlementSweep(now, 25, opts.deadlineAt);
++    let noticesDelivered = 0;
++    if (this.payoutNotices && !(opts.deadlineAt !== undefined && Date.now() >= opts.deadlineAt)) {
++      try {
++        // Sol B-684-3 (round 13): notice delivery keeps the sweep's deadline too.
++        noticesDelivered = await this.payoutNotices.dispatchPending(now, 25, opts.deadlineAt);
++      } catch (err) {
++        this.logger.warn(
++          `SFEE_NOTICE_DISPATCH_DEFERRED sweep: ${settlementFailureCode(err)}; the next run retries`,
++        );
++      }
++    }
++    const due = await this.transfers.findDueTransfers(now, opts.batch ?? 50);
++    let attempted = 0;
+     let succeeded = 0;
+     let failed = 0;
++    // Notice delivery or settlements stopped on the deadline (Sol B-684-3).
++    let deadlineReached = opts.deadlineAt !== undefined && Date.now() >= opts.deadlineAt;
+     for (const row of due) {
+-      const updated = await this.transfers.attempt(row.id);
++      if (opts.deadlineAt !== undefined && Date.now() >= opts.deadlineAt) {
++        deadlineReached = true;
++        break;
++      }
++      attempted += 1;
++      // B-627-9 (c): the sweeper takes the same per-charge money lock and
++      // fence as the inline settlement path (busy -> left for the next run).
++      const updated = await this.settlements.attemptTransferUnderLock(row);
+       if (updated.status === 'succeeded') succeeded += 1;
+       else if (updated.status === 'failed') failed += 1;
+     }
+-    return { attempted: due.length, succeeded, failed };
++    return {
++      attempted,
++      succeeded,
++      failed,
++      ...(deadlineReached ? { deadline_reached: true } : {}),
++      settlements,
++      ...(noticesDelivered > 0 ? { notices_delivered: noticesDelivered } : {}),
++    };
++  }
++
++  // S-FEE — settle a guest-storefront purchase after its conversion commits
++  // (the guest PaymentIntent / first invoice has no checkout-session hook).
++  // Never throws; the settlement sweeper is the backstop.
++  async settleGuestPurchaseByPaymentIntent(paymentIntentId: string): Promise<void> {
++    try {
++      const purchase = await this.prisma.clientPurchase.findFirst({
++        where: { stripe_payment_intent_id: paymentIntentId },
++      });
++      if (!purchase || !(purchase.amount_cents > 0)) return;
++      await this.settlements.settlePurchase(purchase);
++    } catch (err) {
++      this.logger.warn(
++        `guest settlement failed pi=${paymentIntentId}: ${settlementFailureCode(err)}`,
++      );
++    }
+   }
+ }
+diff --git a/src/checkout/refund-dispute-handler.service.ts b/src/checkout/refund-dispute-handler.service.ts
+index 8759eb7b..79f3bbbd 100644
+--- a/src/checkout/refund-dispute-handler.service.ts
++++ b/src/checkout/refund-dispute-handler.service.ts
+@@ -1,10 +1,13 @@
+ import { BadRequestException, Injectable, Logger, Optional } from '@nestjs/common';
+-import type {
+-  ChargeDispute,
+-  ChargeRefund,
+-  ClientPurchase,
+-  Prisma,
+-} from '@prisma/client';
++import type { ChargeDispute, ChargeRefund, ClientPurchase, Prisma } from '@prisma/client';
++import {
++  ChargeSettlementService,
++  chargeRefundsFromStripe,
++  disputeAmountsFrom,
++  isLegacyDestinationCharge,
++  settlementFailureCode,
++} from '../connect/fees/charge-settlement.service';
++import { isRetryableMoneyError } from '../connect/fees/money-errors';
+ import { PayoutReadinessService } from '../connect/fees/payout-readiness.service';
+ import { SplitLedgerService } from '../connect/fees/split-ledger.service';
+ import { TransferOrchestratorService } from '../connect/fees/transfer-orchestrator.service';
+@@ -13,6 +16,7 @@ import {
+   StripeConnectApiService,
+ } from '../connect/stripe-connect-api.service';
+ import { NotificationsService } from '../notifications/notifications.service';
++import { PayoutNoticeService } from './payout-notice.service';
+ import { NotificationKind } from '../notifications/notification-kind';
+ import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
+ import { PartialRefundDecisionService } from '../regimes/partial-refund-decision.service';
+@@ -86,6 +90,16 @@ export class RefundDisputeHandlerService {
+     // wiring (CheckoutModule imports RegimesModule) always provides it. The
+     // service itself no-ops when FEATURE_NAMED_REGIMES is OFF.
+     @Optional() private partialRefundDecisions?: PartialRefundDecisionService,
++    // S-FEE — per-charge settlement. Refunds / disputes on a separate-charge-
++    // and-transfer charge re-derive every payee's target here (coach bears
++    // the refunded principal and every Stripe fee; TGP is never out the
++    // processing or dispute fee). @Optional() for legacy hand-built wiring;
++    // production (CheckoutModule imports ConnectModule) always provides it.
++    @Optional() private settlements?: ChargeSettlementService,
++    // S-FEE round 5 (OR-111-1) — delivers the exact-amount payout notices the
++    // settlement writes for each refund / chargeback / dispute outcome
++    // (push + in-app + email). @Optional() for legacy hand-built wiring.
++    @Optional() private payoutNotices?: PayoutNoticeService,
+   ) {}
+ 
+   // Webhook entry point — returns claimed=true iff we matched to a
+@@ -98,15 +112,70 @@ export class RefundDisputeHandlerService {
+   // atomically with the entitlement flip. Side-effect handlers that do
+   // NOT revoke entitlement (refund.updated, dispute.created/updated,
+   // transfer.reversed, payout.*) ignore it.
+-  async handle(event: {
+-    id: string;
++  async handle(
++    event: {
++      id: string;
++      type: string;
++      data: { object: Record<string, unknown> };
++    },
++    tx?: WebhookTx,
++  ): Promise<{
++    claimed: boolean;
++    reason?: string;
++    purchase_id?: string;
++    deferredPayoutNoticeChargeId?: string;
++  }> {
++    const result = await this.route(event, tx);
++    const chargeId = this.payoutNoticeChargeId(event);
++    if (!chargeId) return result;
++    // C-627-7 (round 6): inside BillingService's webhook $transaction the
++    // push / email HTTP calls must not run; the caller delivers after commit
++    // (deliverPayoutNotices) and the sweeper is the backstop. Without an
++    // outer transaction (direct callers) delivery runs here.
++    if (tx) return { ...result, deferredPayoutNoticeChargeId: chargeId };
++    await this.deliverPayoutNotices(chargeId);
++    return result;
++  }
++
++  // The charge whose payout notices this event may have recorded.
++  private payoutNoticeChargeId(event: {
+     type: string;
+     data: { object: Record<string, unknown> };
+-  }, tx?: WebhookTx): Promise<{ claimed: boolean; reason?: string; purchase_id?: string }> {
++  }): string | null {
++    if (!this.payoutNotices || !event.type.startsWith('charge.')) return null;
++    const obj = event.data.object as { id?: unknown; charge?: unknown };
++    if (event.type === 'charge.refunded') return typeof obj.id === 'string' ? obj.id : null;
++    return typeof obj.charge === 'string' ? obj.charge : null;
++  }
++
++  // OR-111-1: deliver the payout notices the settlement recorded for this
++  // charge once the money step (and its lock) is done and no transaction is
++  // open. Best effort, never throws: the notices are durable rows and the
++  // sweeper re-delivers undelivered ones.
++  async deliverPayoutNotices(chargeId: string): Promise<void> {
++    if (!this.payoutNotices) return;
++    try {
++      await this.payoutNotices.dispatchForCharge(chargeId);
++    } catch (err) {
++      this.logger.warn(
++        `SFEE_NOTICE_DISPATCH_DEFERRED charge=${chargeId}: ${settlementFailureCode(err)}; the sweeper delivers it`,
++      );
++    }
++  }
++
++  private async route(
++    event: {
++      id: string;
++      type: string;
++      data: { object: Record<string, unknown> };
++    },
++    tx?: WebhookTx,
++  ): Promise<{ claimed: boolean; reason?: string; purchase_id?: string }> {
+     switch (event.type) {
+       case 'charge.refunded':
+         return this.onChargeRefunded(event, tx);
+       case 'charge.refund.updated':
++      case 'refund.updated':
+         return this.onRefundUpdated(event);
+       case 'charge.dispute.created':
+         return this.onDisputeOpened(event);
+@@ -127,9 +196,12 @@ export class RefundDisputeHandlerService {
+ 
+   // --- Refund pipeline ---
+ 
+-  private async onChargeRefunded(event: {
+-    data: { object: Record<string, unknown> };
+-  }, _outerTx?: WebhookTx): Promise<{ claimed: boolean; reason?: string; purchase_id?: string }> {
++  private async onChargeRefunded(
++    event: {
++      data: { object: Record<string, unknown> };
++    },
++    _outerTx?: WebhookTx,
++  ): Promise<{ claimed: boolean; reason?: string; purchase_id?: string }> {
+     // PR-16: _outerTx is accepted for interface symmetry but the refund
+     // path opens its OWN inner $transaction for the entitlement flip
+     // (see fullyRefunded branch below). cancelPendingForPurchase rides
+@@ -143,7 +215,10 @@ export class RefundDisputeHandlerService {
+       amount?: number;
+       amount_refunded?: number;
+       refunded?: boolean;
+-      refunds?: { data?: Array<{ id?: string; amount?: number; status?: string; reason?: string | null }> };
++      refunds?: {
++        data?: Array<{ id?: string; amount?: number; status?: string; reason?: string | null }>;
++        has_more?: boolean;
++      };
+     };
+     if (!charge?.id) return { claimed: false, reason: 'no_charge_id' };
+     const purchase = await this.resolvePurchaseByCharge(charge.id);
+@@ -154,7 +229,7 @@ export class RefundDisputeHandlerService {
+     // upsertAndApplyRefund returns { ledger_just_reversed: boolean } so
+     // we know which refund ids transitioned this delivery; redeliveries
+     // see ledger_reversed already true and skip.
+-    const refunds = charge.refunds?.data ?? [];
++    const refunds = await this.completeRefunds(charge);
+     const newlyAppliedRefunds: Array<{
+       id: string;
+       amount_cents: number;
+@@ -185,10 +260,8 @@ export class RefundDisputeHandlerService {
+     // refunded charges carry the running total). Partial refunds keep
+     // entitlement_active true; the client keeps the access they paid
+     // net-of-credit for.
+-    const totalAmount =
+-      typeof charge.amount === 'number' ? charge.amount : purchase.amount_cents;
+-    const refundedCents =
+-      typeof charge.amount_refunded === 'number' ? charge.amount_refunded : 0;
++    const totalAmount = typeof charge.amount === 'number' ? charge.amount : purchase.amount_cents;
++    const refundedCents = typeof charge.amount_refunded === 'number' ? charge.amount_refunded : 0;
+     const fullyRefunded = totalAmount > 0 && refundedCents >= totalAmount;
+     // R81 (PR-395 follow-up, F5) — refund/chargeback behaviour for the Roman P4
+     // first-payment celebration is RETAIN-BY-DESIGN: a refund (even a full one)
+@@ -266,11 +339,7 @@ export class RefundDisputeHandlerService {
+         // refund = client keeps the access they paid net-of-credit for,
+         // and continues receiving dripped content. Documented.
+         if (this.fanout) {
+-          await this.fanout.cancelPendingForPurchase(
+-            purchase.id,
+-            'refund',
+-            tx,
+-          );
++          await this.fanout.cancelPendingForPurchase(purchase.id, 'refund', tx);
+         }
+       });
+     }
+@@ -310,9 +379,62 @@ export class RefundDisputeHandlerService {
+       });
+     }
+ 
++    // B-684-1 (round 11): the settlement also converges once more, under the charge lock,
++    // after the per-refund alerts, so a retried delivery loses none of them. Round 13 (Opus
++    // B-684-3): on the SUCCEEDED refunds of the complete list, never amount_refunded (it also
++    // counts pending refunds). A converted charge reads its own debits from Stripe (B-683-1).
++    const succeededCents = refunds.reduce(
++      (n, r) => n + (r.status === 'succeeded' && typeof r.amount === 'number' ? r.amount : 0),
++      0,
++    );
++    if (this.settlements && succeededCents > 0) {
++      await this.settlements.applyAdjustments({
++        purchase,
++        charge_id: charge.id,
++        refunded_cents: succeededCents,
++      });
++    }
++
+     return { claimed: true, purchase_id: purchase.id };
+   }
+ 
++  /**
++   * Round 13 (Sol B-684-1, Opus B-684-3): every refund on the charge. The event embeds at most
++   * the latest ten (none on current API versions), so unless the embedded list is explicitly
++   * complete and accounts for amount_refunded, it is read from Stripe to the last page. An
++   * incomplete read throws RefundStateUnavailableError (the webhook fails, Stripe redelivers);
++   * nothing moves.
++   */
++  private async completeRefunds(charge: {
++    id?: string;
++    amount_refunded?: number;
++    refunds?: {
++      data?: Array<{ id?: string; amount?: number; status?: string; reason?: string | null }>;
++      has_more?: boolean;
++    };
++  }): Promise<Array<{ id?: string; amount?: number; status?: string; reason?: string | null }>> {
++    const embedded = charge.refunds?.data ?? [];
++    const live = embedded.reduce(
++      (n, r) =>
++        n +
++        (r.status !== 'failed' && r.status !== 'canceled' && typeof r.amount === 'number'
++          ? r.amount
++          : 0),
++      0,
++    );
++    const complete = charge.refunds?.has_more !== true && live >= (charge.amount_refunded ?? 0);
++    if (complete || !this.settlements || !charge.id) return embedded;
++    // Ids, statuses and the client's own amounts; the settlement debits are read under the lock.
++    const list = await chargeRefundsFromStripe(this.stripe, charge.id, null);
++    const reasons = new Map(embedded.map((r) => [r.id, r.reason ?? null]));
++    return list.refunds.map((r) => ({
++      id: r.id,
++      amount: r.amount_cents,
++      status: r.status,
++      reason: reasons.get(r.id) ?? null,
++    }));
++  }
++
+   private async onRefundUpdated(event: {
+     data: { object: Record<string, unknown> };
+   }): Promise<{ claimed: boolean; reason?: string; purchase_id?: string }> {
+@@ -321,12 +443,18 @@ export class RefundDisputeHandlerService {
+       charge?: string | null;
+       amount?: number;
+       status?: string;
++      reason?: string | null;
+       failure_reason?: string | null;
+     };
+     if (!refund?.id) return { claimed: false };
+     const existing = await this.prisma.chargeRefund.findUnique({
+       where: { stripe_refund_id: refund.id },
+     });
++    const chargeId =
++      existing?.stripe_charge_id ?? (typeof refund.charge === 'string' ? refund.charge : null);
++    if (this.settlements && chargeId) {
++      return this.applyRefundUpdate(refund, existing, chargeId);
++    }
+     if (!existing) {
+       // No-op: we'll see the parent charge.refunded shortly.
+       return { claimed: false, reason: 'no_known_refund' };
+@@ -341,6 +469,77 @@ export class RefundDisputeHandlerService {
+     return { claimed: true, purchase_id: existing.purchase_id };
+   }
+ 
++  /**
++   * Round 13 (Opus B-684-3): a refund's terminal status moves its money. One that becomes
++   * succeeded is applied now (once, under the charge lock, idempotent on ledger_reversed) and
++   * the coach is told; a pending one moves nothing. One that fails or is canceled after its
++   * money was applied raises an alert and flags the settlement for review (C-684-4; nothing is
++   * re-credited automatically). A refund this service has not seen yet is recorded too.
++   */
++  private async applyRefundUpdate(
++    refund: {
++      id?: string;
++      amount?: number;
++      status?: string;
++      reason?: string | null;
++      failure_reason?: string | null;
++    },
++    existing: ChargeRefund | null,
++    chargeId: string,
++  ): Promise<{ claimed: boolean; reason?: string; purchase_id?: string }> {
++    const purchase = existing
++      ? await this.prisma.clientPurchase.findUnique({ where: { id: existing.purchase_id } })
++      : await this.resolvePurchaseByCharge(chargeId);
++    if (!purchase || !refund.id) return { claimed: false, reason: 'no_matching_purchase' };
++    const status = refund.status ?? existing?.status ?? 'pending';
++    if (existing?.ledger_reversed && (status === 'failed' || status === 'canceled')) {
++      this.logger.error(
++        `SFEE_REFUND_FAILED_AFTER_APPLY alert=true charge=${chargeId} refund=${refund.id} status=${status}: the payout was already reduced for this refund; the settlement is flagged for review and nothing is re-credited automatically`,
++      );
++      await this.prisma.chargeSettlement.updateMany({
++        where: { stripe_charge_id: chargeId },
++        data: {
++          reconcile_requested_at: new Date(),
++          reconcile_reason: 'SFEE_REFUND_FAILED_AFTER_APPLY',
++        },
++      });
++    }
++    const outcome = await this.upsertAndApplyRefund({
++      purchase,
++      stripe_refund_id: refund.id,
++      stripe_charge_id: chargeId,
++      amount_cents:
++        typeof refund.amount === 'number' ? refund.amount : (existing?.amount_cents ?? 0),
++      status,
++      reason: refund.reason ?? existing?.reason ?? null,
++    });
++    if (refund.failure_reason !== undefined) {
++      await this.prisma.chargeRefund.update({
++        where: { stripe_refund_id: refund.id },
++        data: { failure_reason: refund.failure_reason ?? null },
++      });
++    }
++    if (outcome.ledger_just_reversed && this.partialRefundDecisions) {
++      const fresh = await this.prisma.clientPurchase.findUnique({ where: { id: purchase.id } });
++      if (fresh && fresh.status !== 'refunded') {
++        await this.partialRefundDecisions.onPartialRefund({
++          client_purchase_id: purchase.id,
++          stripe_refund_id: refund.id,
++        });
++      }
++    }
++    if (outcome.ledger_just_reversed) {
++      await this.emitRefundCoachAlert({
++        purchase,
++        amount_cents: outcome.row.amount_cents,
++        stripe_refund_id: refund.id,
++        stripe_charge_id: chargeId,
++        reason: outcome.row.reason ?? null,
++      });
++    }
++    return { claimed: true, purchase_id: purchase.id };
++  }
++
+   // Idempotently create a refund row + apply ledger reversals. Safe to
+   // re-run with the same payload — composite-unique on stripe_refund_id
+   // + ledger.applyReversal monotonically increases reversed_cents.
+@@ -360,23 +559,27 @@ export class RefundDisputeHandlerService {
+     note?: string | null;
+     initiated_by_user_id?: string | null;
+   }): Promise<{ row: ChargeRefund; ledger_just_reversed: boolean }> {
++    const updateExisting = (existing: ChargeRefund) =>
++      this.prisma.chargeRefund.update({
++        where: { stripe_refund_id: args.stripe_refund_id },
++        data: {
++          status: args.status,
++          amount_cents: args.amount_cents,
++          reason: args.reason ?? existing.reason,
++          note: args.note ?? existing.note,
++          initiated_by_user_id: args.initiated_by_user_id ?? existing.initiated_by_user_id,
++          posted_at: args.status === 'succeeded' ? new Date() : existing.posted_at,
++        },
++      });
+     const existing = await this.prisma.chargeRefund.findUnique({
+       where: { stripe_refund_id: args.stripe_refund_id },
+     });
+-    const row = existing
+-      ? await this.prisma.chargeRefund.update({
+-          where: { stripe_refund_id: args.stripe_refund_id },
+-          data: {
+-            status: args.status,
+-            amount_cents: args.amount_cents,
+-            reason: args.reason ?? existing.reason,
+-            note: args.note ?? existing.note,
+-            initiated_by_user_id:
+-              args.initiated_by_user_id ?? existing.initiated_by_user_id,
+-            posted_at: args.status === 'succeeded' ? new Date() : existing.posted_at,
+-          },
+-        })
+-      : await this.prisma.chargeRefund.create({
++    let row: ChargeRefund;
++    if (existing) {
++      row = await updateExisting(existing);
++    } else {
++      try {
++        row = await this.prisma.chargeRefund.create({
+           data: {
+             purchase_id: args.purchase.id,
+             stripe_refund_id: args.stripe_refund_id,
+@@ -389,6 +592,19 @@ export class RefundDisputeHandlerService {
+             posted_at: args.status === 'succeeded' ? new Date() : null,
+           },
+         });
++      } catch (err) {
++        // An admin refund and its charge.refunded webhook raced to insert the
++        // same refund id: the loser updates the winner's row.
++        const raced =
++          typeof err === 'object' && err !== null && (err as { code?: unknown }).code === 'P2002'
++            ? await this.prisma.chargeRefund.findUnique({
++                where: { stripe_refund_id: args.stripe_refund_id },
++              })
++            : null;
++        if (!raced) throw err;
++        row = await updateExisting(raced);
++      }
++    }
+ 
+     // Apply ledger reversals only once per refund (idempotency flag),
+     // and only when the refund is actually `succeeded` — pending refunds
+@@ -397,13 +613,45 @@ export class RefundDisputeHandlerService {
+       return { row, ledger_just_reversed: false };
+     }
+ 
+-    await this.applyLedgerReversal(args.purchase.id, args.amount_cents);
+-    await this.applyHeadCoachReversal(args.purchase.id, args.amount_cents);
+-
+-    const updated = await this.prisma.chargeRefund.update({
+-      where: { id: row.id },
+-      data: { ledger_reversed: true, transfer_reversed: true },
+-    });
++    // S-FEE round 3 (B-627-2): one application per Stripe refund id, and one
++    // money movement at a time per charge. "Is this refund applied yet",
++    // the adjustment and "mark it applied" form one critical section under
++    // the charge's lock, so a duplicate delivery, two refunds of one charge
++    // delivered together, or an admin refund racing its own charge.refunded
++    // webhook apply each refund exactly once. The settlement path converges
++    // on the cumulative refunded total; the legacy path reverses this
++    // refund's share with an idempotency key that carries the refund id.
++    // A ChargeLockBusyError propagates (the webhook returns non-2xx and
++    // Stripe redelivers; the lock holder applies this refund before it
++    // releases, because it re-reads the charge's succeeded refunds).
++    const apply = async (): Promise<ChargeRefund | null> => {
++      if (this.settlements) {
++        const fresh = await this.prisma.chargeRefund.findUnique({ where: { id: row.id } });
++        if (!fresh || fresh.ledger_reversed) return null;
++      }
++      const settled = await this.applySettlementRefund(args.purchase, args.stripe_charge_id);
++      if (!settled) {
++        // Legacy destination charge (pre-S-FEE): unchanged reversal path.
++        await this.applyLedgerReversal(args.purchase.id, args.amount_cents, args.stripe_charge_id);
++        await this.applyHeadCoachReversal(
++          args.purchase.id,
++          args.amount_cents,
++          args.stripe_charge_id,
++          args.stripe_refund_id,
++        );
++      }
++      return this.prisma.chargeRefund.update({
++        where: { id: row.id },
++        data: { ledger_reversed: true, transfer_reversed: true },
++      });
++    };
++    const updated = this.settlements
++      ? await this.settlements.withChargeLock(args.stripe_charge_id, apply)
++      : await apply();
++    if (!updated) {
++      const current = await this.prisma.chargeRefund.findUnique({ where: { id: row.id } });
++      return { row: current ?? row, ledger_just_reversed: false };
++    }
+     return { row: updated, ledger_just_reversed: true };
+   }
+ 
+@@ -420,6 +668,15 @@ export class RefundDisputeHandlerService {
+     reason: string | null;
+   }): Promise<void> {
+     try {
++      // OR-111-1: a settlement charge's refund already has an exact-amount
++      // payout notice (what the client got back, what came back from that
++      // sale's payout, what is held from the next sale). Deliver it and skip
++      // this generic line so the coach gets one alert, with the real numbers.
++      // Delivery itself runs after the webhook commits (handle() and
++      // deliverPayoutNotices, C-627-7); this only checks that one exists.
++      if (this.payoutNotices && (await this.payoutNotices.hasNotices(args.stripe_charge_id))) {
++        return;
++      }
+       // Determine whether this refund is full (purchase fully refunded)
+       // or partial — affects the message body and entitlement_revoked
+       // payload field. We re-read the purchase rather than relying on
+@@ -428,8 +685,7 @@ export class RefundDisputeHandlerService {
+       const fresh = await this.prisma.clientPurchase.findUnique({
+         where: { id: args.purchase.id },
+       });
+-      const isFullRefund =
+-        !!fresh && fresh.status === 'refunded' && !fresh.entitlement_active;
++      const isFullRefund = !!fresh && fresh.status === 'refunded' && !fresh.entitlement_active;
+       const dollars = (args.amount_cents / 100).toFixed(2);
+       const body = isFullRefund
+         ? `Refund processed: $${dollars} returned to client.`
+@@ -464,11 +720,62 @@ export class RefundDisputeHandlerService {
+ 
+   // Reverses the destination + application_fee ledger slices
+   // proportionally to the refund amount.
++  // S-FEE — route a refund on a separate-charge-and-transfer charge through
++  // the settlement (cumulative succeeded refunds on the charge). Returns
++  // false when the charge is a legacy destination charge (or unsettled
++  // legacy wiring), so the caller runs the legacy reversal path.
++  private async applySettlementRefund(
++    purchase: ClientPurchase,
++    chargeId: string,
++  ): Promise<boolean> {
++    if (!this.settlements) return false;
++    const refunds = await this.prisma.chargeRefund.findMany({
++      where: { stripe_charge_id: chargeId, status: 'succeeded' },
++      select: { amount_cents: true },
++    });
++    const refundedCents = refunds.reduce((n, r) => n + r.amount_cents, 0);
++    const outcome = await this.settlements.applyAdjustments({
++      purchase,
++      charge_id: chargeId,
++      refunded_cents: refundedCents,
++    });
++    return outcome !== 'legacy' && outcome !== 'no_settlement';
++  }
++
++  // S-FEE — dispute position change on a separate-charge-and-transfer
++  // charge. Stripe debits the platform for the disputed amount and the
++  // dispute fee; the coach bears both (transfer reversal, then netting).
++  // Returns false for a legacy destination charge.
++  private async applySettlementDispute(
++    purchase: ClientPurchase,
++    chargeId: string,
++    balanceTransactions: Array<{ amount?: number; fee?: number }> | undefined,
++    disputeId?: string | null,
++    noticeEvent: 'dispute_lost' | null = null,
++  ): Promise<boolean> {
++    if (!this.settlements || !balanceTransactions) return false;
++    const outcome = await this.settlements.applyAdjustments({
++      purchase,
++      charge_id: chargeId,
++      dispute: disputeAmountsFrom(balanceTransactions),
++      // Read the dispute's current position under the charge lock, so an
++      // older event processed late cannot undo a newer outcome.
++      dispute_id: disputeId ?? null,
++      notice_event: noticeEvent,
++    });
++    return outcome !== 'legacy' && outcome !== 'no_settlement';
++  }
++
+   private async applyLedgerReversal(
+     purchaseId: string,
+     refundAmountCents: number,
++    chargeId?: string | null,
+   ): Promise<void> {
+-    const entries = await this.ledger.findByPurchase(purchaseId);
++    // Legacy rows only: per-purchase slices (stripe_charge_id may be null)
++    // or the slices of THIS charge. Never touch another charge's slices.
++    const entries = (await this.ledger.findByPurchase(purchaseId)).filter(
++      (e) => !chargeId || e.stripe_charge_id == null || e.stripe_charge_id === chargeId,
++    );
+     const purchase = await this.prisma.clientPurchase.findUnique({
+       where: { id: purchaseId },
+     });
+@@ -498,9 +805,20 @@ export class RefundDisputeHandlerService {
+   private async applyHeadCoachReversal(
+     purchaseId: string,
+     refundAmountCents: number,
++    chargeId?: string | null,
++    // Stripe refund id (or dispute id): one reversal per refund at Stripe.
++    reversalSourceId?: string | null,
+   ): Promise<void> {
++    // Legacy head-coach transfers only (S-FEE settlement transfers are
++    // reversed by ChargeSettlementService).
+     const transfer = await this.prisma.connectTransfer.findFirst({
+-      where: { purchase_id: purchaseId, status: 'succeeded' },
++      where: {
++        purchase_id: purchaseId,
++        status: 'succeeded',
++        kind: 'head_coach_split',
++        settlement_id: null,
++        ...(chargeId ? { source_stripe_charge_id: chargeId } : {}),
++      },
+     });
+     if (!transfer) return;
+     const purchase = await this.prisma.clientPurchase.findUnique({
+@@ -517,6 +835,10 @@ export class RefundDisputeHandlerService {
+       await this.transfers.reverse({
+         transfer_row_id: transfer.id,
+         amount_cents: amount,
++        purpose: 'legacy',
++        ...(reversalSourceId
++          ? { idempotency_key: `tgp-tr-rev-${transfer.id}-src-${reversalSourceId}` }
++          : {}),
+       });
+     } catch (err) {
+       this.logger.warn(
+@@ -539,9 +861,12 @@ export class RefundDisputeHandlerService {
+     return this.upsertDispute(event, /*initial=*/ false);
+   }
+ 
+-  private async onDisputeClosed(event: {
+-    data: { object: Record<string, unknown> };
+-  }, _outerTx?: WebhookTx): Promise<{ claimed: boolean; reason?: string; purchase_id?: string }> {
++  private async onDisputeClosed(
++    event: {
++      data: { object: Record<string, unknown> };
++    },
++    _outerTx?: WebhookTx,
++  ): Promise<{ claimed: boolean; reason?: string; purchase_id?: string }> {
+     // PR-16: see onChargeRefunded — _outerTx is accepted for symmetry
+     // but the dispute path's entitlement flip already executes on
+     // this.prisma directly (not through the outer billing tx, because
+@@ -553,7 +878,7 @@ export class RefundDisputeHandlerService {
+       charge?: string | null;
+       status?: string;
+       amount?: number;
+-      balance_transactions?: Array<{ id: string }>;
++      balance_transactions?: Array<{ id: string; amount?: number; fee?: number }>;
+     };
+     if (!dispute?.id) return { claimed: false };
+     const existing = await this.prisma.chargeDispute.findUnique({
+@@ -569,15 +894,36 @@ export class RefundDisputeHandlerService {
+           dispute.balance_transactions?.[0]?.id ?? existing.balance_transaction_id,
+       },
+     });
++    // S-FEE — converge the settlement to the dispute's final position (won:
++    // principal reinstated, the coach is paid back less any fee Stripe kept;
++    // lost: the withdrawal stands). Entitlement handling below is unchanged.
++    let settlementHandled = false;
++    if (dispute.charge) {
++      const disputePurchase = await this.prisma.clientPurchase.findUnique({
++        where: { id: updated.purchase_id },
++      });
++      if (disputePurchase) {
++        settlementHandled = await this.applySettlementDispute(
++          disputePurchase,
++          dispute.charge,
++          dispute.balance_transactions,
++          dispute.id,
++          dispute.status === 'lost' ? 'dispute_lost' : null,
++        );
++      }
++    }
+     // On a `lost` outcome, reverse the destination + application_fee
+-    // ledger slices and reverse any head-coach transfer.
++    // ledger slices and reverse any head-coach transfer (legacy charges;
++    // a settlement-backed charge was already recovered above).
+     if (dispute.status === 'lost' && !updated.ledger_reversed) {
+       const purchase = await this.prisma.clientPurchase.findUnique({
+         where: { id: updated.purchase_id },
+       });
+       if (purchase) {
+-        await this.applyLedgerReversal(purchase.id, updated.amount_cents);
+-        await this.applyHeadCoachReversal(purchase.id, updated.amount_cents);
++        if (!settlementHandled) {
++          await this.applyLedgerReversal(purchase.id, updated.amount_cents, dispute.charge);
++          await this.applyHeadCoachReversal(purchase.id, updated.amount_cents, dispute.charge);
++        }
+         // PR-16 — entitlement flip + drop-cancel commit atomically.
+         // The Stripe-HTTP-ridden ledger / transfer reversals above
+         // intentionally run outside this tx (P1-3 anti-pattern). The
+@@ -594,11 +940,7 @@ export class RefundDisputeHandlerService {
+             data: { status: 'chargeback_lost', entitlement_active: false },
+           });
+           if (this.fanout) {
+-            await this.fanout.cancelPendingForPurchase(
+-              purchase.id,
+-              'dispute',
+-              tx,
+-            );
++            await this.fanout.cancelPendingForPurchase(purchase.id, 'dispute', tx);
+           }
+         });
+       }
+@@ -629,6 +971,7 @@ export class RefundDisputeHandlerService {
+       currency?: string;
+       reason?: string;
+       evidence_details?: { due_by?: number; submission_count?: number };
++      balance_transactions?: Array<{ id?: string; amount?: number; fee?: number }>;
+     };
+     if (!dispute?.id || !dispute.charge) return { claimed: false };
+     const purchase = await this.resolvePurchaseByCharge(dispute.charge);
+@@ -679,8 +1022,7 @@ export class RefundDisputeHandlerService {
+             purchase_id: purchase.id,
+             stripe_dispute_id: disputeId,
+             stripe_charge_id: chargeId,
+-            amount_cents:
+-              typeof dispute.amount === 'number' ? dispute.amount : 0,
++            amount_cents: typeof dispute.amount === 'number' ? dispute.amount : 0,
+             currency: dispute.currency ?? 'usd',
+             status: dispute.status ?? 'needs_response',
+             reason: dispute.reason ?? null,
+@@ -707,11 +1049,7 @@ export class RefundDisputeHandlerService {
+     } catch (err) {
+       // Prisma raises P2002 on a unique-constraint violation. Anything
+       // else (e.g. connection error) we propagate so Stripe retries.
+-      if (
+-        !err ||
+-        typeof err !== 'object' ||
+-        (err as { code?: string }).code !== 'P2002'
+-      ) {
++      if (!err || typeof err !== 'object' || (err as { code?: string }).code !== 'P2002') {
+         throw err;
+       }
+       // Race lost — another delivery wrote first. The in-tx create
+@@ -742,8 +1080,7 @@ export class RefundDisputeHandlerService {
+             status: dispute.status ?? 'needs_response',
+             reason: dispute.reason ?? null,
+             evidence_due_by: dueBy ?? undefined,
+-            amount_cents:
+-              typeof dispute.amount === 'number' ? dispute.amount : undefined,
++            amount_cents: typeof dispute.amount === 'number' ? dispute.amount : undefined,
+           },
+         });
+         if (initial) {
+@@ -760,6 +1097,33 @@ export class RefundDisputeHandlerService {
+       isFirstObservation = false;
+     }
+ 
++    // S-FEE — Stripe debited the platform for the disputed amount + fee
++    // (dispute.balance_transactions). Recover it from the payees now, as
++    // Stripe recommends on charge.dispute.created ("recover funds from the
++    // connected account by reversing the transfer"). Idempotent per dispute
++    // position; a legacy destination charge is left to the legacy path.
++    // Round 4 (B-627-4): no adjustment failure is swallowed. Lock busy / lost,
++    // an unreadable canonical dispute or an unknown reversal outcome (and any
++    // other error) fail the delivery so Stripe redelivers it; the settlement
++    // is also flagged for the sweeper. The coach alert below still goes out
++    // first, because a redelivery is no longer the first observation.
++    let adjustmentError: unknown = null;
++    try {
++      await this.applySettlementDispute(
++        purchase,
++        dispute.charge,
++        dispute.balance_transactions,
++        dispute.id,
++      );
++    } catch (err) {
++      adjustmentError = err;
++      const level = isRetryableMoneyError(err) ? 'warn' : 'error';
++      this.logger[level](
++        `dispute settlement adjustment failed dispute=${dispute.id} charge=${dispute.charge}` +
++          `${level === 'error' ? ' alert=true' : ''}: ${settlementFailureCode(err)}; the delivery is retried`,
++      );
++    }
++
+     // A276 P1-1 (refix) — emit COACH_ALERT on the FIRST observation of
+     // this dispute id. We deliberately key on "is this row new" rather
+     // than `initial` alone: a `charge.dispute.updated` arriving before
+@@ -804,6 +1168,7 @@ export class RefundDisputeHandlerService {
+       }
+     }
+ 
++    if (adjustmentError) throw adjustmentError;
+     return { claimed: true, purchase_id: row.purchase_id };
+   }
+ 
+@@ -823,17 +1188,50 @@ export class RefundDisputeHandlerService {
+       where: { stripe_transfer_id: transfer.id },
+     });
+     if (!row) return { claimed: false };
+-    const fullyReversed = !!transfer.reversed;
+-    await this.prisma.connectTransfer.update({
+-      where: { id: row.id },
+-      data: {
+-        reversed_amount_cents:
+-          typeof transfer.amount_reversed === 'number'
+-            ? transfer.amount_reversed
+-            : row.reversed_amount_cents,
+-        status: fullyReversed ? 'reversed' : row.status,
+-        reversed_at: fullyReversed ? new Date() : row.reversed_at,
+-      },
++    const settlement =
++      row.settlement_id && this.settlements
++        ? await this.prisma.chargeSettlement.findUnique({ where: { id: row.settlement_id } })
++        : null;
++    // Absolute sync from Stripe's cumulative amount_reversed; never lowers
++    // what we already recorded (an older event can arrive late).
++    const sync = async () => {
++      const fresh = await this.prisma.connectTransfer.findUniqueOrThrow({ where: { id: row.id } });
++      const reversed =
++        typeof transfer.amount_reversed === 'number'
++          ? Math.min(
++              fresh.amount_cents,
++              Math.max(fresh.reversed_amount_cents, transfer.amount_reversed),
++            )
++          : fresh.reversed_amount_cents;
++      const fullyReversed = !!transfer.reversed || reversed >= fresh.amount_cents;
++      await this.prisma.connectTransfer.update({
++        where: { id: row.id },
++        data: {
++          reversed_amount_cents: reversed,
++          status: fullyReversed ? 'reversed' : fresh.status,
++          reversed_at: fullyReversed ? (fresh.reversed_at ?? new Date()) : fresh.reversed_at,
++        },
++      });
++    };
++    if (!settlement || !this.settlements) {
++      await sync();
++      return { claimed: true, purchase_id: row.purchase_id };
++    }
++    // Round 4 (B-627-5): a settlement transfer's reversal is synced and the
++    // charge re-converged under the charge's lock, so a reversal Stripe
++    // applied while our receipt was lost corrects the payee's position (and
++    // any recovery opened for it) without waiting for another adjustment.
++    const purchase = await this.prisma.clientPurchase.findUnique({
++      where: { id: settlement.purchase_id },
++    });
++    await this.settlements.withChargeLock(settlement.stripe_charge_id, async () => {
++      await sync();
++      if (purchase) {
++        await this.settlements!.applyAdjustments({
++          purchase,
++          charge_id: settlement.stripe_charge_id,
++        });
++      }
+     });
+     return { claimed: true, purchase_id: row.purchase_id };
+   }
+@@ -864,9 +1262,7 @@ export class RefundDisputeHandlerService {
+       amount_cents: typeof payout.amount === 'number' ? payout.amount : 0,
+       status,
+       arrival_at:
+-        typeof payout.arrival_date === 'number'
+-          ? new Date(payout.arrival_date * 1000)
+-          : null,
++        typeof payout.arrival_date === 'number' ? new Date(payout.arrival_date * 1000) : null,
+       failure_message: payout.failure_message ?? null,
+     });
+     return { claimed: true };
+@@ -877,9 +1273,14 @@ export class RefundDisputeHandlerService {
+   // Resolve a ClientPurchase from a Stripe charge id by walking the
+   // SplitLedgerEntry table (which we populate at charge time with
+   // stripe_charge_id).
+-  private async resolvePurchaseByCharge(
+-    chargeId: string,
+-  ): Promise<ClientPurchase | null> {
++  private async resolvePurchaseByCharge(chargeId: string): Promise<ClientPurchase | null> {
++    // S-FEE: every settled charge (incl. renewals) has a settlement row.
++    const settledPurchaseId = await this.settlements?.purchaseIdForCharge(chargeId);
++    if (settledPurchaseId) {
++      return this.prisma.clientPurchase.findUnique({
++        where: { id: settledPurchaseId },
++      });
++    }
+     const entry = await this.prisma.splitLedgerEntry.findFirst({
+       where: { stripe_charge_id: chargeId, kind: 'destination' },
+     });
+@@ -891,8 +1292,7 @@ export class RefundDisputeHandlerService {
+     // Fallback — pull the PI off the Charge and match on stripe_payment_intent_id.
+     try {
+       const charge = await this.stripe.retrieveCharge(chargeId);
+-      const piId =
+-        typeof charge.payment_intent === 'string' ? charge.payment_intent : null;
++      const piId = typeof charge.payment_intent === 'string' ? charge.payment_intent : null;
+       if (!piId) return null;
+       return this.prisma.clientPurchase.findFirst({
+         where: { stripe_payment_intent_id: piId },
+@@ -929,40 +1329,67 @@ export class RefundDisputeHandlerService {
+     if (purchase.source) {
+       throw new BadRequestException({
+         error: 'GRANT_NOT_REFUNDABLE',
+-        message: 'This entitlement is a $0 grant, not a purchase; use POST /v1/entitlements/grants/revoke',
++        message:
++          'This entitlement is a $0 grant, not a purchase; use POST /v1/entitlements/grants/revoke',
+       });
+     }
+     // Resolve the underlying charge id. For one_time prefer the saved PI;
+     // for recurring use the most recent destination ledger slice.
+     const chargeId = await this.resolveChargeIdForPurchase(purchase);
+     if (!chargeId) {
+-      throw new Error(
+-        `createAdminRefund: no charge id for purchase ${purchase.id}`,
+-      );
++      throw new Error(`createAdminRefund: no charge id for purchase ${purchase.id}`);
+     }
+     const idempotencyKey = `tgp-refund-${purchase.id}-${args.amount_cents ?? 'full'}-${args.initiated_by_user_id}`;
++    // S-FEE: reverse_transfer / refund_application_fee only exist for
++    // destination charges. A separate-charge-and-transfer charge is
++    // recovered by ChargeSettlementService when the refund is applied.
++    // Decided from the Stripe charge itself, so a not-yet-settled charge is
++    // classified correctly too.
++    const legacyDestination = this.settlements
++      ? isLegacyDestinationCharge(await this.stripe.retrieveCharge(chargeId))
++      : true;
+     const stripe = await this.stripe.createRefund({
+       charge_id: chargeId,
+       amount: args.amount_cents,
+       reason: args.reason,
+-      reverse_transfer: true,
+-      refund_application_fee: true,
++      reverse_transfer: legacyDestination,
++      refund_application_fee: legacyDestination,
+       metadata: {
+         tgp_purchase_id: purchase.id,
+         tgp_initiated_by: args.initiated_by_user_id,
+       },
+       idempotencyKey,
+     });
+-    const outcome = await this.upsertAndApplyRefund({
++    const refundInput = {
+       purchase,
+       stripe_refund_id: stripe.id,
+       stripe_charge_id: chargeId,
+-      amount_cents: typeof stripe.amount === 'number' ? stripe.amount : args.amount_cents ?? purchase.amount_cents,
++      amount_cents:
++        typeof stripe.amount === 'number'
++          ? stripe.amount
++          : (args.amount_cents ?? purchase.amount_cents),
+       status: stripe.status ?? 'pending',
+       reason: args.reason ?? null,
+       note: args.note ?? null,
+       initiated_by_user_id: args.initiated_by_user_id,
+-    });
++    };
++    let outcome: { row: ChargeRefund; ledger_just_reversed: boolean };
++    try {
++      outcome = await this.upsertAndApplyRefund(refundInput);
++    } catch (err) {
++      // The refund exists at Stripe and its ChargeRefund row is written; the
++      // payout adjustment is applied by whoever holds the charge lock (it
++      // re-reads the refunds) or by the charge.refunded webhook.
++      if (!isRetryableMoneyError(err)) throw err;
++      this.logger.warn(
++        `admin refund recorded; payout adjustment deferred to the charge.refunded webhook refund=${stripe.id} charge=${chargeId}: ${settlementFailureCode(err)}`,
++      );
++      const recorded = await this.prisma.chargeRefund.findUnique({
++        where: { stripe_refund_id: stripe.id },
++      });
++      if (!recorded) throw err;
++      return recorded;
++    }
+     // A276 P0-2 (refix) — admin-initiated refund: re-read the purchase
+     // (admin path doesn't go through the webhook's purchase.update
+     // branch, so we use the row state at call time) and emit the same
+@@ -973,7 +1400,7 @@ export class RefundDisputeHandlerService {
+       const amount_cents =
+         typeof stripe.amount === 'number'
+           ? stripe.amount
+-          : args.amount_cents ?? purchase.amount_cents;
++          : (args.amount_cents ?? purchase.amount_cents);
+       // Admin refund implicitly fully refunds when amount matches the
+       // purchase amount. Mirror the webhook's purchase-state update so
+       // emitRefundCoachAlert observes the correct status.
+@@ -994,23 +1421,18 @@ export class RefundDisputeHandlerService {
+     return outcome.row;
+   }
+ 
+-  private async resolveChargeIdForPurchase(
+-    purchase: ClientPurchase,
+-  ): Promise<string | null> {
++  private async resolveChargeIdForPurchase(purchase: ClientPurchase): Promise<string | null> {
+     if (purchase.stripe_payment_intent_id) {
+       try {
+-        const pi = await this.stripe.retrievePaymentIntent(
+-          purchase.stripe_payment_intent_id,
+-        );
+-        const latest =
+-          typeof pi.latest_charge === 'string' ? pi.latest_charge : null;
++        const pi = await this.stripe.retrievePaymentIntent(purchase.stripe_payment_intent_id);
++        const latest = typeof pi.latest_charge === 'string' ? pi.latest_charge : null;
+         if (latest) return latest;
+       } catch (err) {
+-        this.logger.warn(
+-          `retrievePaymentIntent failed: ${(err as Error).message}`,
+-        );
++        this.logger.warn(`retrievePaymentIntent failed: ${settlementFailureCode(err)}`);
+       }
+     }
++    const latestSettled = await this.settlements?.latestChargeIdForPurchase(purchase.id);
++    if (latestSettled) return latestSettled;
+     const entry = await this.prisma.splitLedgerEntry.findFirst({
+       where: { purchase_id: purchase.id, kind: 'destination' },
+       orderBy: { posted_at: 'desc' },
+diff --git a/src/checkout/settlement-sweep.cron.ts b/src/checkout/settlement-sweep.cron.ts
+new file mode 100644
+index 00000000..8edb760a
+--- /dev/null
++++ b/src/checkout/settlement-sweep.cron.ts
+@@ -0,0 +1,137 @@
++import { Injectable, Logger } from '@nestjs/common';
++import { Cron } from '@nestjs/schedule';
++import { hostname } from 'node:os';
++import { randomUUID } from 'node:crypto';
++import { settlementFailureCode } from '../connect/fees/charge-settlement.service';
++import { CronLeaseService } from './cron-lease.service';
++import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
++
++// S-FEE — scheduled payout / settlement sweep, every 15 minutes.
++//
++// What it runs: PurchaseSplitHandlerService.runTransferSweeper, which
++//   1. retries settlements still waiting for Stripe's fee and settles recent
++//      paid purchases no webhook settled (ChargeSettlementService), then
++//   2. posts due coach / head-coach transfers, each with its own backoff.
++// Same code path as POST /v1/admin/payments/transfers/run-sweeper.
++//
++// Safety:
++//   - single runner across Fly machines: CronLease row "sfee-settlement-sweep"
++//     (LEASE_TTL_MS); a machine that does not get the lease skips the tick;
++//   - idempotent per charge and transfer: ChargeSettlement is unique per
++//     charge, ConnectTransfer.idempotency_key is unique and is the Stripe
++//     Idempotency-Key, so an overlapping run cannot pay twice;
++//   - bounded: 25 settlements + BATCH transfers per run, and no new work
++//     starts after RUN_BUDGET_MS (well inside the lease);
++//   - kill switch: SFEE_SETTLEMENT_SWEEP_ENABLED=false stops scheduled runs
++//     (the admin endpoint still works for a manual run).
++// Every failure is logged with a specific SFEE_* code (see SWEEP_LOG_CODES and
++// TRANSFER_FAILURE_CODES in transfer-orchestrator.service.ts).
++
++export const SWEEP_JOB_NAME = 'sfee-settlement-sweep';
++export const SWEEP_CRON = '*/15 * * * *';
++export const LEASE_TTL_MS = 10 * 60_000;
++export const RUN_BUDGET_MS = 8 * 60_000;
++export const BATCH = 50;
++
++export const SWEEP_LOG_CODES = {
++  disabled: 'SFEE_SWEEP_DISABLED',
++  lockHeld: 'SFEE_SWEEP_SKIPPED_LOCK_HELD',
++  lockError: 'SFEE_SWEEP_LOCK_ERROR',
++  failed: 'SFEE_SWEEP_FAILED',
++  deadline: 'SFEE_SWEEP_DEADLINE_REACHED',
++  transfersFailed: 'SFEE_SWEEP_TRANSFERS_FAILED',
++  done: 'SFEE_SWEEP_DONE',
++} as const;
++
++export type SweepRunResult =
++  | { ran: false; reason: 'disabled' | 'lock_held' | 'lock_error' }
++  | {
++      ran: true;
++      ok: boolean;
++      attempted?: number;
++      succeeded?: number;
++      failed?: number;
++      deadline_reached?: boolean;
++    };
++
++export function sweepEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
++  return env.SFEE_SETTLEMENT_SWEEP_ENABLED !== 'false';
++}
++
++@Injectable()
++export class SettlementSweepCron {
++  private readonly logger = new Logger(SettlementSweepCron.name);
++  private readonly holder = `${process.env.FLY_MACHINE_ID ?? hostname()}:${process.pid}:${randomUUID().slice(0, 8)}`;
++
++  constructor(
++    private readonly lease: CronLeaseService,
++    private readonly splits: PurchaseSplitHandlerService,
++  ) {}
++
++  @Cron(SWEEP_CRON, { name: SWEEP_JOB_NAME })
++  async tick(): Promise<void> {
++    if (process.env.NODE_ENV === 'test') return;
++    await this.runOnce();
++  }
++
++  /** One guarded run. Never throws; returns what happened for tests/ops. */
++  async runOnce(now: Date = new Date(), holder: string = this.holder): Promise<SweepRunResult> {
++    if (!sweepEnabled()) {
++      this.logger.warn(
++        `${SWEEP_LOG_CODES.disabled} SFEE_SETTLEMENT_SWEEP_ENABLED=false; scheduled payouts are paused. Run POST /v1/admin/payments/transfers/run-sweeper by hand or unset the switch.`,
++      );
++      return { ran: false, reason: 'disabled' };
++    }
++    let acquired = false;
++    try {
++      acquired = (await this.lease.tryAcquire(SWEEP_JOB_NAME, holder, LEASE_TTL_MS, now)).acquired;
++    } catch (err) {
++      this.logger.error(
++        `${SWEEP_LOG_CODES.lockError} alert=true could not read the sweep lease; this tick is skipped and the next one retries: ${settlementFailureCode(err)}`,
++      );
++      return { ran: false, reason: 'lock_error' };
++    }
++    if (!acquired) {
++      this.logger.debug(`${SWEEP_LOG_CODES.lockHeld} another machine is running the sweep`);
++      return { ran: false, reason: 'lock_held' };
++    }
++    try {
++      const result = await this.splits.runTransferSweeper(now, {
++        batch: BATCH,
++        deadlineAt: Date.now() + RUN_BUDGET_MS,
++      });
++      if (result.deadline_reached) {
++        this.logger.warn(
++          `${SWEEP_LOG_CODES.deadline} stopped after ${result.attempted} transfers; the rest are due on the next run`,
++        );
++      }
++      if (result.failed > 0) {
++        this.logger.error(
++          `${SWEEP_LOG_CODES.transfersFailed} alert=true ${result.failed} transfer(s) failed for good this run; see SFEE_TRANSFER_*_FINAL lines for each one`,
++        );
++      }
++      this.logger.log(
++        `${SWEEP_LOG_CODES.done} attempted=${result.attempted} succeeded=${result.succeeded} failed=${result.failed} settlements_settled=${result.settlements?.settled ?? 0}`,
++      );
++      return {
++        ran: true,
++        ok: true,
++        attempted: result.attempted,
++        succeeded: result.succeeded,
++        failed: result.failed,
++        ...(result.deadline_reached ? { deadline_reached: true } : {}),
++      };
++    } catch (err) {
++      this.logger.error(
++        `${SWEEP_LOG_CODES.failed} alert=true sweep run failed; due work stays pending for the next run: ${settlementFailureCode(err)}`,
++      );
++      return { ran: true, ok: false };
++    } finally {
++      await this.lease.release(SWEEP_JOB_NAME, holder, now).catch((err: unknown) => {
++        this.logger.warn(
++          `${SWEEP_LOG_CODES.lockError} could not release the sweep lease; it expires on its own in ${LEASE_TTL_MS / 60_000} minutes: ${settlementFailureCode(err)}`,
++        );
++      });
++    }
++  }
++}
+diff --git a/src/coach-connect/coach-connect.service.ts b/src/coach-connect/coach-connect.service.ts
+index 811809fd..9fad7076 100644
+--- a/src/coach-connect/coach-connect.service.ts
++++ b/src/coach-connect/coach-connect.service.ts
+@@ -348,7 +348,10 @@ export class CoachConnectService {
+ 
+     return {
+       revenue_30d: earnings.as_seller.posted_cents / 100,
+-      net_30d: (earnings.as_seller.posted_cents - earnings.as_seller.refunds_cents) / 100,
++      // S-FEE: the shared coach-net figure (posted net of reversals minus
++      // recoveries), identical to the earnings summary. Subtracting refunds
++      // again double-counted what reversals already removed.
++      net_30d: earnings.as_seller.net_cents / 100,
+       currency: 'usd',
+       active_clients: activeClients,
+       clients_added_30d: clientsAdded30d,
+diff --git a/src/connect/connect.module.ts b/src/connect/connect.module.ts
+index 8737a842..ef5cf76b 100644
+--- a/src/connect/connect.module.ts
++++ b/src/connect/connect.module.ts
+@@ -3,6 +3,7 @@ import { JwksVerifierService } from '../auth/jwks.service';
+ import { ConnectController } from './connect.controller';
+ import { ConnectModuleState } from './connect.module-state';
+ import { ConnectService } from './connect.service';
++import { ChargeSettlementService } from './fees/charge-settlement.service';
+ import { FeePolicyService } from './fees/fee-policy.service';
+ import { PayoutReadinessService } from './fees/payout-readiness.service';
+ import { ReconciliationService } from './fees/reconciliation.service';
+@@ -34,6 +35,7 @@ import {
+     FeePolicyService,
+     SplitLedgerService,
+     TransferOrchestratorService,
++    ChargeSettlementService,
+     // Phase 6 — payout readiness cache + Stripe-vs-ledger reconciliation.
+     PayoutReadinessService,
+     ReconciliationService,
+@@ -49,6 +51,7 @@ import {
+     FeePolicyService,
+     SplitLedgerService,
+     TransferOrchestratorService,
++    ChargeSettlementService,
+     PayoutReadinessService,
+     ReconciliationService,
+   ],
+diff --git a/src/email/email.service.ts b/src/email/email.service.ts
+index 228bb313..19bb9691 100644
+--- a/src/email/email.service.ts
++++ b/src/email/email.service.ts
+@@ -62,6 +62,8 @@ const TEMPLATE_SUBJECTS: Record<EmailTemplateKey, string> = {
+   'payment-final-notice':
+     "A second heads-up — subscription ends {{cancellation_date}} if payment doesn't go through",
+   'payment-recovered': "You're all set — payment received",
++  // S-FEE round 5 (OR-111-1) — the notice's own title (plain, no exclamation).
++  'coach-payout-adjustment': '{{#if subject}}{{subject}}{{else}}A change to your payouts{{/if}}',
+ };
+ 
+ // EmailService is the single entry point for sending transactional email.
+diff --git a/src/email/email.types.ts b/src/email/email.types.ts
+index f203c1f6..50fba2b7 100644
+--- a/src/email/email.types.ts
++++ b/src/email/email.types.ts
+@@ -26,6 +26,8 @@ export const EmailTemplateKey = {
+   PAYMENT_REMINDER_URGENT: 'payment-reminder-urgent',
+   PAYMENT_FINAL_NOTICE: 'payment-final-notice',
+   PAYMENT_RECOVERED: 'payment-recovered',
++  // S-FEE round 5 (OR-111-1) — refund / chargeback payout notice to a coach.
++  COACH_PAYOUT_ADJUSTMENT: 'coach-payout-adjustment',
+ } as const;
+ export type EmailTemplateKey =
+   (typeof EmailTemplateKey)[keyof typeof EmailTemplateKey];
+diff --git a/src/email/templates/coach-payout-adjustment.hbs b/src/email/templates/coach-payout-adjustment.hbs
+new file mode 100644
+index 00000000..b13877b0
+--- /dev/null
++++ b/src/email/templates/coach-payout-adjustment.hbs
+@@ -0,0 +1,27 @@
++<!doctype html>
++<html lang="en">
++  <body style="font-family: -apple-system, system-ui, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; color: #1a1a1a;">
++    <h1 style="font-size: 22px; margin: 0 0 16px;">{{title}}</h1>
++    <p>Hi{{#if recipient_name}} {{recipient_name}}{{/if}},</p>
++    <p>{{summary}}</p>
++    <table style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 15px;">
++      <tr><td style="padding: 6px 0;">The sale</td><td style="padding: 6px 0; text-align: right;">{{charge_display}}</td></tr>
++      <tr><td style="padding: 6px 0;">What the client got back</td><td style="padding: 6px 0; text-align: right;">{{customer_refunded_display}}</td></tr>
++      <tr><td style="padding: 6px 0;">Taken back from that sale's payout</td><td style="padding: 6px 0; text-align: right;">{{reversed_display}}</td></tr>
++      {{#if reinstated_display}}<tr><td style="padding: 6px 0;">Paid back to you after the dispute</td><td style="padding: 6px 0; text-align: right;">{{reinstated_display}}</td></tr>{{/if}}
++    </table>
++    {{#if has_hold}}
++    <p>Held for this sale in total: {{held_display}}. It is made up of:</p>
++    <table style="width: 100%; border-collapse: collapse; margin: 8px 0 16px; font-size: 15px;">
++      {{#each held_lines}}<tr><td style="padding: 4px 0;">{{label}}</td><td style="padding: 4px 0; text-align: right;">{{display}}</td></tr>{{/each}}
++    </table>
++    {{#if held_collected_display}}<p style="font-size: 14px; color: #555;">Already taken from a later sale: {{held_collected_display}}.</p>{{/if}}
++    <p><strong>Still to be held from your next sale: {{held_open_display}}</strong>, on top of that sale's usual fees.</p>
++    <p style="font-size: 14px; color: #555;">It comes out of your next payout, and out of the ones after it if one sale is not enough. Nothing is taken from sales already paid out.</p>
++    {{else}}
++    <p style="font-size: 14px; color: #555;">Nothing is held from your next sale.</p>
++    {{/if}}
++    <hr style="border: 0; border-top: 1px solid #eaeaea; margin: 32px 0;" />
++    <p style="font-size: 12px; color: #888;">You can see every payout change and what is still held in the app under Money.</p>
++  </body>
++</html>
+diff --git a/test/admin-analytics.service.spec.ts b/test/admin-analytics.service.spec.ts
+index 36b9b236..76686dd0 100644
+--- a/test/admin-analytics.service.spec.ts
++++ b/test/admin-analytics.service.spec.ts
+@@ -39,6 +39,13 @@ function makePrismaStub() {
+         accounts.filter((a) => matchWhere(a, where)),
+       ),
+     },
++    // S-FEE: recoveries owed back on refunded / disputed charges.
++    payeeRecovery: {
++      findMany: jest.fn(async () => []),
++    },
++    chargeSettlement: {
++      findMany: jest.fn(async () => []),
++    },
+     payoutSnapshot: {
+       findMany: jest.fn(async ({ where = {} }: any) =>
+         snapshots.filter((s) => matchWhere(s, where)),
+diff --git a/test/checkout-webhook-fee-split.spec.ts b/test/checkout-webhook-fee-split.spec.ts
+index d6334a70..4572a40e 100644
+--- a/test/checkout-webhook-fee-split.spec.ts
++++ b/test/checkout-webhook-fee-split.spec.ts
+@@ -4,7 +4,9 @@ import { PurchaseSplitHandlerService } from '../src/checkout/purchase-split-hand
+ import { FeePolicyService } from '../src/connect/fees/fee-policy.service';
+ import { SplitLedgerService } from '../src/connect/fees/split-ledger.service';
+ import { TransferOrchestratorService } from '../src/connect/fees/transfer-orchestrator.service';
++import { ChargeSettlementService } from '../src/connect/fees/charge-settlement.service';
+ import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++import { asPrisma, makeCharge, settlementTables } from './utils/settlement-fakes';
+ 
+ // Integration-style: wires the actual webhook handler against an
+ // in-memory prisma stub + stub Stripe client to verify lifecycle events
+@@ -27,6 +29,12 @@ class StripeStub extends StripeConnectApiService {
+     destination: args.destination,
+   }));
+   cancelSubscription = jest.fn();
++  // S-FEE: the settlement reads the charge with its balance transaction
++  // ($100.00 US card, Stripe fee $3.20).
++  retrieveCharge = jest.fn(async (id: string) =>
++    makeCharge({ id, amount: 10_000, fee: 320, payment_intent: 'pi_abc' }),
++  );
++  listInvoices = jest.fn(async () => ({ data: [] }));
+ }
+ 
+ function makePrismaStub() {
+@@ -244,16 +252,42 @@ function makePrismaStub() {
+ 
+ function makeHandler() {
+   const prisma = makePrismaStub();
++  // S-FEE settlement tables share the stub's arrays.
++  const tables = settlementTables({
++    purchases: prisma._data.purchases,
++    accounts: prisma._data.accounts,
++    feePolicies: prisma._data.feePolicies,
++    assignments: prisma._data.assignments,
++    settlements: [],
++    recoveries: [],
++    ledger: prisma._data.splits,
++    transfers: prisma._data.transfers,
++    refunds: [],
++  });
++  Object.assign(prisma, {
++    connectAccount: tables.connectAccount,
++    feePolicy: tables.feePolicy,
++    teamSubCoachAssignment: tables.teamSubCoachAssignment,
++    splitLedgerEntry: tables.splitLedgerEntry,
++    connectTransfer: tables.connectTransfer,
++    chargeSettlement: tables.chargeSettlement,
++    payeeRecovery: tables.payeeRecovery,
++    chargeRefund: tables.chargeRefund,
++    cronLease: tables.cronLease,
++    $transaction: async (fn: (tx: object) => Promise<unknown>) => fn(prisma),
++  });
+   const stripe = new StripeStub();
+   const fee = new FeePolicyService(prisma as any);
+   const ledger = new SplitLedgerService(prisma as any);
+   const transfers = new TransferOrchestratorService(prisma as any, stripe as any, ledger);
++  const settlements = new ChargeSettlementService(asPrisma(prisma), stripe, fee, ledger, transfers);
+   const splits = new PurchaseSplitHandlerService(
+     prisma as any,
+     stripe as any,
+     fee,
+     ledger,
+     transfers,
++    settlements,
+   );
+   const dunning = new DunningService(prisma as any, stripe as any);
+   const handler = new CheckoutWebhookHandlerService(
+@@ -266,7 +300,7 @@ function makeHandler() {
+ }
+ 
+ describe('CheckoutWebhookHandlerService Phase 4-5 integration', () => {
+-  it('checkout.session.completed materializes the ledger and posts the head-coach transfer', async () => {
++  it('checkout.session.completed settles the charge: coach net and head-coach transfers', async () => {
+     const { handler, prisma, stripe } = makeHandler();
+     prisma._data.purchases.push({
+       id: 'p1',
+@@ -307,13 +341,26 @@ describe('CheckoutWebhookHandlerService Phase 4-5 integration', () => {
+     expect(result.claimed).toBe(true);
+     expect(prisma._data.purchases[0].status).toBe('paid');
+     expect(prisma._data.purchases[0].entitlement_active).toBe(true);
+-    // 3 ledger entries (sub-coach scenario).
+-    expect(prisma._data.splits).toHaveLength(3);
+-    // Head-coach transfer was posted.
++    // 4 ledger slices (sub-coach scenario): 2% fee, Stripe fee, coach net, head coach.
++    expect(prisma._data.splits).toHaveLength(4);
++    // Head-coach and coach-net transfers were posted from the charge.
++    expect(stripe.createTransfer).toHaveBeenCalledWith(
++      expect.objectContaining({
++        amount: 500,
++        destination: 'acct_head',
++        source_transaction: 'ch_test',
++      }),
++    );
+     expect(stripe.createTransfer).toHaveBeenCalledWith(
+-      expect.objectContaining({ amount: 500, destination: 'acct_head' }),
++      expect.objectContaining({
++        amount: 8_980,
++        destination: 'acct_sub',
++        source_transaction: 'ch_test',
++      }),
++    );
++    expect(prisma._data.transfers.every((t: { status: string }) => t.status === 'succeeded')).toBe(
++      true,
+     );
+-    expect(prisma._data.transfers[0].status).toBe('succeeded');
+   });
+ 
+   it('replaying checkout.session.completed is idempotent (no duplicate ledger or transfer rows)', async () => {
+@@ -351,11 +398,11 @@ describe('CheckoutWebhookHandlerService Phase 4-5 integration', () => {
+     await handler.handle(event);
+     await handler.handle(event);
+     await handler.handle(event);
+-    expect(prisma._data.splits).toHaveLength(3);
+-    expect(prisma._data.transfers).toHaveLength(1);
+-    // All createTransfer calls share the same idempotency-key
++    expect(prisma._data.splits).toHaveLength(4);
++    expect(prisma._data.transfers).toHaveLength(2);
++    // One idempotency key per charge and leg.
+     const keys = new Set(stripe.createTransfer.mock.calls.map((c: any) => c[0].idempotencyKey));
+-    expect(keys.size).toBe(1);
++    expect([...keys].sort()).toEqual(['tgp-settle-ch_test-coach', 'tgp-settle-ch_test-head_coach']);
+   });
+ 
+   it('invoice.payment_failed opens a dunning window and queues a reminder', async () => {
+diff --git a/test/coach-connect.service.spec.ts b/test/coach-connect.service.spec.ts
+index 048e55a9..d918c76b 100644
+--- a/test/coach-connect.service.spec.ts
++++ b/test/coach-connect.service.spec.ts
+@@ -59,6 +59,8 @@ function buildAnalytics() {
+       pending_cents: 0,
+       reversed_cents: 0,
+       refunds_cents: 0,
++      recoveries_cents: 0,
++      net_cents: 0,
+       purchases_count: 0,
+     },
+     as_head_coach: {
+@@ -66,6 +68,8 @@ function buildAnalytics() {
+       posted_cents: 0,
+       pending_cents: 0,
+       reversed_cents: 0,
++      recoveries_cents: 0,
++      net_cents: 0,
+       sub_coaches_count: 0,
+     },
+     last_payout: null,
+@@ -352,12 +356,17 @@ describe('CoachConnectService.getMetrics', () => {
+ 
+   it('reflects ledger earnings + recurring MRR on the happy path', async () => {
+     const earnings = {
++      // S-FEE: a $50 refund whose transfer reversal Stripe refused is owed
++      // back as a recovery; net_cents = posted - recoveries (the shared
++      // coachNetCents helper), so net_30d no longer re-subtracts refunds.
+       as_seller: {
+         gross_cents: 50_000,
+         posted_cents: 50_000,
+         pending_cents: 0,
+         reversed_cents: 0,
+         refunds_cents: 5_000,
++        recoveries_cents: 5_000,
++        net_cents: 45_000,
+         purchases_count: 4,
+       },
+       as_head_coach: {
+@@ -365,6 +374,8 @@ describe('CoachConnectService.getMetrics', () => {
+         posted_cents: 10_000,
+         pending_cents: 0,
+         reversed_cents: 0,
++        recoveries_cents: 0,
++        net_cents: 10_000,
+         sub_coaches_count: 2,
+       },
+     };
+diff --git a/test/coach-payments-field-select.spec.ts b/test/coach-payments-field-select.spec.ts
+index 7aeb72a1..0fb9c2a1 100644
+--- a/test/coach-payments-field-select.spec.ts
++++ b/test/coach-payments-field-select.spec.ts
+@@ -166,6 +166,10 @@ function buildPrisma() {
+       ),
+       groupBy: jest.fn(async () => []),
+     },
++    // S-FEE: the earnings summary also sums recoveries owed back (none here).
++    payeeRecovery: {
++      aggregate: jest.fn(async () => ({ _sum: { amount_cents: null } })),
++    },
+     connectTransfer: {
+       findMany: jest.fn(async (args: { where?: Row; select?: Row }) =>
+         transfers.filter((r) => matches(r, args.where)).map((r) => project(r, args.select, {})),
+diff --git a/test/payment-ops.controller.spec.ts b/test/payment-ops.controller.spec.ts
+index 7373d576..44fd5496 100644
+--- a/test/payment-ops.controller.spec.ts
++++ b/test/payment-ops.controller.spec.ts
+@@ -7,6 +7,7 @@ import {
+   CoachPaymentOpsController,
+ } from '../src/checkout/payment-ops.controller';
+ import { CursorPageQueryDto } from '../src/checkout/payment-ops.dto';
++import type { PayoutNoticeService } from '../src/checkout/payout-notice.service';
+ import { DunningService } from '../src/checkout/dunning.service';
+ import { PurchaseSplitHandlerService } from '../src/checkout/purchase-split-handler.service';
+ import { FeePolicyService } from '../src/connect/fees/fee-policy.service';
+@@ -95,6 +96,10 @@ function makePrismaStub() {
+         }));
+       }),
+     },
++    // S-FEE: recoveries owed back (none in these fixtures).
++    payeeRecovery: {
++      aggregate: jest.fn(async () => ({ _sum: { amount_cents: null } })),
++    },
+     connectTransfer: {
+       findMany: jest.fn(async ({ where = {} }: any) =>
+         transfers.filter((t) =>
+@@ -201,20 +206,38 @@ function makeAdminController() {
+   return { ctrl, prisma, fee, dunning, splits, payoutReadiness, reconciliation, refundDispute, analytics, stripeConnect };
+ }
+ 
++// Typed narrowing helper (no banned cast tokens): the stub only carries the
++// two methods the coach controller calls.
++const asPayoutNotices = (m: object): PayoutNoticeService => m as PayoutNoticeService;
++
+ function makeCoachController() {
+   const prisma = makePrismaStub();
+   const fee = new FeePolicyService(prisma as any);
+   const ledger = new SplitLedgerService(prisma as any);
+   const payoutReadiness = { getForCoach: jest.fn() } as any;
+   const analytics = { getCoachEarnings: jest.fn() } as any;
++  const payoutNotices = {
++    listForPayee: jest.fn(
++      async (_payee: string, _page: { cursor: string | null; limit: number }) => ({
++        open_balance: [],
++        needs_attention_count: 0,
++        notices: [],
++        next_cursor: null,
++      }),
++    ),
++    acknowledge: jest.fn(async (_payee: string, _id: string) => ({
++      acknowledged_at: '2026-10-02T00:00:00.000Z',
++    })),
++  };
+   const ctrl = new CoachPaymentOpsController(
+     prisma as any,
+     fee,
+     ledger,
+     payoutReadiness,
+     analytics,
++    asPayoutNotices(payoutNotices),
+   );
+-  return { ctrl, prisma, payoutReadiness, analytics };
++  return { ctrl, prisma, payoutReadiness, analytics, payoutNotices };
+ }
+ 
+ describe('AdminPaymentOpsController', () => {
+@@ -454,6 +477,22 @@ describe('CoachPaymentOpsController', () => {
+     return { user: { id: userId, role } } as any;
+   }
+ 
++  // S-FEE round 5 (OR-111-1): the Money page's held balance + payout notices
++  // are always read for the CALLER (req.user.id), never a coach_id argument.
++  it('adjustments: reads the caller own held balance and notices, page size capped', async () => {
++    const { ctrl, payoutNotices } = makeCoachController();
++    await ctrl.listAdjustments(makeReq('me'), { cursor: 'n-9', limit: 100 });
++    expect(payoutNotices.listForPayee).toHaveBeenCalledWith('me', { cursor: 'n-9', limit: 50 });
++    await ctrl.listAdjustments(makeReq('me'), {});
++    expect(payoutNotices.listForPayee).toHaveBeenLastCalledWith('me', { cursor: null, limit: 20 });
++  });
++
++  it('adjustments acknowledge: scoped to the caller', async () => {
++    const { ctrl, payoutNotices } = makeCoachController();
++    await ctrl.acknowledgeAdjustment(makeReq('me'), 'n-1');
++    expect(payoutNotices.acknowledge).toHaveBeenCalledWith('me', 'n-1');
++  });
++
+   it('returns only the coach own purchases', async () => {
+     const { ctrl, prisma } = makeCoachController();
+     prisma._purchases.push(
+@@ -532,6 +571,9 @@ describe('CoachPaymentOpsController', () => {
+     expect(out.summary.posted_cents).toBe(9_800);
+     expect(out.summary.pending_cents).toBe(9_300);
+     expect(out.summary.reversed_cents).toBe(500);
++    // S-FEE: shared coach-net definition (posted - recoveries owed).
++    expect(out.summary.recoveries_cents).toBe(0);
++    expect(out.summary.net_cents).toBe(9_800);
+     expect(out.entries).toHaveLength(3);
+     expect(out.next_cursor).toBeNull();
+   });
+diff --git a/test/purchase-split-handler.service.spec.ts b/test/purchase-split-handler.service.spec.ts
+index ed5b5c3e..193cd21e 100644
+--- a/test/purchase-split-handler.service.spec.ts
++++ b/test/purchase-split-handler.service.spec.ts
+@@ -1,241 +1,126 @@
++import type { ClientPurchase } from '@prisma/client';
+ import { PurchaseSplitHandlerService } from '../src/checkout/purchase-split-handler.service';
++import { ChargeSettlementService } from '../src/connect/fees/charge-settlement.service';
+ import { FeePolicyService } from '../src/connect/fees/fee-policy.service';
+ import { SplitLedgerService } from '../src/connect/fees/split-ledger.service';
+ import { TransferOrchestratorService } from '../src/connect/fees/transfer-orchestrator.service';
+-import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++import { FakeStripe, asPrisma, makeCharge, makeSettlementPrisma } from './utils/settlement-fakes';
+ 
+-// End-to-end test of the post-charge split flow:
+-//   onChargeSucceeded -> ledger entries created + posted, head-coach
+-//   Transfer enqueued and posted to Stripe.
+-
+-class StripeStub extends StripeConnectApiService {
+-  retrievePaymentIntent = jest.fn(async (_id: string) => ({
+-    id: _id,
+-    latest_charge: 'ch_test',
+-  }));
+-  createTransfer = jest.fn(async (args: any) => ({
+-    id: 'tr_' + args.idempotencyKey,
+-    amount: args.amount,
+-    currency: args.currency,
+-    destination: args.destination,
+-  }));
+-}
+-
+-function makePrismaStub() {
+-  const data: any = {
+-    connectAccounts: [] as any[],
+-    feePolicies: [] as any[],
+-    teamAssignments: [] as any[],
+-    purchases: [] as any[],
+-    splitLedger: [] as any[],
+-    transfers: [] as any[],
+-  };
+-  let n = 0;
+-  return {
+-    _data: data,
+-    connectAccount: {
+-      findUnique: jest.fn(async ({ where }: any) =>
+-        data.connectAccounts.find((a: any) => a.coach_user_id === where.coach_user_id) ?? null,
+-      ),
+-    },
+-    feePolicy: {
+-      findUnique: jest.fn(async ({ where }: any) =>
+-        data.feePolicies.find((p: any) => p.coach_id === where.coach_id) ?? null,
+-      ),
+-    },
+-    teamSubCoachAssignment: {
+-      findFirst: jest.fn(async ({ where }: any) => {
+-        return (
+-          data.teamAssignments.find(
+-            (a: any) =>
+-              a.sub_coach_id === where.sub_coach_id && a.archived_at == null,
+-          ) ?? null
+-        );
+-      }),
+-    },
+-    splitLedgerEntry: {
+-      findFirst: jest.fn(async ({ where }: any) =>
+-        data.splitLedger.find(
+-          (e: any) =>
+-            e.purchase_id === where.purchase_id &&
+-            e.kind === where.kind &&
+-            (where.payee_user_id === null
+-              ? e.payee_user_id == null
+-              : e.payee_user_id === where.payee_user_id),
+-        ) ?? null,
+-      ),
+-      upsert: jest.fn(async ({ where, create, update }: any) => {
+-        const composite = where.purchase_id_kind_payee_user_id;
+-        const existing = data.splitLedger.find(
+-          (e: any) =>
+-            e.purchase_id === composite.purchase_id &&
+-            e.kind === composite.kind &&
+-            e.payee_user_id === composite.payee_user_id,
+-        );
+-        if (existing) {
+-          Object.assign(existing, update);
+-          return { ...existing };
+-        }
+-        const row = {
+-          id: 'le-' + ++n,
+-          status: 'pending',
+-          reversed_cents: 0,
+-          created_at: new Date(),
+-          ...create,
+-        };
+-        data.splitLedger.push(row);
+-        return { ...row };
+-      }),
+-      create: jest.fn(async ({ data: input }: any) => {
+-        const row = {
+-          id: 'le-' + ++n,
+-          status: 'pending',
+-          reversed_cents: 0,
+-          ...input,
+-        };
+-        data.splitLedger.push(row);
+-        return { ...row };
+-      }),
+-      update: jest.fn(async ({ where, data: patch }: any) => {
+-        const row = data.splitLedger.find((e: any) => e.id === where.id);
+-        Object.assign(row, patch);
+-        return { ...row };
+-      }),
+-      findUniqueOrThrow: jest.fn(async ({ where }: any) => {
+-        const row = data.splitLedger.find((e: any) => e.id === where.id);
+-        if (!row) throw new Error('not found');
+-        return { ...row };
+-      }),
+-    },
+-    connectTransfer: {
+-      findUniqueOrThrow: jest.fn(async ({ where }: any) => {
+-        const row = data.transfers.find((t: any) => t.id === where.id);
+-        if (!row) throw new Error('not found');
+-        return { ...row };
+-      }),
+-      upsert: jest.fn(async ({ where, create, update }: any) => {
+-        const existing = data.transfers.find(
+-          (t: any) => t.idempotency_key === where.idempotency_key,
+-        );
+-        if (existing) {
+-          Object.assign(existing, update);
+-          return { ...existing };
+-        }
+-        const row = {
+-          id: 'tr-' + ++n,
+-          attempts: 0,
+-          max_attempts: 6,
+-          reversed_amount_cents: 0,
+-          ...create,
+-        };
+-        data.transfers.push(row);
+-        return { ...row };
+-      }),
+-      update: jest.fn(async ({ where, data: patch }: any) => {
+-        const row = data.transfers.find((t: any) => t.id === where.id);
+-        Object.assign(row, patch);
+-        return { ...row };
+-      }),
+-      findMany: jest.fn(async () => data.transfers.filter((t: any) => t.status === 'pending')),
+-    },
+-  };
+-}
++// End-to-end test of the post-charge split flow (S-FEE):
++//   onChargeSucceeded -> ChargeSettlement + ledger slices written from
++//   Stripe's ACTUAL fee, coach (and head-coach) transfers posted with
++//   source_transaction = the charge. Pre-S-FEE destination charges keep the
++//   legacy head-coach-only flow.
+ 
+ function makeService() {
+-  const prisma = makePrismaStub();
+-  const stripe = new StripeStub();
+-  const fee = new FeePolicyService(prisma as any);
+-  const ledger = new SplitLedgerService(prisma as any);
+-  const transfers = new TransferOrchestratorService(prisma as any, stripe as any, ledger);
++  const { prisma, db } = makeSettlementPrisma();
++  const stripe = new FakeStripe();
++  const fee = new FeePolicyService(asPrisma(prisma));
++  const ledger = new SplitLedgerService(asPrisma(prisma));
++  const transfers = new TransferOrchestratorService(asPrisma(prisma), stripe, ledger);
++  const settlements = new ChargeSettlementService(asPrisma(prisma), stripe, fee, ledger, transfers);
+   const svc = new PurchaseSplitHandlerService(
+-    prisma as any,
+-    stripe as any,
++    asPrisma(prisma),
++    stripe,
+     fee,
+     ledger,
+     transfers,
++    settlements,
+   );
+-  return { svc, prisma, stripe };
++  // $100.00 US card charge: Stripe fee 2.9% + 30c = $3.20.
++  stripe.charges.set(
++    'ch_test',
++    makeCharge({ id: 'ch_test', amount: 10_000, fee: 320, payment_intent: 'pi_abc' }),
++  );
++  return { svc, db, stripe };
+ }
+ 
+-const SOLO_PURCHASE = {
+-  id: 'p-solo',
+-  client_user_id: 'cli-1',
+-  coach_user_id: 'coach-solo',
+-  package_id: 'pk',
+-  amount_cents: 10_000,
+-  currency: 'usd',
+-  stripe_payment_intent_id: 'pi_abc',
+-  billing_type: 'one_time',
+-  status: 'paid',
+-} as any;
++function purchase(overrides: Record<string, unknown>): ClientPurchase {
++  const row: Record<string, unknown> = {
++    id: 'p-solo',
++    client_user_id: 'cli-1',
++    coach_user_id: 'coach-solo',
++    package_id: 'pk',
++    amount_cents: 10_000,
++    currency: 'usd',
++    stripe_payment_intent_id: 'pi_abc',
++    stripe_subscription_id: null,
++    billing_type: 'one_time',
++    status: 'paid',
++    source: null,
++    ...overrides,
++  };
++  return row as ClientPurchase;
++}
+ 
+-const SUB_PURCHASE = {
+-  id: 'p-sub',
+-  client_user_id: 'cli-2',
+-  coach_user_id: 'sub-1',
+-  package_id: 'pk',
+-  amount_cents: 10_000,
+-  currency: 'usd',
+-  stripe_payment_intent_id: 'pi_def',
+-  billing_type: 'one_time',
+-  status: 'paid',
+-} as any;
++const SOLO_PURCHASE = purchase({});
++const SUB_PURCHASE = purchase({ id: 'p-sub', client_user_id: 'cli-2', coach_user_id: 'sub-1' });
++
++function withTeam(db: ReturnType<typeof makeService>['db'], headAccount = true) {
++  db.accounts.push({ coach_user_id: 'sub-1', stripe_account_id: 'acct_sub' });
++  if (headAccount) db.accounts.push({ coach_user_id: 'head-1', stripe_account_id: 'acct_head' });
++  db.assignments.push({
++    sub_coach_id: 'sub-1',
++    head_coach_id: 'head-1',
++    archived_at: null,
++    created_at: new Date(),
++  });
++}
+ 
+ describe('PurchaseSplitHandlerService (end-to-end)', () => {
+   describe('solo PT', () => {
+-    it('writes application_fee + destination as posted, no transfer enqueued', async () => {
+-      const { svc, prisma, stripe } = makeService();
+-      prisma._data.connectAccounts.push({
+-        coach_user_id: 'coach-solo',
+-        stripe_account_id: 'acct_solo',
+-      });
++    it('settles price - actual Stripe fee - 2% to the coach from the charge', async () => {
++      const { svc, db, stripe } = makeService();
++      db.accounts.push({ coach_user_id: 'coach-solo', stripe_account_id: 'acct_solo' });
+       const result = await svc.onChargeSucceeded({ purchase: SOLO_PURCHASE });
+-      expect(result.ledger_entries).toBe(2);
+-      expect(result.transfer_enqueued).toBe(false);
+-      expect(result.charge_id).toBe('ch_test');
+-      // application_fee posted with charge id
+-      const appFee = prisma._data.splitLedger.find((e: any) => e.kind === 'application_fee');
+-      expect(appFee.status).toBe('posted');
+-      expect(appFee.amount_cents).toBe(200);
+-      expect(appFee.stripe_charge_id).toBe('ch_test');
+-      // destination posted with charge id, amount = 98%
+-      const dest = prisma._data.splitLedger.find((e: any) => e.kind === 'destination');
+-      expect(dest.status).toBe('posted');
+-      expect(dest.amount_cents).toBe(9_800);
+-      expect(stripe.createTransfer).not.toHaveBeenCalled();
+-    });
+-  });
+-
+-  describe('sub-coach', () => {
+-    it('writes three ledger rows + posts a head-coach transfer with source_transaction=ch_test', async () => {
+-      const { svc, prisma, stripe } = makeService();
+-      prisma._data.connectAccounts.push({
+-        coach_user_id: 'sub-1',
+-        stripe_account_id: 'acct_sub',
++      expect(result).toEqual({ charge_id: 'ch_test', ledger_entries: 3, transfer_enqueued: true });
++      const slice = (kind: string) => db.ledger.find((e) => e.kind === kind)!;
++      expect(slice('application_fee')).toMatchObject({
++        amount_cents: 200,
++        status: 'posted',
++        stripe_charge_id: 'ch_test',
+       });
+-      prisma._data.connectAccounts.push({
+-        coach_user_id: 'head-1',
+-        stripe_account_id: 'acct_head',
++      expect(slice('stripe_fee')).toMatchObject({
++        amount_cents: 320,
++        status: 'posted',
++        stripe_charge_id: 'ch_test',
+       });
+-      prisma._data.teamAssignments.push({
+-        sub_coach_id: 'sub-1',
+-        head_coach_id: 'head-1',
+-        archived_at: null,
+-        created_at: new Date(),
++      expect(slice('destination')).toMatchObject({
++        amount_cents: 9_480,
++        status: 'posted',
++        payee_user_id: 'coach-solo',
+       });
++      expect(stripe.createTransfer).toHaveBeenCalledWith(
++        expect.objectContaining({
++          amount: 9_480,
++          destination: 'acct_solo',
++          source_transaction: 'ch_test',
++        }),
++      );
++      expect(db.settlements[0]).toMatchObject({
++        gross_cents: 10_000,
++        stripe_fee_cents: 320,
++        platform_fee_cents: 200,
++        head_coach_split_cents: 0,
++        coach_net_cents: 9_480,
++      });
++    });
++  });
+ 
++  describe('sub-coach', () => {
++    it('writes four ledger slices and posts coach + head-coach transfers with source_transaction=ch_test', async () => {
++      const { svc, db, stripe } = makeService();
++      withTeam(db);
+       const result = await svc.onChargeSucceeded({ purchase: SUB_PURCHASE });
+-      expect(result.ledger_entries).toBe(3);
++      expect(result.ledger_entries).toBe(4);
+       expect(result.transfer_enqueued).toBe(true);
+ 
+-      const hcs = prisma._data.splitLedger.find((e: any) => e.kind === 'head_coach_split');
+-      expect(hcs.amount_cents).toBe(500);
+-      expect(hcs.payee_user_id).toBe('head-1');
+-
+-      const dest = prisma._data.splitLedger.find((e: any) => e.kind === 'destination');
+-      expect(dest.amount_cents).toBe(9_300);
++      const hcs = db.ledger.find((e) => e.kind === 'head_coach_split')!;
++      expect(hcs).toMatchObject({ amount_cents: 500, payee_user_id: 'head-1', status: 'posted' });
++      expect(hcs.stripe_transfer_id).toMatch(/^tr_/);
++      const dest = db.ledger.find((e) => e.kind === 'destination')!;
++      expect(dest.amount_cents).toBe(8_980);
+ 
+-      // Stripe transfer was created with source_transaction.
+       expect(stripe.createTransfer).toHaveBeenCalledWith(
+         expect.objectContaining({
+           amount: 500,
+@@ -243,73 +128,87 @@ describe('PurchaseSplitHandlerService (end-to-end)', () => {
+           source_transaction: 'ch_test',
+         }),
+       );
+-      // Transfer row stamped succeeded.
+-      expect(prisma._data.transfers[0].status).toBe('succeeded');
+-      // head_coach_split ledger entry stamped posted with transfer id.
+-      expect(hcs.status).toBe('posted');
+-      expect(hcs.stripe_transfer_id).toMatch(/^tr_/);
++      expect(stripe.createTransfer).toHaveBeenCalledWith(
++        expect.objectContaining({
++          amount: 8_980,
++          destination: 'acct_sub',
++          source_transaction: 'ch_test',
++        }),
++      );
++      expect(db.transfers.every((t) => t.status === 'succeeded')).toBe(true);
+     });
+ 
+-    it('is idempotent — re-invoking onChargeSucceeded does not double-post the transfer', async () => {
+-      const { svc, prisma, stripe } = makeService();
+-      prisma._data.connectAccounts.push({
+-        coach_user_id: 'sub-1',
+-        stripe_account_id: 'acct_sub',
+-      });
+-      prisma._data.connectAccounts.push({
+-        coach_user_id: 'head-1',
+-        stripe_account_id: 'acct_head',
+-      });
+-      prisma._data.teamAssignments.push({
+-        sub_coach_id: 'sub-1',
+-        head_coach_id: 'head-1',
+-        archived_at: null,
+-        created_at: new Date(),
+-      });
+-
++    it('is idempotent: re-invoking onChargeSucceeded does not double-post', async () => {
++      const { svc, db, stripe } = makeService();
++      withTeam(db);
+       await svc.onChargeSucceeded({ purchase: SUB_PURCHASE });
+-      const firstCallCount = stripe.createTransfer.mock.calls.length;
+       await svc.onChargeSucceeded({ purchase: SUB_PURCHASE });
+-      // Second call may invoke Stripe once more (idempotency-key collapses
+-      // on Stripe's side), but the local ConnectTransfer row count must
+-      // stay at 1.
+-      expect(prisma._data.transfers).toHaveLength(1);
+-      // Same idempotency key reused across attempts.
+-      const keys = new Set(
+-        stripe.createTransfer.mock.calls.map((c: any) => c[0].idempotencyKey),
+-      );
+-      expect(keys.size).toBe(1);
+-      expect(stripe.createTransfer.mock.calls.length).toBeGreaterThanOrEqual(
+-        firstCallCount,
+-      );
++      await svc.onChargeSucceeded({ purchase: SUB_PURCHASE });
++      expect(db.transfers).toHaveLength(2);
++      expect(db.ledger).toHaveLength(4);
++      expect(stripe.createTransfer).toHaveBeenCalledTimes(2);
+     });
+ 
+-    it('skips the head-coach transfer when the head coach has no Connect account', async () => {
+-      const { svc, prisma, stripe } = makeService();
+-      prisma._data.connectAccounts.push({
+-        coach_user_id: 'sub-1',
+-        stripe_account_id: 'acct_sub',
+-      });
+-      prisma._data.teamAssignments.push({
+-        sub_coach_id: 'sub-1',
+-        head_coach_id: 'head-1',
+-        archived_at: null,
+-        created_at: new Date(),
+-      });
++    it('head coach without a Connect account: the sub-coach keeps the split', async () => {
++      const { svc, db, stripe } = makeService();
++      withTeam(db, false);
+       const result = await svc.onChargeSucceeded({ purchase: SUB_PURCHASE });
+-      // head coach has no acct -> ledger only has application_fee + destination
+-      expect(result.ledger_entries).toBe(2);
+-      expect(result.transfer_enqueued).toBe(false);
+-      expect(stripe.createTransfer).not.toHaveBeenCalled();
++      expect(result.ledger_entries).toBe(3);
++      expect(stripe.createTransfer).toHaveBeenCalledTimes(1);
++      expect(stripe.createTransfer).toHaveBeenCalledWith(
++        expect.objectContaining({ amount: 9_480, destination: 'acct_sub' }),
++      );
+     });
+   });
+ 
+-  it('skips the entire split when the seller has no Connect account', async () => {
+-    const { svc, prisma, stripe } = makeService();
++  it('seller without a Connect account: nothing moves until payout setup is done', async () => {
++    const { svc, db, stripe } = makeService();
+     const result = await svc.onChargeSucceeded({ purchase: SOLO_PURCHASE });
+     expect(result.ledger_entries).toBe(0);
+     expect(result.transfer_enqueued).toBe(false);
+-    expect(prisma._data.splitLedger).toHaveLength(0);
++    expect(db.ledger).toHaveLength(0);
++    expect(db.settlements[0]).toMatchObject({ status: 'awaiting_fee' });
++    expect(db.settlements[0].last_error).toMatch(/no connected Stripe account/);
+     expect(stripe.createTransfer).not.toHaveBeenCalled();
+   });
++
++  it('free packages and $0 invite-code grants never settle', async () => {
++    const { svc, db, stripe } = makeService();
++    const grant = purchase({ id: 'p-free', amount_cents: 0, source: 'invite_code' });
++    const result = await svc.onChargeSucceeded({ purchase: grant });
++    const zeroInvoice = await svc.onChargeSucceeded({
++      purchase: SOLO_PURCHASE,
++      invoice_amount_cents: 0,
++    });
++    expect(result).toEqual({ charge_id: null, ledger_entries: 0, transfer_enqueued: false });
++    expect(zeroInvoice).toEqual({ charge_id: null, ledger_entries: 0, transfer_enqueued: false });
++    expect(db.settlements).toHaveLength(0);
++    expect(stripe.retrieveCharge).not.toHaveBeenCalled();
++  });
++
++  it('pre-S-FEE destination charge: legacy head-coach flow, no coach transfer', async () => {
++    const { svc, db, stripe } = makeService();
++    withTeam(db);
++    stripe.charges.set(
++      'ch_test',
++      makeCharge({
++        id: 'ch_test',
++        amount: 10_000,
++        fee: 320,
++        payment_intent: 'pi_abc',
++        legacy_application_fee_amount: 700,
++      }),
++    );
++    const result = await svc.onChargeSucceeded({ purchase: SUB_PURCHASE });
++    expect(result.ledger_entries).toBe(3);
++    expect(db.settlements[0]).toMatchObject({ status: 'legacy_destination' });
++    expect(stripe.createTransfer).toHaveBeenCalledTimes(1);
++    expect(stripe.createTransfer).toHaveBeenCalledWith(
++      expect.objectContaining({
++        amount: 500,
++        destination: 'acct_head',
++        source_transaction: 'ch_test',
++      }),
++    );
++  });
+ });
+diff --git a/test/reconciliation.service.spec.ts b/test/reconciliation.service.spec.ts
+index 3349cb39..7c2cc152 100644
+--- a/test/reconciliation.service.spec.ts
++++ b/test/reconciliation.service.spec.ts
+@@ -6,7 +6,27 @@ function makePrismaStub() {
+   const splits: any[] = [];
+   const transfers: any[] = [];
+   const snapshots: any[] = [];
++  const settlements: any[] = [];
++  const recoveries: any[] = [];
+   return {
++    _settlements: settlements,
++    _recoveries: recoveries,
++    // S-FEE: settlement-backed purchases reconcile per charge.
++    chargeSettlement: {
++      findMany: jest.fn(async ({ where = {} }: any) =>
++        settlements.filter(
++          (r) =>
++            r.purchase_id === where.purchase_id &&
++            r.mechanism === where.mechanism &&
++            r.status === where.status,
++        ),
++      ),
++    },
++    payeeRecovery: {
++      findMany: jest.fn(async ({ where = {} }: any) =>
++        recoveries.filter((r) => (where.settlement_id?.in ?? []).includes(r.settlement_id)),
++      ),
++    },
+     _purchases: purchases,
+     _splits: splits,
+     _transfers: transfers,
+@@ -215,4 +235,104 @@ describe('ReconciliationService', () => {
+     expect(drift).toHaveLength(1);
+     expect(drift[0].purchase_id).toBe('p5');
+   });
++  describe('S-FEE settlement-backed purchases', () => {
++    // $49.00 US card: Stripe fee 172, TGP 2% = 98, coach net 4630.
++    function seedSettled(
++      prisma: ReturnType<typeof makePrismaStub>,
++      opts: { transfer?: boolean } = {},
++    ) {
++      prisma._purchases.push({ id: 'p49', amount_cents: 4_900, stripe_payment_intent_id: 'pi_49' });
++      prisma._settlements.push({
++        id: 'cs-1',
++        purchase_id: 'p49',
++        stripe_charge_id: 'ch_49',
++        mechanism: 'separate_charge_transfer',
++        status: 'settled',
++        coach_user_id: 'coach-1',
++        head_coach_user_id: null,
++        gross_cents: 4_900,
++        stripe_fee_cents: 172,
++        platform_fee_cents: 98,
++        head_coach_split_cents: 0,
++        coach_net_cents: 4_630,
++        refunded_cents: 0,
++        dispute_withdrawn_cents: 0,
++        dispute_fee_cents: 0,
++        target_platform_fee_cents: 98,
++        target_head_coach_cents: 0,
++        target_coach_net_cents: 4_630,
++        created_at: new Date(),
++      });
++      const slice = (kind: string, amount: number, payee: string | null) => ({
++        id: `le-${kind}`,
++        purchase_id: 'p49',
++        stripe_charge_id: 'ch_49',
++        kind,
++        payee_user_id: payee,
++        amount_cents: amount,
++        reversed_cents: 0,
++        status: 'posted',
++      });
++      prisma._splits.push(
++        slice('application_fee', 98, null),
++        slice('stripe_fee', 172, null),
++        slice('destination', 4_630, 'coach-1'),
++      );
++      if (opts.transfer !== false) {
++        prisma._transfers.push({
++          id: 'tr-1',
++          purchase_id: 'p49',
++          settlement_id: 'cs-1',
++          destination_user_id: 'coach-1',
++          amount_cents: 4_630,
++          netted_recovery_cents: 0,
++          reversed_amount_cents: 0,
++          status: 'succeeded',
++        });
++      }
++    }
++    const charge49 = (fee: number) => ({
++      retrieveCharge: jest.fn(async () => ({
++        id: 'ch_49',
++        amount: 4_900,
++        amount_refunded: 0,
++        balance_transaction: {
++          id: 'txn_49',
++          amount: 4_900,
++          fee,
++          net: 4_900 - fee,
++          currency: 'usd',
++        },
++      })),
++    });
++
++    it('ok when Stripe, ledger slices, transfers and platform net agree', async () => {
++      const { svc, prisma, stripe } = makeSvc(charge49(172));
++      seedSettled(prisma);
++      const result = await svc.reconcilePurchase('p49');
++      expect(result.status).toBe('ok');
++      expect(result.drift_cents).toBe(0);
++      expect(stripe.retrieveCharge).toHaveBeenCalledWith('ch_49', {
++        expandBalanceTransaction: true,
++      });
++    });
++
++    it('drift when Stripe reports a different fee than the settlement recorded', async () => {
++      const { svc, prisma } = makeSvc(charge49(200));
++      seedSettled(prisma);
++      const result = await svc.reconcilePurchase('p49');
++      expect(result.status).toBe('drift');
++      expect(result.drift_cents).toBe(28);
++      expect(result.notes).toContain('stripe_fee: expected 172, found 200');
++    });
++
++    it('drift when the coach transfer is missing (platform holding the coach net)', async () => {
++      const { svc, prisma } = makeSvc(charge49(172));
++      seedSettled(prisma, { transfer: false });
++      const result = await svc.reconcilePurchase('p49');
++      expect(result.status).toBe('drift');
++      expect(result.notes).toContain('coach_position: expected 4630, found 0');
++      expect(result.notes).toContain('platform_net: expected 98, found 4728');
++    });
++  });
+ });

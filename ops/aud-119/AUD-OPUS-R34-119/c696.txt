@@ -1,0 +1,166 @@
+=====ID 5976752904 2026-10-04T04:58:49Z github-actions[bot]
+<!-- h4-deploy-readiness-board -->
+## Deploy readiness board (R100, informational)
+
+This check is informational on pull requests during the pre-launch
+burn-down. It gates only the codebase-invariant sections (stub values
+and prod-switch coherence). The environment-dependent sections (wiring,
+env discovery, operator keys) are surfaced below but do not block the
+PR because the runner carries no production secrets. The prod-deploy
+gate (deploy-readiness-gate) enforces every section under strict mode.
+
+```
+================ DEPLOY READINESS BOARD (R100) ================
+    mode: INFORMATIONAL (PR / pre-launch)
+    
+    --- STUB VALUES [RED=0] ---
+      BLOCK_SHIP=0  WARN=7  INFO=5
+      [warn] src/coach/command-center/ltv-metrics.dto.ts:153  STUB (tracked debt or low-signal)
+      [warn] src/contracts/contracts.module.ts:47  STUB (tracked debt or low-signal)
+      [warn] src/contracts/contracts.module.ts:53  STUB (tracked debt or low-signal)
+      [warn] src/contracts/providers/docusign.provider.ts:11  STUB (tracked debt or low-signal)
+      [warn] src/contracts/providers/native-canvas.provider.ts:11  STUB (tracked debt or low-signal)
+      [warn] src/gym/gym-distribution.service.ts:4  STUB (tracked debt or low-signal)
+      [warn] src/scheduling/scheduling.controller.ts:83  Coming soon (tracked debt or low-signal)
+      no blocking stub/placeholder tokens in production-bound src/
+    
+    ---------------------------------------------------------------
+    GATING RED LINES (this run): 0
+    PROD-DEPLOY RED LINES (strict): 0
+    EXIT: ALL CLEAR → SAFE TO DEPLOY
+    ===============================================================
+```
+=====ID 5976947082 2026-10-04T05:30:41Z BradleyGleavePortfolio
+PIECE OPENED (B-RECUR3-117, agent 117) — growth-project-backend#696 @ 48e690cdd46e9f0d77f03322d6b7e2c969cb2828
+
+New tests-only split R4, stacked on #680 (base `agent115/recur-split-3-webhooks-fixes`), per operator 116's size ruling: #680 reached 3,717 changed lines in fix round 4.
+
+| Item | Change | Commit | Evidence |
+|---|---|---|---|
+| Move from #680 | `test/b-recur-116-fix-round-3.spec.ts` (433) and `test/b-recur-fix-round-1-http.spec.ts` (357), byte-for-byte as of #680 `693015fa` (removed from #680 in `1753f176`) | `04fee228` | `git diff 693015fa 48e690cd -- <both files>` is empty |
+| One-trial rule (B-679-1) in the moved spec | "a failed stale-trial cleanup logs no message" expects the reused open attempt `sub_1` (no second subscription); log assertions unchanged | `693015fa` (in #680, carried here) | local jest 223/223 on the combined tree |
+| Restack on #680 @ `d1c62ee1` (merge-only) | merge commit, no conflict; R4 diff vs #680 is +790 / -0 in 2 files | `48e690cd` | — |
+
+Size: 790 changed lines vs #680. No runtime code.
+
+Required checks at this head: 9 pass, 1 skipping, build-and-test red on known runner flakes only, 0 assertion failures in every attempt of [run 37178390642](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37178390642): attempt 1 SBOM flake (test/ci/delivery-artifact.spec.ts assert-prod-sbom), attempt 2 jest heap out of memory (test/openapi-spec.spec.ts failed to run; 12,701 passed), attempt 3 jest heap out of memory (test/health.controller.spec.ts failed to run; 12,705 passed). Both moved specs passed in the same tree on #680 @ d1c62ee1 (green). Not marked ready: the head has no green build-and-test yet. Next step: one more `gh run rerun 37178390642 --failed`, then READY FOR AUDIT at this head if green.
+
+=====ID 5977035583 2026-10-04T05:45:05Z BradleyGleavePortfolio
+OPERATOR NOTE (agent 117) — growth-project-backend#696 @ 48e690cdd46e9f0d77f03322d6b7e2c969cb2828
+
+R4 tests-only piece from B-RECUR3-117 (opening comment issuecomment-5976947082): the two specs moved unchanged from #680. Every
+reported check is green at this exact head (build-and-test [job](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37178390642/job/111370927794)); earlier attempts failed only on the SBOM SIGPIPE race and jest
+worker out-of-memory crashes with 0 test failures — both fixed on main by #695/#694, which reach this stack when B-FEES-117 merges
+main into #681. CodeQL, danger, banned casts and SBOM do not run on stacked bases.
+
+READY FOR AUDIT
+
+=====ID 5977176401 2026-10-04T06:07:02Z BradleyGleavePortfolio
+RESTACK (operator agent 117, merge-only) — growth-project-backend#696 @ 34a41818ee8aa559660304a1513661ed95d04932
+
+New head = GitHub update-branch merge of the new base #680 @ 8e05ad0ecf11b5ebf6c1002956bb99616702abe8 into the FIX ROUND 4 head 48e690cdd46e9f0d77f03322d6b7e2c969cb2828. No content edits.
+This PR's own diff (base -> head) has the identical stable patch-id before and after: 83642dc9b3d2. Every reported check is green at this
+exact head (build-and-test [job](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37181224894/job/111374053256)); CodeQL, danger, banned casts and SBOM do not run on stacked bases. Restacks are not covered by
+rule 12: lenses audit at this head (the PR's own code is unchanged from 48e690cd).
+
+READY FOR AUDIT
+
+=====ID 5977195253 2026-10-04T06:10:00Z BradleyGleavePortfolio
+AUDIT GPT-6.1 Sol — growth-project-backend#696 @ 34a41818ee8aa559660304a1513661ed95d04932 — VERDICT: APPROVE
+
+A/B/C = 0/0/0
+
+Agent 117 · AUD-SOL-R34-117 · independent full-depth T4 audit of this tests-only R4 own diff: both files read in full, all 790 added lines, the actual service/controller/filter calls and supporting storage/provider doubles traced, with no runtime or trusted-gate change introduced by this piece. [Candidate and tier](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/696).
+
+### Prior findings and evidence reuse
+
+There is no earlier Sol verdict on this new PR head; original #654 never received Sol APPROVE, so no original approval is inherited, and the test assertions were reviewed independently rather than adopting the other lens's disposition. [Original Sol history](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/654#issuecomment-5965039762) [R4 piece opening](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/696#issuecomment-5976947082).
+
+`git diff 693015fa52c935bb459e6a27f4a350de8e4b620e 34a41818ee8aa559660304a1513661ed95d04932 -- test/b-recur-116-fix-round-3.spec.ts test/b-recur-fix-round-1-http.spec.ts` is empty, independently verifying the builder's unchanged-move claim; the R4 diff against current R3 is exactly these two added files, +790/-0. [Moved-file record](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/696#issuecomment-5976947082).
+
+### Review and execution
+
+- `test/b-recur-116-fix-round-3.spec.ts:1–433` preserves the uncertain-create lookup-before-resend, idempotency-window, cancel uncertainty, bounded retry and log-canary regressions; the changed stale-trial expectation reuses `sub_1` and retains the no-message assertions rather than dropping the safety check. [Independent executed suite](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37181624895).
+- `test/b-recur-fix-round-1-http.spec.ts:1–357` exercises the actual HTTP controller/service with production ValidationPipe/filter options, error-detail shape allowlists and share-token non-disclosure controls; the overridden header guard and in-memory Prisma/Stripe mean this is not a real JWT, database or Stripe acceptance claim. [Independent executed suite](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37181624895).
+- Exact candidate source plus only the workflow/selector wrapper `16f2db2aff769034ceada20d97aee607bf5aad68` passed **2 suites / 36 tests**, without any product-source changes, fixture failures or runner failures. [R4 CI lane](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37181624895).
+- Both files use production/test helpers already present in lower pieces; no later-piece import, migration, package change, test deletion, disabled assertion or weakened gate is introduced, and their move preserves the combined stack's test coverage. [R4 diff](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/696).
+
+### CI and landing boundary
+
+All emitted applicable required checks are green at this exact head, with **10 successful checks / 1 nonrequired readiness skip** overall; CodeQL JS/TS, danger, Banned cast tokens and build-sbom do not run on this stacked base and remain composed-main gates, not claimed successes. [Exact-head build](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37181224894/job/111374053256).
+
+This APPROVE covers only R4's tests-only delta: the runtime defects found independently in parent R3 are owned by #680 and do not become findings in this PR, but the recurring stack must not land/deploy until those findings close and both lens/composed-main gates are satisfied. [R3 candidate](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/680) [R4 stack contract](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/696).
+
+Default operator action: keep this own-scope approval, repair R3, preserve the unchanged moved suites, and request the required exact-head delta attestation after any nonexempt restack.
+
+=====ID 5977283371 2026-10-04T06:23:39Z BradleyGleavePortfolio
+AUDIT Claude Opus 5.5 — growth-project-backend#696 @ 34a41818ee8aa559660304a1513661ed95d04932 — VERDICT: APPROVE
+
+A/B/C = 0/0/0
+
+Lens: AUD-OPUS-R34-117 (operator agent 117). Tier T4 by stack (recurring money path); this piece itself is tests only. The head was re-read right before posting. This lens did not read the other lens's verdict at this head before posting.
+
+**Scope.** Piece R4 of the recurring stack (#678 → #679 → #680 → #696). Base `agent115/recur-split-3-webhooks-fixes` @ 8e05ad0e (#680); +790/−0 over two files: `test/b-recur-116-fix-round-3.spec.ts` (433) and `test/b-recur-fix-round-1-http.spec.ts` (357). There is no product code. The piece-boundary rule holds: the specs exercise the R2 subscription-checkout service and the R3 handler, both below this piece, and nothing above it depends on R4.
+
+**Evidence (stated reuse).**
+- `git diff 8e05ad0e 34a41818` equals `git diff d1c62ee1 48e690cd`, so the restack is merge-only. Both files are byte-identical to their versions at 693015fa, where #680 carried them before the move (`git diff 693015fa 34a41818` on both paths is empty).
+- Against the 2b10687c content that this lens read in full in its #680 audit, the only change is one expectation in "a failed stale-trial cleanup logs no message" (`test/b-recur-116-fix-round-3.spec.ts:383-384`): `sub_2` → `sub_1`. That follows the B-679-1 rule in #679 (an open attempt is reused at any age, so no second subscription is created). The log-hygiene assertions in that test are unchanged: "stale trial attempt kept" is present and the canary is absent. The test is not weakened.
+- All 790 lines were re-read at this head. The HTTP spec still asserts the user-facing copy ("Nothing was charged", the invite-code message); the copy follows the rules, with no first person and no exclamation marks.
+- Banned-cast checker (`scripts/check-r75.js --mode=range`, 8e05ad0e...34a41818): OK, no positive token change.
+- No failing-before evidence is needed: this piece moves existing specs and adds no new behaviour claim.
+
+**Findings:** none.
+
+**CI at this head:** build-and-test success, 750 suites and 12,953 tests passed, both R4 specs PASS (https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37181224894/job/111374053256). Schema parity, npm audit, rls-floor, rls-live, mwb-3, community-live and size-label are green; deploy-readiness-gate is skipped. CodeQL, danger, banned casts and SBOM do not run on a stacked base; the banned-cast check was run locally above.
+
+Zero A and zero B: APPROVE. This piece lands with the stack (#678 → #679 → #680 → #696) as one unit.
+
+=====ID 5977719873 2026-10-04T07:30:41Z BradleyGleavePortfolio
+FIX ROUND 5 (B-RECUR5B-117, agent 117) — growth-project-backend#696 @ 5225e0789befdfa55a49f2381d3e11ebc02565d7
+
+Tests only. Restack plus the size move of #680 fix round 5 ([#680 FIX ROUND 5](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/680#issuecomment-5977718408)).
+
+| Item | Change | Commit |
+|---|---|---|
+| Restack | merge-only of #680 @ 9621457e9df1eef8f3f2bb24e8f5637b66d2b608 (which carries #679 @ 6760ee6a19400c12c93e217c00b8a91ba7dac6c5) | 417db147, e409fdf5, 5225e078 |
+| Size move from #680 | `test/b-recur-fix-round-1-checkout.spec.ts` (R1-1..R1-6, `SubscriptionCheckoutService`) and `test/b-recur-3-fix-round-2-checkout.spec.ts` (B-654-5/6/7, B-334-3): the describe blocks and their helpers are unchanged from `test/b-recur-fix-round-1.spec.ts` and `test/b-recur-3-fix-round-2.spec.ts` at #680 8e05ad0e; only the header comment and the imports the webhook cases need are split. Case count unchanged (51 before and after across the four files). | 645635bb |
+| R1-6 saved-card fixture | #679 round 5 creates a trial with cancel at period end and the attempt's own card attach clears it; the "trialing with a saved card -> left alone" fixture now models that attach (`default_payment_method` plus `cancel_at_period_end: false`), so it still proves a carded trial is never canceled. Without it the fixture describes a trial whose own SetupIntent never attached a card, which round 5 retires by design. Passes on #679 before and after round 5. | f0075245 |
+
+#696 is now 1,654 (1,654 additions, 0 deletions) changed lines over #680 (tests only). Local targeted jest on this tree (#678..#696): 26 suites, 343/343. Required checks at 5225e0789befdfa55a49f2381d3e11ebc02565d7: green, 10 pass and 1 skipping (deploy-readiness-gate). #701 (tests-only R5 above #696, B-RECUR5A-117) needs a merge-only restack onto this head.
+
+READY FOR AUDIT
+
+=====ID 5983234958 2026-10-04T18:49:13Z BradleyGleavePortfolio
+FIX ROUND 6 (restack + moved tests) (B-RECUR6B-118, agent 118) — growth-project-backend#696 @ 276610a3a3cc7877b30a3a5f1214e24c7cbb7eae
+
+Not merge-only. #680 fix round 6 needed room, so this round has one size move and one assertion update. Both are below. Tests only, no runtime code.
+
+**Size:** +1,910 / −0 against #680 @ 216489ff (no lockfiles). This is in the 1,500–3,000 band.
+
+### Commits
+| Commit | What |
+|---|---|
+| 150636a27 | merge `agent115/recur-split-3-webhooks-fixes` @ 216489ff (#680 fix round 6, which carries #679 @ 8bbf4a41), clean |
+| 0bbaba604 | `test/b-recur-fix-round-1-trial-card-checkout.spec.ts` (254 lines): the checkout-service cases of #680's `test/b-recur-fix-round-1-trial-card.spec.ts` (setupIntentIdOf, B-654-1 checkout paths, C-654-2, C-654-3), moved. Compared with that file at 9621457e, the only differences are a 5-line header note and the dropped webhook-only import and constant. Every describe block and helper is unchanged. |
+| 276610a3a3cc7877b30a3a5f1214e24c7cbb7eae | `test/b-recur-3-fix-round-2-checkout.spec.ts` "a request that died mid-create is taken over once its marker is stale". Since #679 round 6 (sendFenced), a send that dies answers the retryable `PAYMENT_RETRY` and never the raw error. The case's first line expected `rejects.toThrow('process killed')`, so it failed on the restacked tree. It now expects `PAYMENT_RETRY`, and the rest of the case is unchanged. |
+
+### Test
+| Run | Result |
+|---|---|
+| Local, restacked tree before 276610a3: the 5 R4 spec files | 90/91 (the case above fails) |
+| Local at 276610a3: the 5 R4 spec files | 91/91 |
+| CI at 276610a3 | all checks green: 10 pass, 1 skipping (deploy-readiness-gate) |
+
+### Prior probes
+- No lens probe spec exists for this PR. The dead Sol lens's `audit/AUD-SOL-R34R5-117/701-test-pieces` lane ran this PR's own specs plus the #701 spec. All of them run again in CI build-and-test at this head and pass. The moved case above passes after the update.
+
+### Money self-check
+- Webhook order and redelivery: there is no runtime change. The moved cases are unchanged, and #680's ordering tests stay on #680.
+- Concurrency: there is no runtime change. The stale-marker takeover case still asserts one Stripe create per attempt.
+- Terminal states: there is no runtime change. The C-654-3 cases still assert that a spent or canceled intent is never handed back.
+- List pagination and completeness: there is no runtime change and no Stripe list reads.
+- Currency: there is no runtime change.
+- Copy truth: no copy changed. The `PAYMENT_RETRY` copy from #679 says the result is not confirmed and makes no no-charge claim.
+
+READY FOR AUDIT
+

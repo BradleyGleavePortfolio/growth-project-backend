@@ -29,10 +29,12 @@ emojis, no exclamation marks, no generic errors.
    (two workers, lock order); terminal states (refunded, disputed, canceled, deleted account); list pagination and completeness (fail
    closed on incomplete Stripe lists); currency (presentment vs settlement, minor units, zero-decimal currencies); copy truth (no claim
    before proof). Get it right once.
-7. Size: over 3,000 changed lines (additions + deletions; lockfiles/generated/snapshots excluded; tests count) is an automatic fail
-   with NO grandfathering. Check `gh pr view N --json additions,deletions` and your local diff before every push. 1,500-3,000: say so in
-   the FIX ROUND; the operator posts the SIZE ASSESSMENT. PRs within 75 lines of 3,000 (#682, #688, #687, #683, #685, #672, #364, and
-   mobile #343 at 2,813): your entry says where new tests go; never push one over.
+7. Size (owner 12:33 PDT 10-04, replaces the 3,000 rule): any PR OPENED after 12:33:16 PDT 10-04 over 1,500 changed lines
+   (additions + deletions; lockfiles/generated/snapshots excluded; tests count) is an automatic fail: lenses answer REQUEST CHANGES
+   "SIZE FAIL (over 1,500 lines)" without review; builders split before opening and check before every push. Every PR open at 12:33 is
+   grandfathered (list: tgp-agent-context governance/PR_SIZE_GRANDFATHERED_2026-10-04.md) and keeps the 3,000 ceiling it was built
+   under: never push one over 3,000. Near-ceiling grandfathered PRs (#682, #688, #687, #683, #685, #672, #364, mobile #343): your entry
+   says where new tests go.
 8. Known infra failures are fixed on main (#694 jest OOM, #695 SBOM race). A stacked piece may still hit them: rerun the failed job
    ONCE, then investigate. Never relabel a regression a flake.
 9. Rule 12: a pure main merge where every PR file stays byte-identical needs no new lens verdict (operator MERGE-ONLY TREE CHECK).
