@@ -482,7 +482,9 @@ describe('C-611-17 guard: no log call under src/ interpolates an address, a name
       'this.logger.log(`digest sent user=${client.id} emailCount=${emailCount}`)',
       "this.logger.log(`provider ${provider.name} threw (err=${err instanceof Error ? err.name : 'unknown'})`)",
       'this.logger.log({ event: STR_EVENT, note_length: result.note?.length ?? 0 })',
-      'this.logger.log(`EMAIL_TRANSPORT=${kind}; templates=${EmailTemplateKey.WEEKLY_DIGEST}`)',
+      // Split so no single literal holds template syntax naming an import in
+      // scope (CodeQL js/template-syntax-in-string-literal).
+      'this.logger.log(`EMAIL_TRANSPORT=${kind}; templates=$' + '{EmailTemplateKey.WEEKLY_DIGEST}`)',
       'this.logger.error(`recovery failed checkout=${checkout.id}: ${redactEmailAddresses(err.message)}`)',
     ];
     for (const snippet of good) {

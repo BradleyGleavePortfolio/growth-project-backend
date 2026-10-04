@@ -4,7 +4,7 @@
  * bodies, exception messages) before it reaches a log line or error column.
  */
 import {
-  EMAIL_PLACEHOLDER,
+  REDACTED_EMAIL,
   LOG_TEXT_MAX,
   redactEmailAddresses,
 } from '../../src/observability/log-pii';
@@ -33,7 +33,7 @@ describe('C-611-17: redactEmailAddresses', () => {
     expect(out.length).toBe(LOG_TEXT_MAX);
     expect(out).not.toContain('@');
     expect(out).not.toContain('pat');
-    expect(redactEmailAddresses('a@b.c tail', 4)).toBe(EMAIL_PLACEHOLDER.slice(0, 4));
+    expect(redactEmailAddresses('a@b.c tail', 4)).toBe(REDACTED_EMAIL.slice(0, 4));
   });
 
   it('never throws on a non-string', () => {

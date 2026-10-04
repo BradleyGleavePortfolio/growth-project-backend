@@ -18,7 +18,7 @@
 export const LOG_TEXT_MAX = 500;
 
 /** Replacement for anything that looks like an address. */
-export const EMAIL_PLACEHOLDER = '[email]';
+export const REDACTED_EMAIL = '[email]';
 
 // Any run of characters around an '@' that is not whitespace, a quote,
 // a bracket or a list separator: covers "a@b.c", "<a@b.c>", "a+tag@b",
@@ -32,5 +32,5 @@ const ADDRESS_LIKE = /[^\s@<>()[\]{}"'`,;]*@[^\s@<>()[\]{}"'`,;]*/g;
  */
 export function redactEmailAddresses(text: unknown, max: number = LOG_TEXT_MAX): string {
   if (typeof text !== 'string') return 'unknown';
-  return text.replace(ADDRESS_LIKE, EMAIL_PLACEHOLDER).slice(0, max);
+  return text.replace(ADDRESS_LIKE, REDACTED_EMAIL).slice(0, max);
 }

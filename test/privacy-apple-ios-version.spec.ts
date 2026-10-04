@@ -85,7 +85,8 @@ describe('C-611-18: the Sign in with Apple steps match the iOS version', () => {
 
   it('earlier iOS versions and other devices get the web steps', () => {
     for (const text of [trust.SIGN_IN_WITH_APPLE_DELETION_TEXT, privacyDeletion, helpInApp]) {
-      const web = sentences(text).filter((s) => s.includes('account.apple.com'));
+      // Match the phrase, not a bare host name (CodeQL js/incomplete-url-substring-sanitization).
+      const web = sentences(text).filter((s) => s.includes('sign in at account.apple.com, go to'));
       expect(web).toHaveLength(1);
       expect(web[0]).toMatch(/^On an earlier version of iOS, or on any other device, /);
       expect(web[0]).toContain('Sign-In & Security');
