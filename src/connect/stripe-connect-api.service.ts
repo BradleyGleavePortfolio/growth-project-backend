@@ -318,6 +318,18 @@ export class StripeConnectApiService {
     return this.get(`/invoices?${q.toString()}`);
   }
 
+  // B-TR5-119 (B-673-1) — the open invoices a never-billed cancel voids first.
+  async listOpenInvoices(
+    subscriptionId: string,
+  ): Promise<{ data?: Array<{ id?: string }>; has_more?: boolean }> {
+    const q = new URLSearchParams({ subscription: subscriptionId, status: 'open', limit: '100' });
+    return this.get(`/invoices?${q.toString()}`);
+  }
+
+  async voidInvoice(invoiceId: string): Promise<{ id: string; status?: string }> {
+    return this.post(`/invoices/${encodeURIComponent(invoiceId)}/void`, {});
+  }
+
   // Stripe Product — represents the package itself (name, description).
   // One Product per CoachPackage. The Stripe Product id is cached on the
   // CoachPackage row.
