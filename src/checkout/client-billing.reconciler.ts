@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ClientBillingService } from './client-billing.service';
+import { dunningErrorCode } from './dunning-v2/dunning-v2.safe-error';
 
 /** Hourly at minute 37 UTC: away from the dunning v2 sweep (minute 7). */
 export const CLIENT_BILLING_RECONCILE_CRON_EXPRESSION = '37 * * * *';
@@ -39,8 +40,7 @@ export class ClientBillingReconciler {
         this.logger.log(JSON.stringify({ event: 'client_billing.reconcile_completed', ...out }));
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.error(`client billing reconcile: fatal error: ${message}`);
+      this.logger.error(`client billing reconcile: fatal error: ${dunningErrorCode(err)}`);
     } finally {
       this.running = false;
     }

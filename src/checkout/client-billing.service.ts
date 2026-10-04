@@ -32,6 +32,7 @@ import {
 import { DunningService } from './dunning.service';
 import { isDunningV2Enabled } from './dunning-v2/dunning-v2.feature';
 import { DUNNING_V2_REVERSAL_REASON, DunningV2Service } from './dunning-v2/dunning-v2.service';
+import { dunningErrorCode } from './dunning-v2/dunning-v2.safe-error';
 
 /**
  * S-DUNNING-R2/R3 — the client's own billing actions, native in the app
@@ -304,6 +305,9 @@ type PurchaseWithDunning = ClientPurchase & { dunning: DunningState | null };
 
 type Tx = Prisma.TransactionClient;
 
+/** B-689-1: what a payment did to the purchase's dunning cycle. */
+type CycleSettlement = 'cleared' | 'dispute' | 'unknown';
+
 /** The lease was taken over by a newer holder; stop before any further write. */
 export class BillingLeaseLostError extends Error {
   constructor(readonly purchaseId: string) {
@@ -314,6 +318,15 @@ export class BillingLeaseLostError extends Error {
 
 export function isDisputeCycle(state: DunningState | null | undefined): boolean {
   return state?.status === 'active' && state.last_failure_reason === DUNNING_V2_REVERSAL_REASON;
+}
+
+/**
+ * The reversed amount is known only on a dispute cycle (the marker's cycle
+ * records it); a dispute recorded during a payment cycle has none here.
+ */
+function disputedAmount(p: PurchaseWithDunning | undefined): number | null {
+  const v = p?.dunning?.last_failed_amount_cents;
+  return isDisputeCycle(p?.dunning) && Number.isInteger(v) ? (v as number) : null;
 }
 
 function isDelinquent(p: PurchaseWithDunning): boolean {
@@ -419,13 +432,13 @@ export class ClientBillingService {
           created: typeof inv.created === 'number' ? inv.created : null,
         });
       }
-      if (isDisputeCycle(p.dunning)) {
-        const amount = p.dunning?.last_failed_amount_cents;
+      // B-689-1: the obligation-aware authority, not the marker alone.
+      if (await this.disputeOpen(p.id)) {
         disputes.push({
           purchase_id: p.id,
           coach_name: coachNames.get(p.coach_user_id) ?? null,
           currency: normalizeCurrency(p.currency),
-          amount_cents: Number.isInteger(amount) ? (amount as number) : null,
+          amount_cents: disputedAmount(p),
         });
       }
     }
@@ -523,9 +536,8 @@ export class ClientBillingService {
     const coachNames = await this.coachNames([...delinquent, ...replayed.map((r) => r.purchase)]);
     const plans: PlanPayResult[] = [];
     for (const r of replayed) {
-      plans.push(
-        this.replayPlan(r.purchase, r.lines, coachNames.get(r.purchase.coach_user_id) ?? null),
-      );
+      const name = coachNames.get(r.purchase.coach_user_id) ?? null;
+      plans.push(this.replayPlan(r.purchase, r.lines, name, await this.disputeOpen(r.purchase.id)));
     }
     const secrets = new Map<string, string | null>();
     for (const purchase of delinquent) {
@@ -578,7 +590,7 @@ export class ClientBillingService {
       amount_paid_cents: 0,
       amount_due_cents: 0,
       access: 'unchanged',
-      dispute_open: isDisputeCycle(purchase.dunning),
+      dispute_open: await this.disputeOpen(purchase.id),
       error_code: null,
       invoices: [],
     };
@@ -724,14 +736,15 @@ export class ClientBillingService {
           ? 'paid'
           : 'nothing_due';
         // A dispute is never settled by a card update or a renewal payment
-        // (B-628-8): access stays as the dispute cycle decides.
-        if (!plan.dispute_open) {
-          plan.access = await this.restoreAfterPayment(
-            purchase,
-            lease,
-            lines.some((l) => l.result === 'paid'),
-          );
-        }
+        // (B-628-8): B-689-1 decides it again after the pay, under the
+        // cycle's row lock (a dispute may have arrived during the await).
+        const restore = await this.restoreAfterPayment(
+          purchase,
+          lease,
+          lines.some((l) => l.result === 'paid'),
+        );
+        plan.access = restore.access;
+        plan.dispute_open = plan.dispute_open || restore.disputeOpen;
       }
       // Uncertain / processing / bank-confirmation rows stay open so the
       // reconciler re-reads Stripe and restores access when they settle.
@@ -753,7 +766,7 @@ export class ClientBillingService {
       // Unexpected failure: if a payment was attempted its result is not
       // known, so never claim nothing was charged.
       this.logger.error(
-        `card update: plan failed purchase=${purchase.id} op=${opId ?? 'none'}: ${(err as Error).message}`,
+        `card update: plan failed purchase=${purchase.id} op=${opId ?? 'none'}: ${dunningErrorCode(err)}`,
       );
       const moneyUnknown = attemptedPay || unresolved;
       plan.outcome = moneyUnknown ? 'uncertain' : 'failed';
@@ -817,6 +830,7 @@ export class ClientBillingService {
     purchase: PurchaseWithDunning,
     lines: InvoiceLine[],
     coachName: string | null,
+    disputeOpen: boolean,
   ): PlanPayResult {
     const unknown = lines.some((l) => l.result === 'uncertain');
     const plan: PlanPayResult = {
@@ -827,7 +841,7 @@ export class ClientBillingService {
       amount_paid_cents: 0,
       amount_due_cents: 0,
       access: 'unchanged',
-      dispute_open: isDisputeCycle(purchase.dunning),
+      dispute_open: disputeOpen,
       error_code: unknown ? 'PAYMENT_RESULT_UNKNOWN' : null,
       invoices: [],
     };
@@ -1016,10 +1030,21 @@ export class ClientBillingService {
         if (err instanceof StripeConnectApiError && err.httpStatus === 409) {
           return { kind: 'uncertain', amountPaidCents: 0, errorCode: 'PAYMENT_RESULT_UNKNOWN' };
         }
+        // B-689-3: a paid invoice proves settlement, not which call paid
+        // it (a Stripe retry may have collected during our await). Only the
+        // same-key replay attributes it; an unknown answer stays uncertain
+        // and the reconciler replays the key later.
         const lostReply = !(err instanceof StripeConnectApiError) || err.httpStatus >= 500;
-        return lostReply
-          ? { kind: 'paid', amountPaidCents: this.paidCents(fresh, inv) }
-          : { kind: 'already_paid', amountPaidCents: 0 };
+        if (!lostReply) return { kind: 'already_paid', amountPaidCents: 0 };
+        const replay = await this.replayPay(
+          fresh,
+          paymentMethodId,
+          payIdempotencyKey(inv.id, setupIntentId),
+        );
+        if (replay.kind === 'paid')
+          return { kind: 'paid', amountPaidCents: replay.amountPaidCents };
+        if (replay.kind === 'already_paid') return { kind: 'already_paid', amountPaidCents: 0 };
+        return { kind: 'uncertain', amountPaidCents: 0, errorCode: 'PAYMENT_RESULT_UNKNOWN' };
       }
       if (!(err instanceof StripeConnectApiError)) {
         // Lost response: the payment may or may not have landed.
@@ -1051,7 +1076,7 @@ export class ClientBillingService {
       }
       // A definitive Stripe refusal (4xx, invoice still unpaid): not charged.
       this.logger.warn(
-        `card update: invoice pay refused invoice=${inv.id}: ${err.httpStatus} ${err.stripeCode ?? ''}`,
+        `card update: invoice pay refused invoice=${inv.id}: ${dunningErrorCode(err)}`,
       );
       return { kind: 'failed', amountPaidCents: 0, errorCode: 'STRIPE_REQUEST_FAILED' };
     }
@@ -1070,7 +1095,7 @@ export class ClientBillingService {
     purchase: PurchaseWithDunning,
     lease: Lease | null,
     knownPaid: boolean,
-  ): Promise<PlanAccess> {
+  ): Promise<{ access: PlanAccess; disputeOpen: boolean }> {
     let subPaid = false;
     let subStatus: string | null = null;
     let periodEnd: Date | null = purchase.current_period_end;
@@ -1083,10 +1108,11 @@ export class ClientBillingService {
       }
     } catch (err) {
       this.logger.warn(
-        `card update: post-pay subscription read deferred to webhook purchase=${purchase.id}: ${(err as Error).message}`,
+        `card update: post-pay subscription read deferred to webhook purchase=${purchase.id}: ${dunningErrorCode(err)}`,
       );
     }
-    if (!knownPaid && !subPaid) return 'unchanged';
+    if (!knownPaid && !subPaid) return { access: 'unchanged', disputeOpen: false };
+    let settled = 'unknown' as CycleSettlement;
     try {
       await this.fencedTx(lease, async (tx) => {
         if (subPaid && subStatus) {
@@ -1100,25 +1126,18 @@ export class ClientBillingService {
             },
           });
         }
-        if (this.dunningV2) {
-          await this.dunningV2.applyImmediateClear(purchase.id, 'card_update', tx);
-        }
+        settled = await this.settleCycleOnPaid(tx, purchase.id, 'card_update');
       });
     } catch (err) {
       if (err instanceof BillingLeaseLostError) throw err;
       this.logger.warn(
-        `card update: access restore deferred to webhook purchase=${purchase.id}: ${(err as Error).message}`,
+        `card update: access restore deferred to webhook purchase=${purchase.id}: ${dunningErrorCode(err)}`,
       );
     }
-    if (this.dunning) {
-      try {
-        await this.dunning.recordResolution(purchase.id);
-      } catch (err) {
-        this.logger.warn(
-          `card update: v1 resolution deferred to webhook purchase=${purchase.id}: ${(err as Error).message}`,
-        );
-      }
-    }
+    // B-689-1: v1 resolves the cycle only when the locked authority above
+    // found no dispute; unknown (the check failed) never resolves it.
+    if (settled === 'dispute') return { access: 'unchanged', disputeOpen: true };
+    if (settled === 'cleared') await this.resolveV1(purchase.id, 'card update');
     const fresh = await this.prisma.clientPurchase.findUnique({
       where: { id: purchase.id },
       include: { dunning: true },
@@ -1131,7 +1150,57 @@ export class ClientBillingService {
     if (!confirmed) {
       this.logEvent('billing.card_update_access_updating', { purchase_id: purchase.id });
     }
-    return confirmed ? 'restored' : 'updating';
+    return { access: confirmed ? 'restored' : 'updating', disputeOpen: false };
+  }
+
+  /**
+   * B-689-1: a payment settles the payment part of a cycle, never a dispute.
+   * Decided inside the caller's money transaction, under the DunningState
+   * row lock (dispute recording takes the same lock), from the current
+   * obligation-aware authority. A disputed cycle stays (or becomes) the
+   * dispute cycle with its lock timeline; otherwise the v2 clear runs on the
+   * same transaction and the caller runs the v1 resolution after commit.
+   */
+  private async settleCycleOnPaid(
+    tx: Tx,
+    purchaseId: string,
+    via: 'card_update' | 'retry',
+  ): Promise<CycleSettlement> {
+    if (typeof (tx as { $queryRaw?: unknown }).$queryRaw === 'function') {
+      await tx.$queryRaw`SELECT "id" FROM "DunningState" WHERE "purchase_id" = ${purchaseId} FOR UPDATE`;
+    }
+    if (await this.disputeOpen(purchaseId, tx)) {
+      await this.dunningV2?.keepAsDisputeCycle(purchaseId, tx);
+      this.logEvent('billing.dispute_cycle_kept_on_paid', { purchase_id: purchaseId });
+      return 'dispute';
+    }
+    if (this.dunningV2) await this.dunningV2.applyImmediateClear(purchaseId, via, tx);
+    return 'cleared';
+  }
+
+  /**
+   * True while a dispute is open on this purchase: the cycle's marker, or
+   * (B-628-13 / B-689-1) any open obligation the dispute path recorded,
+   * read on `db` (the caller's transaction when one is held).
+   */
+  private async disputeOpen(
+    purchaseId: string,
+    db: Tx | PrismaService = this.prisma,
+  ): Promise<boolean> {
+    const state = await db.dunningState.findUnique({ where: { purchase_id: purchaseId } });
+    if (isDisputeCycle(state)) return true;
+    return this.dunningV2 ? this.dunningV2.isDisputeCycleOpen(purchaseId, db) : false;
+  }
+
+  private async resolveV1(purchaseId: string, step: string): Promise<void> {
+    if (!this.dunning) return;
+    try {
+      await this.dunning.recordResolution(purchaseId);
+    } catch (err) {
+      this.logger.warn(
+        `${step}: v1 resolution deferred to webhook purchase=${purchaseId}: ${dunningErrorCode(err)}`,
+      );
+    }
   }
 
   private composeCardResult(
@@ -1260,9 +1329,7 @@ export class ClientBillingService {
   }
 
   private disputeAmount(delinquent: PurchaseWithDunning[], purchaseId: string): number | null {
-    const p = delinquent.find((x) => x.id === purchaseId);
-    const v = p?.dunning?.last_failed_amount_cents;
-    return Number.isInteger(v) ? (v as number) : null;
+    return disputedAmount(delinquent.find((x) => x.id === purchaseId));
   }
 
   /**
@@ -1292,7 +1359,7 @@ export class ClientBillingService {
           );
         } else if (access === 'partial') {
           parts.push('That plan is active again.');
-        } else {
+        } else if (plans.some((p) => p.outcome === 'paid' && !p.dispute_open)) {
           parts.push(
             'Your payment is in. Your access is still updating; pull down to refresh in a minute.',
           );
@@ -1479,7 +1546,10 @@ export class ClientBillingService {
         throw this.stripeFailure(err, 'invoice_list');
       }
       const existing = await this.openCancelOperation(purchase.id);
-      if (invoices.length === 0 && !existing) {
+      // B-689-4: a paid invoice never settles a reversed payment, so a
+      // cycle with an open dispute is 2A (end now), never option A.
+      const dispute = await this.disputeOpen(purchase.id);
+      if (invoices.length === 0 && !existing && !dispute) {
         const period = await this.latestPeriodState(purchase);
         if (period === 'paid') return await this.keepPaidPeriod(purchase, lease, null);
         if (period === 'unknown') throw this.planChangeUnknown(0);
@@ -1563,14 +1633,18 @@ export class ClientBillingService {
         await this.saveOperation(lease, opId, 'voiding', lines, null, false);
       }
       const period = await this.latestPeriodState(purchase);
-      if (period === 'paid') return await this.keepPaidPeriod(purchase, lease, opId);
+      if (period === 'paid' && !dispute) return await this.keepPaidPeriod(purchase, lease, opId);
       if (period === 'unknown') throw this.planChangeUnknown(voidedCount);
       if (period !== 'canceled') {
         await this.saveOperation(lease, opId, 'canceling', lines, null, false);
         await this.renewLease(lease);
         await this.cancelSubscriptionNow(purchase, voidedCount, opId, lease, lines);
       }
-      return await this.endAccessNow(purchase, lease, opId, lines, voidedCount, voidedCents);
+      const ended = await this.endAccessNow(purchase, lease, opId, lines, voidedCount, voidedCents);
+      if (dispute) {
+        ended.message += ` Ending the plan does not settle the payment your bank reversed; contact support at ${SUPPORT_EMAIL} to sort it out.`;
+      }
+      return ended;
     } finally {
       await this.releaseLease(lease);
     }
@@ -1585,7 +1659,7 @@ export class ClientBillingService {
       sub = await this.stripe.retrieveSubscription(purchase.stripe_subscription_id as string);
     } catch (err) {
       this.logger.warn(
-        `cancel: subscription re-read failed purchase=${purchase.id}: ${(err as Error).message}`,
+        `cancel: subscription re-read failed purchase=${purchase.id}: ${dunningErrorCode(err)}`,
       );
       return 'unknown';
     }
@@ -1600,7 +1674,7 @@ export class ClientBillingService {
       return inv.status === 'paid' ? 'paid' : 'unpaid';
     } catch (err) {
       this.logger.warn(
-        `cancel: latest invoice re-read failed purchase=${purchase.id}: ${(err as Error).message}`,
+        `cancel: latest invoice re-read failed purchase=${purchase.id}: ${dunningErrorCode(err)}`,
       );
       return 'unknown';
     }
@@ -1618,6 +1692,7 @@ export class ClientBillingService {
   ): Promise<CancelPlanResult> {
     let periodEnd = purchase.current_period_end ?? purchase.access_expires_at;
     let status = 'active';
+    let settled = 'unknown' as CycleSettlement;
     await this.renewLease(lease);
     try {
       const sub = await this.stripe.setCancelAtPeriodEnd({
@@ -1646,7 +1721,7 @@ export class ClientBillingService {
           data: { client_canceled_at: null },
         });
       }
-      if (this.dunningV2) await this.dunningV2.applyImmediateClear(purchase.id, 'retry', tx);
+      settled = await this.settleCycleOnPaid(tx, purchase.id, 'retry');
       if (opId) {
         await tx.clientBillingOperation.update({
           where: { id: opId },
@@ -1654,15 +1729,7 @@ export class ClientBillingService {
         });
       }
     });
-    if (this.dunning) {
-      try {
-        await this.dunning.recordResolution(purchase.id);
-      } catch (err) {
-        this.logger.warn(
-          `cancel: v1 resolution deferred to webhook purchase=${purchase.id}: ${(err as Error).message}`,
-        );
-      }
-    }
+    if (settled === 'cleared') await this.resolveV1(purchase.id, 'cancel');
     this.logEvent('billing.client_cancel_paid_meanwhile', {
       purchase_id: purchase.id,
       access_ends_at: periodEnd?.toISOString() ?? null,
@@ -1688,7 +1755,7 @@ export class ClientBillingService {
         canceled = String(sub.status) === 'canceled';
       } catch (readErr) {
         this.logger.warn(
-          `cancel: subscription re-read after cancel failure purchase=${purchase.id}: ${(readErr as Error).message}`,
+          `cancel: subscription re-read after cancel failure purchase=${purchase.id}: ${dunningErrorCode(readErr)}`,
         );
       }
       if (!canceled) {
@@ -1819,7 +1886,10 @@ export class ClientBillingService {
           where: { id: op.purchase_id },
           include: { dunning: true },
         });
-        if (!purchase) continue;
+        if (!purchase) {
+          await this.deferOperation(op.id, now);
+          continue;
+        }
         if (op.kind === 'cancel') {
           if (purchase.status === 'canceled') {
             await this.prisma.clientBillingOperation.update({
@@ -1836,8 +1906,9 @@ export class ClientBillingService {
       } catch (err) {
         failed += 1;
         this.logger.warn(
-          `reconcile: operation ${op.kind} failed op=${op.id} purchase=${op.purchase_id}: ${(err as Error).message}`,
+          `reconcile: operation ${op.kind} failed op=${op.id} purchase=${op.purchase_id}: ${dunningErrorCode(err)}`,
         );
+        await this.deferOperation(op.id, now);
       }
     }
     if (isDunningV2Enabled()) {
@@ -1848,6 +1919,7 @@ export class ClientBillingService {
           purchase: { cancel_at_period_end: true, status: { in: [...DELINQUENT_STATUSES] } },
         },
         include: { purchase: true },
+        orderBy: { updated_at: 'asc' },
         take: 100,
       });
       for (const row of outOfBand) {
@@ -1858,12 +1930,26 @@ export class ClientBillingService {
         } catch (err) {
           failed += 1;
           this.logger.warn(
-            `reconcile: 2A failed purchase=${row.purchase_id}: ${(err as Error).message}`,
+            `reconcile: 2A failed purchase=${row.purchase_id}: ${dunningErrorCode(err)}`,
           );
+          await this.prisma.dunningState
+            .updateMany({ where: { id: row.id, status: 'active' }, data: { updated_at: now } })
+            .catch(() => undefined);
         }
       }
     }
     return { finished, applied, failed };
+  }
+
+  /**
+   * C-689-2 (Opus): a failed attempt moves the operation to the back of the
+   * queue (and waits the settle window again), so failing operations never
+   * starve newer ones out of the `take: 100` page.
+   */
+  private async deferOperation(opId: string, now: Date): Promise<void> {
+    await this.prisma.clientBillingOperation
+      .updateMany({ where: { id: opId, completed_at: null }, data: { updated_at: now } })
+      .catch(() => undefined);
   }
 
   /**
@@ -1895,7 +1981,7 @@ export class ClientBillingService {
           paymentMethodId = typeof pm === 'string' ? pm : (pm?.id ?? null);
         } catch (err) {
           this.logger.warn(
-            `reconcile: setup intent re-read failed op=${opId}: ${(err as Error).message}`,
+            `reconcile: setup intent re-read failed op=${opId}: ${dunningErrorCode(err)}`,
           );
         }
       }
@@ -1931,7 +2017,8 @@ export class ClientBillingService {
         );
         return expired;
       }
-      if (lines.some((l) => l.result === 'paid') && !isDisputeCycle(purchase.dunning)) {
+      // B-689-1: restoreAfterPayment decides the dispute under the lock.
+      if (lines.some((l) => l.result === 'paid')) {
         await this.restoreAfterPayment(purchase, lease, true);
       }
       await this.saveOperation(lease, opId, 'reconciled', lines, null, true);
@@ -2162,7 +2249,7 @@ export class ClientBillingService {
     } catch (err) {
       // An unreleased lease expires on its own after BILLING_ACTION_LEASE_MS.
       this.logger.warn(
-        `billing lease release failed purchase=${lease.purchaseId}: ${(err as Error).message}`,
+        `billing lease release failed purchase=${lease.purchaseId}: ${dunningErrorCode(err)}`,
       );
     }
   }
@@ -2295,7 +2382,7 @@ export class ClientBillingService {
       return card;
     } catch (err) {
       // customer.updated mirrors the same fields; the card is saved either way.
-      this.logger.warn(`card mirror deferred to webhook: ${(err as Error).message}`);
+      this.logger.warn(`card mirror deferred to webhook: ${dunningErrorCode(err)}`);
       return null;
     }
   }
@@ -2304,7 +2391,7 @@ export class ClientBillingService {
     try {
       return await this.stripe.retrieveInvoice(invoiceId);
     } catch (err) {
-      this.logger.warn(`invoice re-read failed invoice=${invoiceId}: ${(err as Error).message}`);
+      this.logger.warn(`invoice re-read failed invoice=${invoiceId}: ${dunningErrorCode(err)}`);
       return null;
     }
   }
@@ -2331,9 +2418,7 @@ export class ClientBillingService {
     const moneyStep = step === 'invoice_pay';
     const planStep = step === 'invoice_void' || step === 'cancel' || step === 'cancel_schedule';
     if (err instanceof StripeConnectApiError) {
-      this.logger.warn(
-        `client billing ${step}: Stripe ${err.httpStatus} ${err.stripeCode ?? ''} ${err.message}`,
-      );
+      this.logger.warn(`client billing ${step}: ${dunningErrorCode(err)}`);
       const unavailable = err.httpStatus >= 500 || err.httpStatus === 429;
       if (unavailable) return this.unavailable(step);
       return new HttpException(
@@ -2353,7 +2438,7 @@ export class ClientBillingService {
       /fetch failed|ECONN|ETIMEDOUT|socket hang up|aborted/i.test(message)
     ) {
       // Transport failure before Stripe answered (DNS, reset, TLS, timeout).
-      this.logger.warn(`client billing ${step}: Stripe unreachable: ${message}`);
+      this.logger.warn(`client billing ${step}: Stripe unreachable: ${dunningErrorCode(err)}`);
       return this.unavailable(step);
     }
     if (/STRIPE_SECRET_KEY/i.test(message)) {
@@ -2364,7 +2449,7 @@ export class ClientBillingService {
           'Card payments are not available right now, and nothing was charged. Contact support with the reference below.',
       });
     }
-    this.logger.error(`client billing ${step}: unexpected ${message}`);
+    this.logger.error(`client billing ${step}: unexpected ${dunningErrorCode(err)}`);
     if (moneyStep || planStep) {
       return this.unavailable(step);
     }

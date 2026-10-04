@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { DunningV2Service } from './dunning-v2.service';
+import { dunningErrorCode } from './dunning-v2.safe-error';
 import { isDunningV2Enabled } from './dunning-v2.feature';
 import { DUNNING_V2_SWEEP_CRON_EXPRESSION } from './dunning-v2.cadence';
 
@@ -42,8 +43,7 @@ export class DunningLockoutScheduler {
       const out = await this.dunningV2.runSweep();
       this.logger.log(JSON.stringify({ event: 'dunning_v2.sweep_completed', ...out }));
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.error(`dunning v2 sweep: fatal error: ${message}`);
+      this.logger.error(`dunning v2 sweep: fatal error: ${dunningErrorCode(err)}`);
     } finally {
       this.running = false;
     }

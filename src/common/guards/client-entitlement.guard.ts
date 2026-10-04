@@ -12,6 +12,7 @@ import { PrismaService } from '../../prisma.service';
 import { SKIP_CLIENT_ENTITLEMENT_KEY } from '../decorators/skip-client-entitlement.decorator';
 import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
 import { isDunningV2Enabled } from '../../checkout/dunning-v2/dunning-v2.feature';
+import { DUNNING_V2_GRACE_STATUSES } from '../../checkout/dunning-v2/dunning-grace';
 
 @Injectable()
 export class ClientEntitlementGuard implements CanActivate {
@@ -58,7 +59,8 @@ export class ClientEntitlementGuard implements CanActivate {
           OR: [
             paidWindow,
             {
-              status: 'past_due',
+              // B-690-5: past_due or unpaid (DUNNING_V2_GRACE_STATUSES).
+              status: { in: [...DUNNING_V2_GRACE_STATUSES] },
               dunning: { is: { status: 'active', locked_out_at: null } },
             },
           ],
