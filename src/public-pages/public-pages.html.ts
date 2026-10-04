@@ -86,11 +86,12 @@ export function renderBillingUpdateCardPage(): string {
     title: 'The Growth Project — Update your card',
     headline: 'Update your card in the app',
     body:
-      'Card updates happen inside The Growth Project app, so your card ' +
-      'details stay with our payment provider and never pass through a web ' +
-      'page. Open the app on your phone and it takes you straight to the ' +
-      'card screen. Once the new card is saved, the amount owed is paid with ' +
-      'it and your access stays on.',
+      'Card updates happen inside The Growth Project app, so card details ' +
+      'stay with the payment provider and never pass through a web page. ' +
+      'Open the app on your phone and it takes you straight to the card ' +
+      'screen. After the new card is saved, the app tries the amount owed ' +
+      'on it; once that payment goes through, access continues, or comes ' +
+      'back if it was paused.',
     cta_label: 'Open the app',
     cta_href: 'tgp://billing/update-card',
     links: [
@@ -123,9 +124,7 @@ export function renderSignupPage(inviteCode?: string | null): string {
         'If you run into trouble, email us with the code below and we will ' +
         'help you finish setup.',
       cta_label: 'Email us',
-      cta_href:
-        `mailto:${SUPPORT_EMAIL}` +
-        `?subject=${encodeURIComponent('Invite ' + code)}`,
+      cta_href: `mailto:${SUPPORT_EMAIL}` + `?subject=${encodeURIComponent('Invite ' + code)}`,
       invite_code: code,
     });
   }
