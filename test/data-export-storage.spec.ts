@@ -283,7 +283,40 @@ function matches(row: Record<string, unknown>, where: Where): boolean {
   });
 }
 
-function fakeDb() {
+/** Applies a Prisma `orderBy` (one object or a list); rows it leaves tied keep insertion order. */
+function ordered(list: Row[], orderBy: unknown): Row[] {
+  const keys = (Array.isArray(orderBy) ? orderBy : orderBy ? [orderBy] : []) as Array<
+    Record<string, 'asc' | 'desc'>
+  >;
+  const value = (v: unknown) => (v instanceof Date ? v.getTime() : String(v));
+  return [...list].sort((x, y) => {
+    for (const key of keys) {
+      const [col, dir] = Object.entries(key)[0];
+      const a = value((x as Record<string, unknown>)[col]);
+      const b = value((y as Record<string, unknown>)[col]);
+      if (a !== b) return (a < b ? -1 : 1) * (dir === 'asc' ? 1 : -1);
+    }
+    return 0;
+  });
+}
+
+/**
+ * The in-memory database. Request rows are stamped by `clock`: by default it
+ * always moves forward (at least 1 ms per row), like rows created by separate
+ * requests. A test that needs equal (or out-of-order) created_at values
+ * passes its own clock. Reads apply the service's `orderBy`; rows it leaves
+ * tied come back oldest first, the order a database is free to choose, so a
+ * missing tiebreaker shows up as the wrong row. `ids: 'descending'` hands out
+ * ids that sort newest-lowest, so no test can pass on id order by luck.
+ */
+function fakeDb(opts: { clock?: () => Date; ids?: 'ascending' | 'descending' } = {}) {
+  let lastStamp = 0;
+  const clock =
+    opts.clock ??
+    (() => {
+      lastStamp = Math.max(Date.now(), lastStamp + 1);
+      return new Date(lastStamp);
+    });
   const rows = new Map<string, Row>();
   const users = new Map<string, { id: string; deleted_at: Date | null }>([
     [A, { id: A, deleted_at: null }],
@@ -292,14 +325,19 @@ function fakeDb() {
   const cleanup = new Map<string, Record<string, unknown>>();
   const audits: string[] = [];
   let seq = 0;
-  const sorted = (list: Row[]) =>
-    [...list].sort((x, y) => y.created_at.getTime() - x.created_at.getTime());
+  const select = (args: { where: Where; orderBy?: unknown }) =>
+    ordered(
+      [...rows.values()].filter((r) => matches(r, args.where)),
+      args.orderBy,
+    );
   const prisma = {
     dataExportRequest: {
-      findFirst: async (args: { where: Where }) =>
-        sorted([...rows.values()].filter((r) => matches(r, args.where)))[0] ?? null,
-      findMany: async (args: { where: Where; take?: number }) =>
-        sorted([...rows.values()].filter((r) => matches(r, args.where)))
+      findFirst: async (args: { where: Where; orderBy?: unknown }) => {
+        const r = select(args)[0];
+        return r ? { ...r } : null;
+      },
+      findMany: async (args: { where: Where; orderBy?: unknown; take?: number }) =>
+        select(args)
           .slice(0, args.take ?? 10_000)
           .map((r) => ({ ...r })),
       findUnique: async (args: { where: { id: string } }) => {
@@ -318,12 +356,13 @@ function fakeDb() {
           });
         }
         seq += 1;
+        const n = opts.ids === 'descending' ? 999_999_999_999 - seq : seq;
         const row: Row = {
-          id: `00000000-0000-4000-8000-${String(seq).padStart(12, '0')}`,
+          id: `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
           user_id: args.data.user_id,
           status: args.data.status,
           file_url: null,
-          created_at: new Date(),
+          created_at: clock(),
           completed_at: null,
           expires_at: null,
           file_size_bytes: null,
@@ -1592,6 +1631,99 @@ class FakeRes extends Writable {
     cb();
   }
 }
+
+// F-EXPORT-TIE: main CI run 37177734569 failed the B-636-5 test above once.
+// The replacement request was stamped in the same created_at millisecond as
+// the retired row, and the latest-request read (created_at desc, no
+// tiebreaker) returned the retired row. The latest request is now the active
+// row when one exists, else the newest terminal row with the id as a stable
+// tiebreaker.
+describe('latest request with equal or out-of-order created_at (F-EXPORT-TIE)', () => {
+  /** Retires a READY export the way the app does: the archive is lost, the link request says so. */
+  async function retire(svc: DataExportService, st: ReturnType<typeof fakeStorage>, id: string) {
+    st.objects.delete(`${id}.json`);
+    expect(await codeOf(svc.createDownloadLink(A))).toBe('DATA_EXPORT_FILE_MISSING');
+  }
+
+  it('a replacement stamped in the same millisecond as the retired row is the row the status screen and the download link use', async () => {
+    const t0 = Date.now();
+    const db = fakeDb({ clock: () => new Date(t0), ids: 'descending' });
+    const st = fakeStorage();
+    const old = await readyExport(db, st);
+    const svc = instance(db, st);
+    await retire(svc, st, old);
+    expect(db.rows.get(old)?.status).toBe(DataExportStatus.FAILED);
+
+    const next = await requestOnly(svc, A);
+    expect(next.created_at.getTime()).toBe(t0);
+    expect(db.rows.get(old)?.created_at.getTime()).toBe(t0);
+    expect(await svc.getLatestStatus(A)).toMatchObject({
+      id: next.id,
+      status: DataExportStatus.PENDING,
+    });
+
+    await runOn(instance(db, st), next.id, A);
+    expect(await svc.getLatestStatus(A)).toMatchObject({
+      id: next.id,
+      status: DataExportStatus.READY,
+      download_available: true,
+    });
+    const link = await svc.createDownloadLink(A);
+    expect(link.download_path).toContain('token=');
+    const dl = await svc.openDownload(tokenFrom(link.download_path));
+    expect((await readAll(dl.chunks)).equals(ARCHIVE)).toBe(true);
+    // The rate limit sees the same READY export the status screen shows.
+    expect(await codeOf(requestOnly(svc, A))).toBe('DATA_EXPORT_RATE_LIMITED');
+  });
+
+  it('a replacement stamped before the retired row (the database clock stepped back) is still the latest request', async () => {
+    let stamp = Date.now();
+    const db = fakeDb({ clock: () => new Date(stamp) });
+    const st = fakeStorage();
+    const old = await readyExport(db, st);
+    const svc = instance(db, st);
+    await retire(svc, st, old);
+
+    stamp -= 2_000;
+    const next = await requestOnly(svc, A);
+    expect(next.created_at.getTime()).toBeLessThan(db.rows.get(old)?.created_at.getTime() ?? 0);
+    expect((await svc.getLatestStatus(A)).id).toBe(next.id);
+
+    await runOn(instance(db, st), next.id, A);
+    expect(await svc.getLatestStatus(A)).toMatchObject({
+      id: next.id,
+      status: DataExportStatus.READY,
+      download_available: true,
+    });
+    const dl = await svc.openDownload(tokenFrom((await svc.createDownloadLink(A)).download_path));
+    expect((await readAll(dl.chunks)).equals(ARCHIVE)).toBe(true);
+  });
+
+  it('two finished requests in the same millisecond: every read picks the same one, the greater id', async () => {
+    const t0 = Date.now();
+    const db = fakeDb({ clock: () => new Date(t0) });
+    const st = fakeStorage();
+    const first = await readyExport(db, st);
+    const svc = instance(db, st);
+    await retire(svc, st, first);
+    const second = (await requestOnly(svc, A)).id;
+    const row = db.rows.get(second);
+    if (!row) throw new Error('row');
+    row.status = DataExportStatus.FAILED;
+    expect(second > first).toBe(true);
+
+    for (let read = 0; read < 3; read += 1) {
+      expect(await svc.getLatestStatus(A)).toMatchObject({
+        id: second,
+        status: DataExportStatus.FAILED,
+        download_available: false,
+      });
+    }
+    expect(await codeOf(svc.createDownloadLink(A))).toBe('DATA_EXPORT_FILE_MISSING');
+    // Neither finished row blocks the next request.
+    expect((await requestOnly(svc, A)).status).toBe(DataExportStatus.PENDING);
+  });
+});
 
 describe('GET /v1/me/data-export/download (controller)', () => {
   it('streams the archive as a private attachment', async () => {

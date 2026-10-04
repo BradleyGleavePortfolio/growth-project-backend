@@ -34,39 +34,53 @@ command -v jq >/dev/null 2>&1 || fail "jq not available"
 [[ -f "$LOCKFILE" ]] || fail "lockfile not found: ${LOCKFILE}"
 
 jq -e '.bomFormat == "CycloneDX"' "$SBOM_FILE" >/dev/null 2>&1 || fail "${SBOM_FILE} is not a CycloneDX document"
-COUNT=$(jq '.components | length' "$SBOM_FILE")
+jq -e '.components | type == "array"' "$SBOM_FILE" >/dev/null 2>&1 \
+  || fail "${SBOM_FILE} components is not a list; regenerate the SBOM with cdxgen"
+COUNT=$(jq '.components | length' "$SBOM_FILE") || fail "could not count the components of ${SBOM_FILE}"
 [[ "$COUNT" -gt 0 ]] || fail "SBOM has zero components; an empty scan is not evidence"
 
+# Fail closed (C-695-1): every value below comes from a plain command
+# substitution checked with `|| fail`, never from an unchecked process
+# substitution, so a jq, sort or comm failure stops the check with its reason
+# instead of yielding an empty list that reads as "0 dev-only leaks".
+jq empty "$LOCKFILE" >/dev/null 2>&1 \
+  || fail "lockfile ${LOCKFILE} is not valid JSON; restore it from git or run npm install"
+jq -e '.packages | type == "object"' "$LOCKFILE" >/dev/null 2>&1 \
+  || fail "lockfile ${LOCKFILE} has no \"packages\" map (npm lockfile v2 or v3 needed); regenerate it with npm 7 or later"
+
 # name@version of every component
-COMPONENTS=$(jq -r '.components[] | "\(.name)@\(.version // "")"' "$SBOM_FILE" | sort -u)
+COMPONENTS=$(jq -r '.components[] | "\(.name)@\(.version // "")"' "$SBOM_FILE" | sort -u) \
+  || fail "could not list the components of ${SBOM_FILE}"
 
 # name@version that appears in the lockfile ONLY as `dev: true` entries
 # (lockfile v2/v3 `packages` map). A nested dev copy of a name@version that
 # also exists as a production entry is not dev-only.
-lock_nv() { # $1 = jq filter on .value
+lock_nv() { # $1 = dev | prod
   jq -r --arg f "$1" '
     .packages | to_entries[] | select(.key != "")
     | select(if $f == "dev" then (.value.dev == true) else (.value.dev != true) end)
     | (.key | sub("^.*node_modules/"; "")) + "@" + (.value.version // "")' "$LOCKFILE" | sort -u
 }
-DEV_ONLY=$(comm -23 <(lock_nv dev) <(lock_nv prod) || true)
+DEV=$(lock_nv dev) || fail "could not read the dev entries of ${LOCKFILE}"
+PROD=$(lock_nv prod) || fail "could not read the production entries of ${LOCKFILE}"
+[[ -n "$PROD" ]] || fail "lockfile ${LOCKFILE} lists no production packages; the dev-only check has nothing to compare against"
+DEV_ONLY=$(comm -23 <(printf '%s\n' "$DEV") <(printf '%s\n' "$PROD")) \
+  || fail "could not compare the dev and production entries of ${LOCKFILE}"
 
-LEAK=$(comm -12 <(printf '%s\n' "$COMPONENTS") <(printf '%s\n' "$DEV_ONLY") || true)
+LEAK=$(comm -12 <(printf '%s\n' "$COMPONENTS") <(printf '%s\n' "$DEV_ONLY")) \
+  || fail "could not compare ${SBOM_FILE} with the dev-only entries of ${LOCKFILE}"
 [[ -z "$LEAK" ]] || fail "dev-only packages present in production SBOM: $(printf '%s' "$LEAK" | tr '\n' ' ')"
 
-NAMES=$(jq -r '.components[].name' "$SBOM_FILE" | sort -u)
+NAMES=$(jq -r '.components[].name' "$SBOM_FILE" | sort -u) || fail "could not list the component names of ${SBOM_FILE}"
 # has_name <name>: 0 when <name> is one whole line of NAMES, 1 when it is not.
-# grep reads a here-string, never a pipe: with `printf | grep -q` under
-# pipefail, grep's early exit on a match could kill printf with SIGPIPE (141)
-# and turn a PRESENT name into "absent" (a banned tool passed the denylist;
-# a present runtime package read as missing). Any other grep status aborts.
+# A pure shell pattern match: no pipe, here-string, temp file or child
+# process, so nothing can fail and read as "absent" (C-695-2). The earlier
+# `printf | grep -q` lost a SIGPIPE race under pipefail, and a here-string
+# that bash could not create (no free descriptor, no temp file) exited 1 like
+# "no match". The quoted operand matches literally: `*`, `?` and `[` in a
+# name are not patterns.
 has_name() {
-  local rc=0
-  grep -qxF -- "$1" <<<"$NAMES" || rc=$?
-  case "$rc" in
-    0 | 1) return "$rc" ;;
-    *) fail "grep exited ${rc} while checking '${1}'; the SBOM name check could not run" ;;
-  esac
+  [[ $'\n'"${NAMES}"$'\n' == *$'\n'"$1"$'\n'* ]]
 }
 for d in $DENY_LIST; do
   if has_name "$d"; then fail "build/test tool '${d}' present in production SBOM"; fi
