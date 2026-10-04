@@ -298,6 +298,8 @@ describe('CoachMoneyService.getSummary', () => {
       paying_clients: 2,
       churned_30d: 1,
       new_clients_30d: 1,
+      trial_clients: 0,
+      trial_mrr_cents: 0,
     });
     for (const call of p.splitLedgerEntry.findMany.mock.calls) {
       const w = (call[0] as { where: Record<string, unknown> }).where;
