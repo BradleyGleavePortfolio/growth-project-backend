@@ -18,6 +18,7 @@ import {
 import { PackagesService } from '../packages/packages.service';
 import { PrismaService } from '../prisma.service';
 import { CheckoutService, isRecurringPackage } from './checkout.service';
+import { errorLabel } from './error-label';
 import {
   attachTrialCard,
   readTrialSetup,
@@ -135,20 +136,6 @@ function codeOfHttp(err: unknown): string | null {
   if (!body || typeof body !== 'object') return null;
   const code: unknown = Reflect.get(body, 'code');
   return typeof code === 'string' ? code : null;
-}
-
-/**
- * A log-safe label for a caught error: its machine code or class name, never
- * its message (a message can echo request values).
- */
-function errorLabel(err: unknown): string {
-  if (err && typeof err === 'object') {
-    for (const field of ['stripeCode', 'code', 'stripeType', 'type']) {
-      const v: unknown = Reflect.get(err, field);
-      if (typeof v === 'string' && /^[A-Za-z0-9_.-]{1,64}$/.test(v)) return v;
-    }
-  }
-  return err instanceof Error ? err.name : 'unknown';
 }
 
 /** Stripe kept this Idempotency-Key for a request with other parameters. */
@@ -790,10 +777,11 @@ export class SubscriptionCheckoutService {
    *      reservation: Stripe never saw the key. A definitive Stripe refusal
    *      ends the attempt (Stripe stores that answer under the key). An
    *      uncertain one (timeout, 5xx, 429, connection drop) marks it for a
-   *      retry; the next request for it resends the pinned request, and if
-   *      Stripe reports the key was used with other parameters, the
-   *      subscription is found by metadata.tgp_purchase_id or the attempt
-   *      ends (nothing was created).
+   *      retry; the next request for it first looks the subscription up by
+   *      metadata.tgp_purchase_id (C-654-8) and resends the pinned request
+   *      only when none exists and the key is still retained; if Stripe
+   *      reports the key was used with other parameters, the lookup decides
+   *      again or the attempt ends (nothing was created).
    */
   private async mintSubscription(
     reservation: ClientPurchase,
@@ -849,19 +837,42 @@ export class SubscriptionCheckoutService {
       tgp_fee_mechanism: 'separate_charge_transfer',
       tgp_checkout: 'native_subscription',
     };
-    let sub: StripeSubscriptionCheckoutObject;
-    try {
-      sub = await this.stripe.createSubscription({
-        customer: customerId,
-        recurringPriceId: terms.recurring_price_id,
-        oneTimePriceId: terms.one_time_price_id ?? undefined,
-        onBehalfOf: destination,
-        metadata,
-        trialPeriodDays: terms.trial_days > 0 ? terms.trial_days : undefined,
-        idempotencyKey: stripeKey,
-      });
-    } catch (err) {
-      if (isIdempotencyMismatch(err)) {
+    // B-654-5 / C-654-8 — a retry never resends blindly: Stripe keeps a key
+    // for 24 h only, after which the pinned request would make a second
+    // subscription. Stripe is read first: the attempt's own subscription
+    // (metadata.tgp_purchase_id) is bound; unreadable stays retryable; none
+    // past the key window ends the attempt (nothing was created). Inside the
+    // window the same key still guards the resend.
+    let sub: StripeSubscriptionCheckoutObject | null = null;
+    if (!firstTry) {
+      const found = await this.findAttemptSubscription(reservation);
+      if (found === 'unreadable') {
+        await this.markRetryable(reservation);
+        throw this.inProgress(true);
+      }
+      sub = found;
+      if (!sub && Date.now() - reservation.created_at.getTime() >= OPEN_ATTEMPT_MAX_AGE_MS) {
+        await this.expireAttempt(reservation.id);
+        throw this.attemptExpired('timed_out');
+      }
+    }
+    if (!sub) {
+      try {
+        sub = await this.stripe.createSubscription({
+          customer: customerId,
+          recurringPriceId: terms.recurring_price_id,
+          oneTimePriceId: terms.one_time_price_id ?? undefined,
+          onBehalfOf: destination,
+          metadata,
+          trialPeriodDays: terms.trial_days > 0 ? terms.trial_days : undefined,
+          idempotencyKey: stripeKey,
+        });
+      } catch (err) {
+        if (!isIdempotencyMismatch(err)) {
+          if (isDefinitiveRefusal(err)) await this.expireAttempt(reservation.id);
+          else await this.markRetryable(reservation);
+          throw this.stripeFailure(err);
+        }
         const found = await this.findAttemptSubscription(reservation);
         if (found === 'unreadable') {
           await this.markRetryable(reservation);
@@ -874,12 +885,6 @@ export class SubscriptionCheckoutService {
           throw this.attemptExpired('timed_out');
         }
         sub = found;
-      } else if (isDefinitiveRefusal(err)) {
-        await this.expireAttempt(reservation.id);
-        throw this.stripeFailure(err);
-      } else {
-        await this.markRetryable(reservation);
-        throw this.stripeFailure(err);
       }
     }
 
@@ -982,8 +987,8 @@ export class SubscriptionCheckoutService {
     this.logger.error(
       `subscription ${sub.id} has no payable PaymentIntent or SetupIntent and is not paid; canceling it`,
     );
-    await this.cancelQuietly(sub.id);
-    await this.expireAttempt(row.id);
+    // B-654-8 — the attempt ends only once Stripe shows its subscription ended.
+    if (await this.cancelConfirmed(sub.id)) await this.expireAttempt(row.id);
     throw new ServiceUnavailableException({
       code: 'SUBSCRIPTION_SETUP_UNAVAILABLE',
       error: 'SUBSCRIPTION_SETUP_UNAVAILABLE',
@@ -1024,8 +1029,8 @@ export class SubscriptionCheckoutService {
    * B-654-5 / B-654-7 — a same-key retry. The key is bound to its attempt
    * and to the terms that attempt was started with:
    *   * still being created by another request: wait for it (bounded);
-   *   * its create ended uncertainly (or its request died): resend the pinned
-   *     request and finish it;
+   *   * its create ended uncertainly (or its request died): finish it from
+   *     Stripe (C-654-8: look up first; resend only inside the key window);
    *   * paid / card saved: SUBSCRIPTION_ALREADY_ACTIVE; ended:
    *     SUBSCRIPTION_ATTEMPT_EXPIRED (never a spent or dead secret, R1-5 /
    *     C-654-3);
@@ -1188,12 +1193,18 @@ export class SubscriptionCheckoutService {
       }
     } else if (parseCheckoutTerms(row.checkout_terms)) {
       const found = await this.findAttemptSubscription(row);
-      if (found === 'unreadable') throw this.inProgress(true);
+      if (found === 'unreadable') {
+        await this.markRetryable(row);
+        throw this.inProgress(true);
+      }
       sub = found;
     }
     if (sub && (await this.attemptSettled(row, sub))) return 'settled';
-    if (sub && (sub.status === 'incomplete' || sub.status === 'trialing')) {
-      await this.cancelQuietly(sub.id);
+    // B-654-8 — never end the attempt while its subscription may still charge.
+    const cancelable = sub && (sub.status === 'incomplete' || sub.status === 'trialing');
+    if (sub && cancelable && !(await this.cancelConfirmed(sub.id))) {
+      await this.markRetryable(row);
+      throw this.inProgress(true);
     }
     await this.expireAttempt(row.id);
     this.logger.log(`billing.subscription_attempt_retired purchase=${row.id} reason=terms_changed`);
@@ -1277,8 +1288,10 @@ export class SubscriptionCheckoutService {
     } catch (err) {
       throw this.stripeFailure(err);
     }
-    if (sub.status === 'active' || (sub.status === 'trialing' && !!sub.default_payment_method)) {
-      // Paid (or card saved) a moment ago; the webhook will grant access.
+    // Paid (or card saved) a moment ago; the webhook will grant access.
+    // B-654-8 — past_due / unpaid were active and still charge: the plan.
+    const live = sub.status === 'active' || sub.status === 'past_due' || sub.status === 'unpaid';
+    if (live || (sub.status === 'trialing' && !!sub.default_payment_method)) {
       throw this.alreadyActive({ ...cur, status: sub.status });
     }
     // B-654-6 — a first payment already in flight or paid is never canceled.
@@ -1353,10 +1366,10 @@ export class SubscriptionCheckoutService {
       });
       return this.resultFromRow(row, pkg, true, sub.status);
     }
-    // Stale: retire it so incomplete subscriptions never pile up.
-    if (sub.status === 'incomplete' || sub.status === 'trialing') {
-      await this.cancelQuietly(sub.id);
-    }
+    // Stale: retire it so incomplete subscriptions never pile up. B-654-8 —
+    // only once Stripe shows it ended; else retryable, never a second one.
+    const cancelable = sub.status === 'incomplete' || sub.status === 'trialing';
+    if (cancelable && !(await this.cancelConfirmed(sub.id))) throw this.inProgress(true);
     await this.expireAttempt(cur.id);
     return null;
   }
@@ -1364,6 +1377,7 @@ export class SubscriptionCheckoutService {
   private sheetSecret(
     sub: StripeSubscriptionCheckoutObject,
   ): { mode: 'payment' | 'setup'; client_secret: string } | null {
+    if (sub.status === 'canceled' || sub.status === 'incomplete_expired') return null;
     const si = sub.pending_setup_intent;
     if (sub.status === 'trialing') {
       if (si && typeof si === 'object' && typeof si.client_secret === 'string') {
@@ -1516,7 +1530,7 @@ export class SubscriptionCheckoutService {
         where: { id, entitlement_active: false, stripe_client_secret: null },
       });
     } catch (err) {
-      this.logger.error(`could not drop subscription reservation ${id}: ${(err as Error).message}`);
+      this.logger.error(`could not drop reservation purchase=${id} error=${errorLabel(err)}`);
     }
   }
 
@@ -1525,8 +1539,30 @@ export class SubscriptionCheckoutService {
       await this.stripe.cancelSubscription(subscriptionId);
     } catch (err) {
       this.logger.warn(
-        `could not cancel stale subscription ${subscriptionId}: ${(err as Error).message}; Stripe expires it after 23 h`,
+        `could not cancel stale subscription ${subscriptionId} error=${errorLabel(err)}; Stripe expires it after 23 h`,
       );
+    }
+  }
+
+  /**
+   * B-654-8 — cancel an unpaid subscription; true only once Stripe shows it
+   * ended. A failed or lost cancel is reconciled by reading it back.
+   */
+  private async cancelConfirmed(subscriptionId: string): Promise<boolean> {
+    try {
+      await this.stripe.cancelSubscription(subscriptionId);
+      return true;
+    } catch (err) {
+      this.logger.warn(`cancel failed subscription=${subscriptionId} error=${errorLabel(err)}`);
+    }
+    try {
+      const now = await this.stripe.retrieveSubscriptionForCheckout(subscriptionId);
+      return now.status === 'canceled' || now.status === 'incomplete_expired';
+    } catch (err) {
+      this.logger.warn(
+        `cancel unconfirmed subscription=${subscriptionId} error=${errorLabel(err)}`,
+      );
+      return false;
     }
   }
 
@@ -1568,14 +1604,12 @@ export class SubscriptionCheckoutService {
           if (outcome === 'card_saved') cardSaved.push(row);
         } catch (err) {
           // One unreadable attempt never stops the others or the checkout.
-          this.logger.warn(
-            `stale trial attempt kept purchase=${row.id}: ${(err as Error).message}`,
-          );
+          this.logger.warn(`stale trial attempt kept purchase=${row.id} error=${errorLabel(err)}`);
         }
       }
     } catch (err) {
       this.logger.warn(
-        `stale trial attempt cleanup skipped client=${clientId}: ${(err as Error).message}`,
+        `stale trial attempt cleanup skipped client=${clientId} error=${errorLabel(err)}`,
       );
     }
     return cardSaved;
@@ -1646,7 +1680,7 @@ export class SubscriptionCheckoutService {
       if (piStatus === 'canceled') return 'dead';
       return 'usable';
     } catch (err) {
-      this.logger.warn(`replay secret check skipped purchase=${row.id}: ${(err as Error).message}`);
+      this.logger.warn(`replay secret check skipped purchase=${row.id} error=${errorLabel(err)}`);
       return 'usable';
     }
   }
@@ -1661,7 +1695,7 @@ export class SubscriptionCheckoutService {
       await attachTrialCard(this.stripe, subscriptionId, paymentMethodId);
     } catch (err) {
       this.logger.warn(
-        `trial card attach deferred purchase=${purchaseId}: ${(err as Error).message}`,
+        `trial card attach deferred purchase=${purchaseId} error=${errorLabel(err)}`,
       );
     }
   }
