@@ -945,9 +945,11 @@ export class RefundDisputeHandlerService {
     if (!current || current.transfer_reversed) return 'already_done';
     if (current.transfer_reversal_review_at) return 'needs_review';
     const key = refundTransferReversalKey(refundRowId);
-    const prior = await this.prisma.transferReversalOp.findUnique({
-      where: { idempotency_key: key },
-    });
+    // An operation under the key exists only after the first attempt was
+    // stamped (admission writes the stamp before the operation).
+    const prior = current.transfer_reversal_first_attempt_at
+      ? await this.prisma.transferReversalOp.findUnique({ where: { idempotency_key: key } })
+      : null;
     let send: { transfer_row_id: string; amount_cents: number };
     if (prior) {
       send = { transfer_row_id: prior.transfer_id, amount_cents: prior.amount_cents };
@@ -1732,9 +1734,10 @@ export class RefundDisputeHandlerService {
     const retry = typeof row.transfer_reversal_amount_cents === 'number';
     if (!retry && !firstPassAt) return 'already_done';
     const key = disputeTransferReversalKey(row.id);
-    const prior = await this.prisma.transferReversalOp.findUnique({
-      where: { idempotency_key: key },
-    });
+    // An operation under the key exists only after the amount was stamped.
+    const prior = retry
+      ? await this.prisma.transferReversalOp.findUnique({ where: { idempotency_key: key } })
+      : null;
     let send: { transfer_row_id: string; amount_cents: number };
     if (prior) {
       send = { transfer_row_id: prior.transfer_id, amount_cents: prior.amount_cents };

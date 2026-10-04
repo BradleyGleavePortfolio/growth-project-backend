@@ -1051,10 +1051,12 @@ export class TransferOrchestratorService {
   /**
    * B-COACH-5 (owner reconcile, B-641-7): record a reversal Stripe already
    * holds (found on the transfer's complete reversal list) as a completed
-   * operation, with no Stripe call. Absolute like every completion: the
-   * operation's base is Stripe's cumulative total less this reversal, so a
-   * transfer.reversed sync that already counted it never counts it again. A
-   * reversal an operation already recorded is returned as recorded.
+   * operation, with no Stripe call. One transaction takes the transfer's
+   * reversal slot, writes the operation already succeeded (it is never
+   * pending, so no driver can send it) and sets the total absolutely: the
+   * base is Stripe's cumulative total less this reversal, so a total that
+   * already counts it never counts it twice. A reversal an operation already
+   * recorded (stripe_reversal_id is unique) is returned as recorded.
    */
   async recordFoundReversal(args: {
     transfer_row_id: string;
@@ -1064,25 +1066,79 @@ export class TransferOrchestratorService {
     idempotency_key: string;
   }): Promise<ReverseOutcome> {
     await this.resolvePendingReversals(args.transfer_row_id);
-    const recorded =
+    const recorded = async () =>
       (await this.prisma.transferReversalOp.findUnique({
         where: { stripe_reversal_id: args.stripe_reversal_id },
       })) ??
       (await this.prisma.transferReversalOp.findUnique({
         where: { idempotency_key: args.idempotency_key },
       }));
-    if (recorded) return this.outcomeOf(recorded);
+    const prior = await recorded();
+    if (prior) return this.outcomeOf(prior);
     const row = await this.prisma.connectTransfer.findUniqueOrThrow({
       where: { id: args.transfer_row_id },
     });
     const amount = Math.min(args.amount_cents, row.amount_cents);
     if (!(amount > 0)) return { status: 'succeeded', transfer: row, op_id: null };
-    const op = await this.startReversal(row, amount, {
-      idempotency_key: args.idempotency_key,
-      purpose: 'legacy',
-      base_reversed_cents: Math.max(0, args.stripe_reversed_total_cents - amount),
-    });
-    return this.completeReversal(op, args.stripe_reversal_id);
+    let written: { transfer: ConnectTransfer; op_id: string } | null = null;
+    try {
+      written = await this.prisma.$transaction(async (tx) => {
+        const slot = await tx.connectTransfer.updateMany({
+          where: { id: row.id, reversal_seq: row.reversal_seq },
+          data: { reversal_seq: row.reversal_seq + 1 },
+        });
+        if (slot.count !== 1) return null;
+        const op = await tx.transferReversalOp.create({
+          data: {
+            transfer_id: row.id,
+            seq: row.reversal_seq + 1,
+            idempotency_key: args.idempotency_key,
+            amount_cents: amount,
+            base_reversed_cents: Math.max(0, args.stripe_reversed_total_cents - amount),
+            purpose: 'legacy',
+            status: 'succeeded',
+            stripe_reversal_id: args.stripe_reversal_id,
+            resolved_at: new Date(),
+          },
+        });
+        const t = await tx.connectTransfer.findUniqueOrThrow({ where: { id: row.id } });
+        const reversed = Math.min(
+          t.amount_cents,
+          Math.max(t.reversed_amount_cents, op.base_reversed_cents + op.amount_cents),
+        );
+        const full = reversed >= t.amount_cents;
+        const transfer = await tx.connectTransfer.update({
+          where: { id: t.id },
+          data: {
+            reversed_amount_cents: reversed,
+            status: full ? 'reversed' : t.status,
+            reversed_at: full ? new Date() : t.reversed_at,
+          },
+        });
+        return { transfer, op_id: op.id };
+      });
+    } catch (err) {
+      if ((err as { code?: string }).code !== 'P2002') throw err;
+    }
+    if (!written) {
+      // Another writer took the slot or recorded this reversal first.
+      const raced = await recorded();
+      if (raced) return this.outcomeOf(raced);
+      throw new ReversalUncertainError(
+        row.id,
+        args.idempotency_key,
+        'another worker started a reversal on this transfer at the same time',
+      );
+    }
+    const { transfer } = written;
+    if (transfer.ledger_entry_id && !transfer.settlement_id && transfer.stripe_transfer_id) {
+      await this.ledger.setReversedTotal({
+        entry_id: transfer.ledger_entry_id,
+        reversed_total_cents: transfer.reversed_amount_cents,
+        stripe_transfer_id: transfer.stripe_transfer_id,
+      });
+    }
+    return { status: 'succeeded', transfer, op_id: written.op_id };
   }
 
   /**
@@ -1127,7 +1183,6 @@ export class TransferOrchestratorService {
       idempotency_key?: string;
       purpose?: ReversalPurpose;
       fence?: MoneyFence;
-      base_reversed_cents?: number;
     },
   ): Promise<TransferReversalOp> {
     const seq = row.reversal_seq + 1;
@@ -1152,7 +1207,7 @@ export class TransferOrchestratorService {
           seq,
           idempotency_key: key,
           amount_cents: amount,
-          base_reversed_cents: args.base_reversed_cents ?? row.reversed_amount_cents,
+          base_reversed_cents: row.reversed_amount_cents,
           purpose,
           status: 'pending',
         },

@@ -187,6 +187,7 @@ export function harness() {
     db,
     svc,
     restart,
+    transfers,
     reverseTransfer,
     reversals,
     expireKeys: () => retained.clear(),
