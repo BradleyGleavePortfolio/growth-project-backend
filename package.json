@@ -96,7 +96,7 @@
       "deepmerge-ts": "8.0.0"
     },
     "@nestjs/platform-express@11.1.26": {
-      "multer": "2.3.0"
+      "multer": "2.4.0"
     },
     "@nestjs/swagger@11.4.4": {
       "js-yaml": "4.3.2"
