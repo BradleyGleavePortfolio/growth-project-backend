@@ -36,9 +36,11 @@ import {
   attemptExpired,
   coachNotConnected,
   inProgress,
+  keyOtherPlan,
   packageIsFree,
   packageUnavailable,
   planNotFound,
+  setupUnavailable,
   stripeFailure,
 } from './subscription-errors';
 import {
@@ -118,7 +120,6 @@ export type {
 //     expired on Stripe) is canceled on Stripe and marked expired before a
 //     new attempt is reserved, so incomplete Subscriptions never pile up.
 //     Stripe itself expires an unpaid `incomplete` Subscription after 23 h.
-
 
 type Tx = Prisma.TransactionClient;
 
@@ -231,6 +232,10 @@ export class SubscriptionCheckoutService {
       where: { idempotency_key: purchaseKey },
     });
     if (replay && replay.client_user_id === client.id) {
+      // B-679-2 — a key belongs to the plan it started; never relabel it.
+      if (replay.package_id !== pkg.id || replay.coach_user_id !== pkg.coach_id) {
+        throw keyOtherPlan();
+      }
       return this.replayAttempt(replay, pkg, pkgTrial, offeredPrice);
     }
 
@@ -281,7 +286,7 @@ export class SubscriptionCheckoutService {
     // `trialing` on Stripe until the trial ends (Stripe expires only
     // `incomplete` ones after 23 h). Retire the stale ones now. Best effort:
     // it never blocks this checkout.
-    const cardSaved = await this.retireStaleTrialAttempts(client.id, coach.id);
+    const cardSaved = await this.retireStaleTrialAttempts(client.id, coach.id, pkg.id);
     // B-654-1 — a stale trial of THIS package whose card turned out saved is
     // the client's plan (the webhook grants it); never start a second one.
     const savedHere = cardSaved.find((r) => r.package_id === pkg.id);
@@ -446,16 +451,25 @@ export class SubscriptionCheckoutService {
     } catch (err) {
       throw stripeFailure(err);
     }
+    // B-679-4 — the answer may predate a newer cancel (or be an idempotent
+    // replay): write Stripe's current state, and only over the row version
+    // this request read; a newer write (webhook, cancel) wins.
+    try {
+      sub = await this.stripe.retrieveSubscriptionForCheckout(row.stripe_subscription_id);
+    } catch (err) {
+      this.logger.warn(`resume read-back skipped purchase=${row.id} error=${errorLabel(err)}`);
+    }
     const periodEnd =
       typeof sub.current_period_end === 'number'
         ? new Date(sub.current_period_end * 1000)
         : row.current_period_end;
-    const updated = await this.prisma.clientPurchase.update({
-      where: { id: row.id },
+    const res = await this.prisma.clientPurchase.updateMany({
+      where: { id: row.id, updated_at: row.updated_at },
       data: { cancel_at_period_end: !!sub.cancel_at_period_end, current_period_end: periodEnd },
     });
-    this.logger.log(`billing.client_plan_resumed purchase=${row.id}`);
-    return planView(updated, pkg);
+    const updated = await this.prisma.clientPurchase.findUnique({ where: { id: row.id } });
+    this.logger.log(`billing.client_plan_resumed purchase=${row.id} superseded=${res.count !== 1}`);
+    return planView(updated ?? row, pkg);
   }
 
   // ── internals ──────────────────────────────────────────────────────────
@@ -500,8 +514,8 @@ export class SubscriptionCheckoutService {
       });
       if (live) return { kind: 'active', purchase: live };
 
-      // 2. An open attempt for the same package (any key) -> reuse it.
-      const since = new Date(Date.now() - OPEN_ATTEMPT_MAX_AGE_MS);
+      // 2. An open attempt for the same package (any key, B-679-1: any age;
+      //    an unresolved attempt is never replaced by elapsed time) -> reuse it.
       const open = await tx.clientPurchase.findFirst({
         where: {
           client_user_id: args.clientId,
@@ -511,7 +525,6 @@ export class SubscriptionCheckoutService {
           trial_started_at: null,
           status: { in: [...OPEN_ATTEMPT_STATUSES] },
           idempotency_key: { startsWith: `sub-${args.clientId}-` },
-          created_at: { gt: since },
         },
         orderBy: { created_at: 'desc' },
       });
@@ -532,7 +545,6 @@ export class SubscriptionCheckoutService {
                 trial_days: { not: null },
                 entitlement_active: false,
                 status: { in: [...OPEN_ATTEMPT_STATUSES] },
-                created_at: { gt: since },
               },
             ],
           },
@@ -628,7 +640,24 @@ export class SubscriptionCheckoutService {
       // Nothing reached Stripe under this attempt's key yet.
       if (firstTry) await this.dropReservation(reservation.id);
       else await this.markRetryable(reservation);
-      throw stripeFailure(err);
+      throw stripeFailure(err, firstTry);
+    }
+
+    // B-679-7 — re-prove after every await that this is still an open,
+    // unbound reservation: a closed attempt never sends its create.
+    const stillOpen = await this.prisma.clientPurchase.findFirst({
+      where: {
+        id: reservation.id,
+        status: 'pending',
+        entitlement_active: false,
+        stripe_subscription_id: null,
+      },
+    });
+    if (!stillOpen) {
+      const now = await this.prisma.clientPurchase.findUnique({ where: { id: reservation.id } });
+      if (now && (now.entitlement_active || now.trial_started_at)) throw alreadyActive(now);
+      if (now?.stripe_subscription_id) throw inProgress(false);
+      throw attemptExpired('timed_out');
     }
 
     const metadata = {
@@ -672,9 +701,10 @@ export class SubscriptionCheckoutService {
         });
       } catch (err) {
         if (!isIdempotencyMismatch(err)) {
-          if (isDefinitiveRefusal(err)) await this.expireAttempt(reservation.id);
+          const refused = isDefinitiveRefusal(err);
+          if (refused) await this.expireAttempt(reservation.id);
           else await this.markRetryable(reservation);
-          throw stripeFailure(err);
+          throw stripeFailure(err, refused);
         }
         const found = await this.findAttemptSubscription(reservation);
         if (found === 'unreadable') {
@@ -726,13 +756,25 @@ export class SubscriptionCheckoutService {
     }
     if (!bound) {
       const again = await this.prisma.clientPurchase.findUnique({ where: { id: reservation.id } });
-      if (again && (again.entitlement_active || again.trial_started_at))
-        throw alreadyActive(again);
+      if (again && (again.entitlement_active || again.trial_started_at)) throw alreadyActive(again);
       if (again && again.stripe_subscription_id === sub.id) {
         bound = again;
-      } else {
-        if (subscriptionUnpaid(sub)) await this.cancelQuietly(sub.id);
+      } else if (subscriptionUnpaid(sub)) {
+        await this.cancelQuietly(sub.id);
         throw attemptExpired('terms_changed');
+      } else {
+        // B-679-7 — paid or in flight although the attempt closed meanwhile:
+        // keep it on the row for reconciliation; never a no-charge answer.
+        await this.prisma.clientPurchase
+          .updateMany({
+            where: { id: reservation.id, stripe_subscription_id: null },
+            data: { stripe_subscription_id: sub.id },
+          })
+          .catch(() => undefined);
+        this.logger.error(
+          `billing.subscription_paid_after_close purchase=${reservation.id} stripe_status=${sub.status}`,
+        );
+        throw inProgress(true);
       }
     }
     return this.finishBound(bound, sub, pkg, stripeKey, reusedFlag);
@@ -767,13 +809,8 @@ export class SubscriptionCheckoutService {
       } catch (err) {
         throw stripeFailure(err);
       }
-      const updated = await this.prisma.clientPurchase.update({
-        where: { id: row.id },
-        data: {
-          stripe_client_secret: secret.client_secret,
-          stripe_ephemeral_key: ephemeral.secret,
-        },
-      });
+      const updated = await this.storeCredentials(row, sub, secret.client_secret, ephemeral.secret);
+      if (!updated) throw attemptExpired('timed_out');
       return this.resultFromRow(updated, pkg, reusedFlag, sub.status);
     }
     const outcome = classifyWithoutSheet(sub);
@@ -791,13 +828,37 @@ export class SubscriptionCheckoutService {
       `subscription ${sub.id} has no payable PaymentIntent or SetupIntent and is not paid; canceling it`,
     );
     // B-654-8 — the attempt ends only once Stripe shows its subscription ended.
-    if (await this.cancelConfirmed(sub.id)) await this.expireAttempt(row.id);
-    throw new ServiceUnavailableException({
-      code: 'SUBSCRIPTION_SETUP_UNAVAILABLE',
-      error: 'SUBSCRIPTION_SETUP_UNAVAILABLE',
-      message:
-        'The card screen could not be prepared for this plan. Nothing was charged. Try again in a minute.',
+    const end = await this.endUnpaid(row, sub);
+    if (end === 'settled') throw alreadyActive(row);
+    if (end === 'ended') await this.expireAttempt(row.id);
+    throw setupUnavailable(end === 'ended');
+  }
+
+  /**
+   * B-679-3 — store sheet credentials only while the row is still this open,
+   * unentitled attempt of `sub`. A row that turned entitled meanwhile answers
+   * ALREADY_ACTIVE; one that ended answers null (no credential is written or
+   * returned).
+   */
+  private async storeCredentials(
+    row: ClientPurchase,
+    sub: StripeSubscriptionCheckoutObject,
+    clientSecret: string,
+    ephemeralKey: string,
+  ): Promise<ClientPurchase | null> {
+    const res = await this.prisma.clientPurchase.updateMany({
+      where: {
+        id: row.id,
+        stripe_subscription_id: sub.id,
+        status: { in: [...OPEN_ATTEMPT_STATUSES] },
+        entitlement_active: false,
+        trial_started_at: null,
+      },
+      data: { stripe_client_secret: clientSecret, stripe_ephemeral_key: ephemeralKey },
     });
+    const now = await this.prisma.clientPurchase.findUnique({ where: { id: row.id } });
+    if (now && (now.entitlement_active || now.trial_started_at)) throw alreadyActive(now);
+    return res.count === 1 ? now : null;
   }
 
   /**
@@ -938,8 +999,19 @@ export class SubscriptionCheckoutService {
   ): Promise<StripeSubscriptionCheckoutObject | null | 'unreadable'> {
     if (!row.stripe_customer_id) return null;
     try {
-      const list = await this.stripe.listSubscriptionsForCustomer(row.stripe_customer_id);
-      const hit = (list.data ?? []).find((s) => s.metadata?.tgp_purchase_id === row.id);
+      let list = await this.stripe.listSubscriptionsForCustomer(row.stripe_customer_id);
+      const own = (l: typeof list) =>
+        (l.data ?? []).find((s) => s.metadata?.tgp_purchase_id === row.id);
+      let hit = own(list);
+      if (!hit && list.has_more) {
+        // C-679-2 — a full page without it: read only what was created since
+        // this attempt began (5 min clock margin); its own subscription is newer.
+        const createdGte = Math.floor(row.created_at.getTime() / 1000) - 300;
+        list = await this.stripe.listSubscriptionsForCustomer(row.stripe_customer_id, {
+          createdGte,
+        });
+        hit = own(list);
+      }
       if (!hit) return list.has_more ? 'unreadable' : null;
       return await this.stripe.retrieveSubscriptionForCheckout(hit.id);
     } catch (err) {
@@ -976,10 +1048,13 @@ export class SubscriptionCheckoutService {
     }
     if (sub && (await this.attemptSettled(row, sub))) return 'settled';
     // B-654-8 — never end the attempt while its subscription may still charge.
-    const cancelable = sub && (sub.status === 'incomplete' || sub.status === 'trialing');
-    if (sub && cancelable && !(await this.cancelConfirmed(sub.id))) {
-      await this.markRetryable(row);
-      throw inProgress(true);
+    if (sub && (sub.status === 'incomplete' || sub.status === 'trialing')) {
+      const end = await this.endUnpaid(row, sub);
+      if (end === 'settled') return 'settled';
+      if (end === 'unconfirmed') {
+        await this.markRetryable(row);
+        throw inProgress(true);
+      }
     }
     await this.expireAttempt(row.id);
     this.logger.log(`billing.subscription_attempt_retired purchase=${row.id} reason=terms_changed`);
@@ -1132,19 +1207,17 @@ export class SubscriptionCheckoutService {
       } catch (err) {
         throw stripeFailure(err);
       }
-      const row = await this.prisma.clientPurchase.update({
-        where: { id: cur.id },
-        data: {
-          stripe_client_secret: secret.client_secret,
-          stripe_ephemeral_key: ephemeral.secret,
-        },
-      });
-      return this.resultFromRow(row, pkg, true, sub.status);
+      const row = await this.storeCredentials(cur, sub, secret.client_secret, ephemeral.secret);
+      // Ended meanwhile: the caller reserves a fresh attempt.
+      return row ? this.resultFromRow(row, pkg, true, sub.status) : null;
     }
     // Stale: retire it so incomplete subscriptions never pile up. B-654-8 —
     // only once Stripe shows it ended; else retryable, never a second one.
-    const cancelable = sub.status === 'incomplete' || sub.status === 'trialing';
-    if (cancelable && !(await this.cancelConfirmed(sub.id))) throw inProgress(true);
+    if (sub.status === 'incomplete' || sub.status === 'trialing') {
+      const end = await this.endUnpaid(cur, sub);
+      if (end === 'settled') throw alreadyActive({ ...cur, status: sub.status });
+      if (end === 'unconfirmed') throw inProgress(true);
+    }
     await this.expireAttempt(cur.id);
     return null;
   }
@@ -1240,6 +1313,58 @@ export class SubscriptionCheckoutService {
   }
 
   /**
+   * C-679-1 — end an unpaid attempt's subscription without racing a payment
+   * that lands after the caller's read: an incomplete subscription's open,
+   * payable first invoice is voided first (Stripe never voids a paid one) and
+   * a trial's pending SetupIntent is canceled first (Stripe refuses once the
+   * card was saved). A refusal re-reads Stripe: paid, processing or a saved
+   * card is 'settled' and nothing is canceled. 'ended' only once confirmed.
+   */
+  private async endUnpaid(
+    row: ClientPurchase,
+    sub: StripeSubscriptionCheckoutObject,
+  ): Promise<'ended' | 'settled' | 'unconfirmed'> {
+    const inv =
+      sub.latest_invoice && typeof sub.latest_invoice === 'object' ? sub.latest_invoice : null;
+    const pi = inv && typeof inv.payment_intent === 'object' ? inv.payment_intent : null;
+    const si = sub.pending_setup_intent;
+    const siId =
+      (si && typeof si === 'object' ? si.id : typeof si === 'string' ? si : null) ??
+      setupIntentIdOf(row.stripe_client_secret);
+    const siOpen = !(
+      si &&
+      typeof si === 'object' &&
+      (si.status === 'canceled' || si.status === 'succeeded')
+    );
+    try {
+      if (
+        sub.status === 'incomplete' &&
+        inv?.id &&
+        inv.status === 'open' &&
+        pi?.status &&
+        PAYABLE_PI_STATUSES.has(pi.status)
+      ) {
+        await this.stripe.voidInvoice(inv.id, `tgp-void-${inv.id}`);
+      } else if (sub.status === 'trialing' && siId && siOpen) {
+        await this.stripe.cancelSetupIntent(siId, `tgp-seti-cancel-${siId}`);
+      }
+    } catch (err) {
+      this.logger.warn(`cancel guard refused subscription=${sub.id} error=${errorLabel(err)}`);
+      try {
+        const now = await this.stripe.retrieveSubscriptionForCheckout(sub.id);
+        if (now.status === 'canceled' || now.status === 'incomplete_expired') return 'ended';
+        return (await this.attemptSettled(row, now)) ? 'settled' : 'unconfirmed';
+      } catch (readErr) {
+        this.logger.warn(
+          `cancel guard unconfirmed subscription=${sub.id} error=${errorLabel(readErr)}`,
+        );
+        return 'unconfirmed';
+      }
+    }
+    return (await this.cancelConfirmed(sub.id)) ? 'ended' : 'unconfirmed';
+  }
+
+  /**
    * B-654-8 — cancel an unpaid subscription; true only once Stripe shows it
    * ended. A failed or lost cancel is reconciled by reading it back.
    */
@@ -1272,6 +1397,7 @@ export class SubscriptionCheckoutService {
   private async retireStaleTrialAttempts(
     clientId: string,
     coachId: string,
+    packageId: string,
   ): Promise<ClientPurchase[]> {
     const cardSaved: ClientPurchase[] = [];
     try {
@@ -1284,7 +1410,6 @@ export class SubscriptionCheckoutService {
           entitlement_active: false,
           trial_started_at: null,
           trial_days: { not: null },
-          stripe_subscription_id: { not: null },
           status: { in: [...OPEN_ATTEMPT_STATUSES] },
           idempotency_key: { startsWith: `sub-${clientId}-` },
           created_at: { lte: before },
@@ -1293,9 +1418,11 @@ export class SubscriptionCheckoutService {
         take: STALE_TRIAL_RETIRE_LIMIT,
       });
       for (const row of stale) {
-        if (!row.stripe_subscription_id) continue;
         try {
-          const outcome = await this.retireOneStaleTrial(row, row.stripe_subscription_id);
+          const subscriptionId =
+            row.stripe_subscription_id ?? (await this.resolveStaleUnbound(row, packageId));
+          if (!subscriptionId) continue;
+          const outcome = await this.retireOneStaleTrial(row, subscriptionId);
           if (outcome === 'card_saved') cardSaved.push(row);
         } catch (err) {
           // One unreadable attempt never stops the others or the checkout.
@@ -1308,6 +1435,45 @@ export class SubscriptionCheckoutService {
       );
     }
     return cardSaved;
+  }
+
+  /**
+   * B-679-1 — an old unbound trial attempt holds its one-trial reservation
+   * until Stripe answers for it: its subscription (found by metadata) is
+   * bound, then reused for this same plan (never a second one) or retired
+   * like any stale trial for another plan; none at all (past the key window)
+   * releases it; unreadable or still in flight keeps it. null = nothing to
+   * retire now.
+   */
+  private async resolveStaleUnbound(
+    row: ClientPurchase,
+    packageId: string,
+  ): Promise<string | null> {
+    const inFlight =
+      row.stripe_checkout_session_id === reservedMarker(row.idempotency_key) &&
+      Date.now() - row.updated_at.getTime() <= STALE_RESERVATION_MS;
+    if (inFlight || row.status !== 'pending') return null;
+    const found = parseCheckoutTerms(row.checkout_terms)
+      ? await this.findAttemptSubscription(row)
+      : null;
+    if (found === 'unreadable') return null;
+    if (!found) {
+      await this.expireAttempt(row.id);
+      this.logger.log(`billing.trial_attempt_released purchase=${row.id}`);
+      return null;
+    }
+    const res = await this.prisma.clientPurchase.updateMany({
+      where: { id: row.id, stripe_subscription_id: null, status: 'pending' },
+      data: {
+        stripe_subscription_id: found.id,
+        stripe_checkout_session_id: found.id,
+        current_period_end:
+          typeof found.current_period_end === 'number'
+            ? new Date(found.current_period_end * 1000)
+            : null,
+      },
+    });
+    return res.count === 1 && row.package_id !== packageId ? found.id : null;
   }
 
   /**
@@ -1334,7 +1500,8 @@ export class SubscriptionCheckoutService {
       if (!setup || (setup.status !== 'requires_payment_method' && setup.status !== 'canceled')) {
         return 'kept';
       }
-      await this.stripe.cancelSubscription(sub.id);
+      const end = await this.endUnpaid(row, sub);
+      if (end !== 'ended') return end === 'settled' ? 'card_saved' : 'kept';
     }
     await this.prisma.clientPurchase.updateMany({
       where: { id: row.id, entitlement_active: false, trial_started_at: null },

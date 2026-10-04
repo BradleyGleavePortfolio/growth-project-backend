@@ -11,7 +11,11 @@ import {
 } from '@nestjs/common';
 import type { ClientPurchase } from '@prisma/client';
 import { StripeConnectApiError } from '../connect/stripe-connect-api.service';
+import { SUPPORT_EMAIL } from '../public-pages/trust-pages.html';
 import { iso } from './subscription-plan';
+
+/** B-679-6 — the next step of an outcome the payment service has not confirmed. */
+const CHECK_THEN_SUPPORT = `Open Your plan to check whether it started before you try again. If it keeps happening, contact support at ${SUPPORT_EMAIL} and include the reference shown with this message.`;
 
 export function alreadyIncluded(row: ClientPurchase): HttpException {
   const source = row.source ?? '';
@@ -100,8 +104,8 @@ export function inProgress(retryable: boolean): HttpException {
     ? new ServiceUnavailableException({
         code: 'PAYMENT_RETRY',
         error: 'PAYMENT_RETRY',
-        message:
-          'The last attempt to start this plan did not finish. Nothing was charged. Try again.',
+        // B-679-6 — the outcome is unknown here: never a no-charge claim.
+        message: `The last attempt to start this plan did not finish, and its result is not confirmed yet. ${CHECK_THEN_SUPPORT}`,
       })
     : new ServiceUnavailableException({
         code: 'PAYMENT_IN_PROGRESS',
@@ -110,7 +114,11 @@ export function inProgress(retryable: boolean): HttpException {
       });
 }
 
-export function stripeFailure(err: unknown): HttpException {
+/**
+ * B-679-6 — `noCharge` only where it is proven (nothing reached Stripe, or
+ * Stripe refused the create); otherwise the answer says the result is unknown.
+ */
+export function stripeFailure(err: unknown, noCharge = false): HttpException {
   if (err instanceof HttpException) return err;
   if (err instanceof StripeConnectApiError) {
     const status = err.httpStatus >= 400 && err.httpStatus < 600 ? err.httpStatus : 502;
@@ -118,12 +126,34 @@ export function stripeFailure(err: unknown): HttpException {
       {
         code: 'STRIPE_CHECKOUT_ERROR',
         error: 'STRIPE_CHECKOUT_ERROR',
-        message:
-          'The payment service did not answer as expected. Nothing was charged. Try again in a minute.',
+        message: noCharge
+          ? 'The payment service did not answer as expected. Nothing was charged. Try again in a minute.'
+          : `The payment service did not answer as expected, so this step did not finish. ${CHECK_THEN_SUPPORT}`,
         stripeCode: err.stripeCode,
       },
       status === 400 || status === 402 ? 502 : status,
     );
   }
   throw err;
+}
+
+/** B-679-2 — a client key already started another plan; it never relabels that attempt. */
+export function keyOtherPlan(): HttpException {
+  return new ConflictException({
+    code: 'CHECKOUT_KEY_OTHER_PLAN',
+    error: 'CHECKOUT_KEY_OTHER_PLAN',
+    message:
+      'This checkout was opened for a different plan. Close it, then start this plan again from your coach’s plans.',
+  });
+}
+
+/** B-679-6 — the sheet could not be prepared; no-charge only once the attempt is confirmed closed. */
+export function setupUnavailable(closed: boolean): HttpException {
+  return new ServiceUnavailableException({
+    code: 'SUBSCRIPTION_SETUP_UNAVAILABLE',
+    error: 'SUBSCRIPTION_SETUP_UNAVAILABLE',
+    message: closed
+      ? 'The card screen could not be prepared for this plan. Nothing was charged. Try again in a minute.'
+      : `The card screen could not be prepared for this plan, and closing it is not confirmed yet. ${CHECK_THEN_SUPPORT}`,
+  });
 }
