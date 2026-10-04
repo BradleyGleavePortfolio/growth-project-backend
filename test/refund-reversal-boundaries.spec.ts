@@ -78,32 +78,19 @@ function webhookBeforeRecord(h: H): void {
   });
 }
 
-// The nth read of row `id` returns the old row; only then does a DIFFERENT
-// refund's reversal of that row commit (READ COMMITTED, plain SELECT).
-function commitBetweenReadAndWrite(
-  h: H,
-  model: string,
-  id: string,
-  nth: number,
-  commit: () => void,
-) {
-  const m = h.db[model];
-  const original = m.findUniqueOrThrow;
-  let reads = 0;
-  m.findUniqueOrThrow = async (args: { where: { id?: string } }) => {
-    const row = await original(args);
-    if (args.where.id === id && ++reads === nth) commit();
-    return row;
-  };
-}
-
 describe('B-674-1 — a concurrent reversal of another refund is added to, never overwritten (unit)', () => {
-  it('transfer row and head-coach slice keep 122 + 50 when 50 commits between the record read and write', async () => {
+  it('transfer row and head-coach slice keep 122 + 50 when another refund reverses 50 before the record', async () => {
     const h = seeded('p-cc', ['r-a']);
-    // Read 1 is reverse()'s lookup before Stripe; read 2 is the record.
-    commitBetweenReadAndWrite(h, 'connectTransfer', 'tr-p-cc', 2, () => {
-      rowOf(h, 'connectTransfer', 'tr-p-cc').reversed_amount_cents += 50;
-      rowOf(h, 'splitLedgerEntry', 'p-cc-head').reversed_cents += 50;
+    // While r-a's answer is in flight another refund reverses 50: it finishes
+    // r-a's operation from Stripe's list first, then adds its own.
+    const provider = h.reverseTransfer.getMockImplementation()!;
+    h.reverseTransfer.mockImplementationOnce(async (args) => {
+      const receipt = await provider(args);
+      await h.transfers.reverse({
+        ...{ transfer_row_id: 'tr-p-cc', amount_cents: 50 },
+        ...{ idempotency_key: 'tgp-tr-rev-refund-r-b', purpose: 'legacy' },
+      });
+      return receipt;
     });
     await h.svc.retryPendingTransferReversals();
     expect({
@@ -243,9 +230,10 @@ describe('B-674-3 — one Stripe reversal is recorded once, wherever the webhook
       await h.svc.handle(transferReversed(args.transfer_id, h.stripeTotal(args.transfer_id)));
       throw new StripeConnectApiError('timed out', 503, 'request_timeout', null);
     });
+    // The lost answer is found on Stripe's list under the key: recorded now.
     await h.svc.retryPendingTransferReversals();
     expect(h.refund('r-to')).toMatchObject({
-      transfer_reversed: false,
+      transfer_reversed: true,
       transfer_reversal_amount_cents: 245,
     });
     await h.svc.retryPendingTransferReversals(new Date(Date.now() + HOUR));
@@ -255,7 +243,7 @@ describe('B-674-3 — one Stripe reversal is recorded once, wherever the webhook
       stripe: h.stripeTotal('tr_p-to'),
       recorded: h.headCoach('p-to'),
       slice: rowOf(h, 'splitLedgerEntry', 'p-to-head').reversed_cents,
-    }).toEqual({ done: true, sent: [245, 245], stripe: 245, recorded: 245, slice: 245 });
+    }).toEqual({ done: true, sent: [245], stripe: 245, recorded: 245, slice: 245 });
   });
 
   it('stale or repeated webhooks change nothing that was recorded', async () => {

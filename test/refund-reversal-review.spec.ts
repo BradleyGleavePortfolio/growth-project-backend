@@ -248,7 +248,8 @@ describe('B-641-11 — reversal failure logs carry ids and closed codes only', (
     error.name = 'AUDIT_FREE_TEXT_CANARY_contact_at_example_invalid';
     const logged = await failOnce(error);
     expect(logged).toContain('refund=r-log');
-    expect(logged).toContain('code=error');
+    // Not a Stripe answer: the reversal operation reports the outcome unknown.
+    expect(logged).toContain('code=SFEE_REVERSAL_UNCERTAIN');
     expect(logged).not.toContain('AUDIT_FREE_TEXT_CANARY');
   });
 
@@ -261,19 +262,22 @@ describe('B-641-11 — reversal failure logs carry ids and closed codes only', (
         'invalid_request_error',
       ),
     );
-    expect(logged).toContain('code=stripe_402_other');
+    // A definitive refusal (400/402/404): the operation's line carries the
+    // status and the cataloged code ('other' when unknown).
+    expect(logged).toMatch(/http=402 type=invalid_request_error code=other/);
+    expect(logged).toContain('refund=r-log code=stripe_refused');
     expect(logged).not.toMatch(/canary|example/);
-    expect(await failOnce(new StripeConnectApiError('x', 99999, 'rate_limit', null))).toContain(
-      'code=stripe_0_rate_limit',
-    );
     expect(
       await failOnce(new StripeConnectApiError('x', 400, 'balance_insufficient', null)),
-    ).toContain('code=stripe_400_balance_insufficient');
-    expect(await failOnce(new StripeConnectApiError('x', 500, null, null))).toContain(
-      'code=stripe_500_none',
-    );
-    // C-674-5: the client timeout (stripe-connect-api handleFetchError) is cataloged.
+    ).toMatch(/http=400 .*code=balance_insufficient/);
+    // C-674-5: anything else (bad status, 5xx, the client timeout) is unknown.
     const timeout = new StripeConnectApiError('x', 503, 'request_timeout', 'api_connection_error');
-    expect(await failOnce(timeout)).toContain('code=stripe_503_request_timeout');
+    for (const err of [
+      new StripeConnectApiError('x', 99999, 'rate_limit', null),
+      new StripeConnectApiError('x', 500, null, null),
+      timeout,
+    ]) {
+      expect(await failOnce(err)).toContain('refund=r-log code=SFEE_REVERSAL_UNCERTAIN');
+    }
   });
 });

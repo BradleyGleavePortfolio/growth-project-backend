@@ -61,8 +61,13 @@ describe('B-641-7 — owner reconcile of a row in review (Stripe is the truth)',
         .catch((e: { response?: { code?: string } }) => e.response?.code),
     ]);
     expect(a).toMatchObject({ outcome: 'reversed', amount_cents: 122 });
-    // The second owner either sees the record already made or loses the claim.
-    expect(['REFUND_TRANSFER_REVERSAL_ALREADY_RECORDED', 'already_recorded']).toContain(
+    // The second owner sees the record already made, loses the claim, or (its
+    // operation raced the first on the transfer) is told to retry (503).
+    expect([
+      'REFUND_TRANSFER_REVERSAL_ALREADY_RECORDED',
+      'already_recorded',
+      'TRANSFER_REVERSAL_UNCERTAIN',
+    ]).toContain(
       typeof b === 'string' ? b : (b as { outcome: string }).outcome,
     );
     expect(h.stripeTotal('tr_p-x')).toBe(122);
@@ -133,7 +138,7 @@ describe('B-641-7 — owner reconcile of a row in review (Stripe is the truth)',
     ]);
   });
 
-  it('every new reversal request carries the refund id in Stripe metadata', async () => {
+  it('every new reversal request carries the refund-scoped operation key in Stripe metadata', async () => {
     const h = harness();
     const at = new Date(Date.now() - HOUR);
     seedPurchase(h.db, 'p-m', at);
@@ -143,9 +148,9 @@ describe('B-641-7 — owner reconcile of a row in review (Stripe is the truth)',
     await h.svc.retryPendingTransferReversals(
       new Date(Date.now() + REFUND_TRANSFER_RETRY_WINDOW_MS * 2),
     );
-    expect(h.reverseTransfer.mock.calls[0][0].metadata).toEqual({
-      tgp_charge_refund_id: 'r-m',
-      tgp_purchase_id: 'p-m',
+    expect(h.reverseTransfer.mock.calls[0][0].metadata).toMatchObject({
+      tgp_reversal_op: 'tgp-tr-rev-refund-r-m',
+      tgp_purpose: 'legacy',
     });
   });
 });
