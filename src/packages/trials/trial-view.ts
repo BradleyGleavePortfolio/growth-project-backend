@@ -20,7 +20,10 @@ export type PurchaseTrialState =
   | 'trialing'
   /** Subscription is trialing but no card was saved: not active yet. */
   | 'setup_incomplete'
-  /** The trial is over (converted to paid, or ended after a cancel). */
+  /**
+   * The trial is over (converted to paid, or ended after a cancel). Only a
+   * trial that started (trial_ends_at set) can end.
+   */
   | 'ended'
   /**
    * B-TRIALS-3 — this subscription tried to start a second free trial with
@@ -92,5 +95,10 @@ export function purchaseTrialView(
     });
     return { ...base, state: 'trialing', will_charge: reason === null, no_charge_reason: reason };
   }
+  // B-T12-116 (C-671-1) — trial_ends_at is written only when a trial really
+  // starts (card saved, subscription trialing). A purchase that never got
+  // there (a checkout reservation left pending, an expired or failed
+  // attempt) had no trial: it reads 'none', never "The trial is over".
+  if (!endsAt) return { ...base, state: 'none', ...none };
   return { ...base, state: 'ended', ...none };
 }

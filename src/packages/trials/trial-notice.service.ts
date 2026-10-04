@@ -6,8 +6,10 @@ import { EmailService } from '../../email/email.service';
 import { EmailTemplateKey } from '../../email/email.types';
 import { NotificationKind } from '../../notifications/notification-kind';
 import { NotificationsService } from '../../notifications/notifications.service';
+import { resolveRecipientTimeZone } from '../../notifications/recipient-timezone';
 import { PrismaService } from '../../prisma.service';
 import {
+  chargeLabel,
   formatTrialAmount,
   formatTrialDate,
   trialEndingCopy,
@@ -46,8 +48,10 @@ export { willChargeCard } from './trial-copy';
 //     transport is bounded below the lease (B-656-2). Delivery is honestly
 //     at-least-once: a process that dies after the provider accepted the
 //     message but before the outcome write is retried after the lease
-//     expires (email retries use a new per-attempt idempotency key only
-//     after a definite failure);
+//     expires. Every email attempt after the first carries its own
+//     idempotency key (`:a<attempt>`), so a first send that timed out but
+//     did reach the provider can still produce a second email; the lease
+//     and the 30 s transport bound keep the two from ever overlapping;
 //   * push re-reads the client's notification preferences at delivery: a
 //     global mute records push_status 'suppressed' and sends nothing. The
 //     email is a billing notice about an upcoming card charge and is sent
@@ -55,6 +59,26 @@ export { willChargeCard } from './trial-copy';
 //   * the copy says what will really happen: a card is charged only when the
 //     subscription or the customer still holds a payment method; a client who
 //     removed the card mid-trial is told nothing will be charged (B-656-5).
+//
+// B-T12-116 (agent 116) — fix round 6 for Sol B-672-1/2 and Opus B-672-1,
+// C-672-1/2/3/5/6:
+//   * every channel claim takes its eligibility and its lease from a fresh
+//     clock at the claim (the caller's start time plus the time elapsed
+//     since), never the sweep's start time, so a row reached late in a slow
+//     sweep holds a full lease; a claim whose preparation already used up
+//     the room for the bounded transport sends nothing and gives its
+//     attempt back (B-672-1 Sol, C-672-1 Opus);
+//   * a notice whose purchase was cancelled or is gone is settled 'skipped'
+//     (terminal) on both channels, and the retry sweep pages by
+//     (created_at, id) with a resumable cursor, so no prefix of skipped,
+//     unknown-card or leased rows hides a later notice (B-672-2, C-672-2);
+//   * the trial-end date is formatted in main's recipient time zone
+//     (resolveRecipientTimeZone: a stamped preference, else the coach's
+//     zone); with no usable zone it is the earliest calendar date the end
+//     falls on anywhere (UTC-12), so the named date is never a day late
+//     (B-672-1 Opus);
+//   * "plus any tax" when the subscription has Stripe automatic tax
+//     (C-672-5, operator ruling 2026-10-03).
 
 export const TRIAL_NOTICE_MAX_ATTEMPTS = 5;
 /** Stripe's default trial_will_end lead: three days before the trial end. */
@@ -65,11 +89,26 @@ export const TRIAL_NOTICE_TRANSPORT_TIMEOUT_MS = 30 * 1000;
 const RECONCILE_BATCH = 100;
 /** Pages one reconcile sweep reads before it resumes on the next sweep. */
 export const RECONCILE_MAX_PAGES = 50;
-/** Mobile route the notice opens (Your plan: trial end date + cancel). */
+/**
+ * Mobile route the notice should open (Your plan: trial end date + cancel).
+ * C-672-3 — mobile main's push-tap router (CLIENT_PUSH_ROUTES) does not list
+ * this route yet, so a tap opens Notification Center until the mobile trials
+ * piece adds it; the in-app row's deep link (tgp://plan) is unaffected.
+ */
 export const TRIAL_ACTION_SCREEN = 'ClientPackages';
+/**
+ * B-672-1 (Opus) — the zone for a trial-end date when no zone is known for
+ * the client or their coach: UTC-12, the earliest calendar date anywhere, so
+ * the named day is never later than the client's true local end.
+ */
+export const TRIAL_DATE_FALLBACK_ZONE = 'Etc/GMT+12';
 /** Give the post-commit delivery a head start before the sweeper retries. */
 const SWEEP_MIN_AGE_MS = 2 * 60 * 1000;
 const SWEEP_BATCH = 50;
+/** B-672-2 — pages one retry sweep reads before it resumes from its cursor. */
+export const SWEEP_MAX_PAGES = 20;
+/** B-672-2 — a sweep stops paging after this and resumes next time. */
+export const SWEEP_BUDGET_MS = 8 * 60 * 1000;
 
 type Tx = Prisma.TransactionClient | PrismaService;
 
@@ -88,6 +127,8 @@ export interface RecordTrialNoticeArgs {
   cancelAtPeriodEnd: boolean;
   /** A payment method will really be charged at the trial end. */
   cardOnFile: boolean;
+  /** C-672-5 — Stripe may add tax at the trial end (automatic tax). */
+  taxMayApply?: boolean;
   source: TrialNoticeSource;
   eventId?: string | null;
   now?: Date;
@@ -112,6 +153,8 @@ export interface TrialWillEndSubscription {
   cancel_at_period_end?: boolean;
   default_payment_method?: unknown;
   default_source?: unknown;
+  /** C-672-5 — Stripe automatic tax on the subscription's invoices. */
+  automatic_tax?: { enabled?: boolean | null } | null;
   items?: {
     data?: Array<{
       quantity?: number | null;
@@ -125,6 +168,11 @@ export function hasSavedPaymentMethod(sub: { default_payment_method?: unknown })
   const pm = sub?.default_payment_method;
   if (typeof pm === 'string') return pm.length > 0;
   return !!(pm && typeof pm === 'object' && typeof (pm as { id?: unknown }).id === 'string');
+}
+
+/** C-672-5 — Stripe may add tax to the trial-end invoice. */
+export function subscriptionTaxMayApply(sub: TrialWillEndSubscription): boolean {
+  return sub.automatic_tax?.enabled === true;
 }
 
 /** What the card will be charged when the trial ends, from Stripe's own items. */
@@ -147,6 +195,8 @@ export class TrialNoticeService {
   private readonly logger = new Logger(TrialNoticeService.name);
   /** B-656-3 — keyset position when a reconcile sweep hit the page cap. */
   private reconcileCursor: { endsAt: Date; id: string } | null = null;
+  /** B-672-2 — keyset position when a retry sweep hit its page/time budget. */
+  private sweepCursor: { createdAt: Date; id: string } | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -198,6 +248,7 @@ export class TrialNoticeService {
       currency: (sub.items?.data?.[0]?.price?.currency ?? purchase.currency ?? 'usd').toLowerCase(),
       cancelAtPeriodEnd: !!sub.cancel_at_period_end,
       cardOnFile,
+      taxMayApply: subscriptionTaxMayApply(sub),
       source: 'trial_will_end',
       eventId: args.eventId,
       now,
@@ -241,6 +292,7 @@ export class TrialNoticeService {
       ).toLowerCase(),
       cancelAtPeriodEnd: !!args.sub.cancel_at_period_end,
       cardOnFile,
+      taxMayApply: subscriptionTaxMayApply(args.sub),
       source: 'trial_start',
       eventId: args.eventId ?? null,
       now,
@@ -264,6 +316,7 @@ export class TrialNoticeService {
           currency: args.currency,
           stripe_event_id: args.eventId ?? null,
           source: args.source,
+          tax_may_apply: args.taxMayApply === true,
         },
       ],
       skipDuplicates: true,
@@ -277,7 +330,7 @@ export class TrialNoticeService {
     });
     if (!notice) return null;
 
-    const timeZone = await this.clientTimeZone(purchase.client_user_id, tx);
+    const timeZone = await this.noticeTimeZone(purchase.client_user_id, tx);
     const copy = trialEndingCopy({
       trialEndsAt,
       amountCents: args.amountCents,
@@ -285,6 +338,7 @@ export class TrialNoticeService {
       timeZone,
       cancelAtPeriodEnd: args.cancelAtPeriodEnd,
       cardOnFile: args.cardOnFile,
+      taxMayApply: args.taxMayApply === true,
     });
     // Global mute / per-kind prefs are enforced inside createNotification.
     await this.notifications.createNotification(
@@ -310,12 +364,17 @@ export class TrialNoticeService {
     return notice.id;
   }
 
-  /** Deliver push + email for a recorded notice. Never throws. */
+  /**
+   * Deliver push + email for a recorded notice. Never throws. `now` is the
+   * caller's current time; every claim inside reads a fresh clock from it
+   * (B-672-1).
+   */
   async deliver(noticeId: string, now: Date = new Date()): Promise<void> {
+    const clock = elapsedClock(now);
     try {
       const notice = await this.prisma.packageTrialNotice.findUnique({ where: { id: noticeId } });
       if (!notice) return;
-      if (notice.trial_ends_at.getTime() <= now.getTime()) return;
+      if (notice.trial_ends_at.getTime() <= clock().getTime()) return;
       const purchase = await this.prisma.clientPurchase.findUnique({
         where: { id: notice.purchase_id },
         select: {
@@ -328,8 +387,13 @@ export class TrialNoticeService {
           client: { select: { email: true, name: true } },
         },
       });
-      if (!purchase || purchase.status === 'canceled') return;
-      const timeZone = await this.clientTimeZone(notice.client_user_id);
+      if (!purchase || purchase.status === 'canceled') {
+        // B-672-2 — the notice no longer applies: settle both channels so the
+        // row never occupies a retry sweep again.
+        await this.settleSkipped(noticeId, purchase ? 'purchase_canceled' : 'purchase_missing');
+        return;
+      }
+      const timeZone = await this.noticeTimeZone(notice.client_user_id);
       // B-656-5 — the truth at delivery time (the card may have been removed
       // or replaced since the notice was recorded).
       const cardOnFile = await this.cardAuthority(purchase.card_on_file, notice.client_user_id);
@@ -348,8 +412,9 @@ export class TrialNoticeService {
         timeZone,
         cancelAtPeriodEnd: purchase.cancel_at_period_end,
         cardOnFile,
+        taxMayApply: notice.tax_may_apply,
       });
-      await this.deliverPush(notice, copy.title, copy.body, now);
+      await this.deliverPush(notice, copy.title, copy.body, clock);
       await this.deliverEmail(
         notice,
         {
@@ -357,12 +422,15 @@ export class TrialNoticeService {
           planName: purchase.package?.name ?? 'your plan',
           coachName: purchase.coach?.name ?? null,
           dateLabel: formatTrialDate(notice.trial_ends_at, timeZone),
-          amountLabel: formatTrialAmount(notice.amount_cents, notice.currency),
+          amountLabel: chargeLabel(
+            formatTrialAmount(notice.amount_cents, notice.currency),
+            notice.tax_may_apply,
+          ),
           cancelAtPeriodEnd: purchase.cancel_at_period_end,
           cardOnFile,
           cadence: cadenceLabel(purchase.package?.interval, purchase.package?.interval_count),
         },
-        now,
+        clock,
       );
     } catch (err) {
       this.logger.error(`trial notice delivery failed notice=${noticeId}: ${trialErrorClass(err)}`);
@@ -376,6 +444,7 @@ export class TrialNoticeService {
    */
   @Cron('*/10 * * * *', { name: 'trial-notice-sweep', timeZone: 'UTC' })
   async sweep(now: Date = new Date()): Promise<number> {
+    const clock = elapsedClock(now);
     let reconciled = 0;
     try {
       reconciled = await this.reconcileDue(now);
@@ -383,21 +452,52 @@ export class TrialNoticeService {
       // A reconcile failure never blocks the delivery retries below.
       this.logger.error(`trial notice reconcile errored: ${trialErrorClass(err)}`);
     }
-    const due = await this.prisma.packageTrialNotice.findMany({
-      where: {
-        trial_ends_at: { gt: now },
-        created_at: { lt: new Date(now.getTime() - SWEEP_MIN_AGE_MS) },
-        OR: [
-          { push_status: 'pending', push_attempts: { lt: TRIAL_NOTICE_MAX_ATTEMPTS } },
-          { email_status: 'pending', email_attempts: { lt: TRIAL_NOTICE_MAX_ATTEMPTS } },
-        ],
-      },
-      orderBy: { created_at: 'asc' },
-      take: SWEEP_BATCH,
-      select: { id: true },
-    });
-    for (const row of due) await this.deliver(row.id, now);
-    return reconciled + due.length;
+    // B-672-2 — keyset paging on (created_at, id): rows that stay pending
+    // (unknown card, a live lease elsewhere) never hold back the rows after
+    // them. A sweep that hits its page or time budget resumes from its
+    // cursor next time; a sweep that reaches the end starts over next time.
+    let cursor = this.sweepCursor;
+    this.sweepCursor = null;
+    let handled = 0;
+    for (let page = 0; page < SWEEP_MAX_PAGES; page += 1) {
+      const at = clock();
+      const due = await this.prisma.packageTrialNotice.findMany({
+        where: {
+          AND: [
+            {
+              trial_ends_at: { gt: at },
+              created_at: { lt: new Date(at.getTime() - SWEEP_MIN_AGE_MS) },
+              OR: [
+                { push_status: 'pending', push_attempts: { lt: TRIAL_NOTICE_MAX_ATTEMPTS } },
+                { email_status: 'pending', email_attempts: { lt: TRIAL_NOTICE_MAX_ATTEMPTS } },
+              ],
+            },
+            ...(cursor
+              ? [
+                  {
+                    OR: [
+                      { created_at: { gt: cursor.createdAt } },
+                      { created_at: cursor.createdAt, id: { gt: cursor.id } },
+                    ],
+                  },
+                ]
+              : []),
+          ],
+        },
+        orderBy: [{ created_at: 'asc' }, { id: 'asc' }],
+        take: SWEEP_BATCH,
+        select: { id: true, created_at: true },
+      });
+      for (const row of due) await this.deliver(row.id, clock());
+      handled += due.length;
+      if (due.length < SWEEP_BATCH) return reconciled + handled;
+      const last = due[due.length - 1];
+      cursor = { createdAt: last.created_at, id: last.id };
+      if (clock().getTime() - now.getTime() >= SWEEP_BUDGET_MS) break;
+    }
+    this.sweepCursor = cursor;
+    this.logger.warn('trial notice sweep hit its page or time budget; resumes next sweep');
+    return reconciled + handled;
   }
 
   /**
@@ -408,6 +508,7 @@ export class TrialNoticeService {
    * endpoint that is missing the event. Returns how many it recorded.
    */
   async reconcileDue(now: Date = new Date()): Promise<number> {
+    const clock = elapsedClock(now);
     const horizon = new Date(now.getTime() + TRIAL_NOTICE_LEAD_MS);
     // B-656-3 — keyset paging on (trial_ends_at, id): already-noticed rows
     // never hold back a due trial behind them. A sweep that hits the page cap
@@ -450,7 +551,7 @@ export class TrialNoticeService {
         },
       });
       if (candidates.length === 0) return recorded;
-      recorded += await this.reconcilePage(candidates, now);
+      recorded += await this.reconcilePage(candidates, now, clock);
       const last = candidates[candidates.length - 1];
       if (candidates.length < RECONCILE_BATCH || !last.trial_ends_at) return recorded;
       cursor = { endsAt: last.trial_ends_at, id: last.id };
@@ -468,6 +569,7 @@ export class TrialNoticeService {
         Pick<ClientPurchase, 'cancel_at_period_end' | 'card_on_file' | 'trial_ends_at'>
     >,
     now: Date,
+    clock: () => Date,
   ): Promise<number> {
     const existing = await this.prisma.packageTrialNotice.findMany({
       where: { purchase_id: { in: candidates.map((c) => c.id) } },
@@ -497,7 +599,7 @@ export class TrialNoticeService {
         );
         if (id) {
           recorded += 1;
-          await this.deliver(id, now);
+          await this.deliver(id, clock());
         }
       } catch (err) {
         this.logger.error(
@@ -512,17 +614,20 @@ export class TrialNoticeService {
     notice: PackageTrialNotice,
     title: string,
     body: string,
-    now: Date,
+    clock: () => Date,
   ): Promise<void> {
     if (notice.push_status !== 'pending' || notice.push_attempts >= TRIAL_NOTICE_MAX_ATTEMPTS)
       return;
-    const lease = await this.claim(notice.id, 'push', now);
+    const lease = await this.claim(notice.id, 'push', clock());
     if (!lease) return;
     let status: 'delivered' | 'no_token' | 'suppressed' | 'pending' | 'failed';
     let error: string | null = null;
     // B-656-4 — the client's preferences at delivery time (a mute set after
     // the notice was recorded still applies).
     const prefs = await this.notifications.getPreferences(notice.client_user_id);
+    // B-672-1 — the preference read may have used up the lease: never start
+    // a send the lease cannot cover.
+    if (!(await this.leaseCoversSend(notice.id, 'push', lease, clock))) return;
     if ((prefs as Record<string, unknown>).muted === true) {
       status = 'suppressed';
     } else {
@@ -536,8 +641,8 @@ export class TrialNoticeService {
             kind: NotificationKind.TRIAL_ENDING,
             purchase_id: notice.purchase_id,
             deep_link: 'tgp://plan',
-            // The app's push-tap router (pushTapRouter CLIENT_PUSH_ROUTES) opens
-            // Your plan, where the trial end date and the cancel path live.
+            // Your plan, where the trial end date and the cancel path live,
+            // once the app's push-tap router lists it (C-672-3, see above).
             actionScreen: TRIAL_ACTION_SCREEN,
           },
           controller.signal,
@@ -576,21 +681,25 @@ export class TrialNoticeService {
       cardOnFile: boolean;
       cadence: string;
     },
-    now: Date,
+    clock: () => Date,
   ): Promise<void> {
     if (notice.email_status !== 'pending' || notice.email_attempts >= TRIAL_NOTICE_MAX_ATTEMPTS) {
       return;
     }
     if (!this.email) return;
-    const lease = await this.claim(notice.id, 'email', now);
+    const lease = await this.claim(notice.id, 'email', clock());
     if (!lease) return;
     if (!ctx.recipient?.email) {
       await this.complete(notice.id, 'email', lease.token, { email_status: 'no_email' });
       return;
     }
+    if (!(await this.leaseCoversSend(notice.id, 'email', lease, clock))) return;
     const reason = trialNoChargeReason(ctx);
-    // Attempt 1 keeps the original key; a retry after a definite failure gets
-    // its own key (EmailService treats a reused key as already sent).
+    // Attempt 1 keeps the original key; every later attempt gets its own key
+    // (EmailService treats a reused key as already sent). A later attempt
+    // starts only after the earlier one ended or its lease expired, so the
+    // two never overlap; one that timed out after reaching the provider can
+    // still mean a second email (at-least-once, C-672-6).
     const baseKey = `trial-ending:${notice.purchase_id}:${notice.trial_ends_at.getTime()}`;
     const idempotencyKey = lease.attempt === 1 ? baseKey : `${baseKey}:a${lease.attempt}`;
     let status: 'sent' | 'pending' | 'failed' = 'pending';
@@ -635,7 +744,7 @@ export class TrialNoticeService {
     noticeId: string,
     channel: 'push' | 'email',
     now: Date,
-  ): Promise<{ token: string; attempt: number } | null> {
+  ): Promise<{ token: string; attempt: number; until: Date } | null> {
     const token = randomUUID();
     const until = new Date(now.getTime() + TRIAL_NOTICE_LEASE_MS);
     const where: Prisma.PackageTrialNoticeWhereInput =
@@ -669,7 +778,54 @@ export class TrialNoticeService {
     });
     const held = channel === 'push' ? row?.push_lease_token : row?.email_lease_token;
     if (!row || held !== token) return null;
-    return { token, attempt: channel === 'push' ? row.push_attempts : row.email_attempts };
+    return {
+      token,
+      attempt: channel === 'push' ? row.push_attempts : row.email_attempts,
+      until,
+    };
+  }
+
+  /**
+   * B-672-1 — true while the lease still has room for the bounded transport.
+   * Otherwise the claim is handed back unused (fenced: lease cleared, the
+   * attempt returned) and nothing is sent; the next claim retries it.
+   */
+  private async leaseCoversSend(
+    noticeId: string,
+    channel: 'push' | 'email',
+    lease: { token: string; until: Date },
+    clock: () => Date,
+  ): Promise<boolean> {
+    if (clock().getTime() + TRIAL_NOTICE_TRANSPORT_TIMEOUT_MS < lease.until.getTime()) return true;
+    await this.complete(
+      noticeId,
+      channel,
+      lease.token,
+      channel === 'push'
+        ? { push_attempts: { increment: -1 }, last_error: 'push:lease_exhausted' }
+        : { email_attempts: { increment: -1 }, last_error: 'email:lease_exhausted' },
+    );
+    return false;
+  }
+
+  /**
+   * B-672-2 — the purchase was cancelled or is gone: settle every channel
+   * that is still pending as 'skipped' (terminal), so the row never takes a
+   * place in a retry sweep again. A channel already settled is untouched.
+   */
+  private async settleSkipped(
+    noticeId: string,
+    code: 'purchase_canceled' | 'purchase_missing',
+  ): Promise<void> {
+    const last_error = `skip:${code}`;
+    await this.prisma.packageTrialNotice.updateMany({
+      where: { id: noticeId, push_status: 'pending' },
+      data: { push_status: 'skipped', last_error },
+    });
+    await this.prisma.packageTrialNotice.updateMany({
+      where: { id: noticeId, email_status: 'pending' },
+      data: { email_status: 'skipped', last_error },
+    });
   }
 
   /** Fenced outcome: only the current lease holder may write it. */
@@ -728,17 +884,14 @@ export class TrialNoticeService {
     }
   }
 
-  private async clientTimeZone(userId: string, tx?: Tx): Promise<string | null> {
-    const db = tx ?? this.prisma;
-    try {
-      const prefs = await db.notificationPreferences.findUnique({
-        where: { user_id: userId },
-        select: { timezone: true },
-      });
-      return prefs?.timezone ?? null;
-    } catch {
-      return null;
-    }
+  /**
+   * B-672-1 (Opus) — the zone a trial-end date is written in: main's
+   * recipient rule (a stamped preference, else the coach's zone), else
+   * UTC-12 so the named day is never later than the true local end.
+   */
+  private async noticeTimeZone(userId: string, tx?: Tx): Promise<string> {
+    const zone = await resolveRecipientTimeZone(tx ?? this.prisma, userId);
+    return zone ?? TRIAL_DATE_FALLBACK_ZONE;
   }
 }
 
@@ -753,6 +906,15 @@ export function cadenceLabel(interval?: string | null, count?: number | null): s
   const unit = interval === 'week' || interval === 'year' ? interval : 'month';
   if (n === 1) return unit === 'week' ? 'weekly' : unit === 'year' ? 'yearly' : 'monthly';
   return `every ${n} ${unit}s`;
+}
+
+/**
+ * B-672-1 — a clock that starts at `start` (the caller's notion of now, so
+ * tests and replays can pin it) and advances with real elapsed time.
+ */
+function elapsedClock(start: Date): () => Date {
+  const wallAtStart = Date.now();
+  return () => new Date(start.getTime() + (Date.now() - wallAtStart));
 }
 
 const TIMED_OUT = Symbol('trial-notice-timeout');
