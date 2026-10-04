@@ -326,6 +326,19 @@ export class StripeConnectApiService {
     return this.get(`/invoices?${q.toString()}`);
   }
 
+  // B-TR6-119 (Sol B-673-1) — uncollectible invoices stay payable (Stripe allows
+  // uncollectible -> paid), so the void domain lists them as well.
+  async listUncollectibleInvoices(
+    subscriptionId: string,
+  ): Promise<{ data?: Array<{ id?: string }>; has_more?: boolean }> {
+    const q = new URLSearchParams({
+      subscription: subscriptionId,
+      status: 'uncollectible',
+      limit: '100',
+    });
+    return this.get(`/invoices?${q.toString()}`);
+  }
+
   async voidInvoice(invoiceId: string): Promise<{ id: string; status?: string }> {
     return this.post(`/invoices/${encodeURIComponent(invoiceId)}/void`, {});
   }
