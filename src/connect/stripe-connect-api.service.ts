@@ -308,6 +308,16 @@ export class StripeConnectApiService {
     );
   }
 
+  // B-TR4-119 (Sol B-673-1) — one bounded page of a subscription's paid
+  // invoices; has_more says whether the page is the complete history.
+  async listPaidInvoices(subscriptionId: string): Promise<{
+    data?: Array<{ id: string; amount_paid?: number; total?: number }>;
+    has_more?: boolean;
+  }> {
+    const q = new URLSearchParams({ subscription: subscriptionId, status: 'paid', limit: '100' });
+    return this.get(`/invoices?${q.toString()}`);
+  }
+
   // Stripe Product — represents the package itself (name, description).
   // One Product per CoachPackage. The Stripe Product id is cached on the
   // CoachPackage row.

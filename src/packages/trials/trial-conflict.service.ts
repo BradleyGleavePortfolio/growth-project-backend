@@ -30,7 +30,7 @@ import { PrismaService } from '../../prisma.service';
 //   isBlocked() every later subscription / invoice event for the purchase: a
 //              purchase with a conflict row never gets trial access.
 //   supersede() the trial ended before any cancel succeeded and Stripe moved
-//              the subscription to active/past_due (billing started). A
+//              the subscription to active, or a paid invoice proves it billed. A
 //              cancel can no longer prevent that charge, and cancelling now
 //              would leave a paying client with nothing, so the obligation
 //              closes, the plan is treated as a regular paid plan sold
@@ -47,6 +47,11 @@ import { PrismaService } from '../../prisma.service';
 // supersedes it as the active webhook does (paid plan kept, billed alert),
 // and a failed or unknown read cancels nothing. Sol C-673-2: every lease,
 // admission and backoff reads a fresh clock, never the sweep's start time.
+// B-TR4-119 (agent 119) — Sol B-673-1: past_due/unpaid say one invoice is
+// unpaid, not that none was ever paid; only a complete paid-invoice page
+// decides (charged: supersede; none: cancel; else retry). Sol B-673-2: a
+// supersession, cancellation or new lease committed during the reads vetoes
+// the DELETE (re-checked after the reads, before the decision).
 
 export const TRIAL_CONFLICT_LEASE_MS = 60 * 1000;
 export const TRIAL_CONFLICT_CANCEL_TIMEOUT_MS = 20 * 1000;
@@ -60,11 +65,33 @@ type Db = Prisma.TransactionClient | PrismaService;
 export type TrialConflictSettleOutcome =
   'cancelled' | 'superseded' | 'retry' | 'busy' | 'not_owed' | 'stale';
 
-/** Stripe states with nothing billed for the current period: a cancel takes no money back. */
-const UNBILLED_STATUSES = new Set(['trialing', 'past_due', 'unpaid', 'incomplete', 'paused']);
+/** Stripe states that never billed a regular invoice: a cancel takes no money back. */
+const UNBILLED_STATUSES = new Set(['trialing', 'incomplete', 'paused']);
+/** States that may follow a paid period: the invoice history decides. */
+const HISTORY_STATUSES = new Set(['past_due', 'unpaid']);
 
 export type TrialConflictAction =
-  'cancel' | 'gone' | 'billed' | 'trial_ending' | 'lease_exhausted' | 'state_unknown';
+  | 'cancel'
+  | 'gone'
+  | 'billed'
+  | 'trial_ending'
+  | 'lease_exhausted'
+  | 'state_unknown'
+  | 'history_unknown';
+export type TrialPaidHistory = 'charged' | 'none' | 'unknown';
+
+/** B-673-1 — none only from a complete, well-formed page with no charge on it. */
+export function trialPaidHistory(list: unknown): TrialPaidHistory {
+  const page = list as { data?: unknown; has_more?: unknown } | null | undefined;
+  if (!page || !Array.isArray(page.data)) return 'unknown';
+  let wellFormed = true;
+  for (const inv of page.data as Array<{ amount_paid?: unknown; total?: unknown } | null>) {
+    const paid = inv?.amount_paid;
+    if (typeof paid !== 'number') wellFormed = false;
+    else if (paid > 0 || (typeof inv?.total === 'number' && inv.total > 0)) return 'charged';
+  }
+  return wellFormed && page.has_more === false ? 'none' : 'unknown';
+}
 
 /**
  * B-673-1 — what an owed conflict may do, from Stripe's subscription as read
@@ -77,11 +104,15 @@ export function trialConflictAction(
   sub: { status?: unknown; trial_end?: unknown } | null | undefined,
   at: Date,
   leaseUntil: Date,
+  history: TrialPaidHistory = 'unknown',
 ): TrialConflictAction {
   const status = typeof sub?.status === 'string' ? sub.status : '';
   if (status === 'canceled' || status === 'incomplete_expired') return 'gone';
   if (status === 'active') return 'billed';
-  if (!UNBILLED_STATUSES.has(status)) return 'state_unknown';
+  if (HISTORY_STATUSES.has(status)) {
+    if (history === 'charged') return 'billed';
+    if (history !== 'none') return 'history_unknown';
+  } else if (!UNBILLED_STATUSES.has(status)) return 'state_unknown';
   if (at.getTime() + TRIAL_CONFLICT_CANCEL_TIMEOUT_MS >= leaseUntil.getTime()) {
     return 'lease_exhausted';
   }
@@ -231,8 +262,22 @@ export class TrialConflictService {
           this.stripe.retrieveSubscription(row.stripe_subscription_id),
           TRIAL_CONFLICT_CANCEL_TIMEOUT_MS,
         );
+        const history = HISTORY_STATUSES.has(String(sub?.status))
+          ? trialPaidHistory(
+              await withDeadline(
+                this.stripe.listPaidInvoices(row.stripe_subscription_id),
+                TRIAL_CONFLICT_CANCEL_TIMEOUT_MS,
+              ).catch(() => null),
+            )
+          : undefined;
+        // B-673-2 — the row must still be owed under this lease after the reads.
+        const still = await this.prisma.packageTrialConflict.findFirst({
+          where: { id: row.id, lease_token: token, status: 'owed' },
+          select: { id: true },
+        });
+        if (!still) return 'stale';
         // Decided and sent with no await in between (the admission point).
-        const action = trialConflictAction(sub, clock(), until);
+        const action = trialConflictAction(sub, clock(), until, history);
         if (action === 'cancel') {
           await withDeadline(
             this.stripe.cancelSubscription(row.stripe_subscription_id),

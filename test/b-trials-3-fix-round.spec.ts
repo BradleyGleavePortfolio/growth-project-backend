@@ -213,6 +213,11 @@ function world(
       status: 'trialing',
       trial_end: epoch(new Date(Date.now() + 30 * 864e5)),
     })),
+    // B-TR4-119 (B-673-1) — the only paid invoice is the $0 trial one: never billed.
+    listPaidInvoices: jest.fn(async () => ({
+      data: [{ id: 'in_trial', amount_paid: 0, total: 0 }],
+      has_more: false,
+    })),
   });
   const conflictSvc = new TrialConflictService(
     stub<ConstructorParameters<typeof TrialConflictService>[0]>(prisma),
