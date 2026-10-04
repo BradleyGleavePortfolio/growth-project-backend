@@ -25,8 +25,8 @@ import {
   type Row,
 } from './utils/settlement-fakes';
 
-// Round 11 (B-F34-116). B-683-1/2/3 test F3 code; they live in this F4 piece because F3 is at
-// its 3,000-line limit and F4 already carries the wired services they run through.
+// Round 11 (B-F34-116). B-683-1/2/3 test F3 code; round 13 (B-FEES-117) moves them unchanged
+// but for the fixtures noted below into the F4b tests piece (every piece under 3,000 lines).
 const CANARY = 'CANARY_body_contact_at_example_invalid';
 
 function setup(opts: { currency?: string; amount?: number } = {}) {
@@ -83,8 +83,11 @@ function fxCharge(ctx: ReturnType<typeof setup>, amountRefunded: number) {
     balance_transaction: { id: 'txn_1', amount: 8_000, fee: 200, net: 7_800, currency: 'usd' },
   });
 }
-const refund = (id: string, usd: number, status = 'succeeded') => ({
-  id, status, balance_transaction: { id: `txn_${id}`, amount: -usd, currency: 'usd' },
+// Round 13 (B-FEES-117): a listed refund carries its own CAD amount and currency, as Stripe's
+// refund object always does (the reader now rejects a refund without them, Sol B-683-4).
+const refund = (id: string, usd: number, cad: number, status = 'succeeded') => ({
+  id, status, amount: cad, currency: 'cad',
+  balance_transaction: { id: `txn_${id}`, amount: -usd, currency: 'usd' },
 });
 // Stripe's refund list (GET /refunds?charge=), stubbed by assignment so this spec also runs
 // unchanged against the pre-fix code (failing-before).
@@ -103,7 +106,7 @@ describe('B-683-1: a converted charge is refunded in its settlement currency', (
   it('refund before settlement: the USD 20 debit, not CAD 25, comes off the coach', async () => {
     const ctx = setup({ currency: 'cad', amount: 10_000 });
     fxCharge(ctx, 2_500);
-    stubRefundList(ctx.stripe, async () => ({ data: [refund('re_1', 2_000)], has_more: false }));
+    stubRefundList(ctx.stripe, async () => ({ data: [refund('re_1', 2_000, 2_500)], has_more: false }));
     await ctx.settlements.settleCharge({ purchase: ctx.purchase, charge_id: 'ch_1' });
     expect(ctx.db.settlements[0]).toMatchObject({ currency: 'usd', refunded_cents: 2_000 });
     expect(ctx.stripe.netTo('acct_1')).toBe(5_640);
@@ -119,8 +122,8 @@ describe('B-683-1: a converted charge is refunded in its settlement currency', (
     fxCharge(ctx, 5_000);
     stubRefundList(ctx.stripe, async (after) =>
       after === null
-        ? { data: [refund('re_2', 2_100)], has_more: true }
-        : { data: [refund('re_1', 2_000), refund('re_x', 999, 'failed')], has_more: false },
+        ? { data: [refund('re_2', 2_100, 2_500)], has_more: true }
+        : { data: [refund('re_1', 2_000, 2_500), refund('re_x', 999, 1_250, 'failed')], has_more: false },
     );
     // The caller's 5000 is CAD presentment cents: ignored for a converted charge.
     const input = { purchase: ctx.purchase, charge_id: 'ch_1', refunded_cents: 5_000 };
@@ -280,13 +283,21 @@ describe('B-684-1: a refund list truncated to the latest ten still converges', (
     } },
   });
   const recent = Array.from({ length: 10 }, (_, i) => ({
-    id: `re_recent_${i}`, amount: 400, status: 'succeeded',
+    id: `re_recent_${i}`, amount: 400, status: 'succeeded', currency: 'usd',
   }));
+  // Round 13 (Sol B-684-1): Stripe's complete list (GET /refunds?charge=) holds the eleventh,
+  // older refund the event's latest-ten page omits; the handler reads it.
+  const older = { id: 're_older', amount: 900, status: 'succeeded', currency: 'usd' };
+  const completeList = (ctx: ReturnType<typeof setup>) =>
+    Object.assign(ctx.stripe, {
+      listChargeRefunds: jest.fn(async () => ({ data: [...recent, older], has_more: false })),
+    });
 
   it('eleven refunds, ten embedded: the settlement reaches 4900 on the first delivery', async () => {
     const ctx = setup();
     await ctx.settlements.settleCharge({ purchase: ctx.purchase, charge_id: 'ch_1' });
     ctx.stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4_900, fee: 172, amount_refunded: 4_900 }));
+    completeList(ctx);
     const e = event('evt_1', 4_900, recent, true);
     await ctx.refunds.handle(e);
     await ctx.refunds.handle(e);
@@ -303,6 +314,7 @@ describe('B-684-1: a refund list truncated to the latest ten still converges', (
     await ctx.refunds.handle(event('evt_1', 4_000, recent, false));
     expect(ctx.db.settlements[0].refunded_cents).toBe(4_000);
     ctx.stripe.charges.set('ch_1', makeCharge({ id: 'ch_1', amount: 4_900, fee: 172, amount_refunded: 4_900 }));
+    completeList(ctx);
     await ctx.refunds.handle(event('evt_2', 4_900, recent, true));
     await ctx.refunds.handle(event('evt_2', 4_900, recent, true));
     expect(ctx.db.settlements[0].refunded_cents).toBe(4_900);

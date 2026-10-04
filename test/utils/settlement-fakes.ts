@@ -567,6 +567,40 @@ export class FakeStripe extends StripeConnectApiService {
     return c;
   });
 
+  /**
+   * Round 13: a charge's refunds as Stripe lists them (newest first). Without an entry, a
+   * charge's amount_refunded is one succeeded refund at the charge's own rate (older fixtures).
+   */
+  refundsByCharge = new Map<
+    string,
+    Array<{ id: string; status: string; amount: number; currency?: string; debit?: number }>
+  >();
+  refundListPageSize = 100;
+  failListRefunds = false;
+  listChargeRefunds = jest.fn(async (chargeId: string, after: string | null) => {
+    if (this.failListRefunds)
+      throw new StripeConnectApiError('Stripe API 500', 500, null, 'api_error');
+    const c = this.charges.get(chargeId);
+    const bt = c?.balance_transaction as { amount: number; currency: string } | undefined;
+    const refunded = c?.amount_refunded ?? 0;
+    const all =
+      this.refundsByCharge.get(chargeId) ??
+      (refunded > 0 ? [{ id: `re_${chargeId}`, status: 'succeeded', amount: refunded }] : []);
+    const start = after ? all.findIndex((r) => r.id === after) + 1 : 0;
+    const page = all.slice(start, start + this.refundListPageSize);
+    const data = page.map((r) => ({
+      id: r.id,
+      status: r.status,
+      amount: r.amount,
+      currency: r.currency ?? c?.currency ?? 'usd',
+      balance_transaction: {
+        amount: -(r.debit ?? Math.round((r.amount * (bt?.amount ?? 1)) / (c?.amount || 1))),
+        currency: bt?.currency ?? 'usd',
+      },
+    }));
+    return { data, has_more: start + page.length < all.length };
+  });
+
   retrievePaymentIntent = jest.fn(async (id: string) => {
     const charge = [...this.charges.values()].find((c) => c.payment_intent === id);
     return { id, latest_charge: charge?.id ?? null };
