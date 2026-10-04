@@ -28,9 +28,13 @@ function world(reason = 'declined') {
   const stripe = new FakeStripeBilling();
   stripe.customers.set('cus_client', { id: 'cus_client', default_payment_method: 'pm_old' });
   stripe.subs.set('sub_client', {
-    id: 'sub_client', status: 'past_due', customer: 'cus_client',
+    id: 'sub_client',
+    status: 'past_due',
+    customer: 'cus_client',
     current_period_end: Math.floor(NOW.getTime() / 1000) + 20 * 86400,
-    default_payment_method: 'pm_old', cancel_at_period_end: false, latest_invoice: null,
+    default_payment_method: 'pm_old',
+    cancel_at_period_end: false,
+    latest_invoice: null,
   });
   stripe.addCard('pm_old', 'decline', '0002');
   stripe.addCard('pm_ok', 'ok', '4242');
@@ -38,17 +42,36 @@ function world(reason = 'declined') {
   fake.seed('user', { id: 'client', name: 'Synthetic Client', role: 'student' });
   fake.seed('user', { id: 'coach', name: 'Synthetic Coach', role: 'coach' });
   fake.seed('coachPackage', { id: 'package', billing_type: 'recurring', price_cents: 15000 });
-  fake.seed('connectCustomer', { id: 'customer', client_user_id: 'client', stripe_customer_id: 'cus_client' });
+  fake.seed('connectCustomer', {
+    id: 'customer',
+    client_user_id: 'client',
+    stripe_customer_id: 'cus_client',
+  });
   fake.seed('clientPurchase', {
-    id: 'purchase', client_user_id: 'client', coach_user_id: 'coach', package_id: 'package',
-    billing_type: 'recurring', status: 'past_due', entitlement_active: false,
-    stripe_subscription_id: 'sub_client', amount_cents: 15000, currency: 'usd',
-    created_at: OLD, current_period_end: OLD, access_expires_at: OLD,
+    id: 'purchase',
+    client_user_id: 'client',
+    coach_user_id: 'coach',
+    package_id: 'package',
+    billing_type: 'recurring',
+    status: 'past_due',
+    entitlement_active: false,
+    stripe_subscription_id: 'sub_client',
+    amount_cents: 15000,
+    currency: 'usd',
+    created_at: OLD,
+    current_period_end: OLD,
+    access_expires_at: OLD,
   });
   fake.seed('dunningState', {
-    id: 'state', purchase_id: 'purchase', status: 'active', last_failure_reason: reason,
-    locked_out_at: OLD, entered_at: OLD, client_canceled_at: null,
-    step_index: 3, last_failed_amount_cents: 15000,
+    id: 'state',
+    purchase_id: 'purchase',
+    status: 'active',
+    last_failure_reason: reason,
+    locked_out_at: OLD,
+    entered_at: OLD,
+    client_canceled_at: null,
+    step_index: 3,
+    last_failed_amount_cents: 15000,
   });
   const v1 = new DunningService(prisma, stub(stripe));
   const v2 = new DunningV2Service(prisma, new DunningV2Telemetry(), undefined, stub(stripe));
@@ -64,15 +87,21 @@ async function approve(w: World) {
   w.stripe.confirmSetupIntentInSheet(si.setup_intent_id, 'pm_ok');
   const quote = await w.billing.getPaymentQuote('client');
   const approved = quote.lines.map((l) => ({
-    invoice_id: l.invoice_id, currency: l.currency, amount_cents: l.amount_cents,
+    invoice_id: l.invoice_id,
+    currency: l.currency,
+    amount_cents: l.amount_cents,
   }));
   return { id: si.setup_intent_id, approved, quote };
 }
 
 function dispute(w: World) {
   w.fake.seed('dunningDisputeObligation', {
-    id: 'obligation', purchase_id: 'purchase', stripe_dispute_id: 'dp_old',
-    stripe_charge_id: 'ch_old', status: 'needs_response', closed_at: null,
+    id: 'obligation',
+    purchase_id: 'purchase',
+    stripe_dispute_id: 'dp_old',
+    stripe_charge_id: 'ch_old',
+    status: 'needs_response',
+    closed_at: null,
   });
 }
 
@@ -105,13 +134,23 @@ describe('B-D34-116 dunning D3 fix round (#689)', () => {
     const w = world();
     dispute(w);
     const si = await approve(w);
-    expect(si.quote.disputes).toEqual([expect.objectContaining({ purchase_id: 'purchase', amount_cents: null })]);
+    expect(si.quote.disputes).toEqual([
+      expect.objectContaining({ purchase_id: 'purchase', amount_cents: null }),
+    ]);
     const res = await w.billing.confirmCardUpdate('client', si.id, si.approved);
     expect(w.stripe.charges).toHaveLength(1);
-    expect(res.plans[0]).toMatchObject({ outcome: 'paid', dispute_open: true, access: 'unchanged' });
+    expect(res.plans[0]).toMatchObject({
+      outcome: 'paid',
+      dispute_open: true,
+      access: 'unchanged',
+    });
     expect(res.message).toMatch(/reversed an earlier payment/);
     expect(res.message).not.toMatch(/still updating/);
-    expect(w.state()).toMatchObject({ status: 'active', last_failure_reason: 'charge_disputed', locked_out_at: OLD });
+    expect(w.state()).toMatchObject({
+      status: 'active',
+      last_failure_reason: 'charge_disputed',
+      locked_out_at: OLD,
+    });
   });
 
   it('B-689-1: a dispute recorded while the pay call is in flight is not cleared', async () => {
@@ -136,7 +175,9 @@ describe('B-D34-116 dunning D3 fix round (#689)', () => {
     dispute(w);
     jest.setSystemTime(new Date(NOW.getTime() + 10 * 60000));
     await w.billing.reconcile();
-    expect(w.op(si.id)?.lines).toEqual([expect.objectContaining({ result: 'paid', amount_paid_cents: 15000 })]);
+    expect(w.op(si.id)?.lines).toEqual([
+      expect.objectContaining({ result: 'paid', amount_paid_cents: 15000 }),
+    ]);
     expect(w.state()).toMatchObject({ status: 'active', last_failure_reason: 'charge_disputed' });
     expect(w.stripe.charges).toHaveLength(1);
   });
@@ -152,7 +193,10 @@ describe('B-D34-116 dunning D3 fix round (#689)', () => {
   it('B-689-1: an authority read that fails never resolves the cycle (deferred to the webhook)', async () => {
     const w = world();
     const si = await approve(w);
-    jest.spyOn(w.v2, 'isDisputeCycleOpen').mockResolvedValueOnce(false).mockRejectedValueOnce(new Error(SENTINEL));
+    jest
+      .spyOn(w.v2, 'isDisputeCycleOpen')
+      .mockResolvedValueOnce(false)
+      .mockRejectedValueOnce(new Error(SENTINEL));
     const res = await w.billing.confirmCardUpdate('client', si.id, si.approved);
     expect(res.plans[0]).toMatchObject({ outcome: 'paid', access: 'updating' });
     expect(w.state()).toMatchObject({ status: 'active', locked_out_at: OLD });
@@ -172,9 +216,13 @@ describe('B-D34-116 dunning D3 fix round (#689)', () => {
     expect(w.op(si.id)?.completed_at ?? null).toBeNull();
     jest.setSystemTime(new Date(NOW.getTime() + 10 * 60000));
     await w.billing.reconcile();
-    expect(w.op(si.id)?.lines).toEqual([expect.objectContaining({ result: 'already_paid', amount_paid_cents: 0 })]);
+    expect(w.op(si.id)?.lines).toEqual([
+      expect.objectContaining({ result: 'already_paid', amount_paid_cents: 0 }),
+    ]);
     expect(w.op(si.id)?.completed_at).toBeTruthy();
-    expect(w.stripe.charges).toEqual([expect.objectContaining({ by: 'stripe_retry', amount: 15000 })]);
+    expect(w.stripe.charges).toEqual([
+      expect.objectContaining({ by: 'stripe_retry', amount: 15000 }),
+    ]);
     expect(logged()).not.toContain('SYNTHETIC');
   });
 
@@ -197,7 +245,10 @@ describe('B-D34-116 dunning D3 fix round (#689)', () => {
     expect(res).toMatchObject({ outcome: 'ended', paid_period_kept: false });
     expect(res.message).toMatch(/does not settle the payment your bank reversed/);
     expect(w.stripe.subs.get('sub_client')?.status).toBe('canceled');
-    expect(w.fake.find('clientPurchase', { id: 'purchase' })).toMatchObject({ status: 'canceled', entitlement_active: false });
+    expect(w.fake.find('clientPurchase', { id: 'purchase' })).toMatchObject({
+      status: 'canceled',
+      entitlement_active: false,
+    });
   });
 
   it('B-689-4 control: an ordinary cycle paid meanwhile keeps the paid period (option A)', async () => {
@@ -213,17 +264,28 @@ describe('B-D34-116 dunning D3 fix round (#689)', () => {
   it('B-689-2: provider, database and transport diagnostics never reach the logs', async () => {
     const w = world();
     jest.spyOn(w.stripe, 'createSetupIntent').mockRejectedValueOnce(unavailable());
-    await expect(w.billing.createCardSetup('client', '00000000-0000-4000-8000-000000000002')).rejects.toMatchObject({
+    await expect(
+      w.billing.createCardSetup('client', '00000000-0000-4000-8000-000000000002'),
+    ).rejects.toMatchObject({
       response: { code: 'STRIPE_UNAVAILABLE' },
     });
-    jest.spyOn(w.stripe, 'createSetupIntent').mockRejectedValueOnce(new Error(`fetch failed ${SENTINEL}`));
-    await expect(w.billing.createCardSetup('client', '00000000-0000-4000-8000-000000000003')).rejects.toBeTruthy();
+    jest
+      .spyOn(w.stripe, 'createSetupIntent')
+      .mockRejectedValueOnce(new Error(`fetch failed ${SENTINEL}`));
+    await expect(
+      w.billing.createCardSetup('client', '00000000-0000-4000-8000-000000000003'),
+    ).rejects.toBeTruthy();
     jest.spyOn(w.stripe, 'retrieveSubscription').mockRejectedValueOnce(new TypeError(SENTINEL));
     await expect(w.billing.cancelPlan('client', 'purchase')).rejects.toMatchObject({
       response: { code: 'PLAN_CHANGE_RESULT_UNKNOWN' },
     });
-    await new ClientBillingReconciler(stub({ reconcile: () => Promise.reject(new Error(SENTINEL)) })).handleCron();
-    expect(stub(Logger.prototype.error).mock.calls.length + stub(Logger.prototype.warn).mock.calls.length).toBeGreaterThan(2);
+    await new ClientBillingReconciler(
+      stub({ reconcile: () => Promise.reject(new Error(SENTINEL)) }),
+    ).handleCron();
+    expect(
+      stub(Logger.prototype.error).mock.calls.length +
+        stub(Logger.prototype.warn).mock.calls.length,
+    ).toBeGreaterThan(2);
     expect(logged()).not.toContain('SYNTHETIC');
   });
 });
