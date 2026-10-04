@@ -1886,7 +1886,10 @@ export class ClientBillingService {
           where: { id: op.purchase_id },
           include: { dunning: true },
         });
-        if (!purchase) continue;
+        if (!purchase) {
+          await this.deferOperation(op.id, now);
+          continue;
+        }
         if (op.kind === 'cancel') {
           if (purchase.status === 'canceled') {
             await this.prisma.clientBillingOperation.update({
@@ -1905,6 +1908,7 @@ export class ClientBillingService {
         this.logger.warn(
           `reconcile: operation ${op.kind} failed op=${op.id} purchase=${op.purchase_id}: ${dunningErrorCode(err)}`,
         );
+        await this.deferOperation(op.id, now);
       }
     }
     if (isDunningV2Enabled()) {
@@ -1915,6 +1919,7 @@ export class ClientBillingService {
           purchase: { cancel_at_period_end: true, status: { in: [...DELINQUENT_STATUSES] } },
         },
         include: { purchase: true },
+        orderBy: { updated_at: 'asc' },
         take: 100,
       });
       for (const row of outOfBand) {
@@ -1927,10 +1932,24 @@ export class ClientBillingService {
           this.logger.warn(
             `reconcile: 2A failed purchase=${row.purchase_id}: ${dunningErrorCode(err)}`,
           );
+          await this.prisma.dunningState
+            .updateMany({ where: { id: row.id, status: 'active' }, data: { updated_at: now } })
+            .catch(() => undefined);
         }
       }
     }
     return { finished, applied, failed };
+  }
+
+  /**
+   * C-689-2 (Opus): a failed attempt moves the operation to the back of the
+   * queue (and waits the settle window again), so failing operations never
+   * starve newer ones out of the `take: 100` page.
+   */
+  private async deferOperation(opId: string, now: Date): Promise<void> {
+    await this.prisma.clientBillingOperation
+      .updateMany({ where: { id: opId, completed_at: null }, data: { updated_at: now } })
+      .catch(() => undefined);
   }
 
   /**

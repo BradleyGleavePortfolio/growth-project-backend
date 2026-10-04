@@ -203,6 +203,22 @@ describe('B-D34-116 dunning D3 fix round (#689)', () => {
     expect(logged()).not.toContain('SYNTHETIC');
   });
 
+  it('B-689-1: a dispute that closed lost during the cycle still blocks the card update (needs #688 B-688-5)', async () => {
+    const w = world();
+    w.fake.seed('dunningDisputeObligation', {
+      id: 'obligation',
+      purchase_id: 'purchase',
+      stripe_dispute_id: 'dp_lost',
+      stripe_charge_id: 'ch_old',
+      status: 'lost',
+      closed_at: new Date(OLD.getTime() + 5 * 86400000),
+    });
+    const si = await approve(w);
+    const res = await w.billing.confirmCardUpdate('client', si.id, si.approved);
+    expect(res.plans[0]).toMatchObject({ outcome: 'paid', dispute_open: true });
+    expect(w.state()).toMatchObject({ status: 'active', locked_out_at: OLD });
+  });
+
   it('B-689-3: a paid invoice another collector paid during the await is never credited to the update', async () => {
     const w = world();
     const si = await approve(w);
@@ -251,6 +267,34 @@ describe('B-D34-116 dunning D3 fix round (#689)', () => {
     });
   });
 
+  it.each([
+    ['in the app before the lock', null, 'app'],
+    ['in the app after the lock', OLD, 'app'],
+    ['outside the app', null, 'out_of_band'],
+  ])(
+    'B-689-4: a disputed cycle canceled %s ends access now and stays unresolved',
+    async (_case, lockedAt, via) => {
+      const w = world('charge_disputed');
+      Object.assign(w.state()!, { locked_out_at: lockedAt });
+      const inv = w.stripe.invoices.get('in_renewal')!;
+      Object.assign(inv, { status: 'paid', amount_paid: 15000, amount_remaining: 0 });
+      w.stripe.subs.get('sub_client')!.status = 'active';
+      if (via === 'app') {
+        await expect(w.billing.cancelPlan('client', 'purchase')).resolves.toMatchObject({
+          outcome: 'ended',
+        });
+      } else {
+        w.fake.find('clientPurchase', { id: 'purchase' })!.cancel_at_period_end = true;
+        await w.billing.reconcile();
+      }
+      expect(w.fake.find('clientPurchase', { id: 'purchase' })).toMatchObject({
+        status: 'canceled',
+        entitlement_active: false,
+      });
+      expect(w.state()?.status).not.toBe('resolved');
+    },
+  );
+
   it('B-689-4 control: an ordinary cycle paid meanwhile keeps the paid period (option A)', async () => {
     const w = world();
     const inv = w.stripe.invoices.get('in_renewal')!;
@@ -286,6 +330,37 @@ describe('B-D34-116 dunning D3 fix round (#689)', () => {
       stub(Logger.prototype.error).mock.calls.length +
         stub(Logger.prototype.warn).mock.calls.length,
     ).toBeGreaterThan(2);
+    expect(logged()).not.toContain('SYNTHETIC');
+  });
+
+  it('C-689-2 (Opus): failing operations back off so a healthy one is reconciled', async () => {
+    const w = world();
+    const at = new Date(NOW.getTime() - 3600000);
+    for (let i = 0; i < 100; i += 1) {
+      w.fake.seed('clientBillingOperation', {
+        id: `op_bad_${i}`,
+        purchase_id: `bad_${i}`,
+        kind: 'cancel',
+        completed_at: null,
+        updated_at: at,
+      });
+    }
+    w.fake.seed('clientBillingOperation', {
+      id: 'op_ok',
+      purchase_id: 'purchase',
+      kind: 'cancel',
+      completed_at: null,
+      updated_at: new Date(at.getTime() + 1000),
+    });
+    w.fake.find('clientPurchase', { id: 'purchase' })!.status = 'canceled';
+    const prisma = stub(w.billing)['prisma'];
+    const read = prisma.clientPurchase.findUnique;
+    prisma.clientPurchase.findUnique = (args: { where: { id: string } }) =>
+      args.where.id.startsWith('bad_') ? Promise.reject(new Error(SENTINEL)) : read(args);
+    await w.billing.reconcile();
+    jest.setSystemTime(new Date(NOW.getTime() + 10 * 60000));
+    await w.billing.reconcile();
+    expect(w.fake.find('clientBillingOperation', { id: 'op_ok' })?.completed_at).toBeTruthy();
     expect(logged()).not.toContain('SYNTHETIC');
   });
 });
