@@ -39,6 +39,7 @@ import {
   keyOtherPlan,
   packageIsFree,
   packageUnavailable,
+  planChangeUnconfirmed,
   planNotFound,
   setupUnavailable,
   stripeFailure,
@@ -57,6 +58,7 @@ import {
   expandedId,
   isDefinitiveRefusal,
   isIdempotencyMismatch,
+  isResourceMissing,
   iso,
   packageTrialDays,
   planPriceFor,
@@ -382,7 +384,9 @@ export class SubscriptionCheckoutService {
       const sub = await this.stripe.retrieveSubscriptionForCheckout(row.stripe_subscription_id);
       if (sub.status === 'canceled' || sub.status === 'incomplete_expired') return 'ended';
       if (sub.status === 'trialing') {
-        if (sub.default_payment_method) return 'card_saved';
+        // B-679-8 (Opus) — a default with the create-time end still set is
+        // not proof of the attempt's own card: read its SetupIntent.
+        if (sub.default_payment_method && !sub.cancel_at_period_end) return 'card_saved';
         // B-654-1 — read the SetupIntent itself: Stripe returns
         // pending_setup_intent = null once it succeeded.
         const setup = await readTrialSetup(this.stripe, row.stripe_client_secret, sub);
@@ -453,11 +457,13 @@ export class SubscriptionCheckoutService {
     }
     // B-679-4 — the answer may predate a newer cancel (or be an idempotent
     // replay): write Stripe's current state, and only over the row version
-    // this request read; a newer write (webhook, cancel) wins.
+    // this request read; a newer write (webhook, cancel) wins. Without that
+    // state nothing is written (Sol B-679-4): the cached answer proves nothing.
     try {
       sub = await this.stripe.retrieveSubscriptionForCheckout(row.stripe_subscription_id);
     } catch (err) {
-      this.logger.warn(`resume read-back skipped purchase=${row.id} error=${errorLabel(err)}`);
+      this.logger.warn(`resume read-back failed purchase=${row.id} error=${errorLabel(err)}`);
+      throw planChangeUnconfirmed();
     }
     const periodEnd =
       typeof sub.current_period_end === 'number'
@@ -643,23 +649,6 @@ export class SubscriptionCheckoutService {
       throw stripeFailure(err, firstTry);
     }
 
-    // B-679-7 — re-prove after every await that this is still an open,
-    // unbound reservation: a closed attempt never sends its create.
-    const stillOpen = await this.prisma.clientPurchase.findFirst({
-      where: {
-        id: reservation.id,
-        status: 'pending',
-        entitlement_active: false,
-        stripe_subscription_id: null,
-      },
-    });
-    if (!stillOpen) {
-      const now = await this.prisma.clientPurchase.findUnique({ where: { id: reservation.id } });
-      if (now && (now.entitlement_active || now.trial_started_at)) throw alreadyActive(now);
-      if (now?.stripe_subscription_id) throw inProgress(false);
-      throw attemptExpired('timed_out');
-    }
-
     const metadata = {
       tgp_client_user_id: reservation.client_user_id,
       tgp_coach_user_id: reservation.coach_user_id,
@@ -689,6 +678,25 @@ export class SubscriptionCheckoutService {
       }
     }
     if (!sub) {
+      // B-679-7 (Sol) — re-prove after every await (pin write, Stripe lookup)
+      // that this is still an open, unbound reservation, in one conditional
+      // write that also renews its in-flight stamp: a closed attempt never
+      // sends its create, and no closer treats this one as abandoned.
+      const claim = await this.prisma.clientPurchase.updateMany({
+        where: {
+          id: reservation.id,
+          status: 'pending',
+          entitlement_active: false,
+          stripe_subscription_id: null,
+        },
+        data: { stripe_checkout_session_id: reservedMarker(reservation.idempotency_key) },
+      });
+      if (claim.count !== 1) {
+        const now = await this.prisma.clientPurchase.findUnique({ where: { id: reservation.id } });
+        if (now && (now.entitlement_active || now.trial_started_at)) throw alreadyActive(now);
+        if (now?.stripe_subscription_id) throw inProgress(false);
+        throw attemptExpired('timed_out');
+      }
       try {
         sub = await this.stripe.createSubscription({
           customer: customerId,
@@ -759,20 +767,28 @@ export class SubscriptionCheckoutService {
       if (again && (again.entitlement_active || again.trial_started_at)) throw alreadyActive(again);
       if (again && again.stripe_subscription_id === sub.id) {
         bound = again;
-      } else if (subscriptionUnpaid(sub)) {
-        await this.cancelQuietly(sub.id);
-        throw attemptExpired('terms_changed');
       } else {
-        // B-679-7 — paid or in flight although the attempt closed meanwhile:
-        // keep it on the row for reconciliation; never a no-charge answer.
-        await this.prisma.clientPurchase
-          .updateMany({
+        // B-679-7 / Sol B-679-8 — the attempt closed before the bind. An
+        // unpaid subscription ends through the guarded termination (void or
+        // SetupIntent cancel first, so a payment landing now is never
+        // canceled); paid, in flight or unconfirmed stays on the row for
+        // reconciliation and never gets a no-charge answer.
+        const end = subscriptionUnpaid(sub)
+          ? await this.endUnpaid(again ?? reservation, sub)
+          : 'settled';
+        if (end === 'ended') throw attemptExpired('terms_changed');
+        try {
+          await this.prisma.clientPurchase.updateMany({
             where: { id: reservation.id, stripe_subscription_id: null },
             data: { stripe_subscription_id: sub.id },
-          })
-          .catch(() => undefined);
+          });
+        } catch (err) {
+          this.logger.error(
+            `could not record subscription purchase=${reservation.id} error=${errorLabel(err)}`,
+          );
+        }
         this.logger.error(
-          `billing.subscription_paid_after_close purchase=${reservation.id} stripe_status=${sub.status}`,
+          `billing.subscription_paid_after_close purchase=${reservation.id} stripe_status=${sub.status} end=${end}`,
         );
         throw inProgress(true);
       }
@@ -923,6 +939,7 @@ export class SubscriptionCheckoutService {
       // invoice paid a moment ago, before the webhook. Never hand it back.
       const state = await this.replaySecretState(cur);
       if (state === 'settled') throw alreadyActive(cur);
+      if (state === 'unconfirmed') throw inProgress(true);
       if (state === 'dead') {
         await this.expireAttempt(cur.id);
         throw attemptExpired('timed_out');
@@ -933,7 +950,10 @@ export class SubscriptionCheckoutService {
     try {
       sub = await this.stripe.retrieveSubscriptionForCheckout(cur.stripe_subscription_id);
     } catch (err) {
-      throw stripeFailure(err);
+      // C-679-3 — Stripe has no such subscription: the attempt is over.
+      if (!isResourceMissing(err)) throw stripeFailure(err);
+      await this.expireAttempt(cur.id);
+      throw attemptExpired('timed_out');
     }
     return this.finishBound(cur, sub, pkg, `tgp-${cur.idempotency_key}`, true);
   }
@@ -1036,7 +1056,8 @@ export class SubscriptionCheckoutService {
       try {
         sub = await this.stripe.retrieveSubscriptionForCheckout(row.stripe_subscription_id);
       } catch (err) {
-        throw stripeFailure(err);
+        // C-679-3 — Stripe has no such subscription: nothing can charge.
+        if (!isResourceMissing(err)) throw stripeFailure(err);
       }
     } else if (parseCheckoutTerms(row.checkout_terms)) {
       const found = await this.findAttemptSubscription(row);
@@ -1072,7 +1093,9 @@ export class SubscriptionCheckoutService {
   ): Promise<boolean> {
     if (sub.status === 'canceled' || sub.status === 'incomplete_expired') return false;
     if (sub.status === 'trialing') {
-      if (sub.default_payment_method) return true;
+      // B-679-8 (Opus) — with the create-time end still set, a default card
+      // may not be the attempt's own: its SetupIntent decides.
+      if (sub.default_payment_method && !sub.cancel_at_period_end) return true;
       let setup: TrialSetupState | null;
       try {
         setup = await readTrialSetup(this.stripe, row.stripe_client_secret, sub);
@@ -1083,7 +1106,8 @@ export class SubscriptionCheckoutService {
         await this.attachTrialCardQuietly(sub.id, setup.payment_method, row.id);
         return true;
       }
-      return setup?.status === 'processing';
+      // A default card whose SetupIntent cannot be found is never canceled.
+      return setup ? setup.status === 'processing' : !!sub.default_payment_method;
     }
     return !subscriptionUnpaid(sub);
   }
@@ -1136,12 +1160,18 @@ export class SubscriptionCheckoutService {
     try {
       sub = await this.stripe.retrieveSubscriptionForCheckout(subscriptionId);
     } catch (err) {
-      throw stripeFailure(err);
+      // C-679-3 — Stripe has no such subscription: end it, start a fresh one.
+      if (!isResourceMissing(err)) throw stripeFailure(err);
+      await this.expireAttempt(cur.id);
+      return null;
     }
     // Paid (or card saved) a moment ago; the webhook will grant access.
     // B-654-8 — past_due / unpaid were active and still charge: the plan.
+    // B-679-8 (Opus) — a trial default counts once its create-time end is lifted.
     const live = sub.status === 'active' || sub.status === 'past_due' || sub.status === 'unpaid';
-    if (live || (sub.status === 'trialing' && !!sub.default_payment_method)) {
+    const trialSaved =
+      sub.status === 'trialing' && !!sub.default_payment_method && !sub.cancel_at_period_end;
+    if (live || trialSaved) {
       throw alreadyActive({ ...cur, status: sub.status });
     }
     // B-654-6 — a first payment already in flight or paid is never canceled.
@@ -1163,7 +1193,7 @@ export class SubscriptionCheckoutService {
         await this.attachTrialCardQuietly(sub.id, setup.payment_method, cur.id);
         throw alreadyActive({ ...cur, status: sub.status });
       }
-      if (setup && setup.status === 'processing') {
+      if (setup ? setup.status === 'processing' : !!sub.default_payment_method) {
         throw alreadyActive({ ...cur, status: sub.status });
       }
     }
@@ -1299,16 +1329,6 @@ export class SubscriptionCheckoutService {
       });
     } catch (err) {
       this.logger.error(`could not drop reservation purchase=${id} error=${errorLabel(err)}`);
-    }
-  }
-
-  private async cancelQuietly(subscriptionId: string): Promise<void> {
-    try {
-      await this.stripe.cancelSubscription(subscriptionId);
-    } catch (err) {
-      this.logger.warn(
-        `could not cancel stale subscription ${subscriptionId} error=${errorLabel(err)}; Stripe expires it after 23 h`,
-      );
     }
   }
 
@@ -1486,11 +1506,17 @@ export class SubscriptionCheckoutService {
     row: ClientPurchase,
     subscriptionId: string,
   ): Promise<'kept' | 'card_saved' | 'retired'> {
-    const sub = await this.stripe.retrieveSubscriptionForCheckout(subscriptionId);
-    const ended = sub.status === 'canceled' || sub.status === 'incomplete_expired';
-    if (!ended) {
+    let sub: StripeSubscriptionCheckoutObject | null = null;
+    try {
+      sub = await this.stripe.retrieveSubscriptionForCheckout(subscriptionId);
+    } catch (err) {
+      // C-679-3 — Stripe has no such subscription: release its reservation.
+      if (!isResourceMissing(err)) throw err;
+    }
+    if (sub && sub.status !== 'canceled' && sub.status !== 'incomplete_expired') {
       if (sub.status !== 'trialing') return 'kept';
-      if (sub.default_payment_method) return 'card_saved';
+      // B-679-8 (Opus) — a default counts once its create-time end is lifted.
+      if (sub.default_payment_method && !sub.cancel_at_period_end) return 'card_saved';
       const setup = await readTrialSetup(this.stripe, row.stripe_client_secret, sub);
       if (trialCardSaved(setup)) {
         await attachTrialCard(this.stripe, sub.id, setup.payment_method);
@@ -1507,7 +1533,9 @@ export class SubscriptionCheckoutService {
       where: { id: row.id, entitlement_active: false, trial_started_at: null },
       data: { status: 'expired', stripe_client_secret: null, stripe_ephemeral_key: null },
     });
-    this.logger.log(`billing.trial_attempt_retired purchase=${row.id} stripe_status=${sub.status}`);
+    this.logger.log(
+      `billing.trial_attempt_retired purchase=${row.id} stripe_status=${sub?.status ?? 'missing'}`,
+    );
     return 'retired';
   }
 
@@ -1516,9 +1544,13 @@ export class SubscriptionCheckoutService {
    * 'settled': the card was saved / the first invoice paid or is processing
    * (the webhook grants access); 'dead': the intent was canceled or the
    * subscription ended; 'usable' otherwise, and on a Stripe read error (the
-   * previous behaviour: hand back the stored secret).
+   * previous behaviour: hand back the stored secret). Opus B-679-9: a
+   * canceled SetupIntent is 'dead' only once its trial ended ('unconfirmed'
+   * while that is not confirmed).
    */
-  private async replaySecretState(row: ClientPurchase): Promise<'usable' | 'settled' | 'dead'> {
+  private async replaySecretState(
+    row: ClientPurchase,
+  ): Promise<'usable' | 'settled' | 'dead' | 'unconfirmed'> {
     const subscriptionId = row.stripe_subscription_id;
     if (!subscriptionId || !this.state.ready) return 'usable';
     try {
@@ -1529,7 +1561,7 @@ export class SubscriptionCheckoutService {
           return 'settled';
         }
         if (setup?.status === 'processing') return 'settled';
-        if (setup?.status === 'canceled') return 'dead';
+        if (setup?.status === 'canceled') return this.canceledSetupState(row, subscriptionId);
         return 'usable';
       }
       const sub = await this.stripe.retrieveSubscriptionForCheckout(subscriptionId);
@@ -1542,8 +1574,27 @@ export class SubscriptionCheckoutService {
       if (piStatus === 'canceled') return 'dead';
       return 'usable';
     } catch (err) {
+      // C-679-3 — Stripe has no such subscription: the attempt is over.
+      if (isResourceMissing(err) && !setupIntentIdOf(row.stripe_client_secret)) return 'dead';
       this.logger.warn(`replay secret check skipped purchase=${row.id} error=${errorLabel(err)}`);
       return 'usable';
+    }
+  }
+
+  /** Opus B-679-9 — end the trial of a canceled SetupIntent, guarded; never assumed. */
+  private async canceledSetupState(
+    row: ClientPurchase,
+    subscriptionId: string,
+  ): Promise<'settled' | 'dead' | 'unconfirmed'> {
+    try {
+      const sub = await this.stripe.retrieveSubscriptionForCheckout(subscriptionId);
+      if (sub.status === 'canceled' || sub.status === 'incomplete_expired') return 'dead';
+      const end = await this.endUnpaid(row, sub);
+      return end === 'ended' ? 'dead' : end;
+    } catch (err) {
+      if (isResourceMissing(err)) return 'dead';
+      this.logger.warn(`replay trial end unconfirmed purchase=${row.id} error=${errorLabel(err)}`);
+      return 'unconfirmed';
     }
   }
 

@@ -157,3 +157,12 @@ export function setupUnavailable(closed: boolean): HttpException {
       : `The card screen could not be prepared for this plan, and closing it is not confirmed yet. ${CHECK_THEN_SUPPORT}`,
   });
 }
+
+/** Sol B-679-4 — the change was sent, but Stripe's current state was not read back. */
+export function planChangeUnconfirmed(): HttpException {
+  return new ServiceUnavailableException({
+    code: 'PLAN_CHANGE_UNCONFIRMED',
+    error: 'PLAN_CHANGE_UNCONFIRMED',
+    message: `The change to this plan was sent, but the payment service has not confirmed it yet. Refresh Your plan in a minute, and choose Keep plan again if it still shows an end date. If it keeps happening, contact support at ${SUPPORT_EMAIL}.`,
+  });
+}
