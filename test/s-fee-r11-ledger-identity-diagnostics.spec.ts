@@ -10,7 +10,7 @@
 // the two unique indexes on SplitLedgerEntry the way Postgres does (a NULL in
 // any indexed column never conflicts).
 import { Logger } from '@nestjs/common';
-import { Prisma, type ClientPurchase, type SplitLedgerEntry } from '@prisma/client';
+import { Prisma, type ClientPurchase } from '@prisma/client';
 import { ChargeLock } from '../src/connect/fees/charge-lock';
 import type { SplitPlan } from '../src/connect/fees/fee-policy.service';
 import { SplitLedgerService } from '../src/connect/fees/split-ledger.service';
