@@ -2,16 +2,12 @@
 <html lang="en">
   <body style="font-family: -apple-system, system-ui, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; color: #1a1a1a; line-height: 1.5;">
     <div style="white-space: pre-line; font-size: 16px;">{{roman_body}}</div>
-    {{#if update_card_url}}
+    {{#if update_card_url}}{{#unless dispute}}
     <p style="margin: 28px 0 8px;">
       <a href="{{update_card_url}}" style="display: inline-block; background: #1f2a24; color: #ffffff; padding: 12px 22px; border-radius: 8px; text-decoration: none; font-weight: 600;">Update card in the app</a>
     </p>
-    {{#if dispute}}
-    <p style="font-size: 13px; color: #555; margin: 0 0 24px;">Open this on the phone where The Growth Project app is installed. A new card keeps future payments working. It does not settle the reversed payment: that ends when the bank closes the dispute in your coach's favour, for example after you ask the bank to withdraw it.</p>
-    {{else}}
     <p style="font-size: 13px; color: #555; margin: 0 0 24px;">Open this on the phone where The Growth Project app is installed. It goes straight to the card screen. Saving a card there charges the amount owed to it, and once that payment goes through, your access stays on.</p>
-    {{/if}}
-    {{/if}}
+    {{/unless}}{{/if}}
     {{#unless dispute}}
     <p style="font-size: 13px; color: #555;">If you would rather end your plan, open the app and choose End my plan on the payment screen. The unpaid amount is then canceled, nothing more is charged, and access ends right away.</p>
     {{/unless}}

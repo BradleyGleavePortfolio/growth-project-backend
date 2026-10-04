@@ -165,7 +165,7 @@ describe('Late-reversal copy (§C.8)', () => {
   it('LR (dispute) email renders with tokens', () => {
     const e = renderer.clientEmail('lr_day7', TOKENS, false);
     expect(e).toContain(ROMAN_STEMS.lateReversal);
-    expect(e).toContain('March 10');
+    expect(e).toContain('Access has ended and billing for the plan is paused');
   });
   it('late-reversal lockout reuses the household-ledger screen', () => {
     expect(renderer.lockoutScreen(TOKENS, false)).toContain(ROMAN_STEMS.day10);

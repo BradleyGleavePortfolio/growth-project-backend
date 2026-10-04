@@ -386,8 +386,11 @@ describe('B-687-4 (Sol) / B-687-5 (Opus) / C-687-6: copy claims nothing before i
   it.each([0, 1, 2, 3])('dispute cycle step %i: no card or cancel promise', async (stepIndex) => {
     const text = await renderStep({ stepIndex, isLateReversalCycle: true });
     expect(text).toMatch(/dispute/);
+    // R-DISPUTE-PAUSE: access has ended, billing is paused, the coach decides.
+    expect(text).toMatch(/Access has ended and billing (for the plan )?is paused/);
+    expect(text).toMatch(/decides whether to restart it(.|\n)*Restarting is your decision/);
     expect(text).not.toMatch(
-      /stays on|restore|keep everything|will settle it|paid with it|End my plan/i,
+      /stays on|restore|keep everything|will settle it|paid with it|End my plan|Update card|pauses on|locks/i,
     );
     expect(text).not.toMatch(/attempt|declined|failed/i);
   });
