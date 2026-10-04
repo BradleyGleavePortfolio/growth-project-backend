@@ -102,8 +102,9 @@ export class PracticeTypeService {
         financeStatus = 'ok';
       } else if (outcome.kind === 'not_found') {
         financeStatus = 'not_found';
+        // C-611-17: the coach id, not the address used for the lookup.
         this.logger.log(
-          `Practice federation: no finance coach for ${u.email} - fitness-only mirror`,
+          `Practice federation: no finance coach for coach=${coachId} - fitness-only mirror`,
         );
       } else {
         this.logger.error(

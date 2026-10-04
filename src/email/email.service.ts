@@ -10,6 +10,7 @@ import * as path from 'path';
 import * as Handlebars from 'handlebars';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { ProviderFailure, describeFailure, providerErrorCode } from '../observability/log-pii';
 import {
   EmailTemplateKey,
   SendEmailInput,
@@ -25,6 +26,7 @@ interface EmailTransport {
     subject: string;
     html: string;
     replyTo?: string;
+    signal?: AbortSignal;
   }): Promise<{ providerMessageId: string }>;
 }
 
@@ -136,6 +138,9 @@ export class EmailService {
       );
     }
 
+    // An aborted caller sends nothing and leaves its key unused.
+    if (input.signal?.aborted) return this.notStarted(input.idempotencyKey);
+
     // Idempotency: try to INSERT a 'sending' row. On unique violation
     // (P2002) the same key was already used — return 'skipped'. The row
     // is updated to 'sent' / 'failed' / 'logged' once the transport
@@ -180,22 +185,33 @@ export class EmailService {
       html = rendered.html;
       subject = rendered.subject;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'unknown';
-      await this._finalize(logRow.id, 'failed', null, `render: ${msg}`);
+      // B-700-1: a render error can quote template data (a first name, a
+      // coach name); keep the class and code only.
+      const failure = `render: ${describeFailure(err)}`;
+      await this._finalize(logRow.id, 'failed', null, failure);
       return {
         status: 'failed',
         providerMessageId: null,
         idempotencyKey: input.idempotencyKey,
-        error: `render: ${msg}`,
+        error: failure,
       };
+    }
+
+    // Checked again right before the transport: the key is spent ('failed'), nothing is sent.
+    if (input.signal?.aborted) {
+      await this._finalize(logRow.id, 'failed', null, 'aborted before send');
+      return this.notStarted(input.idempotencyKey);
     }
 
     // 'log' transport: structured log instead of an HTTP call. Used in
     // dev/test only — `_initTransport` enforces that production never
     // accidentally lands here.
+    // C-611-17: log lines name the EmailSendLog row (which holds the
+    // recipient for support) and the template, never the address or the
+    // rendered subject (subjects carry first names and coach names).
     if (this.transportKind === 'log' || !this.transport) {
       this.logger.log(
-        `[email:log] to=${input.to} template=${input.template} subject="${subject}" key=${input.idempotencyKey}`,
+        `[email:log] row=${logRow.id} template=${input.template} key=${input.idempotencyKey}`,
       );
       await this._finalize(logRow.id, 'logged', null, null);
       return {
@@ -212,10 +228,11 @@ export class EmailService {
         subject,
         html,
         replyTo: input.replyTo,
+        signal: input.signal,
       });
       await this._finalize(logRow.id, 'sent', providerMessageId, null);
       this.logger.log(
-        `email sent template=${input.template} to=${input.to} provider_id=${providerMessageId}`,
+        `email sent template=${input.template} row=${logRow.id} provider_id=${providerMessageId}`,
       );
       return {
         status: 'sent',
@@ -223,21 +240,29 @@ export class EmailService {
         idempotencyKey: input.idempotencyKey,
       };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'unknown';
-      await this._finalize(logRow.id, 'failed', null, msg.slice(0, 500));
+      // A provider error body can echo the address and display name back
+      // ("Invalid `to` field: ..."). B-700-1: the log line, the stored error
+      // and the returned error (callers log it) hold the provider, HTTP
+      // status and the provider's code only, never the body.
+      const failure = describeFailure(err);
+      await this._finalize(logRow.id, 'failed', null, failure);
       this.logger.error(
-        `email send failed template=${input.template} to=${input.to}: ${msg}`,
+        `email send failed template=${input.template} row=${logRow.id}: ${failure}`,
       );
       return {
         status: 'failed',
         providerMessageId: null,
         idempotencyKey: input.idempotencyKey,
-        error: msg,
+        error: failure,
       };
     }
   }
 
   // ── internal ────────────────────────────────────────────────────────────
+
+  private notStarted(idempotencyKey: string): SendEmailResult {
+    return { status: 'failed', providerMessageId: null, idempotencyKey, notStarted: true };
+  }
 
   private async _finalize(
     rowId: string,
@@ -259,7 +284,7 @@ export class EmailService {
       // Audit-style: never let log-finalize failure mask the real send
       // outcome. Best-effort write; error makes Sentry via global logger.
       this.logger.error(
-        `email send log finalize failed row=${rowId}: ${err instanceof Error ? err.message : 'unknown'}`,
+        `email send log finalize failed row=${rowId}: ${describeFailure(err)}`,
       );
     }
   }
@@ -337,6 +362,7 @@ class ResendTransport implements EmailTransport {
     subject: string;
     html: string;
     replyTo?: string;
+    signal?: AbortSignal;
   }): Promise<{ providerMessageId: string }> {
     const body: Record<string, unknown> = {
       from: args.from,
@@ -353,14 +379,16 @@ class ResendTransport implements EmailTransport {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
+      signal: args.signal,
     });
     if (!res.ok) {
-      const text = await res.text().catch(() => '<no body>');
-      throw new Error(`Resend ${res.status}: ${text.slice(0, 500)}`);
+      // B-700-1: the body can echo the recipient; keep the provider's code.
+      const text = await res.text().catch(() => '');
+      throw new ProviderFailure('resend', res.status, providerErrorCode('resend', text));
     }
     const json = (await res.json().catch(() => ({}))) as { id?: string };
     if (!json.id) {
-      throw new Error('Resend response missing id field');
+      throw new ProviderFailure('resend', res.status, 'missing_id');
     }
     return { providerMessageId: json.id };
   }

@@ -868,17 +868,17 @@ export class TransferOrchestratorService {
   // pending with its marker and is looked up again on the next sweep.
   private async holdUncertain(
     row: ConnectTransfer,
-    message: string,
+    diagnostic: string,
     justSent: boolean,
   ): Promise<ConnectTransfer> {
     this.logger.error(
       `SFEE_TRANSFER_UNCERTAIN alert=true transfer=${row.id} kind=${row.kind} purchase=${row.purchase_id} ` +
         `settlement=${row.settlement_id ?? 'none'} op=${row.idempotency_key} amount=${row.amount_cents} ` +
-        `unresolved_since=${row.stripe_send_unresolved_at?.toISOString() ?? 'unknown'}: ${message}; ` +
+        `unresolved_since=${row.stripe_send_unresolved_at?.toISOString() ?? 'unknown'}: ${diagnostic}; ` +
         (justSent ? 'outcome unknown' : 'not re-sent') +
         ', looked up again before any re-send',
     );
-    return this.scheduleRecheck(row, { message: `${TRANSFER_UNCERTAIN_CODE}: ${message}` });
+    return this.scheduleRecheck(row, { message: `${TRANSFER_UNCERTAIN_CODE}: ${diagnostic}` });
   }
 
   // B-627-9 — a create sent inside the in-flight window is not visible at
@@ -1138,15 +1138,15 @@ export class TransferOrchestratorService {
       const lookup = await this.findStripeReversal(row.stripe_transfer_id, op.idempotency_key);
       if (lookup.kind === 'found') return this.completeReversal(op, lookup.id);
       if (lookup.kind === 'unknown') {
-        const message = `reversal lookup unavailable: ${lookup.reason}`;
+        const diagnostic = `reversal lookup unavailable: ${lookup.reason}`;
         await this.prisma.transferReversalOp.updateMany({
           where: { id: op.id, status: 'pending' },
-          data: { last_error: message.slice(0, 500) },
+          data: { last_error: diagnostic.slice(0, 500) },
         });
         this.logger.error(
-          `SFEE_REVERSAL_UNCERTAIN alert=true transfer=${row.id} op=${op.idempotency_key} amount=${op.amount_cents}: ${message}; not re-sent`,
+          `SFEE_REVERSAL_UNCERTAIN alert=true transfer=${row.id} op=${op.idempotency_key} amount=${op.amount_cents}: ${diagnostic}; not re-sent`,
         );
-        throw new ReversalUncertainError(row.id, op.idempotency_key, message);
+        throw new ReversalUncertainError(row.id, op.idempotency_key, diagnostic);
       }
     }
     // Round 11 (B-682-1): the transfer-send protocol, for reversals. Claim the
@@ -1219,16 +1219,16 @@ export class TransferOrchestratorService {
       }
       const lookup = await this.findStripeReversal(row.stripe_transfer_id, op.idempotency_key);
       if (lookup.kind === 'found') return this.completeReversal(op, lookup.id);
-      const message =
+      const diagnostic =
         lookup.kind === 'unknown' ? `${diag}; reversal lookup unavailable: ${lookup.reason}` : diag;
       await this.prisma.transferReversalOp.updateMany({
         where: { id: op.id, status: 'pending' },
-        data: { last_error: message.slice(0, 500) },
+        data: { last_error: diagnostic.slice(0, 500) },
       });
       this.logger.error(
-        `SFEE_REVERSAL_UNCERTAIN alert=true transfer=${row.id} op=${op.idempotency_key} amount=${op.amount_cents}: ${message}`,
+        `SFEE_REVERSAL_UNCERTAIN alert=true transfer=${row.id} op=${op.idempotency_key} amount=${op.amount_cents}: ${diagnostic}`,
       );
-      throw new ReversalUncertainError(row.id, op.idempotency_key, message);
+      throw new ReversalUncertainError(row.id, op.idempotency_key, diagnostic);
     }
     // Stripe moved the money. If this receipt write fails the op stays
     // pending with attempts > 0, and every retry reconciles by the Stripe
@@ -1329,18 +1329,21 @@ export class TransferOrchestratorService {
     return { status: 'succeeded', transfer, op_id: op.id };
   }
 
-  private async refuseReversal(op: TransferReversalOp, message: string): Promise<ReverseOutcome> {
+  private async refuseReversal(
+    op: TransferReversalOp,
+    diagnostic: string,
+  ): Promise<ReverseOutcome> {
     const transfer = await this.prisma.$transaction(async (tx) => {
       await tx.transferReversalOp.updateMany({
         where: { id: op.id, status: 'pending' },
-        data: { status: 'refused', last_error: message.slice(0, 500), resolved_at: new Date() },
+        data: { status: 'refused', last_error: diagnostic.slice(0, 500), resolved_at: new Date() },
       });
       return tx.connectTransfer.findUniqueOrThrow({ where: { id: op.transfer_id } });
     });
     this.logger.warn(
-      `SFEE_REVERSAL_REFUSED transfer=${op.transfer_id} op=${op.idempotency_key} amount=${op.amount_cents}: ${message}`,
+      `SFEE_REVERSAL_REFUSED transfer=${op.transfer_id} op=${op.idempotency_key} amount=${op.amount_cents}: ${diagnostic}`,
     );
-    return { status: 'refused', transfer, op_id: op.id, error: message };
+    return { status: 'refused', transfer, op_id: op.id, error: diagnostic };
   }
 
   // B-627-9 — every write is a CAS on the attempt that was read or claimed
