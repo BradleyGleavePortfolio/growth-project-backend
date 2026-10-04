@@ -139,10 +139,11 @@ export async function convertedRefundedCents(
   chargeId: string,
   currency: string,
 ): Promise<number> {
+  type RefundPage = Awaited<ReturnType<StripeConnectApiService['listChargeRefunds']>>;
   let total = 0;
   let after: string | null = null;
   for (let page = 0; page < 20; page += 1) {
-    const res = await stripe.listChargeRefunds(chargeId, after).catch((err: unknown) => {
+    const res: RefundPage = await stripe.listChargeRefunds(chargeId, after).catch((err: unknown) => {
       throw new RefundStateUnavailableError(chargeId, settlementFailureCode(err));
     });
     for (const r of res.data ?? []) {
