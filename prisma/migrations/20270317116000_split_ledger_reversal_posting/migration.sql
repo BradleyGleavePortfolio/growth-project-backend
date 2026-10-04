@@ -28,3 +28,12 @@ CREATE POLICY "SplitLedgerReversal_server_only" ON "SplitLedgerReversal"
 -- ChargeRefund.transfer_reversal_amount_cents: the amount the first head-coach
 -- reversal attempt sent; every resend under the same Stripe key replays it.
 ALTER TABLE "ChargeRefund" ADD COLUMN IF NOT EXISTS "transfer_reversal_amount_cents" INTEGER;
+
+-- B-674-5 / B-674-10 (B-CM-117): a lost chargeback's head-coach transfer
+-- reversal, once. Nullable, no backfill: a chargeback closed earlier has no
+-- stamped attempt, so nothing retries it.
+ALTER TABLE "ChargeDispute" ADD COLUMN IF NOT EXISTS "transfer_reversal_amount_cents" INTEGER;
+ALTER TABLE "ChargeDispute" ADD COLUMN IF NOT EXISTS "transfer_reversal_first_attempt_at" TIMESTAMP(3);
+ALTER TABLE "ChargeDispute" ADD COLUMN IF NOT EXISTS "transfer_reversed_at" TIMESTAMP(3);
+ALTER TABLE "ChargeDispute" ADD COLUMN IF NOT EXISTS "transfer_reversal_stripe_id" TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS "ChargeDispute_transfer_reversal_stripe_id_key" ON "ChargeDispute"("transfer_reversal_stripe_id");
