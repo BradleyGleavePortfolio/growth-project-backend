@@ -186,9 +186,13 @@ public pages until it is built and audited.
   (`docs/privacy/vendor-deletion-and-backups.md` §0).
   The removal steps are Apple's own (Apple Support 102571: iPhone
   Settings > [your name] > Sign in with Apple > app > Delete; the web path
-  is account.apple.com > Sign-In & Security). `/privacy` and
-  `/help/delete-account` render the same `SIGN_IN_WITH_APPLE_DELETION_TEXT`
-  and link the article (`test/privacy-apple-unlink-path.spec.ts`).
+  is account.apple.com > Sign-In & Security). The iPhone path is the iOS 18
+  or later one, so the text says so and sends earlier iOS versions (the
+  app supports 16.4 and later) and other devices to the web path
+  (C-611-18). `/privacy` and `/help/delete-account` render the same
+  `SIGN_IN_WITH_APPLE_DELETION_TEXT` and link the article
+  (`test/privacy-apple-unlink-path.spec.ts`,
+  `test/privacy-apple-ios-version.spec.ts`).
 - Section links go through `safeHref()`: site-relative paths, `mailto:`
   and `https:` only; anything else renders as `#`.
 

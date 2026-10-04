@@ -216,8 +216,12 @@ export class CheckoutWebhookHandlerService {
         return this.applyCustomerUpdated(event);
       // Phase 6 — refund / dispute / transfer / payout events. Delegated
       // to the RefundDisputeHandlerService.
+      // Round 17 (Sol B-684-4, Opus B-684-7): Stripe sends refund.updated for every refund and
+      // marks charge.refund.updated deprecated; both reach the refund handler (idempotent per
+      // refund id), so an async refund's later status moves its money either way.
       case 'charge.refunded':
       case 'charge.refund.updated':
+      case 'refund.updated':
       case 'charge.dispute.created':
       case 'charge.dispute.updated':
       case 'charge.dispute.closed':

@@ -12,13 +12,14 @@ import type { ClientPurchase } from '@prisma/client';
 import { PayoutNoticeService } from '../src/checkout/payout-notice.service';
 import { PurchaseSplitHandlerService } from '../src/checkout/purchase-split-handler.service';
 import { RefundDisputeHandlerService } from '../src/checkout/refund-dispute-handler.service';
-import * as settlementModule from '../src/connect/fees/charge-settlement.service';
-import { ChargeSettlementService } from '../src/connect/fees/charge-settlement.service';
+import {
+  ChargeSettlementService,
+  chargeRefundsFromStripe,
+} from '../src/connect/fees/charge-settlement.service';
 import { FeePolicyService } from '../src/connect/fees/fee-policy.service';
 import { PayoutReadinessService } from '../src/connect/fees/payout-readiness.service';
 import { SplitLedgerService } from '../src/connect/fees/split-ledger.service';
 import { TransferOrchestratorService } from '../src/connect/fees/transfer-orchestrator.service';
-import type { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
 import type { EmailService } from '../src/email/email.service';
 import type { NotificationsService } from '../src/notifications/notifications.service';
 import {
@@ -134,14 +135,7 @@ const refundUpdated = (status: string, id = 're_ach', amount = 4_900) => ({
 afterEach(() => jest.restoreAllMocks());
 
 describe('Sol B-683-4: only a validated terminal page completes the refund list', () => {
-  // Resolved at run time: on 35a18539 the reader does not exist yet (convertedRefundedCents).
-  const read = (stripe: FakeStripe) =>
-    (
-      settlementModule as unknown as Record<
-        string,
-        (s: StripeConnectApiService, c: string, cur: string | null) => Promise<unknown>
-      >
-    ).chargeRefundsFromStripe(stripe, 'ch_1', 'usd');
+  const read = (stripe: FakeStripe) => chargeRefundsFromStripe(stripe, 'ch_1', 'usd');
 
   it.each([
     ['has_more=true with no refunds (no cursor)', [{ data: [], has_more: true }]],
