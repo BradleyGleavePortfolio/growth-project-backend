@@ -4,7 +4,8 @@ import { HttpException, Logger } from '@nestjs/common';
 import { SubscriptionCheckoutService } from '../src/checkout/subscription-checkout.service';
 import { errorLabel } from '../src/checkout/error-label';
 import { StripeConnectApiError } from '../src/connect/stripe-connect-api.service';
-import { makeCheckoutHelpers, makeFakePrisma, makeFakeStripe } from './support/b-recur-fakes';
+import { PackagesService } from '../src/packages/packages.service';
+import { makeCheckoutHelpers, makeFakePrisma, makeFakeStripe, matchWhere } from './support/b-recur-fakes';
 
 const CLIENT = '11111111-1111-4111-8111-111111111111';
 const COACH = '22222222-2222-4222-8222-222222222222';
@@ -30,7 +31,7 @@ function packageRow(over: Record<string, unknown> = {}) {
 function setup(over: Record<string, unknown> = {}) {
   const prisma = makeFakePrisma();
   const stripe = makeFakeStripe();
-  const checkout = makeCheckoutHelpers(prisma);
+  const checkout: any = makeCheckoutHelpers(prisma);
   prisma._users.push(
     { id: CLIENT, email: 'synthetic@example.test', name: 'Client', coach_id: COACH },
     { id: COACH, email: 'coach@example.test', name: 'Coach', coach_id: null },
@@ -221,6 +222,44 @@ describe('adversarial: old attempts must still exclude a second create', () => {
 });
 
 describe('adversarial: immutable identity and lifecycle', () => {
+  it('an attempt retired while the pin write reply is delayed cannot subsequently create a billable orphan', async () => {
+    const f = setup();
+    let release: () => void = () => undefined;
+    let notify: () => void = () => undefined;
+    const hold = new Promise<void>((resolve) => { release = resolve; });
+    const pinned = new Promise<void>((resolve) => { notify = resolve; });
+    const realUpdate = f.prisma.clientPurchase.update.getMockImplementation();
+    f.prisma.clientPurchase.update.mockImplementation(async (args: any) => {
+      const row = await realUpdate(args);
+      if (args.data.checkout_terms) {
+        // The database committed the pin, but this worker has not received
+        // its response yet. A retirement/deletion transition wins meanwhile.
+        notify();
+        await hold;
+      }
+      return row;
+    });
+    const realCreate = f.stripe.createSubscription.getMockImplementation();
+    f.stripe.createSubscription.mockImplementation(async (args: any) => {
+      const sub = await realCreate(args);
+      // The candidate explicitly supports canonical paid first invoices.
+      // If a stale request is sent, cancellation is already too late.
+      sub.status = 'active';
+      sub.latest_invoice = { id: 'in_paid', status: 'paid', amount_due: 4900, payment_intent: null };
+      return sub;
+    });
+    const pending = resultOf(intent(f.svc));
+    await pinned;
+    Object.assign(f.prisma._purchases[0], {
+      status: 'canceled', entitlement_active: false,
+      stripe_client_secret: null, stripe_ephemeral_key: null,
+    });
+    release();
+    await pending;
+    expect(f.stripe.createSubscription).not.toHaveBeenCalled();
+    expect([...f.stripe._subs.values()].filter((s: any) => s.status === 'active')).toHaveLength(0);
+  });
+
   it('same key cannot return Plan A credentials relabelled as equally priced Plan B', async () => {
     const f = setup();
     const a = await intent(f.svc);
@@ -237,7 +276,7 @@ describe('adversarial: immutable identity and lifecycle', () => {
     expect(f.stripe.createSubscription).toHaveBeenCalledTimes(1);
   });
 
-  it.each(['active', 'expired'])('a first-mint ephemeral await cannot resurrect credentials after %s', async (status) => {
+  it.each(['active', 'canceled', 'expired'])('a first-mint ephemeral await cannot resurrect credentials after %s', async (status) => {
     const f = setup();
     f.stripe.createEphemeralKey.mockImplementation(async () => {
       Object.assign(f.prisma._purchases[0], {
@@ -285,13 +324,26 @@ describe('adversarial: immutable identity and lifecycle', () => {
     expect(row.cancel_at_period_end).toBe(true);
   });
 
-  it('plan read preserves the bought cadence when the package is edited', async () => {
+  it('plan read preserves bought cadence after a permitted pending-checkout package edit', async () => {
     const f = setup();
     const out = await intent(f.svc);
-    Object.assign(f.prisma._purchases[0], { status: 'active', entitlement_active: true });
-    Object.assign(f.prisma._packages[0], {
-      interval: 'year', interval_count: 1, amount_cents: 5900, stripe_price_id: 'price_B',
+    // Drive the actual package update authority: a not-yet-entitled pending
+    // buyer does not trigger its active-subscriber price lock.
+    f.prisma.coachPackage.findFirst = jest.fn(async ({ where }: any) =>
+      f.prisma._packages.find((p: any) => matchWhere(p, where)) ?? null);
+    f.prisma.coachPackage.update = jest.fn(async ({ where, data }: any) => {
+      const pkg = f.prisma._packages.find((p: any) => p.id === where.id);
+      Object.assign(pkg, data);
+      return pkg;
     });
+    f.prisma.clientPurchase.count = jest.fn(async ({ where }: any) =>
+      f.prisma._purchases.filter((p: any) => matchWhere(p, where)).length);
+    const scope: any = {};
+    const packageService = new PackagesService(f.prisma, scope);
+    await packageService.update(COACH, PKG, { interval: 'year', amount_cents: 5900 });
+    expect(f.prisma._packages[0].interval).toBe('year');
+    // The old PaymentSheet completes at its immutable original Stripe Price.
+    Object.assign(f.prisma._purchases[0], { status: 'active', entitlement_active: true });
     const view = await f.svc.getPlan(CLIENT, out.purchase_id);
     expect(view.amount_cents).toBe(4900);
     expect(view.interval).toBe('month');
