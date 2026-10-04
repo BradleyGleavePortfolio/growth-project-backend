@@ -11,6 +11,11 @@ export interface PayoutNoticeAmounts {
   currency: string;
   charge_gross_cents: number;
   customer_refunded_cents: number;
+  // Round 13 (B-683-1): on a charge presented in another currency than it settled in, what the
+  // client got back in their own currency (customer_refunded_cents is then the settlement
+  // debit). Null when the currencies match.
+  client_currency?: string | null;
+  client_refunded_cents?: number | null;
   reversed_cents: number;
   reinstated_cents: number;
   // Hold on this charge cancelled since the payee's previous notice (won dispute).
@@ -83,7 +88,10 @@ export function payoutNoticeCopy(
   switch (event) {
     case 'refund':
       title = 'A client was refunded';
-      body = `A client got ${m(a.customer_refunded_cents)} back.${took} ${heldSentence(a, a.held_open_cents)}`;
+      body =
+        a.client_currency && a.client_refunded_cents != null
+          ? `A client got ${formatMoney(a.client_refunded_cents, a.client_currency)} back, ${m(a.customer_refunded_cents)} after conversion.${took} ${heldSentence(a, a.held_open_cents)}`
+          : `A client got ${m(a.customer_refunded_cents)} back.${took} ${heldSentence(a, a.held_open_cents)}`;
       break;
     case 'chargeback':
       title = 'A client disputed a charge';
