@@ -270,6 +270,19 @@ to review a trial date that differs from the one shown (operator accepted the co
 #661 and recurring reply codes, today's production backend fallback, recurring never one-time-only, no first person). Find #344's
 prior verdicts in its thread and check them closed. Reports: ops/reports/AUD-OPUS-SH3-118.md, AUD-SOL-SH3-118.md.
 
+## AUD-OPUS-CM-118 / AUD-SOL-CM-118 — coach Money M1 #674 + M3 #676 (T4: coach-visible money, refunds, chargebacks, tax CSV)
+Heads: #674 f9e21a87bf47502458a6ae21c2393010a1279198 (base main; trails main by #698/#699, no shared files; 2,948 lines), #676
+ccd60bbcb6b724534cfc69547c89a68c9af32901 (base agent115/money-split-1-refund-reversal = #674's branch; 2,981 lines). B-CM4-118 FIX ROUND 3 + READY
+(#674 5982570833, #676 5982571192); report ops/reports/B-CM4-118.md (verify every claim). Prior findings to check closed: Sol RC 0/2/2 on
+#674 at 5bbcc92a (5977398163; B-674-11 fair chargeback sweep, B-674-12 one first close, plus the new refund half of B-674-12); Sol RC
+0/1/1 on #676 at 54e61566 (5977398126; B-676-3 tax CSV rows from refund and chargeback events); earlier Opus RC #674 (5976743131) and
+#676 (5976743259). Opus 116's mirror_before_reconcile probe on #674 now expects behavior the B-674-3 fix removed (Opus 117 accepted):
+not a regression unless you show otherwise. Binding: owner-only authz, reversal idempotency under redelivery and concurrency,
+coach-visible money equals the ledger to the cent, MRR and churned_30d exclude never-billed trials (C-673-3 depends on #676's billed
+predicate: check it is exported and correct), webhook order independence, currency. The new sweep column lives in the unreleased migration
+20270317116000 (operator: keep). M4 #677 (4799c6af, merge-only/test move) gets its own pair later. Reports:
+ops/reports/AUD-OPUS-CM-118.md, AUD-SOL-CM-118.md.
+
 ## QUEUED (operator launches as slots free, in this order)
 B-DUNB-118 (after B-DUNA-118 ends): D3 #689 bb992fed + D4 #690 06307883 (both 2,913 lines). Sol RC #689 0/4/0 (5982476834: post-lock
 dispute resolution, cancellation authority, out-of-band selection, lock order) and #690 0/5/1 (5982476848: invoice resurrection, dispute
@@ -280,4 +293,4 @@ as Sol lock order B), C-690-7 payment-failed check/write not atomic (same as Sol
 C-690-5, C-690-2 (Sol). Restack on B-DUNA's D2 top first. Then dunning lens pairs on D1-D4 + D5 (#691 + #642).
 B-RECUR6B-118 (#680 + #696/#701 after B-RECUR6A ends; dead Sol lens AUD-SOL-R34R5-117 probes on audit/AUD-SOL-R34R5-117/680-authority,
 run 37187197172: B-680-2 residual, B-680-5 x2); fees lens pairs (F2+F3, F4+F4b,
-F5+F6 deltas) after B-FEES15; recurring lens pairs after B-RECUR6B; coach pair after B-CM4; AUD pair D5 (#691 + #642); HC pair H6 (mobile #360-#364); wizard pair; N1-N4.
+F5+F6 deltas) after B-FEES15; recurring lens pairs after B-RECUR6B; coach M4 #677 pair (4799c6af merge-only/test move); AUD pair D5 (#691 + #642); HC pair H6 (mobile #360-#364); wizard pair m#345 97c9005e + m#346 2baea5b8 (B-WIZ-118 READY 5982572052/5982579141; then #347 3beab160 merge-only pair; then a W3 #347 fix round for its first-person and isLive issues); N1-N4.

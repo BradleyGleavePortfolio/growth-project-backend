@@ -2,14 +2,19 @@
 
 Started 2026-10-04 09:46 PDT (from `date`). Notes/logs: ops/aud-118/B-WIZ-118/.
 
-## Status (10:25 PDT)
-- FIX ROUND 1 code pushed on #345 and #346; #347 restacked merge-only (twice; final 3beab160). Waiting on PR CI and
-  probe-replay lanes, then FIX ROUND comments + READY FOR AUDIT at green heads.
+## Status (10:30 PDT): DONE — READY FOR AUDIT posted on #345, #346, #347 at green heads
+- #345 @ 97c9005e: FIX ROUND 1 https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/345#issuecomment-5982572052
+  (Typecheck, lint, test; Analyze js-ts; Analyze actions; CodeQL: all pass)
+- #346 @ 2baea5b8: FIX ROUND 1 https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/346#issuecomment-5982579141
+  (Typecheck, lint, test: pass)
+- #347 @ 3beab160: FIX ROUND 1 (restack, merge-only) https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/347#issuecomment-5982583482
+  (Typecheck, lint, test: pass)
+- PR bodies: tier header + Fix rounds table added on all three.
 
 ## Heads
 | PR | start head | new head | base | size (adds+dels, lockfiles excl.) |
 |---|---|---|---|---|
-| #345 W1 | a4e4958820053b5aaa0f2d4a8c14f140816541b2 | 97c9005e644ebc13731d1477bfecc270a10552fd | main 7fdb629a | 1878 -> ~2600 (1,500-3,000 band: SIZE ASSESSMENT needed) |
+| #345 W1 | a4e4958820053b5aaa0f2d4a8c14f140816541b2 | 97c9005e644ebc13731d1477bfecc270a10552fd | main 7fdb629a | 1878 -> 2580 (2573+/7-; band: SIZE ASSESSMENT needed) |
 | #346 W2 | 4522eb8e550119a5cb770b93b9525290b4ffb03f | 2baea5b82a2d0e0a22bac21e8fdb5e074bec9d60 | W1 | 1922 -> 2609 (band) |
 | #347 W3 | ea2c72d1b37b33ecf418c3ff1e198ebb2566c622 | 3beab16088b7eae1fa08851f9742041bb6e0431f | W2 | 2592 unchanged (merge-only) |
 
@@ -30,6 +35,18 @@ Commits (all Bradley Gleave identity, no trailer):
 | B-346-1 (Opus) first-person copy | CoachSetupChecklist "This ticks when your first client payment arrives."; CoachSetupScreen "Stripe, the payments provider TGP uses, ..."; guard test over all checklist states + rendered setup screen | 10e278b6 | lane 37219889067 |
 | C-346-2 archived remembered package | publish/update PACKAGE_ARCHIVED or PACKAGE_NOT_FOUND (codes only) for a remembered intent -> clear it, one fresh create + publish in the same tap | 10e278b6 | lane 37219889067 |
 | C-345-1 copy truth (money list) | resumed copy narrowed to "saved on this device ... finish that same package"; helper doc states the guarantee is per account per device (sign-out wipes) | d197ea9c / 10e278b6 | - |
+
+## Lanes
+- Failing-before: #345 https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37219210136 (14F/3P, 3 controls);
+  #346 https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37219889067 (13F/6P; 5 unchanged durability +
+  form-level cadence, already green from the merged #345 fix).
+- Probe replay: #345 https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37220301571 — Opus helper 4/4 pass;
+  Sol diagnostics 4/5 (changed-retry one-time fails closed by design: double answers the old recurring row; applied-row variant 5/5).
+  #346 https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37220273057 — Opus form 7/7 pass; Sol v3 and v2
+  4/6 each (2 Stripe cases each are harness errors: UNSAFE_getByType / props.onPress not functions in RNTL 14); v3 with
+  testID press (346-lifecycle-v3-hostpress) 6/6 pass.
+- Locks: coach lock taken/released twice (10:18, 10:21 PDT); notify lines in ops/lanes118/notify/coach.txt (latest:
+  #347 @ 3beab16088b7eae1fa08851f9742041bb6e0431f, 10:21 PDT).
 
 ## Production backend today (643817b3): capability notes
 - Package create/PATCH/publish/binding: all exist; the cadence fix works today (controller maps billing_interval -> interval;
@@ -58,7 +75,13 @@ Commits (all Bradley Gleave identity, no trailer):
 ## Operator decisions (recommended default first)
 1. W3 follow-ups above: give to the W3 owner as a normal fix round (default), or let a builder edit #347 content.
 2. Share-message wording "Join my coaching": keep (default) or change to third person.
-3. Size: #345 and #346 are in the 1,500-3,000 band: operator SIZE ASSESSMENT.
+3. Size: #345 (2,580), #346 (2,609) and #347 (2,592) are in the 1,500-3,000 band: operator SIZE ASSESSMENT (default: accept; tests are about half of each new round).
 
 ## HANDOFF
-- In progress: CI + probe lanes pending; FIX ROUND comments not posted yet.
+- Ended 10:30 PDT. READY FOR AUDIT on #345 @ 97c9005e644ebc13731d1477bfecc270a10552fd, #346 @
+  2baea5b82a2d0e0a22bac21e8fdb5e074bec9d60, #347 @ 3beab16088b7eae1fa08851f9742041bb6e0431f; all required checks green.
+- Next: Opus 5.5 + Sol audits at these heads; operator SIZE ASSESSMENT for #345 (2,580), #346 (2,609), #347 (2,592).
+- Open for the operator: W3 follow-ups (CoachPackageEditScreen.tsx:261 isLive, :608 copy; CoachWizardNavigator.tsx:343 copy),
+  C-346-1 async guards in CoachSetupChecklist/InviteShareCard, land #345-#351 as one.
+- Cleanup done: own ci/B-WIZ-118-* branches deleted; worktrees wt/B-WIZ-118-{345,346,347} removed (node_modules unlinked first);
+  no locks held. Comment drafts and PR bodies: ops/aud-118/B-WIZ-118/.
