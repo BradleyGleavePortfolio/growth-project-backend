@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as ts from 'typescript';
 import {
   isAllowedWhileLocked,
+  isCoachThreadOperationWhileLocked,
   isPrivacyOperationWhileLocked,
   normalizePath,
 } from '../src/checkout/dunning-v2/dunning-lockout.guard';
@@ -26,7 +27,8 @@ import {
 // If this test failed: do NOT paste the new path in to make it green. Answer
 // "may a locked-out, non-paying client call this?" The only yes-answers are
 // payment recovery, auth, liveness probes, the Roman lockout explanation, and
-// the AI processing consent privacy control (/me/ai-consent, ruling on #622).
+// the AI processing consent privacy control (/me/ai-consent, ruling on #622),
+// and the client's thread with their own coach (/messages, B-353-10).
 
 const REPO_ROOT = path.join(__dirname, '..');
 const SRC_ROOT = path.join(REPO_ROOT, 'src');
@@ -178,6 +180,9 @@ const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
   'healthz',
   'me/ai-consent', // AiConsentController GET — read AI consent (privacy, #622)
   'me/ai-consent/roman', // AiConsentController POST grant / DELETE withdraw
+  'messages', // ClientMessagingController GET thread / POST send — own coach (B-353-10)
+  'messages/read', // ClientMessagingController POST mark read
+  'messages/unread-count', // ClientMessagingController GET unread count
   'readyz',
   'roman/sessions',
   'roman/sessions/:id',
@@ -249,7 +254,8 @@ describe('DunningLockoutGuard allow-list vs the real mounted route table', () =>
           .filter(
             (r) =>
               isAllowedWhileLocked(r.normalized) ||
-              isPrivacyOperationWhileLocked(r.method, r.normalized),
+              isPrivacyOperationWhileLocked(r.method, r.normalized) ||
+              isCoachThreadOperationWhileLocked(r.method, r.normalized),
           )
           .map((r) => r.normalized),
       ),
