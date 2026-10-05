@@ -192,7 +192,10 @@ export class MessagingInboxService {
           user_id: row.client_id,
           display_name: names.get(row.client_id)?.trim() || 'Client',
         },
-        last_message: blockedByMe ? null : this.lastMessageView(row, coachId),
+        last_message:
+          blockedByMe || (row.sender_id !== null && blocked.has(row.sender_id))
+            ? null
+            : this.lastMessageView(row, coachId),
         unread_count: blockedByMe ? 0 : (unread.by_client[row.client_id] ?? 0),
         muted,
         muted_until: muted && state?.muted_until ? state.muted_until.toISOString() : null,
@@ -241,9 +244,17 @@ export class MessagingInboxService {
     const coachId = me?.coach_id ?? null;
     if (!coachId) return { items: [], next_cursor: null, total_unread: 0 };
 
-    const [row, unread, coach, state, blockedList] = await Promise.all([
+    // B-710-2: messages from a sender the client blocked (e.g. an assigned
+    // sub-coach) never become the preview or count as unread, so the preview
+    // is the newest message from a sender the client still sees.
+    const blockedList = await this.messaging.blockedIdsFor(clientId);
+    const visibleSender: Prisma.CoachMessageWhereInput =
+      blockedList.length > 0
+        ? { OR: [{ sender_id: null }, { sender_id: { notIn: blockedList } }] }
+        : {};
+    const [newest, unreadTotal, coach, state] = await Promise.all([
       this.prisma.coachMessage.findFirst({
-        where: { coach_id: coachId, client_id: clientId },
+        where: { coach_id: coachId, client_id: clientId, ...visibleSender },
         orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
         select: {
           id: true,
@@ -256,7 +267,18 @@ export class MessagingInboxService {
           created_at: true,
         },
       }),
-      this.messaging.unreadCountForClient(clientId),
+      blockedList.length > 0
+        ? this.prisma.coachMessage.count({
+            where: {
+              coach_id: coachId,
+              client_id: clientId,
+              sender_id: { not: clientId },
+              read_at: null,
+              deleted_at: null,
+              ...visibleSender,
+            },
+          })
+        : this.messaging.unreadCountForClient(clientId).then((u) => u.total),
       this.prisma.user.findUnique({ where: { id: coachId }, select: { name: true } }),
       this.prisma.coachThreadState.findUnique({
         where: {
@@ -268,8 +290,11 @@ export class MessagingInboxService {
         },
         select: { muted_until: true, pinned_at: true },
       }),
-      this.messaging.blockedIdsFor(clientId),
     ]);
+    const row =
+      newest && newest.sender_id !== null && blockedList.includes(newest.sender_id)
+        ? null
+        : newest;
     const blockedByMe = blockedList.includes(coachId);
     const muted = !!state?.muted_until && state.muted_until.getTime() > Date.now();
     // A coach thread exists for every coached client, even before the first
@@ -281,7 +306,7 @@ export class MessagingInboxService {
       client_id: clientId,
       counterpart: { user_id: coachId, display_name: coach?.name?.trim() || 'Your coach' },
       last_message: row && !blockedByMe ? this.lastMessageView(row, clientId) : null,
-      unread_count: blockedByMe ? 0 : unread.total,
+      unread_count: blockedByMe ? 0 : unreadTotal,
       muted,
       muted_until: muted && state?.muted_until ? state.muted_until.toISOString() : null,
       pinned: !!state?.pinned_at,
