@@ -1,0 +1,1850 @@
+diff --git a/prisma/migrations/20270226000000_scheduling_request_expiry/down.sql b/prisma/migrations/20270226000000_scheduling_request_expiry/down.sql
+new file mode 100644
+index 00000000..b16766da
+--- /dev/null
++++ b/prisma/migrations/20270226000000_scheduling_request_expiry/down.sql
+@@ -0,0 +1,13 @@
++-- Reverse of 20270226000000_scheduling_request_expiry.
++--
++-- Postgres cannot drop a value from an enum in place, so 'expired' stays in
++-- "SessionStatus" (harmless when unused). Rows that expired are kept as
++-- terminal history: they are moved to 'declined' with end_reason
++-- 'request_expired' so the pre-expiry code (which does not know 'expired')
++-- reads them as a closed request that holds no slot.
++UPDATE "CoachingSession" SET "status" = 'declined', "end_reason" = COALESCE("end_reason", 'request_expired')
++WHERE "status"::text = 'expired';
++
++DROP TABLE IF EXISTS "SchedulingJobLease";
++DROP INDEX IF EXISTS "CoachingSession_status_request_expires_at_idx";
++ALTER TABLE "CoachingSession" DROP COLUMN IF EXISTS "request_expires_at";
+diff --git a/prisma/migrations/20270226000000_scheduling_request_expiry/migration.sql b/prisma/migrations/20270226000000_scheduling_request_expiry/migration.sql
+new file mode 100644
+index 00000000..fc70095d
+--- /dev/null
++++ b/prisma/migrations/20270226000000_scheduling_request_expiry/migration.sql
+@@ -0,0 +1,64 @@
++-- S-SCHED-5: booking request auto-expiry (OR-112-5).
++--
++-- 1. SessionStatus gains 'expired': a request the coach did not answer by its
++--    clear time. Terminal. It is NOT in the occupying set, so the
++--    CoachingSession_no_overlapping_active_booking exclusion constraint
++--    (status IN ('requested','scheduled','pending_provider')) frees the slot
++--    the moment a row becomes expired. The new value is not used anywhere in
++--    this file (a value added by ALTER TYPE cannot be used in the same
++--    transaction).
++-- 2. CoachingSession.request_expires_at: the clear time a pending request
++--    closes. Set by the service on request and when a client move asks again.
++--    Rule (src/scheduling/scheduling.types.ts requestExpiresAt): the earlier
++--    of 48 hours after the request and 1 hour before the start; a short-notice
++--    request that would get less than 30 minutes stays open until the start.
++--    Existing pending requests are backfilled with the same rule measured
++--    from this migration (now()), so no coach loses answer time to the deploy
++--    and nothing expires at deploy for a future session. A pending request
++--    whose start has already passed gets request_expires_at = start_at and is
++--    closed by the first sweep (quietly when its time is more than 24 hours
++--    old; see BookingRequestExpiryJob).
++-- 3. Index (status, request_expires_at) for the expiry sweep.
++-- 4. SchedulingJobLease: single-runner lease row per scheduling sweep (same
++--    shape and rule as the S-FEE CronLease of backend #627). RLS enabled and
++--    forced; only service_role and the platform owner may touch it.
++--
++-- Reverse with down.sql (the enum value stays; see there).
++
++-- 1. ------------------------------------------------------------------------
++ALTER TYPE "SessionStatus" ADD VALUE IF NOT EXISTS 'expired';
++
++-- 2. ------------------------------------------------------------------------
++ALTER TABLE "CoachingSession" ADD COLUMN IF NOT EXISTS "request_expires_at" TIMESTAMP(3);
++
++UPDATE "CoachingSession"
++SET "request_expires_at" = CASE
++  WHEN "start_at" <= now() THEN "start_at"
++  WHEN LEAST(now() + interval '48 hours', "start_at" - interval '1 hour') < now() + interval '30 minutes'
++    THEN "start_at"
++  ELSE LEAST(now() + interval '48 hours', "start_at" - interval '1 hour')
++END
++WHERE "status" = 'requested' AND "request_expires_at" IS NULL;
++
++-- 3. ------------------------------------------------------------------------
++CREATE INDEX IF NOT EXISTS "CoachingSession_status_request_expires_at_idx"
++  ON "CoachingSession" ("status", "request_expires_at");
++
++-- 4. ------------------------------------------------------------------------
++CREATE TABLE IF NOT EXISTS "SchedulingJobLease" (
++    "name" TEXT NOT NULL,
++    "holder" TEXT NOT NULL,
++    "lease_until" TIMESTAMP(3) NOT NULL,
++    "acquired_at" TIMESTAMP(3) NOT NULL,
++    "updated_at" TIMESTAMP(3) NOT NULL,
++    CONSTRAINT "SchedulingJobLease_pkey" PRIMARY KEY ("name")
++);
++
++ALTER TABLE "SchedulingJobLease" ENABLE ROW LEVEL SECURITY;
++ALTER TABLE "SchedulingJobLease" FORCE ROW LEVEL SECURITY;
++DROP POLICY IF EXISTS "scheduling_job_lease_service_role_all" ON "SchedulingJobLease";
++CREATE POLICY "scheduling_job_lease_service_role_all" ON "SchedulingJobLease"
++  AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
++DROP POLICY IF EXISTS "scheduling_job_lease_owner_all" ON "SchedulingJobLease";
++CREATE POLICY "scheduling_job_lease_owner_all" ON "SchedulingJobLease"
++  FOR ALL TO public USING (app.is_owner()) WITH CHECK (app.is_owner());
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+index 514aa3d5..1da5631f 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -3246,6 +3246,9 @@ enum SessionStatus {
+   // Background provider call is in flight (calendar event create/update
+   // or video link mint). Used so a transient retry does not double-book.
+   pending_provider
++  // S-SCHED-5 auto-expiry (migration 20270226000000): a request the coach did
++  // not answer by request_expires_at. Terminal; does not occupy the slot.
++  expired
+ }
+ 
+ enum VideoProvider {
+@@ -3427,6 +3430,10 @@ model CoachingSession {
+   ended_at                 DateTime?
+   // Reason captured on cancel/decline/no_show (free-form, optional).
+   end_reason               String?
++  // S-SCHED-5 auto-expiry: while `requested`, the clear time the coach must
++  // answer by (set on request and when a move asks again). At or after it
++  // the request is closed as `expired` and the slot is free again.
++  request_expires_at       DateTime?
+   created_at               DateTime         @default(now())
+   updated_at               DateTime         @default(now()) @updatedAt
+ 
+@@ -3447,6 +3454,8 @@ model CoachingSession {
+   @@index([coach_id, start_at])
+   @@index([client_id, start_at])
+   @@index([status, start_at])
++  // S-SCHED-5: the expiry sweep reads requested rows by deadline.
++  @@index([status, request_expires_at])
+ }
+ 
+ // SessionParticipant — extra attendees beyond the lead coach/client.
+@@ -7813,3 +7822,15 @@ model AiProcessingConsentEvent {
+ 
+   @@unique([user_id, processor, purpose, seq], name: "ai_consent_event_user_processor_purpose_seq")
+ }
++
++// S-SCHED-5 auto-expiry: single-runner lease for scheduling sweeps (one row
++// per job), the same shape and acquisition rule as the S-FEE CronLease
++// (backend #627). A machine runs the sweep only while it holds an unexpired
++// lease; see src/scheduling/jobs/scheduling-job-lease.service.ts.
++model SchedulingJobLease {
++  name        String   @id
++  holder      String
++  lease_until DateTime
++  acquired_at DateTime
++  updated_at  DateTime @updatedAt
++}
+diff --git a/src/audit/audit.service.ts b/src/audit/audit.service.ts
+index a7e97ac9..343daa8a 100644
+--- a/src/audit/audit.service.ts
++++ b/src/audit/audit.service.ts
+@@ -91,6 +91,8 @@ export const AuditAction = {
+   SESSION_CANCELED: 'session.canceled',
+   SESSION_COMPLETED: 'session.completed',
+   SESSION_NO_SHOW: 'session.no_show',
++  // S-SCHED-5: a request reached its clear time without an answer (system actor).
++  SESSION_EXPIRED: 'session.expired',
+   SESSION_VIDEO_LINK_ATTACHED: 'session.video_link_attached',
+   SESSION_PROVIDER_CALENDAR_CREATED: 'session.provider.calendar_created',
+   SESSION_PROVIDER_VIDEO_CREATED: 'session.provider.video_created',
+@@ -205,8 +207,7 @@ export class AuditService {
+       tenant_coach_id: input.tenantCoachId ?? null,
+       ip: input.ip ?? null,
+       user_agent: input.userAgent ?? null,
+-      metadata:
+-        input.metadata != null ? (input.metadata as Prisma.InputJsonValue) : Prisma.DbNull,
++      metadata: input.metadata != null ? (input.metadata as Prisma.InputJsonValue) : Prisma.DbNull,
+     };
+   }
+ 
+@@ -232,9 +233,7 @@ export class AuditService {
+       await this.prisma.auditLog.create({ data: AuditService.buildRow(input) });
+     } catch (err) {
+       const msg = err instanceof Error ? err.message : String(err);
+-      this.logger.error(
+-        `Audit write failed for action=${input.action}: ${msg}`,
+-      );
++      this.logger.error(`Audit write failed for action=${input.action}: ${msg}`);
+     }
+   }
+ 
+diff --git a/src/notifications/emitters/booking.emitter.ts b/src/notifications/emitters/booking.emitter.ts
+index ad7fac0d..d7da65bb 100644
+--- a/src/notifications/emitters/booking.emitter.ts
++++ b/src/notifications/emitters/booking.emitter.ts
+@@ -125,6 +125,18 @@ export interface BookingLinkReadyPayload extends BaseBookingPayload {
+   scheduledAt: Date;
+ }
+ 
++export interface BookingRequestExpiredPayload extends BaseBookingPayload {
++  recipientUserId: string;
++  recipientRole: BookingRecipientRole;
++  /** The client's name for the coach's notice, the coach's for the client's. */
++  otherPartyDisplayName: string;
++  scheduledAt: Date;
++  /** S-SCHED-5 retry of a partly delivered notice (same rule as reminders). */
++  skipInApp?: boolean;
++  skipPush?: boolean;
++  notificationId?: string | null;
++}
++
+ export interface BookingDeliveryOutcome {
+   inapp: 'written' | 'suppressed' | 'failed' | 'skipped';
+   push: PushDeliveryCode | 'disabled' | 'failed' | 'skipped';
+@@ -400,6 +412,39 @@ export class BookingEmitter {
+     });
+   }
+ 
++  // (k) booking_request_expired -> BOTH sides, once each (S-SCHED-5). Calm,
++  // no blame: what happened, that the time is open again, and the next step.
++  async emitRequestExpired(p: BookingRequestExpiredPayload): Promise<BookingDeliveryOutcome> {
++    const tz = await this.zoneFor(p.recipientUserId, p.sessionId);
++    const what = typeLabel(p.sessionTypeName, 'session');
++    const forWhen = tz ? ` for ${formatWhen(p.scheduledAt, tz)}` : '';
++    const body =
++      p.recipientRole === 'client'
++        ? `Your ${what} request${forWhen} was not confirmed in time, so it has closed. Pick another time in Calendar.`
++        : `${p.otherPartyDisplayName}'s ${what} request${forWhen} closed without an answer, and the time is open again.`;
++    return this.deliver({
++      userId: p.recipientUserId,
++      role: p.recipientRole,
++      kind: NotificationKind.BOOKING_REQUEST_EXPIRED,
++      title: 'Session request closed',
++      body,
++      sessionId: p.sessionId,
++      deepLink:
++        p.recipientRole === 'client'
++          ? `tgp://client/sessions/${p.sessionId}`
++          : `tgp://coach/sessions/${p.sessionId}`,
++      payload: {
++        otherPartyDisplayName: p.otherPartyDisplayName,
++        scheduledAt: p.scheduledAt.toISOString(),
++        timeZone: tz,
++        sessionTypeName: p.sessionTypeName ?? null,
++      },
++      skipInApp: p.skipInApp === true,
++      skipPush: p.skipPush === true,
++      notificationId: p.notificationId ?? null,
++    });
++  }
++
+   // ── Internal ──────────────────────────────────────────────────────────────
+ 
+   private async reminder(
+diff --git a/src/notifications/notification-kind.ts b/src/notifications/notification-kind.ts
+index bc9e58cb..76e412f2 100644
+--- a/src/notifications/notification-kind.ts
++++ b/src/notifications/notification-kind.ts
+@@ -52,6 +52,9 @@ export const NotificationKind = {
+   // Same booking_* preference cluster.
+   BOOKING_LINK_NEEDED: 'booking_link_needed',
+   BOOKING_LINK_READY: 'booking_link_ready',
++  // S-SCHED-5: a request reached its clear time without an answer (to both
++  // sides; the slot is open again). Same booking_* preference cluster.
++  BOOKING_REQUEST_EXPIRED: 'booking_request_expired',
+ 
+   // NUDGE-V1 — Behavioral re-engagement nudges. Four trigger types,
+   // each independently opt-out-able via NotificationPreferences.
+diff --git a/src/scheduling/jobs/reminder.job.ts b/src/scheduling/jobs/reminder.job.ts
+index 0dd52f5d..cac6945b 100644
+--- a/src/scheduling/jobs/reminder.job.ts
++++ b/src/scheduling/jobs/reminder.job.ts
+@@ -60,7 +60,7 @@ export interface ReminderSweepResult {
+  * errors (which can embed query arguments) collapse to their safe code;
+  * anything else keeps its message.
+  */
+-function describeError(err: unknown): string {
++export function describeError(err: unknown): string {
+   return safeLogDiagnostic(err).slice(0, 200);
+ }
+ 
+diff --git a/src/scheduling/jobs/request-expiry.job.ts b/src/scheduling/jobs/request-expiry.job.ts
+new file mode 100644
+index 00000000..d918bbf0
+--- /dev/null
++++ b/src/scheduling/jobs/request-expiry.job.ts
+@@ -0,0 +1,415 @@
++import { Injectable, Logger, Optional } from '@nestjs/common';
++import { Cron } from '@nestjs/schedule';
++import type { CoachingSession } from '@prisma/client';
++import { randomUUID } from 'crypto';
++import { hostname } from 'os';
++import { AuditService } from '../../audit/audit.service';
++import {
++  BookingEmitter,
++  inAppSettled,
++  pushSettled,
++  type BookingDeliveryOutcome,
++} from '../../notifications/emitters/booking.emitter';
++import { NotificationKind } from '../../notifications/notification-kind';
++import { PrismaService } from '../../prisma.service';
++import { SchedulingOpenSlotsService } from '../scheduling-open-slots.service';
++import { REQUEST_EXPIRED_END_REASON } from '../scheduling.types';
++import { auditExpired, expireRequest, type LapsedRow } from '../request-expiry';
++import { describeError } from './reminder.job';
++import { SchedulingJobLeaseService } from './scheduling-job-lease.service';
++
++// S-SCHED-5 auto-expiry sweep (OR-112-5). Every 5 minutes, on one machine
++// (SchedulingJobLease "booking-request-expiry"):
++//
++//  1. Expire: every `requested` row whose request_expires_at has passed is
++//     closed as `expired` by compare-and-set (src/scheduling/request-expiry.ts).
++//     The exclusion constraint no longer counts it, so the slot is free. One
++//     audit row per closed request (system actor). Keyset-paged over the
++//     whole backlog (bounded pages per tick; the rest is next tick's work).
++//  2. Recover (runs before 3): notice rows left `retry`, or `sending` with an
++//     expired lease (a worker died), are re-sent for the channel that did not
++//     land, at most NOTICE_MAX_ATTEMPTS times, then `gave_up` with a safe
++//     last_error.
++//  3. Notify: each request closed in the last NOTICE_FRESH_HOURS (by this
++//     sweep or by a booking transaction) that has no notice rows yet gets one
++//     calm notice per side (client and coach), claimed first as
++//     NotificationDeliveryLog rows (kind booking_request_expired, unique per
++//     session+user+kind) in one transaction, so two runners or a retry can
++//     never notify twice. Older closures (a sweep outage, or pending requests
++//     from before this feature whose time passed long ago) close quietly.
++//
++// Idempotent end to end: re-running a tick changes nothing that is already
++// done; every write is conditional on the state it read.
++
++export const REQUEST_EXPIRY_LEASE_NAME = 'booking-request-expiry';
++export const REQUEST_EXPIRY_LEASE_TTL_MS = 4 * 60_000;
++export const REQUEST_EXPIRY_PAGE = 200;
++/** Pages of the expire pass per tick (the lease is 4 minutes). */
++export const REQUEST_EXPIRY_MAX_PAGES = 10;
++/** A closed request is announced only while its clear time is this recent. */
++export const REQUEST_EXPIRY_NOTICE_FRESH_HOURS = 24;
++export const REQUEST_EXPIRY_NOTICE_LEASE_MS = 4 * 60_000;
++export const REQUEST_EXPIRY_NOTICE_MAX_ATTEMPTS = 3;
++
++export interface RequestExpirySweepResult {
++  lease: 'acquired' | 'held';
++  expired: number;
++  notified: number;
++  retrying: number;
++  gave_up: number;
++  recovered: number;
++  failed: number;
++}
++
++interface NoticeRow {
++  id: string;
++  session_id: string;
++  user_id: string;
++  status: string;
++  attempts: number;
++  claim_token: string | null;
++  lease_until: Date | null;
++  inapp_done_at: Date | null;
++  push_done_at: Date | null;
++  notification_id: string | null;
++}
++
++@Injectable()
++export class BookingRequestExpiryJob {
++  private readonly logger = new Logger(BookingRequestExpiryJob.name);
++  private readonly holder = `${hostname()}:${process.pid}:${randomUUID().slice(0, 8)}`;
++
++  constructor(
++    private readonly prisma: PrismaService,
++    private readonly bookingEmitter: BookingEmitter,
++    private readonly audit: AuditService,
++    private readonly lease: SchedulingJobLeaseService,
++    @Optional() private readonly openSlots?: SchedulingOpenSlotsService,
++  ) {}
++
++  @Cron('*/5 * * * *', { name: 'booking-request-expiry', timeZone: 'UTC' })
++  async runScheduledSweep(): Promise<void> {
++    try {
++      const res = await this.sweep();
++      if (res.lease === 'acquired' && (res.expired || res.notified || res.failed || res.gave_up)) {
++        this.logger.log(
++          `request expiry: expired=${res.expired} notified=${res.notified} retrying=${res.retrying} gave_up=${res.gave_up} failed=${res.failed}`,
++        );
++      }
++    } catch (err) {
++      this.logger.error(`request expiry sweep failed: ${describeError(err)}`);
++    }
++  }
++
++  async sweep(now: Date = new Date()): Promise<RequestExpirySweepResult> {
++    const result: RequestExpirySweepResult = {
++      lease: 'held',
++      expired: 0,
++      notified: 0,
++      retrying: 0,
++      gave_up: 0,
++      recovered: 0,
++      failed: 0,
++    };
++    const lease = await this.lease.tryAcquire(
++      REQUEST_EXPIRY_LEASE_NAME,
++      this.holder,
++      REQUEST_EXPIRY_LEASE_TTL_MS,
++      now,
++    );
++    if (!lease.acquired) return result;
++    result.lease = 'acquired';
++    try {
++      await this.expirePass(now, result);
++      // Recovery before new notices: a notice that failed in this tick waits
++      // for the next one instead of being retried at once.
++      await this.recoveryPass(now, result);
++      await this.noticePass(now, result);
++    } finally {
++      try {
++        await this.lease.release(REQUEST_EXPIRY_LEASE_NAME, this.holder);
++      } catch (err) {
++        this.logger.warn(`request expiry lease release failed: ${describeError(err)}`);
++      }
++    }
++    return result;
++  }
++
++  // 1. ───────────────────────────────────────────────────────────────────
++  private async expirePass(now: Date, result: RequestExpirySweepResult): Promise<void> {
++    let cursor: { at: Date; id: string } | null = null;
++    for (let page = 0; page < REQUEST_EXPIRY_MAX_PAGES; page++) {
++      const rows: LapsedRow[] = await this.prisma.coachingSession.findMany({
++        where: {
++          status: 'requested',
++          request_expires_at: { lte: now },
++          ...(cursor
++            ? {
++                OR: [
++                  { request_expires_at: { gt: cursor.at } },
++                  { request_expires_at: cursor.at, id: { gt: cursor.id } },
++                ],
++              }
++            : {}),
++        },
++        orderBy: [{ request_expires_at: 'asc' }, { id: 'asc' }],
++        take: REQUEST_EXPIRY_PAGE,
++        select: {
++          id: true,
++          coach_id: true,
++          client_id: true,
++          start_at: true,
++          end_at: true,
++          request_expires_at: true,
++        },
++      });
++      if (rows.length === 0) return;
++      const last = rows[rows.length - 1];
++      cursor = { at: last.request_expires_at ?? now, id: last.id };
++      const closed: LapsedRow[] = [];
++      for (const row of rows) {
++        try {
++          if (await expireRequest(this.prisma, row, now)) closed.push(row);
++        } catch (err) {
++          result.failed += 1;
++          this.logger.warn(`request expiry write failed: session=${row.id} ${describeError(err)}`);
++        }
++      }
++      result.expired += closed.length;
++      for (const coachId of new Set(closed.map((r) => r.coach_id))) {
++        this.openSlots?.invalidateCoach(coachId);
++      }
++      try {
++        await auditExpired(this.audit, closed, 'sweep');
++      } catch (err) {
++        this.logger.warn(`request expiry audit failed: ${describeError(err)}`);
++      }
++      if (rows.length < REQUEST_EXPIRY_PAGE) return;
++    }
++  }
++
++  // 3. ───────────────────────────────────────────────────────────────────
++  private async noticePass(now: Date, result: RequestExpirySweepResult): Promise<void> {
++    const since = new Date(now.getTime() - REQUEST_EXPIRY_NOTICE_FRESH_HOURS * 3_600_000);
++    let cursor: { at: Date; id: string } | null = null;
++    for (;;) {
++      const page: CoachingSession[] = await this.prisma.coachingSession.findMany({
++        where: {
++          status: 'expired',
++          end_reason: REQUEST_EXPIRED_END_REASON,
++          request_expires_at: { gte: since, lte: now },
++          ...(cursor
++            ? {
++                OR: [
++                  { request_expires_at: { gt: cursor.at } },
++                  { request_expires_at: cursor.at, id: { gt: cursor.id } },
++                ],
++              }
++            : {}),
++        },
++        orderBy: [{ request_expires_at: 'asc' }, { id: 'asc' }],
++        take: REQUEST_EXPIRY_PAGE,
++      });
++      if (page.length === 0) return;
++      const last = page[page.length - 1];
++      cursor = { at: last.request_expires_at ?? now, id: last.id };
++      const logs = await this.prisma.notificationDeliveryLog.findMany({
++        where: {
++          kind: NotificationKind.BOOKING_REQUEST_EXPIRED,
++          session_id: { in: page.map((s) => s.id) },
++        },
++        select: { session_id: true },
++      });
++      const announced = new Set(logs.map((l) => l.session_id));
++      for (const session of page) {
++        if (announced.has(session.id)) continue;
++        const claims = await this.claimNotices(session, now, result);
++        for (const claim of claims) await this.deliver(session, claim, now, result);
++      }
++      if (page.length < REQUEST_EXPIRY_PAGE) return;
++    }
++  }
++
++  // Both sides' notice rows in one transaction: all or none.
++  private async claimNotices(
++    session: CoachingSession,
++    now: Date,
++    result: RequestExpirySweepResult,
++  ): Promise<NoticeRow[]> {
++    const recipients = [session.client_id, session.coach_id].filter(
++      (u): u is string => typeof u === 'string' && u.length > 0,
++    );
++    const token = randomUUID();
++    try {
++      return await this.prisma.$transaction(async (tx) => {
++        const rows: NoticeRow[] = [];
++        for (const userId of recipients) {
++          const row = await tx.notificationDeliveryLog.create({
++            data: {
++              session_id: session.id,
++              user_id: userId,
++              kind: NotificationKind.BOOKING_REQUEST_EXPIRED,
++              status: 'sending',
++              attempts: 1,
++              lease_until: new Date(now.getTime() + REQUEST_EXPIRY_NOTICE_LEASE_MS),
++              claim_token: token,
++              start_at: session.start_at,
++            },
++          });
++          rows.push(row);
++        }
++        return rows;
++      });
++    } catch (err) {
++      // P2002: another runner claimed these notices first. Anything else is
++      // a failed claim; the session stays unannounced and is retried next tick.
++      if ((err as { code?: unknown })?.code !== 'P2002') {
++        result.failed += 1;
++        this.logger.warn(
++          `request expiry notice claim failed: session=${session.id} ${describeError(err)}`,
++        );
++      }
++      return [];
++    }
++  }
++
++  private async deliver(
++    session: CoachingSession,
++    claim: NoticeRow,
++    now: Date,
++    result: RequestExpirySweepResult,
++  ): Promise<void> {
++    const isClient = claim.user_id === session.client_id;
++    const otherId = isClient ? session.coach_id : session.client_id;
++    let outcome: BookingDeliveryOutcome;
++    try {
++      const [otherName, typeName] = await Promise.all([
++        this.displayName(otherId, isClient ? 'Your coach' : 'Your client'),
++        this.typeName(session.session_type_id),
++      ]);
++      outcome = await this.bookingEmitter.emitRequestExpired({
++        recipientUserId: claim.user_id,
++        recipientRole: isClient ? 'client' : 'coach',
++        otherPartyDisplayName: otherName,
++        sessionId: session.id,
++        sessionTypeName: typeName,
++        scheduledAt: session.start_at,
++        skipInApp: claim.inapp_done_at !== null,
++        skipPush: claim.push_done_at !== null,
++        notificationId: claim.notification_id,
++      });
++    } catch (err) {
++      this.logger.warn(`request expiry notice failed: session=${session.id} ${describeError(err)}`);
++      outcome = { inapp: 'failed', push: 'failed', notificationId: claim.notification_id };
++    }
++    const inappOk = claim.inapp_done_at !== null || inAppSettled(outcome.inapp);
++    const pushOk = claim.push_done_at !== null || pushSettled(outcome.push);
++    const state: 'sent' | 'retry' | 'gave_up' =
++      inappOk && pushOk
++        ? 'sent'
++        : claim.attempts >= REQUEST_EXPIRY_NOTICE_MAX_ATTEMPTS
++          ? 'gave_up'
++          : 'retry';
++    try {
++      await this.prisma.notificationDeliveryLog.updateMany({
++        where: { id: claim.id, claim_token: claim.claim_token },
++        data: {
++          status: state,
++          lease_until: null,
++          inapp_done_at: claim.inapp_done_at ?? (inAppSettled(outcome.inapp) ? now : null),
++          push_done_at: claim.push_done_at ?? (pushSettled(outcome.push) ? now : null),
++          notification_id: outcome.notificationId ?? claim.notification_id,
++          last_error:
++            state === 'sent' ? null : `inapp:${outcome.inapp}/push:${outcome.push}`.slice(0, 120),
++        },
++      });
++    } catch (err) {
++      result.failed += 1;
++      this.logger.warn(
++        `request expiry notice settle failed: row=${claim.id} ${describeError(err)}`,
++      );
++      return;
++    }
++    if (state === 'sent') result.notified += 1;
++    else if (state === 'retry') result.retrying += 1;
++    else result.gave_up += 1;
++  }
++
++  // 2. ───────────────────────────────────────────────────────────────────
++  private async recoveryPass(now: Date, result: RequestExpirySweepResult): Promise<void> {
++    const rows: NoticeRow[] = await this.prisma.notificationDeliveryLog.findMany({
++      where: {
++        kind: NotificationKind.BOOKING_REQUEST_EXPIRED,
++        OR: [
++          { status: 'retry' },
++          { status: 'sending', OR: [{ lease_until: null }, { lease_until: { lt: now } }] },
++        ],
++      },
++      orderBy: { created_at: 'asc' },
++      take: REQUEST_EXPIRY_PAGE,
++    });
++    if (rows.length === 0) return;
++    const sessions = await this.prisma.coachingSession.findMany({
++      where: { id: { in: [...new Set(rows.map((r) => r.session_id))] } },
++    });
++    const byId = new Map(sessions.map((s) => [s.id, s]));
++    for (const row of rows) {
++      const session = byId.get(row.session_id);
++      const exhausted = row.attempts >= REQUEST_EXPIRY_NOTICE_MAX_ATTEMPTS;
++      const gone = !session || session.status !== 'expired';
++      if (exhausted || gone) {
++        const reason = gone ? 'session_changed' : 'attempts_exhausted';
++        const closed = await this.prisma.notificationDeliveryLog.updateMany({
++          where: {
++            id: row.id,
++            status: row.status,
++            attempts: row.attempts,
++            claim_token: row.claim_token,
++          },
++          data: { status: 'gave_up', lease_until: null, last_error: `retired:${reason}` },
++        });
++        if (closed.count === 1) result.gave_up += 1;
++        continue;
++      }
++      const token = randomUUID();
++      const taken = await this.prisma.notificationDeliveryLog.updateMany({
++        where: {
++          id: row.id,
++          status: row.status,
++          attempts: row.attempts,
++          claim_token: row.claim_token,
++        },
++        data: {
++          status: 'sending',
++          attempts: row.attempts + 1,
++          claim_token: token,
++          lease_until: new Date(now.getTime() + REQUEST_EXPIRY_NOTICE_LEASE_MS),
++        },
++      });
++      if (taken.count !== 1) continue;
++      result.recovered += 1;
++      await this.deliver(
++        session,
++        { ...row, attempts: row.attempts + 1, claim_token: token },
++        now,
++        result,
++      );
++    }
++  }
++
++  private async displayName(userId: string | null, fallback: string): Promise<string> {
++    if (!userId) return fallback;
++    const u = await this.prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
++    const name = typeof u?.name === 'string' ? u.name.trim() : '';
++    return name || fallback;
++  }
++
++  private async typeName(sessionTypeId: string | null): Promise<string | null> {
++    if (!sessionTypeId) return null;
++    const t = await this.prisma.sessionType.findUnique({
++      where: { id: sessionTypeId },
++      select: { name: true },
++    });
++    return t?.name ?? null;
++  }
++}
+diff --git a/src/scheduling/jobs/scheduling-job-lease.service.ts b/src/scheduling/jobs/scheduling-job-lease.service.ts
+new file mode 100644
+index 00000000..6bc32396
+--- /dev/null
++++ b/src/scheduling/jobs/scheduling-job-lease.service.ts
+@@ -0,0 +1,59 @@
++import { Injectable } from '@nestjs/common';
++import { PrismaService } from '../../prisma.service';
++
++// S-SCHED-5: single-runner lease for scheduling sweeps that must not run on
++// more than one Fly machine at a time (the request-expiry sweep). Same rule
++// as the S-FEE CronLease (backend #627), on its own table so the two PRs do
++// not collide: one row per job in "SchedulingJobLease", acquired by a single
++// conditional statement so two machines racing for the same expired lease
++// cannot both win.
++//   1. UPDATE ... WHERE name = $job AND lease_until < now (take over an
++//      expired or released lease). Under READ COMMITTED the second UPDATE
++//      re-checks the WHERE after the first commits and matches zero rows.
++//   2. If no row exists yet, INSERT; the primary key makes a concurrent
++//      second INSERT fail with P2002, which is reported as "held".
++// The lease expires on its own (ttl), so a crashed machine never blocks the
++// job for longer than one ttl. Session advisory locks are not used: they are
++// unsafe behind the Supabase transaction pooler.
++
++export type LeaseOutcome = { acquired: true; until: Date } | { acquired: false };
++
++@Injectable()
++export class SchedulingJobLeaseService {
++  constructor(private readonly prisma: PrismaService) {}
++
++  async tryAcquire(
++    name: string,
++    holder: string,
++    ttlMs: number,
++    now: Date = new Date(),
++  ): Promise<LeaseOutcome> {
++    const until = new Date(now.getTime() + ttlMs);
++    const taken = await this.prisma.schedulingJobLease.updateMany({
++      where: { name, lease_until: { lt: now } },
++      data: { holder, lease_until: until, acquired_at: now },
++    });
++    if (taken.count === 1) return { acquired: true, until };
++    try {
++      await this.prisma.schedulingJobLease.create({
++        data: { name, holder, lease_until: until, acquired_at: now },
++      });
++      return { acquired: true, until };
++    } catch (err) {
++      if (isUniqueViolation(err)) return { acquired: false };
++      throw err;
++    }
++  }
++
++  /** Release early; only the current holder can release. */
++  async release(name: string, holder: string, now: Date = new Date()): Promise<void> {
++    await this.prisma.schedulingJobLease.updateMany({
++      where: { name, holder },
++      data: { lease_until: now },
++    });
++  }
++}
++
++function isUniqueViolation(err: unknown): boolean {
++  return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === 'P2002';
++}
+diff --git a/src/scheduling/request-expiry.ts b/src/scheduling/request-expiry.ts
+new file mode 100644
+index 00000000..68b39cae
+--- /dev/null
++++ b/src/scheduling/request-expiry.ts
+@@ -0,0 +1,120 @@
++import { ConflictException } from '@nestjs/common';
++import type { CoachingSession, Prisma } from '@prisma/client';
++import { AuditAction, type AuditService } from '../audit/audit.service';
++import {
++  REQUEST_EXPIRED_END_REASON,
++  SchedulingErrorCode,
++  isLapsedRequest,
++  schedulingError,
++} from './scheduling.types';
++
++// S-SCHED-5 auto-expiry (OR-112-5): the one write that closes a pending
++// request at its clear time, shared by the sweep (BookingRequestExpiryJob)
++// and the booking transaction (which closes a coach's lapsed requests under
++// the per-coach lock before it validates, so a slot is bookable at exactly
++// its clear time even if the sweep is late).
++//
++// The write is compare-and-set: status still 'requested', the deadline still
++// passed, and (per row) the same interval the caller read. A request that was
++// approved, declined, cancelled or moved meanwhile is left alone. Notices are
++// not sent here; the sweep sends them from the committed row (both sides,
++// receipts in NotificationDeliveryLog), so a crash never loses or doubles one.
++
++type Db = Pick<Prisma.TransactionClient, 'coachingSession'>;
++
++export type LapsedRow = Pick<
++  CoachingSession,
++  'id' | 'coach_id' | 'client_id' | 'start_at' | 'end_at' | 'request_expires_at'
++>;
++
++const LAPSED_SELECT = {
++  id: true,
++  coach_id: true,
++  client_id: true,
++  start_at: true,
++  end_at: true,
++  request_expires_at: true,
++} as const;
++
++/** Close one lapsed request. True when this call closed it. */
++export async function expireRequest(db: Db, row: LapsedRow, now: Date): Promise<boolean> {
++  const res = await db.coachingSession.updateMany({
++    where: {
++      id: row.id,
++      status: 'requested',
++      start_at: row.start_at,
++      end_at: row.end_at,
++      request_expires_at: { lte: now },
++    },
++    data: { status: 'expired', ended_at: now, end_reason: REQUEST_EXPIRED_END_REASON },
++  });
++  return res.count === 1;
++}
++
++/** Close every lapsed request of one coach (inside the booking transaction). */
++export async function expireLapsedForCoach(
++  db: Db,
++  coachId: string,
++  now: Date,
++): Promise<LapsedRow[]> {
++  const lapsed = await db.coachingSession.findMany({
++    where: { coach_id: coachId, status: 'requested', request_expires_at: { lte: now } },
++    select: LAPSED_SELECT,
++  });
++  const closed: LapsedRow[] = [];
++  for (const row of lapsed) {
++    if (await expireRequest(db, row, now)) closed.push(row);
++  }
++  return closed;
++}
++
++/** One audit row per closed request; the system closed it, nobody acted. */
++export async function auditExpired(
++  audit: AuditService,
++  rows: LapsedRow[],
++  source: 'sweep' | 'booking',
++): Promise<void> {
++  for (const row of rows) {
++    await audit.write({
++      action: AuditAction.SESSION_EXPIRED,
++      actorId: null,
++      actorRole: 'system',
++      tenantCoachId: row.coach_id,
++      targetUserId: row.client_id ?? null,
++      targetType: 'coaching_session',
++      targetId: row.id,
++      metadata: {
++        from: 'requested',
++        to: 'expired',
++        source,
++        request_expires_at: row.request_expires_at?.toISOString() ?? null,
++      },
++    });
++  }
++}
++
++/** True when a row is closed by expiry, or has reached its clear time. */
++export function isExpiredOrLapsed(
++  row: { status: string; request_expires_at?: Date | null },
++  now: Date = new Date(),
++): boolean {
++  return row.status === 'expired' || isLapsedRequest(row, now);
++}
++
++/**
++ * 409 REQUEST_EXPIRED with copy for the person acting. The body carries the
++ * clear time so the app can show it in the viewer's own time zone.
++ */
++export function requestExpiredError(
++  row: { request_expires_at?: Date | null },
++  viewer: 'client' | 'coach',
++): ConflictException {
++  const message =
++    viewer === 'coach'
++      ? 'This request closed at its answer-by time without a reply, so the time is open again. Message the client if you would like to find another time.'
++      : 'This request closed because your coach did not confirm it in time, and the time is open again. Pick a new time in Calendar.';
++  return new ConflictException({
++    ...schedulingError(SchedulingErrorCode.REQUEST_EXPIRED, message),
++    request_expires_at: row.request_expires_at ? row.request_expires_at.toISOString() : null,
++  });
++}
+diff --git a/src/scheduling/scheduling-open-slots.service.ts b/src/scheduling/scheduling-open-slots.service.ts
+index 0f06eae3..849d7f4e 100644
+--- a/src/scheduling/scheduling-open-slots.service.ts
++++ b/src/scheduling/scheduling-open-slots.service.ts
+@@ -248,6 +248,13 @@ export class SchedulingOpenSlotsService {
+         where: {
+           coach_id: coachId,
+           status: { in: [...OCCUPYING_SESSION_STATUSES] },
++          // S-SCHED-5: a request past its clear time no longer holds the
++          // slot (the booking transaction closes it before writing).
++          OR: [
++            { status: { not: 'requested' } },
++            { request_expires_at: null },
++            { request_expires_at: { gt: new Date() } },
++          ],
+           start_at: { lt: to },
+           end_at: { gt: from },
+           ...(opts.excludeSessionId ? { id: { not: opts.excludeSessionId } } : {}),
+diff --git a/src/scheduling/scheduling-session-lifecycle.service.ts b/src/scheduling/scheduling-session-lifecycle.service.ts
+index acdc0e58..d02689ef 100644
+--- a/src/scheduling/scheduling-session-lifecycle.service.ts
++++ b/src/scheduling/scheduling-session-lifecycle.service.ts
+@@ -41,8 +41,16 @@ import {
+   SESSION_NOT_FOUND_MESSAGE,
+   SchedulingErrorCode,
+   hasUsableLink,
++  requestExpiresAt,
+   schedulingError,
+ } from './scheduling.types';
++import {
++  auditExpired,
++  expireLapsedForCoach,
++  isExpiredOrLapsed,
++  requestExpiredError,
++  type LapsedRow,
++} from './request-expiry';
+ import type { ActorContext } from './scheduling.types';
+ 
+ // State machine: which SessionStatus transitions the service accepts.
+@@ -58,6 +66,9 @@ const ALLOWED_TRANSITIONS: Record<SessionStatus, SessionStatus[]> = {
+   canceled: [],
+   no_show: [],
+   completed: [],
++  // S-SCHED-5: closed by the expiry sweep (or the booking transaction) at the
++  // request's clear time. Terminal.
++  expired: [],
+ };
+ 
+ // pg_advisory_xact_lock(int4, int4): first key is a namespace so this lock
+@@ -160,6 +171,9 @@ export class SchedulingSessionLifecycleService {
+ 
+     const sessionTypeId = dto.session_type_id;
+     const session = await this.runBookingTx(dto.coach_id, async (tx) => {
++      // S-SCHED-5: close this coach's requests that reached their clear time
++      // first, so their slots (and the client's pending count) are free now.
++      const lapsed = await expireLapsedForCoach(tx, dto.coach_id, now);
+       const type = await this.openSlots.resolveBookableType(dto.coach_id, sessionTypeId, tx);
+       assertTypeDuration(type, start, end);
+ 
+@@ -222,13 +236,15 @@ export class SchedulingSessionLifecycleService {
+           video_provider: type.default_video_provider ?? 'stub',
+           calendar_provider: 'stub',
+           approved_at: status === 'scheduled' ? now : null,
++          request_expires_at: status === 'requested' ? requestExpiresAt(now, start) : null,
+         },
+       });
+-      return { created, type };
++      return { created, type, lapsed };
+     });
+ 
+     const { created, type } = session;
+     this.openSlots.invalidateCoach(dto.coach_id);
++    await this.afterLazyExpiry(session.lapsed);
+     await this.audit.write({
+       action: AuditAction.SESSION_REQUESTED,
+       actorId: actor.id,
+@@ -299,14 +315,15 @@ export class SchedulingSessionLifecycleService {
+   ): Promise<CoachingSession> {
+     const existing = await this.loadSessionOrThrow(sessionId);
+     this.access.assertIsSessionCoach(actor, existing);
++    this.assertRequestOpen(existing, actor);
+     this.assertTransition(existing, 'scheduled');
+     assertExpectedStart(existing, opts.expectedStartAt);
+     if (existing.start_at.getTime() <= Date.now()) throw approvalTooLate();
+     const updated = await this.compareAndSet(
+       existing,
+       'scheduled',
+-      { approved_at: new Date() },
+-      { start: 'future', onStarted: approvalTooLate },
++      { approved_at: new Date(), request_expires_at: null },
++      { start: 'future', onStarted: approvalTooLate, requestOpenFor: viewerOf(actor) },
+     );
+     this.openSlots.invalidateCoach(existing.coach_id);
+     await this.writeTransitionAudit(AuditAction.SESSION_APPROVED, actor, existing, 'scheduled');
+@@ -342,12 +359,15 @@ export class SchedulingSessionLifecycleService {
+   ): Promise<CoachingSession> {
+     const existing = await this.loadSessionOrThrow(sessionId);
+     this.access.assertIsSessionCoach(actor, existing);
++    this.assertRequestOpen(existing, actor);
+     this.assertTransition(existing, 'declined');
+     assertExpectedStart(existing, opts.expectedStartAt);
+-    const updated = await this.compareAndSet(existing, 'declined', {
+-      ended_at: new Date(),
+-      end_reason: reason ?? null,
+-    });
++    const updated = await this.compareAndSet(
++      existing,
++      'declined',
++      { ended_at: new Date(), end_reason: reason ?? null },
++      { requestOpenFor: viewerOf(actor) },
++    );
+     this.openSlots.invalidateCoach(existing.coach_id);
+     await this.writeTransitionAudit(AuditAction.SESSION_DECLINED, actor, existing, 'declined', {
+       reason: reason ?? null,
+@@ -375,6 +395,7 @@ export class SchedulingSessionLifecycleService {
+   ): Promise<CoachingSession> {
+     const existing = await this.loadSessionOrThrow(sessionId);
+     await this.access.assertCanActAsParticipant(actor, existing);
++    this.assertRequestOpen(existing, actor);
+     if (existing.status !== 'requested' && existing.status !== 'scheduled') {
+       throw new ConflictException(
+         schedulingError(
+@@ -404,8 +425,13 @@ export class SchedulingSessionLifecycleService {
+         current.start_at.getTime() !== existing.start_at.getTime() ||
+         current.end_at.getTime() !== existing.end_at.getTime()
+       ) {
++        if (current && isExpiredOrLapsed(current, now))
++          throw requestExpiredError(current, viewerOf(actor));
+         throw stateChanged();
+       }
++      if (isExpiredOrLapsed(current, now)) throw requestExpiredError(current, viewerOf(actor));
++      // S-SCHED-5: free the coach's other lapsed requests before validating.
++      const lapsed = await expireLapsedForCoach(tx, current.coach_id, now);
+       const type = current.session_type_id
+         ? await tx.sessionType.findUnique({ where: { id: current.session_type_id } })
+         : null;
+@@ -446,6 +472,8 @@ export class SchedulingSessionLifecycleService {
+           status: current.status,
+           start_at: current.start_at,
+           end_at: current.end_at,
++          // A request moved at its clear time loses to the expiry.
++          ...(current.status === 'requested' ? requestStillOpen(now) : {}),
+         },
+         data: {
+           start_at: start,
+@@ -454,19 +482,29 @@ export class SchedulingSessionLifecycleService {
+           ...(nextStatus === 'requested' && current.status === 'scheduled'
+             ? { approved_at: null }
+             : {}),
++          // A move that asks the coach again starts a fresh answer window.
++          ...(nextStatus === 'requested'
++            ? { request_expires_at: requestExpiresAt(now, start) }
++            : {}),
+         },
+       });
+-      if (moved.count !== 1) throw stateChanged();
++      if (moved.count !== 1) {
++        const after = await tx.coachingSession.findUnique({ where: { id: current.id } });
++        if (after && isExpiredOrLapsed(after, now))
++          throw requestExpiredError(after, viewerOf(actor));
++        throw stateChanged();
++      }
+       // B-643-1 / Sol B-647-1: reminders re-arm for the new time without
+       // touching the claim ledger. Claims are keyed (session, user, kind,
+       // start_at), so the new start time has no claim yet, and the
+       // reminder job only sends while the session still has the start
+       // time it claimed for (reminder.job.ts claimDelivery / remindOne).
+       const row = await tx.coachingSession.findUniqueOrThrow({ where: { id: current.id } });
+-      return { row, typeName: type?.name ?? null, previousStatus: current.status };
++      return { row, typeName: type?.name ?? null, previousStatus: current.status, lapsed };
+     });
+ 
+     this.openSlots.invalidateCoach(existing.coach_id);
++    await this.afterLazyExpiry(result.lapsed);
+     await this.audit.write({
+       action: AuditAction.SESSION_RESCHEDULED,
+       actorId: actor.id,
+@@ -534,6 +572,7 @@ export class SchedulingSessionLifecycleService {
+   ): Promise<CoachingSession> {
+     const existing = await this.loadSessionOrThrow(sessionId);
+     await this.access.assertCanActAsParticipant(actor, existing);
++    this.assertRequestOpen(existing, actor);
+     this.assertTransition(existing, 'canceled');
+     assertExpectedStart(existing, dto.expected_start_at);
+     const clientCancel = actor.role === 'student';
+@@ -542,7 +581,10 @@ export class SchedulingSessionLifecycleService {
+       existing,
+       'canceled',
+       { ended_at: new Date(), end_reason: dto.reason ?? null },
+-      clientCancel ? { start: 'future', onStarted: clientCancelTooLate } : {},
++      {
++        ...(clientCancel ? { start: 'future' as const, onStarted: clientCancelTooLate } : {}),
++        requestOpenFor: viewerOf(actor),
++      },
+     );
+     this.openSlots.invalidateCoach(existing.coach_id);
+     await this.writeTransitionAudit(AuditAction.SESSION_CANCELED, actor, existing, 'canceled', {
+@@ -781,23 +823,33 @@ export class SchedulingSessionLifecycleService {
+     existing: CoachingSession,
+     to: SessionStatus,
+     data: Prisma.CoachingSessionUpdateManyMutationInput,
+-    fence: { start?: 'future' | 'started'; onStarted?: () => HttpException } = {},
++    fence: {
++      start?: 'future' | 'started';
++      onStarted?: () => HttpException;
++      /** S-SCHED-5: a request transition must land before its clear time. */
++      requestOpenFor?: 'client' | 'coach';
++    } = {},
+   ): Promise<CoachingSession> {
+     const now = new Date();
+     const startFilter: Prisma.DateTimeFilter = { equals: existing.start_at };
+     if (fence.start === 'future') startFilter.gt = now;
+     if (fence.start === 'started') startFilter.lte = now;
++    const guardRequest = fence.requestOpenFor !== undefined && existing.status === 'requested';
+     const res = await this.prisma.coachingSession.updateMany({
+       where: {
+         id: existing.id,
+         status: existing.status,
+         start_at: startFilter,
+         end_at: existing.end_at,
++        ...(guardRequest ? requestStillOpen(now) : {}),
+       },
+       data: { ...data, status: to },
+     });
+     if (res.count === 1) return this.loadSessionOrThrow(existing.id);
+     const current = await this.prisma.coachingSession.findUnique({ where: { id: existing.id } });
++    if (guardRequest && fence.requestOpenFor && current && isExpiredOrLapsed(current, now)) {
++      throw requestExpiredError(current, fence.requestOpenFor);
++    }
+     if (current && current.status === existing.status) {
+       if (!sameInterval(current, existing)) throw sessionMoved();
+       if (fence.onStarted) throw fence.onStarted();
+@@ -805,6 +857,23 @@ export class SchedulingSessionLifecycleService {
+     throw stateChanged();
+   }
+ 
++  // S-SCHED-5: a request that is closed by expiry, or has reached its clear
++  // time, cannot be confirmed, declined, cancelled or moved.
++  private assertRequestOpen(existing: CoachingSession, actor: ActorContext): void {
++    if (isExpiredOrLapsed(existing)) throw requestExpiredError(existing, viewerOf(actor));
++  }
++
++  // Requests the booking transaction closed: audited now; the sweep sends
++  // both notices from the committed rows on its next tick.
++  private async afterLazyExpiry(rows: LapsedRow[]): Promise<void> {
++    if (rows.length === 0) return;
++    try {
++      await auditExpired(this.audit, rows, 'booking');
++    } catch (err) {
++      this.logger.warn(`expiry audit failed: ${(err as Error).name}`);
++    }
++  }
++
+   private async writeTransitionAudit(
+     action: (typeof AuditAction)[keyof typeof AuditAction],
+     actor: ActorContext,
+@@ -1282,6 +1351,8 @@ function statusWord(s: SessionStatus): string {
+       return 'completed';
+     case 'no_show':
+       return 'marked as a no-show';
++    case 'expired':
++      return 'closed because it was not confirmed in time';
+     default:
+       return 'closed';
+   }
+@@ -1303,3 +1374,13 @@ function actionWord(to: SessionStatus): string {
+       return 'changed';
+   }
+ }
++
++// S-SCHED-5: the person acting, for REQUEST_EXPIRED copy.
++function viewerOf(actor: ActorContext): 'client' | 'coach' {
++  return actor.role === 'student' ? 'client' : 'coach';
++}
++
++// S-SCHED-5: where-fragment for "this request has not reached its clear time".
++function requestStillOpen(now: Date): Prisma.CoachingSessionWhereInput {
++  return { OR: [{ request_expires_at: null }, { request_expires_at: { gt: now } }] };
++}
+diff --git a/src/scheduling/scheduling-session.view.ts b/src/scheduling/scheduling-session.view.ts
+index 1f3889fd..58931eac 100644
+--- a/src/scheduling/scheduling-session.view.ts
++++ b/src/scheduling/scheduling-session.view.ts
+@@ -1,5 +1,9 @@
+-import type { CoachingSession, Prisma } from '@prisma/client';
+-import { MEETING_LINK_PATTERN, OCCUPYING_SESSION_STATUSES } from './scheduling.types';
++import type { CoachingSession, Prisma, SessionStatus } from '@prisma/client';
++import {
++  MEETING_LINK_PATTERN,
++  OCCUPYING_SESSION_STATUSES,
++  isLapsedRequest,
++} from './scheduling.types';
+ import type { ActorContext } from './scheduling.types';
+ 
+ // S-SCHED-2: the one place a CoachingSession row becomes an API response.
+@@ -89,17 +93,22 @@ export function toSessionView(
+ ): SessionView {
+   const { session_type, coach, client, ...base } = row;
+   const isClientViewer = actor.role === 'student';
+-  const occupying = (OCCUPYING_SESSION_STATUSES as readonly string[]).includes(row.status);
++  // S-SCHED-5: a request past its clear time reads as expired at once, even
++  // before the sweep writes it, so both apps show the exact clear time.
++  const status: SessionStatus = isLapsedRequest(row, now) ? 'expired' : row.status;
++  const occupying = (OCCUPYING_SESSION_STATUSES as readonly string[]).includes(status);
+   const notStarted = row.start_at.getTime() > now.getTime();
+   return {
+     ...base,
++    status,
+     coach_notes_md: isClientViewer ? null : row.coach_notes_md,
+     provider_idempotency_key: isClientViewer ? null : row.provider_idempotency_key,
+     video_meeting_id: isClientViewer ? null : row.video_meeting_id,
+     calendar_event_id: isClientViewer ? null : row.calendar_event_id,
+     // A link only matters once confirmed; clients never see a link on an
+     // unapproved request (the coach may still decline it).
+-    video_url: isClientViewer && row.status === 'requested' ? null : row.video_url,
++    video_url:
++      isClientViewer && (status === 'requested' || status === 'expired') ? null : row.video_url,
+     session_type: session_type
+       ? {
+           id: session_type.id,
+@@ -112,8 +121,8 @@ export function toSessionView(
+       : null,
+     coach_name: coach?.name ?? null,
+     client_name: client?.name ?? null,
+-    meeting_link_status: meetingLinkStatus(row),
++    meeting_link_status: meetingLinkStatus({ status, video_url: row.video_url }),
+     cancellable: occupying && (isClientViewer ? notStarted : true),
+-    reschedulable: (row.status === 'requested' || row.status === 'scheduled') && notStarted,
++    reschedulable: (status === 'requested' || status === 'scheduled') && notStarted,
+   };
+ }
+diff --git a/src/scheduling/scheduling.controller.ts b/src/scheduling/scheduling.controller.ts
+index a4026bfd..818ac460 100644
+--- a/src/scheduling/scheduling.controller.ts
++++ b/src/scheduling/scheduling.controller.ts
+@@ -422,6 +422,8 @@ const LISTABLE_STATUSES: readonly SessionStatus[] = [
+   'canceled',
+   'completed',
+   'no_show',
++  // S-SCHED-5: requests closed at their clear time without an answer.
++  'expired',
+ ];
+ 
+ function parseStatusFilter(raw: string | undefined): SessionStatus[] | null {
+diff --git a/src/scheduling/scheduling.module.ts b/src/scheduling/scheduling.module.ts
+index 3d7dcc5b..09f16ddf 100644
+--- a/src/scheduling/scheduling.module.ts
++++ b/src/scheduling/scheduling.module.ts
+@@ -9,6 +9,8 @@ import { GoogleOAuthController } from './google-oauth/google-oauth.controller';
+ import { GoogleOAuthService } from './google-oauth/google-oauth.service';
+ import { CalendarSyncJob } from './jobs/calendar-sync.job';
+ import { SessionReminderJob } from './jobs/reminder.job';
++import { BookingRequestExpiryJob } from './jobs/request-expiry.job';
++import { SchedulingJobLeaseService } from './jobs/scheduling-job-lease.service';
+ import { GoogleCalendarAdapter } from './providers/google-calendar.adapter';
+ import { GoogleMeetAdapter } from './providers/google-meet.adapter';
+ import { SchedulingProviderRegistry } from './providers/scheduling-provider.registry';
+@@ -58,6 +60,9 @@ import { SchedulingWebhookController } from './scheduling-webhook.controller';
+     GoogleMeetAdapter,
+     ZoomVideoAdapter,
+     SessionReminderJob,
++    // S-SCHED-5: request auto-expiry sweep (single runner via SchedulingJobLease).
++    BookingRequestExpiryJob,
++    SchedulingJobLeaseService,
+     CalendarSyncJob,
+     GoogleOAuthService,
+     // Real Google Calendar REST client. Stubbed adapter
+diff --git a/src/scheduling/scheduling.service.ts b/src/scheduling/scheduling.service.ts
+index 932691df..f9b1ac6c 100644
+--- a/src/scheduling/scheduling.service.ts
++++ b/src/scheduling/scheduling.service.ts
+@@ -150,6 +150,13 @@ export class SchedulingService {
+           status: { in: [...OCCUPYING_SESSION_STATUSES] },
+           end_at: { gt: now },
+           session_type: { is: { is_welcome: true } },
++          // S-SCHED-5: a welcome request past its clear time is not active;
++          // the client can book the welcome call again.
++          OR: [
++            { status: { not: 'requested' } },
++            { request_expires_at: null },
++            { request_expires_at: { gt: now } },
++          ],
+         },
+         select: { id: true, coach_id: true, status: true, start_at: true },
+         orderBy: { start_at: 'asc' },
+diff --git a/src/scheduling/scheduling.types.ts b/src/scheduling/scheduling.types.ts
+index c5147558..2ed96aaf 100644
+--- a/src/scheduling/scheduling.types.ts
++++ b/src/scheduling/scheduling.types.ts
+@@ -58,6 +58,53 @@ export const MAX_BOOKING_HORIZON_DAYS = 120;
+ // Bounds slot holding by unapproved requests.
+ export const MAX_PENDING_REQUESTS_PER_COACH = 3;
+ 
++// ---------------------------------------------------------------------------
++// S-SCHED-5 auto-expiry (OR-112-5): a pending request has one clear time by
++// which the coach must answer. At or after it the request is closed as
++// `expired` (both sides get a calm notice and the slot is free again).
++// ---------------------------------------------------------------------------
++
++/** A coach has at most this long after a request to answer it. */
++export const REQUEST_RESPONSE_WINDOW_HOURS = 48;
++/** ...and must answer at least this long before the session starts. */
++export const REQUEST_ANSWER_BY_BEFORE_START_MINUTES = 60;
++/**
++ * Short-notice requests: when the two rules above would leave the coach less
++ * than this to answer, the request stays open until the session starts
++ * (approval already stops at the start).
++ */
++export const REQUEST_MIN_ANSWER_WINDOW_MINUTES = 30;
++
++/** The clear time a request made (or re-asked) at `requestedAt` closes. */
++export function requestExpiresAt(requestedAt: Date, startAt: Date): Date {
++  const byWindow = requestedAt.getTime() + REQUEST_RESPONSE_WINDOW_HOURS * 3_600_000;
++  const byStart = startAt.getTime() - REQUEST_ANSWER_BY_BEFORE_START_MINUTES * 60_000;
++  const deadline = Math.min(byWindow, byStart);
++  if (deadline < requestedAt.getTime() + REQUEST_MIN_ANSWER_WINDOW_MINUTES * 60_000) {
++    return new Date(startAt.getTime());
++  }
++  return new Date(deadline);
++}
++
++/**
++ * True when a still-`requested` row has reached its clear time. Such a row is
++ * treated as expired everywhere (reads, approve/decline/cancel/move, open
++ * slots) even before the sweep writes `expired`, so the clear time is exact.
++ */
++export function isLapsedRequest(
++  row: { status: string; request_expires_at?: Date | null },
++  now: Date = new Date(),
++): boolean {
++  return (
++    row.status === 'requested' &&
++    row.request_expires_at instanceof Date &&
++    row.request_expires_at.getTime() <= now.getTime()
++  );
++}
++
++/** end_reason written when a request expires. */
++export const REQUEST_EXPIRED_END_REASON = 'request_expired';
++
+ // Stable machine codes for scheduling failures. Every BadRequest/Conflict the
+ // booking surface throws carries one of these as `code` (and, for older
+ // clients, as `error`) plus a human message.
+@@ -87,6 +134,9 @@ export const SchedulingErrorCode = {
+   // S-SCHED-3 (B-634-4 / C-634-3): a list cursor or status filter that the
+   // server cannot read.
+   INVALID_LIST_QUERY: 'INVALID_LIST_QUERY',
++  // S-SCHED-5: the request reached its clear time without an answer and is
++  // closed (or is about to be closed by the sweep); the slot is free again.
++  REQUEST_EXPIRED: 'REQUEST_EXPIRED',
+ } as const;
+ export type SchedulingErrorCodeValue =
+   (typeof SchedulingErrorCode)[keyof typeof SchedulingErrorCode];
+diff --git a/test/scheduling-request-expiry.spec.ts b/test/scheduling-request-expiry.spec.ts
+new file mode 100644
+index 00000000..693d9f27
+--- /dev/null
++++ b/test/scheduling-request-expiry.spec.ts
+@@ -0,0 +1,460 @@
++/**
++ * S-SCHED-5 auto-expiry (OR-112-5): a booking request the coach does not
++ * answer closes at a clear time, both sides get one calm notice, the slot is
++ * free again, and the sweep is idempotent and single-runner.
++ */
++import { HttpException } from '@nestjs/common';
++import * as fs from 'fs';
++import * as path from 'path';
++import { AuditService } from '../src/audit/audit.service';
++import { BookingEmitter } from '../src/notifications/emitters/booking.emitter';
++import { NotificationKind } from '../src/notifications/notification-kind';
++import {
++  NotificationsService,
++  type CreateNotificationInput,
++} from '../src/notifications/notifications.service';
++import type { PushDeliveryResult } from '../src/notifications/push-delivery.types';
++import {
++  BookingRequestExpiryJob,
++  REQUEST_EXPIRY_LEASE_NAME,
++} from '../src/scheduling/jobs/request-expiry.job';
++import { SchedulingJobLeaseService } from '../src/scheduling/jobs/scheduling-job-lease.service';
++import { SchedulingService } from '../src/scheduling/scheduling.service';
++import { requestExpiresAt, type ActorContext } from '../src/scheduling/scheduling.types';
++import { SchedulingFakeDb, asPrisma } from './utils/scheduling-fake-db';
++
++const NOW = new Date('2026-10-05T15:00:00.000Z'); // Monday
++const TUE_1000 = '2026-10-06T17:00:00.000Z';
++const TUE_1015 = '2026-10-06T17:15:00.000Z';
++const TUE_DEADLINE = new Date('2026-10-06T16:00:00.000Z'); // 1h before start
++
++const COACH: ActorContext = { id: 'coach-1', role: 'coach', email: null, coach_id: null };
++const CLIENT: ActorContext = { id: 'client-1', role: 'student', email: null, coach_id: 'coach-1' };
++const CLIENT_2: ActorContext = {
++  id: 'client-2',
++  role: 'student',
++  email: null,
++  coach_id: 'coach-1',
++};
++
++class FakeNotifications {
++  rows: CreateNotificationInput[] = [];
++  pushes: Array<{ userId: string; title: string; body: string }> = [];
++  pushResult: PushDeliveryResult = { delivered: true, code: 'delivered' };
++  createNotification = jest.fn(async (input: CreateNotificationInput) => {
++    this.rows.push(input);
++    return { id: `notif-${this.rows.length}` };
++  });
++  getPreferences = jest.fn(async (userId: string) => ({
++    user_id: userId,
++    timezone: 'America/Los_Angeles',
++    booking_push: true,
++    booking_inapp: true,
++    muted: false,
++  }));
++  pushToUser = jest.fn(async (userId: string, title: string, body: string) => {
++    this.pushes.push({ userId, title, body });
++    return this.pushResult;
++  });
++  expiredFor(userId: string): CreateNotificationInput[] {
++    return this.rows.filter(
++      (r) => r.user_id === userId && r.kind === NotificationKind.BOOKING_REQUEST_EXPIRED,
++    );
++  }
++}
++
++function harness() {
++  const db = new SchedulingFakeDb();
++  db.addUser({ id: 'coach-1', name: 'Coach Kim', role: 'coach' });
++  db.addUser({ id: 'client-1', name: 'Client One', role: 'student', coach_id: 'coach-1' });
++  db.addUser({ id: 'client-2', name: 'Client Two', role: 'student', coach_id: 'coach-1' });
++  db.addSessionType({
++    id: 'st-q',
++    coach_id: 'coach-1',
++    name: 'Quick Q/A Call',
++    duration_minutes: 15,
++    auto_approve: false,
++  });
++  db.addSessionType({
++    id: 'st-open',
++    coach_id: 'coach-1',
++    name: 'Open call',
++    duration_minutes: 15,
++    auto_approve: true,
++  });
++  for (let day = 1; day <= 5; day++) db.addWindow('coach-1', day, 9 * 60, 17 * 60);
++  const notifications = new FakeNotifications();
++  const emitter = new BookingEmitter(
++    Object.assign(
++      Object.create(NotificationsService.prototype) as NotificationsService,
++      notifications,
++    ),
++    asPrisma(db),
++  );
++  const auditWrites: Array<Record<string, unknown>> = [];
++  const audit = Object.assign(Object.create(AuditService.prototype) as AuditService, {
++    write: jest.fn(async (input: Record<string, unknown>) => {
++      auditWrites.push(input);
++    }),
++  });
++  const prisma = asPrisma(db);
++  const svc = new SchedulingService(prisma, audit, undefined, emitter);
++  const lease = new SchedulingJobLeaseService(prisma);
++  const job = new BookingRequestExpiryJob(prisma, emitter, audit, lease);
++  return { db, notifications, svc, auditWrites, job, emitter, audit, prisma, lease };
++}
++
++function req(actor: ActorContext, typeId: string, start = TUE_1000, end = TUE_1015) {
++  return {
++    coach_id: 'coach-1',
++    session_type_id: typeId,
++    title: 'Session',
++    start_at: start,
++    end_at: end,
++  };
++}
++
++async function failure(
++  p: Promise<unknown>,
++): Promise<{ status: number; code: string; message: string; body: Record<string, unknown> }> {
++  try {
++    await p;
++  } catch (err) {
++    if (err instanceof HttpException) {
++      const res = err.getResponse();
++      const body: Record<string, unknown> =
++        typeof res === 'object' && res !== null ? { ...res } : {};
++      return {
++        status: err.getStatus(),
++        code: String(body.code),
++        message: String(body.message),
++        body,
++      };
++    }
++    throw err;
++  }
++  throw new Error('expected a failure');
++}
++
++const CALM = (s: string) => {
++  expect(s).not.toMatch(/!/);
++  expect(s).not.toMatch(/\b(we|us|our)\b/i);
++  expect(s).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u);
++};
++
++beforeAll(() => {
++  jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
++});
++beforeEach(() => jest.setSystemTime(NOW));
++afterAll(() => jest.useRealTimers());
++
++describe('S-SCHED-5 requestExpiresAt rule', () => {
++  it('is 1 hour before the start when that comes before 48 hours', () => {
++    expect(requestExpiresAt(NOW, new Date(TUE_1000)).toISOString()).toBe(
++      TUE_DEADLINE.toISOString(),
++    );
++  });
++  it('is capped at 48 hours after the request', () => {
++    const start = new Date('2026-10-20T17:00:00.000Z');
++    expect(requestExpiresAt(NOW, start).toISOString()).toBe('2026-10-07T15:00:00.000Z');
++  });
++  it('a short-notice request that would get under 30 minutes stays open until the start', () => {
++    const start = new Date(NOW.getTime() + 80 * 60_000); // 1h before = 20 min from now
++    expect(requestExpiresAt(NOW, start).toISOString()).toBe(start.toISOString());
++    const ok = new Date(NOW.getTime() + 95 * 60_000); // 1h before = 35 min from now
++    expect(requestExpiresAt(NOW, ok).getTime()).toBe(ok.getTime() - 60 * 60_000);
++  });
++});
++
++describe('S-SCHED-5 request lifecycle around the clear time', () => {
++  it('a request carries its clear time; an instant booking has none; approval clears it', async () => {
++    const { svc } = harness();
++    const r = await svc.requestSession(CLIENT, req(CLIENT, 'st-q'));
++    expect(r.status).toBe('requested');
++    expect(r.request_expires_at?.toISOString()).toBe(TUE_DEADLINE.toISOString());
++    const approved = await svc.approveSession(COACH, r.id);
++    expect(approved.status).toBe('scheduled');
++    expect(approved.request_expires_at).toBeNull();
++    const instant = await svc.requestSession(
++      CLIENT_2,
++      req(CLIENT_2, 'st-open', '2026-10-06T18:00:00.000Z', '2026-10-06T18:15:00.000Z'),
++    );
++    expect(instant.status).toBe('scheduled');
++    expect(instant.request_expires_at).toBeNull();
++  });
++
++  it('at the clear time the request reads as expired and cannot be approved, declined, cancelled or moved', async () => {
++    const { svc } = harness();
++    const r = await svc.requestSession(CLIENT, req(CLIENT, 'st-q'));
++    jest.setSystemTime(TUE_DEADLINE);
++    const view = await svc.getSession(CLIENT, r.id);
++    expect(view.status).toBe('expired');
++    expect(view.cancellable).toBe(false);
++    expect(view.reschedulable).toBe(false);
++    const approve = await failure(svc.approveSession(COACH, r.id));
++    expect(approve).toMatchObject({ status: 409, code: 'REQUEST_EXPIRED' });
++    expect(approve.body.request_expires_at).toBe(TUE_DEADLINE.toISOString());
++    CALM(approve.message);
++    const decline = await failure(svc.declineSession(COACH, r.id, 'Busy'));
++    expect(decline.code).toBe('REQUEST_EXPIRED');
++    const cancel = await failure(svc.cancelSession(CLIENT, r.id, {}));
++    expect(cancel.code).toBe('REQUEST_EXPIRED');
++    expect(cancel.message).toMatch(/Pick a new time/);
++    CALM(cancel.message);
++    const move = await failure(
++      svc.rescheduleSession(CLIENT, r.id, {
++        start_at: '2026-10-06T19:00:00.000Z',
++        end_at: '2026-10-06T19:15:00.000Z',
++      }),
++    );
++    expect(move.code).toBe('REQUEST_EXPIRED');
++  });
++
++  it('one minute before the clear time the coach can still approve', async () => {
++    const { svc } = harness();
++    const r = await svc.requestSession(CLIENT, req(CLIENT, 'st-q'));
++    jest.setSystemTime(new Date(TUE_DEADLINE.getTime() - 60_000));
++    const ok = await svc.approveSession(COACH, r.id);
++    expect(ok.status).toBe('scheduled');
++  });
++
++  it('the slot is free at exactly the clear time, even before the sweep runs', async () => {
++    const { svc, db, auditWrites } = harness();
++    const r = await svc.requestSession(CLIENT, req(CLIENT, 'st-q'));
++    jest.setSystemTime(new Date(TUE_DEADLINE.getTime() - 60_000));
++    const taken = await failure(svc.requestSession(CLIENT_2, req(CLIENT_2, 'st-q')));
++    expect(taken.code).toBe('SLOT_TAKEN');
++    jest.setSystemTime(TUE_DEADLINE);
++    const slots = await svc.getOpenSlots(CLIENT_2, 'coach-1', {
++      from: '2026-10-06T16:30:00.000Z',
++      to: '2026-10-06T19:00:00.000Z',
++      session_type_id: 'st-q',
++    });
++    expect(slots.slots.map((s) => s.start_at)).toContain(TUE_1000);
++    const second = await svc.requestSession(CLIENT_2, req(CLIENT_2, 'st-q'));
++    expect(second.status).toBe('requested');
++    const first = db.sessions.find((s) => s.id === r.id);
++    expect(first).toMatchObject({ status: 'expired', end_reason: 'request_expired' });
++    expect(auditWrites).toContainEqual(
++      expect.objectContaining({
++        action: 'session.expired',
++        targetId: r.id,
++        actorRole: 'system',
++        metadata: expect.objectContaining({ source: 'booking' }),
++      }),
++    );
++  });
++
++  it('a client move that asks the coach again starts a fresh answer window', async () => {
++    const { svc } = harness();
++    const r = await svc.requestSession(CLIENT, req(CLIENT, 'st-q'));
++    jest.setSystemTime(new Date('2026-10-05T20:00:00.000Z'));
++    const moved = await svc.rescheduleSession(CLIENT, r.id, {
++      start_at: '2026-10-07T17:00:00.000Z',
++      end_at: '2026-10-07T17:15:00.000Z',
++    });
++    expect(moved.status).toBe('requested');
++    expect(moved.request_expires_at?.toISOString()).toBe('2026-10-07T16:00:00.000Z');
++  });
++});
++
++describe('S-SCHED-5 expiry sweep', () => {
++  it('closes the lapsed request, frees the slot and sends one calm notice to each side', async () => {
++    const { svc, db, job, notifications, auditWrites } = harness();
++    const r = await svc.requestSession(CLIENT, req(CLIENT, 'st-q'));
++    notifications.rows.length = 0;
++    notifications.pushes.length = 0;
++    jest.setSystemTime(TUE_DEADLINE);
++    const res = await job.sweep(new Date());
++    expect(res).toMatchObject({ lease: 'acquired', expired: 1, notified: 2, failed: 0 });
++    expect(db.sessions.find((s) => s.id === r.id)).toMatchObject({
++      status: 'expired',
++      end_reason: 'request_expired',
++    });
++    const toClient = notifications.expiredFor('client-1');
++    const toCoach = notifications.expiredFor('coach-1');
++    expect(toClient).toHaveLength(1);
++    expect(toCoach).toHaveLength(1);
++    expect(toClient[0].body).toMatch(
++      /was not confirmed in time, so it has closed\. Pick another time in Calendar\./,
++    );
++    expect(toCoach[0].body).toMatch(
++      /^Client One's Quick Q\/A Call request for .+ closed without an answer, and the time is open again\.$/,
++    );
++    for (const n of [...toClient, ...toCoach]) CALM(n.body);
++    for (const p of notifications.pushes) {
++      expect(p.title).toBe('Session request closed');
++      CALM(p.title);
++      CALM(p.body);
++    }
++    expect(notifications.pushes.map((p) => p.userId).sort()).toEqual(['client-1', 'coach-1']);
++    expect(
++      db.deliveryLogs
++        .filter((l) => l.kind === NotificationKind.BOOKING_REQUEST_EXPIRED)
++        .map((l) => l.status),
++    ).toEqual(['sent', 'sent']);
++    expect(auditWrites.filter((a) => a.action === 'session.expired')).toHaveLength(1);
++
++    // Idempotent: the next tick changes nothing and sends nothing.
++    const again = await job.sweep(new Date(TUE_DEADLINE.getTime() + 5 * 60_000));
++    expect(again).toMatchObject({ expired: 0, notified: 0, recovered: 0 });
++    expect(notifications.pushes).toHaveLength(2);
++    // The slot is bookable again.
++    const next = await svc.requestSession(CLIENT_2, req(CLIENT_2, 'st-q'));
++    expect(next.status).toBe('requested');
++  });
++
++  it('announces a request the booking transaction closed', async () => {
++    const { svc, job, notifications } = harness();
++    await svc.requestSession(CLIENT, req(CLIENT, 'st-q'));
++    jest.setSystemTime(TUE_DEADLINE);
++    await svc.requestSession(CLIENT_2, req(CLIENT_2, 'st-q'));
++    const res = await job.sweep(new Date());
++    expect(res).toMatchObject({ expired: 0, notified: 2 });
++    expect(notifications.expiredFor('client-1')).toHaveLength(1);
++  });
++
++  it('leaves an answered request alone', async () => {
++    const { svc, db, job, notifications } = harness();
++    const r = await svc.requestSession(CLIENT, req(CLIENT, 'st-q'));
++    await svc.approveSession(COACH, r.id);
++    jest.setSystemTime(TUE_DEADLINE);
++    const res = await job.sweep(new Date());
++    expect(res).toMatchObject({ expired: 0, notified: 0 });
++    expect(db.sessions.find((s) => s.id === r.id)?.status).toBe('scheduled');
++    expect(notifications.expiredFor('client-1')).toHaveLength(0);
++  });
++
++  it('two machines sweeping at once: one holds the lease, each side is told once', async () => {
++    const { svc, prisma, emitter, audit, lease, notifications } = harness();
++    await svc.requestSession(CLIENT, req(CLIENT, 'st-q'));
++    jest.setSystemTime(TUE_DEADLINE);
++    const a = new BookingRequestExpiryJob(prisma, emitter, audit, lease);
++    const b = new BookingRequestExpiryJob(prisma, emitter, audit, lease);
++    const [ra, rb] = await Promise.all([a.sweep(new Date()), b.sweep(new Date())]);
++    expect([ra.lease, rb.lease].sort()).toEqual(['acquired', 'held']);
++    expect(notifications.expiredFor('client-1')).toHaveLength(1);
++    expect(notifications.expiredFor('coach-1')).toHaveLength(1);
++  });
++
++  it('a lease held by another machine skips the tick; an expired lease is taken over', async () => {
++    const { svc, db, job } = harness();
++    await svc.requestSession(CLIENT, req(CLIENT, 'st-q'));
++    jest.setSystemTime(TUE_DEADLINE);
++    db.leases.push({
++      name: REQUEST_EXPIRY_LEASE_NAME,
++      holder: 'other-machine',
++      lease_until: new Date(TUE_DEADLINE.getTime() + 60_000),
++      acquired_at: TUE_DEADLINE,
++    });
++    expect(await job.sweep(new Date())).toMatchObject({ lease: 'held', expired: 0 });
++    const later = new Date(TUE_DEADLINE.getTime() + 2 * 60_000);
++    expect(await job.sweep(later)).toMatchObject({ lease: 'acquired', expired: 1 });
++    // Released after the tick, so the next machine does not wait a full ttl.
++    expect((db.leases[0].lease_until as Date).getTime()).toBeLessThanOrEqual(Date.now());
++  });
++
++  it('a request whose time passed long ago closes quietly (no late notice)', async () => {
++    const { db, job, notifications } = harness();
++    db.addSession({
++      id: 'old-req',
++      coach_id: 'coach-1',
++      client_id: 'client-1',
++      session_type_id: 'st-q',
++      start_at: new Date('2026-10-01T17:00:00.000Z'),
++      end_at: new Date('2026-10-01T17:15:00.000Z'),
++      status: 'requested',
++      request_expires_at: new Date('2026-10-01T17:00:00.000Z'),
++    });
++    const res = await job.sweep(NOW);
++    expect(res).toMatchObject({ expired: 1, notified: 0 });
++    expect(db.sessions.find((s) => s.id === 'old-req')?.status).toBe('expired');
++    expect(notifications.rows).toHaveLength(0);
++  });
++
++  it('a failed push is retried on the next tick for that channel only, then settles', async () => {
++    const { svc, db, job, notifications } = harness();
++    await svc.requestSession(CLIENT, req(CLIENT, 'st-q'));
++    notifications.rows.length = 0;
++    jest.setSystemTime(TUE_DEADLINE);
++    notifications.pushResult = { delivered: false, code: 'transport-error' };
++    const first = await job.sweep(new Date());
++    expect(first).toMatchObject({ expired: 1, notified: 0, retrying: 2 });
++    const inAppAfterFirst = notifications.rows.length;
++    expect(inAppAfterFirst).toBe(2);
++    notifications.pushResult = { delivered: true, code: 'delivered' };
++    const second = await job.sweep(new Date(TUE_DEADLINE.getTime() + 5 * 60_000));
++    expect(second).toMatchObject({ recovered: 2, notified: 2 });
++    expect(notifications.rows).toHaveLength(inAppAfterFirst); // no duplicate in-app row
++    expect(
++      db.deliveryLogs
++        .filter((l) => l.kind === NotificationKind.BOOKING_REQUEST_EXPIRED)
++        .map((l) => l.status),
++    ).toEqual(['sent', 'sent']);
++  });
++
++  it('gives up after three attempts with a safe reason', async () => {
++    const { svc, db, job, notifications } = harness();
++    await svc.requestSession(CLIENT, req(CLIENT, 'st-q'));
++    jest.setSystemTime(TUE_DEADLINE);
++    notifications.pushResult = { delivered: false, code: 'transport-error' };
++    for (let i = 0; i < 4; i++) await job.sweep(new Date(TUE_DEADLINE.getTime() + i * 5 * 60_000));
++    const logs = db.deliveryLogs.filter((l) => l.kind === NotificationKind.BOOKING_REQUEST_EXPIRED);
++    expect(logs.map((l) => l.status)).toEqual(['gave_up', 'gave_up']);
++    expect(logs.every((l) => (l.attempts as number) === 3)).toBe(true);
++    expect(notifications.pushes.filter((p) => p.title === 'Session request closed')).toHaveLength(
++      6,
++    );
++  });
++});
++
++describe('S-SCHED-5 migration 20270226000000', () => {
++  const dir = path.join(
++    __dirname,
++    '..',
++    'prisma',
++    'migrations',
++    '20270226000000_scheduling_request_expiry',
++  );
++  const up = fs.readFileSync(path.join(dir, 'migration.sql'), 'utf8');
++  const down = fs.readFileSync(path.join(dir, 'down.sql'), 'utf8');
++  const integrity = fs.readFileSync(
++    path.join(
++      __dirname,
++      '..',
++      'prisma',
++      'migrations',
++      '20270222000000_scheduling_lifecycle_integrity',
++      'migration.sql',
++    ),
++    'utf8',
++  );
++
++  it('adds expired, the clear-time column and index, and does not use the new value in the same file', () => {
++    expect(up).toMatch(/ALTER TYPE "SessionStatus" ADD VALUE IF NOT EXISTS 'expired'/);
++    expect(up).toMatch(/ADD COLUMN IF NOT EXISTS "request_expires_at" TIMESTAMP\(3\)/);
++    expect(up).toMatch(/CoachingSession_status_request_expires_at_idx/);
++    const sqlOnly = up.replace(/--.*$/gm, '');
++    expect(sqlOnly.match(/'expired'/g)).toHaveLength(1);
++  });
++
++  it('the no-double-booking constraint does not count expired rows', () => {
++    const m = integrity.match(/status" IN \(([^)]*)\)/);
++    expect(m?.[1]).toBeDefined();
++    expect(m?.[1]).not.toContain('expired');
++  });
++
++  it('SchedulingJobLease has RLS enabled and forced with service_role and owner policies', () => {
++    expect(up).toMatch(/ALTER TABLE "SchedulingJobLease" ENABLE ROW LEVEL SECURITY/);
++    expect(up).toMatch(/ALTER TABLE "SchedulingJobLease" FORCE ROW LEVEL SECURITY/);
++    expect(up).toMatch(/ON "SchedulingJobLease"\s+AS PERMISSIVE FOR ALL TO service_role/);
++    expect(up).toMatch(/app\.is_owner\(\)/);
++  });
++
++  it('down.sql reverses the table, index and column and keeps expired rows readable', () => {
++    expect(down).toMatch(/DROP TABLE IF EXISTS "SchedulingJobLease"/);
++    expect(down).toMatch(/DROP INDEX IF EXISTS "CoachingSession_status_request_expires_at_idx"/);
++    expect(down).toMatch(/DROP COLUMN IF EXISTS "request_expires_at"/);
++    expect(down).toMatch(/SET "status" = 'declined'/);
++  });
++});
+diff --git a/test/utils/scheduling-fake-db.ts b/test/utils/scheduling-fake-db.ts
+index e0b45568..c00edfef 100644
+--- a/test/utils/scheduling-fake-db.ts
++++ b/test/utils/scheduling-fake-db.ts
+@@ -132,6 +132,8 @@ export class SchedulingFakeDb {
+   subAssignments: Row[] = [];
+   teamAssignments: Row[] = [];
+   deliveryLogs: Row[] = [];
++  /** S-SCHED-5: SchedulingJobLease rows (name is the primary key). */
++  leases: Row[] = [];
+ 
+   enforceLock = true;
+   enforceExclusion = true;
+@@ -270,6 +272,7 @@ export class SchedulingFakeDb {
+       approved_at: null,
+       ended_at: null,
+       end_reason: null,
++      request_expires_at: null,
+       created_at: new Date(),
+       updated_at: new Date(),
+       ...data,
+@@ -590,6 +593,34 @@ export class SchedulingFakeDb {
+     },
+   };
+ 
++  // S-SCHED-5: SchedulingJobLease (primary key on name, like the table).
++  schedulingJobLease = {
++    create: async (args: { data: Row }) => {
++      await this.tick();
++      if (this.leases.some((l) => l.name === args.data.name)) {
++        throw Object.assign(new TypeError('Unique constraint failed'), { code: 'P2002' });
++      }
++      const row = { updated_at: new Date(), ...args.data };
++      this.leases.push(row);
++      return { ...row };
++    },
++    updateMany: async (args: { where?: Row; data: Row }) => {
++      await this.tick();
++      let count = 0;
++      this.leases.forEach((l, i) => {
++        if (!this.matches(l, args.where, 'other')) return;
++        this.leases[i] = { ...l, ...args.data, updated_at: new Date() };
++        count += 1;
++      });
++      return { count };
++    },
++    findUnique: async (args: { where: { name: string } }) => {
++      await this.tick();
++      const row = this.leases.find((l) => l.name === args.where.name);
++      return row ? { ...row } : null;
++    },
++  };
++
+   // Outside a transaction a bare $executeRaw is a no-op.
+   $executeRaw: (strings?: TemplateStringsArray, ...values: unknown[]) => Promise<number> =
+     async () => 0;

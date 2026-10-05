@@ -1,0 +1,2 @@
+linked; now run: /home/user/workspace/ops/heavy.sh npx prisma generate (inside /home/user/workspace/wt/AUD-SOL-PUSH4-121-2)
+[heavy] prisma client served from cache f3a5809d679e4e48 (no generate needed)

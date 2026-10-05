@@ -1,0 +1,625 @@
+﻿2026-10-05T18:24:59.3144135Z Current runner version: '2.337.0'
+2026-10-05T18:24:59.3180405Z ##[group]Runner Image Provisioner
+2026-10-05T18:24:59.3182072Z Hosted Compute Agent
+2026-10-05T18:24:59.3183106Z Version: 20260901.588
+2026-10-05T18:24:59.3184366Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-05T18:24:59.3185638Z Build Date: 2026-09-01T19:56:44Z
+2026-10-05T18:24:59.3187256Z Worker ID: {dde7fdcb-688f-444c-8d13-4c0077209ba0}
+2026-10-05T18:24:59.3188617Z Azure Region: eastus
+2026-10-05T18:24:59.3189555Z ##[endgroup]
+2026-10-05T18:24:59.3192012Z ##[group]Operating System
+2026-10-05T18:24:59.3193061Z Ubuntu
+2026-10-05T18:24:59.3194087Z 24.04.5
+2026-10-05T18:24:59.3195079Z LTS
+2026-10-05T18:24:59.3196350Z ##[endgroup]
+2026-10-05T18:24:59.3197343Z ##[group]Runner Image
+2026-10-05T18:24:59.3198367Z Image: ubuntu-24.04
+2026-10-05T18:24:59.3199428Z Version: 20260927.320.1
+2026-10-05T18:24:59.3201610Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-05T18:24:59.3204547Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-05T18:24:59.3206721Z ##[endgroup]
+2026-10-05T18:24:59.3209068Z ##[group]GITHUB_TOKEN Permissions
+2026-10-05T18:24:59.3211901Z Contents: read
+2026-10-05T18:24:59.3212915Z Metadata: read
+2026-10-05T18:24:59.3213859Z Packages: read
+2026-10-05T18:24:59.3215013Z ##[endgroup]
+2026-10-05T18:24:59.3218577Z Secret source: Actions
+2026-10-05T18:24:59.3220215Z Cache mode: write
+2026-10-05T18:24:59.3221409Z Prepare workflow directory
+2026-10-05T18:24:59.3878600Z Prepare all required actions
+2026-10-05T18:24:59.3952108Z Getting action download info
+2026-10-05T18:24:59.5989080Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-05T18:24:59.6967349Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-05T18:24:59.8923236Z Complete job name: targeted
+2026-10-05T18:24:59.9463577Z ##[group]Checking docker version
+2026-10-05T18:24:59.9477948Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-05T18:25:00.0833278Z '1.48'
+2026-10-05T18:25:00.0849958Z Docker daemon API version: '1.48'
+2026-10-05T18:25:00.0850794Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-05T18:25:00.1021700Z '1.48'
+2026-10-05T18:25:00.1035768Z Docker client API version: '1.48'
+2026-10-05T18:25:00.1041782Z ##[endgroup]
+2026-10-05T18:25:00.1044743Z ##[group]Clean up resources from previous jobs
+2026-10-05T18:25:00.1051243Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=0ea584"
+2026-10-05T18:25:00.1249759Z ##[command]/usr/bin/docker network prune --force --filter "label=0ea584"
+2026-10-05T18:25:00.1399414Z ##[endgroup]
+2026-10-05T18:25:00.1399970Z ##[group]Create local container network
+2026-10-05T18:25:00.1410348Z ##[command]/usr/bin/docker network create --label 0ea584 github_network_463b6255255540d7846445fc592cc25d
+2026-10-05T18:25:00.1931676Z 41643aa36ddf579175103579b17992c14df197e873d8fa66ac0bfd6ec2da2151
+2026-10-05T18:25:00.1952541Z ##[endgroup]
+2026-10-05T18:25:00.1978680Z ##[group]Starting redis service container
+2026-10-05T18:25:00.2001156Z ##[command]/usr/bin/docker pull redis:7-alpine
+2026-10-05T18:25:00.4759181Z 7-alpine: Pulling from library/redis
+2026-10-05T18:25:00.5628165Z 16333ee0c00f: Pulling fs layer
+2026-10-05T18:25:00.5629673Z 83234986c742: Pulling fs layer
+2026-10-05T18:25:00.5632013Z 7eb50503c2b0: Pulling fs layer
+2026-10-05T18:25:00.5632836Z 1522f9c6f453: Pulling fs layer
+2026-10-05T18:25:00.5633856Z 9928009b15c8: Pulling fs layer
+2026-10-05T18:25:00.5634596Z 4f4fb700ef54: Pulling fs layer
+2026-10-05T18:25:00.5635438Z 4eb14bae0e1d: Pulling fs layer
+2026-10-05T18:25:00.5636381Z 1522f9c6f453: Waiting
+2026-10-05T18:25:00.5637297Z 9928009b15c8: Waiting
+2026-10-05T18:25:00.5638159Z 4f4fb700ef54: Waiting
+2026-10-05T18:25:00.5925564Z 83234986c742: Verifying Checksum
+2026-10-05T18:25:00.5927018Z 83234986c742: Download complete
+2026-10-05T18:25:00.5973621Z 7eb50503c2b0: Verifying Checksum
+2026-10-05T18:25:00.5979658Z 7eb50503c2b0: Download complete
+2026-10-05T18:25:00.6189353Z 16333ee0c00f: Verifying Checksum
+2026-10-05T18:25:00.6262561Z 16333ee0c00f: Download complete
+2026-10-05T18:25:00.6263577Z 9928009b15c8: Download complete
+2026-10-05T18:25:00.6442578Z 4f4fb700ef54: Verifying Checksum
+2026-10-05T18:25:00.6443465Z 4f4fb700ef54: Download complete
+2026-10-05T18:25:00.6547976Z 4eb14bae0e1d: Download complete
+2026-10-05T18:25:00.6807102Z 1522f9c6f453: Verifying Checksum
+2026-10-05T18:25:00.6808287Z 1522f9c6f453: Download complete
+2026-10-05T18:25:00.7382002Z 16333ee0c00f: Pull complete
+2026-10-05T18:25:00.7665748Z 83234986c742: Pull complete
+2026-10-05T18:25:00.9109886Z 7eb50503c2b0: Pull complete
+2026-10-05T18:25:01.0987382Z 1522f9c6f453: Pull complete
+2026-10-05T18:25:01.1079151Z 9928009b15c8: Pull complete
+2026-10-05T18:25:01.1171659Z 4f4fb700ef54: Pull complete
+2026-10-05T18:25:01.1296580Z 4eb14bae0e1d: Pull complete
+2026-10-05T18:25:01.1337735Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+2026-10-05T18:25:01.1350067Z Status: Downloaded newer image for redis:7-alpine
+2026-10-05T18:25:01.1359902Z docker.io/library/redis:7-alpine
+2026-10-05T18:25:01.1404775Z ##[command]/usr/bin/docker create --name 0eb342e970ef4234b99b0a51a73060d2_redis7alpine_ad3bc6 --label 0ea584 --network github_network_463b6255255540d7846445fc592cc25d --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+2026-10-05T18:25:01.1688635Z 9a979b6450e2a17dd2836c47ba5563d6fb58c4f5b67ae69b03228966cdbee8f3
+2026-10-05T18:25:01.1710164Z ##[command]/usr/bin/docker start 9a979b6450e2a17dd2836c47ba5563d6fb58c4f5b67ae69b03228966cdbee8f3
+2026-10-05T18:25:01.3936750Z 9a979b6450e2a17dd2836c47ba5563d6fb58c4f5b67ae69b03228966cdbee8f3
+2026-10-05T18:25:01.3964385Z ##[command]/usr/bin/docker ps --all --filter id=9a979b6450e2a17dd2836c47ba5563d6fb58c4f5b67ae69b03228966cdbee8f3 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-05T18:25:01.4101111Z 9a979b6450e2a17dd2836c47ba5563d6fb58c4f5b67ae69b03228966cdbee8f3 Up Less than a second (health: starting)
+2026-10-05T18:25:01.4122321Z ##[command]/usr/bin/docker port 9a979b6450e2a17dd2836c47ba5563d6fb58c4f5b67ae69b03228966cdbee8f3
+2026-10-05T18:25:01.4245088Z 6379/tcp -> 0.0.0.0:6379
+2026-10-05T18:25:01.4245769Z 6379/tcp -> [::]:6379
+2026-10-05T18:25:01.4292420Z ##[endgroup]
+2026-10-05T18:25:01.4301649Z ##[group]Waiting for all services to be ready
+2026-10-05T18:25:01.4315743Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 9a979b6450e2a17dd2836c47ba5563d6fb58c4f5b67ae69b03228966cdbee8f3
+2026-10-05T18:25:01.4438925Z starting
+2026-10-05T18:25:01.4460472Z redis service is starting, waiting 2 seconds before checking again.
+2026-10-05T18:25:03.4465109Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 9a979b6450e2a17dd2836c47ba5563d6fb58c4f5b67ae69b03228966cdbee8f3
+2026-10-05T18:25:03.4597379Z starting
+2026-10-05T18:25:03.4604358Z redis service is starting, waiting 3 seconds before checking again.
+2026-10-05T18:25:07.3547411Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 9a979b6450e2a17dd2836c47ba5563d6fb58c4f5b67ae69b03228966cdbee8f3
+2026-10-05T18:25:07.3673096Z healthy
+2026-10-05T18:25:07.3688994Z redis service is healthy.
+2026-10-05T18:25:07.3689480Z ##[endgroup]
+2026-10-05T18:25:07.3977469Z ##[group]Run actions/checkout@v6
+2026-10-05T18:25:07.3978078Z with:
+2026-10-05T18:25:07.3978383Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-05T18:25:07.3981095Z   token: ***
+2026-10-05T18:25:07.3981304Z   ssh-strict: true
+2026-10-05T18:25:07.3981509Z   ssh-user: git
+2026-10-05T18:25:07.3981727Z   persist-credentials: true
+2026-10-05T18:25:07.3981989Z   clean: true
+2026-10-05T18:25:07.3982228Z   sparse-checkout-cone-mode: true
+2026-10-05T18:25:07.3982719Z   fetch-depth: 1
+2026-10-05T18:25:07.3982923Z   fetch-tags: false
+2026-10-05T18:25:07.3983134Z   show-progress: true
+2026-10-05T18:25:07.3983344Z   lfs: false
+2026-10-05T18:25:07.3983532Z   submodules: false
+2026-10-05T18:25:07.3983738Z   set-safe-directory: true
+2026-10-05T18:25:07.3983981Z   allow-unsafe-pr-checkout: false
+2026-10-05T18:25:07.3984483Z ##[endgroup]
+2026-10-05T18:25:07.4976389Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-05T18:25:07.4977952Z ##[group]Getting Git version info
+2026-10-05T18:25:07.4978589Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-05T18:25:07.4979294Z [command]/usr/bin/git version
+2026-10-05T18:25:07.5050011Z git version 2.55.0
+2026-10-05T18:25:07.5074636Z ##[endgroup]
+2026-10-05T18:25:07.5089136Z Temporarily overriding HOME='/home/runner/work/_temp/f9cd5d0b-7c28-474d-8a5d-59563a7feb70' before making global git config changes
+2026-10-05T18:25:07.5090169Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T18:25:07.5095895Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-05T18:25:07.5150286Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-05T18:25:07.5154431Z ##[group]Determining repository object format
+2026-10-05T18:25:07.5157294Z ##[endgroup]
+2026-10-05T18:25:07.5157962Z ##[group]Initializing the repository
+2026-10-05T18:25:07.5163417Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-05T18:25:07.5299872Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-05T18:25:07.5300557Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-05T18:25:07.5301108Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-05T18:25:07.5301522Z hint: call:
+2026-10-05T18:25:07.5301741Z hint:
+2026-10-05T18:25:07.5302054Z hint: 	git config --global init.defaultBranch <name>
+2026-10-05T18:25:07.5302391Z hint:
+2026-10-05T18:25:07.5302704Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-05T18:25:07.5303387Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-05T18:25:07.5303802Z hint:
+2026-10-05T18:25:07.5304014Z hint: 	git branch -m <name>
+2026-10-05T18:25:07.5304258Z hint:
+2026-10-05T18:25:07.5304804Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-05T18:25:07.5306584Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-05T18:25:07.5319836Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-05T18:25:07.5372384Z ##[endgroup]
+2026-10-05T18:25:07.5373083Z ##[group]Disabling automatic garbage collection
+2026-10-05T18:25:07.5377744Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-05T18:25:07.5408716Z ##[endgroup]
+2026-10-05T18:25:07.5409371Z ##[group]Setting up auth
+2026-10-05T18:25:07.5410334Z Removing SSH command configuration
+2026-10-05T18:25:07.5417838Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T18:25:07.5450106Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T18:25:07.5817094Z Removing HTTP extra header
+2026-10-05T18:25:07.5823237Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T18:25:07.5858818Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T18:25:07.6077836Z Removing includeIf entries pointing to credentials config files
+2026-10-05T18:25:07.6084835Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T18:25:07.6117934Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T18:25:07.6338219Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-3c077b80-c1a6-4f83-ab72-871d4205360d.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-05T18:25:07.6377374Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-3c077b80-c1a6-4f83-ab72-871d4205360d.config
+2026-10-05T18:25:07.6406506Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-3c077b80-c1a6-4f83-ab72-871d4205360d.config
+2026-10-05T18:25:07.6439594Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-3c077b80-c1a6-4f83-ab72-871d4205360d.config
+2026-10-05T18:25:07.6476853Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-3c077b80-c1a6-4f83-ab72-871d4205360d.config
+2026-10-05T18:25:07.6503493Z ##[endgroup]
+2026-10-05T18:25:07.6504112Z ##[group]Fetching the repository
+2026-10-05T18:25:07.6512001Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +b607db55a973355f338755d8b5339162541b3855:refs/remotes/origin/ci/B-CM9-120-before-1
+2026-10-05T18:25:08.9549083Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-05T18:25:08.9550257Z  * [new ref]         b607db55a973355f338755d8b5339162541b3855 -> origin/ci/B-CM9-120-before-1
+2026-10-05T18:25:08.9560365Z [command]/usr/bin/git branch --list --remote origin/ci/B-CM9-120-before-1
+2026-10-05T18:25:08.9585369Z   origin/ci/B-CM9-120-before-1
+2026-10-05T18:25:08.9594480Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-CM9-120-before-1
+2026-10-05T18:25:08.9618545Z b607db55a973355f338755d8b5339162541b3855
+2026-10-05T18:25:08.9623197Z ##[endgroup]
+2026-10-05T18:25:08.9623931Z ##[group]Determining the checkout info
+2026-10-05T18:25:08.9624794Z ##[endgroup]
+2026-10-05T18:25:08.9647132Z [command]/usr/bin/git sparse-checkout disable
+2026-10-05T18:25:08.9681164Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-05T18:25:08.9708875Z ##[group]Checking out the ref
+2026-10-05T18:25:08.9712810Z [command]/usr/bin/git checkout --progress --force -B ci/B-CM9-120-before-1 refs/remotes/origin/ci/B-CM9-120-before-1
+2026-10-05T18:25:09.2269595Z Switched to a new branch 'ci/B-CM9-120-before-1'
+2026-10-05T18:25:09.2275216Z branch 'ci/B-CM9-120-before-1' set up to track 'origin/ci/B-CM9-120-before-1'.
+2026-10-05T18:25:09.2303109Z ##[endgroup]
+2026-10-05T18:25:09.2347590Z [command]/usr/bin/git log -1 --format=%H
+2026-10-05T18:25:09.2365753Z b607db55a973355f338755d8b5339162541b3855
+2026-10-05T18:25:09.2623649Z ##[group]Run actions/setup-node@v6
+2026-10-05T18:25:09.2623975Z with:
+2026-10-05T18:25:09.2624181Z   node-version: 20
+2026-10-05T18:25:09.2624390Z   cache: npm
+2026-10-05T18:25:09.2624589Z   check-latest: false
+2026-10-05T18:25:09.2627424Z   token: ***
+2026-10-05T18:25:09.2627656Z   package-manager-cache: true
+2026-10-05T18:25:09.2627916Z ##[endgroup]
+2026-10-05T18:25:09.4048427Z Attempting to download 20...
+2026-10-05T18:25:09.9372042Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-05T18:25:10.2650321Z Extracting ...
+2026-10-05T18:25:10.2777063Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/fd5d3768-ed67-49e4-ab2c-7b5c50fe2e41 -f /home/runner/work/_temp/9ca62f78-a689-439f-898a-3028dcbe3765
+2026-10-05T18:25:11.3277247Z Adding to the cache ...
+2026-10-05T18:25:13.1864587Z ##[group]Environment details
+2026-10-05T18:25:13.4228996Z node: v20.20.2
+2026-10-05T18:25:13.4229496Z npm: 10.8.2
+2026-10-05T18:25:13.4229838Z yarn: 1.22.22
+2026-10-05T18:25:13.4230784Z ##[endgroup]
+2026-10-05T18:25:13.4249981Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+2026-10-05T18:25:13.5353087Z /home/runner/.npm
+2026-10-05T18:25:13.6037370Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-05T18:25:14.1647053Z Received 86828135 of 86828135 (100.0%), 165.6 MBs/sec
+2026-10-05T18:25:14.1648724Z Cache Size: ~83 MB (86828135 B)
+2026-10-05T18:25:14.1681295Z [command]/usr/bin/tar -xf /home/runner/work/_temp/da8377d1-5be0-46c3-bfeb-dbcb202a9c5b/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+2026-10-05T18:25:14.3445063Z Cache restored successfully
+2026-10-05T18:25:14.3491584Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-05T18:25:14.3707030Z ##[group]Run npm ci
+2026-10-05T18:25:14.3707348Z [36;1mnpm ci[0m
+2026-10-05T18:25:14.3943698Z shell: /usr/bin/bash -e {0}
+2026-10-05T18:25:14.3944053Z ##[endgroup]
+2026-10-05T18:25:20.3433912Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-05T18:25:21.4057904Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-05T18:25:22.5766181Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T18:25:24.0113884Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T18:25:24.0187439Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T18:25:24.0800701Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T18:25:37.3104960Z 
+2026-10-05T18:25:37.3106428Z > growth-project-backend@1.0.0 postinstall
+2026-10-05T18:25:37.3107133Z > prisma generate
+2026-10-05T18:25:37.3107370Z 
+2026-10-05T18:25:38.2568234Z Prisma schema loaded from prisma/schema.prisma
+2026-10-05T18:25:42.1588170Z ┌─────────────────────────────────────────────────────────┐
+2026-10-05T18:25:42.1588795Z 
+2026-10-05T18:25:42.1590056Z │  Update available 6.19.3 -> 8.0.0-rc.20                 │
+2026-10-05T18:25:42.1591023Z │                                                         │
+2026-10-05T18:25:42.1592033Z │  This is a major update - please follow the guide at    │
+2026-10-05T18:25:42.1593017Z │  https://pris.ly/d/major-version-upgrade                │
+2026-10-05T18:25:42.1593887Z │                                                         │
+2026-10-05T18:25:42.1594710Z │  Run the following to update                            │
+2026-10-05T18:25:42.1595567Z │    npm i --save-dev prisma@latest                       │
+2026-10-05T18:25:42.1596641Z │    npm i @prisma/client@latest                          │
+2026-10-05T18:25:42.1597532Z └─────────────────────────────────────────────────────────┘
+2026-10-05T18:25:42.1599105Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.16s
+2026-10-05T18:25:42.1599682Z 
+2026-10-05T18:25:42.1600290Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-05T18:25:42.1600874Z 
+2026-10-05T18:25:42.1601806Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+2026-10-05T18:25:42.1602609Z 
+2026-10-05T18:25:42.2171683Z 
+2026-10-05T18:25:42.2172395Z > growth-project-backend@1.0.0 prepare
+2026-10-05T18:25:42.2173070Z > lefthook install
+2026-10-05T18:25:42.2173349Z 
+2026-10-05T18:25:42.2694886Z sync hooks: ✔️(pre-commit, commit-msg)
+2026-10-05T18:25:42.2867899Z 
+2026-10-05T18:25:42.2868793Z added 1115 packages, and audited 1116 packages in 28s
+2026-10-05T18:25:42.2869116Z 
+2026-10-05T18:25:42.2869310Z 202 packages are looking for funding
+2026-10-05T18:25:42.2869658Z   run `npm fund` for details
+2026-10-05T18:25:42.2912854Z 
+2026-10-05T18:25:42.2913401Z 3 high severity vulnerabilities
+2026-10-05T18:25:42.2914146Z 
+2026-10-05T18:25:42.2914663Z To address all issues (including breaking changes), run:
+2026-10-05T18:25:42.2915289Z   npm audit fix --force
+2026-10-05T18:25:42.2915548Z 
+2026-10-05T18:25:42.2915753Z Run `npm audit` for details.
+2026-10-05T18:25:42.3712743Z ##[group]Run npx prisma generate
+2026-10-05T18:25:42.3713238Z [36;1mnpx prisma generate[0m
+2026-10-05T18:25:42.3788504Z shell: /usr/bin/bash -e {0}
+2026-10-05T18:25:42.3788936Z ##[endgroup]
+2026-10-05T18:25:43.6665492Z Prisma schema loaded from prisma/schema.prisma
+2026-10-05T18:25:47.5772669Z 
+2026-10-05T18:25:47.5774090Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.13s
+2026-10-05T18:25:47.5774575Z 
+2026-10-05T18:25:47.5775038Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-05T18:25:47.5775477Z 
+2026-10-05T18:25:47.5776559Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+2026-10-05T18:25:47.5777178Z 
+2026-10-05T18:25:47.6944882Z ##[group]Run set -euo pipefail
+2026-10-05T18:25:47.6945401Z [36;1mset -euo pipefail[0m
+2026-10-05T18:25:47.6946267Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-05T18:25:47.6946929Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-05T18:25:47.6947317Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-05T18:25:47.6947623Z [36;1mnpx jest --ci --runInBand "${SPECS[@]}"[0m
+2026-10-05T18:25:47.7011498Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-05T18:25:47.7011847Z env:
+2026-10-05T18:25:47.7012069Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-05T18:25:47.7012427Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-05T18:25:47.7012744Z ##[endgroup]
+2026-10-05T18:25:47.7112716Z specs: test/refund-reversal-recovery.spec.ts
+2026-10-05T18:25:51.2691234Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=mf refund=37adaf3e-831b-41c9-863c-cf1d1ea32d4e code=error[39m
+2026-10-05T18:25:51.3811378Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.3814707Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.3819046Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.3820970Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.3827665Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.3829533Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.3837647Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.3840866Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.3851023Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.3853820Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.3861773Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.3864925Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.3873298Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.3876618Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.3892727Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.3894591Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.3897627Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.3899513Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.3911266Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.3914127Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.3921754Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.3924857Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.3931368Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.3934873Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.3944206Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.3948562Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.3951774Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.3955158Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.3959251Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.3962593Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.3966218Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.3969514Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.3972890Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.3976355Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.3979739Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.3983056Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.3987497Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.3990769Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.3994706Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.3998038Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.4006947Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.4010233Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.4015715Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.4019265Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.4023294Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.4026923Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.4029695Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.4031544Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.4063829Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.4065670Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.4069495Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.4071310Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.4078152Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.4082013Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.4085751Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.4089348Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.4093849Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.4097562Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.4101187Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.4104568Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.4108704Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.4112153Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.4115582Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.4119229Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.4123459Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.4127269Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.4130861Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.4134230Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.4138025Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.4141845Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.4145452Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.4148990Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.4152295Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.4155599Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.4159139Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.4162444Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.4165702Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.4169704Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.4172872Z [31m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-fair-000 op=tgp-tr-rev-refund-r-000 amount=122: kind=unknown[39m
+2026-10-05T18:25:51.4176291Z [33m[Nest] 3082  - [39m10/05/2026, 6:25:51 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=fair-000 refund=r-000 code=SFEE_REVERSAL_UNCERTAIN[39m
+2026-10-05T18:25:51.4607601Z FAIL test/refund-reversal-recovery.spec.ts (178 MB heap size)
+2026-10-05T18:25:51.4609915Z   B-674-1: the head slice is published with the operation that records it
+2026-10-05T18:25:51.4613137Z     ✕ a failed slice write rolls the operation back; the redelivery records 122/122/122 once, one send (15 ms)
+2026-10-05T18:25:51.4614468Z     ✕ a held older slice write: the next reversal waits for its transaction, then both count (150/150/150) (13 ms)
+2026-10-05T18:25:51.4616098Z     ✕ a found reversal whose slice write failed: the owner retry records 122/122/122 and its receipt, no send (50 ms)
+2026-10-05T18:25:51.4617602Z     ✓ control: an ordinary refund mirrors and posts the head share once; a redelivery changes nothing (4 ms)
+2026-10-05T18:25:51.4618727Z   B-674-15: owner reconcile records the refund's own operation before anything owed
+2026-10-05T18:25:51.4620178Z     ✕ a full found reversal whose source posting rolled back: the retry records 245 and its receipt, no send (8 ms)
+2026-10-05T18:25:51.4621224Z     ✕ a full refund whose operation the stuck-reversal sweep completed is recorded with its posting (3 ms)
+2026-10-05T18:25:51.4622126Z     ✕ a partial refund whose operation a sibling refund re-drove (transfer now full) is recorded (3 ms)
+2026-10-05T18:25:51.4623386Z     ✓ a found receipt another refund holds is not this refund's: the owner records the receipt named now (2 ms)
+2026-10-05T18:25:51.4624284Z     ✓ control: a partial refund completed by the sweep (transfer not full) is recorded once (2 ms)
+2026-10-05T18:25:51.4625084Z     ✓ control: an ordinary full found reversal records 245 and its receipt without sending (2 ms)
+2026-10-05T18:25:51.4625772Z   B-674-16: a re-drive of an existing operation is an attempt the sweep pages past
+2026-10-05T18:25:51.4626943Z     ✕ 21 refunds with failing pending operations, limit 1: two restarted sweeps reach the recoverable 21st (39 ms)
+2026-10-05T18:25:51.4627385Z 
+2026-10-05T18:25:51.4628114Z   ● B-674-1: the head slice is published with the operation that records it › a failed slice write rolls the operation back; the redelivery records 122/122/122 once, one send
+2026-10-05T18:25:51.4628727Z 
+2026-10-05T18:25:51.4628915Z     expect(received).toEqual(expected) // deep equality
+2026-10-05T18:25:51.4629166Z 
+2026-10-05T18:25:51.4629272Z     - Expected  - 2
+2026-10-05T18:25:51.4629502Z     + Received  + 2
+2026-10-05T18:25:51.4629622Z 
+2026-10-05T18:25:51.4629710Z       Object {
+2026-10-05T18:25:51.4629914Z         "done": false,
+2026-10-05T18:25:51.4630149Z     -   "op": "pending",
+2026-10-05T18:25:51.4630402Z     +   "op": "succeeded",
+2026-10-05T18:25:51.4630644Z         "postings": Array [],
+2026-10-05T18:25:51.4630883Z         "slice": 0,
+2026-10-05T18:25:51.4631093Z         "stripe": 122,
+2026-10-05T18:25:51.4631314Z     -   "transfer": 0,
+2026-10-05T18:25:51.4631548Z     +   "transfer": 122,
+2026-10-05T18:25:51.4631777Z       }
+2026-10-05T18:25:51.4631884Z 
+2026-10-05T18:25:51.4633026Z     [0m [90m 124 |[39m     [36mconst[39m afterFailure [33m=[39m { [33m...[39mmoney(h[33m,[39m [32m'mf'[39m)[33m,[39m op[33m:[39m op()[33m.[39mstatus[33m,[39m done[33m:[39m h[33m.[39mdb[33m.[39mstate[33m.[39mchargeRefund[[35m0[39m][33m.[39mtransfer_reversed }[33m;[39m
+2026-10-05T18:25:51.4634416Z      [90m 125 |[39m     [36mawait[39m refund(h[33m,[39m [32m'mf'[39m)[33m;[39m
+2026-10-05T18:25:51.4636268Z     [31m[1m>[22m[39m[90m 126 |[39m     expect(afterFailure)[33m.[39mtoEqual({ stripe[33m:[39m [35m122[39m[33m,[39m transfer[33m:[39m [35m0[39m[33m,[39m slice[33m:[39m [35m0[39m[33m,[39m postings[33m:[39m [][33m,[39m op[33m:[39m [32m'pending'[39m[33m,[39m done[33m:[39m [36mfalse[39m })[33m;[39m
+2026-10-05T18:25:51.4637503Z      [90m     |[39m                          [31m[1m^[22m[39m
+2026-10-05T18:25:51.4639014Z      [90m 127 |[39m     expect(money(h[33m,[39m [32m'mf'[39m))[33m.[39mtoEqual({ stripe[33m:[39m [35m122[39m[33m,[39m transfer[33m:[39m [35m122[39m[33m,[39m slice[33m:[39m [35m122[39m[33m,[39m postings[33m:[39m [[35m122[39m] })[33m;[39m
+2026-10-05T18:25:51.4642535Z      [90m 128 |[39m     expect([op()[33m.[39mstatus[33m,[39m h[33m.[39mdb[33m.[39mstate[33m.[39mchargeRefund[[35m0[39m][33m.[39mtransfer_reversed[33m,[39m sends(h)])[33m.[39mtoEqual([[32m'succeeded'[39m[33m,[39m [36mtrue[39m[33m,[39m [[35m122[39m]])[33m;[39m
+2026-10-05T18:25:51.4644489Z      [90m 129 |[39m   })[33m;[39m[0m
+2026-10-05T18:25:51.4644821Z 
+2026-10-05T18:25:51.4645264Z       at Object.<anonymous> (test/refund-reversal-recovery.spec.ts:126:26)
+2026-10-05T18:25:51.4645800Z 
+2026-10-05T18:25:51.4647515Z   ● B-674-1: the head slice is published with the operation that records it › a held older slice write: the next reversal waits for its transaction, then both count (150/150/150)
+2026-10-05T18:25:51.4648642Z 
+2026-10-05T18:25:51.4648947Z     expect(received).toEqual(expected) // deep equality
+2026-10-05T18:25:51.4649364Z 
+2026-10-05T18:25:51.4649528Z     - Expected  - 1
+2026-10-05T18:25:51.4649904Z     + Received  + 2
+2026-10-05T18:25:51.4650123Z 
+2026-10-05T18:25:51.4650261Z       Object {
+2026-10-05T18:25:51.4650619Z         "sends": Array [
+2026-10-05T18:25:51.4651329Z           100,
+2026-10-05T18:25:51.4651667Z     +     50,
+2026-10-05T18:25:51.4652005Z         ],
+2026-10-05T18:25:51.4652342Z     -   "slice": 0,
+2026-10-05T18:25:51.4652701Z     +   "slice": 150,
+2026-10-05T18:25:51.4653060Z       }
+2026-10-05T18:25:51.4653244Z 
+2026-10-05T18:25:51.4653616Z     [0m [90m 155 |[39m     release()[33m;[39m
+2026-10-05T18:25:51.4654711Z      [90m 156 |[39m     [36mawait[39m [33mPromise[39m[33m.[39mall([first[33m,[39m second])[33m;[39m
+2026-10-05T18:25:51.4656817Z     [31m[1m>[22m[39m[90m 157 |[39m     expect(during)[33m.[39mtoEqual({ sends[33m:[39m [[35m100[39m][33m,[39m slice[33m:[39m [35m0[39m })[33m;[39m
+2026-10-05T18:25:51.4658124Z      [90m     |[39m                    [31m[1m^[22m[39m
+2026-10-05T18:25:51.4660055Z      [90m 158 |[39m     expect(money(h[33m,[39m [32m'mo'[39m))[33m.[39mtoMatchObject({ stripe[33m:[39m [35m150[39m[33m,[39m transfer[33m:[39m [35m150[39m[33m,[39m slice[33m:[39m [35m150[39m })[33m;[39m
+2026-10-05T18:25:51.4662044Z      [90m 159 |[39m     expect(sends(h))[33m.[39mtoEqual([[35m100[39m[33m,[39m [35m50[39m])[33m;[39m
+2026-10-05T18:25:51.4662993Z      [90m 160 |[39m   })[33m;[39m[0m
+2026-10-05T18:25:51.4663321Z 
+2026-10-05T18:25:51.4663750Z       at Object.<anonymous> (test/refund-reversal-recovery.spec.ts:157:20)
+2026-10-05T18:25:51.4664303Z 
+2026-10-05T18:25:51.4665748Z   ● B-674-1: the head slice is published with the operation that records it › a found reversal whose slice write failed: the owner retry records 122/122/122 and its receipt, no send
+2026-10-05T18:25:51.4667195Z 
+2026-10-05T18:25:51.4667521Z     expect(received).toEqual(expected) // deep equality
+2026-10-05T18:25:51.4667942Z 
+2026-10-05T18:25:51.4668112Z     - Expected  - 2
+2026-10-05T18:25:51.4668488Z     + Received  + 2
+2026-10-05T18:25:51.4668710Z 
+2026-10-05T18:25:51.4668854Z       Object {
+2026-10-05T18:25:51.4669210Z     -   "ops": 0,
+2026-10-05T18:25:51.4669562Z     +   "ops": 1,
+2026-10-05T18:25:51.4669955Z         "postings": Array [],
+2026-10-05T18:25:51.4670931Z         "slice": 0,
+2026-10-05T18:25:51.4671325Z         "stripe": 122,
+2026-10-05T18:25:51.4671723Z     -   "transfer": 0,
+2026-10-05T18:25:51.4672114Z     +   "transfer": 122,
+2026-10-05T18:25:51.4672512Z       }
+2026-10-05T18:25:51.4672695Z 
+2026-10-05T18:25:51.4674057Z     [0m [90m 168 |[39m     [36mconst[39m afterFailure [33m=[39m { [33m...[39mmoney(h[33m,[39m [32m'ff'[39m)[33m,[39m ops[33m:[39m h[33m.[39mdb[33m.[39mstate[33m.[39mtransferReversalOp[33m.[39mlength }[33m;[39m
+2026-10-05T18:25:51.4675410Z      [90m 169 |[39m     [36mconst[39m out [33m=[39m [36mawait[39m h[33m.[39mrestart()[33m.[39mreconcileTransferReversal([32m'r-ff'[39m)[33m;[39m
+2026-10-05T18:25:51.4677194Z     [31m[1m>[22m[39m[90m 170 |[39m     expect(afterFailure)[33m.[39mtoEqual({ stripe[33m:[39m [35m122[39m[33m,[39m transfer[33m:[39m [35m0[39m[33m,[39m slice[33m:[39m [35m0[39m[33m,[39m postings[33m:[39m [][33m,[39m ops[33m:[39m [35m0[39m })[33m;[39m
+2026-10-05T18:25:51.4678262Z      [90m     |[39m                          [31m[1m^[22m[39m
+2026-10-05T18:25:51.4679166Z      [90m 171 |[39m     expect(out)[33m.[39mtoMatchObject({ outcome[33m:[39m [32m'recorded_from_stripe'[39m[33m,[39m amount_cents[33m:[39m [35m122[39m })[33m;[39m
+2026-10-05T18:25:51.4680682Z      [90m 172 |[39m     expect(money(h[33m,[39m [32m'ff'[39m))[33m.[39mtoEqual({ stripe[33m:[39m [35m122[39m[33m,[39m transfer[33m:[39m [35m122[39m[33m,[39m slice[33m:[39m [35m122[39m[33m,[39m postings[33m:[39m [[35m122[39m] })[33m;[39m
+2026-10-05T18:25:51.4682339Z      [90m 173 |[39m     expect(h[33m.[39mrefund([32m'r-ff'[39m))[33m.[39mtoMatchObject({ transfer_reversed[33m:[39m [36mtrue[39m[33m,[39m transfer_reversal_stripe_id[33m:[39m [32m'trr_found_ff'[39m })[33m;[39m[0m
+2026-10-05T18:25:51.4683067Z 
+2026-10-05T18:25:51.4683319Z       at Object.<anonymous> (test/refund-reversal-recovery.spec.ts:170:26)
+2026-10-05T18:25:51.4683811Z 
+2026-10-05T18:25:51.4684650Z   ● B-674-15: owner reconcile records the refund's own operation before anything owed › a full found reversal whose source posting rolled back: the retry records 245 and its receipt, no send
+2026-10-05T18:25:51.4685336Z 
+2026-10-05T18:25:51.4685520Z     expect(received).toEqual(expected) // deep equality
+2026-10-05T18:25:51.4685758Z 
+2026-10-05T18:25:51.4685859Z     - Expected  - 3
+2026-10-05T18:25:51.4686234Z     + Received  + 3
+2026-10-05T18:25:51.4686366Z 
+2026-10-05T18:25:51.4686452Z       Object {
+2026-10-05T18:25:51.4686674Z     -   "amount_cents": 245,
+2026-10-05T18:25:51.4686925Z     +   "amount_cents": 0,
+2026-10-05T18:25:51.4687192Z         "charge_refund_id": "r-fp",
+2026-10-05T18:25:51.4687513Z     -   "outcome": "recorded_from_stripe",
+2026-10-05T18:25:51.4687867Z     -   "stripe_transfer_reversal_id": "trr_found_fp",
+2026-10-05T18:25:51.4688207Z     +   "outcome": "nothing_owed",
+2026-10-05T18:25:51.4688529Z     +   "stripe_transfer_reversal_id": null,
+2026-10-05T18:25:51.4688807Z       }
+2026-10-05T18:25:51.4688917Z 
+2026-10-05T18:25:51.4689476Z     [0m [90m 194 |[39m     expect(h[33m.[39mrefund([32m'r-fp'[39m)[33m.[39mtransfer_reversed)[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+2026-10-05T18:25:51.4690548Z      [90m 195 |[39m     [36mconst[39m out [33m=[39m [36mawait[39m h[33m.[39mrestart()[33m.[39mreconcileTransferReversal([32m'r-fp'[39m)[33m;[39m
+2026-10-05T18:25:51.4691320Z     [31m[1m>[22m[39m[90m 196 |[39m     expect(out)[33m.[39mtoEqual({
+2026-10-05T18:25:51.4691789Z      [90m     |[39m                 [31m[1m^[22m[39m
+2026-10-05T18:25:51.4692282Z      [90m 197 |[39m       charge_refund_id[33m:[39m [32m'r-fp'[39m[33m,[39m
+2026-10-05T18:25:51.4692870Z      [90m 198 |[39m       outcome[33m:[39m [32m'recorded_from_stripe'[39m[33m,[39m
+2026-10-05T18:25:51.4693560Z      [90m 199 |[39m       stripe_transfer_reversal_id[33m:[39m [32m'trr_found_fp'[39m[33m,[39m[0m
+2026-10-05T18:25:51.4693920Z 
+2026-10-05T18:25:51.4694313Z       at Object.<anonymous> (test/refund-reversal-recovery.spec.ts:196:17)
+2026-10-05T18:25:51.4694621Z 
+2026-10-05T18:25:51.4695397Z   ● B-674-15: owner reconcile records the refund's own operation before anything owed › a full refund whose operation the stuck-reversal sweep completed is recorded with its posting
+2026-10-05T18:25:51.4696182Z 
+2026-10-05T18:25:51.4696368Z     expect(received).toEqual(expected) // deep equality
+2026-10-05T18:25:51.4696604Z 
+2026-10-05T18:25:51.4696695Z     - Expected  - 3
+2026-10-05T18:25:51.4696918Z     + Received  + 3
+2026-10-05T18:25:51.4697037Z 
+2026-10-05T18:25:51.4697124Z       Array [
+2026-10-05T18:25:51.4697356Z     -   "recorded_from_stripe",
+2026-10-05T18:25:51.4697605Z     -   245,
+2026-10-05T18:25:51.4697800Z     -   "trr_1",
+2026-10-05T18:25:51.4698006Z     +   "nothing_owed",
+2026-10-05T18:25:51.4698219Z     +   0,
+2026-10-05T18:25:51.4698409Z     +   null,
+2026-10-05T18:25:51.4698604Z       ]
+2026-10-05T18:25:51.4698713Z 
+2026-10-05T18:25:51.4699211Z     [0m [90m 211 |[39m     [36mawait[39m h[33m.[39mtransfers[33m.[39mresolvePendingReversals(t[33m.[39mid)[33m;[39m
+2026-10-05T18:25:51.4700215Z      [90m 212 |[39m     [36mconst[39m out [33m=[39m [36mawait[39m h[33m.[39msvc[33m.[39mreconcileTransferReversal([32m'r-f'[39m)[33m;[39m
+2026-10-05T18:25:51.4701552Z     [31m[1m>[22m[39m[90m 213 |[39m     expect([out[33m.[39moutcome[33m,[39m out[33m.[39mamount_cents[33m,[39m h[33m.[39mrefund([32m'r-f'[39m)[33m.[39mtransfer_reversal_stripe_id])[33m.[39mtoEqual([
+2026-10-05T18:25:51.4702573Z      [90m     |[39m                                                                                          [31m[1m^[22m[39m
+2026-10-05T18:25:51.4703140Z      [90m 214 |[39m       [32m'recorded_from_stripe'[39m[33m,[39m
+2026-10-05T18:25:51.4703572Z      [90m 215 |[39m       [35m245[39m[33m,[39m
+2026-10-05T18:25:51.4704126Z      [90m 216 |[39m       [32m'trr_1'[39m[33m,[39m[0m
+2026-10-05T18:25:51.4704352Z 
+2026-10-05T18:25:51.4704604Z       at Object.<anonymous> (test/refund-reversal-recovery.spec.ts:213:90)
+2026-10-05T18:25:51.4704899Z 
+2026-10-05T18:25:51.4705657Z   ● B-674-15: owner reconcile records the refund's own operation before anything owed › a partial refund whose operation a sibling refund re-drove (transfer now full) is recorded
+2026-10-05T18:25:51.4706429Z 
+2026-10-05T18:25:51.4706612Z     expect(received).toEqual(expected) // deep equality
+2026-10-05T18:25:51.4706840Z 
+2026-10-05T18:25:51.4706935Z     - Expected  - 3
+2026-10-05T18:25:51.4707143Z     + Received  + 3
+2026-10-05T18:25:51.4707266Z 
+2026-10-05T18:25:51.4707348Z       Array [
+2026-10-05T18:25:51.4707574Z     -   "recorded_from_stripe",
+2026-10-05T18:25:51.4707819Z     -   122,
+2026-10-05T18:25:51.4708013Z     -   "trr_1",
+2026-10-05T18:25:51.4708218Z     +   "nothing_owed",
+2026-10-05T18:25:51.4708430Z     +   0,
+2026-10-05T18:25:51.4708623Z     +   null,
+2026-10-05T18:25:51.4708818Z       ]
+2026-10-05T18:25:51.4708919Z 
+2026-10-05T18:25:51.4709498Z     [0m [90m 229 |[39m     [36mawait[39m h[33m.[39msvc[33m.[39mretryPendingTransferReversals([36mnew[39m [33mDate[39m())[33m;[39m
+2026-10-05T18:25:51.4710546Z      [90m 230 |[39m     [36mconst[39m out [33m=[39m [36mawait[39m h[33m.[39msvc[33m.[39mreconcileTransferReversal([32m'r-a'[39m)[33m;[39m
+2026-10-05T18:25:51.4711840Z     [31m[1m>[22m[39m[90m 231 |[39m     expect([out[33m.[39moutcome[33m,[39m out[33m.[39mamount_cents[33m,[39m h[33m.[39mrefund([32m'r-a'[39m)[33m.[39mtransfer_reversal_stripe_id])[33m.[39mtoEqual([
+2026-10-05T18:25:51.4712856Z      [90m     |[39m                                                                                          [31m[1m^[22m[39m
+2026-10-05T18:25:51.4713412Z      [90m 232 |[39m       [32m'recorded_from_stripe'[39m[33m,[39m
+2026-10-05T18:25:51.4713846Z      [90m 233 |[39m       [35m122[39m[33m,[39m
+2026-10-05T18:25:51.4714394Z      [90m 234 |[39m       [32m'trr_1'[39m[33m,[39m[0m
+2026-10-05T18:25:51.4714624Z 
+2026-10-05T18:25:51.4714872Z       at Object.<anonymous> (test/refund-reversal-recovery.spec.ts:231:90)
+2026-10-05T18:25:51.4715172Z 
+2026-10-05T18:25:51.4716084Z   ● B-674-16: a re-drive of an existing operation is an attempt the sweep pages past › 21 refunds with failing pending operations, limit 1: two restarted sweeps reach the recoverable 21st
+2026-10-05T18:25:51.4716760Z 
+2026-10-05T18:25:51.4716939Z     expect(received).toEqual(expected) // deep equality
+2026-10-05T18:25:51.4717166Z 
+2026-10-05T18:25:51.4717266Z     - Expected  - 1
+2026-10-05T18:25:51.4717480Z     + Received  + 1
+2026-10-05T18:25:51.4717607Z 
+2026-10-05T18:25:51.4717693Z       Array [
+2026-10-05T18:25:51.4717888Z         20,
+2026-10-05T18:25:51.4718078Z     -   20,
+2026-10-05T18:25:51.4718265Z     +   1,
+2026-10-05T18:25:51.4718444Z       ]
+2026-10-05T18:25:51.4718550Z 
+2026-10-05T18:25:51.4719394Z     [0m [90m 327 |[39m     [36mconst[39m reached [33m=[39m [36mnew[39m [33mSet[39m(h[33m.[39mreverseTransfer[33m.[39mmock[33m.[39mcalls[33m.[39mmap(([a]) [33m=>[39m a[33m.[39mtransfer_id))[33m;[39m
+2026-10-05T18:25:51.4721058Z      [90m 328 |[39m     [36mawait[39m h[33m.[39mrestart()[33m.[39mretryPendingTransferReversals([36mnew[39m [33mDate[39m([33mDate[39m[33m.[39mnow() [33m+[39m [35m15[39m [33m*[39m [35m60[39m_000)[33m,[39m [35m1[39m)[33m;[39m
+2026-10-05T18:25:51.4722492Z     [31m[1m>[22m[39m[90m 329 |[39m     expect([first[33m.[39mretried[33m,[39m reached[33m.[39msize])[33m.[39mtoEqual([[35m20[39m[33m,[39m [35m20[39m])[33m;[39m
+2026-10-05T18:25:51.4723308Z      [90m     |[39m                                           [31m[1m^[22m[39m
+2026-10-05T18:25:51.4724242Z      [90m 330 |[39m     [36mconst[39m stamped [33m=[39m h[33m.[39mrefund([32m'r-000'[39m)[33m.[39mtransfer_reversal_last_attempt_at [36mas[39m [33mDate[39m[33m;[39m
+2026-10-05T18:25:51.4725565Z      [90m 331 |[39m     expect(stamped[33m.[39mgetTime())[33m.[39mtoBeGreaterThan(at[33m.[39mgetTime() [33m+[39m [35m20[39m)[33m;[39m
+2026-10-05T18:25:51.4727092Z      [90m 332 |[39m     expect([h[33m.[39mstripeTotal([32m'tr_fair-020'[39m)[33m,[39m h[33m.[39mheadCoach([32m'fair-020'[39m)[33m,[39m h[33m.[39mrefund([32m'r-020'[39m)[33m.[39mtransfer_reversed])[33m.[39mtoEqual([[0m
+2026-10-05T18:25:51.4727814Z 
+2026-10-05T18:25:51.4728067Z       at Object.<anonymous> (test/refund-reversal-recovery.spec.ts:329:43)
+2026-10-05T18:25:51.4728363Z 
+2026-10-05T18:25:51.4728534Z Test Suites: 1 failed, 1 total
+2026-10-05T18:25:51.4728856Z Tests:       7 failed, 4 passed, 11 total
+2026-10-05T18:25:51.4729160Z Snapshots:   0 total
+2026-10-05T18:25:51.4729385Z Time:        2.908 s
+2026-10-05T18:25:51.4729775Z Ran all test suites matching test/refund-reversal-recovery.spec.ts.
+2026-10-05T18:25:51.6008490Z ##[error]Process completed with exit code 1.
+2026-10-05T18:25:51.6127526Z Post job cleanup.
+2026-10-05T18:25:51.7037144Z [command]/usr/bin/git version
+2026-10-05T18:25:51.7074425Z git version 2.55.0
+2026-10-05T18:25:51.7113701Z Temporarily overriding HOME='/home/runner/work/_temp/9f275580-9bd1-4df5-9c79-bb0f4f49c18e' before making global git config changes
+2026-10-05T18:25:51.7115228Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T18:25:51.7119654Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-05T18:25:51.7151200Z Removing SSH command configuration
+2026-10-05T18:25:51.7157534Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T18:25:51.7205805Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T18:25:51.7454681Z Removing HTTP extra header
+2026-10-05T18:25:51.7462429Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T18:25:51.7505528Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T18:25:51.7760204Z Removing includeIf entries pointing to credentials config files
+2026-10-05T18:25:51.7771854Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T18:25:51.7806922Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-05T18:25:51.7808120Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-05T18:25:51.7808951Z includeif.gitdir:/github/workspace/.git.path
+2026-10-05T18:25:51.7809792Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T18:25:51.7818751Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-05T18:25:51.7842006Z /home/runner/work/_temp/git-credentials-3c077b80-c1a6-4f83-ab72-871d4205360d.config
+2026-10-05T18:25:51.7853961Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-3c077b80-c1a6-4f83-ab72-871d4205360d.config
+2026-10-05T18:25:51.7891543Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-05T18:25:51.7914926Z /home/runner/work/_temp/git-credentials-3c077b80-c1a6-4f83-ab72-871d4205360d.config
+2026-10-05T18:25:51.7927619Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-3c077b80-c1a6-4f83-ab72-871d4205360d.config
+2026-10-05T18:25:51.7961350Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-05T18:25:51.7983644Z /github/runner_temp/git-credentials-3c077b80-c1a6-4f83-ab72-871d4205360d.config
+2026-10-05T18:25:51.7991469Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-3c077b80-c1a6-4f83-ab72-871d4205360d.config
+2026-10-05T18:25:51.8038011Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T18:25:51.8059663Z /github/runner_temp/git-credentials-3c077b80-c1a6-4f83-ab72-871d4205360d.config
+2026-10-05T18:25:51.8071558Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-3c077b80-c1a6-4f83-ab72-871d4205360d.config
+2026-10-05T18:25:51.8107251Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T18:25:51.8351318Z Removing credentials config '/home/runner/work/_temp/git-credentials-3c077b80-c1a6-4f83-ab72-871d4205360d.config'
+2026-10-05T18:25:51.8498448Z Print service container logs: 0eb342e970ef4234b99b0a51a73060d2_redis7alpine_ad3bc6
+2026-10-05T18:25:51.8503218Z ##[command]/usr/bin/docker logs --details 9a979b6450e2a17dd2836c47ba5563d6fb58c4f5b67ae69b03228966cdbee8f3
+2026-10-05T18:25:51.8655301Z  1:C 05 Oct 2026 18:25:01.399 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+2026-10-05T18:25:51.8658201Z  1:C 05 Oct 2026 18:25:01.399 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+2026-10-05T18:25:51.8659218Z  1:C 05 Oct 2026 18:25:01.399 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+2026-10-05T18:25:51.8660622Z  1:C 05 Oct 2026 18:25:01.399 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+2026-10-05T18:25:51.8661771Z  1:M 05 Oct 2026 18:25:01.399 * monotonic clock: POSIX clock_gettime
+2026-10-05T18:25:51.8662414Z  1:M 05 Oct 2026 18:25:01.399 * Running mode=standalone, port=6379.
+2026-10-05T18:25:51.8663075Z  1:M 05 Oct 2026 18:25:01.400 * Server initialized
+2026-10-05T18:25:51.8663442Z  1:M 05 Oct 2026 18:25:01.400 * Ready to accept connections tcp
+2026-10-05T18:25:51.8680487Z Stop and remove container: 0eb342e970ef4234b99b0a51a73060d2_redis7alpine_ad3bc6
+2026-10-05T18:25:51.8685778Z ##[command]/usr/bin/docker rm --force 9a979b6450e2a17dd2836c47ba5563d6fb58c4f5b67ae69b03228966cdbee8f3
+2026-10-05T18:25:53.5661484Z 9a979b6450e2a17dd2836c47ba5563d6fb58c4f5b67ae69b03228966cdbee8f3
+2026-10-05T18:25:53.5690342Z Remove container network: github_network_463b6255255540d7846445fc592cc25d
+2026-10-05T18:25:53.5695018Z ##[command]/usr/bin/docker network rm github_network_463b6255255540d7846445fc592cc25d
+2026-10-05T18:25:53.6639375Z github_network_463b6255255540d7846445fc592cc25d
+2026-10-05T18:25:53.6722313Z Cleaning up orphan processes

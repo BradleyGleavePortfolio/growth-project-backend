@@ -1,0 +1,1664 @@
+diff --git a/src/notifications/emitters/booking.emitter.ts b/src/notifications/emitters/booking.emitter.ts
+index a423d7ce..ad7fac0d 100644
+--- a/src/notifications/emitters/booking.emitter.ts
++++ b/src/notifications/emitters/booking.emitter.ts
+@@ -1,71 +1,158 @@
+ import { Injectable, Logger } from '@nestjs/common';
+ import { NotificationsService } from '../notifications.service';
+-import { NotificationKind } from '../notification-kind';
++import { NotificationKind, type NotificationKindValue } from '../notification-kind';
++import { NotificationCategory } from '../notification-category.enum';
++import type { PushDeliveryCode } from '../push-delivery.types';
++import { safeLogDiagnostic } from '../../observability/orm-diagnostics';
+ import { PrismaService } from '../../prisma.service';
+-import { formatClock, formatDateTime } from '../local-time';
+ import { resolveRecipientTimeZone } from '../recipient-timezone';
+ 
+-// All booking emitters share the same write shape: ONE in-app inbox row for
+-// the target user, deep-linked to the session, with a payload limited to
+-// what a deep-linked screen needs (other party display name, the scheduled
+-// time and the zone the copy was written in). Keeping a single class so the
+-// invariants live in one place and SchedulingService only injects one
+-// emitter; preferences are still gated by NotificationsService.
++// Booking lifecycle notifications: one in-app row (the notification center
++// entry) plus a real push through the shared Expo transport
++// (NotificationsService.pushToUser).
+ //
+-// B-643-1:
+-//   - Times are written in the recipient's own zone with the zone named
+-//     ("tomorrow at 5:30 PM PDT"), never in UTC. With no usable stored zone
+-//     the copy drops the clock time (local-time.ts, recipient-timezone.ts).
+-//   - Each event is exactly one inbox row. The emitter used to also write a
+-//     `channel: 'push'` row that nothing sent to a device and the inbox
+-//     listed as a duplicate (two items, two unread per event).
+-
+-export interface BookingRequestedPayload {
++// S-SCHED-2:
++//  - Before this, the emitter wrote an in-app row and a channel='push' row but
++//    never sent anything to a device. It now delivers the push and returns the
++//    typed outcome, so the reminder sweep and tests can see what happened.
++//  - Exactly one inbox row per event (the in-app row). The push is gated on
++//    the recipient's booking_push / muted preference directly, so a booking
++//    event no longer shows twice in the notification center and two different
++//    clients booking within a minute do not rate-limit each other's push.
++//  - Tap target: the push data and the in-app payload both carry
++//    actionScreen/actionParams, the format the mobile push router and
++//    notification center consume. Clients land on CalendarSession, coaches on
++//    CoachBookingInbox, both with { sessionId }.
++//  - Times are written in the recipient's own zone with the zone named, e.g.
++//    "Mon, Oct 5, 9:00 AM PDT", never in UTC (B-643-1). The zone comes from
++//    recipient-timezone.ts (zone provenance, B-647-1 / B-647-2): a zone the
++//    person actually supplied, else the coach's published zone. With no
++//    usable zone the copy has no clock time at all (never a silent Pacific
++//    default), and every payload carries the zone it was written in.
++//  - C-647-3: the stored 24h reminder names the date, not "tomorrow", so it
++//    is still true when read the next day.
++//  - Copy is plain and calm (no exclamation marks, no emojis). Each message
++//    says what happened and, where there is one, the next step.
++//  - Emitters never throw: booking state must not fail because delivery did.
++
++export type BookingRecipientRole = 'client' | 'coach';
++
++interface BaseBookingPayload {
++  sessionId: string;
++  /** Appointment type name, e.g. "Quick Q/A Call". Null for untyped legacy sessions. */
++  sessionTypeName?: string | null;
++}
++
++export interface BookingRequestedPayload extends BaseBookingPayload {
+   coachUserId: string;
+   clientDisplayName: string;
+-  sessionId: string;
+   requestedAt: Date;
++  scheduledAt?: Date;
+   notes: string | null;
+ }
+ 
+-export interface BookingConfirmedPayload {
++export interface BookingBookedPayload extends BaseBookingPayload {
++  coachUserId: string;
++  clientDisplayName: string;
++  scheduledAt: Date;
++}
++
++export interface BookingConfirmedPayload extends BaseBookingPayload {
+   clientUserId: string;
+   coachDisplayName: string;
+-  sessionId: string;
+   scheduledAt: Date;
++  /** true when the type confirms instantly (no coach approval step). */
++  instant?: boolean;
+ }
+ 
+-export interface BookingDeclinedPayload {
++export interface BookingDeclinedPayload extends BaseBookingPayload {
+   clientUserId: string;
+   coachDisplayName: string;
+-  sessionId: string;
+   requestedAt: Date;
++  scheduledAt?: Date;
+   declineReason: string | null;
+ }
+ 
+-export interface BookingCancelledPayload {
++export interface BookingCancelledPayload extends BaseBookingPayload {
+   recipientUserId: string;
++  recipientRole?: BookingRecipientRole;
+   cancellingPartyDisplayName: string;
+-  sessionId: string;
+   scheduledAt: Date;
+   cancelReason: string | null;
+ }
+ 
+-export interface BookingRescheduledPayload {
++export interface BookingRescheduledPayload extends BaseBookingPayload {
+   recipientUserId: string;
++  recipientRole?: BookingRecipientRole;
+   reschedulerDisplayName: string;
+-  sessionId: string;
+   oldScheduledAt: Date;
+   newScheduledAt: Date;
+ }
+ 
+-export interface BookingReminderPayload {
++export interface BookingMoveRequestedPayload extends BaseBookingPayload {
++  coachUserId: string;
++  clientDisplayName: string;
++  oldScheduledAt: Date;
++  newScheduledAt: Date;
++}
++
++export interface BookingReminderPayload extends BaseBookingPayload {
+   recipientUserId: string;
++  recipientRole?: BookingRecipientRole;
+   otherPartyDisplayName: string;
+-  sessionId: string;
++  scheduledAt: Date;
++  /** false when the confirmed session still has no call link. */
++  hasMeetingLink?: boolean;
++  /**
++   * S-SCHED-3 (B-634-2) retry of a partly delivered reminder: the channel
++   * that already landed is skipped so the recipient never gets it twice.
++   */
++  skipInApp?: boolean;
++  skipPush?: boolean;
++  /** In-app row written by an earlier attempt; the retried push links to it. */
++  notificationId?: string | null;
++}
++
++export interface BookingLinkNeededPayload extends BaseBookingPayload {
++  coachUserId: string;
++  clientDisplayName: string;
++  scheduledAt: Date;
++}
++
++export interface BookingLinkReadyPayload extends BaseBookingPayload {
++  clientUserId: string;
++  coachDisplayName: string;
+   scheduledAt: Date;
+ }
+ 
++export interface BookingDeliveryOutcome {
++  inapp: 'written' | 'suppressed' | 'failed' | 'skipped';
++  push: PushDeliveryCode | 'disabled' | 'failed' | 'skipped';
++  /** Id of the in-app row this call wrote (or was handed), when there is one. */
++  notificationId?: string | null;
++}
++
++// S-SCHED-3 (B-634-2): which outcomes are final for a channel. A retry can
++// only help transient failures; no device token or a muted preference is a
++// settled answer, not a failure to retry.
++export function inAppSettled(o: BookingDeliveryOutcome['inapp']): boolean {
++  return o === 'written' || o === 'suppressed' || o === 'skipped';
++}
++export function pushSettled(o: BookingDeliveryOutcome['push']): boolean {
++  return (
++    o === 'delivered' ||
++    o === 'no-token' ||
++    o === 'invalid-token' ||
++    o === 'disabled' ||
++    o === 'skipped'
++  );
++}
++
++export const BOOKING_PUSH_SCREEN: Record<BookingRecipientRole, string> = {
++  client: 'CalendarSession',
++  coach: 'CoachBookingInbox',
++};
++
+ @Injectable()
+ export class BookingEmitter {
+   private readonly logger = new Logger(BookingEmitter.name);
+@@ -77,188 +164,428 @@ export class BookingEmitter {
+     private readonly prisma: PrismaService,
+   ) {}
+ 
+-  private zoneFor(userId: string, sessionId: string): Promise<string | null> {
+-    return resolveRecipientTimeZone(this.prisma, userId, sessionId);
+-  }
+-
+-  // (a) booking_requested → to COACH when client creates a request.
+-  async emitRequested(payload: BookingRequestedPayload): Promise<void> {
+-    const body =
+-      `${payload.clientDisplayName} requested a session.`.slice(0, 160);
+-    await this.writeInbox({
+-      userId: payload.coachUserId,
++  // (a) booking_requested -> COACH, a client asked for a coach-approval type.
++  async emitRequested(p: BookingRequestedPayload): Promise<BookingDeliveryOutcome> {
++    const tz = p.scheduledAt ? await this.zoneFor(p.coachUserId, p.sessionId) : null;
++    const when = p.scheduledAt && tz ? formatWhen(p.scheduledAt, tz) : null;
++    const what = typeLabel(p.sessionTypeName, 'a session');
++    const body = when
++      ? `${p.clientDisplayName} asked for ${what} on ${when}. Approve or decline in your booking inbox.`
++      : `${p.clientDisplayName} requested ${what}. Approve or decline in your booking inbox.`;
++    return this.deliver({
++      userId: p.coachUserId,
++      role: 'coach',
+       kind: NotificationKind.BOOKING_REQUESTED,
++      title: 'New session request',
+       body,
+-      deepLink: `tgp://coach/sessions/${payload.sessionId}`,
++      sessionId: p.sessionId,
++      deepLink: `tgp://coach/sessions/${p.sessionId}`,
++      payload: {
++        clientDisplayName: p.clientDisplayName,
++        requestedAt: p.requestedAt.toISOString(),
++        scheduledAt: p.scheduledAt ? p.scheduledAt.toISOString() : null,
++        timeZone: tz,
++        sessionTypeName: p.sessionTypeName ?? null,
++        notes: p.notes,
++      },
++    });
++  }
++
++  // (a2) booking_confirmed -> COACH, a client booked an instant-confirm type.
++  async emitBooked(p: BookingBookedPayload): Promise<BookingDeliveryOutcome> {
++    const tz = await this.zoneFor(p.coachUserId, p.sessionId);
++    const what = typeLabel(p.sessionTypeName, 'a session');
++    return this.deliver({
++      userId: p.coachUserId,
++      role: 'coach',
++      kind: NotificationKind.BOOKING_CONFIRMED,
++      title: 'New session booked',
++      body: tz
++        ? `${p.clientDisplayName} booked ${what} on ${formatWhen(p.scheduledAt, tz)}.`
++        : `${p.clientDisplayName} booked ${what}. Open the session to see the time.`,
++      sessionId: p.sessionId,
++      deepLink: `tgp://coach/sessions/${p.sessionId}`,
+       payload: {
+-        sessionId: payload.sessionId,
+-        clientDisplayName: payload.clientDisplayName,
+-        requestedAt: payload.requestedAt.toISOString(),
+-        notes: payload.notes,
++        clientDisplayName: p.clientDisplayName,
++        scheduledAt: p.scheduledAt.toISOString(),
++        timeZone: tz,
++        sessionTypeName: p.sessionTypeName ?? null,
+       },
+     });
+   }
+ 
+-  // (b) booking_confirmed → to CLIENT when coach approves.
+-  async emitConfirmed(payload: BookingConfirmedPayload): Promise<void> {
+-    const tz = await this.zoneFor(payload.clientUserId, payload.sessionId);
+-    const body = (
+-      tz
+-        ? `${payload.coachDisplayName} confirmed your session on ${formatDateTime(payload.scheduledAt, tz)}.`
+-        : `${payload.coachDisplayName} confirmed your session. Open the session to see the time.`
+-    ).slice(0, 160);
+-    await this.writeInbox({
+-      userId: payload.clientUserId,
++  // (b) booking_confirmed -> CLIENT, coach approved or the type confirms instantly.
++  async emitConfirmed(p: BookingConfirmedPayload): Promise<BookingDeliveryOutcome> {
++    const tz = await this.zoneFor(p.clientUserId, p.sessionId);
++    const when = tz ? formatWhen(p.scheduledAt, tz) : null;
++    const what = typeLabel(p.sessionTypeName, 'session');
++    const body = p.instant
++      ? when
++        ? `Your ${what} with ${p.coachDisplayName} is confirmed for ${when}.`
++        : `Your ${what} with ${p.coachDisplayName} is confirmed. Open the session to see the time.`
++      : when
++        ? `${p.coachDisplayName} confirmed your ${what} on ${when}.`
++        : `${p.coachDisplayName} confirmed your ${what}. Open the session to see the time.`;
++    return this.deliver({
++      userId: p.clientUserId,
++      role: 'client',
+       kind: NotificationKind.BOOKING_CONFIRMED,
++      title: 'Session confirmed',
+       body,
+-      deepLink: `tgp://client/sessions/${payload.sessionId}`,
++      sessionId: p.sessionId,
++      deepLink: `tgp://client/sessions/${p.sessionId}`,
+       payload: {
+-        sessionId: payload.sessionId,
+-        coachDisplayName: payload.coachDisplayName,
+-        scheduledAt: payload.scheduledAt.toISOString(),
++        coachDisplayName: p.coachDisplayName,
++        scheduledAt: p.scheduledAt.toISOString(),
+         timeZone: tz,
++        sessionTypeName: p.sessionTypeName ?? null,
+       },
+     });
+   }
+ 
+-  // (c) booking_declined → to CLIENT when coach declines.
+-  async emitDeclined(payload: BookingDeclinedPayload): Promise<void> {
+-    const body =
+-      `${payload.coachDisplayName} declined your session request.`.slice(
+-        0,
+-        160,
+-      );
+-    await this.writeInbox({
+-      userId: payload.clientUserId,
++  // (c) booking_declined -> CLIENT.
++  async emitDeclined(p: BookingDeclinedPayload): Promise<BookingDeliveryOutcome> {
++    const what = typeLabel(p.sessionTypeName, 'session');
++    const tz = p.scheduledAt ? await this.zoneFor(p.clientUserId, p.sessionId) : null;
++    const when = p.scheduledAt && tz ? formatWhen(p.scheduledAt, tz) : null;
++    const body = when
++      ? `${p.coachDisplayName} could not take your ${what} request for ${when}. Pick another time in Calendar.`
++      : `${p.coachDisplayName} could not take your ${what} request. Pick another time in Calendar.`;
++    return this.deliver({
++      userId: p.clientUserId,
++      role: 'client',
+       kind: NotificationKind.BOOKING_DECLINED,
++      title: 'Session request declined',
+       body,
+-      deepLink: `tgp://client/sessions/${payload.sessionId}`,
++      sessionId: p.sessionId,
++      deepLink: `tgp://client/sessions/${p.sessionId}`,
+       payload: {
+-        sessionId: payload.sessionId,
+-        coachDisplayName: payload.coachDisplayName,
+-        requestedAt: payload.requestedAt.toISOString(),
+-        declineReason: payload.declineReason,
++        coachDisplayName: p.coachDisplayName,
++        requestedAt: p.requestedAt.toISOString(),
++        scheduledAt: p.scheduledAt ? p.scheduledAt.toISOString() : null,
++        timeZone: tz,
++        sessionTypeName: p.sessionTypeName ?? null,
++        declineReason: p.declineReason,
+       },
+     });
+   }
+ 
+-  // (d) booking_cancelled → to the OTHER PARTY when one side cancels.
+-  async emitCancelled(payload: BookingCancelledPayload): Promise<void> {
+-    const tz = await this.zoneFor(payload.recipientUserId, payload.sessionId);
+-    const body = (
+-      tz
+-        ? `${payload.cancellingPartyDisplayName} cancelled the session on ${formatDateTime(payload.scheduledAt, tz)}.`
+-        : `${payload.cancellingPartyDisplayName} cancelled your upcoming session.`
+-    ).slice(0, 160);
+-    await this.writeInbox({
+-      userId: payload.recipientUserId,
++  // (d) booking_cancelled -> the OTHER party.
++  async emitCancelled(p: BookingCancelledPayload): Promise<BookingDeliveryOutcome> {
++    const role = p.recipientRole ?? 'client';
++    const tz = await this.zoneFor(p.recipientUserId, p.sessionId);
++    const what = typeLabel(p.sessionTypeName, 'session');
++    const next = role === 'client' ? ' You can book a new time in Calendar.' : '';
++    return this.deliver({
++      userId: p.recipientUserId,
++      role,
+       kind: NotificationKind.BOOKING_CANCELLED,
+-      body,
+-      deepLink: `tgp://sessions/${payload.sessionId}`,
++      title: 'Session cancelled',
++      body: tz
++        ? `${p.cancellingPartyDisplayName} cancelled the ${what} on ${formatWhen(p.scheduledAt, tz)}.${next}`
++        : `${p.cancellingPartyDisplayName} cancelled your upcoming ${what}.${next}`,
++      sessionId: p.sessionId,
++      deepLink: `tgp://sessions/${p.sessionId}`,
+       payload: {
+-        sessionId: payload.sessionId,
+-        cancellingPartyDisplayName: payload.cancellingPartyDisplayName,
+-        scheduledAt: payload.scheduledAt.toISOString(),
++        cancellingPartyDisplayName: p.cancellingPartyDisplayName,
++        scheduledAt: p.scheduledAt.toISOString(),
+         timeZone: tz,
+-        cancelReason: payload.cancelReason,
++        sessionTypeName: p.sessionTypeName ?? null,
++        cancelReason: p.cancelReason,
+       },
+     });
+   }
+ 
+-  // (e) booking_rescheduled → to the OTHER PARTY when one side reschedules.
+-  async emitRescheduled(payload: BookingRescheduledPayload): Promise<void> {
+-    const tz = await this.zoneFor(payload.recipientUserId, payload.sessionId);
+-    const body = (
+-      tz
+-        ? `${payload.reschedulerDisplayName} moved the session to ${formatDateTime(payload.newScheduledAt, tz)}.`
+-        : `${payload.reschedulerDisplayName} moved your session to a new time. Open the session to see it.`
+-    ).slice(0, 160);
+-    await this.writeInbox({
+-      userId: payload.recipientUserId,
++  // (e) booking_rescheduled -> the OTHER party, the move took effect.
++  async emitRescheduled(p: BookingRescheduledPayload): Promise<BookingDeliveryOutcome> {
++    const role = p.recipientRole ?? 'client';
++    const tz = await this.zoneFor(p.recipientUserId, p.sessionId);
++    const what = typeLabel(p.sessionTypeName, 'session');
++    return this.deliver({
++      userId: p.recipientUserId,
++      role,
+       kind: NotificationKind.BOOKING_RESCHEDULED,
+-      body,
+-      deepLink: `tgp://sessions/${payload.sessionId}`,
++      title: 'Session moved',
++      body: tz
++        ? `${p.reschedulerDisplayName} moved your ${what} to ${formatWhen(p.newScheduledAt, tz)}.`
++        : `${p.reschedulerDisplayName} moved your ${what} to a new time. Open the session to see it.`,
++      sessionId: p.sessionId,
++      deepLink: `tgp://sessions/${p.sessionId}`,
+       payload: {
+-        sessionId: payload.sessionId,
+-        reschedulerDisplayName: payload.reschedulerDisplayName,
+-        oldScheduledAt: payload.oldScheduledAt.toISOString(),
+-        newScheduledAt: payload.newScheduledAt.toISOString(),
++        reschedulerDisplayName: p.reschedulerDisplayName,
++        oldScheduledAt: p.oldScheduledAt.toISOString(),
++        newScheduledAt: p.newScheduledAt.toISOString(),
+         timeZone: tz,
++        sessionTypeName: p.sessionTypeName ?? null,
+       },
+     });
+   }
+ 
+-  // (f) booking_reminder_24h → to a single participant, 24h before start.
+-  async emitReminder24h(payload: BookingReminderPayload): Promise<void> {
+-    const tz = await this.zoneFor(payload.recipientUserId, payload.sessionId);
+-    const body = (
+-      tz
+-        ? // C-647-3: the stored inbox body names the date, not "tomorrow",
+-          // so it is still true when read the next day. The lock-screen push
+-          // renders the relative day at the moment it is sent.
+-          `Reminder: your session with ${payload.otherPartyDisplayName} is on ${formatDateTime(payload.scheduledAt, tz)}.`
+-        : `Reminder: your session with ${payload.otherPartyDisplayName} is in about 24 hours.`
+-    ).slice(0, 160);
+-    await this.writeInbox({
+-      userId: payload.recipientUserId,
+-      kind: NotificationKind.BOOKING_REMINDER_24H,
+-      body,
+-      deepLink: `tgp://sessions/${payload.sessionId}`,
++  // (e2) booking_rescheduled -> COACH, a client moved a coach-approval session;
++  // it is back to awaiting approval at the new time.
++  async emitMoveRequested(p: BookingMoveRequestedPayload): Promise<BookingDeliveryOutcome> {
++    const tz = await this.zoneFor(p.coachUserId, p.sessionId);
++    const to = tz ? formatWhen(p.newScheduledAt, tz) : 'a new time';
++    return this.deliver({
++      userId: p.coachUserId,
++      role: 'coach',
++      kind: NotificationKind.BOOKING_RESCHEDULED,
++      title: 'Session move requested',
++      body: `${p.clientDisplayName} asked to move ${typeLabel(p.sessionTypeName, 'a session')} to ${to}. Approve or decline in your booking inbox.`,
++      sessionId: p.sessionId,
++      deepLink: `tgp://coach/sessions/${p.sessionId}`,
+       payload: {
+-        sessionId: payload.sessionId,
+-        otherPartyDisplayName: payload.otherPartyDisplayName,
+-        scheduledAt: payload.scheduledAt.toISOString(),
++        clientDisplayName: p.clientDisplayName,
++        oldScheduledAt: p.oldScheduledAt.toISOString(),
++        newScheduledAt: p.newScheduledAt.toISOString(),
+         timeZone: tz,
++        sessionTypeName: p.sessionTypeName ?? null,
+       },
+     });
+   }
+ 
+-  // (g) booking_reminder_1h → to a single participant, 1h before start.
+-  async emitReminder1h(payload: BookingReminderPayload): Promise<void> {
+-    const tz = await this.zoneFor(payload.recipientUserId, payload.sessionId);
+-    const body = (
+-      tz
+-        ? `Starting soon: your session with ${payload.otherPartyDisplayName} is at ${formatClock(payload.scheduledAt, tz)}.`
+-        : `Starting soon: your session with ${payload.otherPartyDisplayName} starts in about an hour.`
+-    ).slice(0, 160);
+-    await this.writeInbox({
+-      userId: payload.recipientUserId,
+-      kind: NotificationKind.BOOKING_REMINDER_1H,
+-      body,
+-      deepLink: `tgp://sessions/${payload.sessionId}`,
++  // (f) booking_reminder_24h -> one participant.
++  async emitReminder24h(p: BookingReminderPayload): Promise<BookingDeliveryOutcome> {
++    return this.reminder(p, NotificationKind.BOOKING_REMINDER_24H);
++  }
++
++  // (g) booking_reminder_1h -> one participant.
++  async emitReminder1h(p: BookingReminderPayload): Promise<BookingDeliveryOutcome> {
++    return this.reminder(p, NotificationKind.BOOKING_REMINDER_1H);
++  }
++
++  // (h) booking_link_needed -> COACH, a confirmed session has no call link.
++  async emitLinkNeeded(p: BookingLinkNeededPayload): Promise<BookingDeliveryOutcome> {
++    const tz = await this.zoneFor(p.coachUserId, p.sessionId);
++    const what = typeLabel(p.sessionTypeName, 'session');
++    return this.deliver({
++      userId: p.coachUserId,
++      role: 'coach',
++      kind: NotificationKind.BOOKING_LINK_NEEDED,
++      title: 'Add a call link',
++      body: tz
++        ? `Your ${what} with ${p.clientDisplayName} on ${formatWhen(p.scheduledAt, tz)} has no call link yet. Add one so they can join.`
++        : `Your upcoming ${what} with ${p.clientDisplayName} has no call link yet. Add one so they can join.`,
++      sessionId: p.sessionId,
++      deepLink: `tgp://coach/sessions/${p.sessionId}`,
+       payload: {
+-        sessionId: payload.sessionId,
+-        otherPartyDisplayName: payload.otherPartyDisplayName,
+-        scheduledAt: payload.scheduledAt.toISOString(),
++        clientDisplayName: p.clientDisplayName,
++        scheduledAt: p.scheduledAt.toISOString(),
+         timeZone: tz,
++        sessionTypeName: p.sessionTypeName ?? null,
++      },
++    });
++  }
++
++  // (i) booking_link_ready -> CLIENT, the coach added the call link.
++  async emitLinkReady(p: BookingLinkReadyPayload): Promise<BookingDeliveryOutcome> {
++    const tz = await this.zoneFor(p.clientUserId, p.sessionId);
++    const what = typeLabel(p.sessionTypeName, 'session');
++    return this.deliver({
++      userId: p.clientUserId,
++      role: 'client',
++      kind: NotificationKind.BOOKING_LINK_READY,
++      title: 'Call link ready',
++      body: tz
++        ? `${p.coachDisplayName} added the call link for your ${what} on ${formatWhen(p.scheduledAt, tz)}.`
++        : `${p.coachDisplayName} added the call link for your upcoming ${what}.`,
++      sessionId: p.sessionId,
++      deepLink: `tgp://client/sessions/${p.sessionId}`,
++      payload: {
++        coachDisplayName: p.coachDisplayName,
++        scheduledAt: p.scheduledAt.toISOString(),
++        timeZone: tz,
++        sessionTypeName: p.sessionTypeName ?? null,
+       },
+     });
+   }
+ 
+   // ── Internal ──────────────────────────────────────────────────────────────
+ 
+-  private async writeInbox(args: {
++  private async reminder(
++    p: BookingReminderPayload,
++    kind: NotificationKindValue,
++  ): Promise<BookingDeliveryOutcome> {
++    const role = p.recipientRole ?? 'client';
++    const tz = await this.zoneFor(p.recipientUserId, p.sessionId);
++    const what = typeLabel(p.sessionTypeName, 'session');
++    const withWhom = `Your ${what} with ${p.otherPartyDisplayName}`;
++    const lead =
++      kind === NotificationKind.BOOKING_REMINDER_24H
++        ? tz
++          ? // C-647-3: the stored body names the date, so it stays true
++            // when read the next day.
++            `${withWhom} is on ${formatWhen(p.scheduledAt, tz)}.`
++          : `${withWhom} is in about 24 hours.`
++        : tz
++          ? `${withWhom} starts at ${formatTime(p.scheduledAt, tz)}.`
++          : `${withWhom} starts in about an hour.`;
++    let tail = '';
++    if (p.hasMeetingLink === false) {
++      tail =
++        role === 'coach'
++          ? ' It has no call link yet. Add one so they can join.'
++          : ' Your coach will add the call link before it starts.';
++    }
++    return this.deliver({
++      userId: p.recipientUserId,
++      role,
++      kind,
++      title:
++        kind === NotificationKind.BOOKING_REMINDER_24H
++          ? 'Session tomorrow'
++          : 'Session starting soon',
++      body: `${lead}${tail}`,
++      sessionId: p.sessionId,
++      deepLink: `tgp://sessions/${p.sessionId}`,
++      payload: {
++        otherPartyDisplayName: p.otherPartyDisplayName,
++        scheduledAt: p.scheduledAt.toISOString(),
++        timeZone: tz,
++        sessionTypeName: p.sessionTypeName ?? null,
++        hasMeetingLink: p.hasMeetingLink ?? null,
++      },
++      skipInApp: p.skipInApp === true,
++      skipPush: p.skipPush === true,
++      notificationId: p.notificationId ?? null,
++    });
++  }
++
++  private async deliver(args: {
+     userId: string;
+-    kind: (typeof NotificationKind)[keyof typeof NotificationKind];
++    role: BookingRecipientRole;
++    kind: NotificationKindValue;
++    title: string;
+     body: string;
++    sessionId: string;
+     deepLink: string;
+     payload: Record<string, unknown>;
+-  }): Promise<void> {
++    skipInApp?: boolean;
++    skipPush?: boolean;
++    notificationId?: string | null;
++  }): Promise<BookingDeliveryOutcome> {
++    const body = args.body.slice(0, 160);
++    const actionScreen = BOOKING_PUSH_SCREEN[args.role];
++    const actionParams = { sessionId: args.sessionId };
++    const outcome: BookingDeliveryOutcome = {
++      inapp: 'failed',
++      push: 'failed',
++      notificationId: args.notificationId ?? null,
++    };
++    let notificationId: string | null = args.notificationId ?? null;
++
++    if (args.skipInApp) {
++      outcome.inapp = 'skipped';
++    } else {
++      try {
++        const row = await this.notifications.createNotification({
++          user_id: args.userId,
++          kind: args.kind,
++          body,
++          payload: {
++            ...args.payload,
++            sessionId: args.sessionId,
++            title: args.title,
++            recipientRole: args.role,
++            actionScreen,
++            actionParams,
++            category: NotificationCategory.COACH_DIRECT,
++          },
++          deep_link: args.deepLink,
++          channel: 'inapp',
++        });
++        outcome.inapp = row ? 'written' : 'suppressed';
++        notificationId = row && typeof row.id === 'string' ? row.id : null;
++        outcome.notificationId = notificationId;
++      } catch (err) {
++        this.logger.warn(
++          `BookingEmitter ${args.kind} in-app write failed for user=${args.userId}: ${emitterDiagnostic(err)}`,
++        );
++      }
++    }
++
++    if (args.skipPush) {
++      outcome.push = 'skipped';
++      return outcome;
++    }
+     try {
+-      await this.notifications.createNotification({
+-        user_id: args.userId,
++      if (!(await this.pushAllowed(args.userId))) {
++        outcome.push = 'disabled';
++        return outcome;
++      }
++      const result = await this.notifications.pushToUser(args.userId, args.title, body, {
+         kind: args.kind,
+-        body: args.body,
+-        payload: args.payload,
+-        deep_link: args.deepLink,
+-        channel: 'inapp',
++        category: NotificationCategory.COACH_DIRECT,
++        actionScreen,
++        actionParams,
++        ...(notificationId ? { notificationId } : {}),
+       });
++      outcome.push = result.code;
++      if (!result.delivered && result.code !== 'no-token') {
++        this.logger.warn(
++          `BookingEmitter ${args.kind} push not delivered for user=${args.userId}: ${result.code}`,
++        );
++      }
+     } catch (err) {
+-      // Emitters never propagate errors — booking lifecycle must not
+-      // fail because the notification path hiccupped.
+       this.logger.warn(
+-        `BookingEmitter ${args.kind} failed for user=${args.userId}: ${(err as Error).message}`,
++        `BookingEmitter ${args.kind} push failed for user=${args.userId}: ${emitterDiagnostic(err)}`,
+       );
+     }
++    return outcome;
+   }
++
++  private async pushAllowed(userId: string): Promise<boolean> {
++    const prefs: Record<string, unknown> = await this.notifications.getPreferences(userId);
++    if (prefs.muted === true) return false;
++    return prefs.booking_push !== false;
++  }
++
++  // Recipient-local wording (B-643-1, zone provenance B-647-1 / B-647-2):
++  // the zone the person supplied, else the coach's published zone, else null
++  // (the caller then writes copy without a clock time). Never throws.
++  private zoneFor(userId: string, sessionId: string): Promise<string | null> {
++    return resolveRecipientTimeZone(this.prisma, userId, sessionId);
++  }
++}
++
++/**
++ * B-634-8: the only text a BookingEmitter log line carries for an error.
++ * Booking notification bodies and payloads hold display names and private
++ * request/decline/cancel notes, and an ORM error (or any error wrapping one
++ * as a cause) can echo those query arguments in its message, stack or meta.
++ * ORM errors collapse to `DatabaseRequestError: Database request failed
++ * (P####)` through the shared safeDiagnostic; any other error keeps only its
++ * class name and a machine-shaped `code`, never its message.
++ */
++export function emitterDiagnostic(err: unknown): string {
++  return safeLogDiagnostic(err);
++}
++
++function typeLabel(name: string | null | undefined, fallback: string): string {
++  const n = typeof name === 'string' ? name.trim() : '';
++  return n ? n.slice(0, 60) : fallback;
++}
++
++// e.g. "Mon, Oct 5, 9:00 AM PDT". The app renders the payload's ISO
++// timestamp in the device zone; this is the lock-screen wording.
++export function formatWhen(d: Date, tz: string): string {
++  return new Intl.DateTimeFormat('en-US', {
++    timeZone: tz,
++    weekday: 'short',
++    month: 'short',
++    day: 'numeric',
++    hour: 'numeric',
++    minute: '2-digit',
++    timeZoneName: 'short',
++  }).format(d);
++}
++
++// e.g. "9:00 AM PDT".
++export function formatTime(d: Date, tz: string): string {
++  return new Intl.DateTimeFormat('en-US', {
++    timeZone: tz,
++    hour: 'numeric',
++    minute: '2-digit',
++    timeZoneName: 'short',
++  }).format(d);
+ }
+diff --git a/src/scheduling/jobs/reminder.job.ts b/src/scheduling/jobs/reminder.job.ts
+index e18c0182..984d3320 100644
+--- a/src/scheduling/jobs/reminder.job.ts
++++ b/src/scheduling/jobs/reminder.job.ts
+@@ -120,7 +120,7 @@ export class SessionReminderJob {
+       recipientUserId: string,
+       otherPartyDisplayName: string,
+       session: CoachingSession,
+-    ) => Promise<void>;
++    ) => Promise<unknown>;
+   }): Promise<{ scanned: number; dispatched: number; skipped: number }> {
+     const now = new Date();
+     const lower = new Date(now.getTime() + args.lowerOffsetMinutes * 60 * 1000);
+diff --git a/test/booking-emitter.spec.ts b/test/booking-emitter.spec.ts
+index 006c5f68..7fa4eca0 100644
+--- a/test/booking-emitter.spec.ts
++++ b/test/booking-emitter.spec.ts
+@@ -1,249 +1,625 @@
+ /**
+- * Unit tests for the BookingEmitter (Concierge booking lifecycle).
++ * Unit tests for BookingEmitter (native scheduling lifecycle notifications).
+  *
+- * Strategy mirrors test/notification-emitters.spec.ts: mock
+- * NotificationsService.createNotification and assert the calls. Each
+- * trigger writes exactly ONE `inapp` inbox row for the target user with
+- * the documented kind, payload, and deep_link (B-643-1: the old second
+- * `push` row was listed as a duplicate inbox item and never sent).
++ * S-SCHED-2: each event writes exactly ONE in-app row (the notification
++ * center entry) and sends a REAL push through
++ * NotificationsService.pushToUser, gated on the recipient's booking_push /
++ * muted preference. Both carry actionScreen/actionParams so a tap opens the
++ * session (client: CalendarSession, coach: CoachBookingInbox). Times are in
++ * the recipient's zone with the zone abbreviation; the zone comes from
++ * recipient-timezone.ts (B-643-1 / B-647 zone provenance), and with no usable
++ * zone the copy has no clock time.
+  */
+-
+-import { BookingEmitter } from '../src/notifications/emitters/booking.emitter';
++import { Logger } from '@nestjs/common';
++import { Prisma } from '@prisma/client';
++import {
++  BOOKING_PUSH_SCREEN,
++  BookingEmitter,
++  formatTime,
++  formatWhen,
++} from '../src/notifications/emitters/booking.emitter';
+ import { NotificationKind } from '../src/notifications/notification-kind';
+-import type { CreateNotificationInput } from '../src/notifications/notifications.service';
++import {
++  NotificationsService,
++  type CreateNotificationInput,
++} from '../src/notifications/notifications.service';
++import type { PushDeliveryResult } from '../src/notifications/push-delivery.types';
++import { PrismaService } from '../src/prisma.service';
++
++const SCHEDULED_AT = new Date('2026-10-06T17:00:00Z'); // Tue Oct 6, 10:00 AM PDT
++const NEW_SCHEDULED_AT = new Date('2026-10-07T18:30:00Z');
++const REQUESTED_AT = new Date('2026-10-05T15:00:00Z');
+ 
+-const createNotificationMock = jest.fn().mockResolvedValue({ id: 'notif-1' });
++class FakeNotifications {
++  rows: CreateNotificationInput[] = [];
++  pushes: Array<{ userId: string; title: string; body: string; data: Record<string, unknown> }> =
++    [];
++  prefs: Record<string, Record<string, unknown>> = {};
++  pushResult: PushDeliveryResult = { delivered: true, code: 'delivered' };
++  failInapp = false;
++  failPush = false;
++
++  createNotification = jest.fn(async (input: CreateNotificationInput) => {
++    if (this.failInapp) throw new TypeError('db down');
++    if (this.prefs[input.user_id]?.muted === true) return null;
++    this.rows.push(input);
++    return { id: `notif-${this.rows.length}` };
++  });
+ 
+-const mockNotificationsService = {
+-  createNotification: createNotificationMock,
+-} as never;
++  getPreferences = jest.fn(async (userId: string) => ({
++    user_id: userId,
++    timezone: 'America/Los_Angeles',
++    booking_push: true,
++    muted: false,
++    ...(this.prefs[userId] ?? {}),
++  }));
+ 
+-function calls(): CreateNotificationInput[] {
+-  return createNotificationMock.mock.calls.map(
+-    (c: [CreateNotificationInput]) => c[0],
++  pushToUser = jest.fn(
++    async (userId: string, title: string, body: string, data?: Record<string, unknown>) => {
++      if (this.failPush) throw new TypeError('expo unreachable');
++      this.pushes.push({ userId, title, body, data: data ?? {} });
++      return this.pushResult;
++    },
+   );
+-}
+ 
+-beforeEach(() => {
+-  createNotificationMock.mockClear();
+-});
++  // Zone provenance (B-647-1 / B-647-2): the emitter reads the recipient's
++  // zone through recipient-timezone.ts. This answers it from `prefs` as a
++  // zone the person supplied (timezone_updated_at stamped); default Los
++  // Angeles. No coach profile zones, so an unusable zone means no zone.
++  zoneReads = jest.fn(async (args: { where: { user_id: string } }) => ({
++    timezone: this.prefs[args.where.user_id]?.timezone ?? 'America/Los_Angeles',
++    timezone_updated_at: new Date('2026-09-01T00:00:00Z'),
++  }));
++}
+ 
+-const FIXED_REQUESTED_AT = new Date('2026-06-01T12:00:00Z');
+-const FIXED_SCHEDULED_AT = new Date('2026-06-02T15:30:00Z');
+-const FIXED_NEW_SCHEDULED_AT = new Date('2026-06-03T16:00:00Z');
+-
+-// C-647-2: Prisma is a required dependency. This stub knows no zone, so
+-// copy is written without a clock time (the no-zone branch).
+-const noZonePrisma = Object.create({
+-  notificationPreferences: { findUnique: jest.fn().mockResolvedValue(null) },
+-  coachProfile: { findUnique: jest.fn().mockResolvedValue(null) },
+-  coachingSession: { findUnique: jest.fn().mockResolvedValue(null) },
+-  user: { findUnique: jest.fn().mockResolvedValue(null) },
+-});
++function zonePrisma(fake: FakeNotifications): PrismaService {
++  return Object.assign(Object.create(PrismaService.prototype) as PrismaService, {
++    notificationPreferences: { findUnique: fake.zoneReads },
++    coachProfile: { findUnique: async () => null },
++    coachingSession: { findUnique: async () => null },
++    user: { findUnique: async () => null },
++  });
++}
+ 
+-describe('BookingEmitter', () => {
+-  const emitter = new BookingEmitter(mockNotificationsService, noZonePrisma);
++function build() {
++  const fake = new FakeNotifications();
++  const emitter = new BookingEmitter(
++    Object.assign(Object.create(NotificationsService.prototype) as NotificationsService, fake),
++    zonePrisma(fake),
++  );
++  return { fake, emitter };
++}
+ 
+-  it('emitRequested: targets the coach with ONE booking_requested inbox row', async () => {
+-    await emitter.emitRequested({
++describe('BookingEmitter delivery', () => {
++  it('requested -> coach: one in-app row plus a real push routed to the booking inbox', async () => {
++    const { fake, emitter } = build();
++    const outcome = await emitter.emitRequested({
+       coachUserId: 'coach-1',
+       clientDisplayName: 'Jamie',
+       sessionId: 'sess-1',
+-      requestedAt: FIXED_REQUESTED_AT,
++      sessionTypeName: 'Quick Q/A Call',
++      requestedAt: REQUESTED_AT,
++      scheduledAt: SCHEDULED_AT,
+       notes: null,
+     });
+-
+-    const written = calls();
+-    expect(written.length).toBe(1);
+-    const [inapp] = written;
+-    expect(inapp.user_id).toBe('coach-1');
+-    expect(inapp.kind).toBe(NotificationKind.BOOKING_REQUESTED);
+-    expect(inapp.channel).toBe('inapp');
+-    expect(inapp.deep_link).toBe('tgp://coach/sessions/sess-1');
+-    expect(inapp.body).toContain('Jamie');
+-    expect(inapp.body.length).toBeLessThanOrEqual(160);
+-    expect(inapp.payload).toMatchObject({
++    expect(outcome).toEqual({ inapp: 'written', push: 'delivered', notificationId: 'notif-1' });
++    expect(fake.rows).toHaveLength(1);
++    const [row] = fake.rows;
++    expect(row).toMatchObject({
++      user_id: 'coach-1',
++      kind: NotificationKind.BOOKING_REQUESTED,
++      channel: 'inapp',
++      deep_link: 'tgp://coach/sessions/sess-1',
++    });
++    expect(row.body).toBe(
++      'Jamie asked for Quick Q/A Call on Tue, Oct 6, 10:00 AM PDT. Approve or decline in your booking inbox.',
++    );
++    expect(row.payload).toMatchObject({
+       sessionId: 'sess-1',
+-      clientDisplayName: 'Jamie',
+-      requestedAt: FIXED_REQUESTED_AT.toISOString(),
++      title: 'New session request',
++      recipientRole: 'coach',
++      actionScreen: 'CoachBookingInbox',
++      actionParams: { sessionId: 'sess-1' },
++      scheduledAt: SCHEDULED_AT.toISOString(),
++      sessionTypeName: 'Quick Q/A Call',
++    });
++    expect(fake.pushToUser).toHaveBeenCalledTimes(1);
++    expect(fake.pushes[0]).toEqual({
++      userId: 'coach-1',
++      title: 'New session request',
++      body: row.body,
++      data: {
++        kind: 'booking_requested',
++        category: 'COACH_DIRECT',
++        actionScreen: 'CoachBookingInbox',
++        actionParams: { sessionId: 'sess-1' },
++        notificationId: 'notif-1',
++      },
+     });
+   });
+ 
+-  it('emitConfirmed: targets the client with booking_confirmed; payload carries scheduledAt', async () => {
++  it('confirmed -> client routes to CalendarSession; instant wording differs from approval', async () => {
++    const { fake, emitter } = build();
+     await emitter.emitConfirmed({
+       clientUserId: 'client-1',
+-      coachDisplayName: 'Coach K',
++      coachDisplayName: 'Coach Kim',
+       sessionId: 'sess-2',
+-      scheduledAt: FIXED_SCHEDULED_AT,
+-    });
+-    const [inapp] = calls();
+-    expect(inapp.user_id).toBe('client-1');
+-    expect(inapp.kind).toBe(NotificationKind.BOOKING_CONFIRMED);
+-    expect(inapp.deep_link).toBe('tgp://client/sessions/sess-2');
+-    expect(inapp.body).toContain('Coach K');
+-    expect(inapp.payload).toMatchObject({
+-      sessionId: 'sess-2',
+-      scheduledAt: FIXED_SCHEDULED_AT.toISOString(),
++      sessionTypeName: 'Quick initialization',
++      scheduledAt: SCHEDULED_AT,
++      instant: true,
+     });
+-  });
+-
+-  it('emitDeclined: targets the client with booking_declined; passes reason through payload', async () => {
+-    await emitter.emitDeclined({
++    await emitter.emitConfirmed({
+       clientUserId: 'client-1',
+-      coachDisplayName: 'Coach K',
++      coachDisplayName: 'Coach Kim',
+       sessionId: 'sess-3',
+-      requestedAt: FIXED_REQUESTED_AT,
+-      declineReason: 'out that week',
+-    });
+-    const [inapp] = calls();
+-    expect(inapp.kind).toBe(NotificationKind.BOOKING_DECLINED);
+-    expect(inapp.payload).toMatchObject({
+-      declineReason: 'out that week',
++      sessionTypeName: 'Quick Q/A Call',
++      scheduledAt: SCHEDULED_AT,
+     });
++    expect(fake.rows.map((r) => r.body)).toEqual([
++      'Your Quick initialization with Coach Kim is confirmed for Tue, Oct 6, 10:00 AM PDT.',
++      'Coach Kim confirmed your Quick Q/A Call on Tue, Oct 6, 10:00 AM PDT.',
++    ]);
++    expect(fake.pushes.map((p) => p.data.actionScreen)).toEqual([
++      'CalendarSession',
++      'CalendarSession',
++    ]);
+   });
+ 
+-  it('emitCancelled: targets the OTHER party; payload identifies cancelling party', async () => {
+-    await emitter.emitCancelled({
+-      recipientUserId: 'coach-1',
+-      cancellingPartyDisplayName: 'Jamie',
+-      sessionId: 'sess-4',
+-      scheduledAt: FIXED_SCHEDULED_AT,
+-      cancelReason: null,
+-    });
+-    const [inapp] = calls();
+-    expect(inapp.user_id).toBe('coach-1');
+-    expect(inapp.kind).toBe(NotificationKind.BOOKING_CANCELLED);
+-    expect(inapp.payload).toMatchObject({
+-      cancellingPartyDisplayName: 'Jamie',
++  it('writes the time in the recipient zone', async () => {
++    const { fake, emitter } = build();
++    fake.prefs['client-ny'] = { timezone: 'America/New_York' };
++    await emitter.emitDeclined({
++      clientUserId: 'client-ny',
++      coachDisplayName: 'Coach Kim',
+       sessionId: 'sess-4',
++      sessionTypeName: 'Quick Q/A Call',
++      requestedAt: REQUESTED_AT,
++      scheduledAt: SCHEDULED_AT,
++      declineReason: null,
+     });
++    expect(fake.rows[0].body).toBe(
++      'Coach Kim could not take your Quick Q/A Call request for Tue, Oct 6, 1:00 PM EDT. Pick another time in Calendar.',
++    );
+   });
+ 
+-  it('emitRescheduled: payload carries both old and new scheduledAt', async () => {
+-    await emitter.emitRescheduled({
+-      recipientUserId: 'client-1',
+-      reschedulerDisplayName: 'Coach K',
++  it('an unusable zone writes no clock time (never a silent Pacific default, B-643-1)', async () => {
++    const { fake, emitter } = build();
++    fake.prefs['client-x'] = { timezone: 'Mars/Olympus' };
++    await emitter.emitLinkReady({
++      clientUserId: 'client-x',
++      coachDisplayName: 'Coach Kim',
+       sessionId: 'sess-5',
+-      oldScheduledAt: FIXED_SCHEDULED_AT,
+-      newScheduledAt: FIXED_NEW_SCHEDULED_AT,
++      sessionTypeName: null,
++      scheduledAt: SCHEDULED_AT,
+     });
+-    const [inapp] = calls();
+-    expect(inapp.kind).toBe(NotificationKind.BOOKING_RESCHEDULED);
+-    expect(inapp.payload).toMatchObject({
+-      oldScheduledAt: FIXED_SCHEDULED_AT.toISOString(),
+-      newScheduledAt: FIXED_NEW_SCHEDULED_AT.toISOString(),
++    expect(fake.rows[0].body).toBe('Coach Kim added the call link for your upcoming session.');
++    expect(fake.rows[0].payload).toMatchObject({ timeZone: null });
++  });
++
++  it('respects booking_push=false: in-app row still written, no push sent', async () => {
++    const { fake, emitter } = build();
++    fake.prefs['coach-1'] = { booking_push: false };
++    const outcome = await emitter.emitBooked({
++      coachUserId: 'coach-1',
++      clientDisplayName: 'Jamie',
++      sessionId: 'sess-6',
++      sessionTypeName: 'Quick initialization',
++      scheduledAt: SCHEDULED_AT,
+     });
++    expect(outcome).toEqual({ inapp: 'written', push: 'disabled', notificationId: 'notif-1' });
++    expect(fake.pushToUser).not.toHaveBeenCalled();
+   });
+ 
+-  it('emitReminder24h + emitReminder1h: use distinct kinds with the same deep-link pattern', async () => {
+-    await emitter.emitReminder24h({
++  it('muted recipient: nothing written, nothing pushed', async () => {
++    const { fake, emitter } = build();
++    fake.prefs['client-1'] = { muted: true };
++    const outcome = await emitter.emitCancelled({
+       recipientUserId: 'client-1',
+-      otherPartyDisplayName: 'Coach K',
+-      sessionId: 'sess-6',
+-      scheduledAt: FIXED_SCHEDULED_AT,
++      recipientRole: 'client',
++      cancellingPartyDisplayName: 'Coach Kim',
++      sessionId: 'sess-7',
++      scheduledAt: SCHEDULED_AT,
++      cancelReason: null,
+     });
+-    await emitter.emitReminder1h({
++    expect(outcome).toEqual({ inapp: 'suppressed', push: 'disabled', notificationId: null });
++    expect(fake.rows).toHaveLength(0);
++    expect(fake.pushToUser).not.toHaveBeenCalled();
++  });
++
++  it('reports a missing device token without throwing', async () => {
++    const { fake, emitter } = build();
++    fake.pushResult = { delivered: false, code: 'no-token' };
++    const outcome = await emitter.emitReminder1h({
+       recipientUserId: 'client-1',
+-      otherPartyDisplayName: 'Coach K',
+-      sessionId: 'sess-6',
+-      scheduledAt: FIXED_SCHEDULED_AT,
+-    });
+-    const written = calls();
+-    // Two emit calls x one inbox row each.
+-    expect(written.length).toBe(2);
+-    expect(written[0].kind).toBe(NotificationKind.BOOKING_REMINDER_24H);
+-    expect(written[1].kind).toBe(NotificationKind.BOOKING_REMINDER_1H);
+-    for (const w of written) {
+-      expect(w.deep_link).toBe('tgp://sessions/sess-6');
+-      expect(w.body.length).toBeLessThanOrEqual(160);
+-    }
++      recipientRole: 'client',
++      otherPartyDisplayName: 'Coach Kim',
++      sessionId: 'sess-8',
++      scheduledAt: SCHEDULED_AT,
++      sessionTypeName: 'Quick Q/A Call',
++      hasMeetingLink: true,
++    });
++    expect(outcome).toEqual({ inapp: 'written', push: 'no-token', notificationId: 'notif-1' });
+   });
+ 
+-  it('swallows underlying createNotification errors so lifecycle never blocks', async () => {
+-    createNotificationMock.mockRejectedValueOnce(new Error('db down'));
++  it('never throws when storage or transport fail', async () => {
++    const { fake, emitter } = build();
++    fake.failInapp = true;
++    fake.failPush = true;
+     await expect(
+-      emitter.emitRequested({
+-        coachUserId: 'coach-1',
+-        clientDisplayName: 'Jamie',
+-        sessionId: 'sess-x',
+-        requestedAt: FIXED_REQUESTED_AT,
+-        notes: null,
++      emitter.emitRescheduled({
++        recipientUserId: 'coach-1',
++        recipientRole: 'coach',
++        reschedulerDisplayName: 'Jamie',
++        sessionId: 'sess-9',
++        oldScheduledAt: SCHEDULED_AT,
++        newScheduledAt: NEW_SCHEDULED_AT,
+       }),
+-    ).resolves.toBeUndefined();
++    ).resolves.toEqual({ inapp: 'failed', push: 'failed', notificationId: null });
+   });
+ 
+-  it('body strings never contain emoji or exclamation marks (house style)', async () => {
+-    await emitter.emitConfirmed({
+-      clientUserId: 'client-1',
+-      coachDisplayName: 'Coach K',
+-      sessionId: 'sess-style',
+-      scheduledAt: FIXED_SCHEDULED_AT,
++  it('reminders name the other party and handle a missing call link per side', async () => {
++    const { fake, emitter } = build();
++    await emitter.emitReminder24h({
++      recipientUserId: 'coach-1',
++      recipientRole: 'coach',
++      otherPartyDisplayName: 'Jamie',
++      sessionId: 'sess-10',
++      scheduledAt: SCHEDULED_AT,
++      sessionTypeName: 'Quick Q/A Call',
++      hasMeetingLink: false,
++    });
++    await emitter.emitReminder24h({
++      recipientUserId: 'client-1',
++      recipientRole: 'client',
++      otherPartyDisplayName: 'Coach Kim',
++      sessionId: 'sess-10',
++      scheduledAt: SCHEDULED_AT,
++      sessionTypeName: 'Quick Q/A Call',
++      hasMeetingLink: false,
++    });
++    expect(fake.rows.map((r) => r.body)).toEqual([
++      'Your Quick Q/A Call with Jamie is on Tue, Oct 6, 10:00 AM PDT. It has no call link yet. Add one so they can join.',
++      'Your Quick Q/A Call with Coach Kim is on Tue, Oct 6, 10:00 AM PDT. Your coach will add the call link before it starts.',
++    ]);
++    expect(fake.pushes.map((p) => [p.title, p.data.actionScreen])).toEqual([
++      ['Session tomorrow', 'CoachBookingInbox'],
++      ['Session tomorrow', 'CalendarSession'],
++    ]);
++  });
++
++  it('every message is plain (no exclamation marks) and fits 160 characters', async () => {
++    const { fake, emitter } = build();
++    const long = 'A'.repeat(40);
++    await emitter.emitRequested({
++      coachUserId: 'c',
++      clientDisplayName: long,
++      sessionId: 's',
++      sessionTypeName: 'B'.repeat(80),
++      requestedAt: REQUESTED_AT,
++      scheduledAt: SCHEDULED_AT,
++      notes: null,
+     });
+-    const [inapp] = calls();
+-    expect(inapp.body).not.toMatch(/!/);
+-    // eslint-disable-next-line no-control-regex
+-    expect(inapp.body).not.toMatch(/[\u{1F300}-\u{1FFFF}]/u);
++    await emitter.emitMoveRequested({
++      coachUserId: 'c',
++      clientDisplayName: long,
++      sessionId: 's',
++      oldScheduledAt: SCHEDULED_AT,
++      newScheduledAt: NEW_SCHEDULED_AT,
++    });
++    await emitter.emitLinkNeeded({
++      coachUserId: 'c',
++      clientDisplayName: long,
++      sessionId: 's',
++      scheduledAt: SCHEDULED_AT,
++    });
++    for (const r of fake.rows) {
++      expect(r.body.length).toBeLessThanOrEqual(160);
++      expect(r.body).not.toContain('!');
++    }
++    expect(fake.pushes.every((p) => !p.title.includes('!'))).toBe(true);
++  });
++
++  it('exports the tap targets the mobile push router knows', () => {
++    expect(BOOKING_PUSH_SCREEN).toEqual({
++      client: 'CalendarSession',
++      coach: 'CoachBookingInbox',
++    });
++    expect(formatWhen(SCHEDULED_AT, 'America/Los_Angeles')).toBe('Tue, Oct 6, 10:00 AM PDT');
++    expect(formatTime(SCHEDULED_AT, 'Europe/London')).toBe('6:00 PM GMT+1');
++  });
++});
++
++// B-634-8 (Sol @ bb6f3ea8): booking bodies and payloads carry display names
++// and private request/decline/cancel notes. An ORM error at any of the three
++// emitter catch sites can echo those query arguments; none of it may reach a
++// logger argument. Delivery stays nonthrowing and channel-aware.
++describe('B-634-8: emitter logs never carry raw ORM diagnostics', () => {
++  const CANARY = 'PRIVATE-CANARY-note-Jamie-knee-pain-7f3a';
++  const LOG_METHODS = ['log', 'warn', 'error', 'debug', 'verbose', 'fatal'] as const;
++  let spies: jest.SpyInstance[] = [];
++
++  function ormError(): Prisma.PrismaClientKnownRequestError {
++    const err = new Prisma.PrismaClientKnownRequestError(
++      `Timed out fetching a new connection. Query: INSERT ... body = "${CANARY}"`,
++      { code: 'P2024', clientVersion: 'test', meta: { target: CANARY } },
++    );
++    err.stack = `PrismaClientKnownRequestError: ${CANARY}\n    at query (${CANARY})`;
++    return err;
++  }
++
++  function loggedText(): string {
++    return JSON.stringify(spies.flatMap((s) => s.mock.calls));
++  }
++
++  beforeEach(() => {
++    spies = LOG_METHODS.map((m) =>
++      jest.spyOn(Logger.prototype, m).mockImplementation(() => undefined),
++    );
++  });
++  afterEach(() => {
++    for (const s of spies) s.mockRestore();
++  });
++
++  const requested = {
++    coachUserId: 'coach-1',
++    clientDisplayName: 'Jamie',
++    sessionId: 'sess-1',
++    sessionTypeName: 'Quick Q/A Call',
++    requestedAt: REQUESTED_AT,
++    scheduledAt: SCHEDULED_AT,
++    notes: CANARY,
++  };
++
++  it('in-app creation P2024: canary never logged; push still delivered without a notificationId', async () => {
++    const { fake, emitter } = build();
++    fake.createNotification.mockImplementationOnce(async () => {
++      throw ormError();
++    });
++    const outcome = await emitter.emitRequested(requested);
++    expect(outcome).toEqual({ inapp: 'failed', push: 'delivered', notificationId: null });
++    expect(fake.pushes[0].data).not.toHaveProperty('notificationId');
++    const text = loggedText();
++    expect(text).toContain('booking_requested in-app write failed for user=coach-1');
++    expect(text).toContain('Database request failed (P2024)');
++    expect(text).not.toContain(CANARY);
++  });
++
++  it('push-preference lookup P2024: canary never logged; in-app row kept, push reported failed', async () => {
++    const { fake, emitter } = build();
++    // The zone comes from recipient-timezone.ts; the only preference read is
++    // the push gate.
++    fake.getPreferences.mockImplementationOnce(async () => {
++      throw ormError();
++    });
++    const outcome = await emitter.emitRequested(requested);
++    expect(outcome).toEqual({ inapp: 'written', push: 'failed', notificationId: 'notif-1' });
++    expect(fake.pushToUser).not.toHaveBeenCalled();
++    const text = loggedText();
++    expect(text).toContain('booking_requested push failed for user=coach-1');
++    expect(text).toContain('Database request failed (P2024)');
++    expect(text).not.toContain(CANARY);
++  });
++
++  it('zone lookup P2024: canary never logged; copy without a clock time, both channels delivered', async () => {
++    const { fake, emitter } = build();
++    fake.zoneReads.mockImplementationOnce(async () => {
++      throw ormError();
++    });
++    const outcome = await emitter.emitRequested(requested);
++    expect(outcome).toEqual({ inapp: 'written', push: 'delivered', notificationId: 'notif-1' });
++    expect(fake.rows[0].body).not.toMatch(/AM|PM|\d:\d{2}/);
++    const text = loggedText();
++    // recipient-timezone.ts logs the error class only.
++    expect(text).toContain('time zone lookup failed for user=coach-1');
++    expect(text).toContain('PrismaClientKnownRequestError');
++    expect(text).not.toContain(CANARY);
++  });
++
++  it('an ORM error wrapped as a cause, and a non-ORM error, never log their message', async () => {
++    const { fake, emitter } = build();
++    const wrapped = Object.assign(new Error(`notification write failed: ${CANARY}`), {
++      cause: ormError(),
++    });
++    fake.createNotification.mockImplementationOnce(async () => {
++      throw wrapped;
++    });
++    const plain = Object.assign(new TypeError(`bad payload ${CANARY}`), { code: 'ERR_X' });
++    fake.pushToUser.mockImplementationOnce(async () => {
++      throw plain;
++    });
++    const outcome = await emitter.emitRequested(requested);
++    expect(outcome).toEqual({ inapp: 'failed', push: 'failed', notificationId: null });
++    const text = loggedText();
++    expect(text).toContain('Database request failed (P2024)');
++    // B-634-10: ERR_X is not in the reviewed code catalog, so it is dropped.
++    expect(text).toContain('push failed for user=coach-1: TypeError');
++    expect(text).not.toContain('ERR_X');
++    expect(text).not.toContain(CANARY);
++  });
++});
++
++// B-634-10 (Sol @ 9e6c62c9): identifier-shaped names and codes are still
++// arbitrary data. At the real emitter logger boundary only closed-enum class
++// names and catalogued codes may appear; unknown names log as OtherError.
++describe('B-634-10: emitter logs carry only closed-enum error classes and codes', () => {
++  const NAME_CANARY = 'SYNTHETIC_PRIVATE_CANARY_123';
++  const CODE_CANARY = 'SYNTHETIC_PRIVATE_CODE_456';
++  const LOG_METHODS = ['log', 'warn', 'error', 'debug', 'verbose', 'fatal'] as const;
++  let spies: jest.SpyInstance[] = [];
++  beforeEach(() => {
++    spies = LOG_METHODS.map((m) =>
++      jest.spyOn(Logger.prototype, m).mockImplementation(() => undefined),
++    );
+   });
++  afterEach(() => {
++    for (const s of spies) s.mockRestore();
++  });
++  function loggedText(): string {
++    return JSON.stringify(spies.flatMap((s) => s.mock.calls));
++  }
++  function canaryError(): Error {
++    const err = Object.assign(new Error('provider text'), { code: CODE_CANARY });
++    err.name = NAME_CANARY;
++    return err;
++  }
++  const requested = {
++    coachUserId: 'coach-1',
++    clientDisplayName: 'Jamie',
++    sessionId: 'sess-1',
++    sessionTypeName: 'Quick Q/A Call',
++    requestedAt: REQUESTED_AT,
++    scheduledAt: SCHEDULED_AT,
++    notes: null,
++  };
++
++  it('in-app write: unknown name and code log as OtherError; push still delivered', async () => {
++    const { fake, emitter } = build();
++    fake.createNotification.mockImplementationOnce(async () => {
++      throw canaryError();
++    });
++    const outcome = await emitter.emitRequested(requested);
++    expect(outcome).toEqual({ inapp: 'failed', push: 'delivered', notificationId: null });
++    const text = loggedText();
++    expect(text).toContain('booking_requested in-app write failed for user=coach-1: OtherError');
++    expect(text).not.toContain(NAME_CANARY);
++    expect(text).not.toContain(CODE_CANARY);
++  });
++
++  it('push: a known class with an unknown code logs the class only', async () => {
++    const { fake, emitter } = build();
++    fake.pushToUser.mockImplementationOnce(async () => {
++      throw Object.assign(new TypeError('x'), { code: CODE_CANARY });
++    });
++    const outcome = await emitter.emitRequested(requested);
++    expect(outcome).toEqual({ inapp: 'written', push: 'failed', notificationId: 'notif-1' });
++    const text = loggedText();
++    expect(text).toMatch(/push failed for user=coach-1: TypeError"/);
++    expect(text).not.toContain(CODE_CANARY);
++  });
++
++  it('zone lookup: a wrapped canary cause and a non-Error throw never surface', async () => {
++    const { fake, emitter } = build();
++    fake.zoneReads.mockImplementationOnce(async () => {
++      throw Object.assign(new Error('outer'), { cause: canaryError() });
++    });
++    fake.pushToUser.mockImplementationOnce(async () => {
++      throw { name: NAME_CANARY, code: CODE_CANARY };
++    });
++    const outcome = await emitter.emitRequested(requested);
++    expect(outcome).toEqual({ inapp: 'written', push: 'failed', notificationId: 'notif-1' });
++    const text = loggedText();
++    expect(text).toContain(
++      'time zone lookup failed for user=coach-1; writing copy without a clock time: Error',
++    );
++    expect(text).toContain('push failed for user=coach-1: OtherError');
++    expect(text).not.toContain(NAME_CANARY);
++    expect(text).not.toContain(CODE_CANARY);
++  });
++
++  it('a catalogued transport code on a cause is kept for operators', async () => {
++    const { fake, emitter } = build();
++    fake.pushToUser.mockImplementationOnce(async () => {
++      throw Object.assign(new TypeError('fetch failed'), {
++        cause: Object.assign(new Error('socket'), { code: 'ECONNRESET' }),
++      });
++    });
++    await emitter.emitRequested(requested);
++    expect(loggedText()).toContain('push failed for user=coach-1: TypeError (ECONNRESET)');
++  });
++});
+ 
+-  it('B-643-1: no booking copy ever shows a UTC time; without a known zone it shows no clock time', async () => {
++// Main merge (B-643-1, B-647-1 / B-647-2 zone provenance, C-647-3): the zone
++// comes from recipient-timezone.ts. With no usable zone no booking copy shows
++// a clock time; an unstamped preference row (the schema default zone) is not
++// the person's zone; every payload names the zone its copy was written in.
++describe('BookingEmitter zone provenance (main merge)', () => {
++  function emitterWith(zones: {
++    prefs?: { timezone: string; timezone_updated_at: Date | null } | null;
++    coachProfiles?: Record<string, string>;
++    sessionCoach?: string | null;
++  }) {
++    const fake = new FakeNotifications();
++    const prisma = Object.assign(Object.create(PrismaService.prototype) as PrismaService, {
++      notificationPreferences: { findUnique: async () => zones.prefs ?? null },
++      coachProfile: {
++        findUnique: async (args: { where: { user_id: string } }) => {
++          const tz = zones.coachProfiles?.[args.where.user_id];
++          return tz ? { timezone: tz } : null;
++        },
++      },
++      coachingSession: {
++        findUnique: async () => (zones.sessionCoach ? { coach_id: zones.sessionCoach } : null),
++      },
++      user: { findUnique: async () => null },
++    });
++    const emitter = new BookingEmitter(
++      Object.assign(Object.create(NotificationsService.prototype) as NotificationsService, fake),
++      prisma,
++    );
++    return { fake, emitter };
++  }
++
++  it('no usable zone: every body drops the clock time and never shows UTC', async () => {
++    const { fake, emitter } = emitterWith({});
+     await emitter.emitConfirmed({
+       clientUserId: 'client-1',
+-      coachDisplayName: 'Coach K',
++      coachDisplayName: 'Coach Kim',
+       sessionId: 'sess-tz',
+-      scheduledAt: FIXED_SCHEDULED_AT,
++      scheduledAt: SCHEDULED_AT,
+     });
+     await emitter.emitCancelled({
+       recipientUserId: 'client-1',
+-      cancellingPartyDisplayName: 'Coach K',
++      cancellingPartyDisplayName: 'Coach Kim',
+       sessionId: 'sess-tz',
+-      scheduledAt: FIXED_SCHEDULED_AT,
++      scheduledAt: SCHEDULED_AT,
+       cancelReason: null,
+     });
+     await emitter.emitRescheduled({
+       recipientUserId: 'client-1',
+-      reschedulerDisplayName: 'Coach K',
++      reschedulerDisplayName: 'Coach Kim',
++      sessionId: 'sess-tz',
++      oldScheduledAt: SCHEDULED_AT,
++      newScheduledAt: NEW_SCHEDULED_AT,
++    });
++    await emitter.emitReminder24h({
++      recipientUserId: 'client-1',
++      otherPartyDisplayName: 'Coach Kim',
+       sessionId: 'sess-tz',
+-      oldScheduledAt: FIXED_SCHEDULED_AT,
+-      newScheduledAt: FIXED_NEW_SCHEDULED_AT,
++      scheduledAt: SCHEDULED_AT,
+     });
+-    const bodies = calls().map((c) => c.body);
++    await emitter.emitReminder1h({
++      recipientUserId: 'client-1',
++      otherPartyDisplayName: 'Coach Kim',
++      sessionId: 'sess-tz',
++      scheduledAt: SCHEDULED_AT,
++    });
++    const bodies = fake.rows.map((r) => r.body);
+     expect(bodies).toEqual([
+-      'Coach K confirmed your session. Open the session to see the time.',
+-      'Coach K cancelled your upcoming session.',
+-      'Coach K moved your session to a new time. Open the session to see it.',
++      'Coach Kim confirmed your session. Open the session to see the time.',
++      'Coach Kim cancelled your upcoming session. You can book a new time in Calendar.',
++      'Coach Kim moved your session to a new time. Open the session to see it.',
++      'Your session with Coach Kim is in about 24 hours.',
++      'Your session with Coach Kim starts in about an hour.',
+     ]);
+-    for (const b of bodies) expect(b).not.toMatch(/UTC|\d{2}:\d{2}/);
++    for (const b of bodies) expect(b).not.toMatch(/UTC|AM|PM|\d:\d{2}/);
++    expect(fake.pushes.map((p) => p.body)).toEqual(bodies);
++    for (const r of fake.rows) expect(r.payload).toMatchObject({ timeZone: null });
+   });
+ 
+-  it('B-643-1: lifecycle copy uses the recipient\'s stored zone, with the zone named', async () => {
+-    const prisma = {
+-      notificationPreferences: {
+-        findUnique: jest.fn().mockResolvedValue({
+-          timezone: 'America/Los_Angeles',
+-          timezone_updated_at: new Date('2026-05-01T00:00:00Z'),
+-        }),
+-      },
+-      coachProfile: { findUnique: jest.fn().mockResolvedValue(null) },
+-      coachingSession: { findUnique: jest.fn().mockResolvedValue(null) },
+-      user: { findUnique: jest.fn().mockResolvedValue(null) },
+-    };
+-    const zoned = new BookingEmitter(mockNotificationsService, Object.create(prisma));
+-    await zoned.emitConfirmed({
+-      clientUserId: 'client-1',
+-      coachDisplayName: 'Coach K',
+-      sessionId: 'sess-tz',
+-      scheduledAt: FIXED_SCHEDULED_AT,
++  it('an unstamped preference row is not the person zone: the booking coach zone is used', async () => {
++    const { fake, emitter } = emitterWith({
++      prefs: { timezone: 'America/Los_Angeles', timezone_updated_at: null },
++      coachProfiles: { 'coach-9': 'America/New_York' },
++      sessionCoach: 'coach-9',
+     });
+-    await zoned.emitRescheduled({
++    await emitter.emitReminder24h({
+       recipientUserId: 'client-1',
+-      reschedulerDisplayName: 'Coach K',
++      otherPartyDisplayName: 'Coach Kim',
+       sessionId: 'sess-tz',
+-      oldScheduledAt: FIXED_SCHEDULED_AT,
+-      newScheduledAt: FIXED_NEW_SCHEDULED_AT,
++      scheduledAt: SCHEDULED_AT,
+     });
+-    const [confirmed, moved] = calls();
+-    expect(confirmed.body).toBe('Coach K confirmed your session on Tue, Jun 2 at 8:30 AM PDT.');
+-    expect(confirmed.payload).toMatchObject({ timeZone: 'America/Los_Angeles' });
+-    expect(moved.body).toBe('Coach K moved the session to Wed, Jun 3 at 9:00 AM PDT.');
++    // C-647-3: the stored 24h body names the date, not "tomorrow".
++    expect(fake.rows[0].body).toBe('Your session with Coach Kim is on Tue, Oct 6, 1:00 PM EDT.');
++    expect(fake.rows[0].payload).toMatchObject({ timeZone: 'America/New_York' });
+   });
+ });
+diff --git a/test/booking-reminder-local-time.spec.ts b/test/booking-reminder-local-time.spec.ts
+index 9d94f051..2d3dd752 100644
+--- a/test/booking-reminder-local-time.spec.ts
++++ b/test/booking-reminder-local-time.spec.ts
+@@ -10,7 +10,9 @@
+  *     sweep runs again or on two machines at once.
+  *
+  * Before the fix, the body read "tomorrow at 00:30 UTC" and every reminder
+- * was two inbox items (an inapp row plus a push row) and two unread.
++ * was two inbox items (an inapp row plus a push row) and two unread. Copy is
++ * the S-SCHED-2 wording (type, other party, call-link line); the zone rules
++ * are B-643-1 / B-647.
+  */
+ 
+ import { SessionReminderJob } from '../src/scheduling/jobs/reminder.job';
+@@ -154,10 +156,10 @@ describe('booking reminders: local time, shown once (B-643-1)', () => {
+     const client = await w.notifications.listNotifications('client-1', {});
+     const coach = await w.notifications.listNotifications('coach-1', {});
+     expect(client.items.map((r) => r.body)).toEqual([
+-      'Reminder: your session with Coach K is on Tue, Jun 2 at 5:30 PM PDT.',
++      'Your session with Coach K is on Tue, Jun 2, 5:30 PM PDT.',
+     ]);
+     expect(coach.items.map((r) => r.body)).toEqual([
+-      'Reminder: your session with Jamie is on Tue, Jun 2 at 8:30 PM EDT.',
++      'Your session with Jamie is on Tue, Jun 2, 8:30 PM EDT.',
+     ]);
+     for (const r of w.rows) {
+       expect(r.body).not.toMatch(/UTC|GMT/);
+@@ -177,7 +179,7 @@ describe('booking reminders: local time, shown once (B-643-1)', () => {
+     await w.job.runOneHourReminderSweep();
+     const client = await w.notifications.listNotifications('client-1', {});
+     expect(client.items.map((r) => r.body)).toEqual([
+-      'Starting soon: your session with Coach K is at 5:30 PM PDT.',
++      'Your session with Coach K starts at 5:30 PM PDT.',
+     ]);
+   });
+ 
+@@ -186,7 +188,7 @@ describe('booking reminders: local time, shown once (B-643-1)', () => {
+     await w.job.runTwentyFourHourReminderSweep();
+     const client = await w.notifications.listNotifications('client-1', {});
+     expect(client.items.map((r) => r.body)).toEqual([
+-      'Reminder: your session with Coach K is on Tue, Jun 2 at 7:30 PM CDT.',
++      'Your session with Coach K is on Tue, Jun 2, 7:30 PM CDT.',
+     ]);
+   });
+ 
+@@ -195,8 +197,8 @@ describe('booking reminders: local time, shown once (B-643-1)', () => {
+     await w.job.runTwentyFourHourReminderSweep();
+     const bodies = w.rows.map((r) => r.body).sort();
+     expect(bodies).toEqual([
+-      'Reminder: your session with Coach K is in about 24 hours.',
+-      'Reminder: your session with Jamie is in about 24 hours.',
++      'Your session with Coach K is in about 24 hours.',
++      'Your session with Jamie is in about 24 hours.',
+     ]);
+   });
+ 
+@@ -234,10 +236,10 @@ describe('booking reminders: local time, shown once (B-643-1)', () => {
+     const client = await w.notifications.listNotifications('client-1', {});
+     const coach = await w.notifications.listNotifications('coach-1', {});
+     expect(client.items.map((r) => r.body)).toEqual([
+-      'Reminder: your session with Coach K is on Tue, Jun 2 at 6:30 PM MDT.',
++      'Your session with Coach K is on Tue, Jun 2, 6:30 PM MDT.',
+     ]);
+     expect(coach.items.map((r) => r.body)).toEqual([
+-      'Reminder: your session with Jamie is on Tue, Jun 2 at 6:30 PM MDT.',
++      'Your session with Jamie is on Tue, Jun 2, 6:30 PM MDT.',
+     ]);
+   });
+ 
+@@ -250,10 +252,10 @@ describe('booking reminders: local time, shown once (B-643-1)', () => {
+     const client = await w.notifications.listNotifications('client-1', {});
+     const coach = await w.notifications.listNotifications('coach-1', {});
+     expect(client.items.map((r) => r.body)).toEqual([
+-      'Reminder: your session with Coach K is on Tue, Jun 2 at 8:30 PM EDT.',
++      'Your session with Coach K is on Tue, Jun 2, 8:30 PM EDT.',
+     ]);
+     expect(coach.items.map((r) => r.body)).toEqual([
+-      'Reminder: your session with Jamie is on Tue, Jun 2 at 5:30 PM PDT.',
++      'Your session with Jamie is on Tue, Jun 2, 5:30 PM PDT.',
+     ]);
+   });
+ 
+@@ -262,7 +264,7 @@ describe('booking reminders: local time, shown once (B-643-1)', () => {
+     await w.job.runTwentyFourHourReminderSweep();
+     const client = await w.notifications.listNotifications('client-1', {});
+     expect(client.items.map((r) => r.body)).toEqual([
+-      'Reminder: your session with Coach K is in about 24 hours.',
++      'Your session with Coach K is in about 24 hours.',
+     ]);
+   });
+ });
+diff --git a/test/privacy/no-pii-in-logs.spec.ts b/test/privacy/no-pii-in-logs.spec.ts
+index 0d002b9c..f3410f9b 100644
+--- a/test/privacy/no-pii-in-logs.spec.ts
++++ b/test/privacy/no-pii-in-logs.spec.ts
+@@ -583,7 +583,6 @@ const LEGACY_EXCEPTION_TEXT: Readonly<Record<string, number>> = {
+   'src/leaderboard/leaderboard.scheduler.ts': 1,
+   'src/leaderboard/leaderboard.service.ts': 1,
+   'src/messaging/messaging.service.ts': 1,
+-  'src/notifications/emitters/booking.emitter.ts': 1,
+   'src/notifications/emitters/build-week-day-unlocked.emitter.ts': 1,
+   'src/notifications/emitters/checkin-submitted.emitter.ts': 1,
+   'src/notifications/emitters/coach-alert.emitter.ts': 1,

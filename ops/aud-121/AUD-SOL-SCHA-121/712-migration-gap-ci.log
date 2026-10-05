@@ -1,0 +1,461 @@
+migration-history-proof	Set up job	﻿2026-10-05T19:49:59.7445066Z Current runner version: '2.337.0'
+migration-history-proof	Set up job	2026-10-05T19:49:59.7479184Z ##[group]Runner Image Provisioner
+migration-history-proof	Set up job	2026-10-05T19:49:59.7480581Z Hosted Compute Agent
+migration-history-proof	Set up job	2026-10-05T19:49:59.7481574Z Version: 20260901.588
+migration-history-proof	Set up job	2026-10-05T19:49:59.7482722Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+migration-history-proof	Set up job	2026-10-05T19:49:59.7484002Z Build Date: 2026-09-01T19:56:44Z
+migration-history-proof	Set up job	2026-10-05T19:49:59.7485555Z Worker ID: {9406a61e-d647-42cb-ad25-2bc39129eef9}
+migration-history-proof	Set up job	2026-10-05T19:49:59.7486853Z Azure Region: eastus
+migration-history-proof	Set up job	2026-10-05T19:49:59.7488066Z ##[endgroup]
+migration-history-proof	Set up job	2026-10-05T19:49:59.7491030Z ##[group]Operating System
+migration-history-proof	Set up job	2026-10-05T19:49:59.7492053Z Ubuntu
+migration-history-proof	Set up job	2026-10-05T19:49:59.7492933Z 24.04.5
+migration-history-proof	Set up job	2026-10-05T19:49:59.7493795Z LTS
+migration-history-proof	Set up job	2026-10-05T19:49:59.7494682Z ##[endgroup]
+migration-history-proof	Set up job	2026-10-05T19:49:59.7495706Z ##[group]Runner Image
+migration-history-proof	Set up job	2026-10-05T19:49:59.7496648Z Image: ubuntu-24.04
+migration-history-proof	Set up job	2026-10-05T19:49:59.7497943Z Version: 20260927.320.1
+migration-history-proof	Set up job	2026-10-05T19:49:59.7499853Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+migration-history-proof	Set up job	2026-10-05T19:49:59.7503067Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+migration-history-proof	Set up job	2026-10-05T19:49:59.7504790Z ##[endgroup]
+migration-history-proof	Set up job	2026-10-05T19:49:59.7506697Z ##[group]GITHUB_TOKEN Permissions
+migration-history-proof	Set up job	2026-10-05T19:49:59.7509794Z Contents: read
+migration-history-proof	Set up job	2026-10-05T19:49:59.7510943Z Metadata: read
+migration-history-proof	Set up job	2026-10-05T19:49:59.7511962Z ##[endgroup]
+migration-history-proof	Set up job	2026-10-05T19:49:59.7514856Z Secret source: Actions
+migration-history-proof	Set up job	2026-10-05T19:49:59.7516363Z Cache mode: write
+migration-history-proof	Set up job	2026-10-05T19:49:59.7518206Z Prepare workflow directory
+migration-history-proof	Set up job	2026-10-05T19:49:59.8135042Z Prepare all required actions
+migration-history-proof	Set up job	2026-10-05T19:49:59.8204242Z Getting action download info
+migration-history-proof	Set up job	2026-10-05T19:50:00.0300060Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+migration-history-proof	Set up job	2026-10-05T19:50:00.4029229Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+migration-history-proof	Set up job	2026-10-05T19:50:00.6437008Z Complete job name: migration-history-proof
+migration-history-proof	Initialize containers	﻿2026-10-05T19:50:00.6944833Z ##[group]Checking docker version
+migration-history-proof	Initialize containers	2026-10-05T19:50:00.6957993Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+migration-history-proof	Initialize containers	2026-10-05T19:50:01.6278190Z '1.48'
+migration-history-proof	Initialize containers	2026-10-05T19:50:01.6296043Z Docker daemon API version: '1.48'
+migration-history-proof	Initialize containers	2026-10-05T19:50:01.6296918Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+migration-history-proof	Initialize containers	2026-10-05T19:50:01.6445227Z '1.48'
+migration-history-proof	Initialize containers	2026-10-05T19:50:01.6458987Z Docker client API version: '1.48'
+migration-history-proof	Initialize containers	2026-10-05T19:50:01.6464294Z ##[endgroup]
+migration-history-proof	Initialize containers	2026-10-05T19:50:01.6467285Z ##[group]Clean up resources from previous jobs
+migration-history-proof	Initialize containers	2026-10-05T19:50:01.6473190Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=3c4611"
+migration-history-proof	Initialize containers	2026-10-05T19:50:01.6639273Z ##[command]/usr/bin/docker network prune --force --filter "label=3c4611"
+migration-history-proof	Initialize containers	2026-10-05T19:50:01.6757999Z ##[endgroup]
+migration-history-proof	Initialize containers	2026-10-05T19:50:01.6758594Z ##[group]Create local container network
+migration-history-proof	Initialize containers	2026-10-05T19:50:01.6768795Z ##[command]/usr/bin/docker network create --label 3c4611 github_network_3b0cf24f4a374aef93e2c7313d0d76c4
+migration-history-proof	Initialize containers	2026-10-05T19:50:01.7246813Z fdbe2a502e34ee65f26cfb4163950191eef761676ae0968b677b4271c9236bf5
+migration-history-proof	Initialize containers	2026-10-05T19:50:01.7256365Z ##[endgroup]
+migration-history-proof	Initialize containers	2026-10-05T19:50:01.7282526Z ##[group]Starting postgres service container
+migration-history-proof	Initialize containers	2026-10-05T19:50:01.7304094Z ##[command]/usr/bin/docker pull postgres:15.18
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.0454532Z 15.18: Pulling from library/postgres
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1175293Z 26c307b5e35a: Pulling fs layer
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1179537Z 8b2c4a6af09d: Pulling fs layer
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1181650Z 87028e016b17: Pulling fs layer
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1184006Z 7075aaeba0d2: Pulling fs layer
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1186078Z 2940b17a4e75: Pulling fs layer
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1187995Z 82c3afe6c769: Pulling fs layer
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1189332Z 53125ce046b2: Pulling fs layer
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1190579Z 5d2717eb2aba: Pulling fs layer
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1191685Z d59ab6a87621: Pulling fs layer
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1193263Z ab375627ebf1: Pulling fs layer
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1195058Z 8ed8c28b68ee: Pulling fs layer
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1196549Z 6af0c50f53e0: Pulling fs layer
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1198386Z be670d422a36: Pulling fs layer
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1199554Z d0f85e5745b9: Pulling fs layer
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1200574Z 82c3afe6c769: Waiting
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1201400Z 53125ce046b2: Waiting
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1202338Z 5d2717eb2aba: Waiting
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1203297Z d59ab6a87621: Waiting
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1204229Z ab375627ebf1: Waiting
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1205102Z 6af0c50f53e0: Waiting
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1206679Z 8ed8c28b68ee: Waiting
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1208786Z be670d422a36: Waiting
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1210063Z 7075aaeba0d2: Waiting
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1211205Z d0f85e5745b9: Waiting
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1491706Z 2940b17a4e75: Waiting
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1493207Z 8b2c4a6af09d: Verifying Checksum
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1499444Z 8b2c4a6af09d: Download complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1841515Z 87028e016b17: Verifying Checksum
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.1845114Z 87028e016b17: Download complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.2016575Z 7075aaeba0d2: Verifying Checksum
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.2023089Z 7075aaeba0d2: Download complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.2453862Z 82c3afe6c769: Verifying Checksum
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.2457062Z 82c3afe6c769: Download complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.2588341Z 2940b17a4e75: Verifying Checksum
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.2590546Z 2940b17a4e75: Download complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.2710931Z 53125ce046b2: Verifying Checksum
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.2712709Z 53125ce046b2: Download complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.2839852Z 5d2717eb2aba: Verifying Checksum
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.2842438Z 5d2717eb2aba: Download complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.3051931Z 26c307b5e35a: Download complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.3141848Z ab375627ebf1: Verifying Checksum
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.3143913Z ab375627ebf1: Download complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.3347799Z 8ed8c28b68ee: Verifying Checksum
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.3350890Z 8ed8c28b68ee: Download complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.3411230Z 6af0c50f53e0: Verifying Checksum
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.3417879Z 6af0c50f53e0: Download complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.3641094Z be670d422a36: Verifying Checksum
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.3644109Z be670d422a36: Download complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.3712799Z d0f85e5745b9: Verifying Checksum
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.3715330Z d0f85e5745b9: Download complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.6876130Z d59ab6a87621: Verifying Checksum
+migration-history-proof	Initialize containers	2026-10-05T19:50:02.6878268Z d59ab6a87621: Download complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:03.4047886Z 26c307b5e35a: Pull complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:06.2494233Z 8b2c4a6af09d: Pull complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:06.4222563Z 87028e016b17: Pull complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:06.4608828Z 7075aaeba0d2: Pull complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:06.7558666Z 2940b17a4e75: Pull complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:06.8306980Z 82c3afe6c769: Pull complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:06.8376261Z 53125ce046b2: Pull complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:06.8484420Z 5d2717eb2aba: Pull complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:09.7424436Z d59ab6a87621: Pull complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:09.7545267Z ab375627ebf1: Pull complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:09.7631443Z 8ed8c28b68ee: Pull complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:09.7721457Z 6af0c50f53e0: Pull complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:09.7805566Z be670d422a36: Pull complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:09.7893009Z d0f85e5745b9: Pull complete
+migration-history-proof	Initialize containers	2026-10-05T19:50:09.7928186Z Digest: sha256:6eb0add3b77c081df18aa518ce43df58fdcc40f2e6d868a6fd08038dc7acd425
+migration-history-proof	Initialize containers	2026-10-05T19:50:09.7938525Z Status: Downloaded newer image for postgres:15.18
+migration-history-proof	Initialize containers	2026-10-05T19:50:09.7946406Z docker.io/library/postgres:15.18
+migration-history-proof	Initialize containers	2026-10-05T19:50:09.8005895Z ##[command]/usr/bin/docker create --name ec6f1ef43c2b40399097d96d54bc1772_postgres1518_7903a2 --label 3c4611 --network github_network_3b0cf24f4a374aef93e2c7313d0d76c4 --network-alias postgres -p 5432:5432 --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10 -e "POSTGRES_USER=postgres" -e "POSTGRES_PASSWORD=postgres" -e "POSTGRES_DB=postgres" -e GITHUB_ACTIONS=true -e CI=true postgres:15.18
+migration-history-proof	Initialize containers	2026-10-05T19:50:09.8281104Z 0cd173909f5bfde767e81cf7d6a64448d6092d21e259b04de2ba9f1a46dc4b97
+migration-history-proof	Initialize containers	2026-10-05T19:50:09.8301023Z ##[command]/usr/bin/docker start 0cd173909f5bfde767e81cf7d6a64448d6092d21e259b04de2ba9f1a46dc4b97
+migration-history-proof	Initialize containers	2026-10-05T19:50:10.4998949Z 0cd173909f5bfde767e81cf7d6a64448d6092d21e259b04de2ba9f1a46dc4b97
+migration-history-proof	Initialize containers	2026-10-05T19:50:10.5021401Z ##[command]/usr/bin/docker ps --all --filter id=0cd173909f5bfde767e81cf7d6a64448d6092d21e259b04de2ba9f1a46dc4b97 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+migration-history-proof	Initialize containers	2026-10-05T19:50:10.5220687Z 0cd173909f5bfde767e81cf7d6a64448d6092d21e259b04de2ba9f1a46dc4b97 Up Less than a second (health: starting)
+migration-history-proof	Initialize containers	2026-10-05T19:50:10.5242607Z ##[command]/usr/bin/docker port 0cd173909f5bfde767e81cf7d6a64448d6092d21e259b04de2ba9f1a46dc4b97
+migration-history-proof	Initialize containers	2026-10-05T19:50:10.5374243Z 5432/tcp -> 0.0.0.0:5432
+migration-history-proof	Initialize containers	2026-10-05T19:50:10.5386175Z 5432/tcp -> [::]:5432
+migration-history-proof	Initialize containers	2026-10-05T19:50:10.5424246Z ##[endgroup]
+migration-history-proof	Initialize containers	2026-10-05T19:50:10.5433375Z ##[group]Waiting for all services to be ready
+migration-history-proof	Initialize containers	2026-10-05T19:50:10.5446351Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 0cd173909f5bfde767e81cf7d6a64448d6092d21e259b04de2ba9f1a46dc4b97
+migration-history-proof	Initialize containers	2026-10-05T19:50:10.5584438Z starting
+migration-history-proof	Initialize containers	2026-10-05T19:50:10.5608952Z postgres service is starting, waiting 2 seconds before checking again.
+migration-history-proof	Initialize containers	2026-10-05T19:50:12.5610084Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 0cd173909f5bfde767e81cf7d6a64448d6092d21e259b04de2ba9f1a46dc4b97
+migration-history-proof	Initialize containers	2026-10-05T19:50:12.5733076Z starting
+migration-history-proof	Initialize containers	2026-10-05T19:50:12.5745588Z postgres service is starting, waiting 4 seconds before checking again.
+migration-history-proof	Initialize containers	2026-10-05T19:50:16.5957036Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 0cd173909f5bfde767e81cf7d6a64448d6092d21e259b04de2ba9f1a46dc4b97
+migration-history-proof	Initialize containers	2026-10-05T19:50:16.6074883Z healthy
+migration-history-proof	Initialize containers	2026-10-05T19:50:16.6091108Z postgres service is healthy.
+migration-history-proof	Initialize containers	2026-10-05T19:50:16.6091804Z ##[endgroup]
+migration-history-proof	Run actions/checkout@v6	﻿2026-10-05T19:50:16.6371373Z ##[group]Run actions/checkout@v6
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.6371937Z with:
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.6372233Z   repository: BradleyGleavePortfolio/growth-project-backend
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.6374778Z   token: ***
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.6374988Z   ssh-strict: true
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.6375206Z   ssh-user: git
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.6375423Z   persist-credentials: true
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.6375659Z   clean: true
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.6375869Z   sparse-checkout-cone-mode: true
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.6376123Z   fetch-depth: 1
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.6376321Z   fetch-tags: false
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.6376523Z   show-progress: true
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.6376731Z   lfs: false
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.6376919Z   submodules: false
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.6377123Z   set-safe-directory: true
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.6377717Z   allow-unsafe-pr-checkout: false
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.6378266Z env:
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.6378711Z   DATABASE_URL: ***localhost:5432/postgres
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.6379133Z   DIRECT_URL: ***localhost:5432/postgres
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.6379419Z   NODE_OPTIONS: --max-old-space-size=4096
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.6444197Z ##[endgroup]
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.7396051Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.7397604Z ##[group]Getting Git version info
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.7398115Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.7398782Z [command]/usr/bin/git version
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.8401182Z git version 2.55.0
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.8425025Z ##[endgroup]
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.8440031Z Temporarily overriding HOME='/home/runner/work/_temp/7974afd4-8d0c-4ef0-b0b3-934386e4abd9' before making global git config changes
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.8441397Z Adding repository directory to the temporary git global config as a safe directory
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.8445995Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.8643131Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.8646832Z ##[group]Determining repository object format
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.8649494Z ##[endgroup]
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.8650094Z ##[group]Initializing the repository
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.8653782Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.9246217Z hint: Using 'master' as the name for the initial branch. This default branch name
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.9247180Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.9248391Z hint: to use in all of your new repositories, which will suppress this warning,
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.9249081Z hint: call:
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.9249400Z hint:
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.9249820Z hint: 	git config --global init.defaultBranch <name>
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.9250331Z hint:
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.9250863Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.9251720Z hint: 'development'. The just-created branch can be renamed via this command:
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.9252397Z hint:
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.9252630Z hint: 	git branch -m <name>
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.9252857Z hint:
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.9253169Z hint: Disable this message with "git config set advice.defaultBranchName false"
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.9253831Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.9263229Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.9490438Z ##[endgroup]
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.9491121Z ##[group]Disabling automatic garbage collection
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.9495201Z [command]/usr/bin/git config --local gc.auto 0
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.9523558Z ##[endgroup]
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.9524322Z ##[group]Setting up auth
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.9524868Z Removing SSH command configuration
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.9531371Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:16.9560848Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:17.1373955Z Removing HTTP extra header
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:17.1381050Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:17.1414960Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:17.1643296Z Removing includeIf entries pointing to credentials config files
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:17.1649823Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:17.1681950Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:17.1922167Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-c3c42805-5e08-43e8-9896-8ee38cfc6c67.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:17.1962409Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-c3c42805-5e08-43e8-9896-8ee38cfc6c67.config
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:17.1996485Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-c3c42805-5e08-43e8-9896-8ee38cfc6c67.config
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:17.2032839Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-c3c42805-5e08-43e8-9896-8ee38cfc6c67.config
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:17.2067741Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-c3c42805-5e08-43e8-9896-8ee38cfc6c67.config
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:17.2104462Z ##[endgroup]
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:17.2104921Z ##[group]Fetching the repository
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:17.2116592Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +6cc03d6f54f8f50e51f7c70840f496361c12dd5f:refs/remotes/origin/audit/AUD-SOL-SCHA-121/712-migration-1
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:18.5600612Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:18.5601396Z  * [new ref]         6cc03d6f54f8f50e51f7c70840f496361c12dd5f -> origin/audit/AUD-SOL-SCHA-121/712-migration-1
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:18.5612110Z [command]/usr/bin/git branch --list --remote origin/audit/AUD-SOL-SCHA-121/712-migration-1
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:18.5635648Z   origin/audit/AUD-SOL-SCHA-121/712-migration-1
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:18.5644795Z [command]/usr/bin/git rev-parse refs/remotes/origin/audit/AUD-SOL-SCHA-121/712-migration-1
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:18.5665507Z 6cc03d6f54f8f50e51f7c70840f496361c12dd5f
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:18.5670663Z ##[endgroup]
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:18.5671189Z ##[group]Determining the checkout info
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:18.5672005Z ##[endgroup]
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:18.5678056Z [command]/usr/bin/git sparse-checkout disable
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:18.5841158Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:18.5867985Z ##[group]Checking out the ref
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:18.5872354Z [command]/usr/bin/git checkout --progress --force -B audit/AUD-SOL-SCHA-121/712-migration-1 refs/remotes/origin/audit/AUD-SOL-SCHA-121/712-migration-1
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:18.8057803Z Switched to a new branch 'audit/AUD-SOL-SCHA-121/712-migration-1'
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:18.8065195Z branch 'audit/AUD-SOL-SCHA-121/712-migration-1' set up to track 'origin/audit/AUD-SOL-SCHA-121/712-migration-1'.
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:18.8074535Z ##[endgroup]
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:18.8119460Z [command]/usr/bin/git log -1 --format=%H
+migration-history-proof	Run actions/checkout@v6	2026-10-05T19:50:18.8142488Z 6cc03d6f54f8f50e51f7c70840f496361c12dd5f
+migration-history-proof	Run actions/setup-node@v6	﻿2026-10-05T19:50:18.8391165Z ##[group]Run actions/setup-node@v6
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:18.8391462Z with:
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:18.8391660Z   node-version: 20
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:18.8391868Z   cache: npm
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:18.8392068Z   check-latest: false
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:18.8394450Z   token: ***
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:18.8394683Z   package-manager-cache: true
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:18.8394923Z env:
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:18.8395311Z   DATABASE_URL: ***localhost:5432/postgres
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:18.8395744Z   DIRECT_URL: ***localhost:5432/postgres
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:18.8396036Z   NODE_OPTIONS: --max-old-space-size=4096
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:18.8396309Z ##[endgroup]
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:18.9928526Z Attempting to download 20...
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:19.4764566Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:19.7917300Z Extracting ...
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:19.8031823Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/ec8a580b-1e2d-4eb9-aa32-87d008688dbb -f /home/runner/work/_temp/3ecf5ac1-7180-4898-9534-c3621938e1d9
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:20.8260128Z Adding to the cache ...
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:22.6463556Z ##[group]Environment details
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:22.9736269Z node: v20.20.2
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:22.9736702Z npm: 10.8.2
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:22.9737029Z yarn: 1.22.22
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:22.9737935Z ##[endgroup]
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:22.9756834Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:23.0942723Z /home/runner/.npm
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:23.1844902Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:23.7131456Z Received 86828135 of 86828135 (100.0%), 176.2 MBs/sec
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:23.7133392Z Cache Size: ~83 MB (86828135 B)
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:23.7239403Z [command]/usr/bin/tar -xf /home/runner/work/_temp/bb6d34ea-a368-442a-85f7-e431078fe03e/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:23.9427522Z Cache restored successfully
+migration-history-proof	Run actions/setup-node@v6	2026-10-05T19:50:23.9472955Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+migration-history-proof	Run npm ci	﻿2026-10-05T19:50:23.9669512Z ##[group]Run npm ci
+migration-history-proof	Run npm ci	2026-10-05T19:50:23.9669816Z ^[[36;1mnpm ci^[[0m
+migration-history-proof	Run npm ci	2026-10-05T19:50:24.0497243Z shell: /usr/bin/bash -e {0}
+migration-history-proof	Run npm ci	2026-10-05T19:50:24.0498031Z env:
+migration-history-proof	Run npm ci	2026-10-05T19:50:24.0498488Z   DATABASE_URL: ***localhost:5432/postgres
+migration-history-proof	Run npm ci	2026-10-05T19:50:24.0498930Z   DIRECT_URL: ***localhost:5432/postgres
+migration-history-proof	Run npm ci	2026-10-05T19:50:24.0499234Z   NODE_OPTIONS: --max-old-space-size=4096
+migration-history-proof	Run npm ci	2026-10-05T19:50:24.0499523Z ##[endgroup]
+migration-history-proof	Run npm ci	2026-10-05T19:50:29.6745164Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+migration-history-proof	Run npm ci	2026-10-05T19:50:30.5414458Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+migration-history-proof	Run npm ci	2026-10-05T19:50:31.6772179Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+migration-history-proof	Run npm ci	2026-10-05T19:50:33.0064876Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+migration-history-proof	Run npm ci	2026-10-05T19:50:33.0136205Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+migration-history-proof	Run npm ci	2026-10-05T19:50:33.0908799Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+migration-history-proof	Run npm ci	2026-10-05T19:50:45.9751977Z 
+migration-history-proof	Run npm ci	2026-10-05T19:50:45.9752754Z > growth-project-backend@1.0.0 postinstall
+migration-history-proof	Run npm ci	2026-10-05T19:50:45.9753312Z > prisma generate
+migration-history-proof	Run npm ci	2026-10-05T19:50:45.9753646Z 
+migration-history-proof	Run npm ci	2026-10-05T19:50:46.9138945Z Prisma schema loaded from prisma/schema.prisma
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.6389860Z ┌─────────────────────────────────────────────────────────┐
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.6391065Z │  Update available 6.19.3 -> 8.0.0-rc.20                 │
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.6391893Z │                                                         │
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.6392720Z │  This is a major update - please follow the guide at    │
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.6393682Z │  https://pris.ly/d/major-version-upgrade                │
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.6394603Z │                                                         │
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.6395399Z │  Run the following to update                            │
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.6396281Z │    npm i --save-dev prisma@latest                       │
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.6397123Z │    npm i @prisma/client@latest                          │
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.6398434Z └─────────────────────────────────────────────────────────┘
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.6398861Z 
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.6399587Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.01s
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.6400132Z 
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.6400766Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.6401348Z 
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.6402257Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.6403067Z 
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.6946131Z 
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.6946928Z > growth-project-backend@1.0.0 prepare
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.6948058Z > lefthook install
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.6948412Z 
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.7515103Z sync hooks: ✔️(pre-commit, commit-msg)
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.7683048Z 
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.7683699Z added 1115 packages, and audited 1116 packages in 27s
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.7684155Z 
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.7684848Z 202 packages are looking for funding
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.7685664Z   run `npm fund` for details
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.7727155Z 
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.7727478Z 3 high severity vulnerabilities
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.7727800Z 
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.7728439Z To address all issues (including breaking changes), run:
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.7729208Z   npm audit fix --force
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.7729455Z 
+migration-history-proof	Run npm ci	2026-10-05T19:50:50.7729656Z Run `npm audit` for details.
+migration-history-proof	Run npx prisma generate	﻿2026-10-05T19:50:50.8364850Z ##[group]Run npx prisma generate
+migration-history-proof	Run npx prisma generate	2026-10-05T19:50:50.8365187Z ^[[36;1mnpx prisma generate^[[0m
+migration-history-proof	Run npx prisma generate	2026-10-05T19:50:50.8427698Z shell: /usr/bin/bash -e {0}
+migration-history-proof	Run npx prisma generate	2026-10-05T19:50:50.8427971Z env:
+migration-history-proof	Run npx prisma generate	2026-10-05T19:50:50.8428444Z   DATABASE_URL: ***localhost:5432/postgres
+migration-history-proof	Run npx prisma generate	2026-10-05T19:50:50.8428888Z   DIRECT_URL: ***localhost:5432/postgres
+migration-history-proof	Run npx prisma generate	2026-10-05T19:50:50.8429195Z   NODE_OPTIONS: --max-old-space-size=4096
+migration-history-proof	Run npx prisma generate	2026-10-05T19:50:50.8429493Z ##[endgroup]
+migration-history-proof	Run npx prisma generate	2026-10-05T19:50:52.1062717Z Prisma schema loaded from prisma/schema.prisma
+migration-history-proof	Run npx prisma generate	2026-10-05T19:50:55.8364288Z 
+migration-history-proof	Run npx prisma generate	2026-10-05T19:50:55.8365632Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.04s
+migration-history-proof	Run npx prisma generate	2026-10-05T19:50:55.8366149Z 
+migration-history-proof	Run npx prisma generate	2026-10-05T19:50:55.8366618Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+migration-history-proof	Run npx prisma generate	2026-10-05T19:50:55.8367071Z 
+migration-history-proof	Run npx prisma generate	2026-10-05T19:50:55.8368180Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+migration-history-proof	Run npx prisma generate	2026-10-05T19:50:55.8368786Z 
+migration-history-proof	Run if ! command -v psql; then	﻿2026-10-05T19:50:55.8980894Z ##[group]Run if ! command -v psql; then
+migration-history-proof	Run if ! command -v psql; then	2026-10-05T19:50:55.8981340Z ^[[36;1mif ! command -v psql; then^[[0m
+migration-history-proof	Run if ! command -v psql; then	2026-10-05T19:50:55.8981644Z ^[[36;1m  sudo apt-get update^[[0m
+migration-history-proof	Run if ! command -v psql; then	2026-10-05T19:50:55.8981964Z ^[[36;1m  sudo apt-get install -y postgresql-client^[[0m
+migration-history-proof	Run if ! command -v psql; then	2026-10-05T19:50:55.8982284Z ^[[36;1mfi^[[0m
+migration-history-proof	Run if ! command -v psql; then	2026-10-05T19:50:55.9043610Z shell: /usr/bin/bash -e {0}
+migration-history-proof	Run if ! command -v psql; then	2026-10-05T19:50:55.9043873Z env:
+migration-history-proof	Run if ! command -v psql; then	2026-10-05T19:50:55.9044331Z   DATABASE_URL: ***localhost:5432/postgres
+migration-history-proof	Run if ! command -v psql; then	2026-10-05T19:50:55.9044760Z   DIRECT_URL: ***localhost:5432/postgres
+migration-history-proof	Run if ! command -v psql; then	2026-10-05T19:50:55.9045070Z   NODE_OPTIONS: --max-old-space-size=4096
+migration-history-proof	Run if ! command -v psql; then	2026-10-05T19:50:55.9045380Z ##[endgroup]
+migration-history-proof	Run if ! command -v psql; then	2026-10-05T19:50:55.9123023Z /usr/bin/psql
+migration-history-proof	Run npx jest --ci --runInBand test/audit-sol121-scheduling-migration-gap.spec.ts	﻿2026-10-05T19:50:55.9149741Z ##[group]Run npx jest --ci --runInBand test/audit-sol121-scheduling-migration-gap.spec.ts
+migration-history-proof	Run npx jest --ci --runInBand test/audit-sol121-scheduling-migration-gap.spec.ts	2026-10-05T19:50:55.9150407Z ^[[36;1mnpx jest --ci --runInBand test/audit-sol121-scheduling-migration-gap.spec.ts^[[0m
+migration-history-proof	Run npx jest --ci --runInBand test/audit-sol121-scheduling-migration-gap.spec.ts	2026-10-05T19:50:55.9204060Z shell: /usr/bin/bash -e {0}
+migration-history-proof	Run npx jest --ci --runInBand test/audit-sol121-scheduling-migration-gap.spec.ts	2026-10-05T19:50:55.9204318Z env:
+migration-history-proof	Run npx jest --ci --runInBand test/audit-sol121-scheduling-migration-gap.spec.ts	2026-10-05T19:50:55.9204737Z   DATABASE_URL: ***localhost:5432/postgres
+migration-history-proof	Run npx jest --ci --runInBand test/audit-sol121-scheduling-migration-gap.spec.ts	2026-10-05T19:50:55.9205164Z   DIRECT_URL: ***localhost:5432/postgres
+migration-history-proof	Run npx jest --ci --runInBand test/audit-sol121-scheduling-migration-gap.spec.ts	2026-10-05T19:50:55.9205464Z   NODE_OPTIONS: --max-old-space-size=4096
+migration-history-proof	Run npx jest --ci --runInBand test/audit-sol121-scheduling-migration-gap.spec.ts	2026-10-05T19:50:55.9205751Z ##[endgroup]
+migration-history-proof	Run npx jest --ci --runInBand test/audit-sol121-scheduling-migration-gap.spec.ts	2026-10-05T19:51:05.1331518Z   console.log
+migration-history-proof	Run npx jest --ci --runInBand test/audit-sol121-scheduling-migration-gap.spec.ts	2026-10-05T19:51:05.1332553Z     PASS: older 20270222 filled after applied 20270301; receipt preservation and exact scheduling DB contract equality
+migration-history-proof	Run npx jest --ci --runInBand test/audit-sol121-scheduling-migration-gap.spec.ts	2026-10-05T19:51:05.1333255Z 
+migration-history-proof	Run npx jest --ci --runInBand test/audit-sol121-scheduling-migration-gap.spec.ts	2026-10-05T19:51:05.1333813Z       at Object.<anonymous> (test/audit-sol121-scheduling-migration-gap.spec.ts:106:13)
+migration-history-proof	Run npx jest --ci --runInBand test/audit-sol121-scheduling-migration-gap.spec.ts	2026-10-05T19:51:05.1334387Z 
+migration-history-proof	Run npx jest --ci --runInBand test/audit-sol121-scheduling-migration-gap.spec.ts	2026-10-05T19:51:05.1420202Z PASS test/audit-sol121-scheduling-migration-gap.spec.ts (8.144 s, 62 MB heap size)
+migration-history-proof	Run npx jest --ci --runInBand test/audit-sol121-scheduling-migration-gap.spec.ts	2026-10-05T19:51:05.1422370Z   AUD-SOL-SCHA-121: out-of-order migration deploy on applied newer history
+migration-history-proof	Run npx jest --ci --runInBand test/audit-sol121-scheduling-migration-gap.spec.ts	2026-10-05T19:51:05.1424859Z     ✓ applies the older gap, preserves every newer migration receipt and commutes with in-order replay (7879 ms)
+migration-history-proof	Run npx jest --ci --runInBand test/audit-sol121-scheduling-migration-gap.spec.ts	2026-10-05T19:51:05.1425813Z 
+migration-history-proof	Run npx jest --ci --runInBand test/audit-sol121-scheduling-migration-gap.spec.ts	2026-10-05T19:51:05.1517886Z Test Suites: 1 passed, 1 total
+migration-history-proof	Run npx jest --ci --runInBand test/audit-sol121-scheduling-migration-gap.spec.ts	2026-10-05T19:51:05.1518903Z Tests:       1 passed, 1 total
+migration-history-proof	Run npx jest --ci --runInBand test/audit-sol121-scheduling-migration-gap.spec.ts	2026-10-05T19:51:05.1542030Z Snapshots:   0 total
+migration-history-proof	Run npx jest --ci --runInBand test/audit-sol121-scheduling-migration-gap.spec.ts	2026-10-05T19:51:05.1542505Z Time:        8.38 s
+migration-history-proof	Run npx jest --ci --runInBand test/audit-sol121-scheduling-migration-gap.spec.ts	2026-10-05T19:51:05.1543151Z Ran all test suites matching test/audit-sol121-scheduling-migration-gap.spec.ts.
+migration-history-proof	Post Run actions/setup-node@v6	﻿2026-10-05T19:51:05.1901903Z Post job cleanup.
+migration-history-proof	Post Run actions/setup-node@v6	2026-10-05T19:51:05.3042809Z Cache hit occurred on the primary key node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12, not saving cache.
+migration-history-proof	Post Run actions/checkout@v6	﻿2026-10-05T19:51:05.3165050Z Post job cleanup.
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.3973498Z [command]/usr/bin/git version
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4010450Z git version 2.55.0
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4049033Z Temporarily overriding HOME='/home/runner/work/_temp/13b643af-4464-47ab-b5b2-788c004718e1' before making global git config changes
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4050517Z Adding repository directory to the temporary git global config as a safe directory
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4054699Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4085056Z Removing SSH command configuration
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4092060Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4127149Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4347999Z Removing HTTP extra header
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4352223Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4384090Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4598297Z Removing includeIf entries pointing to credentials config files
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4605725Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4629356Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4630359Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4631002Z includeif.gitdir:/github/workspace/.git.path
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4631445Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4638265Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4658216Z /home/runner/work/_temp/git-credentials-c3c42805-5e08-43e8-9896-8ee38cfc6c67.config
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4670857Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-c3c42805-5e08-43e8-9896-8ee38cfc6c67.config
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4704447Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4724594Z /home/runner/work/_temp/git-credentials-c3c42805-5e08-43e8-9896-8ee38cfc6c67.config
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4733964Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-c3c42805-5e08-43e8-9896-8ee38cfc6c67.config
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4765902Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4785918Z /github/runner_temp/git-credentials-c3c42805-5e08-43e8-9896-8ee38cfc6c67.config
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4793690Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-c3c42805-5e08-43e8-9896-8ee38cfc6c67.config
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4824710Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4846045Z /github/runner_temp/git-credentials-c3c42805-5e08-43e8-9896-8ee38cfc6c67.config
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4856031Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-c3c42805-5e08-43e8-9896-8ee38cfc6c67.config
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.4890892Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+migration-history-proof	Post Run actions/checkout@v6	2026-10-05T19:51:05.5105899Z Removing credentials config '/home/runner/work/_temp/git-credentials-c3c42805-5e08-43e8-9896-8ee38cfc6c67.config'
+migration-history-proof	Stop containers	﻿2026-10-05T19:51:05.5217615Z Print service container logs: ec6f1ef43c2b40399097d96d54bc1772_postgres1518_7903a2
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5222122Z ##[command]/usr/bin/docker logs --details 0cd173909f5bfde767e81cf7d6a64448d6092d21e259b04de2ba9f1a46dc4b97
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5348070Z  initdb: warning: enabling "trust" authentication for local connections
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5349005Z  The files belonging to this database system will be owned by user "postgres".
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5350282Z  initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5351934Z  2026-10-05 19:50:11.352 UTC [1] LOG:  starting PostgreSQL 15.18 (Debian 15.18-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5353076Z  This user must also own the server process.
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5353569Z  
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5354026Z  The database cluster will be initialized with locale "en_US.utf8".
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5354833Z  The default database encoding has accordingly been set to "UTF8".
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5355558Z  The default text search configuration will be set to "english".
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5356124Z  
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5356448Z  Data page checksums are disabled.
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5356865Z  
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5357780Z  fixing permissions on existing directory /var/lib/postgresql/data ... ok
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5358504Z  creating subdirectories ... ok
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5359021Z  selecting dynamic shared memory implementation ... posix
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5359574Z  selecting default max_connections ... 100
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5360043Z  selecting default shared_buffers ... 128MB
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5360498Z  selecting default time zone ... Etc/UTC
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5360976Z  creating configuration files ... ok
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5361452Z  running bootstrap script ... ok
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5361955Z  performing post-bootstrap initialization ... ok
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5362480Z  syncing data to disk ... ok
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5362888Z  
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5363347Z  
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5363744Z  Success. You can now start the database server using:
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5364242Z  
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5364635Z      pg_ctl -D /var/lib/postgresql/data -l logfile start
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5365157Z  
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5365830Z  waiting for server to start....2026-10-05 19:50:11.116 UTC [48] LOG:  starting PostgreSQL 15.18 (Debian 15.18-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5366743Z  2026-10-05 19:50:11.117 UTC [48] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5367626Z  2026-10-05 19:50:11.119 UTC [51] LOG:  database system was shut down at 2026-10-05 19:50:11 UTC
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5368537Z  2026-10-05 19:50:11.122 UTC [48] LOG:  database system is ready to accept connections
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5369013Z   done
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5369213Z  server started
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5369409Z  
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5369742Z  /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5370137Z  
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5370393Z  2026-10-05 19:50:11.234 UTC [48] LOG:  received fast shutdown request
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5370931Z  waiting for server to shut down....2026-10-05 19:50:11.234 UTC [48] LOG:  aborting any active transactions
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5371519Z  2026-10-05 19:50:11.352 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5371995Z  2026-10-05 19:50:11.352 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5372531Z  2026-10-05 19:50:11.353 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5373099Z  2026-10-05 19:50:11.355 UTC [62] LOG:  database system was shut down at 2026-10-05 19:50:11 UTC
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5373626Z  2026-10-05 19:50:11.358 UTC [1] LOG:  database system is ready to accept connections
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5374451Z  2026-10-05 19:50:11.236 UTC [48] LOG:  background worker "logical replication launcher" (PID 54) exited with exit code 1
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5375161Z  2026-10-05 19:50:11.237 UTC [49] LOG:  shutting down
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5375548Z  2026-10-05 19:50:11.237 UTC [49] LOG:  checkpoint starting: shutdown immediate
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5376509Z  2026-10-05 19:50:11.239 UTC [49] LOG:  checkpoint complete: wrote 3 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.003 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5377740Z  2026-10-05 19:50:11.243 UTC [48] LOG:  database system is shut down
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5378081Z   done
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5378268Z  server stopped
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5378465Z  
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5378697Z  PostgreSQL init process complete; ready for start up.
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5379009Z  
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5383891Z Stop and remove container: ec6f1ef43c2b40399097d96d54bc1772_postgres1518_7903a2
+migration-history-proof	Stop containers	2026-10-05T19:51:05.5388763Z ##[command]/usr/bin/docker rm --force 0cd173909f5bfde767e81cf7d6a64448d6092d21e259b04de2ba9f1a46dc4b97
+migration-history-proof	Stop containers	2026-10-05T19:51:05.8880172Z 0cd173909f5bfde767e81cf7d6a64448d6092d21e259b04de2ba9f1a46dc4b97
+migration-history-proof	Stop containers	2026-10-05T19:51:05.8912939Z Remove container network: github_network_3b0cf24f4a374aef93e2c7313d0d76c4
+migration-history-proof	Stop containers	2026-10-05T19:51:05.8917736Z ##[command]/usr/bin/docker network rm github_network_3b0cf24f4a374aef93e2c7313d0d76c4
+migration-history-proof	Stop containers	2026-10-05T19:51:06.0093602Z github_network_3b0cf24f4a374aef93e2c7313d0d76c4
+migration-history-proof	Complete job	﻿2026-10-05T19:51:06.0176182Z Cleaning up orphan processes

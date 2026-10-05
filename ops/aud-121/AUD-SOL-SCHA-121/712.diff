@@ -1,0 +1,1611 @@
+diff --git a/prisma/migrations/20270222000000_scheduling_lifecycle_integrity/down.sql b/prisma/migrations/20270222000000_scheduling_lifecycle_integrity/down.sql
+new file mode 100644
+index 00000000..d3b855b5
+--- /dev/null
++++ b/prisma/migrations/20270222000000_scheduling_lifecycle_integrity/down.sql
+@@ -0,0 +1,47 @@
++-- Reverse of 20270222000000_scheduling_lifecycle_integrity.
++-- Drops exactly what the forward migration added.
++--
++-- Data note: dropping the SessionType columns discards which type was the
++-- welcome type and any stored default meeting links; dropping the
++-- NotificationDeliveryLog delivery-state columns keeps every claim row (so
++-- no reminder is re-sent) but forgets retry state; sessions and other columns
++-- are untouched. Dropping the exclusion constraint removes the database floor
++-- against double booking (the service-level advisory lock and re-check
++-- remain).
++--
++-- btree_gist (S-SCHED-3 C-634-1): removed only when the forward migration
++-- installed it (its ownership comment), and only if nothing else has come to
++-- depend on it; otherwise it stays installed and a NOTICE says why. A
++-- pre-existing, shared extension is never dropped by this file.
++-- The recorded Prisma migration history is not rewritten here.
++DROP INDEX IF EXISTS "NotificationDeliveryLog_kind_status_idx";
++ALTER TABLE "NotificationDeliveryLog" DROP CONSTRAINT IF EXISTS "NotificationDeliveryLog_status_check";
++ALTER TABLE "NotificationDeliveryLog" DROP COLUMN IF EXISTS "last_error";
++ALTER TABLE "NotificationDeliveryLog" DROP COLUMN IF EXISTS "notification_id";
++ALTER TABLE "NotificationDeliveryLog" DROP COLUMN IF EXISTS "push_done_at";
++ALTER TABLE "NotificationDeliveryLog" DROP COLUMN IF EXISTS "inapp_done_at";
++ALTER TABLE "NotificationDeliveryLog" DROP COLUMN IF EXISTS "claim_token";
++ALTER TABLE "NotificationDeliveryLog" DROP COLUMN IF EXISTS "lease_until";
++ALTER TABLE "NotificationDeliveryLog" DROP COLUMN IF EXISTS "attempts";
++ALTER TABLE "NotificationDeliveryLog" DROP COLUMN IF EXISTS "status";
++ALTER TABLE "CoachingSession" DROP CONSTRAINT IF EXISTS "CoachingSession_no_overlapping_active_booking";
++ALTER TABLE "SessionType" DROP CONSTRAINT IF EXISTS "SessionType_default_meeting_url_https";
++DROP INDEX IF EXISTS "SessionType_one_active_welcome_per_coach";
++ALTER TABLE "SessionType" DROP COLUMN IF EXISTS "default_meeting_url";
++ALTER TABLE "SessionType" DROP COLUMN IF EXISTS "is_welcome";
++DO $$
++BEGIN
++  IF EXISTS (
++    SELECT 1 FROM pg_extension e
++    WHERE e.extname = 'btree_gist'
++      AND obj_description(e.oid, 'pg_extension') = 'installed by 20270222000000_scheduling_lifecycle_integrity'
++  ) THEN
++    BEGIN
++      DROP EXTENSION btree_gist RESTRICT;
++    EXCEPTION WHEN dependent_objects_still_exist THEN
++      RAISE NOTICE '20270222000000 down: btree_gist kept; other objects now depend on it';
++    END;
++  ELSE
++    RAISE NOTICE '20270222000000 down: btree_gist was not installed by this migration; left in place';
++  END IF;
++END $$;
+diff --git a/prisma/migrations/20270222000000_scheduling_lifecycle_integrity/migration.sql b/prisma/migrations/20270222000000_scheduling_lifecycle_integrity/migration.sql
+new file mode 100644
+index 00000000..52b5cc70
+--- /dev/null
++++ b/prisma/migrations/20270222000000_scheduling_lifecycle_integrity/migration.sql
+@@ -0,0 +1,134 @@
++-- S-SCHED-2: native scheduling lifecycle integrity.
++--
++-- 1. SessionType gets a persistent welcome marker and an optional per-type
++--    default meeting link (additive, defaulted / nullable; existing rows read
++--    is_welcome = false and default_meeting_url = NULL, so no reader or writer
++--    changes behaviour).
++-- 2. CoachingSession gets a database-level no-double-booking floor: an
++--    exclusion constraint over (coach_id, [start_at, end_at)) restricted to
++--    the statuses that occupy a coach's time. The service already serialises
++--    booking writers per coach with an advisory lock and re-checks inside the
++--    transaction; this constraint makes the guarantee independent of the
++--    application path and of the transaction isolation level.
++--
++-- 3. NotificationDeliveryLog gets recoverable delivery state (S-SCHED-3
++--    B-634-2): status / attempts / lease / claim token / per-channel done
++--    markers. The session start a claim is for is the existing "start_at"
++--    column of migration 20270301000000 (B-NOTIF-4), part of the claim key.
++--    Additive and defaulted: rows written before this migration read
++--    status = 'sent', attempts = 1 (they were attempted
++--    once and are never re-sent), so no reminder is repeated by the deploy.
++--
++-- RLS: no new table. SessionType and CoachingSession keep their existing
++-- enabled + forced RLS policies (PR-RLS-03); new columns inherit them.
++--
++-- Rollout safety: step 2 cannot be created while two active rows for one
++-- coach already overlap. The preflight below fails the migration (the whole
++-- migration is rolled back) with the number of conflicting pairs instead of
++-- silently cancelling anyone's booking. Operator query to inspect before
++-- deploy is in the PR body. Reverse with down.sql.
++
++-- 1. SessionType: welcome marker + default meeting link --------------------
++ALTER TABLE "SessionType" ADD COLUMN IF NOT EXISTS "is_welcome" BOOLEAN NOT NULL DEFAULT false;
++ALTER TABLE "SessionType" ADD COLUMN IF NOT EXISTS "default_meeting_url" TEXT;
++
++-- At most one active welcome type per coach. Archived welcome types do not
++-- count, so a coach can archive the old one and mark a new one.
++CREATE UNIQUE INDEX IF NOT EXISTS "SessionType_one_active_welcome_per_coach"
++  ON "SessionType" ("coach_id")
++  WHERE "is_welcome" = true AND "archived_at" IS NULL;
++
++-- Stored links must be https and bounded (the API validates too; this is the floor).
++ALTER TABLE "SessionType" DROP CONSTRAINT IF EXISTS "SessionType_default_meeting_url_https";
++ALTER TABLE "SessionType" ADD CONSTRAINT "SessionType_default_meeting_url_https"
++  CHECK ("default_meeting_url" IS NULL OR ("default_meeting_url" LIKE 'https://%' AND length("default_meeting_url") <= 500));
++
++-- 2. CoachingSession: no overlapping active bookings per coach -------------
++-- btree_gist provides the gist equality operator class for coach_id (TEXT).
++-- It is a trusted contrib extension (installable by the migration role on
++-- Supabase). Supabase keeps extensions in the "extensions" schema; plain
++-- Postgres (CI) has no such schema, so fall back to the default schema.
++-- Operator-class lookup is by catalog default, not search_path, so either
++-- placement serves the constraint below.
++DO $$
++BEGIN
++  IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'btree_gist') THEN
++    IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'extensions') THEN
++      CREATE EXTENSION btree_gist WITH SCHEMA extensions;
++    ELSE
++      CREATE EXTENSION btree_gist;
++    END IF;
++    -- Ownership marker (S-SCHED-3 C-634-1): down.sql removes the extension
++    -- only when this migration installed it. A pre-existing btree_gist is
++    -- reused and left alone.
++    COMMENT ON EXTENSION btree_gist IS 'installed by 20270222000000_scheduling_lifecycle_integrity';
++  END IF;
++END $$;
++
++-- Preflight: refuse (and roll back) rather than drop or cancel bookings.
++DO $$
++DECLARE
++  conflicts integer;
++BEGIN
++  SELECT count(*) INTO conflicts
++  FROM "CoachingSession" a
++  JOIN "CoachingSession" b
++    ON a."coach_id" = b."coach_id"
++   AND a."id" < b."id"
++   AND a."status" IN ('requested', 'scheduled', 'pending_provider')
++   AND b."status" IN ('requested', 'scheduled', 'pending_provider')
++   AND a."start_at" < b."end_at"
++   AND b."start_at" < a."end_at";
++  IF conflicts > 0 THEN
++    RAISE EXCEPTION 'S-SCHED-2 preflight: % pair(s) of overlapping active CoachingSession rows exist; resolve them (cancel or move one of each pair) before applying 20270222000000', conflicts;
++  END IF;
++END $$;
++
++-- Range preflight (S-SCHED-3 C-634-2): tsrange() below raises a bare
++-- "range lower bound must be less than or equal to range upper bound" on an
++-- active row whose end is before its start. Name the problem instead.
++DO $$
++DECLARE
++  inverted integer;
++BEGIN
++  SELECT count(*) INTO inverted
++  FROM "CoachingSession"
++  WHERE "status" IN ('requested', 'scheduled', 'pending_provider')
++    AND "end_at" < "start_at";
++  IF inverted > 0 THEN
++    RAISE EXCEPTION 'S-SCHED-2 range preflight: % active CoachingSession row(s) end before they start; fix their end_at (or cancel them) before applying 20270222000000', inverted;
++  END IF;
++END $$;
++
++ALTER TABLE "CoachingSession" DROP CONSTRAINT IF EXISTS "CoachingSession_no_overlapping_active_booking";
++ALTER TABLE "CoachingSession" ADD CONSTRAINT "CoachingSession_no_overlapping_active_booking"
++  EXCLUDE USING gist (
++    "coach_id" WITH =,
++    tsrange("start_at", "end_at", '[)') WITH &&
++  )
++  WHERE ("status" IN ('requested', 'scheduled', 'pending_provider'));
++
++-- 3. NotificationDeliveryLog: recoverable reminder delivery ----------------
++ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "status" TEXT NOT NULL DEFAULT 'sent';
++ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "attempts" INTEGER NOT NULL DEFAULT 1;
++ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "lease_until" TIMESTAMP(3);
++ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "claim_token" TEXT;
++ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "inapp_done_at" TIMESTAMP(3);
++ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "push_done_at" TIMESTAMP(3);
++ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "notification_id" TEXT;
++ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "last_error" TEXT;
++
++-- S-SCHED-5 (B-634-7): 'parked' is a reminder row that belongs to an
++-- earlier start of a session moved later; it leaves the recovery page with
++-- its receipts kept and is re-armed when the new start reaches the band.
++-- The value set must equal REMINDER_DELIVERY_STATUSES in
++-- src/scheduling/jobs/reminder.job.ts (test/scheduling-delivery-status-contract.spec.ts).
++ALTER TABLE "NotificationDeliveryLog" DROP CONSTRAINT IF EXISTS "NotificationDeliveryLog_status_check";
++ALTER TABLE "NotificationDeliveryLog" ADD CONSTRAINT "NotificationDeliveryLog_status_check"
++  CHECK ("status" IN ('sending', 'retry', 'sent', 'gave_up', 'parked') AND "attempts" >= 1);
++
++-- The reminder sweep reads unfinished delivery work on every tick (S-SCHED-4
++-- B-634-2: retries and dead workers' claims are selected on their own, not
++-- only through the due band).
++CREATE INDEX IF NOT EXISTS "NotificationDeliveryLog_kind_status_idx"
++  ON "NotificationDeliveryLog" ("kind", "status");
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+index a4d571fa..514aa3d5 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -2160,9 +2160,33 @@ model NotificationDeliveryLog {
+   start_at   DateTime
+   created_at DateTime        @default(now())
+ 
++  // S-SCHED-3 (B-634-2): recoverable delivery state (migration 20270222000000).
++  // status: sending (claimed, lease running) | retry (a channel failed; the
++  // next sweep re-sends only that channel) | sent | gave_up (attempts ran
++  // out). Rows written before this column read 'sent'. CHECK
++  // NotificationDeliveryLog_status_check keeps the value set closed.
++  status           String    @default("sent")
++  attempts         Int       @default(1)
++  // A worker that dies after claiming leaves 'sending' with an expired lease;
++  // the next sweep takes it over.
++  lease_until      DateTime?
++  // Random per-attempt token: only the current owner may settle the row.
++  claim_token      String?
++  inapp_done_at    DateTime?
++  push_done_at     DateTime?
++  // In-app row written by an earlier attempt (the retried push links to it).
++  notification_id  String?
++  // Machine-readable failure summary for operators, e.g. "push:written/transport-error".
++  last_error       String?
++  // The session start a claim is for is `start_at` above (B-NOTIF-4,
++  // migration 20270301000000): a different start is a new claim row.
++
+   @@unique([session_id, user_id, kind, start_at], name: "NotificationDeliveryLog_session_user_kind_start_key")
+   @@index([session_id])
+   @@index([user_id, created_at])
++  // S-SCHED-4 (B-634-2): the reminder sweep reads unfinished work
++  // (kind, status IN ('sending','retry')) every tick.
++  @@index([kind, status])
+ }
+ 
+ // ============================================================
+@@ -3273,6 +3297,17 @@ model SessionType {
+   default_video_provider VideoProvider @default(stub)
+   // Soft-disable so historic sessions still link back to their type.
+   archived_at            DateTime?
++  // S-SCHED-2: the coach's welcome / first call type (the one Roman's
++  // tutorial offers: "Book your welcome call with <coach>"). Persistent
++  // marker, never inferred from the name. At most one active
++  // (archived_at IS NULL) welcome type per coach: partial unique index
++  // SessionType_one_active_welcome_per_coach (migration 20270222000000).
++  is_welcome             Boolean       @default(false)
++  // S-SCHED-2: the coach's own https meeting room for this type. Attached
++  // as the session's manual video link when a session of this type is
++  // confirmed without one. Never shown to clients on the type list.
++  // CHECK SessionType_default_meeting_url_https keeps it https and bounded.
++  default_meeting_url    String?
+   created_at             DateTime      @default(now())
+   updated_at             DateTime      @default(now()) @updatedAt
+ 
+@@ -3398,6 +3433,13 @@ model CoachingSession {
+   participants  SessionParticipant[]      @relation("SessionParticipantSession")
+   delivery_logs NotificationDeliveryLog[] @relation("DeliveryLogSession")
+ 
++  // S-SCHED-2 no-double-booking floor (migration 20270222000000, raw SQL
++  // because Prisma cannot express it): exclusion constraint
++  // CoachingSession_no_overlapping_active_booking forbids two rows for the
++  // same coach_id whose [start_at, end_at) overlap while both are in an
++  // occupying status (requested, scheduled, pending_provider). The service
++  // also serialises writers per coach with an advisory lock and re-checks.
++  //
+   // Hot paths:
+   //   - "list this coach's upcoming sessions" → (coach_id, start_at)
+   //   - "list this client's upcoming sessions" → (client_id, start_at)
+diff --git a/src/notifications/notification-kind.ts b/src/notifications/notification-kind.ts
+index cc220e05..bc9e58cb 100644
+--- a/src/notifications/notification-kind.ts
++++ b/src/notifications/notification-kind.ts
+@@ -47,6 +47,11 @@ export const NotificationKind = {
+   BOOKING_RESCHEDULED: 'booking_rescheduled',
+   BOOKING_REMINDER_24H: 'booking_reminder_24h',
+   BOOKING_REMINDER_1H: 'booking_reminder_1h',
++  // S-SCHED-2: a confirmed session has no call link yet (to the coach, with
++  // an "add the call link" action) and the link was added (to the client).
++  // Same booking_* preference cluster.
++  BOOKING_LINK_NEEDED: 'booking_link_needed',
++  BOOKING_LINK_READY: 'booking_link_ready',
+ 
+   // NUDGE-V1 — Behavioral re-engagement nudges. Four trigger types,
+   // each independently opt-out-able via NotificationPreferences.
+diff --git a/src/observability/orm-diagnostics.ts b/src/observability/orm-diagnostics.ts
+index d952f402..5378c0b6 100644
+--- a/src/observability/orm-diagnostics.ts
++++ b/src/observability/orm-diagnostics.ts
+@@ -22,3 +22,152 @@ export function safeDiagnostic(error: unknown): unknown {
+   }
+   return error;
+ }
++
++/**
++ * B-634-10. The reviewed, finite set of error class names a log line may
++ * carry. Membership is exact: an identifier-shaped but unknown name (for
++ * example `SYNTHETIC_PRIVATE_CANARY_123`) is still arbitrary data and logs as
++ * `OtherError`. Add a class here only after reviewing that its NAME is a
++ * fixed constructor name, never data.
++ */
++export const LOG_ERROR_CLASSES = [
++  'Error',
++  'TypeError',
++  'RangeError',
++  'SyntaxError',
++  'ReferenceError',
++  'EvalError',
++  'URIError',
++  'AggregateError',
++  'AbortError',
++  'TimeoutError',
++  'HttpException',
++  'BadRequestException',
++  'UnauthorizedException',
++  'ForbiddenException',
++  'NotFoundException',
++  'ConflictException',
++  'GoneException',
++  'PayloadTooLargeException',
++  'UnprocessableEntityException',
++  'InternalServerErrorException',
++  'NotImplementedException',
++  'BadGatewayException',
++  'ServiceUnavailableException',
++  'GatewayTimeoutException',
++  'PushAbortedError',
++] as const;
++
++/**
++ * The reviewed, finite catalog of non-ORM machine codes a log line may carry
++ * (Node/undici transport codes, the push abort code and the scheduling
++ * provider and Google OAuth codes this codebase throws). Any other `.code`,
++ * or a code read from an HttpException response body, is dropped. Prisma
++ * P-codes are not listed: they pass only through the validated ORM branch.
++ */
++export const LOG_ERROR_CODES = [
++  'ECONNRESET',
++  'ECONNREFUSED',
++  'ECONNABORTED',
++  'ETIMEDOUT',
++  'ENOTFOUND',
++  'EAI_AGAIN',
++  'EPIPE',
++  'EHOSTUNREACH',
++  'ENETUNREACH',
++  'ABORT_ERR',
++  'UND_ERR_CONNECT_TIMEOUT',
++  'UND_ERR_HEADERS_TIMEOUT',
++  'UND_ERR_BODY_TIMEOUT',
++  'UND_ERR_SOCKET',
++  'PUSH_ABORTED',
++  'CALENDAR_PROVIDER_NOT_IMPLEMENTED',
++  'VIDEO_PROVIDER_NOT_IMPLEMENTED',
++  'GOOGLE_OAUTH_DISABLED',
++  'GOOGLE_OAUTH_EXCHANGE_FAILED',
++  'GOOGLE_OAUTH_REFRESH_MISSING',
++  'GOOGLE_OAUTH_REFRESH_FAILED',
++] as const;
++
++export type LogErrorClass =
++  (typeof LOG_ERROR_CLASSES)[number] | 'DatabaseRequestError' | 'OtherError';
++export type LogErrorCode = (typeof LOG_ERROR_CODES)[number];
++
++const ERROR_CLASS_SET: ReadonlySet<string> = new Set(LOG_ERROR_CLASSES);
++const ERROR_CODE_SET: ReadonlySet<string> = new Set(LOG_ERROR_CODES);
++
++/** Reads one property without letting a hostile getter or Proxy throw. */
++function readProp(value: object, key: string): unknown {
++  try {
++    return (value as Record<string, unknown>)[key];
++  } catch {
++    return undefined;
++  }
++}
++
++/** Maps any value to a member of the closed class enum. */
++export function logErrorClass(error: unknown): LogErrorClass {
++  if (!(error instanceof Error)) return 'OtherError';
++  const name = readProp(error, 'name');
++  return typeof name === 'string' && ERROR_CLASS_SET.has(name)
++    ? (name as LogErrorClass)
++    : 'OtherError';
++}
++
++/**
++ * The first catalogued `.code` on the error or its cause chain (undici wraps
++ * transport codes as `TypeError: fetch failed` with a coded cause). Bounded
++ * and cycle-safe; any code outside the catalog is ignored.
++ */
++export function logErrorCode(error: unknown): LogErrorCode | null {
++  const seen = new Set<unknown>();
++  let current = error;
++  for (let depth = 0; depth < 5 && current instanceof Error && !seen.has(current); depth++) {
++    seen.add(current);
++    const code = readProp(current, 'code');
++    if (typeof code === 'string' && ERROR_CODE_SET.has(code)) return code as LogErrorCode;
++    current = readProp(current, 'cause');
++  }
++  return null;
++}
++
++/** An HttpException's numeric status, only when it is a real HTTP status. */
++function logHttpStatus(error: Error): number | null {
++  const getStatus = readProp(error, 'getStatus');
++  if (typeof getStatus !== 'function') return null;
++  try {
++    const status: unknown = getStatus.call(error);
++    return typeof status === 'number' && Number.isInteger(status) && status >= 100 && status <= 599
++      ? status
++      : null;
++  } catch {
++    return null;
++  }
++}
++
++/**
++ * The only text a log line may carry for an error, built from closed parts:
++ * ORM errors (also when wrapped as a cause) collapse to `DatabaseRequestError:
++ * Database request failed (P####)` with a validated Prisma code; any other
++ * Error logs one member of LOG_ERROR_CLASSES (unknown names -> `OtherError`),
++ * an optional catalogued machine code and, for HttpException, its numeric
++ * status. A non-Error throw logs `OtherError`. Messages, stacks, metadata,
++ * response bodies and unknown names or codes never pass.
++ */
++export function safeLogDiagnostic(error: unknown): string {
++  let safe: unknown;
++  try {
++    safe = safeDiagnostic(error);
++  } catch {
++    return 'OtherError';
++  }
++  if (safe !== error && safe instanceof Error) return `${safe.name}: ${safe.message}`;
++  if (!(safe instanceof Error)) return 'OtherError';
++  const cls = logErrorClass(safe);
++  const parts: string[] = [];
++  const code = logErrorCode(safe);
++  if (code) parts.push(code);
++  const status = cls.endsWith('Exception') ? logHttpStatus(safe) : null;
++  if (status !== null) parts.push(String(status));
++  return parts.length ? `${cls} (${parts.join(' ')})` : cls;
++}
+diff --git a/src/scheduling/dto/scheduling.dto.ts b/src/scheduling/dto/scheduling.dto.ts
+index 6e7d61d7..09002317 100644
+--- a/src/scheduling/dto/scheduling.dto.ts
++++ b/src/scheduling/dto/scheduling.dto.ts
+@@ -42,6 +42,20 @@ export class CreateSessionTypeDto {
+   @IsOptional()
+   @IsIn(VIDEO_PROVIDERS as readonly string[])
+   default_video_provider?: VideoProviderDtoValue;
++
++  // S-SCHED-2: marks the coach's welcome / first call type. Setting it
++  // clears the marker on the coach's other active types.
++  @IsOptional()
++  @IsBoolean()
++  is_welcome?: boolean;
++
++  // S-SCHED-2: the coach's own https room for this type, attached to
++  // sessions of this type when they are confirmed without a link.
++  // Empty string removes it. Never returned to clients on the type list.
++  @IsOptional()
++  @IsString()
++  @MaxLength(500)
++  default_meeting_url?: string | null;
+ }
+ 
+ export class UpdateSessionTypeDto {
+@@ -73,6 +87,16 @@ export class UpdateSessionTypeDto {
+   @IsOptional()
+   @IsBoolean()
+   archived?: boolean;
++
++  @IsOptional()
++  @IsBoolean()
++  is_welcome?: boolean;
++
++  // Empty string or null removes the default link.
++  @IsOptional()
++  @IsString()
++  @MaxLength(500)
++  default_meeting_url?: string | null;
+ }
+ 
+ export class AvailabilityWindowDto {
+@@ -111,6 +135,9 @@ export class RequestSessionDto {
+   @IsUUID()
+   coach_id!: string;
+ 
++  // Required by the service (400 SESSION_TYPE_REQUIRED with a readable
++  // message when missing); optional here so the error is coded, not a
++  // generic validation string.
+   @IsOptional()
+   @IsUUID()
+   session_type_id?: string;
+@@ -145,6 +172,20 @@ export class CancelSessionDto {
+   @IsString()
+   @MaxLength(500)
+   reason?: string;
++
++  // S-SCHED-3 (B-634-1): the start time the caller was looking at. When it
++  // no longer matches the session, the server answers 409 SESSION_MOVED
++  // instead of declining or cancelling a time the caller never saw.
++  @IsOptional()
++  @IsISO8601()
++  expected_start_at?: string;
++}
++
++// S-SCHED-3 (B-634-1): approve carries the start time the coach reviewed.
++export class ApproveSessionDto {
++  @IsOptional()
++  @IsISO8601()
++  expected_start_at?: string;
+ }
+ 
+ export class CompleteSessionDto {
+diff --git a/src/scheduling/scheduling-access.service.ts b/src/scheduling/scheduling-access.service.ts
+new file mode 100644
+index 00000000..e8fa8514
+--- /dev/null
++++ b/src/scheduling/scheduling-access.service.ts
+@@ -0,0 +1,186 @@
++import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
++import type { CoachingSession, Prisma } from '@prisma/client';
++import { PrismaService } from '../prisma.service';
++import {
++  SESSION_NOT_FOUND_MESSAGE,
++  SchedulingErrorCode,
++  schedulingError,
++} from './scheduling.types';
++import type { ActorContext } from './scheduling.types';
++
++// S-SCHED-2 (T4): the single answer to "which coaches may this person see and
++// book with?" for the scheduling surface.
++//
++// A client (role=student) may browse and book:
++//   - their head coach: User.coach_id (the assignment every other surface uses), and
++//   - the sub-coach they are currently delegated to inside that head coach's
++//     team: an open SubCoachAssignment row (unassigned_at IS NULL) for
++//     (client, head coach), whose TeamSubCoachAssignment is not archived and
++//     whose user is still a coach.
++// Nobody else. A coach browses only their own calendar; an owner browses any.
++//
++// Reads of an existing session are separate (assertCanViewSession): the
++// lead client may always read their own session (history must survive a
++// coach change), but acting on it (move/cancel) requires the coach to still
++// be bookable.
++export interface BookableCoach {
++  coach_id: string;
++  name: string;
++  avatar_url: string | null;
++  timezone: string;
++  relationship: 'head_coach' | 'sub_coach';
++}
++
++type Db = PrismaService | Prisma.TransactionClient;
++
++export const DEFAULT_COACH_TIMEZONE = 'America/Los_Angeles';
++
++@Injectable()
++export class SchedulingAccessService {
++  constructor(private readonly prisma: PrismaService) {}
++
++  /** Coach ids this client may browse/book, head coach first. */
++  async bookableCoachIds(actor: ActorContext, db: Db = this.prisma): Promise<string[]> {
++    if (actor.role !== 'student' || !actor.coach_id) return [];
++    const ids = [actor.coach_id];
++    const sub = await db.subCoachAssignment.findFirst({
++      where: {
++        client_id: actor.id,
++        head_coach_id: actor.coach_id,
++        unassigned_at: null,
++      },
++      orderBy: { assigned_at: 'desc' },
++      select: { sub_coach_id: true },
++    });
++    if (sub && sub.sub_coach_id !== actor.coach_id) {
++      const team = await db.teamSubCoachAssignment.findFirst({
++        where: {
++          head_coach_id: actor.coach_id,
++          sub_coach_id: sub.sub_coach_id,
++          archived_at: null,
++        },
++        select: { id: true },
++      });
++      if (team) ids.push(sub.sub_coach_id);
++    }
++    return ids;
++  }
++
++  /**
++   * Throws 403 COACH_NOT_BOOKABLE unless the actor may browse/book this
++   * coach's calendar (types, weekly hours, open slots, new requests).
++   */
++  async assertCanBrowseCoach(
++    actor: ActorContext,
++    coachId: string,
++    db: Db = this.prisma,
++  ): Promise<void> {
++    if (actor.role === 'owner') return;
++    if (actor.role === 'coach') {
++      if (actor.id === coachId) return;
++      throw new ForbiddenException(
++        schedulingError(
++          SchedulingErrorCode.COACH_NOT_BOOKABLE,
++          'You can only manage your own calendar. Open Calendar to see your own hours and sessions.',
++        ),
++      );
++    }
++    const ids = await this.bookableCoachIds(actor, db);
++    if (ids.includes(coachId)) return;
++    throw new ForbiddenException(
++      schedulingError(
++        SchedulingErrorCode.COACH_NOT_BOOKABLE,
++        'You can only book with your own coach. Open Calendar to see who you can book with.',
++      ),
++    );
++  }
++
++  /** The client's bookable coaches with display identity. */
++  async listBookableCoaches(actor: ActorContext): Promise<BookableCoach[]> {
++    const ids = await this.bookableCoachIds(actor);
++    if (ids.length === 0) return [];
++    const users = await this.prisma.user.findMany({
++      where: { id: { in: ids }, role: 'coach' },
++      select: {
++        id: true,
++        name: true,
++        profile: { select: { avatar_url: true } },
++        coach_profile: { select: { timezone: true } },
++      },
++    });
++    const out: BookableCoach[] = [];
++    for (const id of ids) {
++      const u = users.find((x) => x.id === id);
++      if (!u) continue;
++      out.push({
++        coach_id: u.id,
++        name: u.name,
++        avatar_url: u.profile?.avatar_url ?? null,
++        timezone: u.coach_profile?.timezone ?? DEFAULT_COACH_TIMEZONE,
++        relationship: id === actor.coach_id ? 'head_coach' : 'sub_coach',
++      });
++    }
++    return out;
++  }
++
++  /**
++   * Read access to one session. The session's coach, an owner, or the lead
++   * client. A 404 (not 403) for everyone else so session ids cannot be probed.
++   */
++  assertCanViewSession(
++    actor: ActorContext,
++    session: Pick<CoachingSession, 'coach_id' | 'client_id'>,
++  ): void {
++    if (actor.role === 'owner') return;
++    if (actor.role === 'coach' && session.coach_id === actor.id) return;
++    if (actor.role === 'student' && session.client_id === actor.id) return;
++    throw new NotFoundException(
++      schedulingError(SchedulingErrorCode.SESSION_NOT_FOUND, SESSION_NOT_FOUND_MESSAGE),
++    );
++  }
++
++  /**
++   * Move/cancel access. Coach of the session or owner; or the lead client
++   * while the coach is still one of their bookable coaches.
++   */
++  async assertCanActAsParticipant(
++    actor: ActorContext,
++    session: Pick<CoachingSession, 'coach_id' | 'client_id'>,
++    db: Db = this.prisma,
++  ): Promise<void> {
++    this.assertCanViewSession(actor, session);
++    if (actor.role !== 'student') return;
++    const ids = await this.bookableCoachIds(actor, db);
++    if (ids.includes(session.coach_id)) return;
++    throw new ForbiddenException(
++      schedulingError(
++        SchedulingErrorCode.NOT_SESSION_PARTICIPANT,
++        'This session is with a coach you are no longer assigned to. Message your coach or contact support to change it.',
++      ),
++    );
++  }
++
++  /** Coach-only actions (approve, decline, complete, no-show, call link). */
++  assertIsSessionCoach(
++    actor: ActorContext,
++    session: Pick<CoachingSession, 'coach_id' | 'client_id'>,
++  ): void {
++    if (actor.role === 'owner') return;
++    if (actor.role === 'coach' && session.coach_id === actor.id) return;
++    if (actor.role === 'student' && session.client_id === actor.id) {
++      throw new ForbiddenException(
++        schedulingError(
++          SchedulingErrorCode.NOT_SESSION_PARTICIPANT,
++          'Only your coach can do this. Message your coach if something needs to change.',
++        ),
++      );
++    }
++    this.assertCanViewSession(actor, session);
++    throw new ForbiddenException(
++      schedulingError(
++        SchedulingErrorCode.NOT_SESSION_PARTICIPANT,
++        'Only the coach for this session can do this. Open Calendar to see the sessions you can change.',
++      ),
++    );
++  }
++}
+diff --git a/src/scheduling/scheduling-open-slots.service.ts b/src/scheduling/scheduling-open-slots.service.ts
+index 06e5ec36..0f06eae3 100644
+--- a/src/scheduling/scheduling-open-slots.service.ts
++++ b/src/scheduling/scheduling-open-slots.service.ts
+@@ -1,108 +1,270 @@
+ import {
+   BadRequestException,
+-  ForbiddenException,
+   Injectable,
+   Logger,
+   NotFoundException,
++  Optional,
+ } from '@nestjs/common';
++import type { Prisma, SessionType } from '@prisma/client';
+ import { PrismaService } from '../prisma.service';
+-import { computeOpenSlots, validateRange } from './slot-computer.service';
+-import { dateOnly } from './scheduling.types';
++import { DEFAULT_COACH_TIMEZONE, SchedulingAccessService } from './scheduling-access.service';
++import {
++  MAX_RANGE_DAYS as OPEN_SLOTS_MAX_RANGE_DAYS,
++  computeOpenSlots,
++  isIntervalBookable,
++  validateRange,
++  type AvailabilityOverride,
++  type AvailabilityWindow,
++  type SessionInterval,
++} from './slot-computer.service';
++import {
++  MAX_BOOKING_HORIZON_DAYS,
++  MIN_BOOKING_LEAD_MINUTES,
++  OCCUPYING_SESSION_STATUSES,
++  SchedulingErrorCode,
++  dateOnly,
++  schedulingError,
++} from './scheduling.types';
+ import type { ActorContext, OpenSlotsPayload } from './scheduling.types';
+ 
+-// ---------------- Open slots (Phase 1 — TGP-exclusive) ----------------
+-//
+-// Concrete bookable slots over [from, to] for `coachId`. Phase 1
+-// intentionally consumes only TGP state: recurring availability,
+-// coach overrides, and existing active sessions. Phase 2 will fold
+-// in Google Calendar free-busy when the feature flag is on; that
+-// path is documented in the RFC addendum but not wired here.
++type Db = PrismaService | Prisma.TransactionClient;
++
++export interface CoachCalendarInputs {
++  timezone: string;
++  windows: AvailabilityWindow[];
++  overrides: AvailabilityOverride[];
++  bookings: SessionInterval[];
++}
++
++// ---------------- Open slots (TGP-native scheduling) ----------------
+ //
+-// 60s in-process cache keyed on (coach|from|to|duration). Suitable
+-// for the booking-picker UX where the same client opens a coach
+-// page repeatedly; not a substitute for a real cache layer.
++// Concrete bookable slots over [from, to] for `coachId`, from TGP state only:
++// recurring availability, coach overrides (time off / extra hours) and the
++// coach's occupying sessions (OCCUPYING_SESSION_STATUSES: a pending request
++// holds its slot).
+ //
+-// Pulled out of SchedulingService during the M9 refactor — the
+-// behaviour, cache shape, and TTL match the pre-split code exactly.
++// S-SCHED-2:
++//  - Access: SchedulingAccessService.assertCanBrowseCoach (the assigned
++//    client's head coach or current sub-coach, the coach, or owner).
++//  - session_type_id: the slot length is the type's duration and only windows
++//    that are unscoped or scoped to that type count. Archived or foreign types
++//    are refused with SESSION_TYPE_UNAVAILABLE.
++//  - Slots earlier than now + MIN_BOOKING_LEAD_MINUTES or later than the
++//    booking horizon are not offered (the booking path refuses them too).
++//  - isIntervalOpen() is the authoritative, uncached check the booking and
++//    reschedule paths run inside their per-coach locked transaction.
++//  - The 60 s per-process cache is invalidated per coach on every booking
++//    write in this process. Another instance may serve a list up to 60 s old;
++//    the booking path re-validates against fresh state, so a stale slot can
++//    only produce a 409 SLOT_TAKEN / SLOT_UNAVAILABLE, never a double booking.
+ @Injectable()
+ export class SchedulingOpenSlotsService {
+   private readonly logger = new Logger(SchedulingOpenSlotsService.name);
++  private readonly access: SchedulingAccessService;
+ 
+   private readonly _openSlotsCache = new Map<
+     string,
+     { expiresAt: number; payload: OpenSlotsPayload }
+   >();
+   private static readonly OPEN_SLOTS_TTL_MS = 60_000;
++  private static readonly MAX_CACHE_ENTRIES = 500;
++
++  constructor(
++    private readonly prisma: PrismaService,
++    @Optional() access?: SchedulingAccessService,
++  ) {
++    this.access = access ?? new SchedulingAccessService(prisma);
++  }
++
++  invalidateCoach(coachId: string): void {
++    const prefix = `${coachId}|`;
++    for (const key of Array.from(this._openSlotsCache.keys())) {
++      if (key.startsWith(prefix)) this._openSlotsCache.delete(key);
++    }
++  }
+ 
+-  constructor(private readonly prisma: PrismaService) {}
++  invalidateAll(): void {
++    this._openSlotsCache.clear();
++  }
++
++  /** Resolve an active type owned by this coach, or throw 400 SESSION_TYPE_UNAVAILABLE. */
++  async resolveBookableType(
++    coachId: string,
++    sessionTypeId: string,
++    db: Db = this.prisma,
++  ): Promise<SessionType> {
++    const type = await db.sessionType.findUnique({ where: { id: sessionTypeId } });
++    if (!type || type.coach_id !== coachId || type.archived_at) {
++      throw new BadRequestException(
++        schedulingError(
++          SchedulingErrorCode.SESSION_TYPE_UNAVAILABLE,
++          'That appointment type is no longer offered. Pick another type from your coach.',
++        ),
++      );
++    }
++    return type;
++  }
+ 
+   async getOpenSlots(
+     actor: ActorContext,
+     coachId: string,
+-    args: { from: string; to: string; duration_minutes?: number | null },
++    args: {
++      from: string;
++      to: string;
++      duration_minutes?: number | null;
++      session_type_id?: string | null;
++    },
+   ): Promise<OpenSlotsPayload> {
+-    // Same auth rule as request-session: caller must be the assigned
+-    // client, the coach themselves, or owner.
+-    if (
+-      actor.role !== 'owner' &&
+-      !(actor.role === 'coach' && actor.id === coachId) &&
+-      !(actor.role === 'student' && actor.coach_id === coachId)
+-    ) {
+-      throw new ForbiddenException(
+-        'You can only view open slots for your assigned coach',
+-      );
+-    }
++    await this.access.assertCanBrowseCoach(actor, coachId);
+ 
+     const fromDate = new Date(args.from);
+     const toDate = new Date(args.to);
+-    const duration = args.duration_minutes ?? 60;
++    const rangeError = validateRange(fromDate, toDate);
++    if (rangeError) {
++      throw new BadRequestException(
++        schedulingError(
++          SchedulingErrorCode.INVALID_TIME,
++          `Open times could not be listed: ${rangeError.message}. Ask again with a start before the end, at most ${OPEN_SLOTS_MAX_RANGE_DAYS} days apart.`,
++        ),
++      );
++    }
++
++    let sessionType: SessionType | null = null;
++    if (args.session_type_id) {
++      sessionType = await this.resolveBookableType(coachId, args.session_type_id);
++    }
++    const duration = sessionType ? sessionType.duration_minutes : (args.duration_minutes ?? 60);
+     if (!Number.isFinite(duration) || duration <= 0 || duration > 8 * 60) {
+-      throw new BadRequestException('duration_minutes must be 1..480');
++      throw new BadRequestException(
++        schedulingError(
++          SchedulingErrorCode.INVALID_TIME,
++          'That appointment length cannot be booked (it must be 1 to 480 minutes). Pick an appointment type from your coach to see its open times.',
++        ),
++      );
+     }
+-    const rangeError = validateRange(fromDate, toDate);
+-    if (rangeError) throw new BadRequestException(rangeError.message);
+ 
+-    const cacheKey = `${coachId}|${fromDate.toISOString()}|${toDate.toISOString()}|${duration}`;
++    const cacheKey = `${coachId}|${fromDate.toISOString()}|${toDate.toISOString()}|${duration}|${sessionType?.id ?? '-'}`;
+     const cached = this._openSlotsCache.get(cacheKey);
+     const now = Date.now();
+     if (cached && cached.expiresAt > now) {
+-      return cached.payload;
++      return this.withinBookingWindow(cached.payload, now);
++    }
++
++    const inputs = await this.loadCalendarInputs(this.prisma, coachId, fromDate, toDate, {
++      sessionTypeId: sessionType?.id ?? null,
++      excludeSessionId: null,
++    });
++    const slots = computeOpenSlots({
++      from: fromDate,
++      to: toDate,
++      durationMinutes: duration,
++      coachTimezone: inputs.timezone,
++      windows: inputs.windows,
++      overrides: inputs.overrides,
++      bookings: inputs.bookings,
++    });
++
++    const payload: OpenSlotsPayload = {
++      coach_id: coachId,
++      timezone: inputs.timezone,
++      generated_at: new Date().toISOString(),
++      session_type_id: sessionType?.id ?? null,
++      duration_minutes: duration,
++      slots,
++    };
++    if (this._openSlotsCache.size >= SchedulingOpenSlotsService.MAX_CACHE_ENTRIES) {
++      this._openSlotsCache.clear();
+     }
++    this._openSlotsCache.set(cacheKey, {
++      expiresAt: now + SchedulingOpenSlotsService.OPEN_SLOTS_TTL_MS,
++      payload,
++    });
++    return this.withinBookingWindow(payload, now);
++  }
+ 
+-    const coach = await this.prisma.user.findUnique({
++  /**
++   * Authoritative, uncached check used by the booking and reschedule paths
++   * (inside their locked transaction, so `db` is the transaction client): is
++   * [start, end) entirely inside the coach's bookable time for this type,
++   * with no other occupying session overlapping? `excludeSessionId` lets a
++   * reschedule ignore the session being moved.
++   */
++  async isIntervalOpen(
++    db: Db,
++    coachId: string,
++    start: Date,
++    end: Date,
++    opts: { sessionTypeId: string | null; excludeSessionId: string | null },
++  ): Promise<boolean> {
++    const inputs = await this.loadCalendarInputs(db, coachId, start, end, opts);
++    return isIntervalBookable(
++      {
++        from: start,
++        to: end,
++        coachTimezone: inputs.timezone,
++        windows: inputs.windows,
++        overrides: inputs.overrides,
++        bookings: inputs.bookings,
++      },
++      start,
++      end,
++    );
++  }
++
++  /** Coach timezone (CoachProfile.timezone, default America/Los_Angeles). Throws 404 for a non-coach. */
++  async coachTimezone(db: Db, coachId: string): Promise<string> {
++    const coach = await db.user.findUnique({
+       where: { id: coachId },
+-      include: { coach_profile: true },
++      select: { role: true, coach_profile: { select: { timezone: true } } },
+     });
+     if (!coach || coach.role !== 'coach') {
+-      throw new NotFoundException('Coach not found');
++      throw new NotFoundException(
++        schedulingError(
++          SchedulingErrorCode.COACH_NOT_FOUND,
++          'That coach is no longer available to book. Open Calendar to see who you can book with.',
++        ),
++      );
+     }
+-    const timezone =
+-      coach.coach_profile?.timezone ?? 'America/Los_Angeles';
++    return coach.coach_profile?.timezone ?? DEFAULT_COACH_TIMEZONE;
++  }
+ 
++  async loadCalendarInputs(
++    db: Db,
++    coachId: string,
++    from: Date,
++    to: Date,
++    opts: { sessionTypeId: string | null; excludeSessionId: string | null },
++  ): Promise<CoachCalendarInputs> {
++    const timezone = await this.coachTimezone(db, coachId);
+     const [rawWindows, rawOverrides, activeSessions] = await Promise.all([
+-      this.prisma.coachAvailability.findMany({ where: { coach_id: coachId } }),
+-      this.prisma.coachAvailabilityOverride.findMany({
++      db.coachAvailability.findMany({ where: { coach_id: coachId } }),
++      db.coachAvailabilityOverride.findMany({
+         where: {
+           coach_id: coachId,
+-          date: { gte: dateOnly(fromDate, -1), lte: dateOnly(toDate, 1) },
++          date: { gte: dateOnly(from, -1), lte: dateOnly(to, 1) },
+         },
+       }),
+-      this.prisma.coachingSession.findMany({
++      db.coachingSession.findMany({
+         where: {
+           coach_id: coachId,
+-          status: { in: ['requested', 'scheduled', 'pending_provider'] },
+-          start_at: { lt: toDate },
+-          end_at: { gt: fromDate },
++          status: { in: [...OCCUPYING_SESSION_STATUSES] },
++          start_at: { lt: to },
++          end_at: { gt: from },
++          ...(opts.excludeSessionId ? { id: { not: opts.excludeSessionId } } : {}),
+         },
++        select: { start_at: true, end_at: true },
+       }),
+     ]);
+-
+-    const slots = computeOpenSlots({
+-      from: fromDate,
+-      to: toDate,
+-      durationMinutes: duration,
+-      coachTimezone: timezone,
+-      windows: rawWindows.map((w) => ({
++    // A window scoped to a session type only offers that type. Unscoped
++    // windows offer every type.
++    const windows = rawWindows.filter(
++      (w) =>
++        w.session_type_id === null ||
++        (opts.sessionTypeId !== null && w.session_type_id === opts.sessionTypeId),
++    );
++    return {
++      timezone,
++      windows: windows.map((w) => ({
+         day_of_week: w.day_of_week,
+         start_minute: w.start_minute,
+         end_minute: w.end_minute,
+@@ -111,24 +273,19 @@ export class SchedulingOpenSlotsService {
+         date: o.date.toISOString().slice(0, 10),
+         start_minute: o.start_minute,
+         end_minute: o.end_minute,
+-        kind: o.kind as 'holiday' | 'block' | 'extra',
+-      })),
+-      bookings: activeSessions.map((s) => ({
+-        start_at: s.start_at,
+-        end_at: s.end_at,
++        kind: o.kind as AvailabilityOverride['kind'],
+       })),
+-    });
+-
+-    const payload: OpenSlotsPayload = {
+-      coach_id: coachId,
+-      timezone,
+-      generated_at: new Date().toISOString(),
+-      slots,
++      bookings: activeSessions.map((s) => ({ start_at: s.start_at, end_at: s.end_at })),
+     };
+-    this._openSlotsCache.set(cacheKey, {
+-      expiresAt: now + SchedulingOpenSlotsService.OPEN_SLOTS_TTL_MS,
+-      payload,
++  }
++
++  private withinBookingWindow(payload: OpenSlotsPayload, nowMs: number): OpenSlotsPayload {
++    const floor = nowMs + MIN_BOOKING_LEAD_MINUTES * 60_000;
++    const ceiling = nowMs + MAX_BOOKING_HORIZON_DAYS * 24 * 60 * 60_000;
++    const slots = payload.slots.filter((s) => {
++      const t = new Date(s.start_at).getTime();
++      return t >= floor && t <= ceiling;
+     });
+-    return payload;
++    return slots.length === payload.slots.length ? payload : { ...payload, slots };
+   }
+ }
+diff --git a/src/scheduling/scheduling.types.ts b/src/scheduling/scheduling.types.ts
+index c6ba5c01..c5147558 100644
+--- a/src/scheduling/scheduling.types.ts
++++ b/src/scheduling/scheduling.types.ts
+@@ -16,6 +16,10 @@ export interface OpenSlotsPayload {
+   coach_id: string;
+   timezone: string;
+   generated_at: string;
++  // S-SCHED-2: echo of the type the slots were computed for (null for a
++  // legacy duration-only query) and the slot length actually used.
++  session_type_id: string | null;
++  duration_minutes: number;
+   slots: { start_at: string; end_at: string }[];
+ }
+ 
+@@ -31,3 +35,83 @@ export function minutesToHHMM(min: number | null): string | null {
+   const m = min % 60;
+   return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+ }
++
++// ---------------------------------------------------------------------------
++// S-SCHED-2 booking integrity constants. One definition shared by open-slot
++// computation, the booking/reschedule validation and the reminder sweep, so
++// "shown as open" and "bookable" can never disagree.
++// ---------------------------------------------------------------------------
++
++// Statuses that occupy a coach's time. A pending request holds its slot
++// (it is excluded from open slots and blocks overlapping bookings) until the
++// coach declines it or someone cancels it. Mirrors the WHERE clause of the
++// CoachingSession_no_overlapping_active_booking exclusion constraint.
++export const OCCUPYING_SESSION_STATUSES = ['requested', 'scheduled', 'pending_provider'] as const;
++
++// Minimum lead time between now and a bookable start.
++export const MIN_BOOKING_LEAD_MINUTES = 5;
++
++// How far ahead a client may book or move a session.
++export const MAX_BOOKING_HORIZON_DAYS = 120;
++
++// At most this many coach-approval requests may wait on one coach per client.
++// Bounds slot holding by unapproved requests.
++export const MAX_PENDING_REQUESTS_PER_COACH = 3;
++
++// Stable machine codes for scheduling failures. Every BadRequest/Conflict the
++// booking surface throws carries one of these as `code` (and, for older
++// clients, as `error`) plus a human message.
++export const SchedulingErrorCode = {
++  SESSION_TYPE_REQUIRED: 'SESSION_TYPE_REQUIRED',
++  SESSION_TYPE_UNAVAILABLE: 'SESSION_TYPE_UNAVAILABLE',
++  DURATION_MISMATCH: 'DURATION_MISMATCH',
++  SESSION_IN_PAST: 'SESSION_IN_PAST',
++  BEYOND_BOOKING_HORIZON: 'BEYOND_BOOKING_HORIZON',
++  INVALID_TIME: 'INVALID_TIME',
++  SLOT_UNAVAILABLE: 'SLOT_UNAVAILABLE',
++  SLOT_TAKEN: 'SLOT_TAKEN',
++  CALENDAR_BUSY: 'CALENDAR_BUSY',
++  PENDING_REQUEST_LIMIT: 'PENDING_REQUEST_LIMIT',
++  WELCOME_ALREADY_BOOKED: 'WELCOME_ALREADY_BOOKED',
++  SESSION_STATE_CHANGED: 'SESSION_STATE_CHANGED',
++  SESSION_NOT_ACTIVE: 'SESSION_NOT_ACTIVE',
++  SESSION_STARTED: 'SESSION_STARTED',
++  COACH_NOT_BOOKABLE: 'COACH_NOT_BOOKABLE',
++  COACH_NOT_FOUND: 'COACH_NOT_FOUND',
++  SESSION_NOT_FOUND: 'SESSION_NOT_FOUND',
++  NOT_SESSION_PARTICIPANT: 'NOT_SESSION_PARTICIPANT',
++  INVALID_MEETING_LINK: 'INVALID_MEETING_LINK',
++  // S-SCHED-3 (B-634-1): the session moved to a new time after the caller
++  // read it, so the answer they gave was about a different time.
++  SESSION_MOVED: 'SESSION_MOVED',
++  // S-SCHED-3 (B-634-4 / C-634-3): a list cursor or status filter that the
++  // server cannot read.
++  INVALID_LIST_QUERY: 'INVALID_LIST_QUERY',
++} as const;
++export type SchedulingErrorCodeValue =
++  (typeof SchedulingErrorCode)[keyof typeof SchedulingErrorCode];
++
++// B-634-9: the one 404 message for a session the caller cannot see. A
++// missing session and another person's session read the same (existence
++// hiding), so every SESSION_NOT_FOUND throw uses this constant. Client-facing
++// scheduling copy speaks to the reader directly: no "we"/"us", and every
++// message names a working next step.
++export const SESSION_NOT_FOUND_MESSAGE =
++  'That session is no longer available. Open Calendar to see your sessions.';
++
++export function schedulingError(
++  code: SchedulingErrorCodeValue,
++  message: string,
++): { code: SchedulingErrorCodeValue; error: SchedulingErrorCodeValue; message: string } {
++  return { code, error: code, message };
++}
++
++// Meeting links a coach may attach or set as a type default: https only, or
++// a tel: number for phone calls. Bounded. Anything else (javascript:, http:,
++// custom schemes) is refused so the client app only ever opens a safe link.
++export const MEETING_LINK_PATTERN = /^(https:\/\/[^\s<>"']{3,490}|tel:\+?[0-9 ().-]{3,30})$/i;
++export const HTTPS_LINK_PATTERN = /^https:\/\/[^\s<>"']{3,490}$/i;
++
++export function hasUsableLink(url: string | null | undefined): boolean {
++  return typeof url === 'string' && MEETING_LINK_PATTERN.test(url.trim());
++}
+diff --git a/src/scheduling/slot-computer.service.ts b/src/scheduling/slot-computer.service.ts
+index dd30cc2c..9d2a3779 100644
+--- a/src/scheduling/slot-computer.service.ts
++++ b/src/scheduling/slot-computer.service.ts
+@@ -54,12 +54,9 @@ export interface RangeError {
+   message: string;
+ }
+ 
+-const MAX_RANGE_DAYS = 14;
++export const MAX_RANGE_DAYS = 14;
+ 
+-export function validateRange(
+-  from: Date,
+-  to: Date,
+-): RangeError | null {
++export function validateRange(from: Date, to: Date): RangeError | null {
+   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+     return { code: 'BAD_RANGE', message: 'from and to must be valid ISO timestamps' };
+   }
+@@ -100,7 +97,13 @@ function localPartsInTz(
+   const byType: Record<string, string> = {};
+   for (const p of parts) byType[p.type] = p.value;
+   const weekdayMap: Record<string, number> = {
+-    Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
++    Sun: 0,
++    Mon: 1,
++    Tue: 2,
++    Wed: 3,
++    Thu: 4,
++    Fri: 5,
++    Sat: 6,
+   };
+   const hour = Number(byType.hour === '24' ? '0' : byType.hour);
+   const minute = Number(byType.minute);
+@@ -127,15 +130,16 @@ function utcFromLocal(
+   tz: string,
+ ): Date {
+   // First-pass guess: assume the UTC clock matches the local clock.
+-  const guess = new Date(Date.UTC(year, month - 1, day, Math.floor(minuteOfDay / 60), minuteOfDay % 60));
++  const guess = new Date(
++    Date.UTC(year, month - 1, day, Math.floor(minuteOfDay / 60), minuteOfDay % 60),
++  );
+   // What does that UTC instant project to in `tz`?
+   const projected = localPartsInTz(guess, tz);
+   const projectedMin =
+     (Date.UTC(projected.year, projected.month - 1, projected.day) +
+       projected.minuteOfDay * 60_000) /
+     60_000;
+-  const wantedMin =
+-    (Date.UTC(year, month - 1, day) + minuteOfDay * 60_000) / 60_000;
++  const wantedMin = (Date.UTC(year, month - 1, day) + minuteOfDay * 60_000) / 60_000;
+   // Offset in minutes between guess-as-tz and what we wanted.
+   const offsetMin = projectedMin - wantedMin;
+   return new Date(guess.getTime() - offsetMin * 60_000);
+@@ -206,8 +210,74 @@ function sliceIntoSlots(r: MinuteRange, durationMin: number): MinuteRange[] {
+ }
+ 
+ export function computeOpenSlots(input: ComputeInput): ComputedSlot[] {
+-  const { from, to, durationMinutes, coachTimezone, windows, overrides, bookings } = input;
++  const { from, to, durationMinutes } = input;
+   if (durationMinutes <= 0) return [];
++  const afterBookings = computeFreeRanges(input);
++
++  // Clip to the requested [from, to] range.
++  const fromMin = from.getTime() / 60_000;
++  const toMin = to.getTime() / 60_000;
++  const clipped: MinuteRange[] = [];
++  for (const r of afterBookings) {
++    const s = Math.max(r.startMin, fromMin);
++    const e = Math.min(r.endMin, toMin);
++    if (e - s >= durationMinutes) clipped.push({ startMin: s, endMin: e });
++  }
++
++  // Slice into discrete duration-sized slots.
++  const sliced: MinuteRange[] = [];
++  for (const r of clipped) sliced.push(...sliceIntoSlots(r, durationMinutes));
++
++  // Sort + dedupe.
++  sliced.sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
++  const out: ComputedSlot[] = [];
++  let prevStart = -1;
++  for (const s of sliced) {
++    if (s.startMin === prevStart) continue;
++    prevStart = s.startMin;
++    out.push({
++      start_at: new Date(s.startMin * 60_000).toISOString(),
++      end_at: new Date(s.endMin * 60_000).toISOString(),
++    });
++  }
++  return out;
++}
++
++// S-SCHED-2: the authoritative booking check. True when [start, end) lies
++// entirely inside the coach's bookable time: recurring windows + extra
++// overrides, minus holidays/blocks, minus the supplied occupying bookings.
++// Containment (not "equals a sliced slot") so a free interval stays bookable
++// after a neighbouring booking shifts the slice grid. `from`/`to` in `input`
++// should bracket [start, end) (the caller passes the interval itself).
++export function isIntervalBookable(
++  input: Omit<ComputeInput, 'durationMinutes'>,
++  start: Date,
++  end: Date,
++): boolean {
++  const startMin = start.getTime() / 60_000;
++  const endMin = end.getTime() / 60_000;
++  if (!Number.isFinite(startMin) || !Number.isFinite(endMin) || endMin <= startMin) {
++    return false;
++  }
++  const free = computeFreeRanges({ ...input, durationMinutes: endMin - startMin });
++  // Free pieces can abut (a window that ends where an extra override
++  // starts); merge touching pieces before testing containment.
++  const merged: MinuteRange[] = [];
++  for (const r of free.slice().sort((a, b) => a.startMin - b.startMin)) {
++    const last = merged[merged.length - 1];
++    if (last && r.startMin <= last.endMin) {
++      last.endMin = Math.max(last.endMin, r.endMin);
++    } else {
++      merged.push({ startMin: r.startMin, endMin: r.endMin });
++    }
++  }
++  return merged.some((r) => r.startMin <= startMin && r.endMin >= endMin);
++}
++
++// Free minute ranges (UTC minutes) over the local days touched by
++// [from, to]: availability minus overrides minus bookings. Not clipped.
++function computeFreeRanges(input: ComputeInput): MinuteRange[] {
++  const { from, to, coachTimezone, windows, overrides, bookings } = input;
+ 
+   // Determine the local date range to walk. We expand by ±1 day on
+   // each side to catch windows that span midnight in tz vs UTC.
+@@ -233,12 +303,8 @@ export function computeOpenSlots(input: ComputeInput): ComputedSlot[] {
+     const d = date.getUTCDate();
+     const dateKey = ymdString(y, m, d);
+     const dayOverrides = overridesByDate.get(dateKey) ?? [];
+-    const isHoliday = dayOverrides.some(
+-      (o) => o.kind === 'holiday' && o.start_minute === null,
+-    );
+-    const fullDayBlocks = dayOverrides.filter(
+-      (o) => o.kind === 'block' && o.start_minute === null,
+-    );
++    const isHoliday = dayOverrides.some((o) => o.kind === 'holiday' && o.start_minute === null);
++    const fullDayBlocks = dayOverrides.filter((o) => o.kind === 'block' && o.start_minute === null);
+     if (isHoliday || fullDayBlocks.length > 0) {
+       // Whole day off — only EXTRA can put it back.
+       const extras = dayOverrides.filter((o) => o.kind === 'extra');
+@@ -276,7 +342,10 @@ export function computeOpenSlots(input: ComputeInput): ComputedSlot[] {
+       if (o.start_minute === null || o.end_minute === null) continue;
+       const startUtc = utcFromLocal(y, m, d, o.start_minute, coachTimezone);
+       const endUtc = utcFromLocal(y, m, d, o.end_minute, coachTimezone);
+-      partialHoles.push({ startMin: startUtc.getTime() / 60_000, endMin: endUtc.getTime() / 60_000 });
++      partialHoles.push({
++        startMin: startUtc.getTime() / 60_000,
++        endMin: endUtc.getTime() / 60_000,
++      });
+     }
+     const dayResult = subtractRanges(daySolid, partialHoles);
+     solid.push(...dayResult);
+@@ -287,33 +356,5 @@ export function computeOpenSlots(input: ComputeInput): ComputedSlot[] {
+     startMin: b.start_at.getTime() / 60_000,
+     endMin: b.end_at.getTime() / 60_000,
+   }));
+-  const afterBookings = subtractRanges(solid, bookingHoles);
+-
+-  // Clip to the requested [from, to] range.
+-  const fromMin = from.getTime() / 60_000;
+-  const toMin = to.getTime() / 60_000;
+-  const clipped: MinuteRange[] = [];
+-  for (const r of afterBookings) {
+-    const s = Math.max(r.startMin, fromMin);
+-    const e = Math.min(r.endMin, toMin);
+-    if (e - s >= durationMinutes) clipped.push({ startMin: s, endMin: e });
+-  }
+-
+-  // Slice into discrete duration-sized slots.
+-  const sliced: MinuteRange[] = [];
+-  for (const r of clipped) sliced.push(...sliceIntoSlots(r, durationMinutes));
+-
+-  // Sort + dedupe.
+-  sliced.sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
+-  const out: ComputedSlot[] = [];
+-  let prevStart = -1;
+-  for (const s of sliced) {
+-    if (s.startMin === prevStart) continue;
+-    prevStart = s.startMin;
+-    out.push({
+-      start_at: new Date(s.startMin * 60_000).toISOString(),
+-      end_at: new Date(s.endMin * 60_000).toISOString(),
+-    });
+-  }
+-  return out;
++  return subtractRanges(solid, bookingHoles);
+ }
+diff --git a/test/log-diagnostic-closed-enum.spec.ts b/test/log-diagnostic-closed-enum.spec.ts
+new file mode 100644
+index 00000000..517e368e
+--- /dev/null
++++ b/test/log-diagnostic-closed-enum.spec.ts
+@@ -0,0 +1,151 @@
++import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
++import { Prisma } from '@prisma/client';
++import { PushAbortedError } from '../src/notifications/push-delivery.types';
++import {
++  LOG_ERROR_CLASSES,
++  LOG_ERROR_CODES,
++  logErrorClass,
++  logErrorCode,
++  safeLogDiagnostic,
++} from '../src/observability/orm-diagnostics';
++
++// B-634-10 (Sol @ 9e6c62c9): the shared log sanitizer must emit only members
++// of a reviewed closed enum. An identifier-shaped string is still arbitrary
++// data, so a name or code outside the catalog never reaches a log line.
++const CANARY = 'SYNTHETIC_PRIVATE_CANARY_123';
++
++function named(name: string, message = `message ${CANARY}`): Error {
++  const err = new Error(message);
++  err.name = name;
++  return err;
++}
++
++function coded(code: string, base: Error = new Error(`message ${CANARY}`)): Error {
++  return Object.assign(base, { code });
++}
++
++describe('B-634-10: safeLogDiagnostic is a closed enum', () => {
++  it('an identifier-shaped unknown name logs as OtherError', () => {
++    expect(safeLogDiagnostic(named(CANARY))).toBe('OtherError');
++    expect(safeLogDiagnostic(named('Jamie_knee_pain'))).toBe('OtherError');
++  });
++
++  it('an identifier-shaped unknown code is dropped', () => {
++    expect(safeLogDiagnostic(coded(CANARY))).toBe('Error');
++    expect(safeLogDiagnostic(coded(CANARY, new TypeError('x')))).toBe('TypeError');
++  });
++
++  it('an unknown name and an unknown code together log as OtherError only', () => {
++    expect(safeLogDiagnostic(coded(CANARY, named(CANARY)))).toBe('OtherError');
++  });
++
++  it('wrapped causes: a canary cause never surfaces; a catalogued cause code does', () => {
++    const canaryCause = coded(CANARY, named(CANARY));
++    const outer = Object.assign(new Error(`outer ${CANARY}`), { cause: canaryCause });
++    expect(safeLogDiagnostic(outer)).toBe('Error');
++    const fetchFailed = Object.assign(new TypeError('fetch failed'), {
++      cause: coded('UND_ERR_CONNECT_TIMEOUT', named('ConnectTimeoutError')),
++    });
++    expect(safeLogDiagnostic(fetchFailed)).toBe('TypeError (UND_ERR_CONNECT_TIMEOUT)');
++  });
++
++  it('a cyclic cause chain terminates', () => {
++    const a = named(CANARY);
++    const b = Object.assign(new Error('b'), { cause: a });
++    Object.assign(a, { cause: b });
++    expect(safeLogDiagnostic(b)).toBe('Error');
++  });
++
++  it('non-Error throws log OtherError, never their content', () => {
++    for (const value of [
++      CANARY,
++      { name: CANARY, code: CANARY, message: CANARY },
++      42,
++      null,
++      undefined,
++      Symbol(CANARY),
++    ]) {
++      expect(safeLogDiagnostic(value)).toBe('OtherError');
++    }
++  });
++
++  it('a hostile getter on name or code cannot throw or leak', () => {
++    const err = new Error(CANARY);
++    Object.defineProperty(err, 'name', {
++      get() {
++        throw new Error(CANARY);
++      },
++    });
++    expect(() => safeLogDiagnostic(err)).not.toThrow();
++    expect(safeLogDiagnostic(err)).toBe('OtherError');
++    const err2 = new RangeError(CANARY);
++    Object.defineProperty(err2, 'code', {
++      get() {
++        throw new Error(CANARY);
++      },
++    });
++    expect(safeLogDiagnostic(err2)).toBe('RangeError');
++  });
++
++  it('Prisma P-codes still pass through the validated ORM branch, also wrapped', () => {
++    const orm = new Prisma.PrismaClientKnownRequestError(`Query: ${CANARY}`, {
++      code: 'P2024',
++      clientVersion: 'test',
++      meta: { target: CANARY },
++    });
++    expect(safeLogDiagnostic(orm)).toBe('DatabaseRequestError: Database request failed (P2024)');
++    const wrapped = Object.assign(named(CANARY), { cause: orm, code: CANARY });
++    expect(safeLogDiagnostic(wrapped)).toBe(
++      'DatabaseRequestError: Database request failed (P2024)',
++    );
++    // A non-ORM error that merely claims a P-code shape is not trusted.
++    expect(safeLogDiagnostic(coded('P2024'))).toBe('Error');
++  });
++
++  it('known classes keep their name, catalogued code and HTTP status', () => {
++    expect(safeLogDiagnostic(new RangeError(CANARY))).toBe('RangeError');
++    expect(safeLogDiagnostic(new PushAbortedError(CANARY))).toBe('PushAbortedError (PUSH_ABORTED)');
++    expect(safeLogDiagnostic(coded('ECONNRESET', new TypeError(CANARY)))).toBe(
++      'TypeError (ECONNRESET)',
++    );
++    expect(
++      safeLogDiagnostic(
++        new ServiceUnavailableException({
++          error: 'CALENDAR_PROVIDER_NOT_IMPLEMENTED',
++          message: CANARY,
++        }),
++      ),
++    ).toBe('ServiceUnavailableException (503)');
++    expect(safeLogDiagnostic(new NotFoundException(CANARY))).toBe('NotFoundException (404)');
++  });
++
++  it('an HttpException-shaped impostor cannot inject a non-numeric status', () => {
++    const fake = Object.assign(named('NotFoundException'), { getStatus: () => CANARY });
++    expect(safeLogDiagnostic(fake)).toBe('NotFoundException');
++    const outOfRange = Object.assign(named('NotFoundException'), { getStatus: () => 1234567 });
++    expect(safeLogDiagnostic(outOfRange)).toBe('NotFoundException');
++  });
++
++  it('every output is built only from catalog members (property sweep)', () => {
++    const allowed = new Set<string>([...LOG_ERROR_CLASSES, 'OtherError', ...LOG_ERROR_CODES]);
++    const names = [...LOG_ERROR_CLASSES, CANARY, 'X', 'Error2', 'Prisma_Note', ''];
++    const codes = [...LOG_ERROR_CODES, CANARY, 'ERR_X', 'abc.def-1', ''];
++    for (const n of names) {
++      for (const c of codes) {
++        const out = safeLogDiagnostic(coded(c, named(n)));
++        const tokens = out.replace(/[()]/g, ' ').split(/\s+/).filter(Boolean);
++        for (const t of tokens) expect(allowed.has(t)).toBe(true);
++        expect(out).not.toContain(CANARY);
++      }
++    }
++  });
++
++  it('the class and code helpers are exact-membership, not shape filters', () => {
++    expect(logErrorClass(named('TypeError'))).toBe('TypeError');
++    expect(logErrorClass(named('TypeErrorX'))).toBe('OtherError');
++    expect(logErrorClass('TypeError')).toBe('OtherError');
++    expect(logErrorCode(coded('ETIMEDOUT'))).toBe('ETIMEDOUT');
++    expect(logErrorCode(coded('ETIMEDOUT2'))).toBeNull();
++    expect(logErrorCode({ code: 'ETIMEDOUT' })).toBeNull();
++  });
++});
+diff --git a/test/slot-computer-bookable.spec.ts b/test/slot-computer-bookable.spec.ts
+new file mode 100644
+index 00000000..04f9766d
+--- /dev/null
++++ b/test/slot-computer-bookable.spec.ts
+@@ -0,0 +1,92 @@
++/**
++ * S-SCHED-2: isIntervalBookable, the authoritative containment check the
++ * booking and reschedule paths run (pure; no DB).
++ */
++import { computeOpenSlots, isIntervalBookable } from '../src/scheduling/slot-computer.service';
++
++const TZ = 'America/Los_Angeles';
++// Tuesday 2026-10-06 (PDT, UTC-7). day_of_week 2.
++const at = (hhmm: string) => {
++  const [h, m] = hhmm.split(':').map(Number);
++  return new Date(Date.UTC(2026, 9, 6, h + 7, m));
++};
++
++type Calendar = Omit<Parameters<typeof isIntervalBookable>[0], 'from' | 'to'>;
++
++const base: Calendar = {
++  coachTimezone: TZ,
++  windows: [{ day_of_week: 2, start_minute: 9 * 60, end_minute: 12 * 60 }],
++  overrides: [],
++  bookings: [],
++};
++
++function bookable(start: string, end: string, extra: Partial<Calendar> = {}) {
++  const s = at(start);
++  const e = at(end);
++  return isIntervalBookable({ ...base, ...extra, from: s, to: e }, s, e);
++}
++
++describe('isIntervalBookable', () => {
++  it('accepts an interval fully inside a window, including its edges', () => {
++    expect(bookable('09:00', '09:30')).toBe(true);
++    expect(bookable('11:30', '12:00')).toBe(true);
++  });
++
++  it('refuses an interval that leaves the window on either side', () => {
++    expect(bookable('08:45', '09:15')).toBe(false);
++    expect(bookable('11:45', '12:15')).toBe(false);
++  });
++
++  it('refuses overlap with an occupying booking but allows back-to-back', () => {
++    const bookings = [{ start_at: at('10:00'), end_at: at('10:30') }];
++    expect(bookable('10:15', '10:45', { bookings })).toBe(false);
++    expect(bookable('09:30', '10:00', { bookings })).toBe(true);
++    expect(bookable('10:30', '11:00', { bookings })).toBe(true);
++  });
++
++  it('accepts an off-grid start that the slot list would not show (containment, not grid)', () => {
++    const bookings = [{ start_at: at('09:00'), end_at: at('09:10') }];
++    expect(bookable('09:10', '09:40', { bookings })).toBe(true);
++    const listed = computeOpenSlots({
++      ...base,
++      bookings,
++      from: at('09:00'),
++      to: at('12:00'),
++      durationMinutes: 30,
++    }).map((s) => s.start_at);
++    expect(listed[0]).toBe(at('09:10').toISOString());
++  });
++
++  it('honours holidays, blocks and extra hours', () => {
++    expect(
++      bookable('10:00', '10:30', {
++        overrides: [{ date: '2026-10-06', kind: 'holiday', start_minute: null, end_minute: null }],
++      }),
++    ).toBe(false);
++    expect(
++      bookable('10:00', '10:30', {
++        overrides: [{ date: '2026-10-06', kind: 'block', start_minute: 600, end_minute: 615 }],
++      }),
++    ).toBe(false);
++    expect(
++      bookable('12:00', '12:30', {
++        overrides: [{ date: '2026-10-06', kind: 'extra', start_minute: 720, end_minute: 780 }],
++      }),
++    ).toBe(true);
++  });
++
++  it('merges a window with abutting extra hours', () => {
++    expect(
++      bookable('11:45', '12:15', {
++        overrides: [{ date: '2026-10-06', kind: 'extra', start_minute: 720, end_minute: 780 }],
++      }),
++    ).toBe(true);
++  });
++
++  it('refuses empty, inverted or unreadable intervals', () => {
++    const s = at('10:00');
++    expect(isIntervalBookable({ ...base, from: s, to: s }, s, s)).toBe(false);
++    expect(isIntervalBookable({ ...base, from: s, to: s }, at('10:30'), s)).toBe(false);
++    expect(isIntervalBookable({ ...base, from: s, to: s }, new Date('x'), s)).toBe(false);
++  });
++});

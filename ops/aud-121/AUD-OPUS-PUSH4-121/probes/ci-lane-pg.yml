@@ -1,0 +1,58 @@
+# TGP CI lane (operator 115) + Postgres 15 service (AUD-OPUS-PUSH4-121 live probe variant). Lives ONLY on ci/** and audit/** branches; never merge it into a PR or main.
+# Runs targeted jest (+ optional tsc) as ONE job, so a failing-before proof or lens probe costs one runner for a few minutes
+# instead of the 5-job ci.yml. Specs: list jest paths/args in .ci-lane-specs (one per line) at the repo root of the branch.
+# Optional: create an empty .ci-lane-tsc file to also run `npx tsc --noEmit`.
+name: ci-lane
+on:
+  push:
+    branches: ['ci/**', 'audit/**']
+concurrency:
+  group: ci-lane-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  targeted:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 10s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      MWB3_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Type-check (only when .ci-lane-tsc exists)
+        if: hashFiles('.ci-lane-tsc') != ''
+        run: npx tsc --noEmit
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+      - name: Targeted jest
+        shell: bash
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+          THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+        run: |
+          set -euo pipefail
+          test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+          mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+          echo "specs: ${SPECS[*]}"
+          npx jest --ci --runInBand --testTimeout=120000 "${SPECS[@]}"

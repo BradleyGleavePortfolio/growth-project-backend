@@ -1,0 +1,118 @@
+# AUD-OPUS-SCHA-121 probe (agent 121, never merge): migration 20270222000000 applied OUT OF ORDER on a database that already
+# holds every later migration (production order: ...20270301000000, 20270311000000 applied; 20270222000000 pending).
+# Proves: (1) `prisma migrate deploy` applies the one pending older migration; (2) the result equals a fresh in-order chain and
+# schema.prisma; (3) down.sql + re-apply round-trips in the production order; (4) the overlap preflight still refuses.
+name: ci-lane
+on:
+  push:
+    branches: ['audit/**']
+concurrency:
+  group: ci-lane-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  migration-order:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:15.18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      PGPASSWORD: postgres
+      PROD_URL: postgresql://postgres:postgres@localhost:5432/prodlike
+      FRESH_URL: postgresql://postgres:postgres@localhost:5432/fresh
+      SUPABASE_URL: http://127.0.0.1:54321
+      SUPABASE_SERVICE_ROLE_KEY: ci-probe-not-a-secret
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx prisma generate
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Create the two databases and bootstrap both
+        run: |
+          set -euxo pipefail
+          psql postgresql://postgres:postgres@localhost:5432/postgres -v ON_ERROR_STOP=1 -c 'CREATE DATABASE prodlike' -c 'CREATE DATABASE fresh'
+          psql "$PROD_URL" -v ON_ERROR_STOP=1 -q -f prisma/migrations/_supabase_bootstrap.sql
+          psql "$FRESH_URL" -v ON_ERROR_STOP=1 -q -f prisma/migrations/_supabase_bootstrap.sql
+      - name: P1 production order - deploy everything except 20270222000000
+        run: |
+          set -euxo pipefail
+          mv prisma/migrations/20270222000000_scheduling_lifecycle_integrity /tmp/m20270222
+          DATABASE_URL="$PROD_URL" DIRECT_URL="$PROD_URL" npx prisma migrate deploy
+          psql "$PROD_URL" -At -c "select count(*), max(migration_name) from _prisma_migrations where finished_at is not null"
+          psql "$PROD_URL" -At -c "select migration_name from _prisma_migrations where migration_name in ('20270301000000_notification_zone_provenance_reminder_generation','20270311000000_subscription_checkout_terms') order by 1"
+          psql "$PROD_URL" -At -c "select count(*) from _prisma_migrations where migration_name like '20270222%'" | grep -qx 0
+          mv /tmp/m20270222 prisma/migrations/20270222000000_scheduling_lifecycle_integrity
+      - name: P1b seed one legacy reminder claim and two non-overlapping sessions (pre-migration rows)
+        run: |
+          set -euxo pipefail
+          psql "$PROD_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          \d "NotificationDeliveryLog"
+          SQL
+      - name: P2 prisma migrate status reports exactly the one pending migration, deploy applies it
+        run: |
+          set -euxo pipefail
+          export DATABASE_URL="$PROD_URL" DIRECT_URL="$PROD_URL"
+          (npx prisma migrate status || true) | tee /tmp/status-before.txt
+          grep -q '20270222000000_scheduling_lifecycle_integrity' /tmp/status-before.txt
+          npx prisma migrate deploy | tee /tmp/deploy.txt
+          grep -q '20270222000000_scheduling_lifecycle_integrity' /tmp/deploy.txt
+          psql "$PROD_URL" -At -c "select migration_name, finished_at is not null, rolled_back_at is null, applied_steps_count from _prisma_migrations where migration_name like '20270222%'"
+          psql "$PROD_URL" -At -c "select count(*) from _prisma_migrations where migration_name like '20270222%' and finished_at is not null" | grep -qx 1
+          npx prisma migrate status
+          npx prisma migrate deploy | tee /tmp/deploy2.txt
+          grep -q 'No pending migrations to apply' /tmp/deploy2.txt
+      - name: P3 fresh in-order chain
+        run: |
+          set -euxo pipefail
+          DATABASE_URL="$FRESH_URL" DIRECT_URL="$FRESH_URL" npx prisma migrate deploy
+      - name: P4 production-order DB == fresh in-order DB == schema.prisma (prisma migrate diff, exit-code)
+        run: |
+          set -euxo pipefail
+          export DATABASE_URL="$FRESH_URL" DIRECT_URL="$FRESH_URL"
+          npx prisma migrate diff --from-url "$PROD_URL" --to-url "$FRESH_URL" --script | tee /tmp/diff-prod-fresh.sql
+          npx prisma migrate diff --from-url "$PROD_URL" --to-url "$FRESH_URL" --exit-code
+          npx prisma migrate diff --from-url "$PROD_URL" --to-schema-datamodel prisma/schema.prisma --script | tee /tmp/diff-prod-schema.sql
+      - name: P5 catalog objects the migration owns are identical in both orders (pg_catalog, order-insensitive)
+        run: |
+          set -euxo pipefail
+          q() { psql "$1" -At -c "$2" | sort; }
+          for U in "$PROD_URL" "$FRESH_URL"; do
+            {
+              q "$U" "select conname||' '||pg_get_constraintdef(oid) from pg_constraint where conrelid in ('\"CoachingSession\"'::regclass,'\"SessionType\"'::regclass,'\"NotificationDeliveryLog\"'::regclass)"
+              q "$U" "select indexname||' '||indexdef from pg_indexes where tablename in ('CoachingSession','SessionType','NotificationDeliveryLog')"
+              q "$U" "select table_name||'.'||column_name||' '||data_type||' '||is_nullable||' '||coalesce(column_default,'-') from information_schema.columns where table_name in ('CoachingSession','SessionType','NotificationDeliveryLog')"
+              q "$U" "select extname||' '||coalesce(obj_description(oid,'pg_extension'),'-') from pg_extension where extname='btree_gist'"
+              q "$U" "select relname||' rls='||relrowsecurity||' force='||relforcerowsecurity from pg_class where relname in ('CoachingSession','SessionType','NotificationDeliveryLog')"
+              q "$U" "select tablename||' '||policyname from pg_policies where tablename in ('CoachingSession','SessionType','NotificationDeliveryLog')"
+            } > "/tmp/cat-$(basename "$U").txt"
+          done
+          diff -u /tmp/cat-prodlike.txt /tmp/cat-fresh.txt
+          cat /tmp/cat-prodlike.txt
+      - name: P6 down.sql then re-apply in the production order round-trips
+        run: |
+          set -euxo pipefail
+          D=prisma/migrations/20270222000000_scheduling_lifecycle_integrity
+          psql "$PROD_URL" -v ON_ERROR_STOP=1 -f $D/down.sql
+          psql "$PROD_URL" -At -c "select count(*) from information_schema.columns where table_name='NotificationDeliveryLog' and column_name='start_at' and is_nullable='NO'" | grep -qx 1
+          psql "$PROD_URL" -At -c "select count(*) from pg_indexes where indexname='NotificationDeliveryLog_session_id_user_id_kind_start_at_key'" | grep -qx 1
+          psql "$PROD_URL" -v ON_ERROR_STOP=1 -f $D/migration.sql
+          export DATABASE_URL="$FRESH_URL" DIRECT_URL="$FRESH_URL"
+          npx prisma migrate diff --from-url "$PROD_URL" --to-url "$FRESH_URL" --exit-code
+      - name: P7 the overlap preflight refuses in the production order (rolled back, nothing half-applied)
+        run: |
+          set -euxo pipefail
+          D=prisma/migrations/20270222000000_scheduling_lifecycle_integrity
+          psql "$PROD_URL" -v ON_ERROR_STOP=1 -f $D/down.sql
+          psql "$PROD_URL" -At -c "select column_name from information_schema.columns where table_name='CoachingSession' order by ordinal_position" | tr '\n' ' '; echo
+          psql "$PROD_URL" -At -c "select column_name||':'||is_nullable||':'||coalesce(column_default,'-') from information_schema.columns where table_name='User' and is_nullable='NO' and column_default is null" | tr '\n' ' '; echo

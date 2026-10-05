@@ -151,3 +151,77 @@ Binding (owner 11:22): coaches see what Roman wants to do (his proposals) and ap
 reasoning, and never client chat text. FEATURE_ROMAN_ADJUST_ENABLED stays off until landed (operator flag PR later). Check consent (box 2)
 gating, tenancy (a coach acts only on own clients, sub-coach rules), idempotency of approve/reject, audit trail without health labels in
 action names, and truthful mobile copy (no first person, no generic errors).
+
+## Wave 2 builders (12:55)
+
+### B-LOCK3-121 — mobile lockout FIX ROUND 3 on m#352/#353, restack #354 (billing lockout, dispute copy; T4; stack lock: lockout)
+Heads: m#352 c89f719cd8f5863c4150af1da5b96e273df319d6, #353 9d47045b63a4680d852591ae3b4b2d3bfb1e0d85, #354 68c7f080c1e7e7708e7c3b213ae9278b57ba3649.
+Sol L3 verdicts (12:51): #352 RC 0/2/2 (6001848621: B-352-3 native PaymentSheet lease through completion/teardown with owner recheck and
+operation-session fence; B-352-9 inquiry copy must not claim a bank reversal), #353 RC 0/1/3 (6001849106: B-353-8 same for banner,
+lockout screen, UpdateCard), #354 APPROVE 0/0/0. Report ops/reports/AUD-SOL-L3-121.md; probes ops/aud-121/AUD-SOL-L3-121/. Opus L3
+(AUD-OPUS-L3-121) is still reviewing: start on Sol's Bs now, poll #352-#354 comments every 5 minutes for the Opus verdict, and fold its
+Bs into the same round before you push (if Opus has not posted 40 minutes after you start, push Sol's fixes as FIX ROUND 3 and do Opus's
+as FIX ROUND 4). Copy rule: neutral dispute/inquiry wording unless a trusted field proves money was withdrawn; keep the three facts
+(access ended, billing paused, coach decides on restarting), no card or automatic fix, never "settle", no first person, no generic errors.
+Failing-before probes in a mobile CI lane, then green. Fix round comments + READY FOR AUDIT; #354 restack merge-only. Background: A9.2
+"B-LOCK2-120", ops/reports/B-LOCK2-120.md.
+
+### B-ROMAN-AFIX-121 — Roman A1 b#667 + A2 b#665 FIX ROUND 1 (AI, PII, health data; T4; stack lock: roman)
+Heads: b#667 bacd83e10ff0e00dc5165dd223da8b4745e3c82a, #665 eb7cb7a81e86d2a9113b3b65b7f9d011950c3ba5 (drafts; #666-#670 sit on top: restack
+them merge-only after your fixes, never edit their content). Sol RA verdicts (12:5x): #667 RC 0/3/1 (6001851969: exact date of birth
+disclosed, incomplete screening marked complete, escaped context exceeding its hard cap), #665 RC 0/4/1 (6001852378: competing-provider
+double counting, silent wearable truncation, UTC/local workout-date errors, assignment limits hiding future sessions). Report
+ops/reports/AUD-SOL-RA-121.md; probes ops/aud-121/AUD-SOL-RA-121/. Opus RA is still reviewing: start on Sol's Bs, poll for the Opus
+verdict every 5 minutes and fold its Bs in before you push (40-minute rule as in B-LOCK3-121). The coach-pool debit and per-client daily
+cap belong to #668 (another job), not to you. Keep each PR under its size cap (#665 is 2,282 of 3,000; #667 1,832): new tests go in the
+PR that owns the code. Failing-before probes in a backend CI lane. FIX ROUND 1 (OPENING, B-ROMAN-AFIX-121, agent 121) + READY FOR AUDIT;
+RESTACK comments on #666-#670. Background: A9.2 "Roman day-1 jobs".
+
+### B-ROMAN-BFIX-121 — Roman B b#666 + C1 b#668 FIX ROUND 1, #669 C2 fix commit, restack #666-#670 (AI, safety, money; T4; roman upper stack)
+Heads: b#666 0ec835ca1cc9697bde71e6c67ed627ea3a000691 (1,735), #668 fabc2268ffde1e6dca3ea1a18d6bff49c69f7b6f (2,159), #669
+6386c00b2bdbb2c120a5f173dea4753574d415e8 (907: failing-before tests only, red by design), #670 fb67101934becfb8536664df008129061c013dde
+(1,135, golden-set eval). Split of ownership on the Roman stack: B-ROMAN-AFIX-121 owns #667/#665 content; YOU own #666/#668/#669/#670
+content AND their restack: after AFIX posts READY on #665, merge the new #665 head into #666 and restack upward (one push per PR per round).
+Sol RB verdicts (12:5x): #666 RC 0/3/1 (6001863666: acute anaphylaxis routing miss, formatted calorie-floor bypass, negated injury-stop
+instruction accepted); #668 RC 0/3/1 (6001863676: missing coach-pool gate/debit, wrong client daily quota code, mixed kcal field/date
+provenance). Report ops/reports/AUD-SOL-RB-121.md. Also ops/lanes121/notify/AUD-SOL-RA-121-budget-boundary.md: no CoachAIBudgetService
+/ recordUsage anywhere in RomanService/RomanModule, and the daily cost cap (roman.service.ts:1183-1255) aggregates all clients instead of
+per client. Opus RB is still reviewing: start on Sol's Bs, poll for the Opus verdict every 5 minutes and fold its Bs in before you push
+(40-minute rule as in B-LOCK3-121). #669: write the fix commit per handoffs/op-115/reports/B-SCHED-ROMAN-115.md in tgp-agent-context
+(source branch agent115/roman-651-r2-wip-unsplit @ 675cf045), including the disclosed T4-gate ci.yml step for the spend-admission live spec;
+#669 and #670 go green. Day-1 AI budget (owner 11:40-11:41): every live Roman turn checks and debits the coach's CoachAIBudget (src/ai-credits,
+recordUsage) and passes a per-client daily cap; crisis turns exempt from the cap; distinct error codes for client daily cap
+(ROMAN_CAPACITY_REACHED for Roman, AI_DAILY_QUOTA_EXCEEDED elsewhere) and coach pool empty; report the configured cap value and env name.
+Size: #668 has 841 lines of room and #669 has 2,093 (all grandfathered to 3,000): put tests with the code they cover. Failing-before probes
+in a backend CI lane. FIX ROUND 1 (OPENING, B-ROMAN-BFIX-121, agent 121) + READY FOR AUDIT on #666/#668/#669, RESTACK on #670. Flags
+unchanged (FEATURE_ROMAN_CHAT_ENABLED stays excluded until the operator's flag PR). Background: A9.2 "Roman day-1 jobs".
+
+## Wave 3 (13:05; sandbox iowait back to 25%, 5.8 GB disk free)
+
+### B-PROG2-121 — mobile programs P1 m#355 + P2 m#356 FIX ROUND (stack lock: programs; parallel with B-PROG4-121)
+Heads unchanged since agent 120 wrote the job: #355 902c64a64156255ce9ce54147db896ac2142a954 (base main, behind; 1,716), #356
+40ee678adf7a70bdfa18c49cafdbd64a2dc589a5 (1,501). Your job text is A9.2 "B-PROG2-120" in TGP_SOURCE_OF_TRUTH.md (read it word for word;
+replace agent 120 with agent 121 and ops/lanes120 with ops/lanes121). Coordination file: ops/lanes121/notify/programs.txt. The backend
+409 fix is B-MWB409-121 (running in parallel): mobile reads the fields it will return and fails truthfully until then.
+
+### B-PROG4-121 — mobile programs P3 m#357 + P4 m#358 FIX ROUND (stack lock: programs-p34; parallel with B-PROG2-121)
+Heads: #357 b364b9eaaedfb6d297f55a40e4b6a15ac4d2a381 (2,421), #358 4dcf0aff2644ff54fc5fe4de2c97751d7ac7cf94 (1,323). Your job text is A9.2
+"B-PROG4-120" (word for word; agent 121, ops/lanes121; coordination file ops/lanes121/notify/programs.txt written by B-PROG2-121).
+
+### B-MWB409-121 — backend: keep head index + lock token in MWB autosave/undo 409 replies (T4: API contract, error filter)
+Your job text is A9.2 "B-MWB409-120" (word for word; agent 121). New PR on backend main, under 1,500 lines. When READY, write
+ops/lanes121/notify/mwb409.txt with the PR number and head so B-PROG2-121 can read the field names.
+
+### B-SCHED-FIX-121 — b#643 (BOOKING_REMINDERS_ENABLED) + m#341 (device time zone, tap opens session, quiet hours) FIX ROUNDS
+Heads: b#643 f21b3c632a80037c852f91e5d41e33d31d99ef9e (base main, behind; one manifest line; RC both 5960175016 / 5960179586), m#341
+7c791bb3 (base main, behind; 1,966; RC Sol 5972146496 / Opus 5972160274). Background: A9.2 "Scheduling day-1 jobs"; TGP_SOURCE_OF_TRUTH
+A7.4 (BOOKING_REMINDERS_ENABLED must be the literal "on"). Read all four verdicts in full and fix every A/B. #643 stays a manifest +
+runbook/gate PR (no workflow run by you); it applies only after the scheduling pieces b#712-#720 deploy, so the gate text must say so.
+m#341 must work with the new backend scheduling API in b#712-#720 (approved by Sol at 13:01; Opus reviewing). Failing-before probes
+in CI lanes. FIX ROUND comments + READY FOR AUDIT. Keep m#341 under 3,000 (grandfathered).
+
+### AUD-OPUS-SCHM1-121 / AUD-SOL-SCHM1-121 — mobile scheduling K1 m#365 + K2 m#366, first full review (T3/T4: booking, time zones)
+Heads: m#365 cceeb33a (full sha via gh; base main, behind; 2,025), m#366 fa7744cc (base #365; 1,680). Never reviewed. Background: A9.2
+"Scheduling day-1 jobs"; backend API in b#712-#720 (Sol APPROVE all nine 13:01). Binding: coaches decide their times and availability
+(owner 10:32); no onboarding gate (owner 10:33); truthful copy when a coach has no bookable types or hours (not an empty picker); no
+first person, no generic errors; times shown in the device time zone. Probes only in mobile CI lanes. One verdict per PR at the exact head.

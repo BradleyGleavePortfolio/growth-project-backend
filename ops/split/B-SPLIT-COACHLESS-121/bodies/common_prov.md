@@ -1,0 +1,13 @@
+## Split provenance
+- Original: #657 (`annex/a1-coachless-be`) @ `c25960a8b82ed4dd6bea0b7da9f1d77ce783078d` (27 files, +3,184; never reviewed: no AUDIT or FIX ROUND comments, only bot comments). Prior verdicts: none.
+- Reference merge M = `f3f0d659ecb4ad098ff65f454b8ada12be39a5c9` (branch `agent121/coachless-split-0-merged-reference`): merge commit `4a072edfaf6c0e296829e768473d40955fc68642` (#657 + main `5da537d60b5775078c20530829c94d33be2bc527`, conflicts resolved once; `git show --remerge-diff 4a072edf`) plus one commit `f3f0d659` with the two semantic resolutions main's gates require (items 4-5 below).
+- Stack: split 1/3 (base main) <- split 2/3 <- split 3/3. Land as one stack (A5 rule 11), bottom-up.
+- Top-tree equality: `git rev-parse f3f0d659^{tree}` == `git rev-parse <split 3/3 head>^{tree}` == `0279a4f54646f0a9e4bc70b45e1a28ec424faae8`; `git diff f3f0d659 <split 3/3 head>` is empty. No A/B fixes are included (the job is split only).
+- Every file except one is byte-identical to M in the piece that adds it. The exception: `test/coachless/coachless-fixture.ts` in split 2/3 omits the `CoachCodeRedemptionService` import and construction (that service lands in split 3/3, which restores the M file: +8/-1).
+
+## Main-merge resolutions (all in M; each lives in the piece that owns the file)
+1. `.github/fly-env-desired-state.json` (textual, 2 hunks): union. `FEATURE_COACHLESS_HOME: unset` + its note, next to main's `COACH_WELCOME_SCHEDULER_ENABLED` / `WORKOUT_REMINDERS_ENABLED` (#609). [split 2]
+2. `docs/runbooks/launch-flags.md` (textual, 1 hunk): union; the `FEATURE_COACHLESS_HOME | off | ... unset` row next to main's two #609 rows. [split 2]
+3. `.github/workflows/ci.yml` (textual, 1 hunk in rls-live-tests): union; the coachless live RLS step (with its own `NODE_OPTIONS` env) before main's clinic engagement (#609) and data-exports bucket (A-636-1) steps. No step removed or loosened. [split 1]
+4. `src/account-deletion/account-deletion.manifest.ts` (semantic; main's erasure-manifest-coverage gate A-608-1 requires a decision for every user-id column): `CoachCodeRedemption.user_id` delete, `CoachCodeRedemption.coach_id` delete (the ledger row replays the erased coach's card), `CoachlessPromptState.user_id` delete, `FeaturedCoachConfig.coach_user_id` and `.updated_by_user_id` detach (the singleton stays; matches the FK SET NULL). No RESTRICT FKs are involved (all three tables CASCADE or SET NULL). [split 1]
+5. `src/coachless/coach-code-redemption.service.ts` (semantic; main's no-pii-in-logs C-700-2 rule: a new file has no exception-text baseline): the ledger failure-mark log and the unexpected-failure log print `describeFailure(err)` instead of `err.message`. [split 3]

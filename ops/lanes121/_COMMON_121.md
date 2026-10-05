@@ -55,3 +55,10 @@ no exclamation marks, no generic errors. One job = one agent = one or two PRs, t
    get from `date` (TZ=America/Los_Angeles).
 10. Final answer under 250 words: PR(s), exact head(s), verdict or round, A/B/C counts, comment URL(s), CI state, follow-up Cs, operator
     decisions needed (each with your recommended default).
+11. GitHub Actions incident (12:42 PDT 10-05: "delays when assigning GitHub-hosted runners"): keep using CI lanes (owner 12:41: "use
+    github ci lanes") but do not sit idle on a queued lane. Builders: while lanes/PR CI are queued, run the same targeted specs locally
+    through /home/user/workspace/ops/heavy.sh, one at a time, and cite them as local evidence; cite the lane run when it finishes. Lenses:
+    keep reading code and writing probes while lanes queue; if a probe lane has not started 20 minutes after you pushed it, you may run
+    that single spec through heavy.sh (never a full suite) and say so in the verdict.
+12. CI queue discipline (12:47): at most one ci-lane run in flight per agent (all probes for a round in one push); never push a PR head
+    only to re-trigger CI; never rerun or re-dispatch a queued run; one push per PR per round; cancel your own lane runs you no longer need.

@@ -1,0 +1,38 @@
+name: audit-sol121-migration-history
+on:
+  push:
+    branches: ['audit/AUD-SOL-SCHA-121/712-migration-1']
+permissions:
+  contents: read
+jobs:
+  migration-history-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:15.18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx prisma generate
+      - run: |
+          if ! command -v psql; then
+            sudo apt-get update
+            sudo apt-get install -y postgresql-client
+          fi
+      - run: npx jest --ci --runInBand test/audit-sol121-scheduling-migration-gap.spec.ts

@@ -1,0 +1,71 @@
+[heavy] waiting for a slot: npx jest --ci --runInBand test/aud-sol-push4-121-handoff-boundary.spec.ts
+FAIL test/aud-sol-push4-121-handoff-boundary.spec.ts (8.09 s, 115 MB heap size)
+  AUD-SOL-PUSH4-121: replay PUSH3 probe 1 with separate replica accounting
+    ✕ a final token read that outlasts the lease permits only the replica to send once (75 ms)
+  AUD-SOL-PUSH4-121: consent committed before the final handoff predicate
+    ✓ master mute committed during the handoff wait still suppresses the provider call (2 ms)
+    ✓ message switch committed during the handoff wait still suppresses the provider call (1 ms)
+    ✓ control: changing an unrelated kind during that wait still permits this message (3 ms)
+    ✓ control: sign-out committed before that predicate permits no provider call (2 ms)
+    ✓ control: deleting the outbox row before that predicate permits no provider call (2 ms)
+  AUD-SOL-PUSH4-121: lease validity while the final CAS itself waits
+    ✕ a 120000 ms handoff wait cannot use a lease predicate bound to the pre-wait clock (2 ms)
+    ✕ a 121000 ms handoff wait cannot use a lease predicate bound to the pre-wait clock (2 ms)
+    ✓ control: a 70-second handoff wait inside the lease sends once (2 ms)
+
+  ● AUD-SOL-PUSH4-121: replay PUSH3 probe 1 with separate replica accounting › a final token read that outlasts the lease permits only the replica to send once
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 0
+    Received: 1
+
+    [0m [90m 124 |[39m       [36mreturn[39m captured[33m;[39m
+     [90m 125 |[39m     })[33m;[39m
+    [31m[1m>[22m[39m[90m 126 |[39m     expect([36mawait[39m w[33m.[39mdelivery[33m.[39mdrain())[33m.[39mtoBe([35m0[39m)[33m;[39m
+     [90m     |[39m                                      [31m[1m^[22m[39m
+     [90m 127 |[39m     expect(reads)[33m.[39mtoBe([35m4[39m)[33m;[39m
+     [90m 128 |[39m     expect(replicaClient[33m.[39msend)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)[33m;[39m
+     [90m 129 |[39m     expect(w[33m.[39mclient[33m.[39msend)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m[0m
+
+      at Object.<anonymous> (test/aud-sol-push4-121-handoff-boundary.spec.ts:126:38)
+
+  ● AUD-SOL-PUSH4-121: lease validity while the final CAS itself waits › a 120000 ms handoff wait cannot use a lease predicate bound to the pre-wait clock
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 0
+    Received: 1
+
+    [0m [90m 190 |[39m         w[33m.[39mdelivery[33m.[39mclock [33m=[39m [36mnew[39m [33mDate[39m([33mCLOCK[39m[33m.[39mgetTime() [33m+[39m delay)[33m;[39m
+     [90m 191 |[39m       })[33m;[39m
+    [31m[1m>[22m[39m[90m 192 |[39m       expect([36mawait[39m w[33m.[39mdelivery[33m.[39mdrain())[33m.[39mtoBe([35m0[39m)[33m;[39m
+     [90m     |[39m                                        [31m[1m^[22m[39m
+     [90m 193 |[39m       expect(w[33m.[39mclient[33m.[39msend)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+     [90m 194 |[39m     }[33m,[39m
+     [90m 195 |[39m   )[33m;[39m[0m
+
+      at test/aud-sol-push4-121-handoff-boundary.spec.ts:192:40
+
+  ● AUD-SOL-PUSH4-121: lease validity while the final CAS itself waits › a 121000 ms handoff wait cannot use a lease predicate bound to the pre-wait clock
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 0
+    Received: 1
+
+    [0m [90m 190 |[39m         w[33m.[39mdelivery[33m.[39mclock [33m=[39m [36mnew[39m [33mDate[39m([33mCLOCK[39m[33m.[39mgetTime() [33m+[39m delay)[33m;[39m
+     [90m 191 |[39m       })[33m;[39m
+    [31m[1m>[22m[39m[90m 192 |[39m       expect([36mawait[39m w[33m.[39mdelivery[33m.[39mdrain())[33m.[39mtoBe([35m0[39m)[33m;[39m
+     [90m     |[39m                                        [31m[1m^[22m[39m
+     [90m 193 |[39m       expect(w[33m.[39mclient[33m.[39msend)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+     [90m 194 |[39m     }[33m,[39m
+     [90m 195 |[39m   )[33m;[39m[0m
+
+      at test/aud-sol-push4-121-handoff-boundary.spec.ts:192:40
+
+Test Suites: 1 failed, 1 total
+Tests:       3 failed, 6 passed, 9 total
+Snapshots:   0 total
+Time:        8.576 s
+Ran all test suites matching test/aud-sol-push4-121-handoff-boundary.spec.ts.

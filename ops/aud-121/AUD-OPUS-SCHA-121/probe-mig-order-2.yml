@@ -1,0 +1,121 @@
+# AUD-OPUS-SCHA-121 probe mig-2 (agent 121, never merge), from #653 head 9a23e3b2: migrations 20270222000000 (#712) and
+# 20270226000000 (#653) applied OUT OF ORDER, one deploy at a time, on a database already holding every later migration
+# (production: 20270301000000 + 20270311000000 applied). Result must equal a fresh in-order chain. Plus jest probe P-714-1.
+name: ci-lane
+on:
+  push:
+    branches: ['audit/**']
+concurrency:
+  group: ci-lane-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  migration-order:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:15.18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      PGPASSWORD: postgres
+      PROD_URL: postgresql://postgres:postgres@localhost:5432/prodlike
+      FRESH_URL: postgresql://postgres:postgres@localhost:5432/fresh
+      SUPABASE_URL: http://127.0.0.1:54321
+      SUPABASE_SERVICE_ROLE_KEY: ci-probe-not-a-secret
+      M22: prisma/migrations/20270222000000_scheduling_lifecycle_integrity
+      M26: prisma/migrations/20270226000000_scheduling_request_expiry
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx prisma generate
+      - name: P-714-1 jest probe (expected RED at this code; booking push text on lock screens)
+        continue-on-error: true
+        run: npx jest --ci --runInBand test/aud-opus-scha-121-lockscreen.spec.ts
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Create the two databases and bootstrap both
+        run: |
+          set -euxo pipefail
+          psql postgresql://postgres:postgres@localhost:5432/postgres -v ON_ERROR_STOP=1 -c 'CREATE DATABASE prodlike' -c 'CREATE DATABASE fresh'
+          psql "$PROD_URL" -v ON_ERROR_STOP=1 -q -f prisma/migrations/_supabase_bootstrap.sql
+          psql "$FRESH_URL" -v ON_ERROR_STOP=1 -q -f prisma/migrations/_supabase_bootstrap.sql
+      - name: P1 production state - deploy everything except 20270222000000 and 20270226000000
+        run: |
+          set -euxo pipefail
+          mv $M22 /tmp/m22; mv $M26 /tmp/m26
+          DATABASE_URL="$PROD_URL" DIRECT_URL="$PROD_URL" npx prisma migrate deploy
+          psql "$PROD_URL" -At -c "select count(*), max(migration_name) from _prisma_migrations where finished_at is not null"
+          psql "$PROD_URL" -At -c "select count(*) from _prisma_migrations where migration_name like '20270222%' or migration_name like '20270226%'" | grep -qx 0
+      - name: P2a scheduling train deploy - only 20270222000000 pending; deploy applies it
+        run: |
+          set -euxo pipefail
+          export DATABASE_URL="$PROD_URL" DIRECT_URL="$PROD_URL"
+          mv /tmp/m22 $M22
+          (npx prisma migrate status || true) | tee /tmp/s1.txt
+          grep -q '20270222000000_scheduling_lifecycle_integrity' /tmp/s1.txt
+          npx prisma migrate deploy | tee /tmp/d1.txt
+          grep -q '20270222000000_scheduling_lifecycle_integrity' /tmp/d1.txt
+          psql "$PROD_URL" -At -c "select migration_name, finished_at is not null, rolled_back_at is null, applied_steps_count from _prisma_migrations where migration_name like '20270222%'"
+          psql "$PROD_URL" -At -c "select count(*) from _prisma_migrations where migration_name like '20270222%' and finished_at is not null and rolled_back_at is null" | grep -qx 1
+      - name: P2b auto-expiry deploy - only 20270226000000 pending; deploy applies it
+        run: |
+          set -euxo pipefail
+          export DATABASE_URL="$PROD_URL" DIRECT_URL="$PROD_URL"
+          mv /tmp/m26 $M26
+          (npx prisma migrate status || true) | tee /tmp/s2.txt
+          grep -q '20270226000000_scheduling_request_expiry' /tmp/s2.txt
+          npx prisma migrate deploy | tee /tmp/d2.txt
+          grep -q '20270226000000_scheduling_request_expiry' /tmp/d2.txt
+          psql "$PROD_URL" -At -c "select count(*) from _prisma_migrations where migration_name like '20270226%' and finished_at is not null and rolled_back_at is null" | grep -qx 1
+          npx prisma migrate status
+          npx prisma migrate deploy | tee /tmp/d3.txt
+          grep -q 'No pending migrations to apply' /tmp/d3.txt
+      - name: P3 fresh in-order chain
+        run: |
+          set -euxo pipefail
+          DATABASE_URL="$FRESH_URL" DIRECT_URL="$FRESH_URL" npx prisma migrate deploy
+      - name: P4 production-order DB == fresh in-order DB (prisma migrate diff --exit-code); vs schema.prisma (informational)
+        run: |
+          set -euxo pipefail
+          export DATABASE_URL="$FRESH_URL" DIRECT_URL="$FRESH_URL"
+          npx prisma migrate diff --from-url "$PROD_URL" --to-url "$FRESH_URL" --script | tee /tmp/diff-prod-fresh.sql
+          npx prisma migrate diff --from-url "$PROD_URL" --to-url "$FRESH_URL" --exit-code
+          npx prisma migrate diff --from-url "$PROD_URL" --to-schema-datamodel prisma/schema.prisma --script | tee /tmp/diff-prod-schema.sql || true
+      - name: P5 catalog objects identical in both orders (constraints, indexes, columns, enum order, extension, RLS, policies)
+        run: |
+          set -euxo pipefail
+          q() { psql "$1" -At -c "$2" | sort; }
+          T="'CoachingSession','SessionType','NotificationDeliveryLog','SchedulingJobLease'"
+          for U in "$PROD_URL" "$FRESH_URL"; do
+            {
+              q "$U" "select c.relname||' '||conname||' '||pg_get_constraintdef(k.oid) from pg_constraint k join pg_class c on c.oid=k.conrelid where c.relname in ($T)"
+              q "$U" "select indexname||' '||indexdef from pg_indexes where tablename in ($T)"
+              q "$U" "select table_name||'.'||column_name||' '||data_type||' '||is_nullable||' '||coalesce(column_default,'-') from information_schema.columns where table_name in ($T)"
+              psql "$U" -At -c "select string_agg(enumlabel, ',' order by enumsortorder) from pg_enum where enumtypid='\"SessionStatus\"'::regtype"
+              q "$U" "select extname||' '||coalesce(obj_description(oid,'pg_extension'),'-') from pg_extension where extname='btree_gist'"
+              q "$U" "select relname||' rls='||relrowsecurity||' force='||relforcerowsecurity from pg_class where relname in ($T)"
+              q "$U" "select tablename||' '||policyname||' '||array_to_string(roles,',')||' '||cmd||' '||coalesce(qual,'-')||' '||coalesce(with_check,'-') from pg_policies where tablename in ($T)"
+            } > "/tmp/cat-$(basename "$U").txt"
+          done
+          diff -u /tmp/cat-prodlike.txt /tmp/cat-fresh.txt
+          cat /tmp/cat-prodlike.txt
+      - name: P6 down.sql (26 then 22) and re-apply (22 then 26) in the production order round-trips
+        run: |
+          set -euxo pipefail
+          psql "$PROD_URL" -v ON_ERROR_STOP=1 -f $M26/down.sql
+          psql "$PROD_URL" -v ON_ERROR_STOP=1 -f $M22/down.sql
+          psql "$PROD_URL" -At -c "select count(*) from information_schema.columns where table_name='NotificationDeliveryLog' and column_name='start_at' and is_nullable='NO'" | grep -qx 1
+          psql "$PROD_URL" -At -c "select count(*) from pg_indexes where indexname='NotificationDeliveryLog_session_id_user_id_kind_start_at_key'" | grep -qx 1
+          psql "$PROD_URL" -v ON_ERROR_STOP=1 -f $M22/migration.sql
+          psql "$PROD_URL" -v ON_ERROR_STOP=1 -f $M26/migration.sql
+          export DATABASE_URL="$FRESH_URL" DIRECT_URL="$FRESH_URL"
+          npx prisma migrate diff --from-url "$PROD_URL" --to-url "$FRESH_URL" --exit-code

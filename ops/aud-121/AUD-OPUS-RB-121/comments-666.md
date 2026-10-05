@@ -1,0 +1,36 @@
+=== 5972183257 github-actions[bot] 2026-10-03T18:29:18Z
+<!-- h4-deploy-readiness-board -->
+## Deploy readiness board (R100, informational)
+
+This check is informational on pull requests during the pre-launch
+burn-down. It gates only the codebase-invariant sections (stub values
+and prod-switch coherence). The environment-dependent sections (wiring,
+env discovery, operator keys) are surfaced below but do not block the
+PR because the runner carries no production secrets. The prod-deploy
+gate (deploy-readiness-gate) enforces every section under strict mode.
+
+```
+================ DEPLOY READINESS BOARD (R100) ================
+    mode: INFORMATIONAL (PR / pre-launch)
+    
+    --- STUB VALUES [RED=0] ---
+      BLOCK_SHIP=0  WARN=7  INFO=5
+      [warn] src/coach/command-center/ltv-metrics.dto.ts:153  STUB (tracked debt or low-signal)
+      [warn] src/contracts/contracts.module.ts:47  STUB (tracked debt or low-signal)
+      [warn] src/contracts/contracts.module.ts:53  STUB (tracked debt or low-signal)
+      [warn] src/contracts/providers/docusign.provider.ts:11  STUB (tracked debt or low-signal)
+      [warn] src/contracts/providers/native-canvas.provider.ts:11  STUB (tracked debt or low-signal)
+      [warn] src/gym/gym-distribution.service.ts:4  STUB (tracked debt or low-signal)
+      [warn] src/scheduling/scheduling.controller.ts:83  Coming soon (tracked debt or low-signal)
+      no blocking stub/placeholder tokens in production-bound src/
+    
+    ---------------------------------------------------------------
+    GATING RED LINES (this run): 0
+    PROD-DEPLOY RED LINES (strict): 0
+    EXIT: ALL CLEAR → SAFE TO DEPLOY
+    ===============================================================
+```
+
+=== 5972663136 BradleyGleavePortfolio 2026-10-03T19:21:57Z
+Operator 115: rebased onto the re-split A (#667 A1 -> #665 A2) with no content change (`git rebase --onto`; the diff against the previous head `07429136` is only main's 19 files from #647). New head `6de54b10`, 1,735 lines, under the 3,000 limit. Next in the stack: C1 (live-turn wiring).
+

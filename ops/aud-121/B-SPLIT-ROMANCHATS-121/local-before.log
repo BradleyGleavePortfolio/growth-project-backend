@@ -1,0 +1,121 @@
+[heavy] waiting for a slot: npx jest --runInBand --forceExit --runTestsByPath src/services/__tests__/secureStorage.migration.fence.test.ts src/services/__tests__/sessionFence.refresh.test.ts
+PASS src/services/__tests__/sessionFence.refresh.test.ts (9.995 s)
+FAIL src/services/__tests__/secureStorage.migration.fence.test.ts
+  ● legacy copy paused in its native write (Sol A-331-7 round 3, counterexamples 1 and 2) › B signs in while A's legacy copy is landing: B's writes wait for it and land last
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 2
+    + Received  + 2
+
+      Object {
+    -   "access": undefined,
+    -   "refresh": undefined,
+    +   "access": "eyJhbGciOiJub25lIn0.eyJzdWIiOiJ1c2VyLWIiLCJuIjowfQ.sig",
+    +   "refresh": "refresh-b",
+      }
+
+    [0m [90m 165 |[39m     [36mawait[39m settle()[33m;[39m
+     [90m 166 |[39m     [90m// B's first write waits for the copy that is landing.[39m
+    [31m[1m>[22m[39m[90m 167 |[39m     expect(stored())[33m.[39mtoEqual({ access[33m:[39m undefined[33m,[39m refresh[33m:[39m undefined })[33m;[39m
+     [90m     |[39m                      [31m[1m^[22m[39m
+     [90m 168 |[39m     p[33m.[39mrelease()[33m;[39m
+     [90m 169 |[39m     [36mawait[39m bSignIn[33m;[39m
+     [90m 170 |[39m     [36mawait[39m read[33m;[39m[0m
+
+      at Object.toEqual (src/services/__tests__/secureStorage.migration.fence.test.ts:167:22)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+  ● legacy copy paused in its native write (Sol A-331-7 round 3, counterexamples 1 and 2) › sign-out while A's legacy copy is landing: A's session never comes back
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+    -   "access": undefined,
+    +   "access": "eyJhbGciOiJub25lIn0.eyJzdWIiOiJ1c2VyLWEiLCJuIjowfQ.sig",
+        "refresh": undefined,
+      }
+
+    [0m [90m 187 |[39m     [36mawait[39m read[33m;[39m
+     [90m 188 |[39m     [36mawait[39m settle()[33m;[39m
+    [31m[1m>[22m[39m[90m 189 |[39m     expect(stored())[33m.[39mtoEqual({ access[33m:[39m undefined[33m,[39m refresh[33m:[39m undefined })[33m;[39m
+     [90m     |[39m                      [31m[1m^[22m[39m
+     [90m 190 |[39m     expect(mockNative[33m.[39mlegacy[33m.[39mhas([32m'supabase_token'[39m))[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+     [90m 191 |[39m     expect([36mawait[39m secureStorage[33m.[39mgetItem([32m'supabase_token'[39m))[33m.[39mtoBeNull()[33m;[39m
+     [90m 192 |[39m     expect(sessionFenceHeld())[33m.[39mtoBe([36mfalse[39m)[33m;[39m[0m
+
+      at Object.toEqual (src/services/__tests__/secureStorage.migration.fence.test.ts:189:22)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+  ● legacy copy paused in its legacy read (Sol A-331-7 round 3) › sign-out during the legacy read: the stale value is never copied and nothing comes back
+
+    expect(received).toBeNull()
+
+    Received: "eyJhbGciOiJub25lIn0.eyJzdWIiOiJ1c2VyLWEiLCJuIjowfQ.sig"
+
+    [0m [90m 201 |[39m     [36mawait[39m signOutKeys()[33m;[39m
+     [90m 202 |[39m     p[33m.[39mrelease()[33m;[39m
+    [31m[1m>[22m[39m[90m 203 |[39m     expect([36mawait[39m read)[33m.[39mtoBeNull()[33m;[39m
+     [90m     |[39m                        [31m[1m^[22m[39m
+     [90m 204 |[39m     [36mawait[39m settle()[33m;[39m
+     [90m 205 |[39m     expect(stored())[33m.[39mtoEqual({ access[33m:[39m undefined[33m,[39m refresh[33m:[39m undefined })[33m;[39m
+     [90m 206 |[39m     expect([36mawait[39m secureStorage[33m.[39mgetItem([32m'supabase_token'[39m))[33m.[39mtoBeNull()[33m;[39m[0m
+
+      at Object.toBeNull (src/services/__tests__/secureStorage.migration.fence.test.ts:203:24)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+  ● legacy copy paused in its legacy read (Sol A-331-7 round 3) › B signs in during a request's legacy read: the stale value is refused and the request goes out as B
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+    -   "access": "eyJhbGciOiJub25lIn0.eyJzdWIiOiJ1c2VyLWIiLCJuIjowfQ.sig",
+    +   "access": "eyJhbGciOiJub25lIn0.eyJzdWIiOiJ1c2VyLWEiLCJuIjowfQ.sig",
+        "refresh": "refresh-b",
+      }
+
+    [0m [90m 216 |[39m     [36mawait[39m work[33m;[39m
+     [90m 217 |[39m     [36mawait[39m settle()[33m;[39m
+    [31m[1m>[22m[39m[90m 218 |[39m     expect(stored())[33m.[39mtoEqual({ access[33m:[39m [33mB[39m[33m,[39m refresh[33m:[39m [32m'refresh-b'[39m })[33m;[39m
+     [90m     |[39m                      [31m[1m^[22m[39m
+     [90m 219 |[39m     expect(sent)[33m.[39mtoEqual([{ url[33m:[39m [32m'/messages'[39m[33m,[39m authorization[33m:[39m [32m`Bearer ${B}`[39m }])[33m;[39m
+     [90m 220 |[39m   })[33m;[39m
+     [90m 221 |[39m[0m
+
+      at Object.toEqual (src/services/__tests__/secureStorage.migration.fence.test.ts:218:22)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+  ● legacy copy paused in its legacy read (Sol A-331-7 round 3) › B signs in during the refresh token's legacy read: A's refresh token is never copied beside B's access
+
+    expect(received).toBeNull()
+
+    Received: "refresh-a"
+
+    [0m [90m 227 |[39m     [36mawait[39m signIn([33mB[39m[33m,[39m [32m'refresh-b'[39m)[33m;[39m
+     [90m 228 |[39m     p[33m.[39mrelease()[33m;[39m
+    [31m[1m>[22m[39m[90m 229 |[39m     expect([36mawait[39m read)[33m.[39mtoBeNull()[33m;[39m
+     [90m     |[39m                        [31m[1m^[22m[39m
+     [90m 230 |[39m     [36mawait[39m settle()[33m;[39m
+     [90m 231 |[39m     expect(stored())[33m.[39mtoEqual({ access[33m:[39m [33mB[39m[33m,[39m refresh[33m:[39m [32m'refresh-b'[39m })[33m;[39m
+     [90m 232 |[39m   })[33m;[39m[0m
+
+      at Object.toBeNull (src/services/__tests__/secureStorage.migration.fence.test.ts:229:24)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+Test Suites: 1 failed, 1 passed, 2 total
+Tests:       5 failed, 16 passed, 21 total
+Snapshots:   0 total
+Time:        13.524 s
+Ran all test suites within paths "src/services/__tests__/secureStorage.migration.fence.test.ts", "src/services/__tests__/sessionFence.refresh.test.ts".
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
