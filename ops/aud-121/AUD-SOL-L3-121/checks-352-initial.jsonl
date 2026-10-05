@@ -1,0 +1,4 @@
+{"conclusion":"success","html_url":"https://github.com/BradleyGleavePortfolio/growth-project-mobile/runs/111879080954","name":"CodeQL","status":"completed"}
+{"conclusion":"success","html_url":"https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37344285354/job/111878851152","name":"Analyze (javascript-typescript)","status":"completed"}
+{"conclusion":"success","html_url":"https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37344285354/job/111878850490","name":"Analyze (actions)","status":"completed"}
+{"conclusion":"success","html_url":"https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37344285154/job/111878847500","name":"Typecheck, lint, test","status":"completed"}

@@ -1,0 +1,1349 @@
+community-live-tests	UNKNOWN STEP	﻿2026-10-05T17:15:06.5612732Z Current runner version: '2.337.0'
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.5639226Z ##[group]Runner Image Provisioner
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.5640630Z Hosted Compute Agent
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.5641280Z Version: 20260901.588
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.5641915Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.5642801Z Build Date: 2026-09-01T19:56:44Z
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.5643491Z Worker ID: {1f23af94-8f2b-45a3-a447-768cc645debf}
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.5644191Z Azure Region: westus3
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.5645334Z ##[endgroup]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.5647060Z ##[group]Operating System
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.5647829Z Ubuntu
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.5648413Z 24.04.5
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.5648917Z LTS
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.5649500Z ##[endgroup]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.5650053Z ##[group]Runner Image
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.5650751Z Image: ubuntu-24.04
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.5651338Z Version: 20260927.320.1
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.5652687Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.5654311Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.5655775Z ##[endgroup]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.5657057Z ##[group]GITHUB_TOKEN Permissions
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.5659083Z Contents: read
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.5659797Z Metadata: read
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.5660449Z Packages: read
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.5661058Z ##[endgroup]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.5663216Z Secret source: Actions
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.5664285Z Cache mode: write
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.5665262Z Prepare workflow directory
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.6143353Z Prepare all required actions
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.6193752Z Getting action download info
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:06.9821589Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:07.0801189Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:07.3124419Z Complete job name: community-live-tests
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:07.3692623Z ##[group]Checking docker version
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:07.3706562Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:07.4608130Z '1.48'
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:07.4627648Z Docker daemon API version: '1.48'
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:07.4628511Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:07.4801849Z '1.48'
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:07.4816418Z Docker client API version: '1.48'
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:07.4822697Z ##[endgroup]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:07.4826076Z ##[group]Clean up resources from previous jobs
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:07.4832354Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=076779"
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:07.4997865Z ##[command]/usr/bin/docker network prune --force --filter "label=076779"
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:07.5139082Z ##[endgroup]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:07.5139652Z ##[group]Create local container network
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:07.5151101Z ##[command]/usr/bin/docker network create --label 076779 github_network_8779605fd75c487596bd4ad7d709b4aa
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:07.5775685Z ef7442a4d2c26acd32dfdb701cdd5e2ab77535d912a1858d671463c0e19c9196
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:07.5798949Z ##[endgroup]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:07.5824639Z ##[group]Starting postgres service container
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:07.5847874Z ##[command]/usr/bin/docker pull postgres:15
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.3456967Z 15: Pulling from library/postgres
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.5726558Z 6b37362b3da7: Pulling fs layer
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.5728223Z 0d791b2b75ae: Pulling fs layer
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.5729627Z 0d39881c83f7: Pulling fs layer
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.5731021Z c95afe7c234f: Pulling fs layer
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.5732184Z bc176b99a33a: Pulling fs layer
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.5733198Z 08a5cd487deb: Pulling fs layer
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.5734194Z eb4d92aaee0a: Pulling fs layer
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.5735454Z 75a4dff090e8: Pulling fs layer
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.5736548Z afe9a40fb214: Pulling fs layer
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.5737592Z ca5e97c0cd7d: Pulling fs layer
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.5738673Z 53fa82bdba52: Pulling fs layer
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.5739882Z 7b9c6b8e5e6e: Pulling fs layer
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.5741466Z b65147f15943: Pulling fs layer
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.5742634Z 170d9ea1cd85: Pulling fs layer
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.5743747Z c95afe7c234f: Waiting
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.5744708Z bc176b99a33a: Waiting
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.5745900Z 08a5cd487deb: Waiting
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.5746945Z eb4d92aaee0a: Waiting
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.5748031Z 75a4dff090e8: Waiting
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.5749114Z afe9a40fb214: Waiting
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.5750304Z ca5e97c0cd7d: Waiting
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.5751564Z 53fa82bdba52: Waiting
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.5752885Z b65147f15943: Waiting
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.5754227Z 170d9ea1cd85: Waiting
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.5755664Z 7b9c6b8e5e6e: Waiting
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.7486639Z 0d791b2b75ae: Download complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.7737528Z 0d39881c83f7: Verifying Checksum
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.7739965Z 0d39881c83f7: Download complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.8393659Z 6b37362b3da7: Verifying Checksum
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.8394647Z 6b37362b3da7: Download complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.9246961Z c95afe7c234f: Verifying Checksum
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.9247806Z c95afe7c234f: Download complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.9741881Z bc176b99a33a: Verifying Checksum
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:08.9744744Z bc176b99a33a: Download complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:09.0139076Z 08a5cd487deb: Verifying Checksum
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:09.0140283Z 08a5cd487deb: Download complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:09.1072911Z eb4d92aaee0a: Verifying Checksum
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:09.1075826Z eb4d92aaee0a: Download complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:09.1405980Z 75a4dff090e8: Download complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:09.2906470Z ca5e97c0cd7d: Verifying Checksum
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:09.2917226Z ca5e97c0cd7d: Download complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:09.3089611Z 53fa82bdba52: Download complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:09.4629105Z 7b9c6b8e5e6e: Download complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:09.4915963Z b65147f15943: Verifying Checksum
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:09.4916568Z b65147f15943: Download complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:09.5688896Z afe9a40fb214: Verifying Checksum
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:09.5689875Z afe9a40fb214: Download complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:09.6296381Z 170d9ea1cd85: Verifying Checksum
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:09.6297038Z 170d9ea1cd85: Download complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:09.9806925Z 6b37362b3da7: Pull complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:12.6373268Z 0d791b2b75ae: Pull complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:12.8200277Z 0d39881c83f7: Pull complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:12.8709411Z c95afe7c234f: Pull complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:13.1925106Z bc176b99a33a: Pull complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:13.2775476Z 08a5cd487deb: Pull complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:13.2921282Z eb4d92aaee0a: Pull complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:13.3039538Z 75a4dff090e8: Pull complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:16.3327884Z afe9a40fb214: Pull complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:16.3479059Z ca5e97c0cd7d: Pull complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:16.3580294Z 53fa82bdba52: Pull complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:16.3695167Z 7b9c6b8e5e6e: Pull complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:16.3814177Z b65147f15943: Pull complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:16.3918383Z 170d9ea1cd85: Pull complete
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:16.3959548Z Digest: sha256:724292da1f2e50bdccfc3302ce75bbba7f4a6076701b588cc795fcac65683550
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:16.3971607Z Status: Downloaded newer image for postgres:15
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:16.3981980Z docker.io/library/postgres:15
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:16.4050301Z ##[command]/usr/bin/docker create --name 707694ef42db455c9d25f856cce72bdd_postgres15_63328d --label 076779 --network github_network_8779605fd75c487596bd4ad7d709b4aa --network-alias postgres -p 5432:5432 --health-cmd "pg_isready -U postgres" --health-interval 10s --health-timeout 5s --health-retries 10 -e "POSTGRES_USER=postgres" -e "POSTGRES_PASSWORD=postgres" -e "POSTGRES_DB=postgres" -e GITHUB_ACTIONS=true -e CI=true postgres:15
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:16.4326304Z 396220aa3e9d9eecffbc7efea3f0c8f0226a1afb98a470f9fbbf6942cbc55bff
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:16.4354546Z ##[command]/usr/bin/docker start 396220aa3e9d9eecffbc7efea3f0c8f0226a1afb98a470f9fbbf6942cbc55bff
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:16.6592135Z 396220aa3e9d9eecffbc7efea3f0c8f0226a1afb98a470f9fbbf6942cbc55bff
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:16.6623740Z ##[command]/usr/bin/docker ps --all --filter id=396220aa3e9d9eecffbc7efea3f0c8f0226a1afb98a470f9fbbf6942cbc55bff --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:16.6775377Z 396220aa3e9d9eecffbc7efea3f0c8f0226a1afb98a470f9fbbf6942cbc55bff Up Less than a second (health: starting)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:16.6798716Z ##[command]/usr/bin/docker port 396220aa3e9d9eecffbc7efea3f0c8f0226a1afb98a470f9fbbf6942cbc55bff
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:16.6956878Z 5432/tcp -> 0.0.0.0:5432
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:16.6957257Z 5432/tcp -> [::]:5432
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:16.7017525Z ##[endgroup]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:16.7027571Z ##[group]Waiting for all services to be ready
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:16.7042873Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 396220aa3e9d9eecffbc7efea3f0c8f0226a1afb98a470f9fbbf6942cbc55bff
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:16.7233210Z starting
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:16.7249349Z postgres service is starting, waiting 2 seconds before checking again.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:18.7252412Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 396220aa3e9d9eecffbc7efea3f0c8f0226a1afb98a470f9fbbf6942cbc55bff
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:18.7386835Z starting
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:18.7400635Z postgres service is starting, waiting 3 seconds before checking again.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:22.5903974Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 396220aa3e9d9eecffbc7efea3f0c8f0226a1afb98a470f9fbbf6942cbc55bff
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:22.6040386Z starting
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:22.6066945Z postgres service is starting, waiting 8 seconds before checking again.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.4412037Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 396220aa3e9d9eecffbc7efea3f0c8f0226a1afb98a470f9fbbf6942cbc55bff
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.4557162Z healthy
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.4577573Z postgres service is healthy.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.4578847Z ##[endgroup]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.5016791Z ##[group]Run actions/checkout@v6
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.5017373Z with:
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.5017698Z   repository: BradleyGleavePortfolio/growth-project-backend
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.5020297Z   token: ***
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.5020505Z   ssh-strict: true
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.5020705Z   ssh-user: git
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.5020909Z   persist-credentials: true
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.5021145Z   clean: true
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.5021353Z   sparse-checkout-cone-mode: true
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.5021599Z   fetch-depth: 1
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.5021796Z   fetch-tags: false
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.5021994Z   show-progress: true
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.5022195Z   lfs: false
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.5022387Z   submodules: false
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.5022588Z   set-safe-directory: true
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.5022825Z   allow-unsafe-pr-checkout: false
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.5023279Z env:
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.5023725Z   DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.5024155Z   DIRECT_URL: ***localhost:5432/postgres
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.5024648Z   COMMUNITY_TEST_DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.5025425Z   SUPABASE_URL: http://127.0.0.1:54321
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.5025825Z   SUPABASE_SERVICE_ROLE_KEY: ci-community-live-tests-not-a-secret
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.5026176Z ##[endgroup]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6065263Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6066994Z ##[group]Getting Git version info
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6067492Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6068170Z [command]/usr/bin/git version
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6199415Z git version 2.55.0
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6225348Z ##[endgroup]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6240954Z Temporarily overriding HOME='/home/runner/work/_temp/851d8f30-39bc-498b-b6c6-c2541cfec9a5' before making global git config changes
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6242974Z Adding repository directory to the temporary git global config as a safe directory
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6247976Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6308070Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6312387Z ##[group]Determining repository object format
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6315350Z ##[endgroup]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6315948Z ##[group]Initializing the repository
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6320404Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6448159Z hint: Using 'master' as the name for the initial branch. This default branch name
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6448916Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6449829Z hint: to use in all of your new repositories, which will suppress this warning,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6450566Z hint: call:
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6450917Z hint:
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6451393Z hint: 	git config --global init.defaultBranch <name>
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6452035Z hint:
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6452574Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6453509Z hint: 'development'. The just-created branch can be renamed via this command:
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6454003Z hint:
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6454231Z hint: 	git branch -m <name>
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6454484Z hint:
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6454837Z hint: Disable this message with "git config set advice.defaultBranchName false"
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6456174Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6464717Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6538178Z ##[endgroup]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6538635Z ##[group]Disabling automatic garbage collection
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6542604Z [command]/usr/bin/git config --local gc.auto 0
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6573789Z ##[endgroup]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6574819Z ##[group]Setting up auth
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6576427Z Removing SSH command configuration
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6583234Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6617268Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6964450Z Removing HTTP extra header
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.6971182Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.7005595Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.7230844Z Removing includeIf entries pointing to credentials config files
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.7231703Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.7262680Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.7491710Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-4ba7b622-baf8-4d8b-bca3-a39a05d305a5.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.7529620Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-4ba7b622-baf8-4d8b-bca3-a39a05d305a5.config
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.7561955Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-4ba7b622-baf8-4d8b-bca3-a39a05d305a5.config
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.7608373Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-4ba7b622-baf8-4d8b-bca3-a39a05d305a5.config
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.7640160Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-4ba7b622-baf8-4d8b-bca3-a39a05d305a5.config
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.7667438Z ##[endgroup]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.7676066Z ##[group]Fetching the repository
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:31.7677041Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +d03d9d44f469bb4b1ce56e5c3f45964a27dce3d3:refs/remotes/pull/658/merge
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.6000574Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.6001666Z  * [new ref]         d03d9d44f469bb4b1ce56e5c3f45964a27dce3d3 -> pull/658/merge
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.6008824Z ##[endgroup]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.6009609Z ##[group]Determining the checkout info
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.6010618Z ##[endgroup]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.6017565Z [command]/usr/bin/git sparse-checkout disable
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.6078165Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.6106491Z ##[group]Checking out the ref
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.6112207Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/658/merge
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8366114Z Note: switching to 'refs/remotes/pull/658/merge'.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8366812Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8367163Z You are in 'detached HEAD' state. You can look around, make experimental
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8367939Z changes and commit them, and you can discard any commits you make in this
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8368694Z state without impacting any branches by switching back to a branch.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8369140Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8369445Z If you want to create a new branch to retain commits you create, you may
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8370149Z do so (now or later) by using -c with the switch command. Example:
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8370571Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8370742Z   git switch -c <new-branch-name>
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8371012Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8371503Z Or undo this operation with:
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8371761Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8371910Z   git switch -
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8372135Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8372469Z Turn off this advice by setting config variable advice.detachedHead to false
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8372972Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8373548Z HEAD is now at d03d9d4 Merge 4de7a6dccaabd8ead5aabbfa276ebcf847a114c0 into ee55f814eb02b530e6578a168dc16c7ea7e2b07b
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8381994Z ##[endgroup]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8431880Z [command]/usr/bin/git log -1 --format=%H
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8457498Z d03d9d44f469bb4b1ce56e5c3f45964a27dce3d3
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8737580Z ##[group]Run actions/setup-node@v6
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8737873Z with:
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8738068Z   node-version: 20
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8738271Z   cache: npm
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8738463Z   check-latest: false
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8740883Z   token: ***
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8741109Z   package-manager-cache: true
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8741350Z env:
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8741737Z   DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8742170Z   DIRECT_URL: ***localhost:5432/postgres
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8742659Z   COMMUNITY_TEST_DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8743003Z   SUPABASE_URL: http://127.0.0.1:54321
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8743365Z   SUPABASE_SERVICE_ROLE_KEY: ci-community-live-tests-not-a-secret
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:33.8743714Z ##[endgroup]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:34.0166119Z Attempting to download 20...
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:35.1341140Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:35.9965408Z Extracting ...
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:36.0098940Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/82fb01bf-3fa1-4042-b3bc-cc57e0cfb0e5 -f /home/runner/work/_temp/014ee223-73f6-4c1c-b4e5-a7125c55bcee
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:37.0320259Z Adding to the cache ...
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:38.8644011Z ##[group]Environment details
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:39.0888314Z node: v20.20.2
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:39.0888837Z npm: 10.8.2
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:39.0889247Z yarn: 1.22.22
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:39.0890230Z ##[endgroup]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:39.0910482Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:39.1973219Z /home/runner/.npm
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:39.4874353Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:40.7100939Z Received 25165824 of 86828135 (29.0%), 24.0 MBs/sec
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:41.1566634Z Received 86828135 of 86828135 (100.0%), 57.2 MBs/sec
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:41.1568251Z Cache Size: ~83 MB (86828135 B)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:41.1685530Z [command]/usr/bin/tar -xf /home/runner/work/_temp/f5133f26-ba1b-44aa-ad81-ca754847e1f7/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:41.3537245Z Cache restored successfully
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:41.3589543Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:41.3763083Z ##[group]Run npm ci
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:41.3763475Z ^[[36;1mnpm ci^[[0m
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:41.3995263Z shell: /usr/bin/bash -e {0}
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:41.3995658Z env:
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:41.3996321Z   DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:41.3996948Z   DIRECT_URL: ***localhost:5432/postgres
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:41.3997602Z   COMMUNITY_TEST_DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:41.3998086Z   SUPABASE_URL: http://127.0.0.1:54321
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:41.3998609Z   SUPABASE_SERVICE_ROLE_KEY: ci-community-live-tests-not-a-secret
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:41.3999129Z ##[endgroup]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:47.6991454Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:48.5352151Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:50.1650214Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:51.4828852Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:51.5429315Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+community-live-tests	UNKNOWN STEP	2026-10-05T17:15:51.5775985Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:04.9883858Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:04.9884681Z > growth-project-backend@1.0.0 postinstall
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:04.9885620Z > prisma generate
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:04.9887834Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:05.9303997Z Prisma schema loaded from prisma/schema.prisma
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:09.8944262Z ┌─────────────────────────────────────────────────────────┐
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:09.8946069Z │  Update available 6.19.3 -> 8.0.0-rc.20                 │
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:09.8946615Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:09.8947616Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.17s
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:09.8948353Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:09.8949241Z │                                                         │
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:09.8950469Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:09.8951314Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:09.8952584Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:09.8953348Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:09.8992141Z │  This is a major update - please follow the guide at    │
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:09.8993116Z │  https://pris.ly/d/major-version-upgrade                │
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:09.8993966Z │                                                         │
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:09.8994773Z │  Run the following to update                            │
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:09.8995878Z │    npm i --save-dev prisma@latest                       │
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:09.8996729Z │    npm i @prisma/client@latest                          │
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:09.8997605Z └─────────────────────────────────────────────────────────┘
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:09.9522081Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:09.9522841Z > growth-project-backend@1.0.0 prepare
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:09.9523466Z > lefthook install
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:09.9523642Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:10.0040784Z sync hooks: ✔️(pre-commit, commit-msg)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:10.0234266Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:10.0235222Z added 1115 packages, and audited 1116 packages in 29s
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:10.0235695Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:10.0235886Z 202 packages are looking for funding
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:10.0236201Z   run `npm fund` for details
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:10.0268785Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:10.0269042Z 3 high severity vulnerabilities
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:10.0269372Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:10.0269677Z To address all issues (including breaking changes), run:
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:10.0270357Z   npm audit fix --force
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:10.0270583Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:10.0270772Z Run `npm audit` for details.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:10.0922080Z ##[group]Run npx prisma generate
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:10.0922487Z ^[[36;1mnpx prisma generate^[[0m
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:10.0990050Z shell: /usr/bin/bash -e {0}
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:10.0990410Z env:
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:10.0990986Z   DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:10.0991580Z   DIRECT_URL: ***localhost:5432/postgres
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:10.0992229Z   COMMUNITY_TEST_DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:10.0992730Z   SUPABASE_URL: http://127.0.0.1:54321
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:10.0993253Z   SUPABASE_SERVICE_ROLE_KEY: ci-community-live-tests-not-a-secret
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:10.0993763Z ##[endgroup]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:11.3580407Z Prisma schema loaded from prisma/schema.prisma
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.4091507Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.4094097Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.23s
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.4094787Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.4095983Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.4097093Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.4097935Z Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.4098668Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.4787450Z ##[group]Run sudo apt-get update && sudo apt-get install -y postgresql-client
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.4788177Z ^[[36;1msudo apt-get update && sudo apt-get install -y postgresql-client^[[0m
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.4853404Z shell: /usr/bin/bash -e {0}
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.4853765Z env:
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.4854357Z   DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.4855187Z   DIRECT_URL: ***localhost:5432/postgres
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.4855798Z   COMMUNITY_TEST_DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.4856240Z   SUPABASE_URL: http://127.0.0.1:54321
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.4856714Z   SUPABASE_SERVICE_ROLE_KEY: ci-community-live-tests-not-a-secret
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.4857193Z ##[endgroup]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.5924038Z Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.6325572Z Hit:2 http://azure.archive.ubuntu.com/ubuntu noble InRelease
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.6356499Z Get:6 https://packages.microsoft.com/ubuntu/24.04/prod noble InRelease [3600 B]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.6376628Z Get:3 http://azure.archive.ubuntu.com/ubuntu noble-updates InRelease [126 kB]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.6397770Z Get:4 http://azure.archive.ubuntu.com/ubuntu noble-backports InRelease [126 kB]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.6426560Z Get:5 http://azure.archive.ubuntu.com/ubuntu noble-security InRelease [126 kB]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.7736204Z Get:7 https://packages.microsoft.com/ubuntu/24.04/prod noble/main armhf Packages [12.6 kB]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.7842003Z Get:8 https://packages.microsoft.com/ubuntu/24.04/prod noble/main arm64 Packages [458 kB]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.7965248Z Get:9 https://packages.microsoft.com/ubuntu/24.04/prod noble/main amd64 Packages [511 kB]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.8229093Z Get:10 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages [1368 kB]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.8319371Z Get:11 http://azure.archive.ubuntu.com/ubuntu noble-updates/main Translation-en [305 kB]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.8355124Z Get:12 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Components [181 kB]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.8376155Z Get:13 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Packages [1701 kB]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.8457994Z Get:14 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe Translation-en [341 kB]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.8481245Z Get:15 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Components [388 kB]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.8504668Z Get:16 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted amd64 Packages [1728 kB]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.8588870Z Get:17 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted Translation-en [395 kB]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.8613787Z Get:18 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse Translation-en [13.3 kB]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.8623550Z Get:19 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse amd64 Components [940 B]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.9267116Z Get:20 http://azure.archive.ubuntu.com/ubuntu noble-backports/main amd64 Components [5764 B]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.9281850Z Get:21 http://azure.archive.ubuntu.com/ubuntu noble-backports/universe amd64 Components [12.6 kB]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.9341595Z Get:22 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Packages [1069 kB]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.9416384Z Get:23 http://azure.archive.ubuntu.com/ubuntu noble-security/main Translation-en [221 kB]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.9435216Z Get:24 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Components [46.4 kB]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.9447979Z Get:25 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Packages [1216 kB]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.9517614Z Get:26 http://azure.archive.ubuntu.com/ubuntu noble-security/universe Translation-en [244 kB]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.9537786Z Get:27 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Components [76.3 kB]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.9548469Z Get:28 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted amd64 Packages [1566 kB]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:15.9640608Z Get:29 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted Translation-en [361 kB]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:20.5121717Z Fetched 12.6 MB in 1s (9168 kB/s)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:21.4697592Z Reading package lists...
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:21.5039494Z Reading package lists...
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:21.7371046Z Building dependency tree...
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:21.7378673Z Reading state information...
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:21.9159927Z The following NEW packages will be installed:
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:21.9160473Z   postgresql-client
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:21.9336504Z 0 upgraded, 1 newly installed, 0 to remove and 25 not upgraded.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:21.9337346Z Need to get 11.6 kB of archives.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:21.9338139Z After this operation, 17.4 kB of additional disk space will be used.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:21.9339151Z Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:22.0138225Z Get:2 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 postgresql-client all 16+257build1.1 [11.6 kB]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:22.2908446Z Fetched 11.6 kB in 0s (127 kB/s)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:22.3146712Z Selecting previously unselected package postgresql-client.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:22.3448337Z (Reading database ... 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:22.3448825Z (Reading database ... 5%
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:22.3449454Z (Reading database ... 10%
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:22.3450209Z (Reading database ... 15%
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:22.3450741Z (Reading database ... 20%
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:22.3451146Z (Reading database ... 25%
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:22.3451541Z (Reading database ... 30%
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:22.3451935Z (Reading database ... 35%
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:22.3452323Z (Reading database ... 40%
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:22.3452713Z (Reading database ... 45%
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:22.3453113Z (Reading database ... 50%
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:22.3499315Z (Reading database ... 55%
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:22.4890274Z (Reading database ... 60%
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:22.6941447Z (Reading database ... 65%
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:22.8850143Z (Reading database ... 70%
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:23.0506632Z (Reading database ... 75%
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:23.1878785Z (Reading database ... 80%
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:23.3825993Z (Reading database ... 85%
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:23.4929179Z (Reading database ... 90%
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:23.6511953Z (Reading database ... 95%
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:23.6512570Z (Reading database ... 100%
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:23.6513468Z (Reading database ... 202296 files and directories currently installed.)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:23.6564365Z Preparing to unpack .../postgresql-client_16+257build1.1_all.deb ...
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:23.6589634Z Unpacking postgresql-client (16+257build1.1) ...
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:23.6962951Z Setting up postgresql-client (16+257build1.1) ...
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:24.3578607Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:24.3579325Z Running kernel seems to be up-to-date.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:24.3579771Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:24.3580046Z No services need to be restarted.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:24.3580375Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:24.3580650Z No containers need to be restarted.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:24.3580967Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:24.3581288Z No user sessions are running outdated binaries.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:24.3581681Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:24.3582228Z No VM guests are running outdated hypervisor (qemu) binaries on this host.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:25.3772582Z ##[group]Run psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/_supabase_bootstrap.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:25.3773428Z ^[[36;1mpsql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/_supabase_bootstrap.sql^[[0m
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:25.3839543Z shell: /usr/bin/bash -e {0}
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:25.3839902Z env:
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:25.3840769Z   DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:25.3841384Z   DIRECT_URL: ***localhost:5432/postgres
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:25.3842033Z   COMMUNITY_TEST_DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:25.3842532Z   SUPABASE_URL: http://127.0.0.1:54321
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:25.3843070Z   SUPABASE_SERVICE_ROLE_KEY: ci-community-live-tests-not-a-secret
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:25.3843617Z ##[endgroup]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:25.4395248Z CREATE SCHEMA
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:25.4406007Z CREATE FUNCTION
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:25.4434226Z DO
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:25.4484808Z ##[group]Run npx prisma migrate deploy
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:25.4485476Z ^[[36;1mnpx prisma migrate deploy^[[0m
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:25.4549442Z shell: /usr/bin/bash -e {0}
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:25.4549764Z env:
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:25.4550322Z   DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:25.4550889Z   DIRECT_URL: ***localhost:5432/postgres
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:25.4551540Z   COMMUNITY_TEST_DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:25.4551984Z   SUPABASE_URL: http://127.0.0.1:54321
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:25.4552455Z   SUPABASE_SERVICE_ROLE_KEY: ci-community-live-tests-not-a-secret
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:25.4552930Z ##[endgroup]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:26.7263695Z Prisma schema loaded from prisma/schema.prisma
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:26.7511558Z Datasource "db": PostgreSQL database "postgres", schema "public" at "localhost:5432"
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:26.8455860Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:26.8456642Z 191 migrations found in prisma/migrations
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:26.8457060Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:26.9942983Z Applying migration `00000000000000_baseline`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.0437803Z Applying migration `20260423190000_add_indexes_and_orphan_fks`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.0482680Z Applying migration `20260424000000_add_invite_codes`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.0552257Z Applying migration `20260424120000_add_coach_messages`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.0635626Z Applying migration `20260424180000_add_coach_nudges`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.0729993Z Applying migration `20260424200000_add_meal_plans_and_extend_checkins`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.0819843Z Applying migration `20260425030000_add_community_win_and_coach_guideline`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.0937962Z Applying migration `20260425030001_add_community_win_visibility`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.0962918Z Applying migration `20260427000000_add_owner_role_and_coach_profile`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.1089987Z Applying migration `20260427000100_add_saas_billing_and_drafts`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.1363631Z Applying migration `20260427120000_add_audit_log_and_gdpr_lifecycle`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.1516349Z Applying migration `20260428000000_add_client_coach_consent`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.1603389Z Applying migration `20260429210000_add_diet_and_workout_cadence_to_user_profile`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.1636529Z Applying migration `20260430000000_drop_doctrine_drift_remnants`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.1666827Z Applying migration `20260430120000_add_equipment_access_to_user_profile`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.1696004Z Applying migration `20260506000000_add_ptm_phase_1`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.1878157Z Applying migration `20260506010000_add_diagnostic_engine`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.1975507Z Applying migration `20260506020000_add_build_week`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.2099476Z Applying migration `20260506030000_add_coach_signals`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.2200847Z Applying migration `20260506040000_add_voice_notes_and_coach_onboarding`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.2261210Z Applying migration `20260506050000_add_first_win`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.2290277Z Applying migration `20260506060000_add_leaderboard`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.2316821Z Applying migration `20260507000000_add_notification_center`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.2451687Z Applying migration `20260507100000_add_gdpr_deletion_flow`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.2515877Z Applying migration `20260508000000_add_data_export`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.2579436Z Applying migration `20260508000000_add_workout_builder`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.2717779Z Applying migration `20260508000001_rls_workout_builder`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.2758726Z Applying migration `20260508000002_workout_exercise_soft_delete`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.2806615Z Applying migration `20260508000003_workout_builder_idempotency_and_completion`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.2924169Z Applying migration `20260509000000_add_sprint_b_macros_meals_insights`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.3169526Z Applying migration `20260509120000_coach_practice_type_stage3`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.3194776Z Applying migration `20260510000000_add_ai_gateway_audit_and_drafts`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.3351055Z Applying migration `20260510000000_add_team_mode`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.3485131Z Applying migration `20260510000001_team_audit_revenue_sharing_changed`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.3509332Z Applying migration `20260511000000_add_bloodwork`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.3663935Z Applying migration `20260512000000_concierge_scheduling`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.3913980Z Applying migration `20260513000000_food_logger_trainerize_floor`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.3941226Z Applying migration `20260515100000_add_secret_rotation_log`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.4007314Z Applying migration `20260516000000_kms_wrap_bloodwork_and_calendar`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.4034187Z Applying migration `20260517000000_booking_notifications`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.4109296Z Applying migration `20260520000000_setnull_owner_rels`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.4210539Z Applying migration `20260520000001_add_gcal_channel_tracking_to_calendar_connection`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.4248774Z Applying migration `20260521000000_add_connect_account`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.4318953Z Applying migration `20260524000000_add_sub_coach_assignment_and_idempotency`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.4413735Z Applying migration `20260525000000_sub_coach_rls_and_fks`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.4473371Z Applying migration `20260525120000_add_coach_brief_tables`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.4630144Z Applying migration `20260525130000_add_coach_brief_last_push_date`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.4655329Z Applying migration `20260525170000_data_export_one_active_per_user`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.4684611Z Applying migration `20260525180000_recent_auth_nonce`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.4735615Z Applying migration `20260528000000_stream1_coach_ai_credits`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.4871376Z Applying migration `20260528120000_stream1_round1_fixes`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.4916394Z Applying migration `20260530000000_coach_ai_engine_v1`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.5020895Z Applying migration `20260531000000_wearables_foundation`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.5332339Z Applying migration `20260601000000_add_connect_packages_purchases_customers`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.5525623Z Applying migration `20260601000000_add_email_send_log`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.5595113Z Applying migration `20260601000000_add_exercise_catalog_video`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.5669639Z Applying migration `20260602000000_add_connect_fee_split_and_dunning`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.5947440Z Applying migration `20260602000000_add_exercise_video_provider_fields`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.5979503Z Applying migration `20260603000000_add_connect_payout_reconciliation_refund_dispute`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.6175669Z Applying migration `20260604000000_add_team_profile_and_sub_coach_invite`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.6326571Z Applying migration `20260604000001_subcoach_invite_token_hash`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.6357062Z Applying migration `20260605000000_add_meal_plan_days_json`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.6380976Z Applying migration `20260606000000_add_expo_push_token`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.6404718Z Applying migration `20260606000001_payment_failure_event_unique`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.6434484Z Applying migration `20260606000002_food_entry_client_uuid`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.6468167Z Applying migration `20260606000003_rls_financial_tables`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.6507987Z Applying migration `20260607000000_rls_remaining_gaps`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.6611984Z Applying migration `20260607000001_workout_assignment_completion_payload`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.6645947Z Applying migration `20260608000000_rls_team_tables`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.6688697Z Applying migration `20260609000000_add_coach_direct_enabled`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.6713274Z Applying migration `20260610000000_fasting_unique_active`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.6742021Z Applying migration `20260611000000_invite_intended_email`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.6782363Z Applying migration `20260611000001_messagedraft_rls`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.6813189Z Applying migration `20260612000000_add_message_model_and_checkin_reviewed`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.6885639Z Applying migration `20260612000001_message_rls`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.6914810Z Applying migration `20260613000000_message_rls_split_update`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.6943185Z Applying migration `20260613000001_message_fk_cascade`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.6984690Z Applying migration `20260613000002_message_thread_reverse_index`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.7016469Z Applying migration `20260614000000_coach_subscription_tier`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.7051236Z Applying migration `20260614065425_add_coach_first_payment_notification`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.7106010Z Applying migration `20260615000000_drop_coach_direct_enabled`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.7133895Z Applying migration `20260616000000_add_message_reports_and_user_blocks`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.7266642Z Applying migration `20260617000000_fix_message_report_rls_participation_check`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.7310552Z Applying migration `20260618000000_add_rls_payment_revenue_tables`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.7360294Z Applying migration `20260619000000_add_churn_intervention`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.7443908Z Applying migration `20260620000000_workout_builder_p1_fixes`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.7491890Z Applying migration `20260621000000_fix_workout_rls_policies`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.7519771Z Applying migration `20260701235900_add_sub_coach_role_value`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.7541923Z Applying migration `20260702000000_fix_workout_rls_coach_role`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.7572043Z Applying migration `20260703000000_add_coach_brief_generation_lease`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.7603862Z Applying migration `20260703000001_add_coach_brief_push_ledger`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.7663652Z Applying migration `20260703000002_add_coach_brief_check_constraints`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.7711598Z Applying migration `20260704000000_coach_brief_push_ledger_bounded_retry`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.7739344Z Applying migration `20260704000000_rls01_helper_searchpath_hibp`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.7773539Z Applying migration `20260704000001_coach_brief_cwa_index_concurrent`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.7812905Z Applying migration `20260801000000_r43_storefront_phase1`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.7906585Z Applying migration `20260803000000_share_token_21char_invalidate_legacy`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.7933451Z Applying migration `20260804000000_guest_checkout_retryable_conversion`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.7976699Z Applying migration `20260805000000_guest_checkout_pii_retention`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.8013280Z Applying migration `20260806000000_share_link_expiry_revoke`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.8040489Z Applying migration `20260901000000_r46_landing_page_builder_phase1`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.8263756Z Applying migration `20260902000000_r47_landing_pages_phase3_crm_sync`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.8299066Z Applying migration `20260903000000_r47_lead_sync_persistent_state`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.8343903Z Applying migration `20260903000000_r52_landing_pages_renderer_v2`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.8368401Z Applying migration `20260920000000_r48_checkout_hardening`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.8406234Z Applying migration `20260921000000_add_refunded_disputed_to_guest_checkout_status`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.8451441Z Applying migration `20261001000000_dunning_v1`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.8539406Z Applying migration `20261002000000_dunning_v1_send_retry_cas`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.8574354Z Applying migration `20261002000000_nudge_v1`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.8684495Z Applying migration `20261110000000_ai_action_draft_materialised`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.8709998Z Applying migration `20261201000000_stream2_ai_execution_draft_links`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.8770575Z Applying migration `20261202000000_pr3_drip_schema_foundation`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.8965200Z Applying migration `20261203000000_pr7_meal_plan_drip_drop_unique`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.8994333Z Applying migration `20261203100000_pr6_packages_publish_pricing`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.9027176Z Applying migration `20261204000000_pr9_drip_resolver_marker`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.9082306Z Applying migration `20261205000000_pr10_scheduled_drop_retry_lock`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.9120312Z Applying migration `20261206000000_pr12_coach_media_upload_status`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.9187188Z Applying migration `20261207000000_pr14_client_purchase_landing_page_id_and_guest_subscription`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.9221712Z Applying migration `20261207000001_pr14_client_purchase_landing_page_idx_concurrent`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.9257478Z Applying migration `20261208000000_pr15_coach_new_purchase_prefs`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.9287326Z Applying migration `20261209000000_pr17_scheduled_drop_push_seq`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.9323417Z Applying migration `20261210000000_pr_wave0_ai_quota_ltv_peak`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.9419481Z Applying migration `20261211000000_add_sleep_consistency_metrics`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.9441968Z Applying migration `20261211000001_seed_sleep_consistency_metric_defs`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:27.9469914Z Applying migration `20261212000000_community_v1_1_schema`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.0482683Z Applying migration `20261212000000_rls_helper_search_path`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.0514467Z Applying migration `20261212010000_rls_tier2_coach_team`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.0644997Z Applying migration `20261213000000_rls_tier1_phi_financial_privacy`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.0783089Z Applying migration `20261213000000_rls_tier2_sessions`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.0847396Z Applying migration `20261213000000_rls_tier3_nutrition`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.0945152Z Applying migration `20261213000000_rls_tier3_workouts`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.1043040Z Applying migration `20261213000000_rls_tier4_learning_analytics`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.1158313Z Applying migration `20261213000000_rls_tier5_notifications_community`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.1244650Z Applying migration `20261214000000_dunning_v2_lockout_recovery`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.1317363Z Applying migration `20261215000000_b5_digital_contracts`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.1510751Z Applying migration `20261215000000_mwb_1_data_model`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.1769041Z Applying migration `20261215000000_payouts_v2_bank_payout_methods`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.1845162Z Applying migration `20261215000100_seed_b5_contract_templates`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.1891214Z Applying migration `20261215000200_contracts_rls`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.1940485Z Applying migration `20261215000300_named_regimes_and_partial_refund_decision`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.2016327Z Applying migration `20261216000000_add_roman_chat`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.2143492Z Applying migration `20261216000100_add_plan_context_payload`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.2172351Z Applying migration `20261216000200_community_classroom_posts`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.2282492Z Applying migration `20261217000000_community_voice_notes`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.2363344Z Applying migration `20261217000100_community_search_index`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.2480340Z Applying migration `20261217000200_community_wearable_prompts`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.2599712Z Applying migration `20261218000000_add_coach_reviewed_at`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.2677429Z Applying migration `20261218000100_rls_partial_refund_decision`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.2710298Z Applying migration `20261218000200_rename_decided_by_coach_user_id`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.2735845Z Applying migration `20261219000000_community_wearable_prompts_uuid_id`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.2926172Z Applying migration `20261219000000_conv_review_coach_reviewed_at_idx`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.2960327Z Applying migration `20261220000000_talent_marketplace_rls`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.3272422Z Applying migration `20261220000010_marketplace_idempotency_claim_nonce`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.3302781Z Applying migration `20261220000020_marketplace_abuse_signal_rls`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.3368118Z Applying migration `20261220000030_marketplace_connect_event`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.3424356Z Applying migration `20261220000031_application_applicant_listing_unique`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.3455359Z Applying migration `20261221000000_enable_pg_stat_statements`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.3549885Z Applying migration `20261221010000_add_signup_ref_to_user`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.3575604Z Applying migration `20261222000000_add_extension_pair_codes`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.3657164Z Applying migration `20261222000000_scout_ingest_entity`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.3716105Z Applying migration `20261222000000_scout_progress_and_completion`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.3809393Z Applying migration `20261223000100_scout_import_state`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.3866710Z Applying migration `20261223000200_scout_reconstruction`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.3983001Z Applying migration `20261223000300_scout_reconstructed_entity`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.4041954Z Applying migration `20261224000000_rls_close_public_exposure`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.4209309Z Applying migration `20270117000000_durable_import_setup`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.4305743Z Applying migration `20270118000000_scout_ledger_platform_expand`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.4343116Z Applying migration `20270119000000_scout_ledger_obsolete_writer_fence`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.4382110Z Applying migration `20270120000000_scout_identity_ready`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.4449736Z Applying migration `20270121000000_scout_identity_contract`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.4501826Z Applying migration `20270122000000_scout_native_provenance_expand`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.4593705Z Applying migration `20270123000000_scout_run_lifecycle_expand`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.4659607Z Applying migration `20270124000000_scout_run_observation_expand`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.4797193Z Applying migration `20270125000000_restore_schema_declared_objects`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.5077113Z Applying migration `20270203000000_ai_processing_consent_ledger`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.5146202Z Applying migration `20270204000000_recipe_private_by_default`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.5177025Z Applying migration `20270205000000_invite_grant_bindings`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.5239047Z Applying migration `20270210000000_s_fee_charge_settlement`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.5569761Z Applying migration `20270211000000_community_reports_voice_notes_and_wins`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.5744076Z Applying migration `20270212000000_clinic_onboarding_intake`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.5915512Z Applying migration `20270213000000_clinic_engagement`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6080900Z Applying migration `20270216000000_package_first_published_at`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6113442Z Applying migration `20270220000000_data_export_archive_cleanup`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6187126Z Applying migration `20270221000000_data_export_storage_bucket`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6211288Z Applying migration `20270223000000_mwb_program_delivery`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6266307Z Applying migration `20270224000000_build_week_day1_consultation_copy`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6299310Z Applying migration `20270225000000_native_subscription_trials`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6325830Z Applying migration `20270301000000_community_win_coach_matcher`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6356043Z Applying migration `20270301000000_notification_zone_provenance_reminder_generation`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6401591Z Applying migration `20270302000000_coach_code_tools`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6516901Z Applying migration `20270311000000_subscription_checkout_terms`
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6570316Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6572055Z The following migration(s) have been applied:
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6573606Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6573840Z migrations/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6574603Z   └─ 00000000000000_baseline/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6575356Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6575954Z   └─ 20260423190000_add_indexes_and_orphan_fks/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6576493Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6577045Z   └─ 20260424000000_add_invite_codes/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6577621Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6578157Z   └─ 20260424120000_add_coach_messages/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6578785Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6579261Z   └─ 20260424180000_add_coach_nudges/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6579634Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6579991Z   └─ 20260424200000_add_meal_plans_and_extend_checkins/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6580347Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6580706Z   └─ 20260425030000_add_community_win_and_coach_guideline/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6581089Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6581397Z   └─ 20260425030001_add_community_win_visibility/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6581730Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6582102Z   └─ 20260427000000_add_owner_role_and_coach_profile/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6582437Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6582744Z   └─ 20260427000100_add_saas_billing_and_drafts/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6583081Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6583397Z   └─ 20260427120000_add_audit_log_and_gdpr_lifecycle/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6583739Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6584086Z   └─ 20260428000000_add_client_coach_consent/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6584395Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6584768Z   └─ 20260429210000_add_diet_and_workout_cadence_to_user_profile/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6585740Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6586730Z   └─ 20260430000000_drop_doctrine_drift_remnants/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6587121Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6587480Z   └─ 20260430120000_add_equipment_access_to_user_profile/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6587819Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6588092Z   └─ 20260506000000_add_ptm_phase_1/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6588384Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6588681Z   └─ 20260506010000_add_diagnostic_engine/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6588997Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6589289Z   └─ 20260506020000_add_build_week/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6589559Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6589831Z   └─ 20260506030000_add_coach_signals/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6590111Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6590436Z   └─ 20260506040000_add_voice_notes_and_coach_onboarding/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6590767Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6591037Z   └─ 20260506050000_add_first_win/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6591313Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6591581Z   └─ 20260506060000_add_leaderboard/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6591865Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6592164Z   └─ 20260507000000_add_notification_center/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6592457Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6592741Z   └─ 20260507100000_add_gdpr_deletion_flow/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6593049Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6593315Z   └─ 20260508000000_add_data_export/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6593801Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6594079Z   └─ 20260508000000_add_workout_builder/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6594514Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6595318Z   └─ 20260508000001_rls_workout_builder/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6595891Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6596515Z   └─ 20260508000002_workout_exercise_soft_delete/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6597158Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6597871Z   └─ 20260508000003_workout_builder_idempotency_and_completion/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6598587Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6599247Z   └─ 20260509000000_add_sprint_b_macros_meals_insights/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6599902Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6600514Z   └─ 20260509120000_coach_practice_type_stage3/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6601116Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6601747Z   └─ 20260510000000_add_ai_gateway_audit_and_drafts/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6602395Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6602929Z   └─ 20260510000000_add_team_mode/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6603497Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6604132Z   └─ 20260510000001_team_audit_revenue_sharing_changed/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6604781Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6605658Z   └─ 20260511000000_add_bloodwork/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6606150Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6606685Z   └─ 20260512000000_concierge_scheduling/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6607250Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6607891Z   └─ 20260513000000_food_logger_trainerize_floor/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6608450Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6608911Z   └─ 20260515100000_add_secret_rotation_log/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6609397Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6609934Z   └─ 20260516000000_kms_wrap_bloodwork_and_calendar/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6610464Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6610929Z   └─ 20260517000000_booking_notifications/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6611378Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6611801Z   └─ 20260520000000_setnull_owner_rels/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6612264Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6612863Z   └─ 20260520000001_add_gcal_channel_tracking_to_calendar_connection/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6613521Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6613976Z   └─ 20260521000000_add_connect_account/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6614467Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6615435Z   └─ 20260524000000_add_sub_coach_assignment_and_idempotency/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6616039Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6616522Z   └─ 20260525000000_sub_coach_rls_and_fks/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6617019Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6617497Z   └─ 20260525120000_add_coach_brief_tables/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6617977Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6618804Z   └─ 20260525130000_add_coach_brief_last_push_date/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6619385Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6619933Z   └─ 20260525170000_data_export_one_active_per_user/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6620482Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6620935Z   └─ 20260525180000_recent_auth_nonce/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6621422Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6621895Z   └─ 20260528000000_stream1_coach_ai_credits/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6622357Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6622800Z   └─ 20260528120000_stream1_round1_fixes/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6623249Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6623690Z   └─ 20260530000000_coach_ai_engine_v1/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6624113Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6624539Z   └─ 20260531000000_wearables_foundation/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6625288Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6626013Z   └─ 20260601000000_add_connect_packages_purchases_customers/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6626700Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6627242Z   └─ 20260601000000_add_email_send_log/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6627768Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6628370Z   └─ 20260601000000_add_exercise_catalog_video/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6628926Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6629562Z   └─ 20260602000000_add_connect_fee_split_and_dunning/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6630423Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6631043Z   └─ 20260602000000_add_exercise_video_provider_fields/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6631653Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6632409Z   └─ 20260603000000_add_connect_payout_reconciliation_refund_dispute/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6633138Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6633768Z   └─ 20260604000000_add_team_profile_and_sub_coach_invite/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6634419Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6635201Z   └─ 20260604000001_subcoach_invite_token_hash/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6635822Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6636376Z   └─ 20260605000000_add_meal_plan_days_json/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6636932Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6637449Z   └─ 20260606000000_add_expo_push_token/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6637991Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6638597Z   └─ 20260606000001_payment_failure_event_unique/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6639175Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6639747Z   └─ 20260606000002_food_entry_client_uuid/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6640306Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6640829Z   └─ 20260606000003_rls_financial_tables/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6641382Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6641935Z   └─ 20260607000000_rls_remaining_gaps/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6642459Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6643088Z   └─ 20260607000001_workout_assignment_completion_payload/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6643700Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6644231Z   └─ 20260608000000_rls_team_tables/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6644755Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6645513Z   └─ 20260609000000_add_coach_direct_enabled/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6646068Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6646646Z   └─ 20260610000000_fasting_unique_active/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6647195Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6647723Z   └─ 20260611000000_invite_intended_email/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6648257Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6648811Z   └─ 20260611000001_messagedraft_rls/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6649325Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6649975Z   └─ 20260612000000_add_message_model_and_checkin_reviewed/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6650629Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6651112Z   └─ 20260612000001_message_rls/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6651605Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6652154Z   └─ 20260613000000_message_rls_split_update/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6652746Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6653284Z   └─ 20260613000001_message_fk_cascade/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6653803Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6654408Z   └─ 20260613000002_message_thread_reverse_index/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6655227Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6656035Z   └─ 20260614000000_coach_subscription_tier/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6656675Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6657354Z   └─ 20260614065425_add_coach_first_payment_notification/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6658026Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6658586Z   └─ 20260615000000_drop_coach_direct_enabled/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6659140Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6659816Z   └─ 20260616000000_add_message_reports_and_user_blocks/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6660427Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6661131Z   └─ 20260617000000_fix_message_report_rls_participation_check/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6661814Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6662400Z   └─ 20260618000000_add_rls_payment_revenue_tables/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6662991Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6663576Z   └─ 20260619000000_add_churn_intervention/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6664117Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6664664Z   └─ 20260620000000_workout_builder_p1_fixes/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6665484Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6666054Z   └─ 20260621000000_fix_workout_rls_policies/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6666620Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6667188Z   └─ 20260701235900_add_sub_coach_role_value/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6667748Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6668316Z   └─ 20260702000000_fix_workout_rls_coach_role/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6668870Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6669802Z   └─ 20260703000000_add_coach_brief_generation_lease/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6670442Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6671020Z   └─ 20260703000001_add_coach_brief_push_ledger/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6671597Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6672219Z   └─ 20260703000002_add_coach_brief_check_constraints/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6672811Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6673464Z   └─ 20260704000000_coach_brief_push_ledger_bounded_retry/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6674131Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6674737Z   └─ 20260704000000_rls01_helper_searchpath_hibp/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6675539Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6676197Z   └─ 20260704000001_coach_brief_cwa_index_concurrent/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6676822Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6677361Z   └─ 20260801000000_r43_storefront_phase1/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6677914Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6678566Z   └─ 20260803000000_share_token_21char_invalidate_legacy/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6679194Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6679860Z   └─ 20260804000000_guest_checkout_retryable_conversion/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6680538Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6681150Z   └─ 20260805000000_guest_checkout_pii_retention/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6681766Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6682363Z   └─ 20260806000000_share_link_expiry_revoke/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6682952Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6683504Z   └─ 20260901000000_r46_landing_page_builder_phase1/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6684099Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6684701Z   └─ 20260902000000_r47_landing_pages_phase3_crm_sync/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6685577Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6686204Z   └─ 20260903000000_r47_lead_sync_persistent_state/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6686765Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6687401Z   └─ 20260903000000_r52_landing_pages_renderer_v2/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6687980Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6688484Z   └─ 20260920000000_r48_checkout_hardening/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6689015Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6689820Z   └─ 20260921000000_add_refunded_disputed_to_guest_checkout_status/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6690577Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6691097Z   └─ 20261001000000_dunning_v1/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6691599Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6692219Z   └─ 20261002000000_dunning_v1_send_retry_cas/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6692801Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6693310Z   └─ 20261002000000_nudge_v1/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6693811Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6694439Z   └─ 20261110000000_ai_action_draft_materialised/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6695327Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6696225Z   └─ 20261201000000_stream2_ai_execution_draft_links/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6696976Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6697607Z   └─ 20261202000000_pr3_drip_schema_foundation/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6698270Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6698873Z   └─ 20261203000000_pr7_meal_plan_drip_drop_unique/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6699736Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6700406Z   └─ 20261203100000_pr6_packages_publish_pricing/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6701005Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6701595Z   └─ 20261204000000_pr9_drip_resolver_marker/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6702202Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6702818Z   └─ 20261205000000_pr10_scheduled_drop_retry_lock/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6703452Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6704063Z   └─ 20261206000000_pr12_coach_media_upload_status/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6704725Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6705823Z   └─ 20261207000000_pr14_client_purchase_landing_page_id_and_guest_subscription/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6706694Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6707507Z   └─ 20261207000001_pr14_client_purchase_landing_page_idx_concurrent/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6708288Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6708934Z   └─ 20261208000000_pr15_coach_new_purchase_prefs/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6709574Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6710249Z   └─ 20261209000000_pr17_scheduled_drop_push_seq/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6710848Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6711501Z   └─ 20261210000000_pr_wave0_ai_quota_ltv_peak/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6712083Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6712738Z   └─ 20261211000000_add_sleep_consistency_metrics/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6713350Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6714045Z   └─ 20261211000001_seed_sleep_consistency_metric_defs/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6714707Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6715494Z   └─ 20261212000000_community_v1_1_schema/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6716081Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6716764Z   └─ 20261212000000_rls_helper_search_path/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6717423Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6717998Z   └─ 20261212010000_rls_tier2_coach_team/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6718583Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6719221Z   └─ 20261213000000_rls_tier1_phi_financial_privacy/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6719869Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6720431Z   └─ 20261213000000_rls_tier2_sessions/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6720995Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6721584Z   └─ 20261213000000_rls_tier3_nutrition/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6722139Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6722675Z   └─ 20261213000000_rls_tier3_workouts/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6723279Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6723884Z   └─ 20261213000000_rls_tier4_learning_analytics/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6724500Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6725370Z   └─ 20261213000000_rls_tier5_notifications_community/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6726063Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6726679Z   └─ 20261214000000_dunning_v2_lockout_recovery/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6727552Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6728166Z   └─ 20261215000000_b5_digital_contracts/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6728764Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6729351Z   └─ 20261215000000_mwb_1_data_model/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6729934Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6730535Z   └─ 20261215000000_payouts_v2_bank_payout_methods/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6731233Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6731849Z   └─ 20261215000100_seed_b5_contract_templates/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6732474Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6733012Z   └─ 20261215000200_contracts_rls/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6733622Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6734344Z   └─ 20261215000300_named_regimes_and_partial_refund_decision/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6735231Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6735810Z   └─ 20261216000000_add_roman_chat/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6736405Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6737039Z   └─ 20261216000100_add_plan_context_payload/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6737674Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6738285Z   └─ 20261216000200_community_classroom_posts/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6738945Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6739525Z   └─ 20261217000000_community_voice_notes/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6740138Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6740705Z   └─ 20261217000100_community_search_index/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6741677Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6742310Z   └─ 20261217000200_community_wearable_prompts/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6742930Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6743621Z   └─ 20261218000000_add_coach_reviewed_at/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6744369Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6745778Z   └─ 20261218000100_rls_partial_refund_decision/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6746591Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6747350Z   └─ 20261218000200_rename_decided_by_coach_user_id/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6748033Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6748724Z   └─ 20261219000000_community_wearable_prompts_uuid_id/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6749421Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6750144Z   └─ 20261219000000_conv_review_coach_reviewed_at_idx/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6750828Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6751442Z   └─ 20261220000000_talent_marketplace_rls/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6752092Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6752792Z   └─ 20261220000010_marketplace_idempotency_claim_nonce/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6753367Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6753890Z   └─ 20261220000020_marketplace_abuse_signal_rls/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6754411Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6755509Z   └─ 20261220000030_marketplace_connect_event/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6756441Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6757454Z   └─ 20261220000031_application_applicant_listing_unique/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6758192Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6758690Z   └─ 20261221000000_enable_pg_stat_statements/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6759186Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6759650Z   └─ 20261221010000_add_signup_ref_to_user/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6760124Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6760619Z   └─ 20261222000000_add_extension_pair_codes/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6761101Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6761542Z   └─ 20261222000000_scout_ingest_entity/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6762013Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6762515Z   └─ 20261222000000_scout_progress_and_completion/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6763036Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6763486Z   └─ 20261223000100_scout_import_state/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6764187Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6765430Z   └─ 20261223000200_scout_reconstruction/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6766140Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6766525Z   └─ 20261223000300_scout_reconstructed_entity/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6766865Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6767202Z   └─ 20261224000000_rls_close_public_exposure/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6767533Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6767839Z   └─ 20270117000000_durable_import_setup/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6768144Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6768755Z   └─ 20270118000000_scout_ledger_platform_expand/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6769120Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6769474Z   └─ 20270119000000_scout_ledger_obsolete_writer_fence/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6769851Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6770158Z   └─ 20270120000000_scout_identity_ready/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6770465Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6770798Z   └─ 20270121000000_scout_identity_contract/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6771120Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6771455Z   └─ 20270122000000_scout_native_provenance_expand/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6771806Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6772173Z   └─ 20270123000000_scout_run_lifecycle_expand/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6772502Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6772836Z   └─ 20270124000000_scout_run_observation_expand/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6773166Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6773499Z   └─ 20270125000000_restore_schema_declared_objects/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6773836Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6774176Z   └─ 20270203000000_ai_processing_consent_ledger/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6774505Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6774817Z   └─ 20270204000000_recipe_private_by_default/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6775557Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6775857Z   └─ 20270205000000_invite_grant_bindings/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6776187Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6776695Z   └─ 20270210000000_s_fee_charge_settlement/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6776998Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6777347Z   └─ 20270211000000_community_reports_voice_notes_and_wins/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6777710Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6778016Z   └─ 20270212000000_clinic_onboarding_intake/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6778323Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6778645Z   └─ 20270213000000_clinic_engagement/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6778929Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6779227Z   └─ 20270216000000_package_first_published_at/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6779534Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6779847Z   └─ 20270220000000_data_export_archive_cleanup/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6780154Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6780445Z   └─ 20270221000000_data_export_storage_bucket/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6780746Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6781023Z   └─ 20270223000000_mwb_program_delivery/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6781309Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6781652Z   └─ 20270224000000_build_week_day1_consultation_copy/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6781980Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6782272Z   └─ 20270225000000_native_subscription_trials/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6782589Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6782898Z   └─ 20270301000000_community_win_coach_matcher/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6783206Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6783615Z   └─ 20270301000000_notification_zone_provenance_reminder_generation/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6784002Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6784283Z   └─ 20270302000000_coach_code_tools/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6784562Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6785160Z   └─ 20270311000000_subscription_checkout_terms/
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6785504Z     └─ migration.sql
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6785714Z       
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6786003Z All migrations have been successfully applied.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6931815Z ##[group]Run npx jest test/community/rls/community-wins-rls.live.spec.ts test/community/rls/community-message-shape.live.spec.ts test/community/community-moderation.e2e.spec.ts test/community/community-reactions.e2e.spec.ts test/community/community-dms.e2e.spec.ts test/community/community-foundation.e2e.spec.ts test/community/community-plan-context.e2e.spec.ts test/community/community-posts.e2e.spec.ts test/community/community-messages.e2e.spec.ts test/community/events/community-events.e2e.spec.ts test/invite-codes/coach-code-tools.live.spec.ts --runInBand --testTimeout=60000
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.6936647Z ^[[36;1mnpx jest test/community/rls/community-wins-rls.live.spec.ts test/community/rls/community-message-shape.live.spec.ts test/community/community-moderation.e2e.spec.ts test/community/community-reactions.e2e.spec.ts test/community/community-dms.e2e.spec.ts test/community/community-foundation.e2e.spec.ts test/community/community-plan-context.e2e.spec.ts test/community/community-posts.e2e.spec.ts test/community/community-messages.e2e.spec.ts test/community/events/community-events.e2e.spec.ts test/invite-codes/coach-code-tools.live.spec.ts --runInBand --testTimeout=60000^[[0m
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.7003221Z shell: /usr/bin/bash -e {0}
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.7003501Z env:
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.7004035Z   DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.7004488Z   DIRECT_URL: ***localhost:5432/postgres
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.7005234Z   COMMUNITY_TEST_DATABASE_URL: ***localhost:5432/postgres
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.7005627Z   SUPABASE_URL: http://127.0.0.1:54321
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.7006044Z   SUPABASE_SERVICE_ROLE_KEY: ci-community-live-tests-not-a-secret
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.7006475Z   NODE_OPTIONS: --max-old-space-size=4096
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:28.7006783Z ##[endgroup]
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:33.3528471Z PASS test/community/events/community-events.e2e.spec.ts (127 MB heap size)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:34.4880855Z PASS test/community/community-foundation.e2e.spec.ts (176 MB heap size)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:35.5627091Z PASS test/community/community-plan-context.e2e.spec.ts (235 MB heap size)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:36.7166116Z ^[[31m[Nest] 3621  - ^[[39m10/05/2026, 5:16:36 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[ExceptionsHandler] ^[[39mPrismaClientUnknownRequestError: 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:36.7167495Z Invalid `tx.notification.create()` invocation in
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:36.7168517Z /home/runner/work/growth-project-backend/growth-project-backend/src/community/safety/community-moderation-notices.ts:81:25
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:36.7169168Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:36.7169582Z   78 if (existing.some((n) => isJsonObject(n.payload) && n.payload.idempotency_key === key)) {
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:36.7170159Z   79   return 'exists';
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:36.7170437Z   80 }
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:36.7170868Z → 81 await tx.notification.create(
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:36.7171300Z Error occurred during query execution:
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:36.7172810Z ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "P0001", message: "B-610-13 probe: notice insert refused", severity: "ERROR", detail: None, column: None, hint: None }), transient: false })
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:36.7175632Z     at ei.handleRequestError ^[[90m(/home/runner/work/growth-project-backend/growth-project-backend/^[[39mnode_modules/^[[4m@prisma/client^[[24m/src/runtime/RequestHandler.ts:237:13^[[90m)^[[39m
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:36.7177514Z     at ei.handleAndLogRequestError ^[[90m(/home/runner/work/growth-project-backend/growth-project-backend/^[[39mnode_modules/^[[4m@prisma/client^[[24m/src/runtime/RequestHandler.ts:174:12^[[90m)^[[39m
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:36.7179559Z     at ei.request ^[[90m(/home/runner/work/growth-project-backend/growth-project-backend/^[[39mnode_modules/^[[4m@prisma/client^[[24m/src/runtime/RequestHandler.ts:143:12^[[90m)^[[39m
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:36.7181380Z     at a ^[[90m(/home/runner/work/growth-project-backend/growth-project-backend/^[[39mnode_modules/^[[4m@prisma/client^[[24m/src/runtime/getPrismaClient.ts:833:24^[[90m)^[[39m
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:36.7183516Z     at storeModerationNotice ^[[90m(/home/runner/work/growth-project-backend/growth-project-backend/^[[39msrc/community/safety/community-moderation-notices.ts:81:3^[[90m)^[[39m
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:36.7185349Z     at ^[[90m/home/runner/work/growth-project-backend/growth-project-backend/^[[39msrc/community/moderation/community-moderation.service.ts:471:18
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:36.7187175Z     at Proxy._transactionWithCallback ^[[90m(/home/runner/work/growth-project-backend/growth-project-backend/^[[39mnode_modules/^[[4m@prisma/client^[[24m/src/runtime/getPrismaClient.ts:722:18^[[90m)^[[39m
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:36.7188767Z     at CommunityModerationService.act ^[[90m(/home/runner/work/growth-project-backend/growth-project-backend/^[[39msrc/community/moderation/community-moderation.service.ts:449:44^[[90m)^[[39m
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:36.7190177Z     at ^[[90m/home/runner/work/growth-project-backend/growth-project-backend/^[[39mnode_modules/^[[4m@nestjs/core^[[24m/router/router-execution-context.js:47:62
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:36.7192229Z     at ^[[90m/home/runner/work/growth-project-backend/growth-project-backend/^[[39mnode_modules/^[[4m@nestjs/core^[[24m/router/router-proxy.js:9:17 {
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:36.7193539Z   clientVersion: ^[[32m'6.19.3'^[[39m
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:36.7194061Z }
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:36.8162405Z PASS test/community/community-moderation.e2e.spec.ts (297 MB heap size)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:37.9338540Z PASS test/community/community-messages.e2e.spec.ts (348 MB heap size)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:38.8633393Z PASS test/community/community-dms.e2e.spec.ts (399 MB heap size)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:39.4541400Z PASS test/community/rls/community-wins-rls.live.spec.ts (421 MB heap size)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:40.5529895Z PASS test/community/community-posts.e2e.spec.ts (225 MB heap size)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:41.4515524Z ^[[95m[Nest] 3621  - ^[[39m10/05/2026, 5:16:41 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[InviteCodesService] ^[[39m^[[95mattach no-op: user=e987c73a-ff02-4e6b-855a-0743992b39b1 already attached to coach=54b3464b-dc59-4c1c-8a73-4ac87317cc13^[[39m
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:41.4517681Z ^[[95m[Nest] 3621  - ^[[39m10/05/2026, 5:16:41 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[InviteCodesService] ^[[39m^[[95mattach no-op: user=e987c73a-ff02-4e6b-855a-0743992b39b1 already attached to coach=54b3464b-dc59-4c1c-8a73-4ac87317cc13^[[39m
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:41.6722415Z PASS test/invite-codes/coach-code-tools.live.spec.ts (270 MB heap size)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:42.6103528Z PASS test/community/community-reactions.e2e.spec.ts (330 MB heap size)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:42.9849128Z PASS test/community/rls/community-message-shape.live.spec.ts (345 MB heap size)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:42.9869245Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:42.9878944Z Test Suites: 11 passed, 11 total
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:42.9879497Z Tests:       109 passed, 109 total
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:42.9879850Z Snapshots:   0 total
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:42.9880151Z Time:        13.42 s
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:42.9883593Z Ran all test suites matching test/community/rls/community-wins-rls.live.spec.ts|test/community/rls/community-message-shape.live.spec.ts|test/community/community-moderation.e2e.spec.ts|test/community/community-reactions.e2e.spec.ts|test/community/community-dms.e2e.spec.ts|test/community/community-foundation.e2e.spec.ts|test/community/community-plan-context.e2e.spec.ts|test/community/community-posts.e2e.spec.ts|test/community/community-messages.e2e.spec.ts|test/community/events/community-events.e2e.spec.ts|test/invite-codes/coach-code-tools.live.spec.ts.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:43.9926897Z Jest did not exit one second after the test run has completed.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:43.9927673Z 
+community-live-tests	UNKNOWN STEP	2026-10-05T17:16:43.9929228Z 'This usually means that there are asynchronous operations that weren't stopped in your tests. Consider running Jest with `--detectOpenHandles` to troubleshoot this issue.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.1702650Z Post job cleanup.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.3036170Z Cache hit occurred on the primary key node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12, not saving cache.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.3191438Z Post job cleanup.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.4110485Z [command]/usr/bin/git version
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.4153421Z git version 2.55.0
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.4196283Z Temporarily overriding HOME='/home/runner/work/_temp/e10d7877-9a14-44dc-bc5f-c41a1322b822' before making global git config changes
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.4198499Z Adding repository directory to the temporary git global config as a safe directory
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.4202258Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.4239679Z Removing SSH command configuration
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.4247711Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.4288495Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.4539724Z Removing HTTP extra header
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.4545913Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.4585956Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.4860323Z Removing includeIf entries pointing to credentials config files
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.4869874Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.4917427Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.4919398Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.4920883Z includeif.gitdir:/github/workspace/.git.path
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.4921927Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.4930988Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.4963678Z /home/runner/work/_temp/git-credentials-4ba7b622-baf8-4d8b-bca3-a39a05d305a5.config
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.4977911Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-4ba7b622-baf8-4d8b-bca3-a39a05d305a5.config
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5032473Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5066297Z /home/runner/work/_temp/git-credentials-4ba7b622-baf8-4d8b-bca3-a39a05d305a5.config
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5088029Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-4ba7b622-baf8-4d8b-bca3-a39a05d305a5.config
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5128746Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5163308Z /github/runner_temp/git-credentials-4ba7b622-baf8-4d8b-bca3-a39a05d305a5.config
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5174474Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-4ba7b622-baf8-4d8b-bca3-a39a05d305a5.config
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5230527Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5267763Z /github/runner_temp/git-credentials-4ba7b622-baf8-4d8b-bca3-a39a05d305a5.config
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5278466Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-4ba7b622-baf8-4d8b-bca3-a39a05d305a5.config
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5341345Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5646006Z Removing credentials config '/home/runner/work/_temp/git-credentials-4ba7b622-baf8-4d8b-bca3-a39a05d305a5.config'
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5785645Z Print service container logs: 707694ef42db455c9d25f856cce72bdd_postgres15_63328d
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5790663Z ##[command]/usr/bin/docker logs --details 396220aa3e9d9eecffbc7efea3f0c8f0226a1afb98a470f9fbbf6942cbc55bff
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5941969Z  The files belonging to this database system will be owned by user "postgres".
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5943237Z  This user must also own the server process.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5946441Z  initdb: warning: enabling "trust" authentication for local connections
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5947190Z  
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5947636Z  The database cluster will be initialized with locale "en_US.utf8".
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5948270Z  The default database encoding has accordingly been set to "UTF8".
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5948748Z  The default text search configuration will be set to "english".
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5949423Z  
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5949884Z  Data page checksums are disabled.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5950438Z  
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5951237Z  fixing permissions on existing directory /var/lib/postgresql/data ... ok
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5952524Z  initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5953723Z  2026-10-05 17:15:17.539 UTC [1] LOG:  starting PostgreSQL 15.19 (Debian 15.19-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5954540Z  2026-10-05 17:15:17.539 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5955537Z  2026-10-05 17:15:17.539 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5956464Z  2026-10-05 17:15:17.540 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5957273Z  2026-10-05 17:15:17.543 UTC [62] LOG:  database system was shut down at 2026-10-05 17:15:17 UTC
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5958141Z  2026-10-05 17:15:17.546 UTC [1] LOG:  database system is ready to accept connections
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5958976Z  2026-10-05 17:16:36.609 UTC [138] ERROR:  B-610-13 probe: notice insert refused
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5959954Z  2026-10-05 17:16:36.609 UTC [138] CONTEXT:  PL/pgSQL function b610_13_notice_probe_3e025a0edce2() line 1 at RAISE
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5963262Z  2026-10-05 17:16:36.609 UTC [138] STATEMENT:  INSERT INTO "public"."Notification" ("id","user_id","kind","payload","body","deep_link","channel","created_at") VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING "public"."Notification"."id", "public"."Notification"."user_id", "public"."Notification"."kind", "public"."Notification"."payload", "public"."Notification"."body", "public"."Notification"."deep_link", "public"."Notification"."channel", "public"."Notification"."read_at", "public"."Notification"."created_at", "public"."Notification"."ai_draft_id"
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5965702Z  2026-10-05 17:16:39.161 UTC [149] ERROR:  community.win.moderation_column: only a moderator can hide or unhide a win
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5966432Z  2026-10-05 17:16:39.161 UTC [149] CONTEXT:  PL/pgSQL function community_win_guard_moderation() line 40 at RAISE
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5967175Z  2026-10-05 17:16:39.161 UTC [149] STATEMENT:  UPDATE "CommunityWin" SET hidden_at = now() WHERE id = $1
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5967913Z  2026-10-05 17:16:39.266 UTC [149] ERROR:  community.win.moderation_column: author, coach and visibility cannot be changed
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5968640Z  2026-10-05 17:16:39.266 UTC [149] CONTEXT:  PL/pgSQL function community_win_guard_moderation() line 32 at RAISE
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5969317Z  2026-10-05 17:16:39.266 UTC [149] STATEMENT:  UPDATE "CommunityWin" SET visibility = 'public' WHERE id = $1
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5970172Z  2026-10-05 17:16:39.272 UTC [149] ERROR:  community.win.moderation_column: author, coach and visibility cannot be changed
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5971621Z  2026-10-05 17:16:39.272 UTC [149] CONTEXT:  PL/pgSQL function community_win_guard_moderation() line 32 at RAISE
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5973121Z  2026-10-05 17:16:39.272 UTC [149] STATEMENT:  UPDATE "CommunityWin" SET coach_id = $1 WHERE id = $2
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5974218Z  2026-10-05 17:16:39.276 UTC [149] ERROR:  community.win.moderation_column: only a moderator can hide a win
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5975627Z  2026-10-05 17:16:39.276 UTC [149] CONTEXT:  PL/pgSQL function community_win_guard_moderation() line 20 at RAISE
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5976194Z  2026-10-05 17:16:39.276 UTC [149] STATEMENT:  
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5976687Z  	          INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility, hidden_at)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5977190Z  	          VALUES ($1, $2, $3, 'x', 'y', 'circle', now())
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5977710Z  2026-10-05 17:16:39.280 UTC [149] ERROR:  new row violates row-level security policy for table "CommunityWin"
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5978194Z  2026-10-05 17:16:39.280 UTC [149] STATEMENT:  
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5978623Z  	          INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5979074Z  	          VALUES ($1, $2, $3, 'x', 'y', 'public')
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5979580Z  2026-10-05 17:16:39.295 UTC [149] ERROR:  community.win.moderation_column: coach_id must be the author's coach
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5980268Z  2026-10-05 17:16:39.295 UTC [149] CONTEXT:  PL/pgSQL function community_win_guard_moderation() line 16 at RAISE
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5980772Z  2026-10-05 17:16:39.295 UTC [149] STATEMENT:  
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5981190Z  	        INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5981615Z  	        VALUES ($1, $2, $3, 'x', 'y', 'circle')
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5982102Z  2026-10-05 17:16:39.300 UTC [149] ERROR:  community.win.moderation_column: coach_id must be the author's coach
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5982778Z  2026-10-05 17:16:39.300 UTC [149] CONTEXT:  PL/pgSQL function community_win_guard_moderation() line 16 at RAISE
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5983268Z  2026-10-05 17:16:39.300 UTC [149] STATEMENT:  
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5983694Z  	        INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5984115Z  	        VALUES ($1, $2, $3, 'x', 'y', 'circle')
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5984787Z  2026-10-05 17:16:39.304 UTC [149] ERROR:  community.win.moderation_column: coach_id must be the author's coach
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5985776Z  2026-10-05 17:16:39.304 UTC [149] CONTEXT:  PL/pgSQL function community_win_guard_moderation() line 16 at RAISE
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5986272Z  2026-10-05 17:16:39.304 UTC [149] STATEMENT:  
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5986691Z  	        INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5987108Z  	        VALUES ($1, $2, $3, 'x', 'y', 'circle')
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5987602Z  2026-10-05 17:16:39.308 UTC [149] ERROR:  community.win.moderation_column: coach_id must be the author's coach
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5988255Z  2026-10-05 17:16:39.308 UTC [149] CONTEXT:  PL/pgSQL function community_win_guard_moderation() line 16 at RAISE
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5988741Z  2026-10-05 17:16:39.308 UTC [149] STATEMENT:  
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5989146Z  	        INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5989568Z  	        VALUES ($1, $2, $3, 'x', 'y', 'circle')
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5989999Z  2026-10-05 17:16:39.344 UTC [149] ERROR:  permission denied for function community_win_author_coach
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5990573Z  2026-10-05 17:16:39.344 UTC [149] STATEMENT:  SELECT app.community_win_author_coach($1) AS c
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5991138Z  2026-10-05 17:16:39.348 UTC [149] ERROR:  permission denied for function community_win_author_coach
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5991694Z  2026-10-05 17:16:39.348 UTC [149] STATEMENT:  SELECT app.community_win_author_coach($1) AS c
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5992198Z  2026-10-05 17:16:41.353 UTC [152] ERROR:  permission denied for function is_owner
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5992582Z  2026-10-05 17:16:41.353 UTC [152] STATEMENT:  
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5993145Z  	        SELECT count(*)::bigint AS n FROM "InviteRedemption" WHERE coach_id = $1
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5993729Z  2026-10-05 17:16:41.456 UTC [152] ERROR:  new row violates row-level security policy for table "InviteRedemption"
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5994445Z  2026-10-05 17:16:41.456 UTC [152] STATEMENT:  INSERT INTO "InviteRedemption" (id, coach_id, client_user_id, code, source)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5995316Z  	          VALUES ($1, $2, $3, 'GP-FAKE22', 'invite_code')
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5995985Z  2026-10-05 17:16:42.812 UTC [155] ERROR:  new row for relation "community_messages_default" violates check constraint "community_messages_scope_shape_check"
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5997764Z  2026-10-05 17:16:42.812 UTC [155] DETAIL:  Failing row contains (30c09b83-078d-4f89-84de-078f27bbb1dd, 2026-10-05 17:16:42.812471+00, eeb91de4-a8a8-4bdf-b1d9-9c5962654a6a, null, cohort, null, null, 8b2de61e-b36f-49ad-8f32-020ca0b2f8b3, text, shape probe, null, null, null, null, null, d79b261b-9bf3-4419-99fc-cb9dc7d1d16a, null, null, null, null, null, null, active, null, 2026-10-05 17:16:42.812471+00, null).
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5999226Z  2026-10-05 17:16:42.812 UTC [155] STATEMENT:  
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5999520Z  	      INSERT INTO community_messages
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.5999868Z  	        (id, workspace_id, cohort_id, scope, dm_key, sender_id, body,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6000254Z  	         plan_context_type, plan_context_id, updated_at)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6000551Z  	      VALUES
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6000753Z  	        ($1::uuid, $2::uuid,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6000974Z  	         $3::uuid,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6001228Z  	         $4::"CommunityMessageScope", $5, $6, 'shape probe',
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6001539Z  	         $7, $8::uuid, now())
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6002136Z  2026-10-05 17:16:42.923 UTC [155] ERROR:  new row for relation "community_messages_default" violates check constraint "community_messages_scope_shape_check"
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6003783Z  2026-10-05 17:16:42.923 UTC [155] DETAIL:  Failing row contains (e0e8b9ab-d651-4704-aba7-3fa1105ae6fd, 2026-10-05 17:16:42.923299+00, eeb91de4-a8a8-4bdf-b1d9-9c5962654a6a, null, cohort, null, null, 8b2de61e-b36f-49ad-8f32-020ca0b2f8b3, text, shape probe, null, null, null, null, null, null, null, null, null, null, null, null, active, null, 2026-10-05 17:16:42.923299+00, null).
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6005529Z  2026-10-05 17:16:42.923 UTC [155] STATEMENT:  
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6005826Z  	      INSERT INTO community_messages
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6006161Z  	        (id, workspace_id, cohort_id, scope, dm_key, sender_id, body,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6006552Z  	         plan_context_type, plan_context_id, updated_at)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6006844Z  	      VALUES
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6007035Z  	        ($1::uuid, $2::uuid,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6007251Z  	         $3::uuid,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6007506Z  	         $4::"CommunityMessageScope", $5, $6, 'shape probe',
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6007811Z  	         $7, $8::uuid, now())
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6008401Z  2026-10-05 17:16:42.925 UTC [155] ERROR:  new row for relation "community_messages_default" violates check constraint "community_messages_scope_shape_check"
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6010114Z  2026-10-05 17:16:42.925 UTC [155] DETAIL:  Failing row contains (0d3d3aab-003e-4a35-9c8e-1afa947aa7f1, 2026-10-05 17:16:42.925832+00, eeb91de4-a8a8-4bdf-b1d9-9c5962654a6a, null, cohort, null, null, 8b2de61e-b36f-49ad-8f32-020ca0b2f8b3, text, shape probe, null, null, null, null, community_post_comment, null, null, null, null, null, null, null, active, null, 2026-10-05 17:16:42.925832+00, null).
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6011500Z  2026-10-05 17:16:42.925 UTC [155] STATEMENT:  
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6011793Z  	      INSERT INTO community_messages
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6012123Z  	        (id, workspace_id, cohort_id, scope, dm_key, sender_id, body,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6012500Z  	         plan_context_type, plan_context_id, updated_at)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6012796Z  	      VALUES
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6012984Z  	        ($1::uuid, $2::uuid,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6013199Z  	         $3::uuid,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6013442Z  	         $4::"CommunityMessageScope", $5, $6, 'shape probe',
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6013909Z  	         $7, $8::uuid, now())
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6014512Z  2026-10-05 17:16:42.927 UTC [155] ERROR:  new row for relation "community_messages_default" violates check constraint "community_messages_scope_shape_check"
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6016837Z  2026-10-05 17:16:42.927 UTC [155] DETAIL:  Failing row contains (42c51ecd-284d-4994-850e-4e2b35213785, 2026-10-05 17:16:42.927734+00, eeb91de4-a8a8-4bdf-b1d9-9c5962654a6a, null, cohort, null, null, 8b2de61e-b36f-49ad-8f32-020ca0b2f8b3, text, shape probe, null, null, null, null, plan_week, 13305fa4-8135-4f60-ba0f-387e1d5e0643, null, null, null, null, null, null, active, null, 2026-10-05 17:16:42.927734+00, null).
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6018424Z  2026-10-05 17:16:42.927 UTC [155] STATEMENT:  
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6018715Z  	      INSERT INTO community_messages
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6019189Z  	        (id, workspace_id, cohort_id, scope, dm_key, sender_id, body,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6019590Z  	         plan_context_type, plan_context_id, updated_at)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6019881Z  	      VALUES
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6020121Z  	        ($1::uuid, $2::uuid,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6020444Z  	         $3::uuid,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6020697Z  	         $4::"CommunityMessageScope", $5, $6, 'shape probe',
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6021128Z  	         $7, $8::uuid, now())
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6021854Z  2026-10-05 17:16:42.929 UTC [155] ERROR:  new row for relation "community_messages_default" violates check constraint "community_messages_scope_shape_check"
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6023706Z  2026-10-05 17:16:42.929 UTC [155] DETAIL:  Failing row contains (88be4f8c-df1f-452d-a39e-9d15a354d770, 2026-10-05 17:16:42.929822+00, eeb91de4-a8a8-4bdf-b1d9-9c5962654a6a, null, cohort, dm:30f5f6c3, null, 8b2de61e-b36f-49ad-8f32-020ca0b2f8b3, text, shape probe, null, null, null, null, community_post_comment, c3150434-4d37-468f-ac95-7674b388dfe0, null, null, null, null, null, null, active, null, 2026-10-05 17:16:42.929822+00, null).
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6025503Z  2026-10-05 17:16:42.929 UTC [155] STATEMENT:  
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6025799Z  	      INSERT INTO community_messages
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6026127Z  	        (id, workspace_id, cohort_id, scope, dm_key, sender_id, body,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6026714Z  	         plan_context_type, plan_context_id, updated_at)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6027018Z  	      VALUES
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6027206Z  	        ($1::uuid, $2::uuid,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6027430Z  	         $3::uuid,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6027689Z  	         $4::"CommunityMessageScope", $5, $6, 'shape probe',
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6028002Z  	         $7, $8::uuid, now())
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6028600Z  2026-10-05 17:16:42.931 UTC [155] ERROR:  new row for relation "community_messages_default" violates check constraint "community_messages_scope_shape_check"
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6030403Z  2026-10-05 17:16:42.931 UTC [155] DETAIL:  Failing row contains (7eb1d3e2-0218-4ea5-a75c-6737f8b42b42, 2026-10-05 17:16:42.931885+00, eeb91de4-a8a8-4bdf-b1d9-9c5962654a6a, fafc90de-1207-43e5-8c20-6bcb75689175, cohort, dm:30f5f6c3, null, 8b2de61e-b36f-49ad-8f32-020ca0b2f8b3, text, shape probe, null, null, null, null, null, null, null, null, null, null, null, null, active, null, 2026-10-05 17:16:42.931885+00, null).
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6031863Z  2026-10-05 17:16:42.931 UTC [155] STATEMENT:  
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6032158Z  	      INSERT INTO community_messages
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6032484Z  	        (id, workspace_id, cohort_id, scope, dm_key, sender_id, body,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6032862Z  	         plan_context_type, plan_context_id, updated_at)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6033160Z  	      VALUES
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6033347Z  	        ($1::uuid, $2::uuid,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6033567Z  	         $3::uuid,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6033817Z  	         $4::"CommunityMessageScope", $5, $6, 'shape probe',
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6034119Z  	         $7, $8::uuid, now())
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6034701Z  2026-10-05 17:16:42.933 UTC [155] ERROR:  new row for relation "community_messages_default" violates check constraint "community_messages_scope_shape_check"
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6036847Z  2026-10-05 17:16:42.933 UTC [155] DETAIL:  Failing row contains (0048af3e-2b69-4f04-8021-ba37dcaa073f, 2026-10-05 17:16:42.933223+00, eeb91de4-a8a8-4bdf-b1d9-9c5962654a6a, fafc90de-1207-43e5-8c20-6bcb75689175, dm, dm:30f5f6c3, null, 8b2de61e-b36f-49ad-8f32-020ca0b2f8b3, text, shape probe, null, null, null, null, null, null, null, null, null, null, null, null, active, null, 2026-10-05 17:16:42.933223+00, null).
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6038299Z  2026-10-05 17:16:42.933 UTC [155] STATEMENT:  
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6038590Z  	      INSERT INTO community_messages
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6038919Z  	        (id, workspace_id, cohort_id, scope, dm_key, sender_id, body,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6039306Z  	         plan_context_type, plan_context_id, updated_at)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6039595Z  	      VALUES
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6039794Z  	        ($1::uuid, $2::uuid,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6040011Z  	         $3::uuid,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6040261Z  	         $4::"CommunityMessageScope", $5, $6, 'shape probe',
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6040580Z  	         $7, $8::uuid, now())
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6041171Z  2026-10-05 17:16:42.934 UTC [155] ERROR:  new row for relation "community_messages_default" violates check constraint "community_messages_scope_shape_check"
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6042804Z  2026-10-05 17:16:42.934 UTC [155] DETAIL:  Failing row contains (9ba42127-38a9-452d-ab6d-77f2f07788e4, 2026-10-05 17:16:42.934708+00, eeb91de4-a8a8-4bdf-b1d9-9c5962654a6a, null, dm, null, null, 8b2de61e-b36f-49ad-8f32-020ca0b2f8b3, text, shape probe, null, null, null, null, null, null, null, null, null, null, null, null, active, null, 2026-10-05 17:16:42.934708+00, null).
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6044109Z  2026-10-05 17:16:42.934 UTC [155] STATEMENT:  
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6044404Z  	      INSERT INTO community_messages
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6044749Z  	        (id, workspace_id, cohort_id, scope, dm_key, sender_id, body,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6045374Z  	         plan_context_type, plan_context_id, updated_at)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6045669Z  	      VALUES
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6045856Z  	        ($1::uuid, $2::uuid,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6046083Z  	         $3::uuid,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6046495Z  	         $4::"CommunityMessageScope", $5, $6, 'shape probe',
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6046797Z  	         $7, $8::uuid, now())
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6047382Z  2026-10-05 17:16:42.936 UTC [155] ERROR:  new row for relation "community_messages_default" violates check constraint "community_messages_scope_shape_check"
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6049197Z  2026-10-05 17:16:42.936 UTC [155] DETAIL:  Failing row contains (5d99cfa0-9b3a-49d5-a4d9-db14f0ffd331, 2026-10-05 17:16:42.936077+00, eeb91de4-a8a8-4bdf-b1d9-9c5962654a6a, null, dm, null, null, 8b2de61e-b36f-49ad-8f32-020ca0b2f8b3, text, shape probe, null, null, null, null, community_post_comment, d4f1e2b5-75de-4e6e-9773-4f502bde87ee, null, null, null, null, null, null, active, null, 2026-10-05 17:16:42.936077+00, null).
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6050670Z  2026-10-05 17:16:42.936 UTC [155] STATEMENT:  
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6050965Z  	      INSERT INTO community_messages
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6051290Z  	        (id, workspace_id, cohort_id, scope, dm_key, sender_id, body,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6051670Z  	         plan_context_type, plan_context_id, updated_at)
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6051963Z  	      VALUES
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6052148Z  	        ($1::uuid, $2::uuid,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6052368Z  	         $3::uuid,
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6052619Z  	         $4::"CommunityMessageScope", $5, $6, 'shape probe',
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6052923Z  	         $7, $8::uuid, now())
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6053165Z  creating subdirectories ... ok
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6053468Z  selecting dynamic shared memory implementation ... posix
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6053817Z  selecting default max_connections ... 100
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6054109Z  selecting default shared_buffers ... 128MB
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6054397Z  selecting default time zone ... Etc/UTC
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6054682Z  creating configuration files ... ok
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6055274Z  running bootstrap script ... ok
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6055786Z  performing post-bootstrap initialization ... ok
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6056127Z  syncing data to disk ... ok
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6056363Z  
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6056538Z  
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6056769Z  Success. You can now start the database server using:
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6057084Z  
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6057322Z      pg_ctl -D /var/lib/postgresql/data -l logfile start
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6057619Z  
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6058267Z  waiting for server to start....2026-10-05 17:15:17.300 UTC [48] LOG:  starting PostgreSQL 15.19 (Debian 15.19-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6059152Z  2026-10-05 17:15:17.301 UTC [48] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6059721Z  2026-10-05 17:15:17.303 UTC [51] LOG:  database system was shut down at 2026-10-05 17:15:17 UTC
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6060235Z  2026-10-05 17:15:17.307 UTC [48] LOG:  database system is ready to accept connections
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6060617Z   done
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6060798Z  server started
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6060990Z  
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6061303Z  /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6061693Z  
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6061941Z  2026-10-05 17:15:17.419 UTC [48] LOG:  received fast shutdown request
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6062474Z  waiting for server to shut down....2026-10-05 17:15:17.419 UTC [48] LOG:  aborting any active transactions
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6063165Z  2026-10-05 17:15:17.421 UTC [48] LOG:  background worker "logical replication launcher" (PID 54) exited with exit code 1
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6063703Z  2026-10-05 17:15:17.422 UTC [49] LOG:  shutting down
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6064098Z  2026-10-05 17:15:17.423 UTC [49] LOG:  checkpoint starting: shutdown immediate
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6065780Z  2026-10-05 17:15:17.425 UTC [49] LOG:  checkpoint complete: wrote 3 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.003 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6067023Z  2026-10-05 17:15:17.429 UTC [48] LOG:  database system is shut down
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6084407Z   done
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6084765Z  server stopped
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6085275Z  
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6085673Z  PostgreSQL init process complete; ready for start up.
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6086127Z  
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6093570Z Stop and remove container: 707694ef42db455c9d25f856cce72bdd_postgres15_63328d
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.6099814Z ##[command]/usr/bin/docker rm --force 396220aa3e9d9eecffbc7efea3f0c8f0226a1afb98a470f9fbbf6942cbc55bff
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.7491598Z 396220aa3e9d9eecffbc7efea3f0c8f0226a1afb98a470f9fbbf6942cbc55bff
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.7524776Z Remove container network: github_network_8779605fd75c487596bd4ad7d709b4aa
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.7529923Z ##[command]/usr/bin/docker network rm github_network_8779605fd75c487596bd4ad7d709b4aa
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.8626926Z github_network_8779605fd75c487596bd4ad7d709b4aa
+community-live-tests	UNKNOWN STEP	2026-10-05T17:17:39.8710117Z Cleaning up orphan processes

@@ -1,0 +1,2761 @@
+diff --git a/prisma/migrations/20270210000000_s_fee_charge_settlement/down.sql b/prisma/migrations/20270210000000_s_fee_charge_settlement/down.sql
+new file mode 100644
+index 00000000..da4fb958
+--- /dev/null
++++ b/prisma/migrations/20270210000000_s_fee_charge_settlement/down.sql
+@@ -0,0 +1,48 @@
++-- Reverse of 20270210000000_s_fee_charge_settlement.
++-- Disposable/pre-use only: refuses once any ChargeSettlement or PayeeRecovery
++-- row exists (those rows are money records; repair is forward-only). Never
++-- claims to restore data.
++BEGIN;
++SET LOCAL lock_timeout = '5s';
++SET LOCAL row_security = off;
++
++DO $$
++BEGIN
++  IF EXISTS (SELECT 1 FROM "ChargeSettlement") OR EXISTS (SELECT 1 FROM "PayeeRecovery")
++     OR EXISTS (SELECT 1 FROM "TransferReversalOp") OR EXISTS (SELECT 1 FROM "PayoutAdjustmentNotice") THEN
++    RAISE EXCEPTION 'S-FEE down refused: settlement rows exist; fix forward';
++  END IF;
++  IF EXISTS (
++    SELECT 1 FROM "ConnectTransfer"
++    WHERE "stripe_send_unresolved_at" IS NOT NULL AND "status" = 'pending'
++  ) THEN
++    RAISE EXCEPTION 'S-FEE down refused: a transfer has an unresolved Stripe create; dropping the marker could re-send it';
++  END IF;
++  IF EXISTS (
++    SELECT 1 FROM "SplitLedgerEntry"
++    GROUP BY "purchase_id", "kind", "payee_user_id"
++    HAVING COUNT(*) > 1
++  ) THEN
++    RAISE EXCEPTION 'S-FEE down refused: per-charge ledger rows exist; the old per-purchase unique cannot be restored';
++  END IF;
++END $$;
++
++ALTER TABLE "ConnectTransfer" DROP CONSTRAINT IF EXISTS "ConnectTransfer_settlement_id_fkey";
++DROP INDEX IF EXISTS "ConnectTransfer_settlement_id_idx";
++DROP TABLE IF EXISTS "CronLease";
++DROP TABLE IF EXISTS "TransferReversalOp";
++DROP TABLE IF EXISTS "PayoutAdjustmentNotice";
++DROP TABLE "PayeeRecovery";
++DROP TABLE "ChargeSettlement";
++ALTER TABLE "ConnectTransfer" DROP COLUMN "stripe_send_unresolved_at";
++ALTER TABLE "ConnectTransfer" DROP COLUMN "reversal_seq";
++ALTER TABLE "ConnectTransfer" DROP COLUMN "netted_recovery_cents";
++ALTER TABLE "ConnectTransfer" DROP COLUMN "kind";
++ALTER TABLE "ConnectTransfer" DROP COLUMN "settlement_id";
++DROP INDEX IF EXISTS "SplitLedgerEntry_stripe_charge_id_idx";
++DROP INDEX IF EXISTS "SplitLedgerEntry_purchase_kind_payee_charge_key";
++-- Restore the migration chain's original name for the 3-column unique.
++CREATE UNIQUE INDEX "SplitLedgerEntry_purchase_kind_payee_idx"
++  ON "SplitLedgerEntry"("purchase_id", "kind", "payee_user_id");
++
++COMMIT;
+diff --git a/prisma/migrations/20270210000000_s_fee_charge_settlement/migration.sql b/prisma/migrations/20270210000000_s_fee_charge_settlement/migration.sql
+new file mode 100644
+index 00000000..47384649
+--- /dev/null
++++ b/prisma/migrations/20270210000000_s_fee_charge_settlement/migration.sql
+@@ -0,0 +1,287 @@
++-- S-FEE — per-charge settlement ledger for coach-package payments.
++--
++-- Additive except for one index swap on SplitLedgerEntry:
++--   * new tables ChargeSettlement, PayeeRecovery, TransferReversalOp, CronLease,
++--     PayoutAdjustmentNotice (RLS enabled + forced);
++--   * ConnectTransfer gains settlement_id / kind / netted_recovery_cents /
++--     reversal_seq / stripe_send_unresolved_at
++--     (defaults keep every existing row valid: kind='head_coach_split');
++--   * SplitLedgerEntry's (purchase_id, kind, payee_user_id) unique is replaced
++--     by (purchase_id, kind, payee_user_id, stripe_charge_id) so each renewal
++--     charge gets its own ledger rows. The new key is strictly weaker than the
++--     old one, so every existing row already satisfies it (no data rewrite).
++--
++-- RLS posture mirrors SplitLedgerEntry / ConnectTransfer
++-- (20260607000000_rls_remaining_gaps): owner ALL, payee SELECT, service_role
++-- (Primitive A) for the webhook/settlement writers. anon resolves to zero rows.
++--
++-- Rollback: down.sql (refuses once any settlement row exists; forward-fix only).
++
++BEGIN;
++
++-- ConnectTransfer: settlement linkage.
++ALTER TABLE "ConnectTransfer" ADD COLUMN "settlement_id" TEXT;
++ALTER TABLE "ConnectTransfer" ADD COLUMN "kind" TEXT NOT NULL DEFAULT 'head_coach_split';
++ALTER TABLE "ConnectTransfer" ADD COLUMN "netted_recovery_cents" INTEGER NOT NULL DEFAULT 0;
++-- Round 4: reversal operation slot (B-627-5).
++ALTER TABLE "ConnectTransfer" ADD COLUMN "reversal_seq" INTEGER NOT NULL DEFAULT 0;
++-- Round 7 (B-627-8): set before every Stripe create, cleared when its result
++-- is established. While set, the transfer is reconciled against Stripe's
++-- transfer list before anything is sent again (Stripe idempotency keys can
++-- expire after 24 h). Existing pending rows that were already tried once are
++-- treated as unresolved, so a lost earlier result is looked up, not re-sent.
++ALTER TABLE "ConnectTransfer" ADD COLUMN "stripe_send_unresolved_at" TIMESTAMP(3);
++UPDATE "ConnectTransfer"
++   SET "stripe_send_unresolved_at" = COALESCE("last_attempt_at", "updated_at")
++ WHERE "status" = 'pending' AND "attempts" > 0 AND "stripe_transfer_id" IS NULL;
++
++-- SplitLedgerEntry: per-charge uniqueness. The old 3-column unique is named
++-- "SplitLedgerEntry_purchase_kind_payee_idx" by the migration chain
++-- (20260602000000) and "SplitLedgerEntry_purchase_id_kind_payee_user_id_key"
++-- by Prisma's default naming; drop whichever exists. The new name is mapped
++-- explicitly in schema.prisma because Prisma's default would exceed 63 chars.
++DROP INDEX IF EXISTS "SplitLedgerEntry_purchase_kind_payee_idx";
++DROP INDEX IF EXISTS "SplitLedgerEntry_purchase_id_kind_payee_user_id_key";
++CREATE UNIQUE INDEX "SplitLedgerEntry_purchase_kind_payee_charge_key"
++  ON "SplitLedgerEntry"("purchase_id", "kind", "payee_user_id", "stripe_charge_id");
++CREATE INDEX "SplitLedgerEntry_stripe_charge_id_idx" ON "SplitLedgerEntry"("stripe_charge_id");
++
++-- ChargeSettlement.
++CREATE TABLE "ChargeSettlement" (
++    "id" TEXT NOT NULL,
++    "purchase_id" TEXT NOT NULL,
++    "coach_user_id" TEXT NOT NULL,
++    "head_coach_user_id" TEXT,
++    "stripe_charge_id" TEXT NOT NULL,
++    "stripe_balance_transaction_id" TEXT,
++    "stripe_invoice_id" TEXT,
++    "currency" TEXT NOT NULL DEFAULT 'usd',
++    "rail" TEXT NOT NULL DEFAULT 'card',
++    "mechanism" TEXT NOT NULL DEFAULT 'separate_charge_transfer',
++    "status" TEXT NOT NULL DEFAULT 'awaiting_fee',
++    "platform_bps" INTEGER NOT NULL,
++    "head_coach_bps" INTEGER NOT NULL DEFAULT 0,
++    "gross_cents" INTEGER NOT NULL,
++    "stripe_fee_cents" INTEGER,
++    "platform_fee_cents" INTEGER,
++    "head_coach_split_cents" INTEGER,
++    "coach_net_cents" INTEGER,
++    "refunded_cents" INTEGER NOT NULL DEFAULT 0,
++    "dispute_withdrawn_cents" INTEGER NOT NULL DEFAULT 0,
++    "dispute_fee_cents" INTEGER NOT NULL DEFAULT 0,
++    "target_platform_fee_cents" INTEGER,
++    "target_head_coach_cents" INTEGER,
++    "target_coach_net_cents" INTEGER,
++    "settled_at" TIMESTAMP(3),
++    "adjusted_at" TIMESTAMP(3),
++    "last_error" TEXT,
++    "reconcile_requested_at" TIMESTAMP(3),
++    "reconcile_dispute_id" TEXT,
++    "reconcile_reason" TEXT,
++    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updated_at" TIMESTAMP(3) NOT NULL,
++    CONSTRAINT "ChargeSettlement_pkey" PRIMARY KEY ("id"),
++    -- Money invariants enforced by the database as well as the service.
++    CONSTRAINT "ChargeSettlement_gross_nonneg" CHECK ("gross_cents" >= 0),
++    CONSTRAINT "ChargeSettlement_platform_fee_nonneg" CHECK ("platform_fee_cents" IS NULL OR "platform_fee_cents" >= 0),
++    CONSTRAINT "ChargeSettlement_target_platform_fee_nonneg" CHECK ("target_platform_fee_cents" IS NULL OR "target_platform_fee_cents" >= 0),
++    CONSTRAINT "ChargeSettlement_slices_sum_to_gross" CHECK (
++      "status" <> 'settled' OR (
++        "stripe_fee_cents" + "platform_fee_cents" + "head_coach_split_cents" + "coach_net_cents" = "gross_cents"
++      )
++    )
++);
++CREATE UNIQUE INDEX "ChargeSettlement_stripe_charge_id_key" ON "ChargeSettlement"("stripe_charge_id");
++CREATE INDEX "ChargeSettlement_purchase_id_idx" ON "ChargeSettlement"("purchase_id");
++CREATE INDEX "ChargeSettlement_coach_user_id_created_at_idx" ON "ChargeSettlement"("coach_user_id", "created_at");
++CREATE INDEX "ChargeSettlement_status_idx" ON "ChargeSettlement"("status");
++CREATE INDEX "ChargeSettlement_reconcile_requested_at_idx" ON "ChargeSettlement"("reconcile_requested_at");
++ALTER TABLE "ChargeSettlement" ADD CONSTRAINT "ChargeSettlement_purchase_id_fkey"
++  FOREIGN KEY ("purchase_id") REFERENCES "ClientPurchase"("id") ON DELETE CASCADE ON UPDATE CASCADE;
++
++-- PayeeRecovery.
++CREATE TABLE "PayeeRecovery" (
++    "id" TEXT NOT NULL,
++    "settlement_id" TEXT NOT NULL,
++    "payee_user_id" TEXT NOT NULL,
++    "amount_cents" INTEGER NOT NULL,
++    "collected_cents" INTEGER NOT NULL DEFAULT 0,
++    "currency" TEXT NOT NULL DEFAULT 'usd',
++    "reason" TEXT NOT NULL,
++    "status" TEXT NOT NULL DEFAULT 'open',
++    "idempotency_key" TEXT NOT NULL,
++    "collected_at" TIMESTAMP(3),
++    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updated_at" TIMESTAMP(3) NOT NULL,
++    CONSTRAINT "PayeeRecovery_pkey" PRIMARY KEY ("id"),
++    CONSTRAINT "PayeeRecovery_amount_nonneg" CHECK ("amount_cents" >= 0),
++    CONSTRAINT "PayeeRecovery_collected_bounded" CHECK ("collected_cents" >= 0 AND "collected_cents" <= "amount_cents")
++);
++CREATE UNIQUE INDEX "PayeeRecovery_idempotency_key_key" ON "PayeeRecovery"("idempotency_key");
++CREATE INDEX "PayeeRecovery_payee_user_id_status_idx" ON "PayeeRecovery"("payee_user_id", "status");
++CREATE INDEX "PayeeRecovery_settlement_id_idx" ON "PayeeRecovery"("settlement_id");
++ALTER TABLE "PayeeRecovery" ADD CONSTRAINT "PayeeRecovery_settlement_id_fkey"
++  FOREIGN KEY ("settlement_id") REFERENCES "ChargeSettlement"("id") ON DELETE CASCADE ON UPDATE CASCADE;
++
++CREATE INDEX "ConnectTransfer_settlement_id_idx" ON "ConnectTransfer"("settlement_id");
++ALTER TABLE "ConnectTransfer" ADD CONSTRAINT "ConnectTransfer_settlement_id_fkey"
++  FOREIGN KEY ("settlement_id") REFERENCES "ChargeSettlement"("id") ON DELETE CASCADE ON UPDATE CASCADE;
++
++-- TransferReversalOp: durable keyed Stripe transfer reversals (round 4, B-627-5).
++CREATE TABLE "TransferReversalOp" (
++    "id" TEXT NOT NULL,
++    "transfer_id" TEXT NOT NULL,
++    "seq" INTEGER NOT NULL,
++    "idempotency_key" TEXT NOT NULL,
++    "amount_cents" INTEGER NOT NULL,
++    "base_reversed_cents" INTEGER NOT NULL,
++    "purpose" TEXT NOT NULL DEFAULT 'adjust',
++    "status" TEXT NOT NULL DEFAULT 'pending',
++    "stripe_reversal_id" TEXT,
++    "attempts" INTEGER NOT NULL DEFAULT 0,
++    "last_attempt_at" TIMESTAMP(3),
++    "last_error" TEXT,
++    "resolved_at" TIMESTAMP(3),
++    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updated_at" TIMESTAMP(3) NOT NULL,
++    CONSTRAINT "TransferReversalOp_pkey" PRIMARY KEY ("id"),
++    CONSTRAINT "TransferReversalOp_amount_positive" CHECK ("amount_cents" > 0),
++    CONSTRAINT "TransferReversalOp_base_nonneg" CHECK ("base_reversed_cents" >= 0)
++);
++CREATE UNIQUE INDEX "TransferReversalOp_idempotency_key_key" ON "TransferReversalOp"("idempotency_key");
++CREATE UNIQUE INDEX "TransferReversalOp_stripe_reversal_id_key" ON "TransferReversalOp"("stripe_reversal_id");
++CREATE UNIQUE INDEX "TransferReversalOp_transfer_id_seq_key" ON "TransferReversalOp"("transfer_id", "seq");
++CREATE INDEX "TransferReversalOp_status_created_at_idx" ON "TransferReversalOp"("status", "created_at");
++ALTER TABLE "TransferReversalOp" ADD CONSTRAINT "TransferReversalOp_transfer_id_fkey"
++  FOREIGN KEY ("transfer_id") REFERENCES "ConnectTransfer"("id") ON DELETE CASCADE ON UPDATE CASCADE;
++
++-- PayoutAdjustmentNotice: the payee-facing refund / chargeback record (round 5,
++-- owner decision OR-111-1). Amounts are integer cents in the settlement currency.
++CREATE TABLE "PayoutAdjustmentNotice" (
++    "id" TEXT NOT NULL,
++    "settlement_id" TEXT NOT NULL,
++    "payee_user_id" TEXT NOT NULL,
++    "role" TEXT NOT NULL,
++    "purchase_id" TEXT NOT NULL,
++    "stripe_charge_id" TEXT NOT NULL,
++    "event" TEXT NOT NULL,
++    "currency" TEXT NOT NULL DEFAULT 'usd',
++    "charge_gross_cents" INTEGER NOT NULL,
++    "customer_refunded_cents" INTEGER NOT NULL,
++    -- Round 13 (B-683-1): the client's own currency and refunded amount when the
++    -- charge was presented in another currency than it settled in; else NULL.
++    "client_currency" TEXT,
++    "client_refunded_cents" INTEGER CHECK ("client_refunded_cents" >= 0),
++    "reversed_cents" INTEGER NOT NULL,
++    "reinstated_cents" INTEGER NOT NULL DEFAULT 0,
++    "held_cents" INTEGER NOT NULL,
++    "held_tgp_fee_cents" INTEGER NOT NULL,
++    "held_stripe_fee_cents" INTEGER NOT NULL,
++    "held_dispute_fee_cents" INTEGER NOT NULL,
++    "held_not_reversed_cents" INTEGER NOT NULL,
++    "held_open_cents" INTEGER NOT NULL,
++    "state_key" TEXT NOT NULL,
++    "idempotency_key" TEXT NOT NULL,
++    "title" TEXT NOT NULL,
++    "body" TEXT NOT NULL,
++    "inapp_status" TEXT NOT NULL DEFAULT 'pending',
++    "inapp_notification_id" TEXT,
++    "push_notification_id" TEXT,
++    "push_status" TEXT NOT NULL DEFAULT 'pending',
++    "email_status" TEXT NOT NULL DEFAULT 'pending',
++    "email_attempts" INTEGER NOT NULL DEFAULT 0,
++    "dispatch_attempts" INTEGER NOT NULL DEFAULT 0,
++    "dispatch_claimed_at" TIMESTAMP(3),
++    "dispatched_at" TIMESTAMP(3),
++    "acknowledged_at" TIMESTAMP(3),
++    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updated_at" TIMESTAMP(3) NOT NULL,
++    CONSTRAINT "PayoutAdjustmentNotice_pkey" PRIMARY KEY ("id"),
++    CONSTRAINT "PayoutAdjustmentNotice_amounts_nonneg" CHECK (
++      "charge_gross_cents" >= 0 AND "customer_refunded_cents" >= 0 AND "reversed_cents" >= 0
++      AND "reinstated_cents" >= 0 AND "held_tgp_fee_cents" >= 0 AND "held_stripe_fee_cents" >= 0
++      AND "held_dispute_fee_cents" >= 0 AND "held_not_reversed_cents" >= 0
++      AND "held_open_cents" >= 0 AND "held_open_cents" <= "held_cents"
++    ),
++    CONSTRAINT "PayoutAdjustmentNotice_held_parts_sum" CHECK (
++      "held_cents" = "held_tgp_fee_cents" + "held_stripe_fee_cents" + "held_dispute_fee_cents" + "held_not_reversed_cents"
++    )
++);
++CREATE UNIQUE INDEX "PayoutAdjustmentNotice_idempotency_key_key" ON "PayoutAdjustmentNotice"("idempotency_key");
++CREATE INDEX "PayoutAdjustmentNotice_payee_user_id_created_at_idx" ON "PayoutAdjustmentNotice"("payee_user_id", "created_at");
++CREATE INDEX "PayoutAdjustmentNotice_settlement_id_idx" ON "PayoutAdjustmentNotice"("settlement_id");
++CREATE INDEX "PayoutAdjustmentNotice_dispatched_at_created_at_idx" ON "PayoutAdjustmentNotice"("dispatched_at", "created_at");
++ALTER TABLE "PayoutAdjustmentNotice" ADD CONSTRAINT "PayoutAdjustmentNotice_settlement_id_fkey"
++  FOREIGN KEY ("settlement_id") REFERENCES "ChargeSettlement"("id") ON DELETE CASCADE ON UPDATE CASCADE;
++
++-- CronLease: single-runner lease for the scheduled settlement sweep, the
++-- per-charge money lock (name 'sfee-charge:<charge id>', deleted on release)
++-- and the paid-invoice backfill cursor.
++CREATE TABLE "CronLease" (
++    "name" TEXT NOT NULL,
++    "holder" TEXT NOT NULL,
++    "lease_until" TIMESTAMP(3) NOT NULL,
++    "acquired_at" TIMESTAMP(3) NOT NULL,
++    "updated_at" TIMESTAMP(3) NOT NULL,
++    "cursor" TEXT,
++    CONSTRAINT "CronLease_pkey" PRIMARY KEY ("name")
++);
++
++-- RLS.
++ALTER TABLE "CronLease" ENABLE ROW LEVEL SECURITY;
++ALTER TABLE "CronLease" FORCE ROW LEVEL SECURITY;
++DROP POLICY IF EXISTS "cron_lease_service_role_all" ON "CronLease";
++CREATE POLICY "cron_lease_service_role_all" ON "CronLease"
++  AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
++DROP POLICY IF EXISTS "cron_lease_owner_all" ON "CronLease";
++CREATE POLICY "cron_lease_owner_all" ON "CronLease"
++  FOR ALL TO public USING (app.is_owner()) WITH CHECK (app.is_owner());
++ALTER TABLE "ChargeSettlement" ENABLE ROW LEVEL SECURITY;
++ALTER TABLE "ChargeSettlement" FORCE ROW LEVEL SECURITY;
++ALTER TABLE "PayeeRecovery" ENABLE ROW LEVEL SECURITY;
++ALTER TABLE "PayeeRecovery" FORCE ROW LEVEL SECURITY;
++ALTER TABLE "TransferReversalOp" ENABLE ROW LEVEL SECURITY;
++ALTER TABLE "TransferReversalOp" FORCE ROW LEVEL SECURITY;
++DROP POLICY IF EXISTS "transfer_reversal_op_service_role_all" ON "TransferReversalOp";
++CREATE POLICY "transfer_reversal_op_service_role_all" ON "TransferReversalOp"
++  AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
++DROP POLICY IF EXISTS "transfer_reversal_op_owner_all" ON "TransferReversalOp";
++CREATE POLICY "transfer_reversal_op_owner_all" ON "TransferReversalOp"
++  FOR ALL TO public USING (app.is_owner()) WITH CHECK (app.is_owner());
++
++DROP POLICY IF EXISTS "charge_settlement_service_role_all" ON "ChargeSettlement";
++CREATE POLICY "charge_settlement_service_role_all" ON "ChargeSettlement"
++  AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
++DROP POLICY IF EXISTS "charge_settlement_owner_all" ON "ChargeSettlement";
++CREATE POLICY "charge_settlement_owner_all" ON "ChargeSettlement"
++  FOR ALL TO public USING (app.is_owner()) WITH CHECK (app.is_owner());
++DROP POLICY IF EXISTS "charge_settlement_payee_select" ON "ChargeSettlement";
++CREATE POLICY "charge_settlement_payee_select" ON "ChargeSettlement"
++  FOR SELECT TO public
++  USING (app.current_user_id() IS NOT NULL AND ("coach_user_id" = app.current_user_id() OR "head_coach_user_id" = app.current_user_id()));
++
++DROP POLICY IF EXISTS "payee_recovery_service_role_all" ON "PayeeRecovery";
++CREATE POLICY "payee_recovery_service_role_all" ON "PayeeRecovery"
++  AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
++DROP POLICY IF EXISTS "payee_recovery_owner_all" ON "PayeeRecovery";
++CREATE POLICY "payee_recovery_owner_all" ON "PayeeRecovery"
++  FOR ALL TO public USING (app.is_owner()) WITH CHECK (app.is_owner());
++DROP POLICY IF EXISTS "payee_recovery_payee_select" ON "PayeeRecovery";
++CREATE POLICY "payee_recovery_payee_select" ON "PayeeRecovery"
++  FOR SELECT TO public
++  USING (app.current_user_id() IS NOT NULL AND "payee_user_id" = app.current_user_id());
++
++ALTER TABLE "PayoutAdjustmentNotice" ENABLE ROW LEVEL SECURITY;
++ALTER TABLE "PayoutAdjustmentNotice" FORCE ROW LEVEL SECURITY;
++DROP POLICY IF EXISTS "payout_adjustment_notice_service_role_all" ON "PayoutAdjustmentNotice";
++CREATE POLICY "payout_adjustment_notice_service_role_all" ON "PayoutAdjustmentNotice"
++  AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
++DROP POLICY IF EXISTS "payout_adjustment_notice_owner_all" ON "PayoutAdjustmentNotice";
++CREATE POLICY "payout_adjustment_notice_owner_all" ON "PayoutAdjustmentNotice"
++  FOR ALL TO public USING (app.is_owner()) WITH CHECK (app.is_owner());
++DROP POLICY IF EXISTS "payout_adjustment_notice_payee_select" ON "PayoutAdjustmentNotice";
++CREATE POLICY "payout_adjustment_notice_payee_select" ON "PayoutAdjustmentNotice"
++  FOR SELECT TO public
++  USING (app.current_user_id() IS NOT NULL AND "payee_user_id" = app.current_user_id());
++
++COMMIT;
+diff --git a/prisma/migrations/20270213000000_clinic_engagement/down.sql b/prisma/migrations/20270213000000_clinic_engagement/down.sql
+new file mode 100644
+index 00000000..345b5c7e
+--- /dev/null
++++ b/prisma/migrations/20270213000000_clinic_engagement/down.sql
+@@ -0,0 +1,11 @@
++-- Down for 20270213000000_clinic_engagement. Drops scheduler state only
++-- (welcome jobs, per-coach welcome settings, reminder ledger) and the two
++-- workout-reminder preference columns, and the CoachMessage welcome_job_id key
++-- (NULL on every non-welcome row; the welcome rows themselves are kept).
++DROP TABLE IF EXISTS "WorkoutReminderDelivery";
++DROP TABLE IF EXISTS "CoachWelcomeMessageJob";
++DROP TABLE IF EXISTS "CoachWelcomeMessageSetting";
++ALTER TABLE "NotificationPreferences" DROP COLUMN IF EXISTS "workout_reminder_push";
++ALTER TABLE "NotificationPreferences" DROP COLUMN IF EXISTS "workout_reminder_inapp";
++DROP INDEX IF EXISTS "CoachMessage_welcome_job_id_key";
++ALTER TABLE "CoachMessage" DROP COLUMN IF EXISTS "welcome_job_id";
+diff --git a/prisma/migrations/20270213000000_clinic_engagement/migration.sql b/prisma/migrations/20270213000000_clinic_engagement/migration.sql
+new file mode 100644
+index 00000000..dce26acf
+--- /dev/null
++++ b/prisma/migrations/20270213000000_clinic_engagement/migration.sql
+@@ -0,0 +1,179 @@
++-- C05 items 6-7 — clinic engagement: coach welcome message (13 minutes after
++-- onboarding completes) + workout reminders on plan days.
++--
++-- Additive-only. Adds two default-true columns to NotificationPreferences, one
++-- nullable unique column to CoachMessage (welcome_job_id, the welcome
++-- message's idempotency key) and creates three tables with indexes/FKs. No
++-- existing column, type, index or constraint is altered or dropped. User back-relations in
++-- schema.prisma are Prisma-virtual and emit no DDL.
++--
++-- RLS POLICY CITATION (ENGINEERING_RULES §2), helpers from
++-- 20261212000000_rls_helper_search_path / 20260704000000_rls01_helper_searchpath_hibp:
++--   app.current_user_id()  session GUC set by RlsContextInterceptor
++--   app.is_owner()         platform owner context
++--
++-- CoachWelcomeMessageSetting (per-coach config, written by the owner endpoint
++-- or the operator script through service_role):
++--   p_coachwelcomemessagesetting_service_role_all  service_role ALL
++--   p_coachwelcomemessagesetting_select            SELECT owner OR coach self
++--   no public INSERT/UPDATE/DELETE
++--   RESTRICTIVE anon deny-all
++--
++-- CoachWelcomeMessageJob (scheduler state; rendered_body carries the client's
++-- first name):
++--   p_coachwelcomemessagejob_service_role_all  service_role ALL
++--   p_coachwelcomemessagejob_select            SELECT owner only
++--   no public INSERT/UPDATE/DELETE (the scheduler runs as service_role)
++--   RESTRICTIVE anon deny-all
++--
++-- WorkoutReminderDelivery (one row per client per local day):
++--   p_workoutreminderdelivery_service_role_all  service_role ALL
++--   p_workoutreminderdelivery_select            SELECT owner OR client self
++--   no public INSERT/UPDATE/DELETE
++--   RESTRICTIVE anon deny-all
++--
++-- Rollback: down.sql drops the three tables and the two columns (scheduler
++-- state only; no user-authored content). Otherwise fix forward.
++
++-- AlterTable
++ALTER TABLE "NotificationPreferences" ADD COLUMN     "workout_reminder_inapp" BOOLEAN NOT NULL DEFAULT true,
++ADD COLUMN     "workout_reminder_push" BOOLEAN NOT NULL DEFAULT true;
++
++-- CreateTable
++CREATE TABLE "CoachWelcomeMessageSetting" (
++    "id" TEXT NOT NULL,
++    "coach_id" TEXT NOT NULL,
++    "enabled" BOOLEAN NOT NULL DEFAULT false,
++    "template" TEXT,
++    "enabled_at" TIMESTAMP(3),
++    "updated_by" TEXT,
++    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updated_at" TIMESTAMP(3) NOT NULL,
++
++    CONSTRAINT "CoachWelcomeMessageSetting_pkey" PRIMARY KEY ("id")
++);
++
++-- CreateTable
++CREATE TABLE "CoachWelcomeMessageJob" (
++    "id" TEXT NOT NULL,
++    "client_id" TEXT NOT NULL,
++    "coach_id" TEXT NOT NULL,
++    "completed_at" TIMESTAMP(3) NOT NULL,
++    "fire_at" TIMESTAMP(3) NOT NULL,
++    "status" TEXT NOT NULL DEFAULT 'pending',
++    "reason" TEXT,
++    "rendered_body" TEXT,
++    "message_id" TEXT,
++    "attempt_count" INTEGER NOT NULL DEFAULT 0,
++    "next_retry_at" TIMESTAMP(3),
++    "locked_at" TIMESTAMP(3),
++    "lease_token" TEXT,
++    "sent_at" TIMESTAMP(3),
++    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updated_at" TIMESTAMP(3) NOT NULL,
++
++    CONSTRAINT "CoachWelcomeMessageJob_pkey" PRIMARY KEY ("id")
++);
++
++-- CreateTable
++CREATE TABLE "WorkoutReminderDelivery" (
++    "id" TEXT NOT NULL,
++    "client_id" TEXT NOT NULL,
++    "local_date" DATE NOT NULL,
++    "timezone" TEXT NOT NULL,
++    "slot" TEXT NOT NULL,
++    "first_day" BOOLEAN NOT NULL DEFAULT false,
++    "status" TEXT NOT NULL DEFAULT 'sending',
++    "sent_at" TIMESTAMP(3),
++    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++
++    CONSTRAINT "WorkoutReminderDelivery_pkey" PRIMARY KEY ("id")
++);
++
++-- AlterTable (B-609-3): persistence-boundary idempotency key for the welcome
++-- message. Nullable, NULL for every existing and every non-welcome row; the
++-- unique index admits any number of NULLs.
++ALTER TABLE "CoachMessage" ADD COLUMN "welcome_job_id" TEXT;
++
++-- CreateIndex
++CREATE UNIQUE INDEX "CoachMessage_welcome_job_id_key" ON "CoachMessage"("welcome_job_id");
++
++-- CreateIndex
++CREATE UNIQUE INDEX "CoachWelcomeMessageSetting_coach_id_key" ON "CoachWelcomeMessageSetting"("coach_id");
++
++-- CreateIndex
++CREATE UNIQUE INDEX "CoachWelcomeMessageJob_client_id_key" ON "CoachWelcomeMessageJob"("client_id");
++
++-- CreateIndex
++CREATE UNIQUE INDEX "CoachWelcomeMessageJob_message_id_key" ON "CoachWelcomeMessageJob"("message_id");
++
++-- CreateIndex
++CREATE INDEX "CoachWelcomeMessageJob_status_fire_at_idx" ON "CoachWelcomeMessageJob"("status", "fire_at");
++
++-- CreateIndex
++CREATE INDEX "CoachWelcomeMessageJob_coach_id_idx" ON "CoachWelcomeMessageJob"("coach_id");
++
++-- CreateIndex
++CREATE UNIQUE INDEX "WorkoutReminderDelivery_client_id_local_date_key" ON "WorkoutReminderDelivery"("client_id", "local_date");
++
++-- AddForeignKey
++ALTER TABLE "CoachWelcomeMessageSetting" ADD CONSTRAINT "CoachWelcomeMessageSetting_coach_id_fkey" FOREIGN KEY ("coach_id") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
++
++-- AddForeignKey
++ALTER TABLE "CoachWelcomeMessageJob" ADD CONSTRAINT "CoachWelcomeMessageJob_client_id_fkey" FOREIGN KEY ("client_id") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
++
++-- AddForeignKey
++ALTER TABLE "CoachWelcomeMessageJob" ADD CONSTRAINT "CoachWelcomeMessageJob_coach_id_fkey" FOREIGN KEY ("coach_id") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
++
++-- AddForeignKey
++ALTER TABLE "WorkoutReminderDelivery" ADD CONSTRAINT "WorkoutReminderDelivery_client_id_fkey" FOREIGN KEY ("client_id") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
++
++
++-- ═════════════════════════════════════════════════════════════════════════
++-- ROW-LEVEL SECURITY
++-- ═════════════════════════════════════════════════════════════════════════
++
++-- ─── 1) CoachWelcomeMessageSetting ──────────────────────────────────────
++ALTER TABLE "CoachWelcomeMessageSetting" ENABLE ROW LEVEL SECURITY;
++ALTER TABLE "CoachWelcomeMessageSetting" FORCE ROW LEVEL SECURITY;
++
++DROP POLICY IF EXISTS "p_coachwelcomemessagesetting_service_role_all" ON "CoachWelcomeMessageSetting";
++CREATE POLICY "p_coachwelcomemessagesetting_service_role_all" ON "CoachWelcomeMessageSetting" AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
++COMMENT ON POLICY "p_coachwelcomemessagesetting_service_role_all" ON "CoachWelcomeMessageSetting" IS 'Primitive A: service_role bypass for the owner endpoint, operator script and scheduler.';
++
++DROP POLICY IF EXISTS "p_coachwelcomemessagesetting_select" ON "CoachWelcomeMessageSetting";
++CREATE POLICY "p_coachwelcomemessagesetting_select" ON "CoachWelcomeMessageSetting" AS PERMISSIVE FOR SELECT TO public USING ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND "coach_id" = app.current_user_id())));
++COMMENT ON POLICY "p_coachwelcomemessagesetting_select" ON "CoachWelcomeMessageSetting" IS 'Coach reads own welcome setting; platform owner reads all. No public writes.';
++
++DROP POLICY IF EXISTS "p_coachwelcomemessagesetting_anon_deny" ON "CoachWelcomeMessageSetting";
++CREATE POLICY "p_coachwelcomemessagesetting_anon_deny" ON "CoachWelcomeMessageSetting" AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false);
++
++-- ─── 2) CoachWelcomeMessageJob ──────────────────────────────────────────
++ALTER TABLE "CoachWelcomeMessageJob" ENABLE ROW LEVEL SECURITY;
++ALTER TABLE "CoachWelcomeMessageJob" FORCE ROW LEVEL SECURITY;
++
++DROP POLICY IF EXISTS "p_coachwelcomemessagejob_service_role_all" ON "CoachWelcomeMessageJob";
++CREATE POLICY "p_coachwelcomemessagejob_service_role_all" ON "CoachWelcomeMessageJob" AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
++COMMENT ON POLICY "p_coachwelcomemessagejob_service_role_all" ON "CoachWelcomeMessageJob" IS 'Primitive A: service_role bypass for the welcome scheduler.';
++
++DROP POLICY IF EXISTS "p_coachwelcomemessagejob_select" ON "CoachWelcomeMessageJob";
++CREATE POLICY "p_coachwelcomemessagejob_select" ON "CoachWelcomeMessageJob" AS PERMISSIVE FOR SELECT TO public USING (app.is_owner());
++COMMENT ON POLICY "p_coachwelcomemessagejob_select" ON "CoachWelcomeMessageJob" IS 'Scheduler state: platform owner only. The delivered message itself lives in CoachMessage under its own policies.';
++
++DROP POLICY IF EXISTS "p_coachwelcomemessagejob_anon_deny" ON "CoachWelcomeMessageJob";
++CREATE POLICY "p_coachwelcomemessagejob_anon_deny" ON "CoachWelcomeMessageJob" AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false);
++
++-- ─── 3) WorkoutReminderDelivery ─────────────────────────────────────────
++ALTER TABLE "WorkoutReminderDelivery" ENABLE ROW LEVEL SECURITY;
++ALTER TABLE "WorkoutReminderDelivery" FORCE ROW LEVEL SECURITY;
++
++DROP POLICY IF EXISTS "p_workoutreminderdelivery_service_role_all" ON "WorkoutReminderDelivery";
++CREATE POLICY "p_workoutreminderdelivery_service_role_all" ON "WorkoutReminderDelivery" AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
++COMMENT ON POLICY "p_workoutreminderdelivery_service_role_all" ON "WorkoutReminderDelivery" IS 'Primitive A: service_role bypass for the reminder scheduler.';
++
++DROP POLICY IF EXISTS "p_workoutreminderdelivery_select" ON "WorkoutReminderDelivery";
++CREATE POLICY "p_workoutreminderdelivery_select" ON "WorkoutReminderDelivery" AS PERMISSIVE FOR SELECT TO public USING ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND "client_id" = app.current_user_id())));
++COMMENT ON POLICY "p_workoutreminderdelivery_select" ON "WorkoutReminderDelivery" IS 'Client reads own reminder ledger; platform owner reads all. No public writes.';
++
++DROP POLICY IF EXISTS "p_workoutreminderdelivery_anon_deny" ON "WorkoutReminderDelivery";
++CREATE POLICY "p_workoutreminderdelivery_anon_deny" ON "WorkoutReminderDelivery" AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false);
+diff --git a/prisma/migrations/20270220000000_data_export_archive_cleanup/down.sql b/prisma/migrations/20270220000000_data_export_archive_cleanup/down.sql
+new file mode 100644
+index 00000000..c9b4964a
+--- /dev/null
++++ b/prisma/migrations/20270220000000_data_export_archive_cleanup/down.sql
+@@ -0,0 +1,9 @@
++-- Reverse of 20270220000000_data_export_archive_cleanup.
++--
++-- Drops the cleanup-record table (its policies and index go with it). This
++-- forgets every pending archive cleanup: run it only when the table is empty
++-- (SELECT count(*) FROM "data_export_archive_cleanup" = 0), or first remove
++-- each listed archive by hand on its machine (<DATA_EXPORT_FS_DIR>/<export_id>.json).
++-- The nightly orphan sweep still removes archives with no request row that
++-- are older than an hour, but it is not a substitute for a pending record.
++DROP TABLE IF EXISTS "data_export_archive_cleanup";
+diff --git a/prisma/migrations/20270220000000_data_export_archive_cleanup/migration.sql b/prisma/migrations/20270220000000_data_export_archive_cleanup/migration.sql
+new file mode 100644
+index 00000000..5773f5ac
+--- /dev/null
++++ b/prisma/migrations/20270220000000_data_export_archive_cleanup/migration.sql
+@@ -0,0 +1,68 @@
++-- B-608-11 — durable cleanup records for data-export archives.
++--
++-- Additive only: one new table, one index, RLS. No shipped migration is
++-- altered. Reverse: down.sql (drops only what this file creates).
++--
++-- A data-export archive lives on the local disk of the machine that built it
++-- (DATA_EXPORT_FS_DIR, default /tmp/exports). When the export worker must
++-- remove an archive that no request row owns any more (the account was erased
++-- while the archive was being built, or the export run failed) and the unlink
++-- fails with anything other than ENOENT (EACCES, EIO, ...), it writes one row
++-- here. The nightly data-export cleanup on that machine retries the unlink
++-- and deletes the row only once the archive is confirmed gone (unlink
++-- succeeded, or ENOENT on the machine that wrote it). Nothing is announced as
++-- deleted while a row exists.
++--
++-- Privacy: the table holds no user id, email or other personal data. The
++-- export id is a random UUID whose request row is already gone; the archive
++-- path is derived from it by the server (exportArchivePath), never stored, so
++-- a row cannot point the cleanup at a file outside the export directory.
++--
++-- RLS: service_role only (Primitive A). anon and authenticated get
++-- RESTRICTIVE deny-all policies plus REVOKE of table privileges.
++
++SET lock_timeout = '5s';
++
++CREATE TABLE "data_export_archive_cleanup" (
++    "export_id"       TEXT NOT NULL,
++    "machine"         TEXT NOT NULL,
++    "reason"          TEXT NOT NULL,
++    "attempts"        INTEGER NOT NULL DEFAULT 1,
++    "last_error_code" TEXT NOT NULL,
++    "created_at"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "last_attempt_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    CONSTRAINT "data_export_archive_cleanup_pkey" PRIMARY KEY ("export_id"),
++    CONSTRAINT "data_export_archive_cleanup_export_id_check" CHECK ("export_id" ~ '^[0-9A-Za-z_-]{1,64}$'),
++    CONSTRAINT "data_export_archive_cleanup_reason_check" CHECK ("reason" IN ('request_removed', 'failed_run')),
++    CONSTRAINT "data_export_archive_cleanup_attempts_check" CHECK ("attempts" >= 1),
++    CONSTRAINT "data_export_archive_cleanup_text_check" CHECK (
++        length("machine") BETWEEN 1 AND 255
++        AND length("last_error_code") BETWEEN 1 AND 64
++    )
++);
++
++CREATE INDEX "data_export_archive_cleanup_machine_created_at_idx"
++    ON "data_export_archive_cleanup"("machine", "created_at");
++
++ALTER TABLE "data_export_archive_cleanup" ENABLE ROW LEVEL SECURITY;
++ALTER TABLE "data_export_archive_cleanup" FORCE ROW LEVEL SECURITY;
++
++REVOKE ALL ON TABLE "data_export_archive_cleanup" FROM anon;
++REVOKE ALL ON TABLE "data_export_archive_cleanup" FROM authenticated;
++
++CREATE POLICY "p_data_export_archive_cleanup_service_role_all" ON "data_export_archive_cleanup"
++    AS PERMISSIVE FOR ALL TO service_role USING (true) WITH CHECK (true);
++COMMENT ON POLICY "p_data_export_archive_cleanup_service_role_all" ON "data_export_archive_cleanup" IS
++  'Primitive A: service_role access for the data-export worker and its nightly cleanup, the only readers and writers.';
++
++CREATE POLICY "deny_all_anon_data_export_archive_cleanup" ON "data_export_archive_cleanup"
++    AS RESTRICTIVE FOR ALL TO anon USING (false) WITH CHECK (false);
++COMMENT ON POLICY "deny_all_anon_data_export_archive_cleanup" ON "data_export_archive_cleanup" IS
++  'RESTRICTIVE deny-all: anon can never read or write archive cleanup records.';
++
++CREATE POLICY "deny_all_authenticated_data_export_archive_cleanup" ON "data_export_archive_cleanup"
++    AS RESTRICTIVE FOR ALL TO authenticated USING (false) WITH CHECK (false);
++COMMENT ON POLICY "deny_all_authenticated_data_export_archive_cleanup" ON "data_export_archive_cleanup" IS
++  'RESTRICTIVE deny-all: authenticated principals can never read or write archive cleanup records; only service_role (Primitive A) may.';
++
++RESET lock_timeout;
+diff --git a/prisma/migrations/20270221000000_data_export_storage_bucket/down.sql b/prisma/migrations/20270221000000_data_export_storage_bucket/down.sql
+new file mode 100644
+index 00000000..e0b16631
+--- /dev/null
++++ b/prisma/migrations/20270221000000_data_export_storage_bucket/down.sql
+@@ -0,0 +1,35 @@
++-- Reverse of 20270221000000_data_export_storage_bucket.
++--
++-- Removes the `data-exports` bucket and its restrictive fence policy only
++-- while the bucket holds no object. While any
++-- archive is stored the bucket is kept and this script fails loudly: deleting
++-- user archives is never a side effect of a rollback. To retire the bucket,
++-- first let the nightly data-export cleanup expire every archive (or remove
++-- them through the Storage API), then re-run this file.
++--
++-- Supabase projects that block direct deletes from storage tables answer
++-- with their own error here; then remove the empty bucket with the Storage
++-- API (deleteBucket('data-exports')) instead. Either way nothing is deleted
++-- silently.
++--
++-- Non-Supabase databases (no storage.buckets): no-op.
++
++SET lock_timeout = '5s';
++
++DO $data_export_bucket_down$
++BEGIN
++  IF to_regclass('storage.buckets') IS NULL THEN
++    RETURN;
++  END IF;
++  IF to_regclass('storage.objects') IS NOT NULL
++     AND EXISTS (SELECT 1 FROM storage.objects WHERE bucket_id = 'data-exports') THEN
++    RAISE EXCEPTION 'data-exports bucket still holds archives; refusing to drop it. Fix: let the nightly data-export cleanup expire them (or remove them through the Storage API), then re-run down.sql.';
++  END IF;
++  DELETE FROM storage.buckets WHERE id = 'data-exports';
++  IF to_regclass('storage.objects') IS NOT NULL THEN
++    DROP POLICY IF EXISTS data_exports_api_roles_fence ON storage.objects;
++  END IF;
++END
++$data_export_bucket_down$;
++
++RESET lock_timeout;
+diff --git a/prisma/migrations/20270221000000_data_export_storage_bucket/migration.sql b/prisma/migrations/20270221000000_data_export_storage_bucket/migration.sql
+new file mode 100644
+index 00000000..1a4da712
+--- /dev/null
++++ b/prisma/migrations/20270221000000_data_export_storage_bucket/migration.sql
+@@ -0,0 +1,75 @@
++-- B-608-12 / lane B-EXPORT — private Supabase Storage bucket for data exports.
++--
++-- Creates (or re-asserts) the PRIVATE bucket `data-exports` that holds every
++-- user's data-export archive (`<export id>.json`). This migration is the only
++-- way the bucket is created: no console step. It runs in the Fly
++-- release_command (scripts/release.sh, `prisma migrate deploy`) and its
++-- verify.sql runs right after, so a release cannot go green with the bucket
++-- missing or public.
++--
++-- Effect:
++--   * `public = false` always. If a bucket with this id already exists (for
++--     example created by hand), it is forced private, never left public.
++--   * `allowed_mime_types = {application/json}`: only JSON archives can land.
++--   * A RESTRICTIVE fence policy on storage.objects,
++--     `data_exports_api_roles_fence` (FOR ALL TO PUBLIC, USING and WITH CHECK
++--     `bucket_id IS DISTINCT FROM 'data-exports'`), A-636-1. Restrictive
++--     policies are ANDed with every permissive one, so no permissive policy,
++--     however broad (`... OR true`, unscoped, inherited through PUBLIC or a
++--     custom JWT role), can let a role that is subject to RLS (anon,
++--     authenticated, any custom role) list, read, insert, update or delete a
++--     data-exports object. Roles that bypass RLS by design (service_role,
++--     which the backend uses; superusers; the table owner) are unaffected, so
++--     the backend keeps working. Dropped and re-created on every run, so the
++--     fence always has exactly this shape. Supabase allows CREATE POLICY on
++--     storage.objects (only ALTER TABLE storage.objects is blocked); RLS on
++--     storage.objects is on by default and verify.sql fails the release if it
++--     is not.
++--   * The backend never hands out a Storage URL: downloads stream through
++--     GET /v1/me/data-export/download after a 5-minute user-bound token check.
++--
++-- Non-Supabase databases (CI's bare postgres:15, local dev without the
++-- storage schema) have no storage.buckets table; the block is then a no-op,
++-- and the schema (prisma parity, pg_dump) is unchanged everywhere.
++--
++-- Additive only. No public-schema object is created or altered. Reverse:
++-- down.sql (removes the fence and the bucket only while the bucket holds no
++-- object).
++
++SET lock_timeout = '5s';
++
++DO $data_export_bucket$
++BEGIN
++  IF to_regclass('storage.buckets') IS NULL THEN
++    RAISE NOTICE 'data-exports bucket: storage.buckets not present (not a Supabase database); nothing to do.';
++    RETURN;
++  END IF;
++
++  INSERT INTO storage.buckets (id, name, public)
++  VALUES ('data-exports', 'data-exports', false)
++  ON CONFLICT (id) DO UPDATE SET public = false;
++
++  IF EXISTS (
++    SELECT 1 FROM information_schema.columns
++     WHERE table_schema = 'storage' AND table_name = 'buckets' AND column_name = 'allowed_mime_types'
++  ) THEN
++    UPDATE storage.buckets
++       SET allowed_mime_types = ARRAY['application/json']::text[]
++     WHERE id = 'data-exports';
++  END IF;
++
++  IF to_regclass('storage.objects') IS NULL THEN
++    RAISE EXCEPTION 'data-exports bucket: storage.buckets exists but storage.objects does not; refusing to create an unfenced bucket.';
++  END IF;
++
++  DROP POLICY IF EXISTS data_exports_api_roles_fence ON storage.objects;
++  CREATE POLICY data_exports_api_roles_fence ON storage.objects
++    AS RESTRICTIVE
++    FOR ALL
++    TO PUBLIC
++    USING (bucket_id IS DISTINCT FROM 'data-exports')
++    WITH CHECK (bucket_id IS DISTINCT FROM 'data-exports');
++END
++$data_export_bucket$;
++
++RESET lock_timeout;
+diff --git a/prisma/migrations/20270221000000_data_export_storage_bucket/verify.sql b/prisma/migrations/20270221000000_data_export_storage_bucket/verify.sql
+new file mode 100644
+index 00000000..c056f894
+--- /dev/null
++++ b/prisma/migrations/20270221000000_data_export_storage_bucket/verify.sql
+@@ -0,0 +1,144 @@
++-- Catalog verifier for 20270221000000_data_export_storage_bucket (B-EXPORT).
++--
++-- Run by scripts/release.sh step 4 after `prisma migrate deploy` (and listed
++-- in scripts/release-required-verifiers.txt). Read-only. It proves, from the
++-- catalog state Postgres itself enforces (not from the text of other
++-- policies), that only roles which bypass RLS by design can reach the
++-- `data-exports` objects. Any check that fails RAISEs and fails the release:
++--
++--   MISSING   the `data-exports` bucket does not exist, or storage.objects is
++--             missing while storage.buckets exists.
++--   EXPOSURE  one of:
++--             1. the bucket is not explicitly private (public IS DISTINCT FROM false);
++--             2. row level security is OFF on storage.objects (then grants
++--                alone decide, and Supabase grants anon/authenticated on it);
++--             3. the fence `data_exports_api_roles_fence` is missing or not
++--                exactly: RESTRICTIVE, FOR ALL, TO PUBLIC, USING and WITH
++--                CHECK `bucket_id IS DISTINCT FROM 'data-exports'`. Restrictive
++--                policies are ANDed with all permissive ones, so with the fence
++--                in place no permissive policy (`... OR true`, unscoped,
++--                inherited through PUBLIC, custom roles) can expose the bucket
++--                to a role that is subject to RLS;
++--             4. anon or authenticated escapes RLS: superuser, BYPASSRLS, or a
++--                member of a role that is a superuser, has BYPASSRLS or owns
++--                storage.objects (owners skip RLS on their own tables);
++--             5. a view or materialized view over storage.objects that anon or
++--                authenticated may SELECT runs its reads as an owner that
++--                escapes RLS (a view without security_invoker reads as its
++--                owner, so the fence would not apply to the caller).
++--   SERVICE   service_role (the key the backend uses) does not bypass RLS, so
++--             the fence would block the backend itself.
++-- On a database without storage.buckets (CI, local dev) it reports a NOTICE
++-- and passes: there is no Storage there to expose.
++--
++-- Usage (read-only):
++--   npx prisma db execute --url "$DIRECT_URL" --file prisma/migrations/20270221000000_data_export_storage_bucket/verify.sql
++--   psql "$DIRECT_URL" -X -v ON_ERROR_STOP=1 -f prisma/migrations/20270221000000_data_export_storage_bucket/verify.sql
++
++DO $verify_data_export_bucket$
++DECLARE
++  v_public boolean;
++  v_objects regclass;
++  v_owner oid;
++  v_rls boolean;
++  v_fence record;
++  v_fence_count integer;
++  v_expected text := '(bucket_id IS DISTINCT FROM ''data-exports''::text)';
++  v_role text;
++  v_view text;
++BEGIN
++  IF to_regclass('storage.buckets') IS NULL THEN
++    RAISE NOTICE 'data-exports verifier: storage.buckets not present (not a Supabase database); skipped.';
++    RETURN;
++  END IF;
++
++  SELECT public INTO v_public FROM storage.buckets WHERE id = 'data-exports';
++  IF NOT FOUND THEN
++    RAISE EXCEPTION 'MISSING: storage bucket data-exports does not exist. Fix: re-apply the idempotent migration file with npx prisma db execute --url "$DIRECT_URL" --file prisma/migrations/20270221000000_data_export_storage_bucket/migration.sql, then re-run this verifier.';
++  END IF;
++  IF v_public IS DISTINCT FROM false THEN
++    RAISE EXCEPTION 'EXPOSURE: storage bucket data-exports is not private (public = %). Fix: re-apply the idempotent migration file with npx prisma db execute --url "$DIRECT_URL" --file prisma/migrations/20270221000000_data_export_storage_bucket/migration.sql, then re-run this verifier.', coalesce(v_public::text, 'null');
++  END IF;
++
++  v_objects := to_regclass('storage.objects');
++  IF v_objects IS NULL THEN
++    RAISE EXCEPTION 'MISSING: storage.objects does not exist although storage.buckets does; the data-exports fence cannot be proven.';
++  END IF;
++
++  SELECT c.relrowsecurity, c.relowner INTO v_rls, v_owner FROM pg_catalog.pg_class c WHERE c.oid = v_objects;
++  IF v_rls IS DISTINCT FROM true THEN
++    RAISE EXCEPTION 'EXPOSURE: row level security is disabled on storage.objects, so table grants alone decide who reads data-exports objects. Fix: ask Supabase support to re-enable RLS on storage.objects (it is on by default), then re-run this verifier.';
++  END IF;
++
++  SELECT count(*) INTO v_fence_count
++    FROM pg_catalog.pg_policy p
++   WHERE p.polrelid = v_objects AND p.polname = 'data_exports_api_roles_fence';
++  IF v_fence_count <> 1 THEN
++    RAISE EXCEPTION 'EXPOSURE: the restrictive fence data_exports_api_roles_fence on storage.objects is missing. Fix: re-apply the idempotent migration file with npx prisma db execute --url "$DIRECT_URL" --file prisma/migrations/20270221000000_data_export_storage_bucket/migration.sql, then re-run this verifier.';
++  END IF;
++  SELECT p.polpermissive AS permissive,
++         p.polcmd AS cmd,
++         p.polroles AS roles,
++         pg_catalog.pg_get_expr(p.polqual, p.polrelid) AS qual,
++         pg_catalog.pg_get_expr(p.polwithcheck, p.polrelid) AS with_check
++    INTO v_fence
++    FROM pg_catalog.pg_policy p
++   WHERE p.polrelid = v_objects AND p.polname = 'data_exports_api_roles_fence';
++  IF v_fence.permissive IS DISTINCT FROM false
++     OR v_fence.cmd IS DISTINCT FROM '*'
++     OR v_fence.roles IS DISTINCT FROM ARRAY[0::oid]
++     OR v_fence.qual IS DISTINCT FROM v_expected
++     OR v_fence.with_check IS DISTINCT FROM v_expected THEN
++    RAISE EXCEPTION 'EXPOSURE: the restrictive fence data_exports_api_roles_fence on storage.objects was altered (permissive %, cmd %, roles %, qual %, with_check %). Fix: re-apply the idempotent migration file with npx prisma db execute --url "$DIRECT_URL" --file prisma/migrations/20270221000000_data_export_storage_bucket/migration.sql, then re-run this verifier.',
++      v_fence.permissive, v_fence.cmd, v_fence.roles, v_fence.qual, v_fence.with_check;
++  END IF;
++
++  FOREACH v_role IN ARRAY ARRAY['anon', 'authenticated'] LOOP
++    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = v_role) THEN
++      RAISE EXCEPTION 'MISSING: API role % does not exist on this Supabase database; the data-exports fence cannot be proven for it.', v_role;
++    END IF;
++    IF EXISTS (
++      SELECT 1
++        FROM pg_catalog.pg_roles r
++       WHERE (r.rolsuper OR r.rolbypassrls OR r.oid = v_owner)
++         AND pg_catalog.pg_has_role(v_role, r.oid, 'MEMBER')
++    ) THEN
++      RAISE EXCEPTION 'EXPOSURE: API role % is, or is a member of, a role that bypasses row level security on storage.objects (superuser, BYPASSRLS or the table owner). Fix: revoke that membership or attribute, then re-run this verifier.', v_role;
++    END IF;
++  END LOOP;
++
++  SELECT format('%I.%I', n.nspname, v.relname) INTO v_view
++    FROM pg_catalog.pg_rewrite rw
++    JOIN pg_catalog.pg_depend d
++      ON d.classid = 'pg_catalog.pg_rewrite'::regclass AND d.objid = rw.oid
++    JOIN pg_catalog.pg_class v ON v.oid = rw.ev_class
++    JOIN pg_catalog.pg_namespace n ON n.oid = v.relnamespace
++    JOIN pg_catalog.pg_roles o ON o.oid = v.relowner
++   WHERE d.refclassid = 'pg_catalog.pg_class'::regclass
++     AND d.refobjid = v_objects
++     AND v.oid <> v_objects
++     AND v.relkind IN ('v', 'm')
++     AND (o.rolsuper OR o.rolbypassrls OR pg_catalog.pg_has_role(o.oid, v_owner, 'USAGE'))
++     AND NOT (
++       v.relkind = 'v'
++       AND coalesce(v.reloptions, ARRAY[]::text[]) && ARRAY['security_invoker=true', 'security_invoker=on', 'security_invoker=1', 'security_invoker=yes']
++     )
++     AND (
++       pg_catalog.has_table_privilege('anon', v.oid, 'SELECT')
++       OR pg_catalog.has_table_privilege('authenticated', v.oid, 'SELECT')
++     )
++   ORDER BY 1
++   LIMIT 1;
++  IF FOUND THEN
++    RAISE EXCEPTION 'EXPOSURE: view % reads storage.objects as an owner that bypasses row level security and anon/authenticated may select it, so the data-exports fence does not apply to them. Fix: drop it, set security_invoker = true, or revoke SELECT from anon and authenticated, then re-run this verifier.', v_view;
++  END IF;
++
++  IF NOT EXISTS (
++    SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'service_role' AND (rolbypassrls OR rolsuper)
++  ) THEN
++    RAISE EXCEPTION 'SERVICE: service_role is missing or does not bypass row level security, so the data-exports fence would block the backend. Fix: restore the Supabase default (service_role BYPASSRLS), then re-run this verifier.';
++  END IF;
++
++  RAISE NOTICE 'data-exports verifier: bucket private, RLS on, restrictive fence intact, API roles bound by RLS, no RLS-escaping view, service_role bypasses RLS.';
++END
++$verify_data_export_bucket$;
+diff --git a/prisma/migrations/20270223000000_mwb_program_delivery/down.sql b/prisma/migrations/20270223000000_mwb_program_delivery/down.sql
+new file mode 100644
+index 00000000..f173b203
+--- /dev/null
++++ b/prisma/migrations/20270223000000_mwb_program_delivery/down.sql
+@@ -0,0 +1,9 @@
++-- Reverse of 20270223000000_mwb_program_delivery. Drops only what the forward
++-- migration added. Client copies stay (they are ordinary is_template = false
++-- programs); they lose their client link and exactly-once key, so readers fall
++-- back to ClientWorkoutAssignment.client_id, as for pre-S-MWB clones.
++ALTER TABLE "WorkoutProgram" DROP CONSTRAINT IF EXISTS "WorkoutProgram_client_id_fkey";
++DROP INDEX IF EXISTS "WorkoutProgram_cloned_from_id_client_id_archived_at_idx";
++DROP INDEX IF EXISTS "WorkoutProgram_delivery_key_key";
++ALTER TABLE "WorkoutProgram" DROP COLUMN IF EXISTS "delivery_key";
++ALTER TABLE "WorkoutProgram" DROP COLUMN IF EXISTS "client_id";
+diff --git a/prisma/migrations/20270223000000_mwb_program_delivery/migration.sql b/prisma/migrations/20270223000000_mwb_program_delivery/migration.sql
+new file mode 100644
+index 00000000..c922b8b4
+--- /dev/null
++++ b/prisma/migrations/20270223000000_mwb_program_delivery/migration.sql
+@@ -0,0 +1,39 @@
++-- S-MWB Programs (backend, lane S-MWB-111) — client copies of a master program.
++--
++-- Bulk assign and package delivery copy a master WorkoutProgram (is_template =
++-- true) onto each client as an is_template = false program. Two additive,
++-- nullable columns make that copy addressable and exactly-once:
++--   client_id    — the client the copy was made for (FK User, ON DELETE CASCADE,
++--                  so deleting the client account deletes their copies; the
++--                  copies' plans and assignments already cascade the same way).
++--   delivery_key — UNIQUE exactly-once key. A retried bulk assign
++--                  (`bulk:<coach>:<Idempotency-Key>:<client>`) or a retried
++--                  package delivery (`pkg:p=<purchase>:c=<content>`) converges
++--                  on one copy, including across a rolled-back transaction and
++--                  two racing workers (the loser hits the unique index).
++-- Existing rows keep NULL in both (masters, MWB-2 clones, #607 onboarding
++-- copies); readers fall back to ClientWorkoutAssignment.client_id for those.
++--
++-- No backfill. No RLS change: WorkoutProgram policies are row-level
++-- (owner_user_id / tenant) and cover every column; clients never read
++-- WorkoutProgram directly (they read their ClientWorkoutAssignment rows).
++ALTER TABLE "WorkoutProgram" ADD COLUMN IF NOT EXISTS "client_id" TEXT;
++ALTER TABLE "WorkoutProgram" ADD COLUMN IF NOT EXISTS "delivery_key" TEXT;
++
++CREATE UNIQUE INDEX IF NOT EXISTS "WorkoutProgram_delivery_key_key"
++  ON "WorkoutProgram"("delivery_key");
++
++CREATE INDEX IF NOT EXISTS "WorkoutProgram_cloned_from_id_client_id_archived_at_idx"
++  ON "WorkoutProgram"("cloned_from_id", "client_id", "archived_at");
++
++DO $$
++BEGIN
++  IF NOT EXISTS (
++    SELECT 1 FROM pg_constraint WHERE conname = 'WorkoutProgram_client_id_fkey'
++  ) THEN
++    ALTER TABLE "WorkoutProgram"
++      ADD CONSTRAINT "WorkoutProgram_client_id_fkey"
++      FOREIGN KEY ("client_id") REFERENCES "User"("id")
++      ON DELETE CASCADE ON UPDATE CASCADE;
++  END IF;
++END $$;
+diff --git a/prisma/migrations/20270225000000_native_subscription_trials/down.sql b/prisma/migrations/20270225000000_native_subscription_trials/down.sql
+new file mode 100644
+index 00000000..ef67d1a8
+--- /dev/null
++++ b/prisma/migrations/20270225000000_native_subscription_trials/down.sql
+@@ -0,0 +1,20 @@
++-- Reverse of 20270225000000_native_subscription_trials.
++-- Drops trial bookkeeping only; purchases, subscriptions and entitlement are
++-- untouched. After a rollback the one-trial-per-coach rule cannot see past
++-- trials, so roll back only before trials are switched on for packages.
++-- ClientPurchase.trial_days is shared with B-TRIALS (#656): it is dropped only
++-- when #656's migration has not been applied (no "PackageTrialUsage" table),
++-- so rolling this back never removes a column #656 still reads.
++BEGIN;
++
++ALTER TABLE "ClientPurchase" DROP CONSTRAINT IF EXISTS "ClientPurchase_trial_days_range";
++ALTER TABLE "ClientPurchase" DROP COLUMN IF EXISTS "trial_started_at";
++DO $$
++BEGIN
++  IF to_regclass('public."PackageTrialUsage"') IS NULL THEN
++    ALTER TABLE "ClientPurchase" DROP COLUMN IF EXISTS "trial_days";
++  END IF;
++END
++$$;
++
++COMMIT;
+diff --git a/prisma/migrations/20270225000000_native_subscription_trials/migration.sql b/prisma/migrations/20270225000000_native_subscription_trials/migration.sql
+new file mode 100644
+index 00000000..69bd408d
+--- /dev/null
++++ b/prisma/migrations/20270225000000_native_subscription_trials/migration.sql
+@@ -0,0 +1,27 @@
++-- B-RECUR (agent 113, OR-113-1 / OR-113-2) — native subscription checkout.
++--
++-- Additive only: two nullable columns on ClientPurchase, no backfill, no
++-- index or RLS change (ClientPurchase policies are row-scoped and cover every
++-- column). Existing rows keep NULL = "no trial was granted on this purchase".
++--   trial_days       trial length the checkout offered (NULL = no trial)
++--   trial_started_at when the webhook granted the trial's entitlement
++--
++-- trial_days is SHARED with lane B-TRIALS (#656, 20270228000000), which adds
++-- the same nullable INTEGER column with ADD COLUMN IF NOT EXISTS and no CHECK.
++-- IF NOT EXISTS here too, so the two migrations apply in either order
++-- (fresh database: this file sorts first; production: whichever deploys
++-- first creates it). #656 only ever writes 1..30 into it, inside this CHECK.
++--
++-- Rollback: down.sql (drops the trial_started_at column and the CHECK; drops
++-- trial_days only while #656's PackageTrialUsage table does not exist).
++
++BEGIN;
++
++ALTER TABLE "ClientPurchase" ADD COLUMN IF NOT EXISTS "trial_days" INTEGER;
++ALTER TABLE "ClientPurchase" ADD COLUMN "trial_started_at" TIMESTAMP(3);
++
++ALTER TABLE "ClientPurchase"
++  ADD CONSTRAINT "ClientPurchase_trial_days_range"
++  CHECK ("trial_days" IS NULL OR ("trial_days" >= 1 AND "trial_days" <= 730));
++
++COMMIT;
+diff --git a/prisma/migrations/20270301000000_community_win_coach_matcher/down.sql b/prisma/migrations/20270301000000_community_win_coach_matcher/down.sql
+new file mode 100644
+index 00000000..638ee9ad
+--- /dev/null
++++ b/prisma/migrations/20270301000000_community_win_coach_matcher/down.sql
+@@ -0,0 +1,63 @@
++-- Reverse of 20270301000000_community_win_coach_matcher.
++--
++-- Restores the 20270211000000 state exactly: authenticated may EXECUTE the
++-- coach lookup again (re-opening C-610-11), the INSERT policy and the
++-- moderation trigger call the lookup directly, and the matcher is dropped.
++-- No data is touched.
++GRANT EXECUTE ON FUNCTION app.community_win_author_coach(text) TO authenticated;
++COMMENT ON FUNCTION app.community_win_author_coach(text) IS
++  'A-610-2 round 5: the authoritative coach of a win author (the author for a coach, else User.coach_id; NULL for a deleted or unknown user). The only source of a win''s coach_id for a non-privileged writer.';
++
++DROP POLICY IF EXISTS "p_communitywin_insert" ON "CommunityWin";
++CREATE POLICY "p_communitywin_insert" ON "CommunityWin" AS PERMISSIVE FOR INSERT TO public WITH CHECK ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND "visibility" = 'circle' AND ("user_id" = app.current_user_id() OR app.is_current_coach_of("user_id")) AND "coach_id" IS NOT DISTINCT FROM app.community_win_author_coach("user_id"))));
++COMMENT ON POLICY "p_communitywin_insert" ON "CommunityWin" IS
++  'A-610-2: the author (own path) or the author''s current coach (coach path) may insert a circle win whose coach_id is the author''s authoritative coach (app.community_win_author_coach); owner bypass. hidden_at is guarded by trg_community_win_guard_moderation.';
++
++CREATE OR REPLACE FUNCTION public.community_win_guard_moderation()
++RETURNS trigger
++LANGUAGE plpgsql
++SECURITY INVOKER
++SET search_path = pg_catalog, public, app, pg_temp
++AS $function$
++DECLARE
++  privileged boolean;
++BEGIN
++  SELECT COALESCE(r.rolbypassrls, false) OR r.rolsuper
++    INTO privileged
++    FROM pg_catalog.pg_roles r
++   WHERE r.rolname = current_user;
++  IF COALESCE(privileged, false) OR app.is_owner() THEN
++    RETURN NEW;
++  END IF;
++  IF TG_OP = 'INSERT' THEN
++    IF NEW."coach_id" IS DISTINCT FROM app.community_win_author_coach(NEW."user_id") THEN
++      RAISE EXCEPTION 'community.win.moderation_column: coach_id must be the author''s coach'
++        USING ERRCODE = '42501';
++    END IF;
++    IF NEW."hidden_at" IS NOT NULL THEN
++      RAISE EXCEPTION 'community.win.moderation_column: only a moderator can hide a win'
++        USING ERRCODE = '42501';
++    END IF;
++    RETURN NEW;
++  END IF;
++  IF NEW."user_id" IS DISTINCT FROM OLD."user_id"
++     OR NEW."coach_id" IS DISTINCT FROM OLD."coach_id"
++     OR NEW."visibility" IS DISTINCT FROM OLD."visibility" THEN
++    RAISE EXCEPTION 'community.win.moderation_column: author, coach and visibility cannot be changed'
++      USING ERRCODE = '42501';
++  END IF;
++  IF NEW."hidden_at" IS DISTINCT FROM OLD."hidden_at"
++     AND NOT (
++       app.current_user_id() IS NOT NULL
++       AND app.is_current_coach_of(OLD."user_id")
++     ) THEN
++    RAISE EXCEPTION 'community.win.moderation_column: only a moderator can hide or unhide a win'
++      USING ERRCODE = '42501';
++  END IF;
++  RETURN NEW;
++END
++$function$;
++
++REVOKE ALL ON FUNCTION public.community_win_guard_moderation() FROM PUBLIC, anon, authenticated;
++
++DROP FUNCTION IF EXISTS app.community_win_coach_matches(text, text);
+diff --git a/prisma/migrations/20270301000000_community_win_coach_matcher/migration.sql b/prisma/migrations/20270301000000_community_win_coach_matcher/migration.sql
+new file mode 100644
+index 00000000..9e7c5033
+--- /dev/null
++++ b/prisma/migrations/20270301000000_community_win_coach_matcher/migration.sql
+@@ -0,0 +1,105 @@
++-- C-610-11 (Opus + Sol, #610 audit carry; B-UGC-5, ruling OR-112-6):
++-- the coach lookup app.community_win_author_coach(text) is SECURITY DEFINER
++-- and was EXECUTE-granted to "authenticated", so any signed-in database role
++-- could resolve ANY user id to that user's coach (a cross-tenant lookup) if
++-- the "app" schema were ever exposed over the Data API. The backend connects
++-- as service_role (BYPASSRLS) and is unaffected.
++--
++-- Fix, same behaviour for every legitimate writer:
++--   1. A boolean matcher app.community_win_coach_matches(author, coach)
++--      answers only "is this the author's authoritative coach?" and only for
++--      a caller who is the author or the author's current coach (the same two
++--      principals the INSERT policy admits). For anyone else it is FALSE, so
++--      it can never be used to look up, or confirm, a stranger's coach.
++--   2. The INSERT policy on "CommunityWin" and the moderation trigger use the
++--      matcher instead of the lookup. Policy text is otherwise unchanged.
++--   3. EXECUTE on the lookup is revoked from "authenticated"; it stays for
++--      service_role and for the SECURITY DEFINER helpers that call it
++--      (app.community_win_teammate_visible, the matcher), which run as the
++--      function owner.
++-- No table, column or data change. Additive and safe for the running code.
++
++CREATE OR REPLACE FUNCTION app.community_win_coach_matches(p_author_id text, p_coach_id text)
++RETURNS boolean
++LANGUAGE sql
++STABLE
++SECURITY DEFINER
++SET search_path = pg_catalog, public, app, pg_temp
++AS $function$
++  SELECT COALESCE(
++    app.current_user_id() IS NOT NULL
++    AND p_author_id IS NOT NULL
++    AND (p_author_id = app.current_user_id() OR app.is_current_coach_of(p_author_id))
++    AND p_coach_id IS NOT DISTINCT FROM app.community_win_author_coach(p_author_id),
++    false
++  )
++$function$;
++
++COMMENT ON FUNCTION app.community_win_coach_matches(text, text) IS
++  'C-610-11: TRUE when p_coach_id is the authoritative coach of p_author_id (app.community_win_author_coach) AND the caller is that author or the author''s current coach; FALSE otherwise. Never returns the coach id, so it cannot be used to look up a stranger''s coach.';
++
++REVOKE ALL ON FUNCTION app.community_win_coach_matches(text, text) FROM PUBLIC;
++REVOKE EXECUTE ON FUNCTION app.community_win_coach_matches(text, text) FROM anon;
++GRANT EXECUTE ON FUNCTION app.community_win_coach_matches(text, text) TO authenticated, service_role;
++
++DROP POLICY IF EXISTS "p_communitywin_insert" ON "CommunityWin";
++CREATE POLICY "p_communitywin_insert" ON "CommunityWin" AS PERMISSIVE FOR INSERT TO public WITH CHECK ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND "visibility" = 'circle' AND ("user_id" = app.current_user_id() OR app.is_current_coach_of("user_id")) AND app.community_win_coach_matches("user_id", "coach_id"))));
++COMMENT ON POLICY "p_communitywin_insert" ON "CommunityWin" IS
++  'A-610-2 / C-610-11: the author (own path) or the author''s current coach (coach path) may insert a circle win whose coach_id is the author''s authoritative coach (app.community_win_coach_matches); owner bypass. hidden_at is guarded by trg_community_win_guard_moderation.';
++
++CREATE OR REPLACE FUNCTION public.community_win_guard_moderation()
++RETURNS trigger
++LANGUAGE plpgsql
++SECURITY INVOKER
++SET search_path = pg_catalog, public, app, pg_temp
++AS $function$
++DECLARE
++  privileged boolean;
++BEGIN
++  SELECT COALESCE(r.rolbypassrls, false) OR r.rolsuper
++    INTO privileged
++    FROM pg_catalog.pg_roles r
++   WHERE r.rolname = current_user;
++  IF COALESCE(privileged, false) OR app.is_owner() THEN
++    RETURN NEW;
++  END IF;
++  IF TG_OP = 'INSERT' THEN
++    -- C-610-11: the boolean matcher, not the coach lookup (which the
++    -- authenticated role can no longer execute).
++    IF NOT app.community_win_coach_matches(NEW."user_id", NEW."coach_id") THEN
++      RAISE EXCEPTION 'community.win.moderation_column: coach_id must be the author''s coach'
++        USING ERRCODE = '42501';
++    END IF;
++    IF NEW."hidden_at" IS NOT NULL THEN
++      RAISE EXCEPTION 'community.win.moderation_column: only a moderator can hide a win'
++        USING ERRCODE = '42501';
++    END IF;
++    RETURN NEW;
++  END IF;
++  -- UPDATE: the moderator (the author's current coach, from the live
++  -- relationship, never from the writable coach_id) may hide and unhide;
++  -- nobody but a privileged role may move a win between authors or coaches,
++  -- or change its visibility.
++  IF NEW."user_id" IS DISTINCT FROM OLD."user_id"
++     OR NEW."coach_id" IS DISTINCT FROM OLD."coach_id"
++     OR NEW."visibility" IS DISTINCT FROM OLD."visibility" THEN
++    RAISE EXCEPTION 'community.win.moderation_column: author, coach and visibility cannot be changed'
++      USING ERRCODE = '42501';
++  END IF;
++  IF NEW."hidden_at" IS DISTINCT FROM OLD."hidden_at"
++     AND NOT (
++       app.current_user_id() IS NOT NULL
++       AND app.is_current_coach_of(OLD."user_id")
++     ) THEN
++    RAISE EXCEPTION 'community.win.moderation_column: only a moderator can hide or unhide a win'
++      USING ERRCODE = '42501';
++  END IF;
++  RETURN NEW;
++END
++$function$;
++
++REVOKE ALL ON FUNCTION public.community_win_guard_moderation() FROM PUBLIC, anon, authenticated;
++
++REVOKE EXECUTE ON FUNCTION app.community_win_author_coach(text) FROM authenticated;
++COMMENT ON FUNCTION app.community_win_author_coach(text) IS
++  'A-610-2 round 5: the authoritative coach of a win author (the author for a coach, else User.coach_id; NULL for a deleted or unknown user). C-610-11: not executable by anon or authenticated; API-role SQL uses app.community_win_coach_matches.';
+diff --git a/prisma/migrations/20270301000000_notification_zone_provenance_reminder_generation/down.sql b/prisma/migrations/20270301000000_notification_zone_provenance_reminder_generation/down.sql
+new file mode 100644
+index 00000000..b593b63b
+--- /dev/null
++++ b/prisma/migrations/20270301000000_notification_zone_provenance_reminder_generation/down.sql
+@@ -0,0 +1,19 @@
++-- Reverse of 20270301000000_notification_zone_provenance_reminder_generation.
++-- Restores the (session, user, kind) claim key. If a session already has
++-- claims for two start times, keep the newest claim per key first, or the
++-- unique index cannot be rebuilt.
++SET lock_timeout = '5s';
++
++DELETE FROM "NotificationDeliveryLog" AS a
++USING "NotificationDeliveryLog" AS b
++WHERE a."session_id" = b."session_id" AND a."user_id" = b."user_id" AND a."kind" = b."kind"
++  AND (a."created_at", a."id") < (b."created_at", b."id");
++
++DROP INDEX IF EXISTS "NotificationDeliveryLog_session_id_user_id_kind_start_at_key";
++CREATE UNIQUE INDEX IF NOT EXISTS "NotificationDeliveryLog_session_user_kind_key"
++    ON "NotificationDeliveryLog"("session_id", "user_id", "kind");
++ALTER TABLE "NotificationDeliveryLog" DROP COLUMN IF EXISTS "start_at";
++
++ALTER TABLE "NotificationPreferences" DROP CONSTRAINT IF EXISTS "NotificationPreferences_timezone_source_check";
++ALTER TABLE "NotificationPreferences" DROP COLUMN IF EXISTS "timezone_updated_at";
++ALTER TABLE "NotificationPreferences" DROP COLUMN IF EXISTS "timezone_source";
+diff --git a/prisma/migrations/20270301000000_notification_zone_provenance_reminder_generation/migration.sql b/prisma/migrations/20270301000000_notification_zone_provenance_reminder_generation/migration.sql
+new file mode 100644
+index 00000000..847442e5
+--- /dev/null
++++ b/prisma/migrations/20270301000000_notification_zone_provenance_reminder_generation/migration.sql
+@@ -0,0 +1,44 @@
++-- B-NOTIF-4 (backend #647): recipient time-zone provenance and reminder-claim
++-- generations. Additive except the reminder-claim unique key, which widens.
++-- No RLS change: both tables keep their existing row-level policies, which
++-- cover every column. Reverse: down.sql.
++--
++-- 1) NotificationPreferences.timezone has a schema default
++--    ('America/Los_Angeles'), and a row is created by any preference toggle,
++--    so a stored row is not proof of the person's zone (Opus B-647-1, Sol
++--    B-647-2). Two nullable columns record provenance: they are set only when
++--    a zone is actually supplied (the mobile app's device zone, or an explicit
++--    settings write). No backfill: no client has ever written the zone, so
++--    every existing row is correctly "never supplied" and notification copy
++--    falls back to the coach's zone instead of a synthetic Pacific default.
++SET lock_timeout = '5s';
++
++ALTER TABLE "NotificationPreferences" ADD COLUMN IF NOT EXISTS "timezone_source" TEXT;
++ALTER TABLE "NotificationPreferences" ADD COLUMN IF NOT EXISTS "timezone_updated_at" TIMESTAMP(3);
++
++ALTER TABLE "NotificationPreferences" DROP CONSTRAINT IF EXISTS "NotificationPreferences_timezone_source_check";
++ALTER TABLE "NotificationPreferences"
++    ADD CONSTRAINT "NotificationPreferences_timezone_source_check"
++    CHECK ("timezone_source" IS NULL OR "timezone_source" IN ('device', 'settings'));
++
++-- 2) Reminder claims carry the session start time they were made for (Sol
++--    B-647-1). The claim key becomes (session, user, kind, start_at): a
++--    reschedule gets fresh claims for the new time without deleting anything,
++--    an old-time claim written by a stale sweep can no longer suppress the
++--    new-time reminder, and a no-op reschedule leaves the claim in place.
++--    Backfill: existing claims were made for the session's current time
++--    (reminders have never been enabled in production, so this is normally
++--    empty).
++ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "start_at" TIMESTAMP(3);
++
++UPDATE "NotificationDeliveryLog" AS l
++SET "start_at" = s."start_at"
++FROM "CoachingSession" AS s
++WHERE s."id" = l."session_id" AND l."start_at" IS NULL;
++
++ALTER TABLE "NotificationDeliveryLog" ALTER COLUMN "start_at" SET NOT NULL;
++
++DROP INDEX IF EXISTS "NotificationDeliveryLog_session_user_kind_key";
++DROP INDEX IF EXISTS "NotificationDeliveryLog_session_id_user_id_kind_key";
++CREATE UNIQUE INDEX IF NOT EXISTS "NotificationDeliveryLog_session_id_user_id_kind_start_at_key"
++    ON "NotificationDeliveryLog"("session_id", "user_id", "kind", "start_at");
+diff --git a/prisma/migrations/20270302000000_coach_code_tools/down.sql b/prisma/migrations/20270302000000_coach_code_tools/down.sql
+index 9e5710be..71cbb5ab 100644
+--- a/prisma/migrations/20270302000000_coach_code_tools/down.sql
++++ b/prisma/migrations/20270302000000_coach_code_tools/down.sql
+@@ -1,5 +1,5 @@
+ -- Rollback for 20270302000000_coach_code_tools. Drops the signup ledger and
+--- the four InviteCode columns. Codes keep working; signup history recorded
++-- the five InviteCode columns. Codes keep working; signup history recorded
+ -- since deploy is lost.
+ DROP TABLE IF EXISTS "InviteRedemption";
+ DROP INDEX IF EXISTS "InviteCode_coach_id_idempotency_key_key";
+@@ -8,4 +8,5 @@ ALTER TABLE "InviteCode" DROP CONSTRAINT IF EXISTS "InviteCode_rotated_from_id_f
+ ALTER TABLE "InviteCode" DROP COLUMN IF EXISTS "rotated_from_id",
+   DROP COLUMN IF EXISTS "idempotency_key",
+   DROP COLUMN IF EXISTS "revoked_at",
+-  DROP COLUMN IF EXISTS "label";
++  DROP COLUMN IF EXISTS "label",
++  DROP COLUMN IF EXISTS "successor_code";
+diff --git a/prisma/migrations/20270302000000_coach_code_tools/migration.sql b/prisma/migrations/20270302000000_coach_code_tools/migration.sql
+index aab8a035..f08c647e 100644
+--- a/prisma/migrations/20270302000000_coach_code_tools/migration.sql
++++ b/prisma/migrations/20270302000000_coach_code_tools/migration.sql
+@@ -1,7 +1,7 @@
+ -- A2 coach code tools (annex lane A2-COACH-TOOLS, T4).
+ --
+--- Additive only. Adds four nullable columns to "InviteCode" (label,
+--- revoked_at, idempotency_key, rotated_from_id) with two unique indexes, and
++-- Additive only. Adds five nullable columns to "InviteCode" (label,
++-- revoked_at, idempotency_key, rotated_from_id, successor_code) with two unique indexes, and
+ -- creates the append-only signup ledger "InviteRedemption". No existing
+ -- column, index, policy or constraint is altered or dropped; existing rows
+ -- keep NULL in every new column. The User / CoachPackage back-relations in
+@@ -29,14 +29,15 @@
+ --   not client data the client needs), and a different coach never sees
+ --   another tenant's rows.
+ --
+--- Rollback: down.sql drops the ledger and the four columns (loses signup
++-- Rollback: down.sql drops the ledger and the five columns (loses signup
+ -- history recorded since deploy; codes keep working). Otherwise fix forward.
+ 
+ -- AlterTable
+ ALTER TABLE "InviteCode" ADD COLUMN     "idempotency_key" TEXT,
+ ADD COLUMN     "label" TEXT,
+ ADD COLUMN     "revoked_at" TIMESTAMP(3),
+-ADD COLUMN     "rotated_from_id" TEXT;
++ADD COLUMN     "rotated_from_id" TEXT,
++ADD COLUMN     "successor_code" TEXT;
+ 
+ -- CreateTable
+ CREATE TABLE "InviteRedemption" (
+diff --git a/prisma/migrations/20270311000000_subscription_checkout_terms/down.sql b/prisma/migrations/20270311000000_subscription_checkout_terms/down.sql
+new file mode 100644
+index 00000000..45e9602a
+--- /dev/null
++++ b/prisma/migrations/20270311000000_subscription_checkout_terms/down.sql
+@@ -0,0 +1,8 @@
++-- Rollback of 20270311000000_subscription_checkout_terms (B-RECUR-3).
++-- Drops the attempt-terms snapshot. Safe: the checkout treats a missing
++-- snapshot as "not pinned" and reads today's package terms.
++BEGIN;
++
++ALTER TABLE "ClientPurchase" DROP COLUMN IF EXISTS "checkout_terms";
++
++COMMIT;
+diff --git a/prisma/migrations/20270311000000_subscription_checkout_terms/migration.sql b/prisma/migrations/20270311000000_subscription_checkout_terms/migration.sql
+new file mode 100644
+index 00000000..389d4c87
+--- /dev/null
++++ b/prisma/migrations/20270311000000_subscription_checkout_terms/migration.sql
+@@ -0,0 +1,20 @@
++-- B-RECUR-3 (agent 115, B-654-5 / B-654-7) — native subscription checkout:
++-- the terms one attempt is bound to.
++--
++-- Additive only: one nullable JSONB column on ClientPurchase, no backfill, no
++-- index, no RLS change (ClientPurchase policies are row-scoped and cover every
++-- column). Written by POST /v1/checkout/subscription-intent on its own
++-- reservation before the first Stripe Subscription create:
++--   { v, recurring_price_id, one_time_price_id, amount_cents, one_time_cents,
++--     currency, interval, interval_count, trial_days }
++-- Stripe price ids, amounts and cadence only: no user id, email, token or
++-- secret, so nothing is owed to the account-deletion manifest. Existing rows
++-- keep NULL (every reader treats NULL as "not pinned").
++--
++-- Rollback: down.sql drops the column.
++
++BEGIN;
++
++ALTER TABLE "ClientPurchase" ADD COLUMN "checkout_terms" JSONB;
++
++COMMIT;
+diff --git a/prisma/schema-parity-baseline.sql b/prisma/schema-parity-baseline.sql
+index f0ced140..63698139 100644
+--- a/prisma/schema-parity-baseline.sql
++++ b/prisma/schema-parity-baseline.sql
+@@ -12,12 +12,10 @@ ALTER INDEX "CoachAvailabilityOverride_coach_date_start_kind_key" RENAME TO "Coa
+ ALTER INDEX "CoachBrief_coach_date_key" RENAME TO "CoachBrief_coach_id_brief_date_key";
+ ALTER INDEX "CoachDailyLog_coach_log_date_key" RENAME TO "CoachDailyLog_coach_id_log_date_key";
+ ALTER INDEX "MessageReport_reporter_message_key" RENAME TO "MessageReport_reporter_id_message_id_key";
+-ALTER INDEX "NotificationDeliveryLog_session_user_kind_key" RENAME TO "NotificationDeliveryLog_session_id_user_id_kind_key";
+ ALTER INDEX "NotificationDigestLog_user_digest_window_key" RENAME TO "NotificationDigestLog_user_id_digest_kind_window_date_key";
+ ALTER INDEX "NotificationDigestLog_user_id_digest_kind_idx" RENAME TO "NotificationDigestLog_user_id_digest_kind_window_date_idx";
+ ALTER INDEX "PaymentReminder_purchase_kind_channel_window_idx" RENAME TO "PaymentReminder_purchase_id_kind_channel_window_key_key";
+ ALTER INDEX "ScoutReconstructedEntity_coach_id_source_platform_entity_type_s" RENAME TO "ScoutReconstructedEntity_coach_id_source_platform_entity_ty_key";
+-ALTER INDEX "SplitLedgerEntry_purchase_kind_payee_idx" RENAME TO "SplitLedgerEntry_purchase_id_kind_payee_user_id_key";
+ ALTER INDEX "SubCoachMutationIdempotency_actor_key" RENAME TO "SubCoachMutationIdempotency_actor_id_idempotency_key_key";
+ ALTER INDEX "UserBlock_pair_key" RENAME TO "UserBlock_blocker_id_blocked_id_key";
+ ALTER INDEX "WorkoutBuilderIdempotencyKey_user_route_key_key" RENAME TO "WorkoutBuilderIdempotencyKey_user_id_route_key_idempotency__key";
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+index 40ffa5d1..9b73f484 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -362,6 +362,7 @@ model User {
+   // Sprint B — Workout Builder relations.
+   workout_plans_as_coach           WorkoutPlan[]                  @relation("CoachWorkoutPlans")
+   workout_assignments_as_client    ClientWorkoutAssignment[]      @relation("ClientWorkoutAssignments")
++  workout_program_runs             WorkoutProgram[]               @relation("WorkoutProgramClientRuns")
+   workout_assignments_as_coach     ClientWorkoutAssignment[]      @relation("CoachWorkoutAssignments")
+   workout_builder_idempotency_keys WorkoutBuilderIdempotencyKey[] @relation("WorkoutBuilderIdempotencyUser")
+ 
+@@ -524,6 +525,11 @@ model User {
+   onboarding_intake           ClientOnboardingIntake?          @relation("OnboardingIntakeClient")
+   onboarding_intake_revisions ClientOnboardingIntakeRevision[] @relation("OnboardingIntakeRevisionClient")
+   clinic_program_sets         ClinicProgramSet[]               @relation("ClinicProgramSetCoach")
++  // C05 items 6-7 (engagement): coach welcome message + workout reminders.
++  coach_welcome_setting       CoachWelcomeMessageSetting?      @relation("CoachWelcomeSettingCoach")
++  coach_welcome_jobs_as_coach CoachWelcomeMessageJob[]         @relation("CoachWelcomeJobCoach")
++  coach_welcome_job           CoachWelcomeMessageJob?          @relation("CoachWelcomeJobClient")
++  workout_reminder_deliveries WorkoutReminderDelivery[]        @relation("WorkoutReminderClient")
+   roman_messages RomanMessage[] @relation("RomanMessageUser")
+ 
+   // R2a — AI processing consent ledger (box 2 of the onboarding consent
+@@ -789,6 +795,8 @@ model InviteCode {
+   idempotency_key     String?            @db.Text
+   rotated_from_id     String?            @unique
+   rotated_from        InviteCode?        @relation("InviteCodeRotation", fields: [rotated_from_id], references: [id], onDelete: SetNull)
++  // Archived coach link rows only: the coach link code that replaced this one (B-658-7 retry replay).
++  successor_code      String?            @db.Text
+   rotated_to          InviteCode?        @relation("InviteCodeRotation")
+   redemptions         InviteRedemption[]
+ 
+@@ -1031,6 +1039,15 @@ model NotificationPreferences {
+   quiet_hours_start      String  @default("22:00")
+   quiet_hours_end        String  @default("06:00")
+   timezone               String  @default("America/Los_Angeles")
++  // B-647-1 / B-647-2 (zone provenance): `timezone` above has a schema
++  // default, so a stored row is not proof of the person's zone. These two are
++  // set only when the zone was actually supplied: 'device' (the mobile app
++  // sends the device IANA zone on sign-in, on foreground when it changed, and
++  // at onboarding) or 'settings' (an explicit PATCH). NULL = never supplied:
++  // notification copy and quiet hours ignore `timezone` and fall back to the
++  // coach's zone (recipient-timezone.ts), never silently to Pacific.
++  timezone_source        String?
++  timezone_updated_at    DateTime?
+ 
+   // Phase 9 — Per-kind × per-channel preference flags.
+   // muted=true overrides all per-kind settings (master kill switch).
+@@ -1068,6 +1085,10 @@ model NotificationPreferences {
+   drip_released_email      Boolean @default(false)
+   drip_released_push       Boolean @default(true)
+   drip_released_inapp      Boolean @default(true)
++  // C05 item 7 — WORKOUT_REMINDER (client push at their preferred training
++  // time on plan days). Default ON; Settings > Notifications toggles both.
++  workout_reminder_push    Boolean @default(true)
++  workout_reminder_inapp   Boolean @default(true)
+   // PR-15A — COACH_NEW_PURCHASE (selling coach learns of a new buyer at
+   // entitlement). Default ON for push + in-app per decision #9 mirror —
+   // a coach who is SELLING packages wants to know. email default OFF
+@@ -1297,6 +1318,13 @@ model CoachMessage {
+   // produce two CoachMessage rows; the second INSERT trips P2002 and
+   // the materialiser falls through to its "already_materialised" branch.
+   ai_draft_id String? @unique
++  // C05 item 6 (B-609-3) — set only by the coach welcome scheduler: the id of
++  // the CoachWelcomeMessageJob that produced this row. `@unique` is the
++  // persistence-boundary idempotency key: a stale worker whose lease was
++  // reclaimed cannot insert a second welcome; its INSERT trips P2002 and
++  // MessagingService.sendAsCoach returns the existing row with no side effects.
++  // NULL for every other message.
++  welcome_job_id String? @unique
+ 
+   @@index([coach_id])
+   @@index([client_id])
+@@ -1658,6 +1686,26 @@ model DataExportRequest {
+   @@map("data_export_request")
+ }
+ 
++// B-608-11: a data-export archive that must still be removed from the local
++// disk of `machine` (os.hostname(), the Fly machine id) after its request row
++// is gone or no longer owns it. Written only when deleting the archive failed
++// with an error other than ENOENT; drained by the nightly data-export cleanup
++// on that machine, and deleted only once the archive is confirmed gone. Holds
++// no user id or personal data: the export id is a random UUID and the path is
++// derived from it (exportArchivePath), never stored.
++model DataExportArchiveCleanup {
++  export_id       String   @id
++  machine         String
++  reason          String
++  attempts        Int      @default(1)
++  last_error_code String
++  created_at      DateTime @default(now())
++  last_attempt_at DateTime @default(now())
++
++  @@index([machine, created_at])
++  @@map("data_export_archive_cleanup")
++}
++
+ // Consent layer v1: per-(client, coach, scope) record of whether the
+ // client has granted the coach access to a given slice of their data.
+ //
+@@ -2153,9 +2201,14 @@ model NotificationDeliveryLog {
+   session    CoachingSession @relation("DeliveryLogSession", fields: [session_id], references: [id], onDelete: Cascade)
+   // kind matches NotificationKind values, e.g. booking_reminder_24h.
+   kind       String
++  // Sol B-647-1: the session start time this claim was made for (the schedule
++  // generation). A reschedule changes start_at, so the new time gets a new
++  // claim without deleting the old one, a stale sweep holding the old time can
++  // never suppress the new reminder, and a no-op reschedule cannot re-send.
++  start_at   DateTime
+   created_at DateTime        @default(now())
+ 
+-  @@unique([session_id, user_id, kind], name: "NotificationDeliveryLog_session_user_kind_key")
++  @@unique([session_id, user_id, kind, start_at], name: "NotificationDeliveryLog_session_user_kind_start_key")
+   @@index([session_id])
+   @@index([user_id, created_at])
+ }
+@@ -2306,6 +2359,18 @@ model WorkoutProgram {
+   // revision_retention_count — rolling history depth for WorkoutProgramRevision
+   // eviction on this regime. Default 3 = "last 2 versions + the new one".
+   revision_retention_count Int       @default(3)
++  // ── S-MWB Programs (20270223000000) ─────────────────────────────────
++  // client_id — the client a client copy (is_template=false) was made for by
++  // bulk assign or package delivery. Null on masters and on legacy clones
++  // (MWB-2 clone-to-client, #607 onboarding), which are linked only through
++  // their ClientWorkoutAssignment rows. Deleting the client deletes the copy.
++  client_id                String?
++  client                   User?     @relation("WorkoutProgramClientRuns", fields: [client_id], references: [id], onDelete: Cascade)
++  // delivery_key — exactly-once key for a client copy. UNIQUE, so a retried
++  // bulk assign (`bulk:<coach>:<Idempotency-Key>:<client>`) or a retried
++  // package delivery (`pkg:p=<purchase>:c=<content>`) converges on one copy
++  // even across a rolled-back transaction or two racing workers.
++  delivery_key             String?   @unique
+   created_at               DateTime  @default(now())
+   updated_at               DateTime  @updatedAt
+   archived_at              DateTime?
+@@ -2318,6 +2383,8 @@ model WorkoutProgram {
+   @@index([coach_id, cloned_from_id])
+   // F2 — regime list query: `is_regime=true AND archived_at IS NULL` per coach.
+   @@index([coach_id, is_regime, archived_at])
++  // S-MWB — assignees / assigned-count / already-assigned lookups.
++  @@index([cloned_from_id, client_id, archived_at])
+ }
+ 
+ // Append-only revision log for a single WorkoutPlan ("day"). The head pointer
+@@ -2592,6 +2659,76 @@ model ClinicProgramSet {
+   @@index([coach_id, active])
+ }
+ 
++// ─── C05 items 6-7: engagement (welcome message + workout reminders) ────
++// Per-coach welcome-message configuration. Default OFF. The operator turns it
++// on for one coach at bootstrap (owner endpoint or
++// scripts/set-coach-welcome-message.ts). template NULL = the generic code
++// default in src/engagement/welcome-template.ts. A coach's real template is
++// runtime data and never lives in the repository.
++model CoachWelcomeMessageSetting {
++  id         String    @id @default(uuid())
++  coach_id   String    @unique
++  coach      User      @relation("CoachWelcomeSettingCoach", fields: [coach_id], references: [id], onDelete: Cascade)
++  enabled    Boolean   @default(false)
++  template   String?
++  // Set every time enabled flips false -> true. Only onboarding completions
++  // at or after this instant are scheduled (no retroactive welcome burst).
++  enabled_at DateTime?
++  updated_by String?
++  created_at DateTime  @default(now())
++  updated_at DateTime  @updatedAt
++}
++
++// One row per client, ever (client_id @unique): the durable job that sends
++// the coach welcome message at onboarding completed_at + 13 minutes. The
++// unique key is the idempotency boundary: a replayed /complete, a second
++// scheduler replica, or a restart can never create a second job.
++model CoachWelcomeMessageJob {
++  id            String    @id @default(uuid())
++  client_id     String    @unique
++  client        User      @relation("CoachWelcomeJobClient", fields: [client_id], references: [id], onDelete: Cascade)
++  coach_id      String
++  coach         User      @relation("CoachWelcomeJobCoach", fields: [coach_id], references: [id], onDelete: Cascade)
++  completed_at  DateTime
++  fire_at       DateTime
++  // pending | sending | sent | cancelled | skipped | failed
++  status        String    @default("pending")
++  reason        String?
++  rendered_body String?
++  message_id    String?   @unique
++  attempt_count Int       @default(0)
++  next_retry_at DateTime?
++  locked_at     DateTime?
++  // B-609-3 fencing token: a fresh value on every claim. Every later write by
++  // the claiming worker is conditional on it, so a worker whose lease went
++  // stale and was reclaimed can no longer stamp, mark sent, retry or cancel.
++  lease_token   String?
++  sent_at       DateTime?
++  created_at    DateTime  @default(now())
++  updated_at    DateTime  @updatedAt
++
++  @@index([status, fire_at])
++  @@index([coach_id])
++}
++
++// At most one workout reminder per client per client-local calendar day:
++// (client_id, local_date) @unique is claimed BEFORE the push goes out.
++model WorkoutReminderDelivery {
++  id         String    @id @default(uuid())
++  client_id  String
++  client     User      @relation("WorkoutReminderClient", fields: [client_id], references: [id], onDelete: Cascade)
++  local_date DateTime  @db.Date
++  timezone   String
++  slot       String
++  first_day  Boolean   @default(false)
++  // sending | sent | failed
++  status     String    @default("sending")
++  sent_at    DateTime?
++  created_at DateTime  @default(now())
++
++  @@unique([client_id, local_date])
++}
++
+ // ─── Sprint B: Real Meal Plans (templates + plans + assignments) ──────────
+ model MealTemplate {
+   id            String    @id @default(uuid())
+@@ -3771,6 +3908,8 @@ model ClientPurchase {
+ 
+   splits                 SplitLedgerEntry[]
+   transfers              ConnectTransfer[]
++  // S-FEE — one settlement per Stripe charge (first charge + every renewal).
++  settlements            ChargeSettlement[]
+   dunning                DunningState?
+   reminders              PaymentReminder[]
+   refunds                ChargeRefund[]
+@@ -3808,6 +3947,20 @@ model ClientPurchase {
+   source         String?
+   grant_metadata Json?
+ 
++  // B-RECUR (OR-113-2) — free trial granted by the native subscription
++  // checkout. trial_days is set when the trial is offered (null = no trial);
++  // trial_started_at is set by the webhook when the trial's entitlement is
++  // granted (card saved). One trial per client per coach is decided from
++  // these two columns under a per-(client, coach) advisory lock.
++  trial_days       Int?
++  trial_started_at DateTime?
++  // B-RECUR-3 (B-654-5 / B-654-7) — the exact Stripe request and money terms
++  // one native subscription attempt is bound to (price ids, amounts,
++  // currency, cadence, trial days). Written on the reservation before the
++  // first Subscription create; a retry resends the identical request and a
++  // replay answers these terms. No user id, email, token or secret.
++  checkout_terms   Json?
++
+   @@index([client_user_id, status])
+   @@index([coach_user_id, status])
+   @@index([package_id])
+@@ -3907,7 +4060,10 @@ model SplitLedgerEntry {
+   // reversed back to the platform. Always <= amount_cents.
+   reversed_cents            Int            @default(0)
+   // Idempotency-key we sent to Stripe when posting this slice. Lets the
+-  // worker retry safely. Globally unique.
++  // worker retry safely. Globally unique. S-FEE round 11 (B-681-2): a legacy
++  // per-purchase row carries its durable identity here
++  // (sfee-legacy-ledger:<purchase>:<kind>:<payee account>, ids only), so two
++  // concurrent legacy planners can never create a second row.
+   idempotency_key           String?        @unique
+   last_error                String?
+   posted_at                 DateTime?
+@@ -3915,11 +4071,17 @@ model SplitLedgerEntry {
+   created_at                DateTime       @default(now())
+   updated_at                DateTime       @updatedAt
+ 
+-  @@unique([purchase_id, kind, payee_user_id])
++  // S-FEE: the ledger is per CHARGE. A recurring purchase has one set of rows
++  // per renewal, distinguished by stripe_charge_id. Kinds written by
++  // ChargeSettlementService: application_fee (TGP's 2%), stripe_fee (Stripe's
++  // actual processing fee, borne by the coach), destination (coach net) and
++  // head_coach_split. The four slices of one charge sum to its gross.
++  @@unique([purchase_id, kind, payee_user_id, stripe_charge_id], map: "SplitLedgerEntry_purchase_kind_payee_charge_key")
+   @@index([purchase_id])
+   @@index([status])
+   @@index([kind, status])
+   @@index([payee_user_id, status])
++  @@index([stripe_charge_id])
+ }
+ 
+ // Phase 4 Connect — Follow-on Connect transfer record.
+@@ -3939,6 +4101,16 @@ model ConnectTransfer {
+   purchase_id                   String
+   purchase                      ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
+   ledger_entry_id               String?        @unique
++  // S-FEE — the charge settlement this transfer pays out, and what it is:
++  //   coach_net        : the selling coach's net for the charge
++  //   head_coach_split : the head coach's split for the charge
++  //   coach_reinstate  : funds returned to a payee after a won dispute
++  settlement_id                 String?
++  settlement                    ChargeSettlement? @relation(fields: [settlement_id], references: [id], onDelete: Cascade)
++  kind                          String         @default("head_coach_split")
++  // Open recoveries (PayeeRecovery) netted out of this transfer. The payee's
++  // position for the settlement is amount_cents + netted_recovery_cents.
++  netted_recovery_cents         Int            @default(0)
+   // Destination connected account (head coach for the sub-coach split).
+   destination_stripe_account_id String
+   destination_user_id           String?
+@@ -3961,12 +4133,238 @@ model ConnectTransfer {
+   posted_at                     DateTime?
+   reversed_at                   DateTime?
+   reversed_amount_cents         Int            @default(0)
++  // S-FEE round 4 — reversal operations started on this transfer (CAS slot:
++  // at most one TransferReversalOp in flight per transfer).
++  reversal_seq                  Int            @default(0)
++  // S-FEE round 7 (B-627-8) — set before every Stripe create, cleared once
++  // its result is known (posted, or a definitive 4xx refusal). While set, the
++  // next attempt reconciles against Stripe's transfer list (matched by
++  // metadata.tgp_transfer_op = idempotency_key) before it may send again.
++  stripe_send_unresolved_at     DateTime?
+   created_at                    DateTime       @default(now())
+   updated_at                    DateTime       @updatedAt
+ 
++  reversal_ops TransferReversalOp[]
++
+   @@index([status, next_attempt_at])
+   @@index([destination_user_id])
+   @@index([purchase_id])
++  @@index([settlement_id])
++}
++
++// S-FEE round 4 (B-627-5) — one durable, keyed Stripe transfer reversal. It is
++// written before Stripe is called and resolved from Stripe's answer (or, when
++// the answer was lost, from the transfer's reversal list matched by
++// metadata.tgp_reversal_op = idempotency_key), so an uncertain outcome is
++// re-driven with the same key and never becomes a second recovery.
++model TransferReversalOp {
++  id                  String          @id @default(uuid())
++  transfer_id         String
++  transfer            ConnectTransfer @relation(fields: [transfer_id], references: [id], onDelete: Cascade)
++  seq                 Int
++  idempotency_key     String          @unique
++  amount_cents        Int
++  // The transfer's reversed_amount_cents when the operation started.
++  base_reversed_cents Int
++  // adjust (refund / dispute convergence of THIS charge's transfer) | legacy.
++  // Owner decision OR-111-1: a transfer is only ever reversed for its own
++  // charge; another charge's debt is recovered by forward netting only.
++  purpose             String          @default("adjust")
++  // pending | succeeded | refused
++  status              String          @default("pending")
++  stripe_reversal_id  String?         @unique
++  attempts            Int             @default(0)
++  last_attempt_at     DateTime?
++  last_error          String?
++  resolved_at         DateTime?
++  created_at          DateTime        @default(now())
++  updated_at          DateTime        @updatedAt
++
++  @@unique([transfer_id, seq])
++  @@index([status, created_at])
++}
++
++// S-FEE — Charge settlement (one row per Stripe charge on a coach package).
++//
++// Mechanism: separate charges and transfers. The charge is created on the
++// platform with on_behalf_of = the coach's connected account (coach is the
++// settlement merchant) and NO transfer_data / application fee. After the
++// charge succeeds we read its balance_transaction (actual Stripe fee, in the
++// settlement currency) and compute the split once, in PlatformFeeService:
++//   coach_net = gross - stripe_fee - platform_fee - head_coach_split
++// then transfer coach_net and head_coach_split with source_transaction = the
++// charge. TGP keeps platform_fee and never pays the processing fee.
++//
++// Refunds / disputes re-derive targets (refunded_cents, dispute_*_cents) and
++// reverse transfers; anything a transfer reversal cannot recover becomes a
++// PayeeRecovery that is netted out of the payee's next transfers.
++//
++// status:
++//   awaiting_fee       : charge known, balance transaction not yet available
++//   settled            : split computed, transfers enqueued/posted
++//   legacy_destination : a pre-S-FEE destination charge (Stripe already moved
++//                        the funds via transfer_data); recorded, never transferred
++//   skipped_free       : $0 charge or grant; nothing to settle
++// S-FEE — single-runner lease for scheduled jobs (one row per job). A
++// machine runs the job only while it holds an unexpired lease; see
++// src/checkout/cron-lease.service.ts.
++model CronLease {
++  name        String   @id
++  holder      String
++  lease_until DateTime
++  acquired_at DateTime
++  updated_at  DateTime @updatedAt
++  // Resume position of a paged job (the S-FEE paid-invoice backfill keeps the
++  // last Stripe invoice id it examined). Null for plain leases.
++  cursor      String?
++}
++
++model ChargeSettlement {
++  id                            String         @id @default(uuid())
++  purchase_id                   String
++  purchase                      ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
++  coach_user_id                 String
++  head_coach_user_id            String?
++  stripe_charge_id              String         @unique
++  stripe_balance_transaction_id String?
++  stripe_invoice_id             String?
++  // Settlement currency (balance_transaction.currency). All *_cents below are
++  // in this currency.
++  currency                      String         @default("usd")
++  // card | bank_debit (payment_method_details.type).
++  rail                          String         @default("card")
++  mechanism                     String         @default("separate_charge_transfer")
++  status                        String         @default("awaiting_fee")
++  // Snapshot of the policy used (bps), so a later policy edit never rewrites history.
++  platform_bps                  Int
++  head_coach_bps                Int            @default(0)
++  gross_cents                   Int
++  stripe_fee_cents              Int?
++  platform_fee_cents            Int?
++  head_coach_split_cents        Int?
++  coach_net_cents               Int?
++  // Adjustments (cumulative, mirrored from Stripe).
++  refunded_cents                Int            @default(0)
++  dispute_withdrawn_cents       Int            @default(0)
++  dispute_fee_cents             Int            @default(0)
++  // Current targets after adjustments (equal to the originals until a refund/dispute).
++  target_platform_fee_cents     Int?
++  target_head_coach_cents       Int?
++  target_coach_net_cents        Int?
++  settled_at                    DateTime?
++  adjusted_at                   DateTime?
++  last_error                    String?
++  // S-FEE round 4 (B-627-4) — an adjustment that could not establish
++  // canonical state (dispute unreadable, reversal outcome unknown, lock lost)
++  // flags the settlement; the sweeper re-runs it until it converges.
++  reconcile_requested_at        DateTime?
++  reconcile_dispute_id          String?
++  reconcile_reason              String?
++  created_at                    DateTime       @default(now())
++  updated_at                    DateTime       @updatedAt
++
++  transfers  ConnectTransfer[]
++  recoveries PayeeRecovery[]
++  notices    PayoutAdjustmentNotice[]
++
++  @@index([purchase_id])
++  @@index([coach_user_id, created_at])
++  @@index([status])
++  @@index([reconcile_requested_at])
++}
++
++// S-FEE — Money a payee owes TGP for one charge that a transfer reversal could
++// not recover (the non-returned processing fee on a full refund, a dispute fee,
++// or a reversal Stripe refused because the payee's balance was already paid
++// out). Collected by netting it out of the payee's next transfers (Stripe:
++// "reconcile any amount owed back to it by reducing subsequent transfer amounts
++// or by reversing transfers").
++//   status: open | collected | released (released = a won dispute cancelled it)
++model PayeeRecovery {
++  id              String           @id @default(uuid())
++  settlement_id   String
++  settlement      ChargeSettlement @relation(fields: [settlement_id], references: [id], onDelete: Cascade)
++  payee_user_id   String
++  amount_cents    Int
++  collected_cents Int              @default(0)
++  currency        String           @default("usd")
++  reason          String
++  status          String           @default("open")
++  // Deterministic per (charge, leg, adjustment state): replays collapse.
++  idempotency_key String           @unique
++  collected_at    DateTime?
++  created_at      DateTime         @default(now())
++  updated_at      DateTime         @updatedAt
++
++  @@index([payee_user_id, status])
++  @@index([settlement_id])
++}
++
++// S-FEE round 5 (owner decision OR-111-1) — the payee-facing record of one
++// refund / chargeback / dispute outcome on one charge: what the customer got
++// back, what was taken back from that sale's own payout, and what TGP holds
++// from the payee's next sale(s) (TGP 2% + every Stripe fee on the charge +
++// any share Stripe refused to reverse). Written under the charge lock after
++// the money converged, one row per (charge, payee leg, event, adjustment
++// state); the Money page reads it as "needs attention" and the dispatcher
++// sends the push / in-app alert / email once per row.
++//   role:  coach | head_coach
++//   event: refund | chargeback | dispute_won | dispute_lost
++//   held_cents = held_tgp_fee_cents + held_stripe_fee_cents
++//              + held_dispute_fee_cents + held_not_reversed_cents
++model PayoutAdjustmentNotice {
++  id                      String           @id @default(uuid())
++  settlement_id           String
++  settlement              ChargeSettlement @relation(fields: [settlement_id], references: [id], onDelete: Cascade)
++  payee_user_id           String
++  role                    String
++  purchase_id             String
++  stripe_charge_id        String
++  event                   String
++  currency                String           @default("usd")
++  charge_gross_cents      Int
++  customer_refunded_cents Int
++  // Round 13 (B-683-1): for a charge presented in another currency than it
++  // settled in, what the client got back in their own currency (the cents
++  // above are the settlement debit). Null when the two currencies match.
++  client_currency         String?
++  client_refunded_cents   Int?
++  reversed_cents          Int
++  reinstated_cents        Int              @default(0)
++  held_cents              Int
++  held_tgp_fee_cents      Int
++  held_stripe_fee_cents   Int
++  held_dispute_fee_cents  Int
++  held_not_reversed_cents Int
++  // Part of held_cents not yet netted out of a later sale when the row was written.
++  held_open_cents         Int
++  state_key               String
++  // Deterministic per (charge, leg, event, adjustment state): replays collapse.
++  idempotency_key         String           @unique
++  title                   String
++  body                    String
++  // Round 6 (B-627-6): each channel's outcome is kept, and a retry only
++  // re-runs the channels that are not done.
++  //   inapp: pending | sent | off | failed
++  //   push:  pending | sent | off | no_token | invalid_token | rate_limited | failed
++  //   email: pending | sent | logged | no_address | disabled | failed
++  inapp_status            String           @default("pending")
++  inapp_notification_id   String?
++  push_notification_id    String?
++  push_status             String           @default("pending")
++  email_status            String           @default("pending")
++  // Email attempts made; attempt k > 1 uses the key `${idempotency_key}:e${k}`.
++  email_attempts          Int              @default(0)
++  dispatch_attempts       Int              @default(0)
++  dispatch_claimed_at     DateTime?
++  dispatched_at           DateTime?
++  acknowledged_at         DateTime?
++  created_at              DateTime         @default(now())
++  updated_at              DateTime         @updatedAt
++
++  @@index([payee_user_id, created_at])
++  @@index([settlement_id])
++  @@index([dispatched_at, created_at])
+ }
+ 
+ // Phase 5 Connect — Dunning state per recurring purchase.
+diff --git a/src/invite-codes/README.md b/src/invite-codes/README.md
+index f0f6f7d1..698fe242 100644
+--- a/src/invite-codes/README.md
++++ b/src/invite-codes/README.md
+@@ -136,11 +136,17 @@ flag is off. `:id` is an `InviteCode` id or the literal `coach-link`.
+ | Method | Path | Behavior |
+ |---|---|---|
+ | `GET` | `/coach/codes` | Coach link first, then shareable codes (no single-recipient invites) with status (`active`, `retiring`, `revoked`, `expired`, `used_up`), `join_url` = `qr_payload` (`https://app.trygrowthproject.com/join/<code>`), package, lineage and exact ledger usage (`signups_total`, `signups_7d`) |
+-| `POST` | `/coach/codes` | Create a `GP-XXXXXX` code (unlimited, no expiry unless set; optional label, `max_uses`, `expires_at`, package + grant mode via `InviteGrantService.setBinding`). `Idempotency-Key` header: a retry returns the first code (`replayed: true`) |
+-| `POST` | `/coach/codes/:id/rotate` | New code with the same settings, linked by `rotated_from_id`; the old one is revoked now (`grace_hours` 0, default) or keeps working until `now + grace_hours` (max 168). A retried rotate returns the existing successor. `coach-link` archives the old link code as an InviteCode row so it keeps resolving |
++| `POST` | `/coach/codes` | Create a `GP-XXXXXX` code (unlimited, no expiry unless set; optional label, `max_uses`, `expires_at`, package + grant mode checked by `InviteGrantService.assertBindablePackage` and written in the same INSERT as the code). `Idempotency-Key` header (8-128 visible characters, else `400 idempotency_key_invalid`): a retry returns the first code (`replayed: true`) |
++| `POST` | `/coach/codes/:id/rotate` | New code with the same settings, linked by `rotated_from_id`; the old one is revoked now (`grace_hours` 0, default) or keeps working until `now + grace_hours` (max 168). A retried rotate returns the existing successor. `coach-link` requires `expected_code` (the link on screen), archives the old link code as an InviteCode row (with `successor_code`) so it keeps resolving, and a retry returns the first successor without writing |
+ | `POST` | `/coach/codes/:id/revoke` | Turn a code off (idempotent). The coach link can only be rotated (`409 coach_link_not_revocable`) |
+ | `GET` | `/coach/codes/signups?days=30` | Exact daily signups (1-90 days) in the coach's time zone (`CoachProfile.timezone`, else `America/Los_Angeles`), zero-filled, overall / `by_code` / `by_package`, with `unusual_today` (today >= 3 and >= 3x the trailing 7-day average) to catch a leaked code |
+ 
++Team Mode (`resolveTeamAttribution`, as the legacy create): an active team
++sub-coach's codes are stored under the head coach with `invited_by_user_id` =
++the sub-coach. A sub-coach lists, rotates, revokes and counts only their own
++codes and has no coach link (`403 coach_link_head_coach_only`); the head coach
++sees and manages every team code (`issued_by_user_id` in each view).
++
+ Every create / rotate / revoke writes an audit row (`invite_code.created`,
+ `invite_code.rotated`, `invite_code.revoked`). Rotating or revoking never
+ touches `User.coach_id`, so clients who already joined stay with the coach.
+diff --git a/src/invite-codes/coach-code-tools.controller.ts b/src/invite-codes/coach-code-tools.controller.ts
+index fc6803da..f74e29d2 100644
+--- a/src/invite-codes/coach-code-tools.controller.ts
++++ b/src/invite-codes/coach-code-tools.controller.ts
+@@ -96,7 +96,13 @@ export class CoachCodeToolsController {
+     @Body() body: RotateCoachCodeDto,
+   ) {
+     assertCoachCodeToolsEnabled();
+-    return this.tools.rotate(actorOf(req), id, body?.grace_hours, auditContext(req));
++    return this.tools.rotate(
++      actorOf(req),
++      id,
++      body?.grace_hours,
++      auditContext(req),
++      body?.expected_code,
++    );
+   }
+ 
+   @ApiOperation({ summary: 'Revoke (turn off) a code. Clients who already joined stay with you.' })
+diff --git a/src/invite-codes/coach-code-tools.dto.ts b/src/invite-codes/coach-code-tools.dto.ts
+index a4316f79..db78a78c 100644
+--- a/src/invite-codes/coach-code-tools.dto.ts
++++ b/src/invite-codes/coach-code-tools.dto.ts
+@@ -78,6 +78,16 @@ export class RotateCoachCodeDto {
+   @Min(0)
+   @Max(ROTATE_GRACE_HOURS_MAX)
+   grace_hours?: number;
++
++  @ApiPropertyOptional({
++    maxLength: 32,
++    description:
++      'Required for the coach link (`coach-link`): the link code on screen. A retry returns the first successor.',
++  })
++  @IsOptional()
++  @IsString()
++  @MaxLength(32)
++  expected_code?: string;
+ }
+ 
+ export class CoachCodeSignupsQueryDto {
+diff --git a/src/invite-codes/coach-code-tools.service.ts b/src/invite-codes/coach-code-tools.service.ts
+index b949dfbc..e38b9be6 100644
+--- a/src/invite-codes/coach-code-tools.service.ts
++++ b/src/invite-codes/coach-code-tools.service.ts
+@@ -1,6 +1,7 @@
+ import {
+   BadRequestException,
+   ConflictException,
++  ForbiddenException,
+   HttpException,
+   Injectable,
+   InternalServerErrorException,
+@@ -37,6 +38,13 @@ export const CodeAuditAction = {
+ 
+ export type CodeActor = { id: string; role: string; email?: string | null };
+ type Ctx = { ip?: string | null; userAgent?: string | null };
++/**
++ * B-658-1 — team tenancy, from the same attribution as the legacy create
++ * (InviteCodesService.resolveTeamAttribution): an active team sub-coach works
++ * in the head coach's tenant and sees or changes only the codes they issued;
++ * the head coach sees and manages every team code.
++ */
++type Scope = { tenantId: string; issuerId: string | null };
+ 
+ export type CodeStatus = 'active' | 'retiring' | 'revoked' | 'expired' | 'used_up';
+ 
+@@ -46,6 +54,8 @@ export type CoachCodeView = {
+   code: string;
+   label: string | null;
+   status: CodeStatus;
++  /** The team sub-coach who issued the code (null: issued by the coach themselves). */
++  issued_by_user_id: string | null;
+   join_url: string;
+   /** What the QR encodes: the universal link, which opens the app on /join/<code>. */
+   qr_payload: string;
+@@ -74,6 +84,8 @@ type InviteRow = {
+   used_count: number;
+   package_id: string | null;
+   grant_mode: InviteGrantMode;
++  invited_by_user_id: string | null;
++  successor_code: string | null;
+   rotated_from: { id: string; code: string } | null;
+   rotated_to: { id: string; code: string } | null;
+ };
+@@ -93,6 +105,7 @@ const ROW_SELECT = {
+   intended_email: true,
+   coach_id: true,
+   invited_by_user_id: true,
++  successor_code: true,
+   rotated_from: { select: { id: true, code: true } },
+   rotated_to: { select: { id: true, code: true } },
+ } as const;
+@@ -140,7 +153,7 @@ export function codeStatus(row: InviteRow, now: number = Date.now()): CodeStatus
+   if (lifecycle === 'revoked') return 'revoked';
+   if (lifecycle === 'expired') return 'expired';
+   if (lifecycle === 'max_uses_reached') return 'used_up';
+-  return row.rotated_to ? 'retiring' : 'active';
++  return row.rotated_to || row.successor_code ? 'retiring' : 'active';
+ }
+ 
+ /**
+@@ -177,22 +190,26 @@ export class CoachCodeToolsService {
+   // ---------------------------------------------------------------- list
+ 
+   async list(coachId: string): Promise<{ codes: CoachCodeView[]; tracking_note: string }> {
+-    const profile = await this.inviteCodes.getOrCreateDefaultForCoach(coachId);
++    const scope = await this.scopeOf(coachId);
++    // A sub-coach has no team coach link: their own profile link would attach
++    // clients outside the head coach's tenant (B-658-1).
++    const profile = scope.issuerId
++      ? null
++      : await this.inviteCodes.getOrCreateDefaultForCoach(coachId);
+     const rows = await this.prisma.inviteCode.findMany({
+       // Shareable codes only: single-recipient (emailed) invites are managed
+       // in the invite flow and are bound to one email, so they cannot leak.
+-      where: { coach_id: coachId, intended_email: null },
++      where: { ...rowWhere(scope), intended_email: null },
+       orderBy: { created_at: 'desc' },
+       take: LIST_LIMIT,
+       select: ROW_SELECT,
+     });
+-    const usage = await this.usageByCode(coachId);
++    const usage = await this.usageByCode(scope);
+     const packages = await this.packageNames([
+-      profile.invite_code_package_id,
++      profile?.invite_code_package_id,
+       ...rows.map((r) => r.package_id),
+     ]);
+ 
+-    const link = this.coachLinkView(profile, usage, packages);
+     const now = Date.now();
+     const views = rows.map((r) => this.rowView(r, usage, packages, now));
+     const rank: Record<CodeStatus, number> = {
+@@ -204,7 +221,7 @@ export class CoachCodeToolsService {
+     };
+     views.sort((a, b) => rank[a.status] - rank[b.status]);
+     return {
+-      codes: [link, ...views],
++      codes: [...(profile ? [this.coachLinkView(profile, usage, packages)] : []), ...views],
+       tracking_note:
+         'Signup counts include every signup since code tools were added to your account.',
+     };
+@@ -224,14 +241,28 @@ export class CoachCodeToolsService {
+     idempotencyKey: string | null,
+     ctx: Ctx = {},
+   ): Promise<{ code: CoachCodeView; replayed: boolean }> {
+-    const key = normaliseIdempotencyKey(idempotencyKey);
+-    if (key) {
+-      const prior = await this.prisma.inviteCode.findUnique({
+-        where: { coach_id_idempotency_key: { coach_id: actor.id, idempotency_key: key } },
+-        select: ROW_SELECT,
++    const raw = typeof idempotencyKey === 'string' ? idempotencyKey.trim() : '';
++    const clean = normaliseIdempotencyKey(raw);
++    if (raw && !clean) {
++      // C-658-5: a malformed key is refused, never ignored (a retry would mint a second code).
++      throw new BadRequestException({
++        code: 'idempotency_key_invalid',
++        message:
++          'The Idempotency-Key header must be 8 to 128 visible characters without spaces. Retry with a new key.',
+       });
+-      if (prior) return { code: await this.viewOne(actor.id, prior), replayed: true };
+     }
++    const scope = await this.scopeOf(actor.id);
++    // Keys are per issuer, so a team member's key never replays another member's code.
++    const key = clean ? `${actor.id}:${clean}` : null;
++    const replay = async () =>
++      key
++        ? this.prisma.inviteCode.findUnique({
++            where: { coach_id_idempotency_key: { coach_id: scope.tenantId, idempotency_key: key } },
++            select: ROW_SELECT,
++          })
++        : null;
++    const prior = await replay();
++    if (prior) return { code: await this.viewOne(scope, prior), replayed: true };
+ 
+     const label = cleanLabel(input.label);
+     const expiresAt = input.expires_at ? new Date(input.expires_at) : null;
+@@ -255,28 +286,43 @@ export class CoachCodeToolsService {
+       });
+     }
+ 
+-    let created: { id: string; code: string } | null = null;
++    // B-658-6: the package is decided BEFORE the code exists and written in
++    // the same INSERT, so no replay, list or attach ever sees an active code
++    // without its binding. A package archived later is re-checked at grant
++    // time (InviteGrantService.grantForAttachedCode), as for any bound code.
++    let packageId: string | null = null;
++    if (input.package_id && input.grant_mode) {
++      try {
++        if (!this.grants) throw new Error('grant service unavailable');
++        packageId = await this.grants.assertBindablePackage(scope.tenantId, input.package_id);
++      } catch (err) {
++        throw mapBindingError(err);
++      }
++    }
++
++    let created: InviteRow | null = null;
+     for (let attempt = 0; attempt < 10 && !created; attempt++) {
+       const code = await this.inviteCodes.generateCodeUniqueAcrossTables();
+       try {
+         created = await this.prisma.inviteCode.create({
+           data: {
+             code,
+-            coach_id: actor.id,
++            coach_id: scope.tenantId,
++            invited_by_user_id: scope.issuerId,
+             label,
+             max_uses: input.max_uses ?? null,
+             expires_at: expiresAt,
+             idempotency_key: key,
++            package_id: packageId,
++            grant_mode: packageId && input.grant_mode ? input.grant_mode : 'none',
+           },
+-          select: { id: true, code: true },
++          select: ROW_SELECT,
+         });
+       } catch (err) {
+-        if (isUniqueViolation(err, 'idempotency_key') && key) {
+-          const prior = await this.prisma.inviteCode.findUnique({
+-            where: { coach_id_idempotency_key: { coach_id: actor.id, idempotency_key: key } },
+-            select: ROW_SELECT,
+-          });
+-          if (prior) return { code: await this.viewOne(actor.id, prior), replayed: true };
++        if (key && isUniqueViolation(err, 'idempotency_key')) {
++          // An overlapping retry won: its row is already complete.
++          const winner = await replay();
++          if (winner) return { code: await this.viewOne(scope, winner), replayed: true };
+         }
+         if (isUniqueViolation(err)) continue;
+         throw err;
+@@ -284,38 +330,12 @@ export class CoachCodeToolsService {
+     }
+     if (!created) throw new InternalServerErrorException('Could not generate a unique invite code');
+ 
+-    if (input.package_id && input.grant_mode) {
+-      try {
+-        if (!this.grants) throw new Error('grant service unavailable');
+-        await this.grants.setBinding(
+-          actor,
+-          { code: created.code, package_id: input.package_id, grant_mode: input.grant_mode },
+-          ctx,
+-        );
+-      } catch (err) {
+-        // The code was never returned to anyone, so removing it is safe and
+-        // leaves no half-made code behind.
+-        try {
+-          await this.prisma.inviteCode.delete({ where: { id: created.id } });
+-        } catch (cleanupErr) {
+-          // Unreachable in practice (fresh row, no redemptions). Log it so a
+-          // stray unbound code is visible; the coach still gets the real reason.
+-          this.logger.warn(
+-            `could not remove unbound code ${created.id} after a refused binding: ${
+-              cleanupErr instanceof Error ? cleanupErr.message : 'unknown'
+-            }`,
+-          );
+-        }
+-        throw mapBindingError(err);
+-      }
+-    }
+-
+     void this.audit.write({
+       action: CodeAuditAction.CREATED,
+       actorId: actor.id,
+       actorRole: actor.role,
+       actorEmail: actor.email ?? null,
+-      tenantCoachId: actor.id,
++      tenantCoachId: scope.tenantId,
+       targetType: 'invite_code',
+       targetId: created.id,
+       ip: ctx.ip ?? null,
+@@ -323,16 +343,26 @@ export class CoachCodeToolsService {
+       metadata: {
+         max_uses: input.max_uses ?? null,
+         expires_at: expiresAt?.toISOString() ?? null,
+-        package_id: input.package_id ?? null,
+-        grant_mode: input.grant_mode ?? 'none',
++        package_id: packageId,
++        grant_mode: created.grant_mode,
+       },
+     });
+-    const row = await this.prisma.inviteCode.findUnique({
+-      where: { id: created.id },
+-      select: ROW_SELECT,
+-    });
+-    if (!row) throw codeNotFound();
+-    return { code: await this.viewOne(actor.id, row), replayed: false };
++    if (scope.issuerId) {
++      // Same team feed event as the legacy create (InviteCodesService.createForCoach).
++      await this.prisma.teamAuditEvent
++        .create({
++          data: {
++            head_coach_id: scope.tenantId,
++            actor_user_id: scope.issuerId,
++            target_client_id: null,
++            event_kind: 'invite_sent_by_sub_coach',
++            summary: 'Invite code issued by sub-coach.',
++            metadata: { invite_code_id: created.id, sub_coach_id: scope.issuerId },
++          },
++        })
++        .catch(() => this.logger.warn(`team audit event write failed for invite ${created?.id}`));
++    }
++    return { code: await this.viewOne(scope, created), replayed: false };
+   }
+ 
+   // -------------------------------------------------------------- rotate
+@@ -342,34 +372,63 @@ export class CoachCodeToolsService {
+     id: string,
+     graceHoursRaw: number | undefined,
+     ctx: Ctx = {},
++    expectedCode?: string | null,
+   ): Promise<{ code: CoachCodeView; previous: CoachCodeView | null; replayed: boolean }> {
+     const graceHours = Math.min(
+       Math.max(Math.trunc(graceHoursRaw ?? 0), 0),
+       ROTATE_GRACE_HOURS_MAX,
+     );
+     const graceMs = graceHours * 60 * 60 * 1000;
++    const scope = await this.scopeOf(actor.id);
+ 
+     if (id === COACH_LINK_ID) {
+-      const { profile, previous } = await this.inviteCodes.rotateDefaultCode(actor.id, graceMs);
+-      this.writeRotateAudit(actor, ctx, 'coach_link', previous.id, null, graceHours);
+-      const prevRow = await this.prisma.inviteCode.findUnique({
+-        where: { id: previous.id },
+-        select: ROW_SELECT,
+-      });
+-      const usage = await this.usageByCode(actor.id);
++      if (scope.issuerId) {
++        throw new ForbiddenException({
++          code: 'coach_link_head_coach_only',
++          message:
++            'The team coach link belongs to your head coach. Create your own code here, or ask your head coach to rotate the link.',
++        });
++      }
++      // B-658-7: rotate the link the coach is looking at; a retry of that
++      // rotation returns its first successor and changes nothing.
++      const expected = typeof expectedCode === 'string' ? expectedCode.trim() : '';
++      if (!expected) {
++        throw new BadRequestException({
++          code: 'expected_code_required',
++          message: 'Pull to refresh your codes, then rotate the coach link shown on screen.',
++        });
++      }
++      const { profile, previous, replayed, successorCode } =
++        await this.inviteCodes.rotateDefaultCode(actor.id, graceMs, expected);
++      if (!replayed)
++        this.writeRotateAudit(actor, ctx, actor.id, 'coach_link', previous.id, null, graceHours);
++      const [prevRow, nextRow] = await Promise.all([
++        this.prisma.inviteCode.findUnique({ where: { id: previous.id }, select: ROW_SELECT }),
++        successorCode === profile.invite_code
++          ? null
++          : this.prisma.inviteCode.findUnique({
++              where: { code: successorCode },
++              select: ROW_SELECT,
++            }),
++      ]);
++      const usage = await this.usageByCode(scope);
+       const packages = await this.packageNames([
+         profile.invite_code_package_id,
+-        prevRow?.package_id ?? null,
++        prevRow?.package_id,
++        nextRow?.package_id,
+       ]);
++      const now = Date.now();
+       return {
+-        code: this.coachLinkView(profile, usage, packages),
+-        previous: prevRow ? this.rowView(prevRow, usage, packages, Date.now()) : null,
+-        replayed: false,
++        code: nextRow
++          ? this.rowView(nextRow, usage, packages, now)
++          : this.coachLinkView(profile, usage, packages),
++        previous: prevRow ? this.rowView(prevRow, usage, packages, now) : null,
++        replayed,
+       };
+     }
+ 
+     const old = await this.prisma.inviteCode.findUnique({ where: { id }, select: ROW_SELECT });
+-    if (!old || old.coach_id !== actor.id || old.intended_email) throw codeNotFound();
++    if (!old || !owns(scope, old)) throw codeNotFound();
+     if (old.rotated_to) {
+       // Retried rotate: the successor already exists. Return it, never mint a second.
+       const successor = await this.prisma.inviteCode.findUnique({
+@@ -378,8 +437,8 @@ export class CoachCodeToolsService {
+       });
+       if (successor) {
+         return {
+-          code: await this.viewOne(actor.id, successor),
+-          previous: await this.viewOne(actor.id, old),
++          code: await this.viewOne(scope, successor),
++          previous: await this.viewOne(scope, old),
+           replayed: true,
+         };
+       }
+@@ -402,7 +461,7 @@ export class CoachCodeToolsService {
+           const successor = await tx.inviteCode.create({
+             data: {
+               code,
+-              coach_id: actor.id,
++              coach_id: old.coach_id,
+               invited_by_user_id: old.invited_by_user_id,
+               label: old.label,
+               max_uses: old.max_uses,
+@@ -415,7 +474,7 @@ export class CoachCodeToolsService {
+           });
+           const graceEnd = new Date(now + graceMs);
+           const retired = await tx.inviteCode.updateMany({
+-            where: { id: old.id, coach_id: actor.id, revoked: false },
++            where: { id: old.id, coach_id: old.coach_id, revoked: false },
+             data:
+               graceMs > 0
+                 ? {
+@@ -445,8 +504,8 @@ export class CoachCodeToolsService {
+               select: ROW_SELECT,
+             });
+             return {
+-              code: await this.viewOne(actor.id, winner),
+-              previous: prev ? await this.viewOne(actor.id, prev) : null,
++              code: await this.viewOne(scope, winner),
++              previous: prev ? await this.viewOne(scope, prev) : null,
+               replayed: true,
+             };
+           }
+@@ -458,15 +517,15 @@ export class CoachCodeToolsService {
+     if (!successorId)
+       throw new InternalServerErrorException('Could not generate a unique invite code');
+ 
+-    this.writeRotateAudit(actor, ctx, 'invite_code', old.id, successorId, graceHours);
++    this.writeRotateAudit(actor, ctx, old.coach_id, 'invite_code', old.id, successorId, graceHours);
+     const [next, prev] = await Promise.all([
+       this.prisma.inviteCode.findUnique({ where: { id: successorId }, select: ROW_SELECT }),
+       this.prisma.inviteCode.findUnique({ where: { id: old.id }, select: ROW_SELECT }),
+     ]);
+     if (!next) throw codeNotFound();
+     return {
+-      code: await this.viewOne(actor.id, next),
+-      previous: prev ? await this.viewOne(actor.id, prev) : null,
++      code: await this.viewOne(scope, next),
++      previous: prev ? await this.viewOne(scope, prev) : null,
+       replayed: false,
+     };
+   }
+@@ -485,13 +544,14 @@ export class CoachCodeToolsService {
+           'Your coach link cannot be turned off, only replaced. Rotate it to retire the current one.',
+       });
+     }
++    const scope = await this.scopeOf(actor.id);
+     const row = await this.prisma.inviteCode.findUnique({ where: { id }, select: ROW_SELECT });
+-    if (!row || row.coach_id !== actor.id || row.intended_email) throw codeNotFound();
+-    if (row.revoked) return { code: await this.viewOne(actor.id, row), replayed: true };
++    if (!row || !owns(scope, row)) throw codeNotFound();
++    if (row.revoked) return { code: await this.viewOne(scope, row), replayed: true };
+ 
+     const now = new Date();
+     await this.prisma.inviteCode.updateMany({
+-      where: { id, coach_id: actor.id, revoked: false },
++      where: { id, coach_id: row.coach_id, revoked: false },
+       data: { revoked: true, revoked_at: now },
+     });
+     void this.audit.write({
+@@ -499,7 +559,7 @@ export class CoachCodeToolsService {
+       actorId: actor.id,
+       actorRole: actor.role,
+       actorEmail: actor.email ?? null,
+-      tenantCoachId: actor.id,
++      tenantCoachId: row.coach_id,
+       targetType: 'invite_code',
+       targetId: id,
+       ip: ctx.ip ?? null,
+@@ -508,7 +568,7 @@ export class CoachCodeToolsService {
+     });
+     const fresh = await this.prisma.inviteCode.findUnique({ where: { id }, select: ROW_SELECT });
+     return {
+-      code: await this.viewOne(actor.id, fresh ?? { ...row, revoked: true, revoked_at: now }),
++      code: await this.viewOne(scope, fresh ?? { ...row, revoked: true, revoked_at: now }),
+       replayed: false,
+     };
+   }
+@@ -522,10 +582,12 @@ export class CoachCodeToolsService {
+    */
+   async signups(coachId: string, daysRaw: number | undefined, now: Date = new Date()) {
+     const days = Math.min(Math.max(Math.trunc(daysRaw ?? 30), 1), SIGNUP_DAYS_MAX);
++    const scope = await this.scopeOf(coachId);
+     const profile = await this.prisma.coachProfile.findUnique({
+       where: { user_id: coachId },
+       select: { timezone: true, invite_code: true },
+     });
++    const linkCode = scope.issuerId ? null : (profile?.invite_code ?? null);
+     const tz = isValidTimeZone(profile?.timezone)
+       ? (profile?.timezone as string)
+       : DEFAULT_COACH_TIMEZONE;
+@@ -537,7 +599,7 @@ export class CoachCodeToolsService {
+     // bucketing by local calendar date.
+     const rows = await this.prisma.inviteRedemption.findMany({
+       where: {
+-        coach_id: coachId,
++        ...ledgerWhere(scope),
+         redeemed_at: { gte: new Date(now.getTime() - (days + 2) * DAY_MS), lte: now },
+       },
+       select: { code: true, package_id: true, redeemed_at: true, invite_code_id: true },
+@@ -565,23 +627,23 @@ export class CoachCodeToolsService {
+ 
+     // Every current shareable code appears, even with zero signups.
+     const live = await this.prisma.inviteCode.findMany({
+-      where: { coach_id: coachId, intended_email: null, revoked: false },
++      where: { ...rowWhere(scope), intended_email: null, revoked: false },
+       select: { id: true, code: true, label: true },
+       take: LIST_LIMIT,
+     });
+     const labels = new Map<string, { id: string; label: string | null }>(
+       live.map((r) => [r.code, { id: r.id, label: r.label }]),
+     );
+-    const missing = [...byCode.keys()].filter((c) => !labels.has(c) && c !== profile?.invite_code);
++    const missing = [...byCode.keys()].filter((c) => !labels.has(c) && c !== linkCode);
+     if (missing.length) {
+       const extra = await this.prisma.inviteCode.findMany({
+-        where: { coach_id: coachId, code: { in: missing } },
++        where: { ...rowWhere(scope), code: { in: missing } },
+         select: { id: true, code: true, label: true },
+       });
+       for (const r of extra) labels.set(r.code, { id: r.id, label: r.label });
+     }
+     const codeKeys = new Set<string>([...byCode.keys(), ...live.map((r) => r.code)]);
+-    if (profile?.invite_code) codeKeys.add(profile.invite_code);
++    if (linkCode) codeKeys.add(linkCode);
+ 
+     const series = (counts: number[]) => dates.map((date, i) => ({ date, count: counts[i] }));
+     const sum = (counts: number[]) => counts.reduce((a, b) => a + b, 0);
+@@ -599,7 +661,7 @@ export class CoachCodeToolsService {
+       by_code: [...codeKeys]
+         .map((code) => {
+           const counts = byCode.get(code)?.counts ?? zero();
+-          const isLink = code === profile?.invite_code;
++          const isLink = code === linkCode;
+           const meta = labels.get(code);
+           return {
+             code,
+@@ -629,6 +691,7 @@ export class CoachCodeToolsService {
+   private writeRotateAudit(
+     actor: CodeActor,
+     ctx: Ctx,
++    tenantId: string,
+     kind: 'coach_link' | 'invite_code',
+     previousId: string,
+     successorId: string | null,
+@@ -639,7 +702,7 @@ export class CoachCodeToolsService {
+       actorId: actor.id,
+       actorRole: actor.role,
+       actorEmail: actor.email ?? null,
+-      tenantCoachId: actor.id,
++      tenantCoachId: tenantId,
+       targetType: kind === 'coach_link' ? 'coach_profile_invite_code' : 'invite_code',
+       targetId: successorId ?? actor.id,
+       ip: ctx.ip ?? null,
+@@ -648,19 +711,22 @@ export class CoachCodeToolsService {
+     });
+   }
+ 
+-  private async usageByCode(
+-    coachId: string,
+-  ): Promise<Map<string, { total: number; week: number }>> {
++  private async scopeOf(actorId: string): Promise<Scope> {
++    const a = await this.inviteCodes.resolveTeamAttribution(actorId);
++    return { tenantId: a.effective_coach_id, issuerId: a.invited_by_user_id };
++  }
++
++  private async usageByCode(scope: Scope): Promise<Map<string, { total: number; week: number }>> {
+     const since = new Date(Date.now() - 7 * DAY_MS);
+     const [all, week] = await Promise.all([
+       this.prisma.inviteRedemption.groupBy({
+         by: ['code'],
+-        where: { coach_id: coachId },
++        where: ledgerWhere(scope),
+         _count: { _all: true },
+       }),
+       this.prisma.inviteRedemption.groupBy({
+         by: ['code'],
+-        where: { coach_id: coachId, redeemed_at: { gte: since } },
++        where: { ...ledgerWhere(scope), redeemed_at: { gte: since } },
+         _count: { _all: true },
+       }),
+     ]);
+@@ -681,8 +747,8 @@ export class CoachCodeToolsService {
+     return new Map(rows.map((r) => [r.id, r.name]));
+   }
+ 
+-  private async viewOne(coachId: string, row: InviteRow): Promise<CoachCodeView> {
+-    const usage = await this.usageByCode(coachId);
++  private async viewOne(scope: Scope, row: InviteRow): Promise<CoachCodeView> {
++    const usage = await this.usageByCode(scope);
+     const packages = await this.packageNames([row.package_id]);
+     return this.rowView(row, usage, packages, Date.now());
+   }
+@@ -705,6 +771,7 @@ export class CoachCodeToolsService {
+       code: profile.invite_code,
+       label: 'Coach link',
+       status: 'active',
++      issued_by_user_id: null,
+       join_url: url,
+       qr_payload: url,
+       created_at: profile.created_at ? profile.created_at.toISOString() : null,
+@@ -734,6 +801,7 @@ export class CoachCodeToolsService {
+       code: row.code,
+       label: row.label,
+       status: codeStatus(row, now),
++      issued_by_user_id: row.invited_by_user_id,
+       join_url: url,
+       qr_payload: url,
+       created_at: row.created_at.toISOString(),
+@@ -756,6 +824,26 @@ export class CoachCodeToolsService {
+   }
+ }
+ 
++function rowWhere(s: Scope): Prisma.InviteCodeWhereInput {
++  return { coach_id: s.tenantId, ...(s.issuerId ? { invited_by_user_id: s.issuerId } : {}) };
++}
++
++function ledgerWhere(s: Scope): Prisma.InviteRedemptionWhereInput {
++  return {
++    coach_id: s.tenantId,
++    ...(s.issuerId ? { invite_code: { is: { invited_by_user_id: s.issuerId } } } : {}),
++  };
++}
++
++/** The caller may see and change this shareable code (B-658-1); anything else is a non-leaking 404. */
++function owns(
++  s: Scope,
++  row: { coach_id: string; invited_by_user_id: string | null; intended_email: string | null },
++): boolean {
++  if (row.coach_id !== s.tenantId || row.intended_email) return false;
++  return !s.issuerId || row.invited_by_user_id === s.issuerId;
++}
++
+ function cleanLabel(raw: string | undefined): string | null {
+   if (raw === undefined || raw === null) return null;
+   const trimmed = raw.replace(/\s+/g, ' ').trim();
+diff --git a/src/invite-codes/invite-codes.service.ts b/src/invite-codes/invite-codes.service.ts
+index 9f200ccb..d8869afa 100644
+--- a/src/invite-codes/invite-codes.service.ts
++++ b/src/invite-codes/invite-codes.service.ts
+@@ -168,6 +168,16 @@ class AttachRaceSameCoach extends Error {
+   }
+ }
+ 
++/** B-658-7 — the coach link the caller saw is no longer current: answer with that rotation's outcome. */
++class LinkAlreadyRotated extends Error {}
++
++function linkRotationConflict(): ConflictException {
++  return new ConflictException({
++    code: 'code_rotation_conflict',
++    message: 'Your coach link was just changed on another device. Refresh your codes to see the current link.',
++  });
++}
++
+ /** Only students can be attached to a coach; every other role is refused, never rewritten. */
+ function assertRedeemerIsStudent(me: { role: string }): void {
+   if (me.role === 'student') return;
+@@ -392,7 +402,7 @@ export class InviteCodesService {
+   // Returned shape:
+   //   - head coach (no active sub-coach assignment): {effective_coach_id: callerId, invited_by_user_id: null}
+   //   - sub-coach (>=1 active assignment): {effective_coach_id: head_coach_id, invited_by_user_id: callerId}
+-  private async resolveTeamAttribution(
++  async resolveTeamAttribution(
+     callerId: string,
+   ): Promise<{ effective_coach_id: string; invited_by_user_id: string | null }> {
+     const subAssignment = await this.prisma.teamSubCoachAssignment.findFirst({
+@@ -617,13 +627,19 @@ export class InviteCodesService {
+    * window gets the same package. Clients already attached are untouched:
+    * User.coach_id is the durable link, and a replay of the old code by an
+    * attached client stays the idempotent `already_attached` success.
++   * B-658-7: with `expectedCode` (the link the caller saw) a retry, or an
++   * overlapping duplicate, of a rotation that already happened writes nothing
++   * and returns that rotation's successor (`successor_code` on the archived row).
+    */
+   async rotateDefaultCode(
+     coachId: string,
+     graceMs: number,
++    expectedCode?: string | null,
+   ): Promise<{
+     profile: Awaited<ReturnType<InviteCodesService['getOrCreateDefaultForCoach']>>;
+     previous: { id: string; code: string; expires_at: Date | null; revoked: boolean };
++    replayed: boolean;
++    successorCode: string;
+   }> {
+     await this.getOrCreateDefaultForCoach(coachId);
+     for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt++) {
+@@ -632,6 +648,7 @@ export class InviteCodesService {
+         return await this.prisma.$transaction(async (tx) => {
+           const current = await tx.coachProfile.findUnique({ where: { user_id: coachId } });
+           if (!current) throw new NotFoundException({ code: 'coach_profile_missing', message: 'Coach profile not found' });
++          if (expectedCode && current.invite_code !== expectedCode) throw new LinkAlreadyRotated();
+           const now = new Date();
+           const archived = await tx.inviteCode.create({
+             data: {
+@@ -644,6 +661,7 @@ export class InviteCodesService {
+               revoked_at: graceMs <= 0 ? now : null,
+               package_id: current.invite_code_package_id,
+               grant_mode: current.invite_code_grant_mode,
++              successor_code: next,
+             },
+             select: { id: true, code: true, expires_at: true, revoked: true },
+           });
+@@ -655,16 +673,26 @@ export class InviteCodesService {
+             data: { invite_code: next },
+           });
+           if (moved.count !== 1) {
+-            throw new ConflictException({
+-              code: 'code_rotation_conflict',
+-              message: 'Your coach link was just changed on another device. Refresh your codes to see the current link.',
+-            });
++            if (expectedCode) throw new LinkAlreadyRotated();
++            throw linkRotationConflict();
+           }
+           const profile = await tx.coachProfile.findUnique({ where: { user_id: coachId } });
+           if (!profile) throw new NotFoundException({ code: 'coach_profile_missing', message: 'Coach profile not found' });
+-          return { profile, previous: archived };
++          return { profile, previous: archived, replayed: false, successorCode: next };
+         });
+       } catch (err) {
++        if (err instanceof LinkAlreadyRotated && expectedCode) {
++          // Nothing is written: the archived row of the expected code names its successor.
++          const previous = await this.prisma.inviteCode.findUnique({
++            where: { code: expectedCode },
++            select: { id: true, code: true, expires_at: true, revoked: true, coach_id: true, successor_code: true },
++          });
++          if (!previous || previous.coach_id !== coachId || !previous.successor_code) throw linkRotationConflict();
++          const profile = await this.getOrCreateDefaultForCoach(coachId);
++          return { profile, previous, replayed: true, successorCode: previous.successor_code };
++        }
++        // A duplicate archive of the same code means a concurrent rotation won:
++        // the next attempt sees the moved link (and, with expectedCode, replays it).
+         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') continue;
+         throw err;
+       }
+diff --git a/src/invite-grant/invite-grant.service.ts b/src/invite-grant/invite-grant.service.ts
+index 43940a37..6cb75816 100644
+--- a/src/invite-grant/invite-grant.service.ts
++++ b/src/invite-grant/invite-grant.service.ts
+@@ -279,6 +279,35 @@ export class InviteGrantService implements OnModuleInit {
+     };
+   }
+ 
++  /**
++   * Which package a code may carry (setBinding and A2 create): the code coach's own active package
++   * that needs no signed agreement (a code attach has no signing step). Returns the package id.
++   */
++  async assertBindablePackage(coachId: string, packageId: string): Promise<string> {
++    const pkg = await this.prisma.coachPackage.findUnique({
++      where: { id: packageId },
++      select: {
++        id: true,
++        coach_id: true,
++        is_active: true,
++        archived_at: true,
++        requires_contract: true,
++        contract_template_id: true,
++      },
++    });
++    if (!pkg || pkg.coach_id !== coachId || !pkg.is_active || pkg.archived_at) {
++      throw new NotFoundException({ error: 'PACKAGE_NOT_FOUND', message: 'Package not available' });
++    }
++    if (pkg.requires_contract && pkg.contract_template_id) {
++      throw new BadRequestException({
++        error: 'PACKAGE_REQUIRES_CONTRACT',
++        message:
++          'Packages that require a signed agreement cannot be granted through an invite code',
++      });
++    }
++    return pkg.id;
++  }
++
+   /**
+    * Coach/owner sets or clears the package binding on a code they own.
+    * `package_id: null` or `grant_mode: 'none'` clears the binding (both are
+@@ -302,33 +331,7 @@ export class InviteGrantService implements OnModuleInit {
+     let packageId: string | null = null;
+     let mode: InviteGrantMode = 'none';
+     if (!clearing) {
+-      const pkg = await this.prisma.coachPackage.findUnique({
+-        where: { id: input.package_id as string },
+-        select: {
+-          id: true,
+-          coach_id: true,
+-          is_active: true,
+-          archived_at: true,
+-          requires_contract: true,
+-          contract_template_id: true,
+-        },
+-      });
+-      if (!pkg || pkg.coach_id !== binding.coach_id || !pkg.is_active || pkg.archived_at) {
+-        throw new NotFoundException({
+-          error: 'PACKAGE_NOT_FOUND',
+-          message: 'Package not available',
+-        });
+-      }
+-      // A QR / code attach has no signing step. Packages that require the
+-      // coach service agreement cannot be bound; the gate runs at claim time.
+-      if (pkg.requires_contract && pkg.contract_template_id) {
+-        throw new BadRequestException({
+-          error: 'PACKAGE_REQUIRES_CONTRACT',
+-          message:
+-            'Packages that require a signed agreement cannot be granted through an invite code',
+-        });
+-      }
+-      packageId = pkg.id;
++      packageId = await this.assertBindablePackage(binding.coach_id, input.package_id as string);
+       mode = input.grant_mode;
+     }
+ 

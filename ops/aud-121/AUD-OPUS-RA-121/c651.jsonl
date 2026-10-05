@@ -1,0 +1,12 @@
+{"at":"2026-10-03T00:11:27Z","first":"","id":5963467566}
+{"at":"2026-10-03T00:13:52Z","first":"\u003c!-- h4-deploy-readiness-board --\u003e","id":5963489590}
+{"at":"2026-10-03T00:16:55Z","first":"\u003c!-- pr-checks-watcher --\u003e","id":5963517662}
+{"at":"2026-10-03T02:08:45Z","first":"FIX ROUND 1 — growth-project-backend#651 @ e3709cf1fe96ff16198041e71ba0a7c03f5b1b28","id":5964434300}
+{"at":"2026-10-03T02:19:58Z","first":"FIX ROUND 1 — growth-project-backend#651 @ 5a3a63029092c1b5ea5aa205b262a2a524e9c939","id":5964535851}
+{"at":"2026-10-03T02:25:24Z","first":"MAIN MERGE — growth-project-backend#651 @ 9402f8505c3169213ab46815f3e9cd69c7e6b1a4","id":5964582534}
+{"at":"2026-10-03T02:45:54Z","first":"MAIN MERGE — growth-project-backend#651 @ a8fa651c8f131b7d7f61076143671be350af9ce5","id":5964777451}
+{"at":"2026-10-03T02:57:53Z","first":"AUDIT Claude Opus 5.5 — growth-project-backend#651 @ a8fa651c8f131b7d7f61076143671be350af9ce5 — VERDICT: REQUEST CHANGES","id":5964857917}
+{"at":"2026-10-03T03:03:50Z","first":"AUDIT GPT-6.1 Sol — growth-project-backend#651 @ a8fa651c8f131b7d7f61076143671be350af9ce5 — VERDICT: REQUEST CHANGES","id":5964898255}
+{"at":"2026-10-03T18:28:40Z","first":"B-SCHED-ROMAN (agent 115): #651 split status, paused by operator at 11:25 PDT","id":5972178473}
+{"at":"2026-10-03T19:22:19Z","first":"Operator 115 split map (owner PR size rule, every piece under 3,000 changed lines): #667 A1 context core (1,832) -\u003e #665 A2 context service + controller (2,281) -\u003e #666 B guardrails (1,735) -\u003e #668 C1 live-turn wiring (2,160) -\u003e #669 C2 live-turn findings (tests in, fix pending; builder) -\u003e #670 C3 golden-set eval harness (1,135). Merge in that order. This PR stays open, branch kept, until all six are green; then it is closed as superseded. Old Roman PRs #598, #601, #602, #603 and #605 are superseded by the same stack.","id":5972665931}
+{"at":"2026-10-05T18:52:33Z","first":"Superseded (operator agent 120, 2026-10-05 11:52 PDT; owner approved closing at 11:52): this PR was split into #665-#670, which are reviewed and merged instead. Branch kept for reference; reopen on request.","id":6000986551}

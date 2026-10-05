@@ -1,0 +1,210 @@
+diff --git a/src/checkout/refund-dispute-handler.service.ts b/src/checkout/refund-dispute-handler.service.ts
+index 729624b6..ab02984b 100644
+--- a/src/checkout/refund-dispute-handler.service.ts
++++ b/src/checkout/refund-dispute-handler.service.ts
+@@ -971,6 +971,12 @@ export class RefundDisputeHandlerService {
+       send = { transfer_row_id: owed.transfer.id, amount_cents: admission.amount_cents };
+       if (current.transfer_reversal_first_attempt_at) unproven = owed.transfer;
+     }
++    // B-641-8 / B-674-16: every attempt, a re-drive of the operation already
++    // written too, is stamped first; the sweep orders by it, least recent first.
++    await this.prisma.chargeRefund.updateMany({
++      where: { id: refundRowId, transfer_reversed: false, transfer_reversal_review_at: null },
++      data: { transfer_reversal_last_attempt_at: clock() },
++    });
+     try {
+       const res =
+         (unproven && (await this.reversalStripeHolds(unproven, { kind: 'refund', id: refundRowId }, key))) ||
+@@ -1091,11 +1097,6 @@ export class RefundDisputeHandlerService {
+     if (row.transfer_reversal_review_at) return { outcome: 'needs_review' };
+     const firstAttempt = row.transfer_reversal_first_attempt_at ?? now;
+     if (now.getTime() - firstAttempt.getTime() <= REFUND_TRANSFER_RETRY_WINDOW_MS) {
+-      // B-641-8 (narrowed): the sweep orders by this, least recent first.
+-      await this.prisma.chargeRefund.updateMany({
+-        where: { id: refundRowId, transfer_reversed: false, transfer_reversal_review_at: null },
+-        data: { transfer_reversal_last_attempt_at: now },
+-      });
+       return {
+         outcome: 'admitted',
+         amount_cents: row.transfer_reversal_amount_cents ?? amountCents,
+@@ -1337,6 +1338,31 @@ export class RefundDisputeHandlerService {
+           'This refund is still inside the automatic retry window. The retry sweep owns it; reconcile only rows in the review list.',
+       });
+     }
++    // B-674-15: an operation already written for this refund (sent, review or
++    // found) is finished (Stripe's list by key, never a second send) and recorded
++    // first, whatever the transfer has left. A receipt another refund holds is its.
++    const key = refundTransferReversalKey(row.id);
++    const own = await this.prisma.transferReversalOp.findMany({
++      where: {
++        OR: [{ idempotency_key: key }, { idempotency_key: { startsWith: `${key}-` } }],
++        status: { in: ['pending', 'succeeded'] },
++      },
++      orderBy: { seq: 'asc' },
++    });
++    for (const prior of own) {
++      const receipt = prior.stripe_reversal_id;
++      const holder = { transfer_reversal_stripe_id: receipt, NOT: { id: row.id } };
++      if (receipt && (await this.prisma.chargeRefund.findFirst({ where: holder }))) continue;
++      const res = await this.reconcileStep(() =>
++        this.transfers.reverse({
++          transfer_row_id: prior.transfer_id,
++          amount_cents: prior.amount_cents,
++          idempotency_key: prior.idempotency_key,
++          purpose: 'legacy',
++        }),
++      );
++      return this.recordReconciled(row, res, 'recorded_from_stripe');
++    }
+     const owed = await this.owedHeadCoachReversal(row.purchase_id, row.amount_cents);
+     if (!owed) {
+       await this.markTransferReversalDone(this.prisma, row.id);
+@@ -1356,24 +1382,6 @@ export class RefundDisputeHandlerService {
+           'The head-coach transfer has no Stripe id, so there is nothing to reverse in Stripe.',
+       });
+     }
+-    // An operation already written under this refund's keys is the record:
+-    // finish it first (Stripe's list by key, never a second send).
+-    const key = refundTransferReversalKey(row.id);
+-    for (const opKey of [key, `${key}-review`]) {
+-      const prior = await this.prisma.transferReversalOp.findUnique({
+-        where: { idempotency_key: opKey },
+-      });
+-      if (prior?.status !== 'pending' && prior?.status !== 'succeeded') continue;
+-      const res = await this.reconcileStep(() =>
+-        this.transfers.reverse({
+-          transfer_row_id: prior.transfer_id,
+-          amount_cents: prior.amount_cents,
+-          idempotency_key: opKey,
+-          purpose: 'legacy',
+-        }),
+-      );
+-      return this.recordReconciled(row, res, 'recorded_from_stripe');
+-    }
+     const reversals = await this.listAllTransferReversals(stripeTransferId);
+     let match: { id: string; amount: number } | undefined;
+     if (args.stripe_transfer_reversal_id) {
+diff --git a/src/connect/fees/split-ledger.service.ts b/src/connect/fees/split-ledger.service.ts
+index 64a7d62f..b848f9d2 100644
+--- a/src/connect/fees/split-ledger.service.ts
++++ b/src/connect/fees/split-ledger.service.ts
+@@ -227,13 +227,13 @@ export class SplitLedgerService {
+     entry_id: string;
+     reversed_total_cents: number;
+     stripe_transfer_id?: string | null;
+-  }): Promise<SplitLedgerEntry> {
+-    const current = await this.prisma.splitLedgerEntry.findUniqueOrThrow({
++  }, db: Prisma.TransactionClient = this.prisma): Promise<SplitLedgerEntry> {
++    const current = await db.splitLedgerEntry.findUniqueOrThrow({
+       where: { id: args.entry_id },
+     });
+     const reversed = Math.min(current.amount_cents, Math.max(0, args.reversed_total_cents));
+     const fully = current.amount_cents > 0 && reversed >= current.amount_cents;
+-    return this.prisma.splitLedgerEntry.update({
++    return db.splitLedgerEntry.update({
+       where: { id: args.entry_id },
+       data: {
+         reversed_cents: reversed,
+diff --git a/src/connect/fees/transfer-orchestrator.service.ts b/src/connect/fees/transfer-orchestrator.service.ts
+index 7f675bf7..b1b2d8af 100644
+--- a/src/connect/fees/transfer-orchestrator.service.ts
++++ b/src/connect/fees/transfer-orchestrator.service.ts
+@@ -1053,8 +1053,8 @@ export class TransferOrchestratorService {
+    * holds (found on the transfer's complete reversal list) as a completed
+    * operation, with no Stripe call. One transaction takes the transfer's
+    * reversal slot, writes the operation already succeeded (it is never
+-   * pending, so no driver can send it) and adds it to the recorded total
+-   * (base = the recorded total, as for every operation; a legacy
++   * pending, so no driver can send it) and adds it to the recorded total and
++   * the head slice (base = the recorded total, as for every operation; a legacy
+    * transfer.reversed only observes, B-674-3). A reversal an operation
+    * already recorded (stripe_reversal_id is unique) is returned as recorded.
+    */
+@@ -1131,7 +1131,7 @@ export class TransferOrchestratorService {
+             reversed_at: full ? new Date() : t.reversed_at,
+           },
+         });
+-        return { transfer, op_id: op.id };
++        return { transfer: await this.mirrorHeadSlice(tx, transfer), op_id: op.id };
+       });
+     } catch (err) {
+       if ((err as { code?: string }).code !== 'P2002') throw err;
+@@ -1146,15 +1146,7 @@ export class TransferOrchestratorService {
+         'another worker started a reversal on this transfer at the same time',
+       );
+     }
+-    const { transfer } = written;
+-    if (transfer.ledger_entry_id && !transfer.settlement_id && transfer.stripe_transfer_id) {
+-      await this.ledger.setReversedTotal({
+-        entry_id: transfer.ledger_entry_id,
+-        reversed_total_cents: transfer.reversed_amount_cents,
+-        stripe_transfer_id: transfer.stripe_transfer_id,
+-      });
+-    }
+-    return { status: 'succeeded', transfer, op_id: written.op_id };
++    return { status: 'succeeded', ...written };
+   }
+ 
+   /**
+@@ -1438,7 +1430,7 @@ export class TransferOrchestratorService {
+         Math.max(t.reversed_amount_cents, op.base_reversed_cents + op.amount_cents),
+       );
+       const full = reversed >= t.amount_cents;
+-      return tx.connectTransfer.update({
++      const updated = await tx.connectTransfer.update({
+         where: { id: t.id },
+         data: {
+           reversed_amount_cents: reversed,
+@@ -1446,17 +1438,22 @@ export class TransferOrchestratorService {
+           reversed_at: full ? new Date() : t.reversed_at,
+         },
+       });
++      return this.mirrorHeadSlice(tx, updated);
+     });
+-    if (transfer.ledger_entry_id && !transfer.settlement_id && transfer.stripe_transfer_id) {
+-      await this.ledger.setReversedTotal({
+-        entry_id: transfer.ledger_entry_id,
+-        reversed_total_cents: transfer.reversed_amount_cents,
+-        stripe_transfer_id: transfer.stripe_transfer_id,
+-      });
+-    }
+     return { status: 'succeeded', transfer, op_id: op.id };
+   }
+ 
++  // B-674-1: a legacy head-coach slice mirrors its transfer's recorded total in
++  // the transaction that records that total. The transfer row lock orders the
++  // mirrors, and a failed mirror rolls the operation back (pending, re-listed).
++  private async mirrorHeadSlice(tx: Prisma.TransactionClient, t: ConnectTransfer) {
++    const { ledger_entry_id: entry_id, stripe_transfer_id } = t;
++    if (!entry_id || t.settlement_id || !stripe_transfer_id) return t;
++    const total = { entry_id, stripe_transfer_id, reversed_total_cents: t.reversed_amount_cents };
++    await this.ledger.setReversedTotal(total, tx);
++    return t;
++  }
++
+   private async refuseReversal(
+     op: TransferReversalOp,
+     diagnostic: string,
+diff --git a/test/support/stateful-prisma.ts b/test/support/stateful-prisma.ts
+index 8045f096..06a04e5c 100644
+--- a/test/support/stateful-prisma.ts
++++ b/test/support/stateful-prisma.ts
+@@ -49,6 +49,9 @@ function matchValue(actual: any, cond: any): boolean {
+         case 'equals':
+           if (!matchValue(actual, v)) return false;
+           break;
++        case 'startsWith':
++          if (!(typeof actual === 'string' && actual.startsWith(v as string))) return false;
++          break;
+         default:
+           throw new Error(`stateful-prisma: unsupported operator ${op}`);
+       }
+@@ -79,7 +82,7 @@ export function matchWhere(row: Row, where: Row | undefined): boolean {
+       !(cond instanceof Date) &&
+       !Array.isArray(cond) &&
+       Object.keys(cond).some(
+-        (op) => !['lt', 'lte', 'gt', 'gte', 'in', 'notIn', 'not', 'equals'].includes(op),
++        (op) => !['lt', 'lte', 'gt', 'gte', 'in', 'notIn', 'not', 'equals', 'startsWith'].includes(op),
+       )
+     ) {
+       // compound unique selector, e.g. { user_id_code: { user_id, code } }
