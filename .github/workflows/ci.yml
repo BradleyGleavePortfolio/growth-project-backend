@@ -547,6 +547,8 @@ jobs:
         # And test/onboarding-tenancy-fence.live.spec.ts (#607 A607-3): the
         # completion tenancy fence (User FOR SHARE) blocks a concurrent coach
         # transfer on real Postgres; same gate and bootstrap.
+        # And test/checkout-settlement.live.spec.ts (#661 C-661-12): payment
+        # settlement row versions, row locks and recovery on real Postgres.
         # The five test/mwb-3-*.spec.ts files run under the DEFAULT jest config
         # (jest.config.js matches them via testRegex). With MWB3_TEST_DATABASE_URL
         # set they execute their live blocks instead of skipping. --runInBand so
@@ -562,6 +564,7 @@ jobs:
             test/mwb-3-revision-prune.cron.spec.ts \
             test/profile-put-concurrency.live.spec.ts \
             test/onboarding-tenancy-fence.live.spec.ts \
+            test/checkout-settlement.live.spec.ts \
             --runInBand --testTimeout=120000
         env:
           NODE_OPTIONS: --max-old-space-size=4096
