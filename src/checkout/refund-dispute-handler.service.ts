@@ -1475,7 +1475,7 @@ export class RefundDisputeHandlerService {
         code: 'TRANSFER_REVERSAL_UNCERTAIN',
         error: 'TRANSFER_REVERSAL_UNCERTAIN',
         message:
-          'Stripe could not be read to confirm this reversal, so nothing was sent again or recorded. Retry in a few minutes.',
+          'Stripe could not confirm this reversal yet, or another reversal of this transfer is still in progress, so nothing was sent again or recorded. Retry in a few minutes.',
       });
     }
     if (res.status !== 'succeeded') {
