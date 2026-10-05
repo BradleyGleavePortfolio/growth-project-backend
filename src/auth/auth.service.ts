@@ -45,6 +45,7 @@ import {
 } from './recent-auth.guard';
 import { roleSatisfies } from './roles.guard';
 import type { AppRole } from '../common/decorators/roles.decorator';
+import { describeFailure } from '../observability/log-pii';
 
 // Self-service promotion to coach is the legacy behavior of POST
 // /auth/become-coach. It is a privilege-escalation hole on a sale-ready
@@ -248,7 +249,7 @@ export class AuthService {
     } catch (err) {
       const code = inviteAttachErrorCode(err);
       this.logger.warn(
-        `${flow} invite_code attach failed for user=${userId} code=${code}: ${(err as Error).message}`,
+        `${flow} invite_code attach failed for user=${userId} code=${code}: ${describeFailure(err)}`,
       );
       return { invite_attached: false, invite_attach_error: code };
     }
@@ -827,7 +828,9 @@ export class AuthService {
     });
     if (error || !data?.session) {
       // R30/R109: never log the refresh token; surface a clear, actionable code.
-      this.logger.warn(`extension refresh rejected: ${error?.message ?? 'no session returned'}`);
+      this.logger.warn(
+        `extension refresh rejected: ${error ? describeFailure(error) : 'no session returned'}`,
+      );
       throw new UnauthorizedException({
         code: 'extension_refresh_invalid',
         message: 'refresh token invalid or expired',
@@ -877,7 +880,7 @@ export class AuthService {
     const hashedToken = linkData?.properties?.hashed_token;
     if (linkError || !hashedToken) {
       this.logger.error(
-        `pair redeem: generateLink failed: ${linkError?.message ?? 'no hashed_token'}`,
+        `pair redeem: generateLink failed: ${linkError ? describeFailure(linkError) : 'no hashed_token'}`,
       );
       throw new InternalServerErrorException('pair_redeem_session_mint_failed');
     }
@@ -895,7 +898,7 @@ export class AuthService {
     });
     if (otpError || !otpData?.session) {
       this.logger.error(
-        `pair redeem: verifyOtp failed: ${otpError?.message ?? 'no session returned'}`,
+        `pair redeem: verifyOtp failed: ${otpError ? describeFailure(otpError) : 'no session returned'}`,
       );
       throw new InternalServerErrorException('pair_redeem_session_mint_failed');
     }
@@ -1042,8 +1045,9 @@ export class AuthService {
         // supabase_id === NULL, and that path is auditable on its own.
         // See QA P0-A1.
         if (user.supabase_id && user.supabase_id !== supaUser.id) {
+          // C-611-17: ids only; the address is on the user row.
           this.logger.warn(
-            `googleAuth: refusing to re-bind supabase_id for existing user ${user.id} (email=${supaEmail}); supabase_id already set`,
+            `googleAuth: refusing to re-bind supabase_id for existing user ${user.id} (supabase_id=${supaUser.id}); supabase_id already set`,
           );
           throw new UnauthorizedException(
             'This email is registered with a different sign-in method. Sign in with that method, then link your Google account from settings.',
@@ -1155,7 +1159,7 @@ export class AuthService {
     try {
       applePayload = await this.appleVerifier.verify(token);
     } catch (err) {
-      this.logger.warn(`apple token verify failed: ${(err as Error).message}`);
+      this.logger.warn(`apple token verify failed: ${describeFailure(err)}`);
       throw new UnauthorizedException('Apple auth failed — invalid token');
     }
 
@@ -1212,7 +1216,7 @@ export class AuthService {
 
     if (signInError || !signInData.session || !signInData.user) {
       this.logger.warn(
-        `supabase signInWithIdToken(apple) failed: ${signInError?.message ?? 'no session'}`,
+        `supabase signInWithIdToken(apple) failed: ${signInError ? describeFailure(signInError) : 'no session'}`,
       );
       throw new UnauthorizedException('Apple auth failed — Supabase rejected the token');
     }
@@ -1237,8 +1241,9 @@ export class AuthService {
         // Account-takeover guard — see googleAuth above for rationale.
         // QA P0-A1.
         if (user.supabase_id && user.supabase_id !== supaUser.id) {
+          // C-611-17: ids only; the address is on the user row.
           this.logger.warn(
-            `appleAuth: refusing to re-bind supabase_id for existing user ${user.id} (email=${supaEmail}); supabase_id already set`,
+            `appleAuth: refusing to re-bind supabase_id for existing user ${user.id} (supabase_id=${supaUser.id}); supabase_id already set`,
           );
           throw new UnauthorizedException(
             'This email is registered with a different sign-in method. Sign in with that method, then link your Apple account from settings.',
@@ -1469,7 +1474,9 @@ export class AuthService {
     if (error) {
       // Don't reveal whether the email exists to the client — but do log so ops
       // can see Supabase outages instead of losing the signal. Audit M1.
-      this.logger.warn(`resetPasswordForEmail failed: ${error.message}`);
+      // B-700-2: Supabase echoes the address in some errors
+      // (email_address_invalid); log the status and code only.
+      this.logger.warn(`resetPasswordForEmail failed: ${describeFailure(error)}`);
     }
 
     return { message: 'If an account exists with that email, a reset link has been sent.' };
@@ -1781,7 +1788,7 @@ export class AuthService {
     }
 
     this.logger.warn(
-      `bootstrapFirstOwner: promoted ${user.email} (id=${user.id}) to owner. Unset BOOTSTRAP_SECRET now.`,
+      `bootstrapFirstOwner: promoted user ${user.id} to owner. Unset BOOTSTRAP_SECRET now.`,
     );
 
     return {
@@ -1813,7 +1820,11 @@ export class AuthService {
    */
   async issueRecentAuthToken(
     userId: string,
-    body: { password?: string; provider_token?: string; provider?: 'google' | 'apple' },
+    body: {
+      password?: string;
+      provider_token?: string;
+      provider?: 'google' | 'apple' | 'google_session';
+    },
   ): Promise<{ token: string; expires_in_ms: number }> {
     const secret = process.env.RECENT_AUTH_SECRET;
     if (!secret || secret.length < RECENT_AUTH_SECRET_MIN_LENGTH) {
@@ -1876,6 +1887,75 @@ export class AuthService {
   }
 
   /**
+   * Google re-auth through the Supabase-brokered OAuth flow (mobile #313
+   * B-313-1). The mobile build ships no Google client id (auth is
+   * Supabase-brokered), so it cannot obtain a Google-issued ID token. It
+   * instead runs the same Supabase Google OAuth browser flow again and sends
+   * the access token of that brand-new session. Proof requirements:
+   *   1. Supabase accepts the token (getUser validates it server-side);
+   *   2. it belongs to this user (sub == supabase_id) and the identity has a
+   *      google provider;
+   *   3. its `amr` claim records an `oauth` authentication within
+   *      RECENT_AUTH_TTL_MS. Supabase keeps the original amr timestamp across
+   *      refreshes, so the app's existing session token (the replay the old
+   *      getUser-only path allowed) does not qualify unless the user really
+   *      signed in with Google moments ago.
+   */
+  private async verifyGoogleSessionRecentAuth(
+    user: { id: string; email: string; supabase_id: string | null },
+    sessionToken: string,
+    nowSec: number,
+    ttlSec: number,
+  ): Promise<void> {
+    const claims = decodeJwtClaims(sessionToken);
+    if (!claims) throw new UnauthorizedException('Provider token is invalid');
+    let supaUser: { id: string; app_metadata?: Record<string, unknown> } | null = null;
+    try {
+      const resp = await this.withAuthTimeout<{
+        data: { user: { id: string; app_metadata?: Record<string, unknown> } | null };
+        error: { message: string } | null;
+      }>(this.supabaseAdmin.auth.getUser(sessionToken), 'getUser');
+      supaUser = resp.error ? null : resp.data.user;
+    } catch (err) {
+      const m = (err as Error)?.message ?? '';
+      if (m.startsWith('AUTH_TIMEOUT:')) {
+        this.logger.warn(`recent-auth supabase timeout: ${m}`);
+        throw new ServiceUnavailableException('Authentication service temporarily unavailable');
+      }
+      throw new UnauthorizedException('Provider token is invalid');
+    }
+    if (!supaUser || claims.sub !== supaUser.id) {
+      throw new UnauthorizedException('Provider token is invalid');
+    }
+    if (!user.supabase_id || supaUser.id !== user.supabase_id) {
+      throw new UnauthorizedException('Provider token does not belong to this user');
+    }
+    const providers = supaUser.app_metadata?.['providers'];
+    const hasGoogle =
+      (Array.isArray(providers) && providers.includes('google')) ||
+      supaUser.app_metadata?.['provider'] === 'google';
+    if (!hasGoogle) {
+      throw new UnauthorizedException('Provider token is invalid');
+    }
+    const amr: unknown = Reflect.get(claims, 'amr');
+    const oauthAt = Array.isArray(amr)
+      ? amr
+          .map((entry: unknown) =>
+            typeof entry === 'object' && entry !== null && Reflect.get(entry, 'method') === 'oauth'
+              ? Reflect.get(entry, 'timestamp')
+              : null,
+          )
+          .filter((t): t is number => typeof t === 'number')
+      : [];
+    const freshest = oauthAt.length > 0 ? Math.max(...oauthAt) : null;
+    if (freshest === null || nowSec - freshest > ttlSec) {
+      throw new UnauthorizedException(
+        'Provider token is stale — request a fresh provider token and retry',
+      );
+    }
+  }
+
+  /**
    * Re-verify a fresh Google/Apple identity token as a proof of recent auth.
    *
    * For OAuth-only users (no password on file) this is the only way to obtain
@@ -1891,12 +1971,17 @@ export class AuthService {
    */
   private async verifyOAuthRecentAuthProof(
     user: { id: string; email: string; supabase_id: string | null },
-    provider: 'google' | 'apple',
+    provider: 'google' | 'apple' | 'google_session',
     providerToken: string,
   ): Promise<void> {
     const ttl = parseTtlMs(process.env.RECENT_AUTH_TTL_MS) ?? RECENT_AUTH_TTL_DEFAULT_MS;
     const nowSec = Math.floor(Date.now() / 1000);
     const ttlSec = Math.ceil(ttl / 1000);
+
+    if (provider === 'google_session') {
+      await this.verifyGoogleSessionRecentAuth(user, providerToken, nowSec, ttlSec);
+      return;
+    }
 
     if (provider === 'apple') {
       // Apple — defense-in-depth verify the JWT with our pinned audience list,
@@ -1906,7 +1991,7 @@ export class AuthService {
         payload = await this.appleVerifier.verify(providerToken);
       } catch (err) {
         this.logger.warn(
-          `recent-auth apple token verify failed for user=${user.id}: ${(err as Error).message}`,
+          `recent-auth apple token verify failed for user=${user.id}: ${describeFailure(err)}`,
         );
         throw new UnauthorizedException('Provider token is invalid');
       }
@@ -1948,7 +2033,7 @@ export class AuthService {
       }
       if (signInError || !signInData?.user) {
         this.logger.warn(
-          `recent-auth apple supabase verify failed for user=${user.id}: ${signInError?.message ?? 'no session'}`,
+          `recent-auth apple supabase verify failed for user=${user.id}: ${signInError ? describeFailure(signInError) : 'no session'}`,
         );
         throw new UnauthorizedException('Provider token is invalid');
       }
@@ -1985,7 +2070,7 @@ export class AuthService {
       payload = await this.googleVerifier.verify(providerToken);
     } catch (err) {
       this.logger.warn(
-        `recent-auth google token verify failed for user=${user.id}: ${(err as Error).message}`,
+        `recent-auth google token verify failed for user=${user.id}: ${describeFailure(err)}`,
       );
       throw new UnauthorizedException('Provider token is invalid');
     }
@@ -2034,12 +2119,29 @@ export class AuthService {
           throw new ServiceUnavailableException('Authentication service temporarily unavailable');
         }
         this.logger.warn(
-          `recent-auth google sub lookup failed for user=${user.id}: ${(err as Error).message}`,
+          `recent-auth google sub lookup failed for user=${user.id}: ${describeFailure(err)}`,
         );
       }
     }
     if (!matchesByEmail && !matchesBySub) {
       throw new UnauthorizedException('Provider token does not belong to this user');
     }
+  }
+}
+
+/**
+ * Unverified JWT claims (base64url payload). Only used after/alongside a
+ * server-side validation of the same token (Supabase getUser), never alone.
+ */
+function decodeJwtClaims(token: string): Record<string, unknown> | null {
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const parsed: unknown = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? Object.fromEntries(Object.entries(parsed))
+      : null;
+  } catch {
+    return null;
   }
 }

@@ -85,6 +85,10 @@ function fullProdEnv(): NodeJS.ProcessEnv {
     // were added alongside the storefront. Set here so missingFeature
     // stays empty for the "clean fullProdEnv" assertion.
     APPLE_TEAM_ID: 'TEAMID1234',
+    // #608 account deletion — Sign in with Apple token revocation key
+    // (feature tier: unset means revocation is skipped, never a boot crash).
+    APPLE_SIGNIN_KEY_ID: 'KEYID12345',
+    APPLE_SIGNIN_PRIVATE_KEY: 'fixture-p8-pem',
     ANDROID_SHA256_FINGERPRINT:
       'AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99',
     RESEND_API_KEY: 're_test_key',

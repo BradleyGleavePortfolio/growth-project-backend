@@ -121,6 +121,9 @@ function buildPrismaFake() {
         return sessions[i];
       }),
     },
+    notificationDeliveryLog: {
+      deleteMany: jest.fn(async () => ({ count: 0 })),
+    },
     $transaction: jest.fn(),
   } as any;
 }
@@ -338,6 +341,10 @@ describe('SchedulingService — request + state machine + audit', () => {
       reason: 'conflict',
     });
     expect(rescheduled.start_at.toISOString()).toBe('2026-06-02T15:00:00.000Z');
+    // Sol B-647-1: the move re-arms the reminders through the claim key
+    // (session, user, kind, start_at), so it never deletes claims; a stale
+    // sweep's old-time claim cannot suppress the new time.
+    expect(prisma.notificationDeliveryLog.deleteMany).not.toHaveBeenCalled();
     const audit = auditCtx.writes.find((w) => w.action === 'session.rescheduled');
     expect(audit?.metadata).toMatchObject({
       previous_start_at: '2026-06-01T15:00:00.000Z',

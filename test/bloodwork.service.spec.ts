@@ -512,6 +512,49 @@ describe('BloodworkService', () => {
   });
 
   describe('attachments', () => {
+    it('B-608-8: a supabase storage_ref must be bloodwork/<own client id>/<file>', async () => {
+      const prisma = buildPrisma([{ id: 'client-1', coach_id: 'coach-1' }]);
+      const consent = buildConsent(
+        new Set([`client-1:coach-1:${ConsentScope.HEALTH_BLOODWORK}`]),
+      );
+      const svc = new BloodworkService(prisma, buildAudit(), consent, new KmsService());
+      const panel = await svc.createPanel(
+        'client-1',
+        { collection_date: '2026-04-01', results: [] },
+        baseCtx('client-1'),
+      );
+      for (const storage_ref of [
+        'coach-media/other-coach/video.mp4',
+        'voice-notes/another-user/clip.m4a',
+        'bloodwork/another-client/lab.pdf',
+        'bloodwork/client-1/../another-client/lab.pdf',
+        'bloodwork/client-1/',
+        undefined,
+      ]) {
+        await expect(
+          svc.registerAttachment(
+            panel.id,
+            { storage_ref, storage_backend: 'supabase' },
+            baseCtx('client-1'),
+          ),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      }
+      await expect(
+        svc.registerAttachment(
+          panel.id,
+          { storage_ref: 'coach-media/x/y.mp4', storage_backend: 'SupaBase' },
+          baseCtx('client-1'),
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      const ok = await svc.registerAttachment(
+        panel.id,
+        { storage_ref: 'bloodwork/client-1/2026/lab.pdf', storage_backend: 'Supabase' },
+        baseCtx('client-1'),
+      );
+      expect(ok.storage_backend).toBe('supabase');
+      expect(ok.storage_ref).toBe('bloodwork/client-1/2026/lab.pdf');
+    });
+
     it('client can register an attachment in pending_scan state', async () => {
       const prisma = buildPrisma([{ id: 'client-1', coach_id: 'coach-1' }]);
       const consent = buildConsent(

@@ -227,11 +227,12 @@ describe('PR-14 — Guest storefront recurring + landing_page_id propagation', (
       );
 
       // Subscription minted on the SHARED recurring price with
-      // default_incomplete semantics + connect transfer destination.
+      // default_incomplete semantics, on behalf of the coach (S-FEE: no
+      // transfer destination; each invoice is settled by transfer).
       const subCall = stripe.createSubscription.mock.calls[0][0];
       expect(subCall.recurringPriceId).toBe('price_one');
       expect(subCall.oneTimePriceId).toBeUndefined();
-      expect(subCall.transferDestination).toBe('acct_x');
+      expect(subCall.transferDestination).toBeUndefined();
       expect(subCall.onBehalfOf).toBe('acct_x');
       expect(subCall.idempotencyKey).toBe(`guest-subscription-${IDEMP_KEY}`);
 
@@ -298,14 +299,12 @@ describe('PR-14 — Guest storefront recurring + landing_page_id propagation', (
       expect(stripe.createPaymentIntent).not.toHaveBeenCalled();
     });
 
-    it('combo first-invoice fee percent is sized against the COMBO total (PR-14 R2 P1-1)', async () => {
+    it('S-FEE: combo subscription carries no application fee percent; every invoice settles from its own charge', async () => {
       // Combo: amount_cents = 29900 ($299 one-time), recurring = 4900 ($49/mo).
-      // First invoice total = 34800 cents.
-      // FeePolicy is called PER LEG. Stub returns (594, 0) for any amount,
-      // so per-leg sum = 594 + 594 = 1188 cents of platform fee.
-      // application_fee_percent should be ceil-rounded so the percent
-      // applied to 34800 collects ≥ 1188 cents.
-      //   1188 / 34800 = 3.4138% → ceil to 2dp = 3.42%
+      // The old per-leg application_fee_percent sizing is gone: the
+      // subscription lives on the platform with on_behalf_of and each paid
+      // invoice's charge is settled (price - actual Stripe fee - 2%) by
+      // transfer, so the first invoice and every renewal are exact.
       prisma.coachPackage.findUnique.mockResolvedValueOnce(
         makePkg({
           billing_type: 'one_time',
@@ -334,40 +333,14 @@ describe('PR-14 — Guest storefront recurring + landing_page_id propagation', (
 
       await service.createIntent('tok123', baseDto);
 
-      // Verify FeePolicy was called per leg (recurring + one-time).
-      expect(feePolicy.planFor).toHaveBeenCalledTimes(2);
-      const amountsPolled = feePolicy.planFor.mock.calls.map((c: any) => c[1]);
-      expect(amountsPolled).toEqual(expect.arrayContaining([4900, 29900]));
-
-      // Verify the percent was sized against the COMBO total. Computed:
-      // combined fee = 594 + 594 = 1188 cents; basis = 34800 cents;
-      // percent = ceil(1188 * 10_000 / 34800) / 100 = ceil(341379.31..)/...
-      // toStripeApplicationFeePercent's exact value: ceil((1188*10_000)/34800)
-      // = ceil(341379.3103…) (using integer math: ceil(11_880_000/34_800)
-      // = ceil(341.379...) — actually the formula is hundredths-of-a-percent
-      // ceil. Let's verify it's > the previous (recurring-only) percent.
       const subCall = stripe.createSubscription.mock.calls[0][0];
-      // With basis=4900 only, percent would have been ceil(594*10000/4900)/100
-      // = ceil(1212244.9)/100 — way higher. Now sized against 34800, it must
-      // be LOWER than what the recurring-only basis would have produced.
-      const recurringOnlyPercent = Math.ceil(
-        (594 * 10_000) / 4900,
-      ) / 100;
-      expect(subCall.applicationFeePercent).toBeDefined();
-      expect(subCall.applicationFeePercent).toBeLessThan(recurringOnlyPercent);
-
-      // Also: the percent must collect ≥ contractedFeeCents on the combo
-      // first invoice (over-collection bound is < 1 cent per Stripe's
-      // half-up rounding contract).
-      const actualPercent = subCall.applicationFeePercent;
-      const collectedCents = Math.round(
-        (actualPercent / 100) * 34800,
-      );
-      expect(collectedCents).toBeGreaterThanOrEqual(1188);
+      expect(subCall.applicationFeePercent).toBeUndefined();
+      expect(subCall.transferDestination).toBeUndefined();
+      expect(subCall.onBehalfOf).toBe('acct_x');
+      expect(feePolicy.planFor).not.toHaveBeenCalled();
     });
 
-    it('renewal fee basis: pure-recurring sizes percent against recurring_amount_cents (no regression)', async () => {
-      // Pure recurring still uses single planFor on amount_cents.
+    it('S-FEE: pure recurring subscription carries no application fee percent (no regression)', async () => {
       prisma.coachPackage.findUnique.mockResolvedValueOnce(
         makePkg({
           billing_type: 'recurring',
@@ -395,9 +368,9 @@ describe('PR-14 — Guest storefront recurring + landing_page_id propagation', (
 
       await service.createIntent('tok123', baseDto);
 
-      // FeePolicy called exactly once for pure recurring (no per-leg sum).
-      expect(feePolicy.planFor).toHaveBeenCalledTimes(1);
-      expect(feePolicy.planFor.mock.calls[0][1]).toBe(4900);
+      const subCall = stripe.createSubscription.mock.calls[0][0];
+      expect(subCall.applicationFeePercent).toBeUndefined();
+      expect(subCall.recurringPriceId).toBe('price_one');
     });
 
     it('idempotent replay: the existing GuestCheckout row is replayed without minting a second Subscription', async () => {

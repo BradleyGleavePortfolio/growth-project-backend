@@ -12,6 +12,7 @@ import { RolesGuard } from './auth/roles.guard';
 import { PilotCoachAllowlistGuard } from './common/feature-flag/pilot-coach-allowlist.guard';
 import { ProfileModule } from './profile/profile.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
+import { EngagementModule } from './engagement/engagement.module';
 import { FoodModule } from './food/food.module';
 import { LogModule } from './log/log.module';
 import { WorkoutModule } from './workout/workout.module';
@@ -191,6 +192,7 @@ import { WearablesModule } from './wearables/wearables.module';
     ExtensionPairModule,
     ProfileModule,
     OnboardingModule,
+    EngagementModule,
     FoodModule,
     LogModule,
     WorkoutModule,

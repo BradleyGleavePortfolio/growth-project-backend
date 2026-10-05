@@ -145,6 +145,14 @@ export const AutosaveBatchSchema = z
 export const UndoRequestSchema = z
   .object({
     to_revision_index: z.number().int().min(0),
+    /**
+     * S-MWB-3 (B-328-6): optional head fence. When sent, the undo applies only
+     * if the plan's head is still this index; otherwise a typed 409
+     * `undo_head_moved` carries the current head so the client reconciles. A
+     * retried undo whose first attempt already committed (response lost) is
+     * therefore refused instead of restoring a second time.
+     */
+    expected_head_index: z.number().int().min(0).optional(),
   })
   .strict();
 
