@@ -88,8 +88,14 @@ export class BroadcastsService {
         orderBy: { created_at: 'desc' },
         take: 100,
       }),
+      // B-728-1: the library's read rule (own or tenant_shared masters only).
       this.prisma.workoutProgram.findMany({
-        where: { coach_id: scope.tenantId, is_template: true, archived_at: null },
+        where: {
+          coach_id: scope.tenantId,
+          is_template: true,
+          archived_at: null,
+          OR: [{ owner_user_id: scope.actorId }, { visibility: 'tenant_shared' }],
+        },
         select: { id: true, name: true },
         orderBy: { updated_at: 'desc' },
         take: 100,
@@ -123,6 +129,7 @@ export class BroadcastsService {
     scope: CoachScope,
     input: BroadcastInput,
     now: Date,
+    currentStatus: 'draft' | 'scheduled' = 'scheduled',
   ): Promise<ValidBroadcast> {
     if (typeof input.body !== 'string') throw broadcastError('broadcast.body_invalid');
     const body = input.body.trim();
@@ -151,7 +158,7 @@ export class BroadcastsService {
     const recurrence = input.recurrence == null ? null : parseRecurrence(input.recurrence);
     if (input.urgent !== undefined && typeof input.urgent !== 'boolean')
       throw broadcastError('broadcast.body_invalid', { field: 'urgent' });
-    const status = input.status ?? 'scheduled';
+    const status = input.status ?? currentStatus;
     if (status !== 'draft' && status !== 'scheduled')
       throw broadcastError('broadcast.invalid_transition');
     return {
@@ -273,7 +280,13 @@ export class BroadcastsService {
     const row = await this.load(scope, id);
     if (!EDITABLE.has(row.status)) throw broadcastError('broadcast.not_editable');
     const lastRun = await this.lastClaimed(row.id);
-    const v = await this.validate(scope, input, now);
+    // C-728-1: an edit that omits status keeps a draft a draft (never arms it).
+    const v = await this.validate(
+      scope,
+      input,
+      now,
+      row.status === 'draft' ? 'draft' : 'scheduled',
+    );
     // B-659-1: a claimed occurrence is never sent twice. A one-off that has
     // started sending is immutable (its run carries its own frozen payload);
     // a series may be edited, and the edit applies from the next occurrence.

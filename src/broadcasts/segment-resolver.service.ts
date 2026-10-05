@@ -72,8 +72,15 @@ export class SegmentResolverService {
         if (n !== rule.values.length)
           throw broadcastError('broadcast.segment_ref_not_found', { field: 'package' });
       } else if (rule.field === 'program') {
+        // B-728-1: only a master the caller can read in the program library
+        // (their own, or shared with the team), as ProgramLibraryService does.
         const n = await this.prisma.workoutProgram.count({
-          where: { id: { in: rule.values }, coach_id: scope.tenantId },
+          where: {
+            id: { in: rule.values },
+            coach_id: scope.tenantId,
+            is_template: true,
+            OR: [{ owner_user_id: scope.actorId }, { visibility: 'tenant_shared' }],
+          },
         });
         if (n !== rule.values.length)
           throw broadcastError('broadcast.segment_ref_not_found', { field: 'program' });
@@ -101,8 +108,25 @@ export class SegmentResolverService {
         return new Set(rows.map((r) => r.client_user_id));
       }
       case 'program': {
+        // B-727-1: assigning a master gives the client a live copy
+        // (cloned_from_id = master) whose days carry the copy's id.
         const rows = await this.prisma.clientWorkoutAssignment.findMany({
-          where: { client_id: { in: roster }, workout_plan: { program_id: { in: rule.values } } },
+          where: {
+            client_id: { in: roster },
+            workout_plan: {
+              OR: [
+                { program_id: { in: rule.values } },
+                {
+                  program: {
+                    cloned_from_id: { in: rule.values },
+                    is_template: false,
+                    archived_at: null,
+                    coach_id: scope.tenantId,
+                  },
+                },
+              ],
+            },
+          },
           select: { client_id: true },
           distinct: ['client_id'],
         });
