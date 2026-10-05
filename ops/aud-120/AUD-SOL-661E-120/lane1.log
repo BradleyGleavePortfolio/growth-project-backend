@@ -1,0 +1,710 @@
+targeted	Set up job	﻿2026-10-05T17:49:03.2030318Z Current runner version: '2.337.0'
+targeted	Set up job	2026-10-05T17:49:03.2059517Z ##[group]Runner Image Provisioner
+targeted	Set up job	2026-10-05T17:49:03.2060624Z Hosted Compute Agent
+targeted	Set up job	2026-10-05T17:49:03.2061363Z Version: 20260901.588
+targeted	Set up job	2026-10-05T17:49:03.2062191Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	Set up job	2026-10-05T17:49:03.2063101Z Build Date: 2026-09-01T19:56:44Z
+targeted	Set up job	2026-10-05T17:49:03.2063896Z Worker ID: {759769f1-123c-4273-b025-0e8baa7f09b2}
+targeted	Set up job	2026-10-05T17:49:03.2064855Z Azure Region: eastus
+targeted	Set up job	2026-10-05T17:49:03.2065584Z ##[endgroup]
+targeted	Set up job	2026-10-05T17:49:03.2067572Z ##[group]Operating System
+targeted	Set up job	2026-10-05T17:49:03.2068388Z Ubuntu
+targeted	Set up job	2026-10-05T17:49:03.2069070Z 24.04.5
+targeted	Set up job	2026-10-05T17:49:03.2069823Z LTS
+targeted	Set up job	2026-10-05T17:49:03.2070484Z ##[endgroup]
+targeted	Set up job	2026-10-05T17:49:03.2071206Z ##[group]Runner Image
+targeted	Set up job	2026-10-05T17:49:03.2071969Z Image: ubuntu-24.04
+targeted	Set up job	2026-10-05T17:49:03.2072660Z Version: 20260927.320.1
+targeted	Set up job	2026-10-05T17:49:03.2074049Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	Set up job	2026-10-05T17:49:03.2076433Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	Set up job	2026-10-05T17:49:03.2078021Z ##[endgroup]
+targeted	Set up job	2026-10-05T17:49:03.2079598Z ##[group]GITHUB_TOKEN Permissions
+targeted	Set up job	2026-10-05T17:49:03.2081742Z Contents: read
+targeted	Set up job	2026-10-05T17:49:03.2082477Z Metadata: read
+targeted	Set up job	2026-10-05T17:49:03.2083236Z Packages: read
+targeted	Set up job	2026-10-05T17:49:03.2083892Z ##[endgroup]
+targeted	Set up job	2026-10-05T17:49:03.2086257Z Secret source: Actions
+targeted	Set up job	2026-10-05T17:49:03.2087622Z Cache mode: write
+targeted	Set up job	2026-10-05T17:49:03.2088430Z Prepare workflow directory
+targeted	Set up job	2026-10-05T17:49:03.2454341Z Prepare all required actions
+targeted	Set up job	2026-10-05T17:49:03.2493890Z Getting action download info
+targeted	Set up job	2026-10-05T17:49:03.4169425Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	Set up job	2026-10-05T17:49:03.7052143Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	Set up job	2026-10-05T17:49:04.0759624Z Complete job name: targeted
+targeted	Initialize containers	﻿2026-10-05T17:49:04.1170772Z ##[group]Checking docker version
+targeted	Initialize containers	2026-10-05T17:49:04.1181392Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+targeted	Initialize containers	2026-10-05T17:49:04.2338581Z '1.48'
+targeted	Initialize containers	2026-10-05T17:49:04.2358292Z Docker daemon API version: '1.48'
+targeted	Initialize containers	2026-10-05T17:49:04.2359260Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+targeted	Initialize containers	2026-10-05T17:49:04.2497233Z '1.48'
+targeted	Initialize containers	2026-10-05T17:49:04.2508540Z Docker client API version: '1.48'
+targeted	Initialize containers	2026-10-05T17:49:04.2512592Z ##[endgroup]
+targeted	Initialize containers	2026-10-05T17:49:04.2514588Z ##[group]Clean up resources from previous jobs
+targeted	Initialize containers	2026-10-05T17:49:04.2518905Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=2692f0"
+targeted	Initialize containers	2026-10-05T17:49:04.2638522Z ##[command]/usr/bin/docker network prune --force --filter "label=2692f0"
+targeted	Initialize containers	2026-10-05T17:49:04.2753753Z ##[endgroup]
+targeted	Initialize containers	2026-10-05T17:49:04.2754223Z ##[group]Create local container network
+targeted	Initialize containers	2026-10-05T17:49:04.2761883Z ##[command]/usr/bin/docker network create --label 2692f0 github_network_bddd91558667496c8fcfec9dfb011bab
+targeted	Initialize containers	2026-10-05T17:49:04.3962192Z 0577e6e717acc0355d2596b9e59197bd27b4592fa96ad518d4dc7b6eaad18f3f
+targeted	Initialize containers	2026-10-05T17:49:04.3980889Z ##[endgroup]
+targeted	Initialize containers	2026-10-05T17:49:04.4003039Z ##[group]Starting redis service container
+targeted	Initialize containers	2026-10-05T17:49:04.4020750Z ##[command]/usr/bin/docker pull redis:7-alpine
+targeted	Initialize containers	2026-10-05T17:49:04.9752413Z 7-alpine: Pulling from library/redis
+targeted	Initialize containers	2026-10-05T17:49:05.2732311Z 16333ee0c00f: Pulling fs layer
+targeted	Initialize containers	2026-10-05T17:49:05.2733458Z 83234986c742: Pulling fs layer
+targeted	Initialize containers	2026-10-05T17:49:05.2734410Z 7eb50503c2b0: Pulling fs layer
+targeted	Initialize containers	2026-10-05T17:49:05.2735272Z 1522f9c6f453: Pulling fs layer
+targeted	Initialize containers	2026-10-05T17:49:05.2736157Z 9928009b15c8: Pulling fs layer
+targeted	Initialize containers	2026-10-05T17:49:05.2737270Z 4f4fb700ef54: Pulling fs layer
+targeted	Initialize containers	2026-10-05T17:49:05.2738280Z 4eb14bae0e1d: Pulling fs layer
+targeted	Initialize containers	2026-10-05T17:49:05.2739025Z 1522f9c6f453: Waiting
+targeted	Initialize containers	2026-10-05T17:49:05.2739568Z 9928009b15c8: Waiting
+targeted	Initialize containers	2026-10-05T17:49:05.2740138Z 4f4fb700ef54: Waiting
+targeted	Initialize containers	2026-10-05T17:49:05.2740714Z 4eb14bae0e1d: Waiting
+targeted	Initialize containers	2026-10-05T17:49:05.2960787Z 83234986c742: Verifying Checksum
+targeted	Initialize containers	2026-10-05T17:49:05.2961981Z 83234986c742: Download complete
+targeted	Initialize containers	2026-10-05T17:49:05.3012407Z 7eb50503c2b0: Verifying Checksum
+targeted	Initialize containers	2026-10-05T17:49:05.3013968Z 7eb50503c2b0: Download complete
+targeted	Initialize containers	2026-10-05T17:49:05.3207785Z 16333ee0c00f: Download complete
+targeted	Initialize containers	2026-10-05T17:49:05.3250636Z 9928009b15c8: Verifying Checksum
+targeted	Initialize containers	2026-10-05T17:49:05.3251847Z 9928009b15c8: Download complete
+targeted	Initialize containers	2026-10-05T17:49:05.3600417Z 4eb14bae0e1d: Verifying Checksum
+targeted	Initialize containers	2026-10-05T17:49:05.3601524Z 4eb14bae0e1d: Download complete
+targeted	Initialize containers	2026-10-05T17:49:05.3602443Z 4f4fb700ef54: Verifying Checksum
+targeted	Initialize containers	2026-10-05T17:49:05.3603406Z 4f4fb700ef54: Download complete
+targeted	Initialize containers	2026-10-05T17:49:05.4005610Z 1522f9c6f453: Verifying Checksum
+targeted	Initialize containers	2026-10-05T17:49:05.4007363Z 1522f9c6f453: Download complete
+targeted	Initialize containers	2026-10-05T17:49:05.6444534Z 16333ee0c00f: Pull complete
+targeted	Initialize containers	2026-10-05T17:49:11.4971451Z 83234986c742: Pull complete
+targeted	Initialize containers	2026-10-05T17:49:11.6061285Z 7eb50503c2b0: Pull complete
+targeted	Initialize containers	2026-10-05T17:49:11.9248993Z 1522f9c6f453: Pull complete
+targeted	Initialize containers	2026-10-05T17:49:11.9317331Z 9928009b15c8: Pull complete
+targeted	Initialize containers	2026-10-05T17:49:11.9385474Z 4f4fb700ef54: Pull complete
+targeted	Initialize containers	2026-10-05T17:49:11.9462467Z 4eb14bae0e1d: Pull complete
+targeted	Initialize containers	2026-10-05T17:49:11.9494533Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+targeted	Initialize containers	2026-10-05T17:49:11.9505357Z Status: Downloaded newer image for redis:7-alpine
+targeted	Initialize containers	2026-10-05T17:49:11.9522173Z docker.io/library/redis:7-alpine
+targeted	Initialize containers	2026-10-05T17:49:11.9555355Z ##[command]/usr/bin/docker create --name a631395bf9f744a78564ab4c84ddb699_redis7alpine_8da32e --label 2692f0 --network github_network_bddd91558667496c8fcfec9dfb011bab --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+targeted	Initialize containers	2026-10-05T17:49:11.9742799Z 1c6c73eed32fd2258b34fe04d8b748b23140ee2cdd9262a595585afb77ca9132
+targeted	Initialize containers	2026-10-05T17:49:11.9761870Z ##[command]/usr/bin/docker start 1c6c73eed32fd2258b34fe04d8b748b23140ee2cdd9262a595585afb77ca9132
+targeted	Initialize containers	2026-10-05T17:49:12.1477840Z 1c6c73eed32fd2258b34fe04d8b748b23140ee2cdd9262a595585afb77ca9132
+targeted	Initialize containers	2026-10-05T17:49:12.1499174Z ##[command]/usr/bin/docker ps --all --filter id=1c6c73eed32fd2258b34fe04d8b748b23140ee2cdd9262a595585afb77ca9132 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+targeted	Initialize containers	2026-10-05T17:49:12.1603860Z 1c6c73eed32fd2258b34fe04d8b748b23140ee2cdd9262a595585afb77ca9132 Up Less than a second (health: starting)
+targeted	Initialize containers	2026-10-05T17:49:12.1620473Z ##[command]/usr/bin/docker port 1c6c73eed32fd2258b34fe04d8b748b23140ee2cdd9262a595585afb77ca9132
+targeted	Initialize containers	2026-10-05T17:49:12.1719896Z 6379/tcp -> 0.0.0.0:6379
+targeted	Initialize containers	2026-10-05T17:49:12.1720532Z 6379/tcp -> [::]:6379
+targeted	Initialize containers	2026-10-05T17:49:12.1755140Z ##[endgroup]
+targeted	Initialize containers	2026-10-05T17:49:12.1762247Z ##[group]Waiting for all services to be ready
+targeted	Initialize containers	2026-10-05T17:49:12.1772744Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 1c6c73eed32fd2258b34fe04d8b748b23140ee2cdd9262a595585afb77ca9132
+targeted	Initialize containers	2026-10-05T17:49:12.1867998Z starting
+targeted	Initialize containers	2026-10-05T17:49:12.1884234Z redis service is starting, waiting 2 seconds before checking again.
+targeted	Initialize containers	2026-10-05T17:49:14.1880308Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 1c6c73eed32fd2258b34fe04d8b748b23140ee2cdd9262a595585afb77ca9132
+targeted	Initialize containers	2026-10-05T17:49:14.1978255Z starting
+targeted	Initialize containers	2026-10-05T17:49:14.1987968Z redis service is starting, waiting 3 seconds before checking again.
+targeted	Initialize containers	2026-10-05T17:49:18.1357299Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 1c6c73eed32fd2258b34fe04d8b748b23140ee2cdd9262a595585afb77ca9132
+targeted	Initialize containers	2026-10-05T17:49:18.1466376Z healthy
+targeted	Initialize containers	2026-10-05T17:49:18.1480366Z redis service is healthy.
+targeted	Initialize containers	2026-10-05T17:49:18.1480933Z ##[endgroup]
+targeted	Run actions/checkout@v6	﻿2026-10-05T17:49:18.1700854Z ##[group]Run actions/checkout@v6
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.1701289Z with:
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.1701541Z   repository: BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.1703467Z   token: ***
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.1703656Z   ssh-strict: true
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.1703832Z   ssh-user: git
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.1704005Z   persist-credentials: true
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.1704446Z   clean: true
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.1704625Z   sparse-checkout-cone-mode: true
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.1704828Z   fetch-depth: 1
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.1704995Z   fetch-tags: false
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.1705167Z   show-progress: true
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.1705337Z   lfs: false
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.1705493Z   submodules: false
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.1705667Z   set-safe-directory: true
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.1705879Z   allow-unsafe-pr-checkout: false
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.1706294Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2570474Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2571751Z ##[group]Getting Git version info
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2572209Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2572716Z [command]/usr/bin/git version
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2572921Z git version 2.55.0
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2573586Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2577266Z Temporarily overriding HOME='/home/runner/work/_temp/0e0de3f2-0cbc-4832-9ef9-821f4973ac6d' before making global git config changes
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2577890Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2579838Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2620330Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2623741Z ##[group]Determining repository object format
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2625573Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2625913Z ##[group]Initializing the repository
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2630470Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2703933Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2704652Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2705250Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2705588Z hint: call:
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2705838Z hint:
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2706191Z hint: 	git config --global init.defaultBranch <name>
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2706598Z hint:
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2706964Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2707771Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2708245Z hint:
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2708512Z hint: 	git branch -m <name>
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2708798Z hint:
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2709187Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2710219Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2714916Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2759111Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2759477Z ##[group]Disabling automatic garbage collection
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2759797Z [command]/usr/bin/git config --local gc.auto 0
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2786124Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2786745Z ##[group]Setting up auth
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2790499Z Removing SSH command configuration
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2792626Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.2817319Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.3079371Z Removing HTTP extra header
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.3084055Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.3111621Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.3290576Z Removing includeIf entries pointing to credentials config files
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.3295744Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.3320813Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.3505959Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-6c4e2bde-0c53-4928-b260-7332029def39.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.3535821Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-6c4e2bde-0c53-4928-b260-7332029def39.config
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.3560708Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-6c4e2bde-0c53-4928-b260-7332029def39.config
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.3586167Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-6c4e2bde-0c53-4928-b260-7332029def39.config
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.3610469Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-6c4e2bde-0c53-4928-b260-7332029def39.config
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.3638718Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.3639066Z ##[group]Fetching the repository
+targeted	Run actions/checkout@v6	2026-10-05T17:49:18.3645283Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +f1990303241bf16c37145c5de6ff76919dc44bda:refs/remotes/origin/audit/AUD-SOL-661E-120/1-replay-recovery
+targeted	Run actions/checkout@v6	2026-10-05T17:49:19.7750211Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+targeted	Run actions/checkout@v6	2026-10-05T17:49:19.7750837Z  * [new ref]         f1990303241bf16c37145c5de6ff76919dc44bda -> origin/audit/AUD-SOL-661E-120/1-replay-recovery
+targeted	Run actions/checkout@v6	2026-10-05T17:49:19.7759237Z [command]/usr/bin/git branch --list --remote origin/audit/AUD-SOL-661E-120/1-replay-recovery
+targeted	Run actions/checkout@v6	2026-10-05T17:49:19.7779816Z   origin/audit/AUD-SOL-661E-120/1-replay-recovery
+targeted	Run actions/checkout@v6	2026-10-05T17:49:19.7786469Z [command]/usr/bin/git rev-parse refs/remotes/origin/audit/AUD-SOL-661E-120/1-replay-recovery
+targeted	Run actions/checkout@v6	2026-10-05T17:49:19.7804573Z f1990303241bf16c37145c5de6ff76919dc44bda
+targeted	Run actions/checkout@v6	2026-10-05T17:49:19.7808345Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T17:49:19.7808754Z ##[group]Determining the checkout info
+targeted	Run actions/checkout@v6	2026-10-05T17:49:19.7809186Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T17:49:19.7812334Z [command]/usr/bin/git sparse-checkout disable
+targeted	Run actions/checkout@v6	2026-10-05T17:49:19.8003689Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	Run actions/checkout@v6	2026-10-05T17:49:19.8026802Z ##[group]Checking out the ref
+targeted	Run actions/checkout@v6	2026-10-05T17:49:19.8030566Z [command]/usr/bin/git checkout --progress --force -B audit/AUD-SOL-661E-120/1-replay-recovery refs/remotes/origin/audit/AUD-SOL-661E-120/1-replay-recovery
+targeted	Run actions/checkout@v6	2026-10-05T17:49:19.9766272Z Switched to a new branch 'audit/AUD-SOL-661E-120/1-replay-recovery'
+targeted	Run actions/checkout@v6	2026-10-05T17:49:19.9769704Z branch 'audit/AUD-SOL-661E-120/1-replay-recovery' set up to track 'origin/audit/AUD-SOL-661E-120/1-replay-recovery'.
+targeted	Run actions/checkout@v6	2026-10-05T17:49:19.9813778Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T17:49:19.9817269Z [command]/usr/bin/git log -1 --format=%H
+targeted	Run actions/checkout@v6	2026-10-05T17:49:19.9837727Z f1990303241bf16c37145c5de6ff76919dc44bda
+targeted	Run actions/setup-node@v6	﻿2026-10-05T17:49:20.0037234Z ##[group]Run actions/setup-node@v6
+targeted	Run actions/setup-node@v6	2026-10-05T17:49:20.0037474Z with:
+targeted	Run actions/setup-node@v6	2026-10-05T17:49:20.0037637Z   node-version: 20
+targeted	Run actions/setup-node@v6	2026-10-05T17:49:20.0037802Z   cache: npm
+targeted	Run actions/setup-node@v6	2026-10-05T17:49:20.0037967Z   check-latest: false
+targeted	Run actions/setup-node@v6	2026-10-05T17:49:20.0039734Z   token: ***
+targeted	Run actions/setup-node@v6	2026-10-05T17:49:20.0039917Z   package-manager-cache: true
+targeted	Run actions/setup-node@v6	2026-10-05T17:49:20.0040120Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-05T17:49:20.1804683Z Attempting to download 20...
+targeted	Run actions/setup-node@v6	2026-10-05T17:49:20.6955254Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+targeted	Run actions/setup-node@v6	2026-10-05T17:49:21.0044286Z Extracting ...
+targeted	Run actions/setup-node@v6	2026-10-05T17:49:21.0136579Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/59ac2aa2-a365-4a36-92de-89b580425d2f -f /home/runner/work/_temp/3ca45f54-b28d-4c52-83bd-c41af6b8635d
+targeted	Run actions/setup-node@v6	2026-10-05T17:49:21.8842357Z Adding to the cache ...
+targeted	Run actions/setup-node@v6	2026-10-05T17:49:23.6168860Z ##[group]Environment details
+targeted	Run actions/setup-node@v6	2026-10-05T17:49:23.7892064Z node: v20.20.2
+targeted	Run actions/setup-node@v6	2026-10-05T17:49:23.7892517Z npm: 10.8.2
+targeted	Run actions/setup-node@v6	2026-10-05T17:49:23.7892761Z yarn: 1.22.22
+targeted	Run actions/setup-node@v6	2026-10-05T17:49:23.7893198Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-05T17:49:23.7907360Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+targeted	Run actions/setup-node@v6	2026-10-05T17:49:23.8730815Z /home/runner/.npm
+targeted	Run actions/setup-node@v6	2026-10-05T17:49:23.9547784Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+targeted	Run actions/setup-node@v6	2026-10-05T17:49:24.4519973Z Received 86828135 of 86828135 (100.0%), 188.2 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-05T17:49:24.4520873Z Cache Size: ~83 MB (86828135 B)
+targeted	Run actions/setup-node@v6	2026-10-05T17:49:24.4545043Z [command]/usr/bin/tar -xf /home/runner/work/_temp/a74cf7f8-a197-42f0-bfeb-7ff217fc42a9/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+targeted	Run actions/setup-node@v6	2026-10-05T17:49:24.5841868Z Cache restored successfully
+targeted	Run actions/setup-node@v6	2026-10-05T17:49:24.5882952Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+targeted	Run npm ci	﻿2026-10-05T17:49:24.6069120Z ##[group]Run npm ci
+targeted	Run npm ci	2026-10-05T17:49:24.6069372Z ^[[36;1mnpm ci^[[0m
+targeted	Run npm ci	2026-10-05T17:49:24.6236042Z shell: /usr/bin/bash -e {0}
+targeted	Run npm ci	2026-10-05T17:49:24.6236283Z ##[endgroup]
+targeted	Run npm ci	2026-10-05T17:49:29.0450964Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	Run npm ci	2026-10-05T17:49:29.7014894Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+targeted	Run npm ci	2026-10-05T17:49:30.6123278Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-05T17:49:31.5809483Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-05T17:49:31.5812818Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-05T17:49:31.6402179Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-05T17:49:41.6963526Z 
+targeted	Run npm ci	2026-10-05T17:49:41.6966017Z > growth-project-backend@1.0.0 postinstall
+targeted	Run npm ci	2026-10-05T17:49:41.6966505Z > prisma generate
+targeted	Run npm ci	2026-10-05T17:49:41.6966683Z 
+targeted	Run npm ci	2026-10-05T17:49:42.3968025Z Prisma schema loaded from prisma/schema.prisma
+targeted	Run npm ci	2026-10-05T17:49:45.4885107Z ┌─────────────────────────────────────────────────────────┐
+targeted	Run npm ci	2026-10-05T17:49:45.4885869Z │  Update available 6.19.3 -> 8.0.0-rc.20                 │
+targeted	Run npm ci	2026-10-05T17:49:45.4886388Z │                                                         │
+targeted	Run npm ci	2026-10-05T17:49:45.4886931Z │  This is a major update - please follow the guide at    │
+targeted	Run npm ci	2026-10-05T17:49:45.4887665Z │  https://pris.ly/d/major-version-upgrade                │
+targeted	Run npm ci	2026-10-05T17:49:45.4888240Z │                                                         │
+targeted	Run npm ci	2026-10-05T17:49:45.4888774Z │  Run the following to update                            │
+targeted	Run npm ci	2026-10-05T17:49:45.4889720Z │    npm i --save-dev prisma@latest                       │
+targeted	Run npm ci	2026-10-05T17:49:45.4890303Z │    npm i @prisma/client@latest                          │
+targeted	Run npm ci	2026-10-05T17:49:45.4890876Z └─────────────────────────────────────────────────────────┘
+targeted	Run npm ci	2026-10-05T17:49:45.4891146Z 
+targeted	Run npm ci	2026-10-05T17:49:45.4919300Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.67s
+targeted	Run npm ci	2026-10-05T17:49:45.4919628Z 
+targeted	Run npm ci	2026-10-05T17:49:45.4919923Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	Run npm ci	2026-10-05T17:49:45.4920187Z 
+targeted	Run npm ci	2026-10-05T17:49:45.4920618Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+targeted	Run npm ci	2026-10-05T17:49:45.4920976Z 
+targeted	Run npm ci	2026-10-05T17:49:45.5346086Z 
+targeted	Run npm ci	2026-10-05T17:49:45.5346739Z > growth-project-backend@1.0.0 prepare
+targeted	Run npm ci	2026-10-05T17:49:45.5350278Z > lefthook install
+targeted	Run npm ci	2026-10-05T17:49:45.5354743Z 
+targeted	Run npm ci	2026-10-05T17:49:45.5773896Z sync hooks: ✔️(pre-commit, commit-msg)
+targeted	Run npm ci	2026-10-05T17:49:45.5915998Z 
+targeted	Run npm ci	2026-10-05T17:49:45.5916712Z added 1115 packages, and audited 1116 packages in 21s
+targeted	Run npm ci	2026-10-05T17:49:45.5917082Z 
+targeted	Run npm ci	2026-10-05T17:49:45.5917243Z 202 packages are looking for funding
+targeted	Run npm ci	2026-10-05T17:49:45.5917531Z   run `npm fund` for details
+targeted	Run npm ci	2026-10-05T17:49:45.5942488Z 
+targeted	Run npm ci	2026-10-05T17:49:45.5942695Z 3 high severity vulnerabilities
+targeted	Run npm ci	2026-10-05T17:49:45.5942842Z 
+targeted	Run npm ci	2026-10-05T17:49:45.5943324Z To address all issues (including breaking changes), run:
+targeted	Run npm ci	2026-10-05T17:49:45.5943785Z   npm audit fix --force
+targeted	Run npm ci	2026-10-05T17:49:45.5943956Z 
+targeted	Run npm ci	2026-10-05T17:49:45.5944100Z Run `npm audit` for details.
+targeted	Run npx prisma generate	﻿2026-10-05T17:49:45.6457756Z ##[group]Run npx prisma generate
+targeted	Run npx prisma generate	2026-10-05T17:49:45.6458058Z ^[[36;1mnpx prisma generate^[[0m
+targeted	Run npx prisma generate	2026-10-05T17:49:45.6513335Z shell: /usr/bin/bash -e {0}
+targeted	Run npx prisma generate	2026-10-05T17:49:45.6513560Z ##[endgroup]
+targeted	Run npx prisma generate	2026-10-05T17:49:46.5801605Z Prisma schema loaded from prisma/schema.prisma
+targeted	Run npx prisma generate	2026-10-05T17:49:49.5846500Z 
+targeted	Run npx prisma generate	2026-10-05T17:49:49.5847990Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 1.60s
+targeted	Run npx prisma generate	2026-10-05T17:49:49.5848478Z 
+targeted	Run npx prisma generate	2026-10-05T17:49:49.5848891Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+targeted	Run npx prisma generate	2026-10-05T17:49:49.5849265Z 
+targeted	Run npx prisma generate	2026-10-05T17:49:49.5849588Z Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+targeted	Run npx prisma generate	2026-10-05T17:49:49.5849903Z 
+targeted	Type-check (only when .ci-lane-tsc exists)	﻿2026-10-05T17:49:49.6850444Z ##[group]Run npx tsc --noEmit
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-05T17:49:49.6850711Z ^[[36;1mnpx tsc --noEmit^[[0m
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-05T17:49:49.6904870Z shell: /usr/bin/bash -e {0}
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-05T17:49:49.6905084Z env:
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-05T17:49:49.6905276Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Type-check (only when .ci-lane-tsc exists)	2026-10-05T17:49:49.6905512Z ##[endgroup]
+targeted	Targeted jest	﻿2026-10-05T17:50:32.2241530Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-05T17:50:32.2241807Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-05T17:50:32.2242114Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-05T17:50:32.2242501Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-05T17:50:32.2242781Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-05T17:50:32.2243029Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-05T17:50:32.2299749Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-05T17:50:32.2300041Z env:
+targeted	Targeted jest	2026-10-05T17:50:32.2300236Z   NODE_OPTIONS: --max-old-space-size=4096
+targeted	Targeted jest	2026-10-05T17:50:32.2300520Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+targeted	Targeted jest	2026-10-05T17:50:32.2300781Z ##[endgroup]
+targeted	Targeted jest	2026-10-05T17:50:32.2394607Z specs: --globalSetup=./test/zz-aud-sol120-pg.global.js test/aud-sol-661d-120-composition.live.spec.ts test/aud-sol-661r5-postgres.spec.ts test/aud-sol-661r6-selection.live.spec.ts test/aud-sol-118-owner-boundaries.live.spec.ts test/checkout-settlement.live.spec.ts test/checkout-settlement-round5.spec.ts test/checkout-hosted-activation-once.spec.ts test/checkout-webhook-handler.spec.ts test/checkout.service.spec.ts test/b-secrets-3-admin-credentials.spec.ts test/cancel-pending-on-refund.spec.ts test/purchase-fanout-hooks.spec.ts test/purchase-fanout-tx-plumbing.spec.ts test/checkout-webhook-fee-split.spec.ts test/invite-grant.spec.ts test/billing-checkout-routing.spec.ts test/b-recur-subscription-webhooks.spec.ts test/b-recur-subscription-checkout.spec.ts test/b-recur-subscription-wire.spec.ts test/b-recur-fix-round-1.spec.ts test/b-recur-fix-round-1-checkout.spec.ts test/b-recur-fix-round-1-http.spec.ts test/b-recur-fix-round-1-trial-card.spec.ts test/b-recur-fix-round-1-trial-card-checkout.spec.ts test/b-recur-3-fix-round-2.spec.ts test/b-recur-3-fix-round-2-checkout.spec.ts test/b-recur-3-subscription-terms.spec.ts test/b-recur-116-fix-round-3.spec.ts test/b-recur3-117-webhook-order.spec.ts test/b-recur5a-117-fix-round-5.spec.ts test/b-recur5a-117-moved-fix-round-4.spec.ts test/b-recur5a-117-trial-end-form.spec.ts test/b-recur5b-117-authority.spec.ts test/b-recur6a-118-fix-round-6.spec.ts test/b-recur6a-118-r1.spec.ts test/b-recur6b-118-authority.spec.ts test/b-recur7a-119-r1.spec.ts test/b-recur7a-119-r2.spec.ts test/b-recur7b-119-authority.spec.ts src/regimes/__tests__/partial-refund-decision.service.spec.ts src/notifications/__tests__/first-payment-webhook.integration.spec.ts test/checkout-grant-credentials.spec.ts test/aud-sol-661e-120-recovery.live.spec.ts
+targeted	Targeted jest	2026-10-05T17:50:36.5040071Z ALTER ROLE
+targeted	Targeted jest	2026-10-05T17:50:36.5410271Z NOTICE:  database "l661" does not exist, skipping
+targeted	Targeted jest	2026-10-05T17:50:36.5410783Z DROP DATABASE
+targeted	Targeted jest	2026-10-05T17:50:37.3100370Z CREATE DATABASE
+targeted	Targeted jest	2026-10-05T17:50:37.3741357Z PostgreSQL 16.15 (Ubuntu 16.15-1.pgdg24.04+2) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit
+targeted	Targeted jest	2026-10-05T17:50:39.2249339Z ^[[31m[Nest] 2987  - ^[[39m10/05/2026, 5:50:39 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[31mPaymentIntent pi_r3 cannot be read (stripe_404_resource_missing): its payment_intent.payment_failed is not applied^[[39m
+targeted	Targeted jest	2026-10-05T17:50:39.2347979Z PASS test/checkout-webhook-handler.spec.ts (144 MB heap size)
+targeted	Targeted jest	2026-10-05T17:50:39.2349632Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mPaymentIntent status lookup failed for pi_r3 (Error): Stripe redelivers^[[39m
+targeted	Targeted jest	2026-10-05T17:50:39.2351823Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:39 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mPaymentIntent status lookup failed for pi_r3 (stripe_429_rate_limit): Stripe redelivers^[[39m
+targeted	Targeted jest	2026-10-05T17:50:40.3041677Z PASS test/checkout.service.spec.ts (173 MB heap size)
+targeted	Targeted jest	2026-10-05T17:50:40.8013821Z PASS test/invite-grant.spec.ts (218 MB heap size)
+targeted	Targeted jest	2026-10-05T17:50:43.9899408Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:43 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=v reason=payment_failed^[[39m
+targeted	Targeted jest	2026-10-05T17:50:43.9901250Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:43 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mcheckout.session.completed: purchase=v not activated again (activated before, status=payment_failed)^[[39m
+targeted	Targeted jest	2026-10-05T17:50:43.9902496Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:43 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=v^[[39m
+targeted	Targeted jest	2026-10-05T17:50:43.9903661Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:43 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=v recovered after a failed payment of pi_v^[[39m
+targeted	Targeted jest	2026-10-05T17:50:43.9904721Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:50:43 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=l661-pkg has no contents — purchase=t^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.1279886Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=owner-adopted^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.1281448Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=owner-adopted recovered after a failed payment of pi_two_adopted^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.1283012Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=owner-owner^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.1284229Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=owner-owner recovered after a failed payment of pi_two_owner^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.1285446Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=s-unassign_drops reason=payment_failed^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.1286692Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=s-unassign_drops reason=partial_refund_decision^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.1288091Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PartialRefundDecisionService] ^[[39m^[[32mdecide: refund=re_s-unassign_drops decision=unassign_drops drops_canceled=1 by coach=l661-coach^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.1289234Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 0 drop(s) pending again for purchase=s-unassign_drops^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.1290609Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=s-unassign_drops recovered after a failed payment of pi_s-unassign_drops^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.1291878Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=s-keep_drops reason=payment_failed^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.1293033Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PartialRefundDecisionService] ^[[39m^[[32mdecide: refund=re_s-keep_drops decision=keep_drops drops_canceled=0 by coach=l661-coach^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.1294148Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=s-keep_drops^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.1295334Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=s-keep_drops recovered after a failed payment of pi_s-keep_drops^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.1296526Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=race-recovery reason=payment_failed^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.1297842Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=race-recovery^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.1299049Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=race-recovery recovered after a failed payment of pi_race-recovery^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.2374983Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=race-recovery reason=partial_refund_decision^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.2376402Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PartialRefundDecisionService] ^[[39m^[[32mdecide: refund=re_race-recovery decision=unassign_drops drops_canceled=1 by coach=l661-coach^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.2377896Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=race-decision reason=payment_failed^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.2379430Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=race-decision reason=partial_refund_decision^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.2381543Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PartialRefundDecisionService] ^[[39m^[[32mdecide: refund=re_race-decision decision=unassign_drops drops_canceled=1 by coach=l661-coach^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.2383288Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 0 drop(s) pending again for purchase=race-decision^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.2384531Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=race-decision recovered after a failed payment of pi_race-decision^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.5538776Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=l661-pkg has no contents — purchase=owner-list-9^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.5540776Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=owner-list-9 reason=payment_failed^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.5542732Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=owner-list-9^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.5544765Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=owner-list-9 recovered after a failed payment of pi_list_9^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.7743102Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=l661-pkg has no contents — purchase=owner-list-10^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.7745437Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=owner-list-10 reason=payment_failed^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.7747771Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=owner-list-10^[[39m
+targeted	Targeted jest	2026-10-05T17:50:44.7750109Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=owner-list-10 recovered after a failed payment of pi_list_10^[[39m
+targeted	Targeted jest	2026-10-05T17:50:45.0426755Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=l661-pkg has no contents — purchase=owner-list-12^[[39m
+targeted	Targeted jest	2026-10-05T17:50:45.0428844Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=owner-list-12 reason=payment_failed^[[39m
+targeted	Targeted jest	2026-10-05T17:50:45.0430658Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=owner-list-12^[[39m
+targeted	Targeted jest	2026-10-05T17:50:45.0432371Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:44 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=owner-list-12 recovered after a failed payment of pi_list_12^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.0316199Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:50:47 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=r2-pkg has no contents — purchase=paid-invoice-paid^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.0317577Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:50:47 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=r2-pkg has no contents — purchase=paid-customer-subscription-updated^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.0319413Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:50:47 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=r2-pkg has no contents — purchase=trial-invoice-paid^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.0320602Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:50:47 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=r2-pkg has no contents — purchase=trial-customer-subscription-updated^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.1169096Z PASS test/checkout-settlement.live.spec.ts (7.311 s, 267 MB heap size)
+targeted	Targeted jest	2026-10-05T17:50:48.4223039Z PASS test/cancel-pending-on-refund.spec.ts (300 MB heap size)
+targeted	Targeted jest	2026-10-05T17:50:48.7630548Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-1 reason=refund^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7632212Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-1 reason=dispute^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7634072Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mcancelPendingForPurchase: no pending/due drops for purchase=pur-1 (replay or never-entitled) reason=dispute^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7636061Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=refund^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7638186Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[33mcancelPendingForPurchase: no scheduledDrop client available (purchase=pur-1, reason=refund) — skipping^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7640194Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-1 reason=refund^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7642105Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-target reason=subscription_canceled^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7644034Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=subscription_canceled^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7645910Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=payment_failed^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7648408Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-target reason=dispute^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7650169Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=refund^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7651995Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=refund^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7653742Z ^[[95m[Nest] 2987  - ^[[39m10/04/2026, 5:00:00 AM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7655328Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7656856Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7659118Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=cp-r5 reason=payment_failed^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7660885Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7662662Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=cp-r5 reason=payment_failed^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7664414Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 2 drop(s) pending again for purchase=cp-r5^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7666328Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=cp-r5 recovered after a failed payment of pi_r5^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7668233Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7670004Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=cp-r5 reason=payment_failed^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7672064Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mcheckout.session.completed: purchase=cp-r5 not activated again (activated before, status=payment_failed)^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7674293Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7675843Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7677845Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mpayment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7679846Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mpayment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7681805Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mpayment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7683976Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mpayment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7685848Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mpayment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7687981Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mpayment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7689953Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mpayment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7691740Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7693404Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7695532Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mPaymentIntent status lookup failed for pi_r5 (stripe_401_api_key_invalid): Stripe redelivers^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7697465Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7699279Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mPaymentIntent status lookup failed for pi_r5 (stripe_403_api_key_invalid): Stripe redelivers^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7701131Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7702707Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7704631Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:48 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mcheckout.session.completed: purchase=cp-r5 not activated again (status=refunded)^[[39m
+targeted	Targeted jest	2026-10-05T17:50:48.7737862Z PASS test/checkout-settlement-round5.spec.ts (330 MB heap size)
+targeted	Targeted jest	2026-10-05T17:50:49.2955585Z PASS test/b-recur-subscription-checkout.spec.ts (176 MB heap size)
+targeted	Targeted jest	2026-10-05T17:50:49.4829429Z ^[[31m[Nest] 2987  - ^[[39m10/05/2026, 5:50:49 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31msubscription send/bind failed purchase=00000000-0000-4000-8000-000000000001 error=Error^[[39m
+targeted	Targeted jest	2026-10-05T17:50:49.4833059Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:49 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.client_plan_resumed purchase=00000000-0000-4000-8000-000000000001 superseded=false^[[39m
+targeted	Targeted jest	2026-10-05T17:50:49.4834845Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:49 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-05T17:50:49.4836526Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:49 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-05T17:50:49.4838719Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:49 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-05T17:50:49.4841427Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:49 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-05T17:50:54.5079026Z ^[[31m[Nest] 2987  - ^[[39m10/05/2026, 5:50:54 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31msubscription sub_1 has no payable PaymentIntent or SetupIntent and is not paid; canceling it^[[39m
+targeted	Targeted jest	2026-10-05T17:50:54.5244378Z PASS test/b-recur-3-fix-round-2-checkout.spec.ts (5.222 s, 206 MB heap size)
+targeted	Targeted jest	2026-10-05T17:50:54.9905255Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:54 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=true^[[39m
+targeted	Targeted jest	2026-10-05T17:50:54.9907336Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:54 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_needs_no_sheet purchase=00000000-0000-4000-8000-000000000001 stripe_status=active^[[39m
+targeted	Targeted jest	2026-10-05T17:50:54.9908669Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:54 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_needs_no_sheet purchase=00000000-0000-4000-8000-000000000001 stripe_status=active^[[39m
+targeted	Targeted jest	2026-10-05T17:50:54.9910176Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:54 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_needs_no_sheet purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete^[[39m
+targeted	Targeted jest	2026-10-05T17:50:54.9911450Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:54 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_needs_no_sheet purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete^[[39m
+targeted	Targeted jest	2026-10-05T17:50:54.9912728Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:54 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_needs_no_sheet purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete^[[39m
+targeted	Targeted jest	2026-10-05T17:50:54.9914001Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:54 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_needs_no_sheet purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete^[[39m
+targeted	Targeted jest	2026-10-05T17:50:54.9915269Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:54 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-05T17:50:54.9916891Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:54 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-05T17:50:54.9919153Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:54 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-05T17:50:54.9921314Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:54 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-05T17:50:54.9923437Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:54 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcheckout state read skipped purchase=00000000-0000-4000-8000-000000000001 error=Error^[[39m
+targeted	Targeted jest	2026-10-05T17:50:55.4203895Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:50:55 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mcancelPendingForPurchase: no pending/due drops for purchase=purchase (replay or never-entitled) reason=payment_failed^[[39m
+targeted	Targeted jest	2026-10-05T17:50:55.4205969Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:55 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=purchase reason=payment_failed^[[39m
+targeted	Targeted jest	2026-10-05T17:50:55.4208240Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:55 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 2 drop(s) pending again for purchase=purchase^[[39m
+targeted	Targeted jest	2026-10-05T17:50:55.4209952Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:55 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=purchase recovered after a failed payment of pi_synthetic^[[39m
+targeted	Targeted jest	2026-10-05T17:50:55.4211618Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:55 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 0 drop(s) pending again for purchase=purchase^[[39m
+targeted	Targeted jest	2026-10-05T17:50:55.4213424Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:55 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=purchase recovered after a failed payment of pi_synthetic^[[39m
+targeted	Targeted jest	2026-10-05T17:50:55.4215216Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:55 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=purchase reason=payment_failed^[[39m
+targeted	Targeted jest	2026-10-05T17:50:55.4217367Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:55 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=purchase reason=partial_refund_decision^[[39m
+targeted	Targeted jest	2026-10-05T17:50:55.4218798Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:55 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PartialRefundDecisionService] ^[[39m^[[32mdecide: refund=re_synthetic decision=unassign_drops drops_canceled=1 by coach=coach^[[39m
+targeted	Targeted jest	2026-10-05T17:50:55.4220182Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:55 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 0 drop(s) pending again for purchase=purchase^[[39m
+targeted	Targeted jest	2026-10-05T17:50:55.4222215Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:55 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=purchase recovered after a failed payment of pi_synthetic^[[39m
+targeted	Targeted jest	2026-10-05T17:50:55.5245329Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:55 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=purchase reason=partial_refund_decision^[[39m
+targeted	Targeted jest	2026-10-05T17:50:55.5247526Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:55 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PartialRefundDecisionService] ^[[39m^[[32mdecide: refund=re_synthetic decision=unassign_drops drops_canceled=1 by coach=coach^[[39m
+targeted	Targeted jest	2026-10-05T17:50:55.5248880Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:50:55 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mcancelPendingForPurchase: no pending/due drops for purchase=purchase (replay or never-entitled) reason=payment_failed^[[39m
+targeted	Targeted jest	2026-10-05T17:50:55.5250104Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:55 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 0 drop(s) pending again for purchase=purchase^[[39m
+targeted	Targeted jest	2026-10-05T17:50:55.5251300Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:55 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=purchase recovered after a failed payment of pi_synthetic^[[39m
+targeted	Targeted jest	2026-10-05T17:50:55.6471830Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:50:55 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=pkg has no contents — purchase=purchase^[[39m
+targeted	Targeted jest	2026-10-05T17:50:55.8153119Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:50:55 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=pkg has no contents — purchase=purchase^[[39m
+targeted	Targeted jest	2026-10-05T17:50:55.8154446Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:55 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mcheckout.session.completed: purchase=purchase not activated again (activated before, status=payment_failed)^[[39m
+targeted	Targeted jest	2026-10-05T17:50:55.8156001Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:55 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mPaymentIntent status lookup failed for pi_synthetic (stripe_401_api_key_invalid): Stripe redelivers^[[39m
+targeted	Targeted jest	2026-10-05T17:50:55.8158050Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:55 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mPaymentIntent status lookup failed for pi_synthetic (stripe_403_api_key_invalid): Stripe redelivers^[[39m
+targeted	Targeted jest	2026-10-05T17:50:55.8159327Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:55 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mPaymentIntent status lookup failed for pi_synthetic (stripe_429_api_key_invalid): Stripe redelivers^[[39m
+targeted	Targeted jest	2026-10-05T17:50:55.8160619Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:55 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mPaymentIntent status lookup failed for pi_synthetic (stripe_500_api_key_invalid): Stripe redelivers^[[39m
+targeted	Targeted jest	2026-10-05T17:50:55.8161783Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:55 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 0 drop(s) pending again for purchase=purchase^[[39m
+targeted	Targeted jest	2026-10-05T17:50:55.8163085Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:55 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=purchase recovered after a failed payment of pi_synthetic^[[39m
+targeted	Targeted jest	2026-10-05T17:50:55.8198349Z PASS test/aud-sol-661r5-postgres.spec.ts (251 MB heap size)
+targeted	Targeted jest	2026-10-05T17:50:55.8263138Z   ● Console
+targeted	Targeted jest	2026-10-05T17:50:55.8263336Z 
+targeted	Targeted jest	2026-10-05T17:50:55.8263460Z     console.log
+targeted	Targeted jest	2026-10-05T17:50:55.8263768Z       DISPOSABLE_POSTGRES {
+targeted	Targeted jest	2026-10-05T17:50:55.8264138Z         db: 'aud_sol_661r5_disposable',
+targeted	Targeted jest	2026-10-05T17:50:55.8264498Z         address: '127.0.0.1',
+targeted	Targeted jest	2026-10-05T17:50:55.8265321Z         version: 'PostgreSQL 16.15 (Ubuntu 16.15-1.pgdg24.04+2) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit'
+targeted	Targeted jest	2026-10-05T17:50:55.8266012Z       }
+targeted	Targeted jest	2026-10-05T17:50:55.8266182Z 
+targeted	Targeted jest	2026-10-05T17:50:55.8266510Z       at Object.<anonymous> (test/aud-sol-661r5-postgres.spec.ts:36:11)
+targeted	Targeted jest	2026-10-05T17:50:55.8266843Z 
+targeted	Targeted jest	2026-10-05T17:50:56.2039824Z PASS test/b-recur3-117-webhook-order.spec.ts (196 MB heap size)
+targeted	Targeted jest	2026-10-05T17:50:56.5185698Z ^[[31m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31msubscription sub_1 has no payable PaymentIntent or SetupIntent and is not paid; canceling it^[[39m
+targeted	Targeted jest	2026-10-05T17:50:56.5189686Z ^[[31m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31msubscription sub_1 has no payable PaymentIntent or SetupIntent and is not paid; canceling it^[[39m
+targeted	Targeted jest	2026-10-05T17:50:56.5687630Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mprefetchForOuterTx: subscription read failed sub=sub_n error=Error^[[39m
+targeted	Targeted jest	2026-10-05T17:50:56.5689099Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mprefetchForOuterTx: invoice read failed invoice=in_2 error=Error^[[39m
+targeted	Targeted jest	2026-10-05T17:50:56.5689971Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[32m    LOG^[[39m ^[[38;5;3m[FirstPaymentEmitter] ^[[39mObject(3) {
+targeted	Targeted jest	2026-10-05T17:50:56.5690448Z   event: ^[[32m'first_payment_notification_emitted'^[[39m,
+targeted	Targeted jest	2026-10-05T17:50:56.5690778Z   coachId: ^[[32m'coach'^[[39m,
+targeted	Targeted jest	2026-10-05T17:50:56.5691054Z   category: ^[[32m'COACH_DIRECT'^[[39m
+targeted	Targeted jest	2026-10-05T17:50:56.5691273Z }
+targeted	Targeted jest	2026-10-05T17:50:56.5691759Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CoachFirstPaymentService] ^[[39mObject(2) {
+targeted	Targeted jest	2026-10-05T17:50:56.5692182Z   event: ^[[32m'first_payment_emitted'^[[39m,
+targeted	Targeted jest	2026-10-05T17:50:56.5692442Z   coachId: ^[[32m'coach'^[[39m
+targeted	Targeted jest	2026-10-05T17:50:56.5692638Z }
+targeted	Targeted jest	2026-10-05T17:50:56.5693063Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[32m    LOG^[[39m ^[[38;5;3m[FirstPaymentEmitter] ^[[39mObject(3) {
+targeted	Targeted jest	2026-10-05T17:50:56.5693499Z   event: ^[[32m'first_payment_notification_emitted'^[[39m,
+targeted	Targeted jest	2026-10-05T17:50:56.5694124Z   coachId: ^[[32m'coach'^[[39m,
+targeted	Targeted jest	2026-10-05T17:50:56.5694375Z   category: ^[[32m'COACH_DIRECT'^[[39m
+targeted	Targeted jest	2026-10-05T17:50:56.5694576Z }
+targeted	Targeted jest	2026-10-05T17:50:56.5695022Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CoachFirstPaymentService] ^[[39mObject(2) {
+targeted	Targeted jest	2026-10-05T17:50:56.5695438Z   event: ^[[32m'first_payment_emitted'^[[39m,
+targeted	Targeted jest	2026-10-05T17:50:56.5695685Z   coachId: ^[[32m'coach'^[[39m
+targeted	Targeted jest	2026-10-05T17:50:56.5695870Z }
+targeted	Targeted jest	2026-10-05T17:50:56.5696655Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-05T17:50:56.5698062Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-05T17:50:56.5699266Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-05T17:50:56.5700433Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-05T17:50:56.5701774Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-05T17:50:56.5703068Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mattempt subscription lookup failed purchase=00000000-0000-4000-8000-000000000001 error=stripe:api_error:503:other^[[39m
+targeted	Targeted jest	2026-10-05T17:50:56.5704467Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-05T17:50:56.5705644Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-05T17:50:56.5706732Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_error:503:other^[[39m
+targeted	Targeted jest	2026-10-05T17:50:56.5707986Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-05T17:50:56.5709190Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-05T17:50:56.5710289Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_error:503:other^[[39m
+targeted	Targeted jest	2026-10-05T17:50:56.5711400Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-05T17:50:56.5712605Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-05T17:50:56.5713697Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_error:503:other^[[39m
+targeted	Targeted jest	2026-10-05T17:50:56.5714833Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_error:503:other^[[39m
+targeted	Targeted jest	2026-10-05T17:50:56.5715844Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_error:503:other^[[39m
+targeted	Targeted jest	2026-10-05T17:50:56.5717058Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-05T17:50:56.5717806Z PASS test/b-recur-116-fix-round-3.spec.ts (234 MB heap size)
+targeted	Targeted jest	2026-10-05T17:50:56.9128304Z PASS test/checkout-webhook-fee-split.spec.ts (273 MB heap size)
+targeted	Targeted jest	2026-10-05T17:50:57.1658122Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mcheckout.session.completed: purchase=p1 not activated again (status=paid)^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.1659928Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mcheckout.session.completed: purchase=p1 not activated again (status=paid)^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.1662370Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-05T17:50:56.897Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.1664875Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-08T17:50:56.897Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.1667543Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-12T17:50:56.897Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.1670100Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-19T17:50:56.897Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.1672476Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"in_1","amount_cents":9900,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.1674355Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:56 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.recovered","purchase_id":"p1","dunning_state_id":"d1"}^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.1676347Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.trial_attempt_retired purchase=00000000-0000-4000-8000-000000000001 stripe_status=canceled^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.1678562Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mstale trial attempt kept purchase=00000000-0000-4000-8000-000000000001 error=Error^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.1679793Z PASS test/b-recur-fix-round-1-checkout.spec.ts (216 MB heap size)
+targeted	Targeted jest	2026-10-05T17:50:57.3704441Z ^[[31m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31msubscription sub_1 has no payable PaymentIntent or SetupIntent and is not paid; canceling it^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.3847143Z PASS test/b-recur5a-117-moved-fix-round-4.spec.ts (240 MB heap size)
+targeted	Targeted jest	2026-10-05T17:50:57.7069323Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mstale trial attempt kept purchase=00000000-0000-4000-8000-000000000001 error=Error^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.7071018Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=Error^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.7071969Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=Error^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.7073014Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.trial_attempt_released purchase=00000000-0000-4000-8000-000000000001^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.7074176Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.client_plan_resumed purchase=00000000-0000-4000-8000-000000000001 superseded=true^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.7075348Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.7076537Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard refused subscription=sub_1 error=stripe:invalid_request_error:400:other^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.7078704Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard refused subscription=sub_1 error=stripe:invalid_request_error:400:setup_intent_unexpected_state^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.7080818Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.7081923Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mbilling.trial_card_attached purchase=cp_6b via=webhook^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.7082908Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mbilling.trial_card_attached purchase=cp_6b via=webhook^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.7083551Z PASS test/b-recur6b-118-authority.spec.ts (264 MB heap size)
+targeted	Targeted jest	2026-10-05T17:50:57.7084374Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33msetup_intent.succeeded customer mismatch purchase=cp_6b^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.7085409Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33msetup_intent.succeeded lookup failed si=seti_AttemptOwn error=Error^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.7086714Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"cp_6b","dunning_state_id":"ds_1","step_index":0,"scheduled_for":"2026-10-05T17:50:57.695Z","kind":"soft"}^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.7088354Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"cp_6b","dunning_state_id":"ds_1","step_index":1,"scheduled_for":"2026-10-08T17:50:57.695Z","kind":"urgent"}^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.7089771Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"cp_6b","dunning_state_id":"ds_1","step_index":2,"scheduled_for":"2026-10-12T17:50:57.695Z","kind":"final"}^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.7091216Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.attempt_scheduled","purchase_id":"cp_6b","dunning_state_id":"ds_1","step_index":3,"scheduled_for":"2026-10-19T17:50:57.695Z","kind":"cancelled"}^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.7092549Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[32m    LOG^[[39m ^[[38;5;3m[DunningService] ^[[39m^[[32m{"event":"dunning.opened","purchase_id":"cp_6b","dunning_state_id":"ds_1","invoice_id":"in_6b","amount_cents":14800,"attempt_number":1}^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.9121393Z ^[[31m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31mbilling.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete end=settled^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.9136004Z ^[[31m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31mbilling.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete end=unconfirmed^[[39m
+targeted	Targeted jest	2026-10-05T17:50:57.9174324Z PASS test/b-recur5a-117-fix-round-5.spec.ts (288 MB heap size)
+targeted	Targeted jest	2026-10-05T17:50:58.2485902Z PASS test/b-recur5b-117-authority.spec.ts (318 MB heap size)
+targeted	Targeted jest	2026-10-05T17:50:58.2488332Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-05T17:50:58.2490998Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-05T17:50:58.2493946Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-05T17:50:58.2496436Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-05T17:50:58.2498928Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-05T17:50:58.2501335Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-05T17:50:58.2503698Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-05T17:50:58.2505700Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-05T17:50:58.2507882Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-05T17:50:58.2510550Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel failed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-05T17:50:58.2513213Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.trial_attempt_retired purchase=00000000-0000-4000-8000-000000000001 stripe_status=canceled^[[39m
+targeted	Targeted jest	2026-10-05T17:50:58.2516207Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mresume read-back failed purchase=00000000-0000-4000-8000-000000000001 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-05T17:50:58.2518914Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.client_plan_resumed purchase=00000000-0000-4000-8000-000000000001 superseded=false^[[39m
+targeted	Targeted jest	2026-10-05T17:50:58.2521458Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_resumed purchase=00000000-0000-4000-8000-000000000001 stale=false^[[39m
+targeted	Targeted jest	2026-10-05T17:50:58.2524680Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard refused subscription=sub_1 error=stripe:invalid_request_error:400:other^[[39m
+targeted	Targeted jest	2026-10-05T17:50:58.2526676Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard refused subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-05T17:50:58.2529066Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:57 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard unconfirmed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-05T17:50:58.2530803Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:58 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33minvoice.paid resync failed for sub=sub_a error=Error^[[39m
+targeted	Targeted jest	2026-10-05T17:50:58.2532585Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:58 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mprefetchForOuterTx: retrieveSubscription failed for sub=sub_a error=Error^[[39m
+targeted	Targeted jest	2026-10-05T17:50:58.2533908Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:58 PM ^[[32m    LOG^[[39m ^[[38;5;3m[FirstPaymentEmitter] ^[[39mObject(3) {
+targeted	Targeted jest	2026-10-05T17:50:58.2534925Z   event: ^[[32m'first_payment_notification_emitted'^[[39m,
+targeted	Targeted jest	2026-10-05T17:50:58.2535380Z   coachId: ^[[32m'coach'^[[39m,
+targeted	Targeted jest	2026-10-05T17:50:58.2535786Z   category: ^[[32m'COACH_DIRECT'^[[39m
+targeted	Targeted jest	2026-10-05T17:50:58.2536109Z }
+targeted	Targeted jest	2026-10-05T17:50:58.2536885Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:50:58 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CoachFirstPaymentService] ^[[39mObject(2) {
+targeted	Targeted jest	2026-10-05T17:50:58.2537982Z   event: ^[[32m'first_payment_emitted'^[[39m,
+targeted	Targeted jest	2026-10-05T17:50:58.2538414Z   coachId: ^[[32m'coach'^[[39m
+targeted	Targeted jest	2026-10-05T17:50:58.2538712Z }
+targeted	Targeted jest	2026-10-05T17:50:58.2540034Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:58 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mprefetchForOuterTx: retrieveSubscription failed for sub=sub_a error=Error^[[39m
+targeted	Targeted jest	2026-10-05T17:50:58.5604641Z PASS test/purchase-fanout-tx-plumbing.spec.ts (347 MB heap size)
+targeted	Targeted jest	2026-10-05T17:50:58.8759287Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:50:58 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=undefined has no contents — purchase=cp-3^[[39m
+targeted	Targeted jest	2026-10-05T17:50:58.8760700Z PASS test/b-recur-subscription-webhooks.spec.ts (382 MB heap size)
+targeted	Targeted jest	2026-10-05T17:50:59.4611219Z ^[[31m[Nest] 2987  - ^[[39m10/05/2026, 5:50:59 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[BillingService] ^[[39m^[[31mStripe event handler failed event=evt_boom type=customer.subscription.updated: checkout boom^[[39m
+targeted	Targeted jest	2026-10-05T17:50:59.4739308Z PASS test/billing-checkout-routing.spec.ts (438 MB heap size)
+targeted	Targeted jest	2026-10-05T17:51:00.1206764Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:59 PM ^[[33m   WARN^[[39m ^[[38;5;3m[BillingService] ^[[39m^[[33mpayment_intent.succeeded GuestCheckout fallback lookup failed for pi_saas: Cannot read properties of undefined (reading 'findUnique')^[[39m
+targeted	Targeted jest	2026-10-05T17:51:00.1208793Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:59 PM ^[[33m   WARN^[[39m ^[[38;5;3m[BillingService] ^[[39m^[[33mpreResolveReceiptUrl: lookup failed for pi=pi_guest: stripe down^[[39m
+targeted	Targeted jest	2026-10-05T17:51:00.1209864Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:50:59 PM ^[[33m   WARN^[[39m ^[[38;5;3m[BillingService] ^[[39m^[[33mpreResolveReceiptUrl: lookup failed for pi=pi_guest: stripe down^[[39m
+targeted	Targeted jest	2026-10-05T17:51:00.2402210Z PASS test/b-recur-fix-round-1-http.spec.ts (505 MB heap size)
+targeted	Targeted jest	2026-10-05T17:51:00.6397356Z PASS test/b-recur7b-119-authority.spec.ts (252 MB heap size)
+targeted	Targeted jest	2026-10-05T17:51:00.9298086Z PASS src/notifications/__tests__/first-payment-webhook.integration.spec.ts (277 MB heap size)
+targeted	Targeted jest	2026-10-05T17:51:01.1603915Z PASS test/b-recur-fix-round-1-trial-card-checkout.spec.ts (302 MB heap size)
+targeted	Targeted jest	2026-10-05T17:51:01.4460712Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:01 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.trial_card_attached purchase=00000000-0000-4000-8000-000000000001 via=retire^[[39m
+targeted	Targeted jest	2026-10-05T17:51:01.4463449Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:01 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.trial_attempt_retired purchase=00000000-0000-4000-8000-000000000001 stripe_status=canceled^[[39m
+targeted	Targeted jest	2026-10-05T17:51:01.4465237Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:51:01 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mstale trial attempt kept purchase=00000000-0000-4000-8000-000000000001 error=Error^[[39m
+targeted	Targeted jest	2026-10-05T17:51:01.4466414Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:51:01 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mreplay secret check skipped purchase=00000000-0000-4000-8000-000000000001 error=Error^[[39m
+targeted	Targeted jest	2026-10-05T17:51:01.4467732Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:51:01 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=pkg-h has no contents — purchase=cp-h^[[39m
+targeted	Targeted jest	2026-10-05T17:51:01.4468861Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:01 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mcheckout.session.completed: purchase=cp-h not activated again (status=paid)^[[39m
+targeted	Targeted jest	2026-10-05T17:51:01.4469892Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:51:01 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=pkg-h has no contents — purchase=cp-A^[[39m
+targeted	Targeted jest	2026-10-05T17:51:01.4471055Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:51:01 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=pkg-h has no contents — purchase=cp-ps^[[39m
+targeted	Targeted jest	2026-10-05T17:51:01.4472149Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:01 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mcheckout.session.completed: purchase=cp-late not activated again (status=paid)^[[39m
+targeted	Targeted jest	2026-10-05T17:51:01.4472915Z PASS test/checkout-hosted-activation-once.spec.ts (327 MB heap size)
+targeted	Targeted jest	2026-10-05T17:51:01.4473820Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:01 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mcheckout.session.completed: purchase=cp-late not activated again (status=refunded)^[[39m
+targeted	Targeted jest	2026-10-05T17:51:01.4475039Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:01 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mcheckout.session.completed: purchase=cp-late not activated again (status=disputed)^[[39m
+targeted	Targeted jest	2026-10-05T17:51:01.4476271Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:01 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mcheckout.session.completed: purchase=cp-late not activated again (status=chargeback_lost)^[[39m
+targeted	Targeted jest	2026-10-05T17:51:01.4477596Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:01 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mcheckout.session.completed: purchase=cp-late not activated again (status=canceled)^[[39m
+targeted	Targeted jest	2026-10-05T17:51:01.4478761Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:01 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mcheckout.session.completed: purchase=cp-late not activated again (status=expired)^[[39m
+targeted	Targeted jest	2026-10-05T17:51:06.6481425Z ^[[31m[Nest] 2987  - ^[[39m10/05/2026, 5:51:06 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31mbilling.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete end=unconfirmed^[[39m
+targeted	Targeted jest	2026-10-05T17:51:06.6503848Z ^[[31m[Nest] 2987  - ^[[39m10/05/2026, 5:51:06 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31mbilling.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=active end=settled^[[39m
+targeted	Targeted jest	2026-10-05T17:51:06.6556444Z ^[[31m[Nest] 2987  - ^[[39m10/05/2026, 5:51:06 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[31mbilling.subscription_paid_after_close purchase=00000000-0000-4000-8000-000000000001 stripe_status=incomplete end=unconfirmed^[[39m
+targeted	Targeted jest	2026-10-05T17:51:06.6668070Z PASS test/b-recur6a-118-fix-round-6.spec.ts (5.216 s, 349 MB heap size)
+targeted	Targeted jest	2026-10-05T17:51:06.8475411Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:51:06 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard refused subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-05T17:51:06.8477217Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:51:06 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard unconfirmed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-05T17:51:06.8478552Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:51:06 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard refused subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-05T17:51:06.8479759Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:51:06 PM ^[[33m   WARN^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[33mcancel guard unconfirmed subscription=sub_1 error=stripe:api_connection_error:503:request_timeout^[[39m
+targeted	Targeted jest	2026-10-05T17:51:06.8480912Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:06 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PartialRefundDecisionService] ^[[39m^[[32monPartialRefund: pending decision created for purchase=cp-1 refund=re_123^[[39m
+targeted	Targeted jest	2026-10-05T17:51:06.8482034Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:06 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PartialRefundDecisionService] ^[[39m^[[32monPartialRefund: pending decision created for purchase=cp-1 refund=re_123^[[39m
+targeted	Targeted jest	2026-10-05T17:51:06.8483491Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:06 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PartialRefundDecisionService] ^[[39m^[[32monPartialRefund: pending decision created for purchase=cp-1 refund=re_race^[[39m
+targeted	Targeted jest	2026-10-05T17:51:06.8484667Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:06 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PartialRefundDecisionService] ^[[39m^[[32monPartialRefund: concurrent insert collapsed (P2002) for purchase=cp-1 refund=re_race^[[39m
+targeted	Targeted jest	2026-10-05T17:51:06.8485843Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:06 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PartialRefundDecisionService] ^[[39m^[[32mdecide: refund=re_123 decision=keep_drops drops_canceled=0 by coach=coach-1^[[39m
+targeted	Targeted jest	2026-10-05T17:51:06.8487044Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:06 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PartialRefundDecisionService] ^[[39m^[[32mdecide: refund=re_123 decision=unassign_drops drops_canceled=4 by coach=coach-1^[[39m
+targeted	Targeted jest	2026-10-05T17:51:06.8487932Z PASS src/regimes/__tests__/partial-refund-decision.service.spec.ts (365 MB heap size)
+targeted	Targeted jest	2026-10-05T17:51:10.8388556Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:51:10 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=sol120-pkg has no contents — purchase=paid-invoice-paid^[[39m
+targeted	Targeted jest	2026-10-05T17:51:10.8389888Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:51:10 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=sol120-pkg has no contents — purchase=paid-customer-subscription-updated^[[39m
+targeted	Targeted jest	2026-10-05T17:51:10.8391435Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:51:10 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=sol120-pkg has no contents — purchase=trial-invoice-paid^[[39m
+targeted	Targeted jest	2026-10-05T17:51:10.8392624Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:51:10 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=sol120-pkg has no contents — purchase=trial-customer-subscription-updated^[[39m
+targeted	Targeted jest	2026-10-05T17:51:10.8393970Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:51:10 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mcancelPendingForPurchase: no pending/due drops for purchase=end-active (replay or never-entitled) reason=subscription_canceled^[[39m
+targeted	Targeted jest	2026-10-05T17:51:10.8702175Z PASS test/aud-sol-661d-120-composition.live.spec.ts (397 MB heap size)
+targeted	Targeted jest	2026-10-05T17:51:14.2162920Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:51:14 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=solr6-pkg has no contents — purchase=owner-9^[[39m
+targeted	Targeted jest	2026-10-05T17:51:14.2164423Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:14 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=owner-9 reason=payment_failed^[[39m
+targeted	Targeted jest	2026-10-05T17:51:14.2165948Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:14 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=owner-9^[[39m
+targeted	Targeted jest	2026-10-05T17:51:14.2167595Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:14 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=owner-9 recovered after a failed payment of pi_solr6_9^[[39m
+targeted	Targeted jest	2026-10-05T17:51:14.3264009Z PASS test/aud-sol-661r6-selection.live.spec.ts (431 MB heap size)
+targeted	Targeted jest	2026-10-05T17:51:14.6016103Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:51:14 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=solr6-pkg has no contents — purchase=owner-10^[[39m
+targeted	Targeted jest	2026-10-05T17:51:14.6017996Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:14 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=owner-10 reason=payment_failed^[[39m
+targeted	Targeted jest	2026-10-05T17:51:14.6019551Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:14 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=owner-10^[[39m
+targeted	Targeted jest	2026-10-05T17:51:14.6021132Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:14 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=owner-10 recovered after a failed payment of pi_solr6_10^[[39m
+targeted	Targeted jest	2026-10-05T17:51:14.6049996Z PASS test/checkout-grant-credentials.spec.ts (466 MB heap size)
+targeted	Targeted jest	2026-10-05T17:51:14.7867799Z PASS test/b-recur7a-119-r2.spec.ts (480 MB heap size)
+targeted	Targeted jest	2026-10-05T17:51:15.0462619Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:14 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-05T17:51:15.0464070Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:14 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-05T17:51:15.0465442Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:14 PM ^[[32m    LOG^[[39m ^[[38;5;3m[SubscriptionCheckoutService] ^[[39m^[[32mbilling.subscription_attempt_retired purchase=00000000-0000-4000-8000-000000000001 reason=terms_changed^[[39m
+targeted	Targeted jest	2026-10-05T17:51:18.5812857Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:51:18 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=sol120e-pkg has no contents — purchase=rollback-invoice-paid^[[39m
+targeted	Targeted jest	2026-10-05T17:51:18.5814747Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:51:18 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=sol120e-pkg has no contents — purchase=rollback-customer-subscription-updated^[[39m
+targeted	Targeted jest	2026-10-05T17:51:18.5816406Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:51:18 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=sol120e-pkg has no contents — purchase=invoice-first^[[39m
+targeted	Targeted jest	2026-10-05T17:51:18.5817804Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:51:18 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=sol120e-pkg has no contents — purchase=two-workers^[[39m
+targeted	Targeted jest	2026-10-05T17:51:18.5898415Z PASS test/aud-sol-661e-120-recovery.live.spec.ts (294 MB heap size)
+targeted	Targeted jest	2026-10-05T17:51:18.7557887Z PASS test/b-recur6a-118-r1.spec.ts (306 MB heap size)
+targeted	Targeted jest	2026-10-05T17:51:19.2321011Z PASS test/b-secrets-3-admin-credentials.spec.ts (356 MB heap size)
+targeted	Targeted jest	2026-10-05T17:51:19.3640090Z PASS test/b-recur7a-119-r1.spec.ts (359 MB heap size)
+targeted	Targeted jest	2026-10-05T17:51:19.6549350Z PASS test/b-recur-fix-round-1-trial-card.spec.ts (392 MB heap size)
+targeted	Targeted jest	2026-10-05T17:51:19.9056369Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:19 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mbilling.trial_card_attached purchase=cp_trial via=webhook^[[39m
+targeted	Targeted jest	2026-10-05T17:51:19.9058249Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:51:19 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33msetup_intent.succeeded trial card attach failed purchase=cp_trial error=Error^[[39m
+targeted	Targeted jest	2026-10-05T17:51:19.9060167Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:51:19 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33msetup_intent.succeeded customer mismatch purchase=cp_trial^[[39m
+targeted	Targeted jest	2026-10-05T17:51:19.9061581Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:51:19 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: skipping drop seed for purchase=cp-1 (no engine tables on tx)^[[39m
+targeted	Targeted jest	2026-10-05T17:51:19.9063191Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:51:19 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: skipping drop seed for purchase=cp-2 (no engine tables on tx)^[[39m
+targeted	Targeted jest	2026-10-05T17:51:19.9064860Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:51:19 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: skipping drop seed for purchase=cp-3 (no engine tables on tx)^[[39m
+targeted	Targeted jest	2026-10-05T17:51:19.9066504Z ^[[95m[Nest] 2987  - ^[[39m10/05/2026, 5:51:19 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: skipping drop seed for purchase=cp-3 (no engine tables on tx)^[[39m
+targeted	Targeted jest	2026-10-05T17:51:19.9087618Z PASS test/purchase-fanout-hooks.spec.ts (419 MB heap size)
+targeted	Targeted jest	2026-10-05T17:51:23.6370524Z PASS test/aud-sol-118-owner-boundaries.live.spec.ts (453 MB heap size)
+targeted	Targeted jest	2026-10-05T17:51:23.9069116Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:23 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=owner^[[39m
+targeted	Targeted jest	2026-10-05T17:51:23.9069942Z PASS test/b-recur-fix-round-1.spec.ts (476 MB heap size)
+targeted	Targeted jest	2026-10-05T17:51:23.9070914Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:23 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=owner recovered after a failed payment of pi_118_mixed^[[39m
+targeted	Targeted jest	2026-10-05T17:51:23.9072081Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:23 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 0 drop(s) pending again for purchase=rollback-owner^[[39m
+targeted	Targeted jest	2026-10-05T17:51:23.9073335Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:23 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=rollback-owner recovered after a failed payment of pi_118_rollback^[[39m
+targeted	Targeted jest	2026-10-05T17:51:24.1921573Z PASS test/b-recur-3-fix-round-2.spec.ts (506 MB heap size)
+targeted	Targeted jest	2026-10-05T17:51:24.3072029Z ^[[33m[Nest] 2987  - ^[[39m10/05/2026, 5:51:24 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33msetup_intent.succeeded lookup failed si=seti_T1 error=Error^[[39m
+targeted	Targeted jest	2026-10-05T17:51:24.3073229Z PASS test/b-recur-subscription-wire.spec.ts (514 MB heap size)
+targeted	Targeted jest	2026-10-05T17:51:24.3074689Z ^[[32m[Nest] 2987  - ^[[39m10/05/2026, 5:51:24 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mbilling.trial_card_attached purchase=cp_trial via=webhook^[[39m
+targeted	Targeted jest	2026-10-05T17:51:24.4182288Z PASS test/b-recur-3-subscription-terms.spec.ts (526 MB heap size)
+targeted	Targeted jest	2026-10-05T17:51:24.5235386Z PASS test/b-recur5a-117-trial-end-form.spec.ts (529 MB heap size)
+targeted	Targeted jest	2026-10-05T17:51:24.5253410Z 
+targeted	Targeted jest	2026-10-05T17:51:24.5260713Z Test Suites: 43 passed, 43 total
+targeted	Targeted jest	2026-10-05T17:51:24.5261256Z Tests:       590 passed, 590 total
+targeted	Targeted jest	2026-10-05T17:51:24.5261697Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-05T17:51:24.5262079Z Time:        47.143 s
+targeted	Targeted jest	2026-10-05T17:51:24.5272938Z Ran all test suites matching test/aud-sol-661d-120-composition.live.spec.ts|test/aud-sol-661r5-postgres.spec.ts|test/aud-sol-661r6-selection.live.spec.ts|test/aud-sol-118-owner-boundaries.live.spec.ts|test/checkout-settlement.live.spec.ts|test/checkout-settlement-round5.spec.ts|test/checkout-hosted-activation-once.spec.ts|test/checkout-webhook-handler.spec.ts|test/checkout.service.spec.ts|test/b-secrets-3-admin-credentials.spec.ts|test/cancel-pending-on-refund.spec.ts|test/purchase-fanout-hooks.spec.ts|test/purchase-fanout-tx-plumbing.spec.ts|test/checkout-webhook-fee-split.spec.ts|test/invite-grant.spec.ts|test/billing-checkout-routing.spec.ts|test/b-recur-subscription-webhooks.spec.ts|test/b-recur-subscription-checkout.spec.ts|test/b-recur-subscription-wire.spec.ts|test/b-recur-fix-round-1.spec.ts|test/b-recur-fix-round-1-checkout.spec.ts|test/b-recur-fix-round-1-http.spec.ts|test/b-recur-fix-round-1-trial-card.spec.ts|test/b-recur-fix-round-1-trial-card-checkout.spec.ts|test/b-recur-3-fix-round-2.spec.ts|test/b-recur-3-fix-round-2-checkout.spec.ts|test/b-recur-3-subscription-terms.spec.ts|test/b-recur-116-fix-round-3.spec.ts|test/b-recur3-117-webhook-order.spec.ts|test/b-recur5a-117-fix-round-5.spec.ts|test/b-recur5a-117-moved-fix-round-4.spec.ts|test/b-recur5a-117-trial-end-form.spec.ts|test/b-recur5b-117-authority.spec.ts|test/b-recur6a-118-fix-round-6.spec.ts|test/b-recur6a-118-r1.spec.ts|test/b-recur6b-118-authority.spec.ts|test/b-recur7a-119-r1.spec.ts|test/b-recur7a-119-r2.spec.ts|test/b-recur7b-119-authority.spec.ts|src/regimes/__tests__/partial-refund-decision.service.spec.ts|src/notifications/__tests__/first-payment-webhook.integration.spec.ts|test/checkout-grant-credentials.spec.ts|test/aud-sol-661e-120-recovery.live.spec.ts.
+targeted	Post Run actions/setup-node@v6	﻿2026-10-05T17:51:24.7303922Z Post job cleanup.
+targeted	Post Run actions/setup-node@v6	2026-10-05T17:51:24.8294983Z Cache hit occurred on the primary key node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12, not saving cache.
+targeted	Post Run actions/checkout@v6	﻿2026-10-05T17:51:24.8398758Z Post job cleanup.
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9065989Z [command]/usr/bin/git version
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9095513Z git version 2.55.0
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9124508Z Temporarily overriding HOME='/home/runner/work/_temp/fb4ab3e2-bafe-4672-8b06-2f78afd4c4dd' before making global git config changes
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9125655Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9129865Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9154366Z Removing SSH command configuration
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9159369Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9186352Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9377866Z Removing HTTP extra header
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9381880Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9408304Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9591914Z Removing includeIf entries pointing to credentials config files
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9597422Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9620598Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9621774Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9622631Z includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9623264Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9628917Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9648244Z /home/runner/work/_temp/git-credentials-6c4e2bde-0c53-4928-b260-7332029def39.config
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9656859Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-6c4e2bde-0c53-4928-b260-7332029def39.config
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9685374Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9702989Z /home/runner/work/_temp/git-credentials-6c4e2bde-0c53-4928-b260-7332029def39.config
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9710128Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-6c4e2bde-0c53-4928-b260-7332029def39.config
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9736708Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9753932Z /github/runner_temp/git-credentials-6c4e2bde-0c53-4928-b260-7332029def39.config
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9760540Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-6c4e2bde-0c53-4928-b260-7332029def39.config
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9788110Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9805489Z /github/runner_temp/git-credentials-6c4e2bde-0c53-4928-b260-7332029def39.config
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9812459Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-6c4e2bde-0c53-4928-b260-7332029def39.config
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:24.9840041Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Post Run actions/checkout@v6	2026-10-05T17:51:25.0023341Z Removing credentials config '/home/runner/work/_temp/git-credentials-6c4e2bde-0c53-4928-b260-7332029def39.config'
+targeted	Stop containers	﻿2026-10-05T17:51:25.0123341Z Print service container logs: a631395bf9f744a78564ab4c84ddb699_redis7alpine_8da32e
+targeted	Stop containers	2026-10-05T17:51:25.0127667Z ##[command]/usr/bin/docker logs --details 1c6c73eed32fd2258b34fe04d8b748b23140ee2cdd9262a595585afb77ca9132
+targeted	Stop containers	2026-10-05T17:51:25.0230273Z  1:C 05 Oct 2026 17:49:12.152 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+targeted	Stop containers	2026-10-05T17:51:25.0231769Z  1:C 05 Oct 2026 17:49:12.152 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+targeted	Stop containers	2026-10-05T17:51:25.0232306Z  1:C 05 Oct 2026 17:49:12.152 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+targeted	Stop containers	2026-10-05T17:51:25.0232996Z  1:C 05 Oct 2026 17:49:12.152 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+targeted	Stop containers	2026-10-05T17:51:25.0233623Z  1:M 05 Oct 2026 17:49:12.152 * monotonic clock: POSIX clock_gettime
+targeted	Stop containers	2026-10-05T17:51:25.0233994Z  1:M 05 Oct 2026 17:49:12.152 * Running mode=standalone, port=6379.
+targeted	Stop containers	2026-10-05T17:51:25.0234275Z  1:M 05 Oct 2026 17:49:12.153 * Server initialized
+targeted	Stop containers	2026-10-05T17:51:25.0234631Z  1:M 05 Oct 2026 17:49:12.153 * Ready to accept connections tcp
+targeted	Stop containers	2026-10-05T17:51:25.0251203Z Stop and remove container: a631395bf9f744a78564ab4c84ddb699_redis7alpine_8da32e
+targeted	Stop containers	2026-10-05T17:51:25.0254949Z ##[command]/usr/bin/docker rm --force 1c6c73eed32fd2258b34fe04d8b748b23140ee2cdd9262a595585afb77ca9132
+targeted	Stop containers	2026-10-05T17:51:25.4102441Z 1c6c73eed32fd2258b34fe04d8b748b23140ee2cdd9262a595585afb77ca9132
+targeted	Stop containers	2026-10-05T17:51:25.4127774Z Remove container network: github_network_bddd91558667496c8fcfec9dfb011bab
+targeted	Stop containers	2026-10-05T17:51:25.4131271Z ##[command]/usr/bin/docker network rm github_network_bddd91558667496c8fcfec9dfb011bab
+targeted	Stop containers	2026-10-05T17:51:25.5303243Z github_network_bddd91558667496c8fcfec9dfb011bab
+targeted	Complete job	﻿2026-10-05T17:51:25.5365040Z Cleaning up orphan processes

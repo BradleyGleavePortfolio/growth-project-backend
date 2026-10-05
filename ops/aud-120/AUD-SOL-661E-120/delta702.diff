@@ -1,0 +1,465 @@
+diff --git a/scripts/clear-spent-payment-credentials.ts b/scripts/clear-spent-payment-credentials.ts
+new file mode 100644
+index 00000000..aa02659e
+--- /dev/null
++++ b/scripts/clear-spent-payment-credentials.ts
+@@ -0,0 +1,89 @@
++/**
++ * scripts/clear-spent-payment-credentials.ts (C-661-2, B-661-14/15)
++ *
++ * Erases the cached PaymentSheet client secret and ephemeral key from every
++ * ClientPurchase row whose sheet can no longer be used. Since #661 the
++ * webhooks erase them on every success, grant and end; rows written before
++ * that keep them at rest. A credential is still live (kept) only on:
++ *   - a one-time PaymentIntent attempt in pending / payment_failed (the
++ *     replay resumes the same PaymentIntent);
++ *   - a native subscription attempt that never granted access (open status,
++ *     not entitled, no trial started): an unpaid first invoice, a declined
++ *     first attempt, or a trial whose card is not saved yet.
++ *
++ * Deploy window only, with operator approval. Dry run by default (counts,
++ * writes nothing); `--apply` erases in bounded batches. Idempotent. Logs
++ * counts only, never a credential.
++ *
++ *   npx ts-node scripts/clear-spent-payment-credentials.ts [--apply]
++ */
++import { PrismaClient, type Prisma } from '@prisma/client';
++import { CLEARED_PAYMENT_SECRETS } from '../src/checkout/admin-purchase.select';
++import { errorLabel } from '../src/checkout/error-label';
++import { OPEN_ATTEMPT_STATUSES } from '../src/checkout/subscription-plan';
++
++export const SPENT_PAYMENT_CREDENTIALS: Prisma.ClientPurchaseWhereInput = {
++  OR: [{ stripe_client_secret: { not: null } }, { stripe_ephemeral_key: { not: null } }],
++  NOT: [
++    { stripe_subscription_id: null, status: { in: ['pending', 'payment_failed'] } },
++    {
++      stripe_subscription_id: { not: null },
++      status: { in: [...OPEN_ATTEMPT_STATUSES] },
++      entitlement_active: false,
++      trial_started_at: null,
++    },
++  ],
++};
++
++export interface ClearSpentResult {
++  matched: number;
++  cleared: number;
++  applied: boolean;
++}
++
++export async function clearSpentPaymentCredentials(
++  prisma: Pick<PrismaClient, 'clientPurchase'>,
++  opts: { apply: boolean; batchSize?: number },
++): Promise<ClearSpentResult> {
++  const matched = await prisma.clientPurchase.count({ where: SPENT_PAYMENT_CREDENTIALS });
++  if (!opts.apply) return { matched, cleared: 0, applied: false };
++  const take = Math.max(1, Math.min(opts.batchSize ?? 500, 5_000));
++  let cleared = 0;
++  for (;;) {
++    const ids = await prisma.clientPurchase.findMany({
++      where: SPENT_PAYMENT_CREDENTIALS,
++      select: { id: true },
++      orderBy: { id: 'asc' },
++      take,
++    });
++    if (ids.length === 0) break;
++    // The predicate is re-checked in the write: a row that changed since the
++    // read is left to the webhook that changed it.
++    const res = await prisma.clientPurchase.updateMany({
++      where: { AND: [SPENT_PAYMENT_CREDENTIALS, { id: { in: ids.map((r) => r.id) } }] },
++      data: CLEARED_PAYMENT_SECRETS,
++    });
++    cleared += res.count;
++    if (ids.length < take) break;
++  }
++  return { matched, cleared, applied: true };
++}
++
++async function main() {
++  const prisma = new PrismaClient();
++  try {
++    const result = await clearSpentPaymentCredentials(prisma, {
++      apply: process.argv.includes('--apply'),
++    });
++    console.log(`[clear-spent-payment-credentials] ${JSON.stringify(result)}`);
++  } finally {
++    await prisma.$disconnect();
++  }
++}
++
++if (require.main === module) {
++  main().catch((err: unknown) => {
++    console.error(`[clear-spent-payment-credentials] failed error=${errorLabel(err)}`);
++    process.exit(1);
++  });
++}
+diff --git a/src/checkout/checkout-webhook-handler.service.ts b/src/checkout/checkout-webhook-handler.service.ts
+index 096f3db0..5f0ee2d5 100644
+--- a/src/checkout/checkout-webhook-handler.service.ts
++++ b/src/checkout/checkout-webhook-handler.service.ts
+@@ -1650,6 +1650,8 @@ export class CheckoutWebhookHandlerService {
+           canceled_at: canceledAt,
+           access_expires_at: accessExpiresAt,
+           ...trialStartPatch(fresh, sub, entitled),
++          // B-661-14/15 — a grant means the sheet's intent was paid or its card saved: erase both.
++          ...(entitled ? CLEARED_PAYMENT_SECRETS : {}),
+           updated_at: nextVersion(fresh),
+         },
+       });
+@@ -2287,6 +2289,8 @@ export class CheckoutWebhookHandlerService {
+             status,
+             entitlement_active: entitled,
+             ...trial,
++            // B-661-14/15 — same erase as applySubscriptionUpdated; an unsaved trial card keeps them.
++            ...(entitled ? CLEARED_PAYMENT_SECRETS : {}),
+             current_period_end: currentPeriodEnd,
+             access_expires_at: this.computeAccessExpiry(pkg, fresh, true, currentPeriodEnd),
+             last_error: null,
+diff --git a/test/checkout-grant-credentials.spec.ts b/test/checkout-grant-credentials.spec.ts
+new file mode 100644
+index 00000000..577353f6
+--- /dev/null
++++ b/test/checkout-grant-credentials.spec.ts
+@@ -0,0 +1,169 @@
++// B-661R2-120 — #661 B-661-14 (Sol) / B-661-15 (Opus): the native first grant erases the
++// spent PaymentSheet credentials in the same locked write, on both event owners
++// (invoice.paid and customer.subscription.updated). An attempt that grants nothing keeps
++// them: an unpaid first invoice, a declined first attempt, a trial whose own card is not
++// saved (no default, or a default with the create-time end still set). Also pins the
++// conflict-resolved end (C-661-15: H1a / H1d). The real handler on the recurring fakes
++// (the AUD-OPUS-661D-120 probe harness). Cases marked "(failed before)" fail on #702 @
++// 9ddda117 (src = #661 @ bc399edd).
++import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
++import { makeFakePrisma } from './support/b-recur-fakes';
++
++const NOW = Math.floor(Date.now() / 1000);
++const DAY = 86400;
++const PI_SECRET = 'pi_first_secret_canary';
++const SETI_SECRET = 'seti_trial1_secret_canary';
++const EK = 'ek_test_canary';
++
++const sub = (status: string, over: Record<string, unknown> = {}) => ({
++  id: 'sub_n',
++  status,
++  customer: 'cus_1',
++  current_period_end: NOW + 30 * DAY,
++  cancel_at_period_end: false,
++  default_payment_method: 'pm_card',
++  ...over,
++});
++let seq = 0;
++const ev = (type: string, object: Record<string, unknown>) => {
++  seq += 1;
++  return { id: `evt_b661r2_${seq}`, type, data: { object } };
++};
++const invoicePaid = (over: Record<string, unknown> = {}) =>
++  ev('invoice.paid', {
++    id: 'in_1', subscription: 'sub_n', amount_paid: 4900, currency: 'usd', charge: 'ch_1',
++    billing_reason: 'subscription_create', ...over,
++  });
++const trialRow = { trial_days: 7, stripe_client_secret: SETI_SECRET, stripe_payment_intent_id: null };
++
++function harness(over: Record<string, unknown> = {}) {
++  const prisma = makeFakePrisma();
++  prisma._packages.push({ id: 'pkg', billing_type: 'recurring', interval: 'month', duration_periods: null });
++  prisma._purchases.push({
++    id: 'cp_native', client_user_id: 'client', coach_user_id: 'coach', package_id: 'pkg',
++    amount_cents: 4900, currency: 'usd', billing_type: 'recurring',
++    stripe_checkout_session_id: 'sub_n', stripe_subscription_id: 'sub_n',
++    stripe_payment_intent_id: 'pi_first', stripe_customer_id: 'cus_1',
++    stripe_client_secret: PI_SECRET, stripe_ephemeral_key: EK,
++    status: 'pending', entitlement_active: false, cancel_at_period_end: false,
++    current_period_end: null, canceled_at: null, trial_days: null, trial_started_at: null,
++    last_error: null, idempotency_key: 'sub-client-k', created_at: new Date(), updated_at: new Date(),
++    ...over,
++  });
++  let live: Record<string, unknown> = sub('active');
++  const stripe: any = {
++    retrieveSubscription: jest.fn(async () => ({ ...live })),
++    retrieveSubscriptionForCheckout: jest.fn(async () => ({ ...live })),
++    retrieveInvoice: jest.fn(async () => ({ id: 'in_1', status: 'open' })),
++    retrievePaymentIntent: jest.fn(async () => ({ id: 'pi_first', status: 'succeeded' })),
++  };
++  const splits: any = { onChargeSucceeded: jest.fn(async () => undefined) };
++  const dunning: any = {
++    recordFailure: jest.fn(async () => ({})),
++    recordResolution: jest.fn(async () => null),
++    terminate: jest.fn(async () => null),
++  };
++  const fanout: any = {
++    onPurchaseEntitled: jest.fn(async () => undefined),
++    cancelPendingForPurchase: jest.fn(async () => 0),
++  };
++  const svc = new CheckoutWebhookHandlerService(
++    prisma, stripe, splits, dunning, undefined, fanout, undefined, undefined, undefined,
++  );
++  const deliver = async (e: ReturnType<typeof ev>) => svc.handle(e, prisma, await svc.prefetchForOuterTx(e));
++  return {
++    svc, prisma, fanout, dunning, deliver,
++    row: () => prisma._purchases[0],
++    setLive: (s: Record<string, unknown>) => { live = s; },
++  };
++}
++const erased = { stripe_client_secret: null, stripe_ephemeral_key: null };
++
++describe('B-661-14 / B-661-15: a native first grant erases the spent sheet credentials', () => {
++  it('(failed before) G1 invoice.paid pays the first invoice: active, entitled, fanned out once, both erased', async () => {
++    const h = harness();
++    await h.deliver(invoicePaid());
++    expect(h.row()).toMatchObject({ status: 'active', entitlement_active: true, ...erased });
++    expect(h.fanout.onPurchaseEntitled).toHaveBeenCalledTimes(1);
++  });
++
++  it('(failed before) G2 customer.subscription.updated wins the race with invoice.paid: erased, and the late invoice.paid neither restores nor re-fans-out', async () => {
++    const h = harness();
++    await h.deliver(ev('customer.subscription.updated', sub('active')));
++    expect(h.row()).toMatchObject({ status: 'active', entitlement_active: true, ...erased });
++    await h.deliver(invoicePaid());
++    expect(h.row()).toMatchObject({ status: 'active', entitlement_active: true, ...erased });
++    expect(h.fanout.onPurchaseEntitled).toHaveBeenCalledTimes(1);
++  });
++
++  it('(failed before) G3 a trial whose own card was saved is granted by customer.subscription.updated: trialing, trial used, both erased', async () => {
++    const h = harness(trialRow);
++    const trialing = sub('trialing', { trial_start: NOW });
++    h.setLive(trialing);
++    await h.deliver(ev('customer.subscription.updated', trialing));
++    expect(h.row()).toMatchObject({ status: 'trialing', entitlement_active: true, ...erased });
++    expect(h.row().trial_started_at).toEqual(new Date(NOW * 1000));
++  });
++
++  it('(failed before) G3b the same carded trial granted by its $0 invoice.paid: both erased', async () => {
++    const h = harness(trialRow);
++    h.setLive(sub('trialing', { trial_start: NOW }));
++    await h.deliver(invoicePaid({ amount_paid: 0, charge: null }));
++    expect(h.row()).toMatchObject({ status: 'trialing', entitlement_active: true, ...erased });
++    expect(h.row().trial_started_at).toEqual(new Date(NOW * 1000));
++  });
++
++  it('(failed before) G5 a first attempt declined, then paid: the decline keeps them for the retry, the grant erases them', async () => {
++    const h = harness();
++    await h.deliver(ev('payment_intent.payment_failed', { id: 'pi_first', last_payment_error: { message: 'Your card was declined.' } }));
++    expect(h.row()).toMatchObject({ status: 'pending', entitlement_active: false });
++    expect(h.row()).toMatchObject({ stripe_client_secret: PI_SECRET, stripe_ephemeral_key: EK });
++    await h.deliver(invoicePaid());
++    expect(h.row()).toMatchObject({ status: 'active', entitlement_active: true, ...erased });
++  });
++});
++
++describe('controls: an attempt that grants nothing keeps its payable credentials', () => {
++  it.each([
++    ['no default card', { default_payment_method: null, cancel_at_period_end: true }],
++    ['a default card with the create-time end still set', { cancel_at_period_end: true }],
++  ])('G4 a trial with %s: not granted on either event, SetupIntent secret and key kept, no fanout', async (_name, over) => {
++    const h = harness(trialRow);
++    const unsaved = sub('trialing', { trial_start: NOW, ...over });
++    h.setLive(unsaved);
++    await h.deliver(ev('customer.subscription.updated', unsaved));
++    await h.deliver(invoicePaid({ amount_paid: 0, charge: null }));
++    expect(h.row()).toMatchObject({ entitlement_active: false, trial_started_at: null });
++    expect(h.row()).toMatchObject({ stripe_client_secret: SETI_SECRET, stripe_ephemeral_key: EK });
++    expect(h.fanout.onPurchaseEntitled).not.toHaveBeenCalled();
++  });
++
++  it('G6 an unpaid first invoice (incomplete): not granted, PaymentIntent secret and key kept', async () => {
++    const h = harness();
++    const incomplete = sub('incomplete', { default_payment_method: null });
++    h.setLive(incomplete);
++    await h.deliver(ev('customer.subscription.updated', incomplete));
++    expect(h.row()).toMatchObject({ entitlement_active: false });
++    expect(h.row()).toMatchObject({ stripe_client_secret: PI_SECRET, stripe_ephemeral_key: EK });
++  });
++});
++
++describe('C-661-15: the conflict-resolved end erases on paid and carded-trial plans', () => {
++  it('H1a a paid plan deleted on Stripe: canceled with Stripe canceled_at, drops canceled, dunning ended, both erased', async () => {
++    const h = harness({ status: 'active', entitlement_active: true });
++    const canceled = sub('canceled', { canceled_at: NOW - 60 });
++    h.setLive(canceled);
++    expect(await h.deliver(ev('customer.subscription.deleted', canceled))).toMatchObject({ claimed: true });
++    expect(h.row()).toMatchObject({ status: 'canceled', entitlement_active: false, ...erased });
++    expect(h.row().canceled_at).toEqual(new Date((NOW - 60) * 1000));
++    expect(h.fanout.cancelPendingForPurchase).toHaveBeenCalledWith('cp_native', 'subscription_canceled', h.prisma);
++    expect(h.dunning.terminate).toHaveBeenCalledWith('cp_native', 'subscription_deleted');
++  });
++
++  it('H1d a carded trial deleted before any grant event: canceled, trial recorded as used, both erased', async () => {
++    const h = harness(trialRow);
++    await h.svc.handle(ev('customer.subscription.deleted', sub('canceled', { trial_start: NOW - DAY, canceled_at: NOW })), h.prisma);
++    expect(h.row()).toMatchObject({ status: 'canceled', entitlement_active: false, ...erased });
++    expect(h.row().trial_started_at).toEqual(new Date((NOW - DAY) * 1000));
++  });
++});
+diff --git a/test/checkout-settlement.live.spec.ts b/test/checkout-settlement.live.spec.ts
+index 01d09003..428657e7 100644
+--- a/test/checkout-settlement.live.spec.ts
++++ b/test/checkout-settlement.live.spec.ts
+@@ -2,15 +2,21 @@
+ // B-661-3, B-661-9 and C-661-11 in round 6, the B-661-3 list boundary in round 7). Real
+ // handler, PurchaseFanoutService, PartialRefundDecisionService, CheckoutService and Prisma
+ // on the full schema: xmin, row locks and P2025 are the database's own. Gated on
+-// MWB3_TEST_DATABASE_URL (mwb-3-live-tests).
++// MWB3_TEST_DATABASE_URL (mwb-3-live-tests). B-661R2-120: the native first grant erases the
++// spent sheet credentials (B-661-14 / B-661-15, the AUD-SOL-661D-120 acceptance cases) and the
++// C-661-2 backfill (scripts/clear-spent-payment-credentials.ts) keeps every payable attempt.
+ import { ServiceUnavailableException } from '@nestjs/common';
+ import type { Prisma } from '@prisma/client';
+ import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
+ import { CheckoutService } from '../src/checkout/checkout.service';
+-import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++import {
++  StripeConnectApiService,
++  type StripeSubscriptionCheckoutObject,
++} from '../src/connect/stripe-connect-api.service';
+ import { PurchaseFanoutService } from '../src/packages/purchase-fanout.service';
+ import { PrismaService } from '../src/prisma.service';
+ import { PartialRefundDecisionService } from '../src/regimes/partial-refund-decision.service';
++import { clearSpentPaymentCredentials } from '../scripts/clear-spent-payment-credentials';
+ import { bootstrapTestSchema } from './utils/bootstrap-test-schema';
+ import { resetPublicSchema } from './utils/reset-public-schema';
+ 
+@@ -464,3 +470,144 @@ liveDescribe('#661 settlement on real PostgreSQL', () => {
+     );
+   });
+ });
++
++class SubscriptionStripeStub extends StripeConnectApiService {
++  sub: StripeSubscriptionCheckoutObject = { id: 'sub_unused', status: 'active' };
++  retrieveSubscription = jest.fn(async () => this.sub);
++  retrieveSubscriptionForCheckout = jest.fn(async () => this.sub);
++}
++
++liveDescribe('#661 credentials at rest on real PostgreSQL (B-661-14 / B-661-15, C-661-2)', () => {
++  let prisma: PrismaService;
++  let handler: CheckoutWebhookHandlerService;
++  const stripe = new SubscriptionStripeStub();
++  const [CL, CO, RPKG] = ['r2-client', 'r2-coach', 'r2-pkg'];
++  const EK = 'ek_test_r2_canary';
++  async function deliver(e: Ev) {
++    const pre = await handler.prefetchForOuterTx(e);
++    return prisma.$transaction((tx) => handler.handle(e, tx, pre), { timeout: 30_000 });
++  }
++  const row = (id: string) => prisma.clientPurchase.findUniqueOrThrow({ where: { id } });
++  const fanouts = (id: string) => prisma.purchaseFanout.count({ where: { purchase_id: id } });
++  type Over = Partial<Prisma.ClientPurchaseUncheckedCreateInput>;
++  const seed = (id: string, o: Over = {}) =>
++    prisma.clientPurchase.create({ data: { id, client_user_id: CL, coach_user_id: CO,
++      package_id: RPKG, amount_cents: 4900, billing_type: 'recurring', idempotency_key: id,
++      stripe_checkout_session_id: `sub_${id}`, stripe_subscription_id: `sub_${id}`,
++      stripe_customer_id: 'cus_r2', stripe_client_secret: `pi_${id}_secret_canary`,
++      stripe_ephemeral_key: EK, ...o } });
++  const snapshot = (id: string, over: Partial<StripeSubscriptionCheckoutObject> = {}) => ({
++    id: `sub_${id}`, status: 'active', customer: 'cus_r2', default_payment_method: 'pm_saved',
++    cancel_at_period_end: false, current_period_end: Math.floor(Date.now() / 1000) + 86_400, ...over,
++  });
++  const grantEvent = (type: string, id: string, amount: number) =>
++    type === 'invoice.paid'
++      ? ev(type, `in_${id}_${seq}`, { subscription: `sub_${id}`, amount_paid: amount, currency: 'usd' })
++      : ev(type, `sub_${id}`, { ...stripe.sub });
++
++  beforeAll(async () => {
++    prisma = new PrismaService({ datasources: { db: { url: DB_URL } } });
++    await prisma.$connect();
++    await resetPublicSchema(prisma);
++    await bootstrapTestSchema(prisma);
++    for (const id of [CL, CO]) {
++      await prisma.user.create({ data: { id, supabase_id: id, email: `${id}@example.test`, name: id } });
++    }
++    await prisma.coachPackage.create({ data: { id: RPKG, coach_id: CO, name: 'Live plan',
++      amount_cents: 4900, billing_type: 'recurring' } });
++    const fanout = new PurchaseFanoutService(undefined, undefined, undefined, prisma);
++    handler = new CheckoutWebhookHandlerService(prisma, stripe, undefined, undefined, undefined, fanout);
++  }, 180_000);
++  afterAll(async () => {
++    if (prisma) await prisma.$disconnect();
++  });
++
++  it.each(['invoice.paid', 'customer.subscription.updated'])(
++    '(failed before) %s pays the first invoice: active, entitled, one fanout, both credentials erased in the grant',
++    async (type) => {
++      const id = `paid-${type.replaceAll('.', '-')}`;
++      await seed(id, { stripe_payment_intent_id: `pi_${id}` });
++      stripe.sub = snapshot(id);
++      expect((await deliver(grantEvent(type, id, 4900))).claimed).toBe(true);
++      expect(await row(id)).toMatchObject({ status: 'active', entitlement_active: true,
++        stripe_client_secret: null, stripe_ephemeral_key: null });
++      expect(await fanouts(id)).toBe(1);
++    },
++  );
++
++  it.each(['invoice.paid', 'customer.subscription.updated'])(
++    '(failed before) %s starts a trial whose own card was saved: trialing, trial used, SetupIntent credentials erased',
++    async (type) => {
++      const id = `trial-${type.replaceAll('.', '-')}`;
++      await seed(id, { trial_days: 7, stripe_client_secret: `seti_${id}_secret_canary` });
++      stripe.sub = snapshot(id, { status: 'trialing', trial_start: Math.floor(Date.now() / 1000) });
++      expect((await deliver(grantEvent(type, id, 0))).claimed).toBe(true);
++      const after = await row(id);
++      expect(after).toMatchObject({ status: 'trialing', entitlement_active: true,
++        stripe_client_secret: null, stripe_ephemeral_key: null });
++      expect(after.trial_started_at).toBeInstanceOf(Date);
++      expect(await fanouts(id)).toBe(1);
++    },
++  );
++
++  it.each(['invoice.paid', 'customer.subscription.updated'])(
++    '%s keeps the payable SetupIntent of a trial whose card is not saved (no default; default with the create-time end)',
++    async (type) => {
++      const id = `unsaved-${type.replaceAll('.', '-')}`;
++      const secret = `seti_${id}_secret_canary`;
++      await seed(id, { trial_days: 7, stripe_client_secret: secret });
++      for (const card of [null, 'pm_unconfirmed']) {
++        stripe.sub = snapshot(id, { status: 'trialing', default_payment_method: card,
++          cancel_at_period_end: true, trial_start: Math.floor(Date.now() / 1000) });
++        await deliver(grantEvent(type, id, 0));
++        expect(await row(id)).toMatchObject({ status: 'trialing', entitlement_active: false,
++          trial_started_at: null, stripe_client_secret: secret, stripe_ephemeral_key: EK });
++        expect(await fanouts(id)).toBe(0);
++      }
++    },
++  );
++
++  it('C-661-2 backfill: dry run writes nothing; --apply erases every spent credential in batches, keeps every payable attempt, is idempotent', async () => {
++    await prisma.$executeRaw`TRUNCATE "ClientPurchase" CASCADE`;
++    const started = new Date(Date.now() - 86_400_000);
++    const oneTime = (status: string, entitled = false): Over => ({ billing_type: 'one_time',
++      stripe_subscription_id: null, status, entitlement_active: entitled });
++    const plan = (status: string, entitled: boolean, trial?: Date): Over => ({ status,
++      entitlement_active: entitled, trial_started_at: trial ?? null });
++    const spent: Record<string, Over> = {
++      'ot-paid': oneTime('paid', true), 'ot-refunded': oneTime('refunded'),
++      'ot-expired': oneTime('expired'), 'ot-disputed': oneTime('disputed', true),
++      'ot-key-only': { ...oneTime('canceled'), stripe_client_secret: null },
++      'sub-active': plan('active', true), 'sub-trial-granted': plan('trialing', true, started),
++      'sub-past-due': plan('past_due', true), 'sub-locked-out': plan('past_due', false),
++      'sub-trial-revoked': plan('trialing', false, started), 'sub-canceled': plan('canceled', false),
++      'sub-incomplete-expired': plan('incomplete_expired', false), 'sub-disputed': plan('disputed', false),
++    };
++    const payable: Record<string, Over> = {
++      'ot-pending': oneTime('pending'), 'ot-failed': oneTime('payment_failed'),
++      'sub-pending': plan('pending', false), 'sub-incomplete': plan('incomplete', false),
++      'sub-first-declined': plan('payment_failed', false), 'sub-trial-unsaved': plan('trialing', false),
++    };
++    for (const [id, o] of Object.entries({ ...spent, ...payable })) await seed(id, o);
++    await seed('none-paid', { ...oneTime('paid', true), stripe_client_secret: null, stripe_ephemeral_key: null });
++    const before = await prisma.clientPurchase.findMany({ orderBy: { id: 'asc' } });
++
++    expect(await clearSpentPaymentCredentials(prisma, { apply: false })).toEqual({
++      matched: 13, cleared: 0, applied: false });
++    expect(await prisma.clientPurchase.findMany({ orderBy: { id: 'asc' } })).toEqual(before);
++
++    expect(await clearSpentPaymentCredentials(prisma, { apply: true, batchSize: 4 })).toEqual({
++      matched: 13, cleared: 13, applied: true });
++    const after = new Map((await prisma.clientPurchase.findMany()).map((p) => [p.id, p]));
++    for (const old of before) {
++      const now = after.get(old.id);
++      const keep = old.id in payable || old.id === 'none-paid';
++      expect([old.id, now?.stripe_client_secret, now?.stripe_ephemeral_key]).toEqual(
++        keep ? [old.id, old.stripe_client_secret, old.stripe_ephemeral_key] : [old.id, null, null]);
++      expect(now).toMatchObject({ status: old.status, entitlement_active: old.entitlement_active,
++        trial_started_at: old.trial_started_at, stripe_subscription_id: old.stripe_subscription_id });
++    }
++    expect(await clearSpentPaymentCredentials(prisma, { apply: true })).toEqual({
++      matched: 0, cleared: 0, applied: true });
++  });
++});

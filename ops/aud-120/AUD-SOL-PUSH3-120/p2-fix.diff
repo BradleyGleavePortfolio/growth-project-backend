@@ -1,0 +1,1004 @@
+diff --git a/src/checkout/payout-notice.service.ts b/src/checkout/payout-notice.service.ts
+index 80db7234..c1259f8c 100644
+--- a/src/checkout/payout-notice.service.ts
++++ b/src/checkout/payout-notice.service.ts
+@@ -452,6 +452,8 @@ export class PayoutNoticeService {
+           deep_link: PAYOUT_NOTICE_DEEP_LINK,
+           channel: 'push',
+           throttle_key: n.id,
++          // Opus C-693-2: one inbox item per notice; hidden only behind its inapp row.
++          push_twin: true,
+         });
+         if (!pushRow) {
+           this.logger.warn(
+diff --git a/src/notifications/emitters/booking.emitter.ts b/src/notifications/emitters/booking.emitter.ts
+index db545049..8e791098 100644
+--- a/src/notifications/emitters/booking.emitter.ts
++++ b/src/notifications/emitters/booking.emitter.ts
+@@ -57,6 +57,13 @@ export interface BookingRescheduledPayload {
+   sessionId: string;
+   oldScheduledAt: Date;
+   newScheduledAt: Date;
++  /**
++   * Sol B-693-1: identity of this reschedule, persisted with it (the session
++   * row's updated_at after the move). The same move always has the same id;
++   * a later move, even back to an earlier time, has a new one, so each move
++   * is pushed once. Without it the old and new times identify the move.
++   */
++  rescheduleEventId?: string;
+ }
+ 
+ export interface BookingReminderPayload {
+@@ -185,6 +192,9 @@ export class BookingEmitter {
+         newScheduledAt: payload.newScheduledAt.toISOString(),
+         timeZone: tz,
+       },
++      pushEventId:
++        payload.rescheduleEventId ??
++        `${payload.oldScheduledAt.toISOString()}>${payload.newScheduledAt.toISOString()}`,
+     });
+   }
+ 
+@@ -243,6 +253,8 @@ export class BookingEmitter {
+     body: string;
+     deepLink: string;
+     payload: Record<string, unknown>;
++    /** The event's own identity when the session and time do not give one. */
++    pushEventId?: string;
+   }): Promise<void> {
+     try {
+       await this.notifications.createNotification({
+@@ -258,7 +270,9 @@ export class BookingEmitter {
+       // NotificationDeliveryLog, so each reminder is pushed once.
+       // B-NOTIF-5: the push carries the booking context (re-rendered and
+       // re-checked if quiet hours defer it) and an exactly-once identity per
+-      // session and time, so two sessions never collapse into one push.
++      // session and time (a reschedule: per move, B-693-1), so two sessions
++      // or two moves never collapse into one push. No display name goes into
++      // the push (B-692-1): the lock screen never shows one.
+       const p = args.payload;
+       const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+       const when =
+@@ -274,9 +288,8 @@ export class BookingEmitter {
+           newScheduledAt: str(p.newScheduledAt),
+           oldScheduledAt: str(p.oldScheduledAt),
+           timeZone: str(p.timeZone) ?? null,
+-          otherPartyDisplayName: str(p.otherPartyDisplayName),
+         },
+-        dedupe_key: `${args.kind}:${str(p.sessionId) ?? ''}:${when}`,
++        dedupe_key: `${args.kind}:${str(p.sessionId) ?? ''}:${args.pushEventId ?? when}`,
+       });
+     } catch (err) {
+       // Emitters never propagate errors — booking lifecycle must not
+diff --git a/src/notifications/notifications.service.ts b/src/notifications/notifications.service.ts
+index 66d8f9f3..4377dee1 100644
+--- a/src/notifications/notifications.service.ts
++++ b/src/notifications/notifications.service.ts
+@@ -69,7 +69,9 @@ export interface CreateNotificationInput {
+   /**
+    * B-648-7: true when this `push` row duplicates an `inapp` row the same
+    * writer stored for the same event. The row is kept (history) but hidden
+-   * from the inbox and the unread counts.
++   * from the inbox and the unread counts, and only when that `inapp` row is
++   * found (see PUSH_TWIN_WINDOW_MS): a writer whose inapp write failed or was
++   * switched off keeps its push row visible.
+    */
+   push_twin?: boolean;
+ }
+@@ -95,6 +97,14 @@ const recentPushes = new Map<string, number>();
+  */
+ const INBOX_HIDES_PUSH_TWINS = { inbox_hidden: false };
+ 
++/**
++ * Sol B-648-7 (round 5): a declared twin is hidden only when its counterpart
++ * is proven: an `inapp` row for the same user, kind, deep link and text,
++ * stored in the last hour. Otherwise the push row is the only stored copy and
++ * stays visible.
++ */
++export const PUSH_TWIN_WINDOW_MS = 60 * 60_000;
++
+ @Injectable()
+ export class NotificationsService implements OnModuleInit {
+   private readonly logger = new Logger(NotificationsService.name);
+@@ -123,10 +133,10 @@ export class NotificationsService implements OnModuleInit {
+    */
+   onModuleInit(): void {
+     if (this.pushDelivery) return;
+-    const message =
++    const notWired =
+       'NotificationsService started without PushDeliveryService: no inbox notification would reach a device.';
+-    if (process.env.NODE_ENV === 'production') throw new Error(message);
+-    this.logger.error(message);
++    if (process.env.NODE_ENV === 'production') throw new Error(notWired);
++    this.logger.error(notWired);
+   }
+ 
+   // ── Preferences ───────────────────────────────────────────────────────────
+@@ -516,9 +526,11 @@ export class NotificationsService implements OnModuleInit {
+     const body = input.body.slice(0, 160);
+     // B-648-7: a writer that stores a `push` twin next to the `inapp` row of
+     // the same event says so, and the twin stays out of the inbox and the
+-    // unread counts. Only that writer knows it is a twin; nothing is hidden
+-    // by kind.
+-    const inboxHidden = channel === 'push' && input.push_twin === true;
++    // unread counts once that `inapp` row is found. Nothing is hidden by kind.
++    const inboxHidden =
++      channel === 'push' &&
++      input.push_twin === true &&
++      (await this.inboxCounterpartExists(db, input, body));
+ 
+     return db.notification.create({
+       data: {
+@@ -982,6 +994,30 @@ export class NotificationsService implements OnModuleInit {
+ 
+   // ── Private helpers ───────────────────────────────────────────────────────
+ 
++  /** B-648-7: the `inapp` row a declared push twin duplicates. A failed read proves nothing. */
++  private async inboxCounterpartExists(
++    db: Pick<PrismaService, 'notification'> | Prisma.TransactionClient,
++    input: CreateNotificationInput,
++    body: string,
++  ): Promise<boolean> {
++    try {
++      const twin = await db.notification.findFirst({
++        where: {
++          user_id: input.user_id,
++          kind: input.kind,
++          channel: 'inapp',
++          deep_link: input.deep_link ?? null,
++          body,
++          created_at: { gte: new Date(Date.now() - PUSH_TWIN_WINDOW_MS) },
++        },
++        select: { id: true },
++      });
++      return twin !== null;
++    } catch {
++      return false;
++    }
++  }
++
+   /**
+    * C-648-3: which side of a booking the recipient is on, so the tap opens
+    * that side's session screen. Null for non-booking kinds, a missing
+diff --git a/src/notifications/push/push-channels.ts b/src/notifications/push/push-channels.ts
+new file mode 100644
+index 00000000..4621eb3a
+--- /dev/null
++++ b/src/notifications/push/push-channels.ts
+@@ -0,0 +1,43 @@
++import { NotificationKind } from '../notification-kind';
++import { notificationPrefsPrefix } from './push-preferences';
++
++// Android notification channel for each push (Opus B-693-1).
++//
++// Android shows a push only on a channel the app created; Expo documents that
++// a push naming a channel the device does not have is not displayed. The
++// mobile app creates exactly these four at start-up
++// (growth-project-mobile src/notifications/push-channels.ts PUSH_CHANNEL):
++// keep this list identical to it. test/push-channels.spec.ts pins it.
++export const ANDROID_PUSH_CHANNELS = {
++  COACH_MESSAGES: 'coach-messages',
++  CLIENT_BOT: 'client-bot',
++  MILESTONES: 'milestones',
++  SYSTEM: 'system',
++} as const;
++
++export type AndroidPushChannel = (typeof ANDROID_PUSH_CHANNELS)[keyof typeof ANDROID_PUSH_CHANNELS];
++
++/**
++ * The channel a kind is shown on. Messages use the high-importance
++ * coach-messages channel; booking events (time-critical), coach alerts and
++ * anything not listed use system; milestones and progress use milestones;
++ * reminders, nudges, check-ins, Build Week and new content use client-bot.
++ */
++export function androidChannelFor(kind: string): AndroidPushChannel {
++  const prefix = notificationPrefsPrefix(kind);
++  if (prefix === 'message') return ANDROID_PUSH_CHANNELS.COACH_MESSAGES;
++  if (prefix === 'booking') return ANDROID_PUSH_CHANNELS.SYSTEM;
++  if (prefix === 'milestone' || prefix === 'weight_trend') return ANDROID_PUSH_CHANNELS.MILESTONES;
++  if (
++    kind === NotificationKind.MISSED_CHECKIN ||
++    kind === NotificationKind.BUILD_WEEK_DAY_UNLOCKED ||
++    kind === NotificationKind.WORKOUT_ASSIGNED ||
++    kind === NotificationKind.MEAL_PLAN_ASSIGNED ||
++    kind === NotificationKind.WORKOUT_REMINDER ||
++    kind === NotificationKind.DRIP_RELEASED ||
++    kind.startsWith('nudge_')
++  ) {
++    return ANDROID_PUSH_CHANNELS.CLIENT_BOT;
++  }
++  return ANDROID_PUSH_CHANNELS.SYSTEM;
++}
+diff --git a/src/notifications/push/push-delivery.service.ts b/src/notifications/push/push-delivery.service.ts
+index 4f5ed7ea..5f812bf7 100644
+--- a/src/notifications/push/push-delivery.service.ts
++++ b/src/notifications/push/push-delivery.service.ts
+@@ -13,6 +13,7 @@ import {
+   deadlineSignal,
+ } from './expo-push-client';
+ import { PushContext, lockScreenCopy } from './lock-screen-copy';
++import { androidChannelFor } from './push-channels';
+ import { quietHoursFor } from './push-quiet-hours';
+ import { pushAllowedByPreferences } from './push-preferences';
+ import { usableTimeZone } from '../local-time';
+@@ -40,7 +41,13 @@ import { resolveRecipientTimeZone } from '../recipient-timezone';
+ //     (`muted`, `<kind>_push`), quiet hours in the recipient's CURRENT zone,
+ //     and the burst cap. A push whose switch was turned off while it waited
+ //     is suppressed; one that would now land inside quiet hours waits for
+-//     08:00 local again, without spending a provider retry attempt.
++//     08:00 local again, without spending a provider retry attempt. The
++//     switches and the device token are read once more AFTER the handoff
++//     write, so a mute or sign-out committed at any point before the handoff
++//     stops the send (Sol B-648-9, round 5).
++//   - Lock screen (B-692-1): title and body come only from the per-kind
++//     templates (lock-screen-copy.ts), rendered at the moment of sending; the
++//     Android channel is one the app creates (push-channels.ts, B-693-1).
+ //   - Distinct events are never dropped by a rate limit (B-648-1). A booking
+ //     event has an exactly-once identity (dedupe_key: kind, session, start
+ //     time). Repeats in one conversation collapse: while a push for the same
+@@ -58,7 +65,9 @@ import { resolveRecipientTimeZone } from '../recipient-timezone';
+ //     accepted it: at most once). HTTP 429/5xx means Expo did not accept the
+ //     request, so it is retried with backoff up to MAX_ATTEMPTS.
+ //   - Tokens: DeviceNotRegistered (ticket or receipt) clears the user's token
+-//     only if it is still that exact token.
++//     only if it is still that exact token. A clear that fails is never
++//     settled (B-693-2): the row keeps result_code token-cleanup-pending and
++//     the receipt sweep retries the clear (never the send) until it succeeds.
+ //   - Android without the FCM V1 key: Expo answers InvalidCredentials. The
+ //     token is kept, the push is recorded as provider-not-configured (never
+ //     as sent), and the operator gets one PUSH_PROVIDER_NOT_CONFIGURED line
+@@ -83,6 +92,9 @@ export const RETRY_BACKOFF_MS = [30_000, 2 * 60_000, 10 * 60_000];
+ /** Rows one drain works through at most (the next sweep takes the rest). */
+ export const MAX_ROWS_PER_DRAIN = 500;
+ export const RETENTION_MS = 30 * 24 * 60 * 60_000;
++/** Failed token clears one receipt sweep retries at most (B-693-2). */
++export const TOKEN_CLEANUP_BATCH = 100;
++const CLEANUP_PENDING: SendOutcome = 'token-cleanup-pending';
+ 
+ export type EnqueueCode = 'queued' | 'deferred' | 'duplicate' | 'collapsed';
+ 
+@@ -125,6 +137,7 @@ export type SendOutcome =
+   | 'burst-deferred'
+   | 'quiet-deferred'
+   | 'preference-off'
++  | 'token-cleanup-pending'
+   | 'lease-lost';
+ 
+ interface OutboxRow {
+@@ -513,6 +526,24 @@ export class PushDeliveryService {
+       // B-648-8: prove and renew authority right before the handoff.
+       if (!(await this.handOff(row))) return this.lost(row, 'handoff');
+ 
++      // Sol B-648-9 (round 5): consent at the handoff. These reads start
++      // after the handoff write, so a mute, a switch turned off or a sign-out
++      // committed during the slow reads above is seen here. Nothing has
++      // reached Expo yet: the push is suppressed and no attempt is spent.
++      const [prefsAtSend, userAtSend] = await Promise.all([
++        this.prisma.notificationPreferences.findUnique({ where: { user_id: row.user_id } }),
++        this.prisma.user.findUnique({
++          where: { id: row.user_id },
++          select: { expo_push_token: true },
++        }),
++      ]);
++      if (!pushAllowedByPreferences(prefsAtSend as Record<string, unknown> | null, row.kind)) {
++        return await this.finish(row, 'dropped', 'preference-off');
++      }
++      const to = userAtSend?.expo_push_token ?? null;
++      if (!to) return await this.finish(row, 'dropped', 'no-token');
++      if (!Expo.isExpoPushToken(to)) return await this.finish(row, 'dropped', 'invalid-token');
++
+       // B-648-10 (round 4): the clock at the Expo handoff. If the window
+       // opened during the reads or the handoff write, nothing has reached
+       // Expo yet: back to pending for the morning, attempt refunded.
+@@ -523,21 +554,21 @@ export class PushDeliveryService {
+       }
+       handedOff = true;
+ 
+-      const copy = context
+-        ? lockScreenCopy(
+-            row.kind,
+-            row.body,
+-            { ...context, timeZone: timeZone ?? context.timeZone },
+-            sendAt,
+-          )
+-        : { title: row.title, body: row.body };
++      // B-692-1: the lock screen shows only the kind's template, whatever
++      // text the row holds.
++      const copy = lockScreenCopy(
++        row.kind,
++        row.body,
++        context ? { ...context, timeZone: timeZone ?? context.timeZone } : null,
++        sendAt,
++      );
+       const message: ExpoPushMessage = {
+-        to: token,
+-        title: copy.title || row.title,
+-        body: copy.body || row.body,
++        to,
++        title: copy.title,
++        body: copy.body,
+         data: { ...asData(row.data), kind: row.kind },
+         sound: 'default',
+-        channelId: 'default',
++        channelId: androidChannelFor(row.kind),
+         priority: 'high',
+       };
+ 
+@@ -558,7 +589,7 @@ export class PushDeliveryService {
+       if (ticket.status === 'ok') {
+         return await this.finish(row, 'sent', 'sent', {
+           ticket_id: ticket.id,
+-          token,
++          token: to,
+           sent_at: sendAt,
+         });
+       }
+@@ -566,8 +597,10 @@ export class PushDeliveryService {
+       if (error === 'MessageRateExceeded') {
+         return await this.retryOrDrop(row, 'provider-unavailable');
+       }
+-      const code = await this.handleError(error, row.user_id, token, 'ticket');
+-      return await this.finish(row, 'dropped', code, { token });
++      // A failed token clear is recorded as token-cleanup-pending, which the
++      // receipt sweep retries (B-693-2); the push itself is never re-sent.
++      const code = await this.handleError(error, row.user_id, to, 'ticket');
++      return await this.finish(row, 'dropped', code, { token: to });
+     } catch (err) {
+       this.logger.warn(
+         `push send failed: row=${row.id} user=${row.user_id} kind=${row.kind} error=${errorName(err)}`,
+@@ -641,6 +674,9 @@ export class PushDeliveryService {
+     this.receiptSweepRunning = true;
+     try {
+       const now = this.now();
++      // B-693-2: clears that failed earlier (ticket or receipt) come first.
++      const cleaned = await this.retryTokenCleanup();
++      let checked = 0;
+       const due = await this.prisma.pushOutbox.findMany({
+         where: {
+           status: 'sent',
+@@ -655,7 +691,6 @@ export class PushDeliveryService {
+         take: EXPO_RECEIPT_CHUNK,
+         select: { id: true, user_id: true, ticket_id: true, token: true },
+       });
+-      let checked = 0;
+       if (due.length > 0) {
+         const byTicket = new Map(due.map((r) => [r.ticket_id ?? '', r]));
+         const deadline = deadlineSignal(this.receiptDeadlineMs);
+@@ -685,11 +720,14 @@ export class PushDeliveryService {
+               : 'rejected';
+           }
+           // Another replica may have read the same receipt: count only ours.
++          // B-693-2: when the token clear failed the receipt is read but the
++          // row stays token-cleanup-pending, unsettled and not counted, until
++          // retryTokenCleanup clears the token on a later sweep.
+           const res = await this.prisma.pushOutbox.updateMany({
+             where: { id: entry.id, receipt_checked_at: null },
+             data: { receipt_checked_at: now, result_code: code },
+           });
+-          if (res.count === 1) checked += 1;
++          if (res.count === 1 && code !== CLEANUP_PENDING) checked += 1;
+         }
+       }
+       await this.prisma.pushOutbox.deleteMany({
+@@ -698,7 +736,7 @@ export class PushDeliveryService {
+           not_before: { lt: new Date(now.getTime() - RETENTION_MS) },
+         },
+       });
+-      return { checked, remaining: due.length - checked };
++      return { checked: checked + cleaned, remaining: due.length - checked };
+     } finally {
+       this.receiptSweepRunning = false;
+     }
+@@ -711,8 +749,7 @@ export class PushDeliveryService {
+     stage: 'ticket' | 'receipt',
+   ): Promise<SendOutcome> {
+     if (error === 'DeviceNotRegistered') {
+-      await this.clearToken(userId, token);
+-      return 'device-not-registered';
++      return (await this.clearToken(userId, token)) ? 'device-not-registered' : CLEANUP_PENDING;
+     }
+     if (error === 'InvalidCredentials') {
+       this.alertProviderNotConfigured();
+@@ -724,17 +761,53 @@ export class PushDeliveryService {
+     return 'rejected';
+   }
+ 
+-  private async clearToken(userId: string, token: string): Promise<void> {
++  /**
++   * Clear the token Expo rejected, only if it is still the user's token (a
++   * newer registration stays). True once that is proven: cleared now, or the
++   * user no longer holds it. False when the write failed (B-693-2).
++   */
++  private async clearToken(userId: string, token: string): Promise<boolean> {
+     try {
+-      // Only the token Expo rejected: a newer registration stays.
+-      await this.prisma.user.updateMany({
++      const res = await this.prisma.user.updateMany({
+         where: { id: userId, expo_push_token: token },
+         data: { expo_push_token: null },
+       });
+-      this.logger.log(`push token cleared: user=${userId} reason=DeviceNotRegistered`);
++      if (res.count > 0) {
++        this.logger.log(`push token cleared: user=${userId} reason=DeviceNotRegistered`);
++      }
++      return true;
+     } catch (err) {
+-      this.logger.warn(`push token clear failed: user=${userId} error=${errorName(err)}`);
++      this.logger.warn(
++        `push token clear failed: user=${userId} error=${errorName(err)} (retried by the receipt sweep)`,
++      );
++      return false;
++    }
++  }
++
++  /**
++   * B-693-2: retry the token clears that failed (rows marked
++   * token-cleanup-pending at the ticket or the receipt). Only the clear is
++   * retried, never the push. A row is settled (device-not-registered,
++   * receipt read) once its clear succeeds; returns how many this sweep
++   * settled (a row another replica settled first is not counted).
++   */
++  private async retryTokenCleanup(): Promise<number> {
++    const pending = await this.prisma.pushOutbox.findMany({
++      where: { result_code: CLEANUP_PENDING, token: { not: null } },
++      orderBy: { updated_at: 'asc' },
++      take: TOKEN_CLEANUP_BATCH,
++      select: { id: true, user_id: true, token: true },
++    });
++    let settled = 0;
++    for (const row of pending) {
++      if (!row.token || !(await this.clearToken(row.user_id, row.token))) continue;
++      const res = await this.prisma.pushOutbox.updateMany({
++        where: { id: row.id, result_code: CLEANUP_PENDING },
++        data: { result_code: 'device-not-registered' },
++      });
++      if (res.count === 1) settled += 1;
+     }
++    return settled;
+   }
+ 
+   private alertProviderNotConfigured(): void {
+diff --git a/src/packages/drip-dispatcher.cron.ts b/src/packages/drip-dispatcher.cron.ts
+index 4e38474a..4531df26 100644
+--- a/src/packages/drip-dispatcher.cron.ts
++++ b/src/packages/drip-dispatcher.cron.ts
+@@ -507,8 +507,10 @@ export class DripDispatcherCron {
+       // call must not cascade and skip the other two — a transient
+       // prisma.notification.create blip would otherwise silently drop
+       // the push send + the second DB row write.
++      // B-648-7: the push row below is hidden only behind a stored inapp row.
++      let inappStored = false;
+       try {
+-        await this.notifications.createNotification({
++        const inapp = await this.notifications.createNotification({
+           user_id: clientUserId,
+           kind: NotificationKind.DRIP_RELEASED,
+           body,
+@@ -516,6 +518,7 @@ export class DripDispatcherCron {
+           deep_link: 'tgp://client/library',
+           channel: 'inapp',
+         });
++        inappStored = inapp !== null;
+       } catch (err) {
+         this.logger.warn(
+           `drip-dispatcher in-app notification failed drop=${drop.id} client=${clientUserId}: ${(err as Error).message}`,
+@@ -540,8 +543,8 @@ export class DripDispatcherCron {
+           payload,
+           deep_link: 'tgp://client/library',
+           channel: 'push',
+-          // B-648-7: the inapp row above is the inbox item; this twin is hidden.
+-          push_twin: true,
++          // B-648-7: a twin only when the inapp row above was stored.
++          push_twin: inappStored,
+         });
+       } catch (err) {
+         this.logger.warn(
+diff --git a/src/packages/purchase-fanout.service.ts b/src/packages/purchase-fanout.service.ts
+index a4787ce6..d228c223 100644
+--- a/src/packages/purchase-fanout.service.ts
++++ b/src/packages/purchase-fanout.service.ts
+@@ -667,8 +667,10 @@ export class PurchaseFanoutService {
+     const deep_link = `tgp://coach/purchases/${alert.purchaseId}`;
+ 
+     void (async () => {
++      // B-648-7: the push row below is hidden only behind a stored inapp row.
++      let inappStored = false;
+       try {
+-        await this.notifications!.createNotification({
++        const inapp = await this.notifications!.createNotification({
+           user_id: alert.coachId,
+           kind: NotificationKind.COACH_NEW_PURCHASE,
+           body: body.slice(0, 160),
+@@ -676,6 +678,7 @@ export class PurchaseFanoutService {
+           deep_link,
+           channel: 'inapp',
+         });
++        inappStored = inapp !== null;
+       } catch (err) {
+         this.logger.warn(
+           `coach_new_purchase in-app row failed coach=${alert.coachId} purchase=${alert.purchaseId}: ${(err as Error).message}`,
+@@ -699,8 +702,8 @@ export class PurchaseFanoutService {
+           payload,
+           deep_link,
+           channel: 'push',
+-          // B-648-7: the inapp row above is the inbox item; this twin is hidden.
+-          push_twin: true,
++          // B-648-7: a twin only when the inapp row above was stored.
++          push_twin: inappStored,
+         });
+       } catch (err) {
+         this.logger.warn(
+diff --git a/src/scheduling/scheduling-session-lifecycle.service.ts b/src/scheduling/scheduling-session-lifecycle.service.ts
+index 6291615d..3f2f2031 100644
+--- a/src/scheduling/scheduling-session-lifecycle.service.ts
++++ b/src/scheduling/scheduling-session-lifecycle.service.ts
+@@ -381,6 +381,9 @@ export class SchedulingSessionLifecycleService {
+         sessionId: sessionId,
+         oldScheduledAt: existing.start_at,
+         newScheduledAt: start,
++        // B-693-1: this move's persisted identity (one push per move).
++        rescheduleEventId:
++          updated.updated_at instanceof Date ? updated.updated_at.toISOString() : undefined,
+       });
+     }
+     return updated;
+diff --git a/test/booking-emitter.spec.ts b/test/booking-emitter.spec.ts
+index 68e0175d..ce083f76 100644
+--- a/test/booking-emitter.spec.ts
++++ b/test/booking-emitter.spec.ts
+@@ -176,7 +176,6 @@ describe('BookingEmitter', () => {
+         context: expect.objectContaining({
+           sessionId: 'sess-6',
+           scheduledAt: FIXED_SCHEDULED_AT.toISOString(),
+-          otherPartyDisplayName: 'Coach K',
+         }),
+       }),
+       expect.objectContaining({
+@@ -190,10 +189,13 @@ describe('BookingEmitter', () => {
+         context: expect.objectContaining({
+           sessionId: 'sess-6',
+           scheduledAt: FIXED_SCHEDULED_AT.toISOString(),
+-          otherPartyDisplayName: 'Coach K',
+         }),
+       }),
+     ]);
++    // B-692-1: no display name is stored with a push.
++    for (const [push] of sendPushMock.mock.calls) {
++      expect(push.context).not.toHaveProperty('otherPartyDisplayName');
++    }
+   });
+ 
+   it('swallows underlying createNotification errors so lifecycle never blocks', async () => {
+diff --git a/test/push-delivery-round5.spec.ts b/test/push-delivery-round5.spec.ts
+new file mode 100644
+index 00000000..bd72b64b
+--- /dev/null
++++ b/test/push-delivery-round5.spec.ts
+@@ -0,0 +1,301 @@
++/**
++ * Push P2 fix round (B-PUSH2-120): regressions for both lenses' findings at
++ * 13417e7b. Each case fails on that head.
++ *   - Sol B-693-1: a reschedule back to an earlier time was deduped away.
++ *   - Sol B-648-7: a declared push twin hid the only stored row.
++ *   - Sol B-693-2: a failed DeviceNotRegistered token clear was settled.
++ *   - Sol B-648-9: a mute or sign-out during send preparation did not stop it.
++ *   - Opus B-693-1: Android channel 'default' does not exist in the app.
++ *   - Sol B-692-1 (P1): the worker sends only the kind's template.
++ */
++import { Logger } from '@nestjs/common';
++import type { ExpoPushMessage, ExpoPushReceipt, ExpoPushTicket } from 'expo-server-sdk';
++import { NotificationKind } from '../src/notifications/notification-kind';
++import { NotificationsService } from '../src/notifications/notifications.service';
++import { BookingEmitter } from '../src/notifications/emitters/booking.emitter';
++import { DripDispatcherCron } from '../src/packages/drip-dispatcher.cron';
++import { PurchaseFanoutService } from '../src/packages/purchase-fanout.service';
++import { PushDeliveryService, RECEIPT_MIN_AGE_MS } from '../src/notifications/push/push-delivery.service';
++import { ANDROID_PUSH_CHANNELS, androidChannelFor } from '../src/notifications/push/push-channels';
++import { pushOutboxWorld } from './utils/push-outbox-fake';
++
++const TOKEN = 'ExponentPushToken[abcdefghijklmnopqrstuv]';
++const NEW_TOKEN = 'ExponentPushToken[zyxwvutsrqponmlkjihgfe]';
++const CLOCK = new Date('2026-06-02T18:00:00Z'); // 14:00 New York
++const NY = 'America/New_York';
++
++class Clocked extends PushDeliveryService {
++  clock = CLOCK;
++  protected now(): Date {
++    return new Date(this.clock);
++  }
++}
++
++type NRow = Record<string, unknown> & { id: string; created_at: Date; inbox_hidden: boolean };
++
++function world(prefs: Record<string, unknown> = {}) {
++  let seq = 0;
++  const w = pushOutboxWorld({
++    now: () => delivery.clock,
++    tokens: { 'u-1': TOKEN },
++    prefs: { 'u-1': { timezone: NY, timezone_updated_at: CLOCK, muted: false, ...prefs } },
++  });
++  const client = {
++    send: jest.fn(async (_m: ExpoPushMessage[], _s: AbortSignal): Promise<ExpoPushTicket[]> => [
++      { status: 'ok', id: `t-${++seq}` },
++    ]),
++    getReceipts: jest.fn(async (_i: string[], _s: AbortSignal): Promise<Record<string, ExpoPushReceipt>> => ({})),
++  };
++  const inbox: NRow[] = [];
++  const hit = (row: NRow, where: Record<string, unknown>) =>
++    Object.entries(where).every(([k, v]) => {
++      if (k === 'created_at') return row.created_at >= (v as { gte: Date }).gte;
++      if (k === 'read_at') return row.read_at == null;
++      return (row[k] ?? null) === v;
++    });
++  const db = {
++    ...w.db,
++    notification: {
++      create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
++        const row: NRow = { id: `n-${inbox.length + 1}`, created_at: new Date(Date.now()), inbox_hidden: false, ...data };
++        inbox.push(row);
++        return row;
++      }),
++      findFirst: jest.fn(async ({ where }: { where: Record<string, unknown> }) => inbox.find((r) => hit(r, where)) ?? null),
++      count: jest.fn(async ({ where }: { where: Record<string, unknown> }) => inbox.filter((r) => hit(r, where)).length),
++    },
++    coachingSession: { findUnique: jest.fn(async () => ({ client_id: 'u-1', coach_id: 'coach-1', status: 'scheduled' })) },
++    scheduledDrop: { updateMany: jest.fn(async () => ({ count: 1 })) },
++  };
++  const delivery = new Clocked(Object.create(db), client);
++  delivery.autoDrain = false;
++  const notifications = new NotificationsService(Object.create(db), undefined, undefined, delivery);
++  jest.spyOn(notifications, 'pushToUser').mockResolvedValue({ delivered: false, code: 'no-token' });
++  return { ...w, db, client, inbox, delivery, notifications };
++}
++
++const message = (over: Record<string, unknown> = {}) => ({
++  userId: 'u-1',
++  kind: NotificationKind.MESSAGE_RECEIVED,
++  title: 'New message',
++  body: 'New message from Jamie jamie@example.test',
++  data: { actionScreen: 'Messages' },
++  collapseKey: 'message_received:tgp://messages/t-1',
++  timeZone: NY,
++  ...over,
++});
++
++/** Run `change` while the worker's first token read is in flight. */
++function duringPreparation(w: ReturnType<typeof world>, change: () => void) {
++  const original = w.db.user.findUnique.getMockImplementation();
++  let done = false;
++  w.db.user.findUnique.mockImplementation(async (args) => {
++    const out = original ? await original(args) : { expo_push_token: TOKEN };
++    if (!done) {
++      done = true;
++      change();
++      w.delivery.clock = new Date(CLOCK.getTime() + 70_000);
++    }
++    return out;
++  });
++}
++
++// NotificationsService's in-process push limiter (one push row per user and
++// kind per minute) reads Date.now(); each case starts ten minutes later.
++let wall = Date.parse('2026-06-02T18:00:00Z');
++const tick = (ms = 10 * 60_000) => (wall += ms);
++beforeAll(() => {
++  for (const level of ['warn', 'error', 'log'] as const) {
++    jest.spyOn(Logger.prototype, level).mockImplementation(() => undefined);
++  }
++  jest.spyOn(Date, 'now').mockImplementation(() => wall);
++});
++beforeEach(() => tick());
++
++describe('Sol B-693-1: one push per reschedule', () => {
++  const T = ['2026-06-06T18:00:00Z', '2026-06-06T19:00:00Z', '2026-06-06T20:00:00Z'].map((t) => new Date(t));
++  async function moves(w: ReturnType<typeof world>, path: Array<[number, number, string?]>) {
++    const booking = new BookingEmitter(w.notifications, Object.create(w.db));
++    for (const [from, to, id] of path) {
++      await booking.emitRescheduled({
++        recipientUserId: 'u-1',
++        reschedulerDisplayName: 'Coach K',
++        sessionId: 's-1',
++        oldScheduledAt: T[from],
++        newScheduledAt: T[to],
++        rescheduleEventId: id,
++      });
++      await w.delivery.drain();
++      w.delivery.clock = new Date(w.delivery.clock.getTime() + 5 * 60_000);
++    }
++  }
++
++  it('A -> B -> C -> B: three moves, three pushes', async () => {
++    const w = world();
++    await moves(w, [[0, 1], [1, 2], [2, 1]]);
++    expect(w.client.send).toHaveBeenCalledTimes(3);
++  });
++
++  it('A -> B -> A -> B with each move identified: four pushes; the same move twice: one', async () => {
++    const w = world();
++    await moves(w, [[0, 1, 'e1'], [1, 0, 'e2'], [0, 1, 'e3'], [1, 0, 'e4'], [1, 0, 'e4']]);
++    expect(w.client.send).toHaveBeenCalledTimes(4);
++    expect(w.rows).toHaveLength(4);
++  });
++});
++
++describe('Sol B-648-7: a declared twin is hidden only behind a stored inapp row', () => {
++  const input = {
++    user_id: 'u-1',
++    kind: NotificationKind.COACH_NEW_PURCHASE,
++    body: 'New purchase',
++    deep_link: 'tgp://coach/purchases/p-1',
++  };
++
++  it('inapp switched off: the push row is the only copy and stays visible', async () => {
++    const w = world({ coach_new_purchase_inapp: false });
++    expect(await w.notifications.createNotification({ ...input, channel: 'inapp' })).toBeNull();
++    await w.notifications.createNotification({ ...input, channel: 'push', push_twin: true });
++    expect(w.inbox.map((r) => r.inbox_hidden)).toEqual([false]);
++    expect(await w.notifications.getUnreadCount('u-1')).toBe(1);
++  });
++
++  it('a stored inapp row with the same text and link: the twin is hidden; a different link is not a twin', async () => {
++    const w = world();
++    await w.notifications.createNotification({ ...input, channel: 'inapp' });
++    await w.notifications.createNotification({ ...input, channel: 'push', push_twin: true });
++    tick(2 * 60_000);
++    await w.notifications.createNotification({ ...input, deep_link: 'tgp://coach/purchases/p-2', channel: 'push', push_twin: true });
++    expect(w.inbox.map((r) => r.inbox_hidden)).toEqual([false, true, false]);
++    expect(await w.notifications.getUnreadCount('u-1')).toBe(2);
++  });
++
++  it('Opus C-693-2 (main refresh): throttle_key and push_twin together, one inbox item per payout notice', async () => {
++    const w = world();
++    const notice = { ...input, kind: NotificationKind.COACH_ALERT, deep_link: 'tgp://coach/payouts' };
++    for (const id of ['pn-1', 'pn-2']) {
++      const n = { ...notice, body: `Payout notice ${id}` };
++      await w.notifications.createNotification({ ...n, channel: 'inapp' });
++      expect(await w.notifications.createNotification({ ...n, channel: 'push', throttle_key: id, push_twin: true })).not.toBeNull();
++    }
++    expect(w.inbox.map((r) => r.inbox_hidden)).toEqual([false, true, false, true]);
++    expect(await w.notifications.getUnreadCount('u-1')).toBe(2);
++  });
++
++  it('the drip writer: an inapp DB failure leaves its push row visible; a stored inapp hides the twin', async () => {
++    const drop = { id: 'd-1', display_title: 'Week 2', client_purchase_id: 'cp-1', asset_type: 'meal_plan', asset_id: 'a-1' };
++    for (const fail of [true, false]) {
++      tick();
++      const w = world();
++      if (fail) w.db.notification.create.mockRejectedValueOnce(new Error('synthetic outage'));
++      const cron = new DripDispatcherCron(Object.create(w.db), undefined, w.notifications);
++      const dispatch = Reflect.get(cron, 'dispatchBuyerAlert') as (...a: unknown[]) => Promise<void>;
++      await dispatch.call(cron, drop, 'u-1', CLOCK);
++      const expected = fail ? [['push', false]] : [['inapp', false], ['push', true]];
++      expect(w.inbox.map((r) => [r.channel, r.inbox_hidden])).toEqual(expected);
++      expect(await w.notifications.getUnreadCount('u-1')).toBe(1);
++    }
++  });
++
++  it('the purchase writer: an inapp DB failure leaves its push row visible', async () => {
++    const w = world();
++    w.db.notification.create.mockRejectedValueOnce(new Error('synthetic outage'));
++    const svc = new PurchaseFanoutService(undefined, undefined, w.notifications, undefined);
++    const alert = { coachId: 'u-1', buyerId: 'b-1', buyerDisplayName: 'Sam', purchaseId: 'p-1', packageName: 'Plan' };
++    Reflect.get(svc, 'pendingCoachNewPurchaseAlerts').set('p-1', { ...alert, amountCents: 4900, currency: 'usd' });
++    svc.flushCoachNewPurchaseAlert('p-1');
++    for (let i = 0; i < 5; i += 1) await new Promise((r) => setImmediate(r));
++    expect(w.inbox.map((r) => [r.channel, r.inbox_hidden])).toEqual([['push', false]]);
++  });
++});
++
++describe('Sol B-693-2: a failed token clear is retried, never settled', () => {
++  const dead = { status: 'error', message: 'gone', details: { error: 'DeviceNotRegistered' } } as const;
++
++  it('receipt stage: [0, 1] across two sweeps, the token cleared, no second push', async () => {
++    const w = world();
++    await w.delivery.enqueue(message());
++    await w.delivery.drain();
++    w.delivery.clock = new Date(CLOCK.getTime() + RECEIPT_MIN_AGE_MS);
++    w.client.getReceipts.mockResolvedValue({ 't-1': dead });
++    w.db.user.updateMany.mockRejectedValueOnce(new Error('synthetic outage'));
++    expect((await w.delivery.checkReceipts()).checked).toBe(0);
++    expect(w.rows[0].result_code).toBe('token-cleanup-pending');
++    expect((await w.delivery.checkReceipts()).checked).toBe(1);
++    expect(w.tokens['u-1']).toBeNull();
++    expect(w.rows[0].result_code).toBe('device-not-registered');
++    expect(w.client.send).toHaveBeenCalledTimes(1);
++  });
++
++  it('ticket stage: the clear is retried by the sweep until it succeeds; a newer token is kept', async () => {
++    const w = world();
++    w.client.send.mockResolvedValueOnce([dead]);
++    w.db.user.updateMany.mockRejectedValueOnce(new Error('one')).mockRejectedValueOnce(new Error('two'));
++    await w.delivery.enqueue(message());
++    await w.delivery.drain();
++    expect(w.rows[0]).toMatchObject({ status: 'dropped', result_code: 'token-cleanup-pending', token: TOKEN });
++    expect((await w.delivery.checkReceipts()).checked).toBe(0); // second failure: still owed
++    w.tokens['u-1'] = NEW_TOKEN; // the device registered again meanwhile
++    expect((await w.delivery.checkReceipts()).checked).toBe(1);
++    expect(w.tokens['u-1']).toBe(NEW_TOKEN);
++    expect(w.rows[0].result_code).toBe('device-not-registered');
++    expect(w.client.send).toHaveBeenCalledTimes(1);
++  });
++});
++
++describe('Sol B-648-9: consent is read again after the handoff', () => {
++  type W = ReturnType<typeof world>;
++  it.each([
++    ['master mute', (w: W) => Object.assign(w.prefs['u-1'], { muted: true }), 'preference-off'],
++    ['message switch off', (w: W) => Object.assign(w.prefs['u-1'], { message_push: false }), 'preference-off'],
++    ['sign-out (token cleared)', (w: W) => void (w.tokens['u-1'] = null), 'no-token'],
++  ])('%s during a 70 s preparation read: nothing is sent', async (_name, change, code) => {
++    const w = world();
++    await w.notifications.createNotification({ user_id: 'u-1', kind: NotificationKind.MESSAGE_RECEIVED, body: 'x' });
++    await w.delivery.enqueue(message());
++    duringPreparation(w, () => change(w));
++    expect(await w.delivery.drain()).toBe(0);
++    expect(w.client.send).not.toHaveBeenCalled();
++    expect(w.rows[0]).toMatchObject({ status: 'dropped', result_code: code });
++    expect(w.inbox).toHaveLength(1); // inbox history kept
++  });
++
++  it('controls: a booking push still goes when only messages are switched off; no change sends once', async () => {
++    for (const kind of [NotificationKind.BOOKING_CONFIRMED, NotificationKind.MESSAGE_RECEIVED]) {
++      const w = world();
++      await w.delivery.enqueue(message({ kind, collapseKey: `${kind}:x` }));
++      duringPreparation(w, () => {
++        if (kind !== NotificationKind.MESSAGE_RECEIVED) Object.assign(w.prefs['u-1'], { message_push: false });
++      });
++      expect(await w.delivery.drain()).toBe(1);
++    }
++  });
++});
++
++describe('Opus B-693-1: every push names a channel the app creates', () => {
++  it('the channel list is the mobile PUSH_CHANNEL list, and every kind maps into it', () => {
++    expect(Object.values(ANDROID_PUSH_CHANNELS).sort()).toEqual(['client-bot', 'coach-messages', 'milestones', 'system']);
++    const allowed = new Set<string>(Object.values(ANDROID_PUSH_CHANNELS));
++    for (const kind of [...Object.values(NotificationKind), 'unknown_kind']) {
++      expect(allowed.has(androidChannelFor(kind))).toBe(true);
++    }
++    expect(androidChannelFor(NotificationKind.MESSAGE_RECEIVED)).toBe('coach-messages');
++    expect(androidChannelFor(NotificationKind.BOOKING_REMINDER_1H)).toBe('system');
++    expect(androidChannelFor(NotificationKind.COACH_ALERT)).toBe('system');
++    expect(androidChannelFor(NotificationKind.MILESTONE_REACHED)).toBe('milestones');
++    expect(androidChannelFor(NotificationKind.NUDGE_INACTIVE)).toBe('client-bot');
++  });
++
++  it('the worker sends that channel and only the template copy, whatever the row holds', async () => {
++    const w = world();
++    await w.delivery.enqueue(message());
++    await w.delivery.enqueue(message({ kind: NotificationKind.MILESTONE_REACHED, collapseKey: 'm:1', body: 'Down 2.4 kg' }));
++    expect(await w.delivery.drain()).toBe(2);
++    const sent = w.client.send.mock.calls.map((c) => c[0][0]);
++    expect(sent.map((m) => m.channelId)).toEqual(['coach-messages', 'milestones']);
++    expect(sent.map((m) => m.body)).toEqual([
++      'You have a new message. Open the app to read it.',
++      'You reached a milestone. Open the app to see it.',
++    ]);
++  });
++});
+diff --git a/test/push-delivery-send-time.spec.ts b/test/push-delivery-send-time.spec.ts
+index 8d31a7cc..b159651e 100644
+--- a/test/push-delivery-send-time.spec.ts
++++ b/test/push-delivery-send-time.spec.ts
+@@ -468,10 +468,10 @@ describe('coach messages reach the lock screen (verification)', () => {
+     expect(sent).toMatchObject({
+       to: TOKEN,
+       title: 'New message',
+-      body: 'New message from Coach K',
++      body: 'You have a new message. Open the app to read it.',
+       sound: 'default',
+       priority: 'high',
+-      channelId: 'default',
++      channelId: 'coach-messages',
+     });
+     expect(sent.data).toMatchObject({
+       actionScreen: 'Messages',
+@@ -488,7 +488,9 @@ describe('coach messages reach the lock screen (verification)', () => {
+     expect(await w.delivery.drain()).toBe(0);
+     w.clock.at = NY_0800;
+     expect(await w.delivery.drain()).toBe(1);
+-    expect(w.client.send.mock.calls[0][0][0].body).toBe('New message from Coach K');
++    expect(w.client.send.mock.calls[0][0][0].body).toBe(
++      'You have a new message. Open the app to read it.',
++    );
+   });
+ });
+ 
+diff --git a/test/push-delivery.service.spec.ts b/test/push-delivery.service.spec.ts
+index 3f80919b..b15824cd 100644
+--- a/test/push-delivery.service.spec.ts
++++ b/test/push-delivery.service.spec.ts
+@@ -129,8 +129,8 @@ describe('B-648-1: distinct events are never dropped', () => {
+     expect(await w.svc.drain()).toBe(2);
+     expect(w.client.send).toHaveBeenCalledTimes(2);
+     expect(w.client.send.mock.calls.map((c) => c[0][0].body)).toEqual([
+-      'Your session with Jamie starts at 9:00 AM EDT.',
+-      'Your session with Jamie starts at 9:05 AM EDT.',
++      'Your session starts at 9:00 AM EDT.',
++      'Your session starts at 9:05 AM EDT.',
+     ]);
+   });
+ 
+@@ -156,9 +156,9 @@ describe('B-648-1: distinct events are never dropped', () => {
+       }),
+     );
+     expect(await w.svc.drain()).toBe(1);
+-    expect(w.client.send.mock.calls.map((c) => c[0][0].body)).toEqual([
+-      'New message from Coach K',
+-      'New message from Sam',
++    expect(w.client.send.mock.calls.map((c) => c[0][0].data?.deepLink)).toEqual([
++      'tgp://messages/thread-1',
++      'tgp://messages/thread-2',
+     ]);
+   });
+ 
+@@ -370,7 +370,7 @@ describe('OR-113-5: quiet hours 21:00-08:00 in the recipient zone', () => {
+     w.svc.clock = new Date('2026-06-02T12:00:00Z');
+     expect(await w.svc.drain()).toBe(1);
+     expect(w.client.send.mock.calls[0][0][0].body).toBe(
+-      'Your session with Jamie is today at 10:00 PM EDT.',
++      'Your session is today at 10:00 PM EDT.',
+     );
+     expect(w.rows.find((r) => r.dedupe_key === 'r24:sess-2')?.result_code).toBe('obsolete');
+   });
+@@ -441,7 +441,7 @@ describe('tokens, Android without the FCM key, receipts', () => {
+     const quiet = lockScreenCopy(NotificationKind.WEIGHT_TREND_ALERT, 'You are down 2.4 kg');
+     expect(quiet.body).not.toMatch(/kg|2\.4/);
+     expect(lockScreenCopy(NotificationKind.MESSAGE_RECEIVED, 'New message from Coach K').body).toBe(
+-      'New message from Coach K',
++      'You have a new message. Open the app to read it.',
+     );
+     for (const copy of [quiet, lockScreenCopy('unknown_kind', 'x')]) {
+       expect(copy.body).not.toMatch(/!/);
+diff --git a/test/s-fee-r5-or-111-1.spec.ts b/test/s-fee-r5-or-111-1.spec.ts
+index 22b01462..11a7533c 100644
+--- a/test/s-fee-r5-or-111-1.spec.ts
++++ b/test/s-fee-r5-or-111-1.spec.ts
+@@ -859,7 +859,8 @@ describe('round 6 B-627-6: per-channel delivery against the real EmailService',
+     const pushCall = ctx.notifications.createNotification.mock.calls.find(
+       (c) => (c[0] as { channel?: string }).channel === 'push',
+     );
+-    expect(pushCall?.[0]).toMatchObject({ throttle_key: ctx.db.notices![0].id });
++    // Opus C-693-2 (#693): one inbox item per notice, the push row is its twin.
++    expect(pushCall?.[0]).toMatchObject({ throttle_key: ctx.db.notices![0].id, push_twin: true });
+   });
+ });
+ 
+diff --git a/test/scheduling.service.spec.ts b/test/scheduling.service.spec.ts
+index 4361d19f..70ccc166 100644
+--- a/test/scheduling.service.spec.ts
++++ b/test/scheduling.service.spec.ts
+@@ -185,6 +185,7 @@ describe('SchedulingService — request + state machine + audit', () => {
+   let prisma: any;
+   let auditCtx: ReturnType<typeof buildAudit>;
+   let svc: SchedulingService;
++  let reschedules: Array<{ rescheduleEventId?: string }>;
+ 
+   beforeAll(() => {
+     jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+@@ -205,6 +206,7 @@ describe('SchedulingService — request + state machine + audit', () => {
+     prisma = buildPrismaFake();
+     bindTransaction(prisma);
+     auditCtx = buildAudit();
++    reschedules = [];
+     // BookingEmitter is a thin pass-through to NotificationsService; for
+     // the existing scheduling.service.spec the emit calls are a no-op
+     // stub. Booking-notification coverage lives in
+@@ -214,7 +216,7 @@ describe('SchedulingService — request + state machine + audit', () => {
+       emitConfirmed: async () => undefined,
+       emitDeclined: async () => undefined,
+       emitCancelled: async () => undefined,
+-      emitRescheduled: async () => undefined,
++      emitRescheduled: async (p: { rescheduleEventId?: string }) => void reschedules.push(p),
+       emitReminder24h: async () => undefined,
+       emitReminder1h: async () => undefined,
+     } as unknown as ConstructorParameters<typeof SchedulingService>[3];
+@@ -341,6 +343,8 @@ describe('SchedulingService — request + state machine + audit', () => {
+       reason: 'conflict',
+     });
+     expect(rescheduled.start_at.toISOString()).toBe('2026-06-02T15:00:00.000Z');
++    // Sol B-693-1: each move carries its persisted identity to the push.
++    expect(reschedules.map((r) => r.rescheduleEventId)).toEqual([rescheduled.updated_at.toISOString()]);
+     // Sol B-647-1: the move re-arms the reminders through the claim key
+     // (session, user, kind, start_at), so it never deletes claims; a stale
+     // sweep's old-time claim cannot suppress the new time.

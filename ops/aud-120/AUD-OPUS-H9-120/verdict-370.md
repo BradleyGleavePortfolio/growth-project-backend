@@ -1,0 +1,37 @@
+AUDIT Claude Opus 5.5 — growth-project-mobile#370 @ c7014623520baf23a697f4d646e3d80a423789c5 — VERDICT: APPROVE
+
+A/B/C = 0/0/3
+
+**AUD-OPUS-H9-120, agent 120.** First Opus T4 review of H8 ([OPENING comment](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/370#issuecomment-5999807045)): every line of the 10 files, read against backend main `ee55f814`. Head re-read right before posting. Base `agent119/wear-split-7-signout-durable` @ `a2bfe2fa` (#369 head, Opus APPROVE [6000464490](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/369#issuecomment-6000464490)). Size 890+/160- = 1,050 changed lines, under the 1,500 limit. PR CI at this head: Typecheck, lint, test **success** ([run 37349317509](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37349317509)); Analyze absent on the stacked base. No backend change. Evidence reuse (G09): none; first review of this PR.
+
+### What was checked
+- **C-360-1 late data** (`src/services/health/syncWindows.ts:25`): both platforms start a read one day behind the saved progress (`healthConnectSyncService.ts:71`, `healthKitSyncService.ts:89`). Re-reads are safe for samples with the same interval: backend `dedup.util.ts` keys sha256(user|provider|metric|start|end), unique index, `createMany` with `skipDuplicates`.
+- **C-360-2 Health Connect** (`healthConnectSyncService.ts:255-330`): one page per native call (`:273`, `healthConnectClient.ts` `maxPages`), posted, then saved (token or window end, `:319`) before the next page; a failed resume of a stored token drops it and saves at once (`:293`); a token saved in this run is kept; a POST failure or stop ends the run with earlier pages saved; `resumeOnly` passes read only types holding a token; the 20-page bound reports the type truncated.
+- **C-360-2 Apple Health** (`healthKitSyncService.ts:241-345`): day pieces on local hours (`pieceEnd` `:146`), hourly steps and energy posted only through `settledThrough` (2 h, `:99`), each piece saves every metric that did not fail, never moving one back (`save` `:273`), and the empty tail is saved only when the run posted (`:333`).
+- **onDeviceSync `runSyncPasses`**: Health Connect continues only while a type stopped at the page bound; Apple Health runs one pass; a failure in an earlier pass keeps the import incomplete.
+- Sign-out composition: every page or piece save runs `fence.assertCurrent()` and then `setSyncProgress` on the #369 chain; logging adds record type, page state and error class only (no sample values); no copy change.
+
+### Probes (CI lanes, no local runs)
+- Full replay: lane `audit/AUD-OPUS-H9-120/370-probes-1` at this head plus `c8a33b4f` ([run 37352809675](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37352809675)): 81 suites, 881 pass / 8 fail = the 5 by-design failures (same as #369) plus 3 cases of my own Apple Health probe that failed in its own setup (it iterated `__esModule`). Every PR suite, every earlier probe, `onDeviceState.opusH9` and `healthConnectSyncService.opusH9` pass.
+- Fixed Apple Health probe: [run 37353349279](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37353349279) (5 suites incl. both `.h8` suites, 25/26; the DST case needs the zone set at process start), then [run 37354506930](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37354506930) at `e66aeec0`: `healthKitSyncService.opusH9` **4/4 pass** (the DST case runs in a child jest started with `TZ=America/Los_Angeles`).
+- Cases (real `HealthKitClient` over a mocked native module; real Health Connect sync service with a paging fake; real #369 sign-out):
+  - H9-HC-1: sign-out while page 2 is on the wire: page 1's token was saved, page 3 is never read or posted, the run rejects as stopped, the sweep leaves no progress key.
+  - H9-HC-2: sign-out while a page's progress write is on the wire: the run stops, the sweep removes the key after the write lands.
+  - H9-HC-3 / H9-HK-3: the one-day bound: a record 23 h before saved progress is read, one 25 h before is not.
+  - H9-HK-1: piece ends at 03:00 inside the nights: seven nights posted whole (22:00-06:00, 480 min), one key each, no partial night.
+  - H9-HK-2: pieces across the 2026-11-01 DST end are contiguous on local hours; each settled hour is posted exactly once; steps progress = settled instant, heart rate = now.
+  - H9-HK-4: DOCUMENTS C-370-3 below.
+
+### Findings
+No A, no B.
+
+- **C-370-1 (concurs H8-C1; operator-ruled ticket).** Where: `syncWindows.ts:25` with backend `dedup.util.ts`. Problem: a Health Connect record rewritten in place with a new interval (same record id) is now re-read for a day and posted under a new key, so the backend keeps both rows and the read side sums them; with the 5-minute overlap it was mostly not re-read. Fix rule: backend replaces by (user, provider, sourceRecordId), which the wire already carries (`ingestBatching.ts:104`).
+- **C-370-2 (refresh cost).** Where: `syncWindows.ts:23-24` ("at most a few dozen ingest requests"), `healthConnectNormalizer.ts:191-205` (one sample per heart-rate point), `ingestBatching.ts:31` (250 per request, 3 attempts `:43`), backend `wearables-throttle.ts:33` (60 per minute). Problem: every Health open re-posts a day of every granted type; a writer that stores heart rate every 5 s puts about 17,000 points in a day, about 70 requests, over the 60-per-minute throttle, so a refresh waits on 429s for minutes. No data loss (pages are saved). Fix rule: in the look-back part of the window post only records changed since the last run (Health Connect `metadata.lastModifiedTime`, or H8-C4 changes tokens), and correct the cost note.
+- **C-370-3 (outside this diff, `healthKitNormalizer.ts:468-485` and `healthKitClient.ts:226,359`; day pieces add one 36 h sleep look-back start per piece).** Problem: a long sleep segment that spans a piece's look-back start is not read in that piece, and a later segment of the same night that starts more than 2 h after that start passes the window-start rule, so the night's tail is posted as a second session. Proof: H9-HK-4 ([run 37354506930](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37354506930)): segments 23:00-01:30 and 03:00-06:00 post `23:00-06:00 = 330` and `03:00-06:00 = 180`. Watch sleep stages are short and contiguous, so this needs long coarse segments with a gap; it predates H8 at each run's look-back start. Fix rule: post each sleep session from exactly one piece, the first one in which it is whole (its end in [piece start - 2 h, piece end - 2 h)), so a partial read at a look-back start is never posted.
+
+Builder's H8-C2 (hourly share later than 2 h), H8-C3 (future progress after a clock change) and H8-C4 (changes tokens) are agreed as follow-ups. Carried, not new: per-page and per-piece saves add save points to Sol's C-369-2 (progress not bound to the consent session); H9-HC-1/2 show a save in flight at sign-out ends with no key.
+
+### Operator rulings (defaults), from this lens
+One-day look-back: agree. Apple Health hourly steps and energy wait 2 h: agree. Backend replace of rewritten Health Connect records: follow-up ticket (C-370-1), before the clinic Android build if possible. H8 lands after H1-H7 (#359-#364, #369 @ `a2bfe2fa`), which from the Opus lens is clear to land as one unit with the main-based checks at landing.
+
+Spends nothing; no merge, no deploy.

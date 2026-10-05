@@ -1,0 +1,652 @@
+targeted	Set up job	﻿2026-10-05T17:42:34.9227650Z Current runner version: '2.337.0'
+##[group]Runner Image Provisioner
+Hosted Compute Agent
+Version: 20260901.588
+Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+Build Date: 2026-09-01T19:56:44Z
+Worker ID: {bde8a778-c909-4d52-9973-a63f3587e62f}
+Azure Region: westus3
+##[endgroup]
+##[group]Operating System
+Ubuntu
+24.04.5
+LTS
+##[endgroup]
+##[group]Runner Image
+Image: ubuntu-24.04
+Version: 20260927.320.1
+Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+##[endgroup]
+##[group]GITHUB_TOKEN Permissions
+Contents: read
+Metadata: read
+Packages: read
+##[endgroup]
+Secret source: Actions
+Cache mode: write
+Prepare workflow directory
+Prepare all required actions
+Getting action download info
+Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+Complete job name: targeted
+targeted	Initialize containers	﻿2026-10-05T17:42:35.7513593Z ##[group]Checking docker version
+##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+'1.48'
+Docker daemon API version: '1.48'
+##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+'1.48'
+Docker client API version: '1.48'
+##[endgroup]
+##[group]Clean up resources from previous jobs
+##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=b56de7"
+##[command]/usr/bin/docker network prune --force --filter "label=b56de7"
+##[endgroup]
+##[group]Create local container network
+##[command]/usr/bin/docker network create --label b56de7 github_network_2076a1c581af4bd9bd4bb99ee4185bae
+502d4dc06cbf89a38d476317bbb79fcd520d6ac287311e11e8cae86a6265e6de
+##[endgroup]
+##[group]Starting redis service container
+##[command]/usr/bin/docker pull redis:7-alpine
+7-alpine: Pulling from library/redis
+16333ee0c00f: Pulling fs layer
+83234986c742: Pulling fs layer
+7eb50503c2b0: Pulling fs layer
+1522f9c6f453: Pulling fs layer
+9928009b15c8: Pulling fs layer
+4f4fb700ef54: Pulling fs layer
+4eb14bae0e1d: Pulling fs layer
+4f4fb700ef54: Waiting
+9928009b15c8: Waiting
+4eb14bae0e1d: Waiting
+1522f9c6f453: Waiting
+7eb50503c2b0: Download complete
+83234986c742: Verifying Checksum
+83234986c742: Download complete
+16333ee0c00f: Download complete
+16333ee0c00f: Pull complete
+9928009b15c8: Verifying Checksum
+9928009b15c8: Download complete
+4f4fb700ef54: Verifying Checksum
+4f4fb700ef54: Download complete
+1522f9c6f453: Verifying Checksum
+1522f9c6f453: Download complete
+4eb14bae0e1d: Verifying Checksum
+4eb14bae0e1d: Download complete
+83234986c742: Pull complete
+7eb50503c2b0: Pull complete
+1522f9c6f453: Pull complete
+9928009b15c8: Pull complete
+4f4fb700ef54: Pull complete
+4eb14bae0e1d: Pull complete
+Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+Status: Downloaded newer image for redis:7-alpine
+docker.io/library/redis:7-alpine
+##[command]/usr/bin/docker create --name 400bb1b3f7344c819f78328c5ff1c895_redis7alpine_67f9c8 --label b56de7 --network github_network_2076a1c581af4bd9bd4bb99ee4185bae --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+f180478969f94e4669c4e20996b4b9fb0d5da40ed1bc2f8e28f78350e51ac26a
+##[command]/usr/bin/docker start f180478969f94e4669c4e20996b4b9fb0d5da40ed1bc2f8e28f78350e51ac26a
+f180478969f94e4669c4e20996b4b9fb0d5da40ed1bc2f8e28f78350e51ac26a
+##[command]/usr/bin/docker ps --all --filter id=f180478969f94e4669c4e20996b4b9fb0d5da40ed1bc2f8e28f78350e51ac26a --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+f180478969f94e4669c4e20996b4b9fb0d5da40ed1bc2f8e28f78350e51ac26a Up Less than a second (health: starting)
+##[command]/usr/bin/docker port f180478969f94e4669c4e20996b4b9fb0d5da40ed1bc2f8e28f78350e51ac26a
+6379/tcp -> 0.0.0.0:6379
+6379/tcp -> [::]:6379
+##[endgroup]
+##[group]Waiting for all services to be ready
+##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" f180478969f94e4669c4e20996b4b9fb0d5da40ed1bc2f8e28f78350e51ac26a
+starting
+redis service is starting, waiting 2 seconds before checking again.
+##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" f180478969f94e4669c4e20996b4b9fb0d5da40ed1bc2f8e28f78350e51ac26a
+starting
+redis service is starting, waiting 3 seconds before checking again.
+##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" f180478969f94e4669c4e20996b4b9fb0d5da40ed1bc2f8e28f78350e51ac26a
+healthy
+redis service is healthy.
+##[endgroup]
+targeted	Run actions/checkout@v6	﻿2026-10-05T17:42:47.2250888Z ##[group]Run actions/checkout@v6
+with:
+  repository: BradleyGleavePortfolio/growth-project-backend
+  token: ***
+  ssh-strict: true
+  ssh-user: git
+  persist-credentials: true
+  clean: true
+  sparse-checkout-cone-mode: true
+  fetch-depth: 1
+  fetch-tags: false
+  show-progress: true
+  lfs: false
+  submodules: false
+  set-safe-directory: true
+  allow-unsafe-pr-checkout: false
+##[endgroup]
+Syncing repository: BradleyGleavePortfolio/growth-project-backend
+##[group]Getting Git version info
+Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+[command]/usr/bin/git version
+git version 2.55.0
+##[endgroup]
+Temporarily overriding HOME='/home/runner/work/_temp/22b892cf-6dc6-428c-acc8-a5be7bd6ffb7' before making global git config changes
+Adding repository directory to the temporary git global config as a safe directory
+[command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+##[group]Determining repository object format
+##[endgroup]
+##[group]Initializing the repository
+[command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+[command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+##[endgroup]
+##[group]Disabling automatic garbage collection
+[command]/usr/bin/git config --local gc.auto 0
+##[endgroup]
+##[group]Setting up auth
+Removing SSH command configuration
+[command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Removing HTTP extra header
+[command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Removing includeIf entries pointing to credentials config files
+[command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+[command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+[command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-3dc08f1c-93a6-4c09-a2b9-2594a3164edd.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+[command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-3dc08f1c-93a6-4c09-a2b9-2594a3164edd.config
+[command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-3dc08f1c-93a6-4c09-a2b9-2594a3164edd.config
+[command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-3dc08f1c-93a6-4c09-a2b9-2594a3164edd.config
+[command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-3dc08f1c-93a6-4c09-a2b9-2594a3164edd.config
+##[endgroup]
+##[group]Fetching the repository
+[command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +ca66c2189f90587824c85a1a3aaa848d52d4d741:refs/remotes/origin/audit/AUD-OPUS-CM8-120/674-probes-1
+From https://github.com/BradleyGleavePortfolio/growth-project-backend
+ * [new ref]         ca66c2189f90587824c85a1a3aaa848d52d4d741 -> origin/audit/AUD-OPUS-CM8-120/674-probes-1
+[command]/usr/bin/git branch --list --remote origin/audit/AUD-OPUS-CM8-120/674-probes-1
+  origin/audit/AUD-OPUS-CM8-120/674-probes-1
+[command]/usr/bin/git rev-parse refs/remotes/origin/audit/AUD-OPUS-CM8-120/674-probes-1
+ca66c2189f90587824c85a1a3aaa848d52d4d741
+##[endgroup]
+##[group]Determining the checkout info
+##[endgroup]
+[command]/usr/bin/git sparse-checkout disable
+[command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+##[group]Checking out the ref
+[command]/usr/bin/git checkout --progress --force -B audit/AUD-OPUS-CM8-120/674-probes-1 refs/remotes/origin/audit/AUD-OPUS-CM8-120/674-probes-1
+Switched to a new branch 'audit/AUD-OPUS-CM8-120/674-probes-1'
+branch 'audit/AUD-OPUS-CM8-120/674-probes-1' set up to track 'origin/audit/AUD-OPUS-CM8-120/674-probes-1'.
+##[endgroup]
+[command]/usr/bin/git log -1 --format=%H
+ca66c2189f90587824c85a1a3aaa848d52d4d741
+targeted	Run actions/setup-node@v6	﻿2026-10-05T17:42:49.7641409Z ##[group]Run actions/setup-node@v6
+with:
+  node-version: 20
+  cache: npm
+  check-latest: false
+  token: ***
+  package-manager-cache: true
+##[endgroup]
+Attempting to download 20...
+Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+Extracting ...
+[command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/4488e672-7f78-466e-bea2-27b9c8898cbc -f /home/runner/work/_temp/2883dab8-4739-4cdf-b3ea-6e757af4f03f
+Adding to the cache ...
+##[group]Environment details
+node: v20.20.2
+npm: 10.8.2
+yarn: 1.22.22
+##[endgroup]
+[command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+/home/runner/.npm
+Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+Received 29360128 of 86828135 (33.8%), 28.0 MBs/sec
+Received 86828135 of 86828135 (100.0%), 60.7 MBs/sec
+Cache Size: ~83 MB (86828135 B)
+[command]/usr/bin/tar -xf /home/runner/work/_temp/978e22b8-2c8b-418d-9f34-0c06619b0433/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+Cache restored successfully
+Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+targeted	Run npm ci	﻿2026-10-05T17:42:56.2435852Z ##[group]Run npm ci
+^[[36;1mnpm ci^[[0m
+shell: /usr/bin/bash -e {0}
+##[endgroup]
+npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+
+> growth-project-backend@1.0.0 postinstall
+> prisma generate
+
+Prisma schema loaded from prisma/schema.prisma
+┌─────────────────────────────────────────────────────────┐
+
+✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.43s
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+
+│  Update available 6.19.3 -> 8.0.0-rc.20                 │
+│                                                         │
+│  This is a major update - please follow the guide at    │
+│  https://pris.ly/d/major-version-upgrade                │
+│                                                         │
+│  Run the following to update                            │
+│    npm i --save-dev prisma@latest                       │
+│    npm i @prisma/client@latest                          │
+└─────────────────────────────────────────────────────────┘
+
+> growth-project-backend@1.0.0 prepare
+> lefthook install
+
+sync hooks: ✔️(commit-msg, pre-commit)
+
+added 1115 packages, and audited 1116 packages in 28s
+
+202 packages are looking for funding
+  run `npm fund` for details
+
+3 high severity vulnerabilities
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+targeted	Run npx prisma generate	﻿2026-10-05T17:43:24.0823209Z ##[group]Run npx prisma generate
+^[[36;1mnpx prisma generate^[[0m
+shell: /usr/bin/bash -e {0}
+##[endgroup]
+Prisma schema loaded from prisma/schema.prisma
+
+✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.29s
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+
+targeted	Targeted jest	﻿2026-10-05T17:43:29.5971059Z ##[group]Run set -euo pipefail
+^[[36;1mset -euo pipefail^[[0m
+^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+env:
+  NODE_OPTIONS: --max-old-space-size=4096
+  THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+##[endgroup]
+specs: test/audit-opus-cm8-120-674-reconcile.spec.ts test/audit-opus-cm-118-674.spec.ts test/audit-opus-cm-118-674-send.spec.ts test/audit-b-cm7-120-adapted-opus-118-674-send.spec.ts test/audit-opcm1-117-674.spec.ts test/audit-cm1-674-reversal-mirror.spec.ts test/transfer-reversal-found-slot.spec.ts test/transfer-reversal-slot-base.spec.ts test/refund-reversal-send-time.spec.ts test/refund-reversal-first-pass.spec.ts test/refund-reversal-once.spec.ts test/dispute-transfer-reversal-once.spec.ts test/refund-dispute-handler.service.spec.ts test/split-ledger.service.spec.ts test/cancel-pending-on-refund.spec.ts test/s-fee-r4-money-protocol.spec.ts test/s-fee-r11-reversal-admission-diagnostics.spec.ts
+PASS test/refund-dispute-handler.service.spec.ts (176 MB heap size)
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:33 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mcoach refund notification failed refund=rf_n charge=ch_alert coach=coach-1: expo unreachable^[[39m
+PASS test/s-fee-r4-money-protocol.spec.ts (147 MB heap size)
+PASS test/cancel-pending-on-refund.spec.ts (207 MB heap size)
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-d op=tgp-tr-rev-dispute-cd-1 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-d op=tgp-tr-rev-dispute-cd-1 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-000 op=tgp-tr-rev-dispute-d-000 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-002 op=tgp-tr-rev-dispute-d-002 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-004 op=tgp-tr-rev-dispute-d-004 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-006 op=tgp-tr-rev-dispute-d-006 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-008 op=tgp-tr-rev-dispute-d-008 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-010 op=tgp-tr-rev-dispute-d-010 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-012 op=tgp-tr-rev-dispute-d-012 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-014 op=tgp-tr-rev-dispute-d-014 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-016 op=tgp-tr-rev-dispute-d-016 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-018 op=tgp-tr-rev-dispute-d-018 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-020 op=tgp-tr-rev-dispute-d-020 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-022 op=tgp-tr-rev-dispute-d-022 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-024 op=tgp-tr-rev-dispute-d-024 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-026 op=tgp-tr-rev-dispute-d-026 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-028 op=tgp-tr-rev-dispute-d-028 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-030 op=tgp-tr-rev-dispute-d-030 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-032 op=tgp-tr-rev-dispute-d-032 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-034 op=tgp-tr-rev-dispute-d-034 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-036 op=tgp-tr-rev-dispute-d-036 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-038 op=tgp-tr-rev-dispute-d-038 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-040 op=tgp-tr-rev-dispute-d-040 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-042 op=tgp-tr-rev-dispute-d-042 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-044 op=tgp-tr-rev-dispute-d-044 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-000 op=tgp-tr-rev-dispute-d-000 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-002 op=tgp-tr-rev-dispute-d-002 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-004 op=tgp-tr-rev-dispute-d-004 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-006 op=tgp-tr-rev-dispute-d-006 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-008 op=tgp-tr-rev-dispute-d-008 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-010 op=tgp-tr-rev-dispute-d-010 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-012 op=tgp-tr-rev-dispute-d-012 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-014 op=tgp-tr-rev-dispute-d-014 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-016 op=tgp-tr-rev-dispute-d-016 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-018 op=tgp-tr-rev-dispute-d-018 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-020 op=tgp-tr-rev-dispute-d-020 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-022 op=tgp-tr-rev-dispute-d-022 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-024 op=tgp-tr-rev-dispute-d-024 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-026 op=tgp-tr-rev-dispute-d-026 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-028 op=tgp-tr-rev-dispute-d-028 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-000 op=tgp-tr-rev-dispute-d-000 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-002 op=tgp-tr-rev-dispute-d-002 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-004 op=tgp-tr-rev-dispute-d-004 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-006 op=tgp-tr-rev-dispute-d-006 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-008 op=tgp-tr-rev-dispute-d-008 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m03/20/2027, 10:00:00 AM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-r op=tgp-tr-rev-refund-66e2410c-fdf7-4bee-900e-b2c49926073f amount=49: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[32m[Nest] 3000  - ^[[39m10/05/2026, 5:43:34 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-1 reason=refund^[[39m
+^[[32m[Nest] 3000  - ^[[39m10/05/2026, 5:43:34 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-1 reason=dispute^[[39m
+^[[95m[Nest] 3000  - ^[[39m10/05/2026, 5:43:34 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mcancelPendingForPurchase: no pending/due drops for purchase=pur-1 (replay or never-entitled) reason=dispute^[[39m
+^[[32m[Nest] 3000  - ^[[39m10/05/2026, 5:43:34 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=refund^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:34 PM ^[[33m   WARN^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[33mcancelPendingForPurchase: no scheduledDrop client available (purchase=pur-1, reason=refund) — skipping^[[39m
+^[[32m[Nest] 3000  - ^[[39m10/05/2026, 5:43:34 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-1 reason=refund^[[39m
+^[[32m[Nest] 3000  - ^[[39m10/05/2026, 5:43:34 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-target reason=subscription_canceled^[[39m
+^[[32m[Nest] 3000  - ^[[39m10/05/2026, 5:43:34 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=subscription_canceled^[[39m
+^[[32m[Nest] 3000  - ^[[39m10/05/2026, 5:43:34 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=payment_failed^[[39m
+^[[32m[Nest] 3000  - ^[[39m10/05/2026, 5:43:34 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-target reason=dispute^[[39m
+^[[32m[Nest] 3000  - ^[[39m10/05/2026, 5:43:34 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=refund^[[39m
+^[[32m[Nest] 3000  - ^[[39m10/05/2026, 5:43:34 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=refund^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-d dispute=cd-1 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-d dispute=cd-1 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-d dispute=cd-1 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-000 dispute=d-000 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-002 dispute=d-002 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-004 dispute=d-004 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-006 dispute=d-006 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-008 dispute=d-008 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-010 dispute=d-010 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-012 dispute=d-012 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-014 dispute=d-014 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-016 dispute=d-016 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-018 dispute=d-018 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-020 dispute=d-020 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-022 dispute=d-022 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-024 dispute=d-024 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-026 dispute=d-026 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-028 dispute=d-028 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-030 dispute=d-030 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-032 dispute=d-032 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-034 dispute=d-034 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-036 dispute=d-036 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-038 dispute=d-038 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-040 dispute=d-040 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-042 dispute=d-042 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-044 dispute=d-044 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-000 dispute=d-000 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-002 dispute=d-002 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-004 dispute=d-004 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-006 dispute=d-006 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-008 dispute=d-008 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-010 dispute=d-010 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-012 dispute=d-012 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-014 dispute=d-014 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-016 dispute=d-016 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-018 dispute=d-018 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-020 dispute=d-020 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-022 dispute=d-022 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-024 dispute=d-024 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-026 dispute=d-026 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-028 dispute=d-028 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-000 dispute=d-000 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-002 dispute=d-002 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-004 dispute=d-004 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-006 dispute=d-006 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-008 dispute=d-008 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mtransfer reversal not yet recorded transfer=tr-p-o purchase=p-o stripe_cents=122 recorded_cents=0 code=TRANSFER_REVERSAL_NOT_YET_RECORDED^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:35 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mtransfer reversal not yet recorded transfer=tr-p-o purchase=p-o stripe_cents=100 recorded_cents=0 code=TRANSFER_REVERSAL_UNATTRIBUTED^[[39m
+^[[33m[Nest] 3000  - ^[[39m03/20/2027, 10:00:00 AM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-r refund=66e2410c-fdf7-4bee-900e-b2c49926073f code=SFEE_REVERSAL_UNCERTAIN^[[39m
+PASS test/dispute-transfer-reversal-once.spec.ts (254 MB heap size)
+PASS test/s-fee-r11-reversal-admission-diagnostics.spec.ts (275 MB heap size)
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:36 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-1 op=tgp-tr-rev-refund-refund-1 amount=122: kind=unknown^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:36 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-1 op=tgp-tr-rev-refund-refund-1 amount=122: kind=unknown^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:36 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=refund-1 purchase=p-1 code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+PASS test/refund-reversal-once.spec.ts (316 MB heap size)
+^[[31m[Nest] 3000  - ^[[39m04/10/2027, 1:01:00 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-a op=tgp-tr-rev-refund-rf-a amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m04/10/2027, 1:01:00 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=rf-b purchase=p-b code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+^[[31m[Nest] 3000  - ^[[39m04/10/2027, 12:00:02 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-a op=tgp-tr-rev-refund-rf-a amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m04/10/2027, 12:00:02 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=rf-b purchase=p-b code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+^[[31m[Nest] 3000  - ^[[39m04/10/2027, 12:30:00 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-a op=tgp-tr-rev-refund-rf-a amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m04/10/2027, 12:00:10 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-r1 op=tgp-tr-rev-refund-r1 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m04/10/2027, 12:00:20 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-r2 op=tgp-tr-rev-refund-r2 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m04/10/2027, 12:00:30 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-r3 op=tgp-tr-rev-refund-r3 amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:36 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-1 refund=refund-1 code=error^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:36 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-1 refund=refund-1 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:36 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-1 refund=refund-1 code=error^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:36 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mtransfer reversal not yet recorded transfer=tr-1 purchase=p-1 stripe_cents=122 recorded_cents=0 code=TRANSFER_REVERSAL_NOT_YET_RECORDED^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:36 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mtransfer reversal not yet recorded transfer=tr-1 purchase=p-1 stripe_cents=122 recorded_cents=0 code=TRANSFER_REVERSAL_NOT_YET_RECORDED^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:36 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-1 refund=refund-1 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m04/10/2027, 1:01:00 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a refund=rf-a code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m04/10/2027, 12:00:02 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a refund=rf-a code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m04/10/2027, 12:30:00 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a refund=rf-a code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m04/10/2027, 12:00:10 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-r1 refund=r1 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m04/10/2027, 12:00:20 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-r2 refund=r2 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m04/10/2027, 12:00:30 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-r3 refund=r3 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:37 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-d dispute=cd-1 code=TRANSFER_REVERSALS_LIST_INCOMPLETE^[[39m
+PASS test/refund-reversal-send-time.spec.ts (345 MB heap size)
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:37 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=r-late purchase=p-late code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+FAIL test/audit-cm1-674-reversal-mirror.spec.ts (374 MB heap size)
+  ● B-674-1 — webhook mirror plus local record count one Stripe reversal twice › owner reconcile recorded_from_stripe after the transfer.reversed webhook records the reversal once
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "local_reversed": 122,
+    -   "mirror_before_reconcile": 122,
+    +   "mirror_before_reconcile": 0,
+        "outcome": "recorded_from_stripe",
+        "stripe_total": 122,
+      }
+
+    ^[[0m ^[[90m 56 |^[[39m       stripe_total^[[33m:^[[39m h^[[33m.^[[39mstripeTotal(^[[32m'tr_p-late'^[[39m)^[[33m,^[[39m
+     ^[[90m 57 |^[[39m       local_reversed^[[33m:^[[39m h^[[33m.^[[39mheadCoach(^[[32m'p-late'^[[39m)^[[33m,^[[39m
+    ^[[31m^[[1m>^[[22m^[[39m^[[90m 58 |^[[39m     })^[[33m.^[[39mtoEqual({
+     ^[[90m    |^[[39m        ^[[31m^[[1m^^[[22m^[[39m
+     ^[[90m 59 |^[[39m       mirror_before_reconcile^[[33m:^[[39m ^[[35m122^[[39m^[[33m,^[[39m
+     ^[[90m 60 |^[[39m       outcome^[[33m:^[[39m ^[[32m'recorded_from_stripe'^[[39m^[[33m,^[[39m
+     ^[[90m 61 |^[[39m       stripe_total^[[33m:^[[39m ^[[35m122^[[39m^[[33m,^[[39m^[[0m
+
+      at Object.<anonymous> (test/audit-cm1-674-reversal-mirror.spec.ts:58:8)
+
+  ● B-641-12 (carried) — a reversal of another refund committed between read and write is lost › ConnectTransfer.reversed_amount_cents keeps both reversals
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "concurrentCommitted": true,
+    -   "local_reversed": 222,
+    +   "local_reversed": 122,
+      }
+
+    ^[[0m ^[[90m 195 |^[[39m     })^[[33m;^[[39m
+     ^[[90m 196 |^[[39m     ^[[36mawait^[[39m h^[[33m.^[[39msvc^[[33m.^[[39mretryPendingTransferReversals()^[[33m;^[[39m
+    ^[[31m^[[1m>^[[22m^[[39m^[[90m 197 |^[[39m     expect({ concurrentCommitted^[[33m,^[[39m local_reversed^[[33m:^[[39m h^[[33m.^[[39mheadCoach(^[[32m'p-x'^[[39m) })^[[33m.^[[39mtoEqual({
+     ^[[90m     |^[[39m                                                                         ^[[31m^[[1m^^[[22m^[[39m
+     ^[[90m 198 |^[[39m       concurrentCommitted^[[33m:^[[39m ^[[36mtrue^[[39m^[[33m,^[[39m
+     ^[[90m 199 |^[[39m       local_reversed^[[33m:^[[39m ^[[35m222^[[39m^[[33m,^[[39m ^[[90m// 100 (refund B) + 122 (refund A)^[[39m
+     ^[[90m 200 |^[[39m     })^[[33m;^[[39m^[[0m
+
+      at Object.<anonymous> (test/audit-cm1-674-reversal-mirror.spec.ts:197:73)
+
+^[[31m[Nest] 3000  - ^[[39m04/10/2027, 1:01:00 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-a op=tgp-tr-rev-refund-rf-a amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m04/10/2027, 1:01:00 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=rf-b purchase=p-b code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:37 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-d op=tgp-tr-rev-dispute-cd-1 amount=245: kind=stripe http=503 type=api_connection_error code=request_timeout; reversal lookup unavailable: Stripe reported more reversals but sent an empty page^[[39m
+^[[31m[Nest] 3000  - ^[[39m10/05/2026, 5:43:37 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-d op=tgp-tr-rev-dispute-cd-1 amount=245: reversal lookup unavailable: Stripe reported more reversals but sent an empty page; not re-sent^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:37 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mtransfer reversal not yet recorded transfer=tr-p-late purchase=p-late stripe_cents=122 recorded_cents=0 code=TRANSFER_REVERSAL_NOT_YET_RECORDED^[[39m
+^[[33m[Nest] 3000  - ^[[39m04/10/2027, 1:01:00 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a refund=rf-a code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:37 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-d dispute=cd-1 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+^[[33m[Nest] 3000  - ^[[39m10/05/2026, 5:43:37 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-d dispute=cd-1 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+PASS test/audit-b-cm7-120-adapted-opus-118-674-send.spec.ts (407 MB heap size)
+^[[31m[Nest] 3000  - ^[[39m04/10/2027, 1:01:00 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-a op=tgp-tr-rev-refund-rf-a amount=122: kind=stripe http=503 type=api_connection_error code=request_timeout^[[39m
+^[[31m[Nest] 3000  - ^[[39m04/10/2027, 1:01:00 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[31mhead-coach transfer reversal needs review refund=rf-b purchase=p-b code=REFUND_TRANSFER_REVERSAL_REVIEW^[[39m
+FAIL test/audit-opus-cm-118-674-send.spec.ts (442 MB heap size)
+  ● AUD-OPUS-CM-118 #674 — an incomplete Stripe list never authorizes a resend › B-674-14 (expected red): has_more with an empty page leaves the reversal owed and sends nothing
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "sends_after_list": 0,
+    -   "still_owed": true,
+    +   "still_owed": false,
+        "stripe": 245,
+      }
+
+    ^[[0m ^[[90m 150 |^[[39m       sends_after_list^[[33m:^[[39m h^[[33m.^[[39mreverseTransfer^[[33m.^[[39mmock^[[33m.^[[39mcalls^[[33m.^[[39mlength^[[33m,^[[39m
+     ^[[90m 151 |^[[39m       still_owed^[[33m:^[[39m (h^[[33m.^[[39mdb^[[33m.^[[39mstate^[[33m.^[[39mchargeDispute[^[[35m0^[[39m] ^[[36mas^[[39m ^[[33mRow^[[39m)^[[33m.^[[39mtransfer_reversed_at ^[[33m==^[[39m ^[[36mnull^[[39m^[[33m,^[[39m
+    ^[[31m^[[1m>^[[22m^[[39m^[[90m 152 |^[[39m     })^[[33m.^[[39mtoEqual({ stripe^[[33m:^[[39m ^[[35m245^[[39m^[[33m,^[[39m sends_after_list^[[33m:^[[39m ^[[35m0^[[39m^[[33m,^[[39m still_owed^[[33m:^[[39m ^[[36mtrue^[[39m })^[[33m;^[[39m
+     ^[[90m     |^[[39m        ^[[31m^[[1m^^[[22m^[[39m
+     ^[[90m 153 |^[[39m   })^[[33m;^[[39m
+     ^[[90m 154 |^[[39m
+     ^[[90m 155 |^[[39m   it(^[[32m'control (expected green): a complete list records the reversal Stripe holds, no second send'^[[39m^[[33m,^[[39m ^[[36masync^[[39m () ^[[33m=>^[[39m {^[[0m
+
+      at Object.<anonymous> (test/audit-opus-cm-118-674-send.spec.ts:152:8)
+
+PASS test/split-ledger.service.spec.ts (160 MB heap size)
+^[[33m[Nest] 3000  - ^[[39m04/10/2027, 1:01:00 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-a refund=rf-a code=SFEE_REVERSAL_UNCERTAIN^[[39m
+FAIL test/audit-opus-cm8-120-674-reconcile.spec.ts (191 MB heap size)
+  ● AUD-OPUS-CM8-120 — reconcile a refund whose own operation another driver completed › full refund: the stuck-reversal sweep completes it, then the owner reconcile records it with its posting
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 6
+    + Received  + 4
+
+      Object {
+    -   "amount": 245,
+    -   "bound": "trr_1",
+    -   "outcome": "recorded_from_stripe",
+    -   "postings": Array [
+    -     245,
+    -   ],
+    +   "amount": 0,
+    +   "bound": null,
+    +   "outcome": "nothing_owed",
+    +   "postings": Array [],
+        "sent": 0,
+        "stripe": 245,
+        "transfer": 245,
+      }
+
+    ^[[0m ^[[90m  97 |^[[39m       postings^[[33m:^[[39m h^[[33m.^[[39mpostings(^[[32m'r-f'^[[39m)^[[33m,^[[39m
+     ^[[90m  98 |^[[39m       sent^[[33m:^[[39m h^[[33m.^[[39mreverseTransfer^[[33m.^[[39mmock^[[33m.^[[39mcalls^[[33m.^[[39mlength^[[33m,^[[39m
+    ^[[31m^[[1m>^[[22m^[[39m^[[90m  99 |^[[39m     })^[[33m.^[[39mtoEqual({
+     ^[[90m     |^[[39m        ^[[31m^[[1m^^[[22m^[[39m
+     ^[[90m 100 |^[[39m       outcome^[[33m:^[[39m ^[[32m'recorded_from_stripe'^[[39m^[[33m,^[[39m
+     ^[[90m 101 |^[[39m       amount^[[33m:^[[39m ^[[35m245^[[39m^[[33m,^[[39m
+     ^[[90m 102 |^[[39m       bound^[[33m:^[[39m ^[[32m'trr_1'^[[39m^[[33m,^[[39m^[[0m
+
+      at Object.<anonymous> (test/audit-opus-cm8-120-674-reconcile.spec.ts:99:8)
+
+  ● AUD-OPUS-CM8-120 — reconcile a refund whose own operation another driver completed › partial refund: a sibling refund re-drives it and fills the transfer, then the owner reconcile records it
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 6
+    + Received  + 4
+
+    @@ -1,13 +1,11 @@
+      Object {
+    -   "amount": 122,
+    -   "bound": "trr_1",
+    -   "outcome": "recorded_from_stripe",
+    +   "amount": 0,
+    +   "bound": null,
+    +   "outcome": "nothing_owed",
+        "postings": Object {
+    -     "a": Array [
+    -       122,
+    -     ],
+    +     "a": Array [],
+          "b": Array [
+            123,
+          ],
+        },
+        "stripe": 245,
+
+    ^[[0m ^[[90m 127 |^[[39m       transfer^[[33m:^[[39m h^[[33m.^[[39mheadCoach(^[[32m'p-s'^[[39m)^[[33m,^[[39m
+     ^[[90m 128 |^[[39m       postings^[[33m:^[[39m { a^[[33m:^[[39m h^[[33m.^[[39mpostings(^[[32m'r-a'^[[39m)^[[33m,^[[39m b^[[33m:^[[39m h^[[33m.^[[39mpostings(^[[32m'r-b'^[[39m) }^[[33m,^[[39m
+    ^[[31m^[[1m>^[[22m^[[39m^[[90m 129 |^[[39m     })^[[33m.^[[39mtoEqual({
+     ^[[90m     |^[[39m        ^[[31m^[[1m^^[[22m^[[39m
+     ^[[90m 130 |^[[39m       outcome^[[33m:^[[39m ^[[32m'recorded_from_stripe'^[[39m^[[33m,^[[39m
+     ^[[90m 131 |^[[39m       amount^[[33m:^[[39m ^[[35m122^[[39m^[[33m,^[[39m
+     ^[[90m 132 |^[[39m       bound^[[33m:^[[39m ^[[32m'trr_1'^[[39m^[[33m,^[[39m^[[0m
+
+      at Object.<anonymous> (test/audit-opus-cm8-120-674-reconcile.spec.ts:129:8)
+
+PASS test/audit-opus-cm-118-674.spec.ts (222 MB heap size)
+PASS test/transfer-reversal-found-slot.spec.ts (253 MB heap size)
+^[[31m[Nest] 3000  - ^[[39m03/31/2027, 11:59:59 PM ^[[31m  ERROR^[[39m ^[[38;5;3m[TransferOrchestratorService] ^[[39m^[[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-r op=tgp-tr-rev-refund-rf-1 amount=49: kind=stripe http=503 type=none code=request_timeout^[[39m
+PASS test/refund-reversal-first-pass.spec.ts (284 MB heap size)
+^[[33m[Nest] 3000  - ^[[39m03/31/2027, 11:59:59 PM ^[[33m   WARN^[[39m ^[[38;5;3m[RefundDisputeHandlerService] ^[[39m^[[33mhead-coach transfer reverse pending purchase=p-r refund=rf-1 code=SFEE_REVERSAL_UNCERTAIN^[[39m
+PASS test/transfer-reversal-slot-base.spec.ts (314 MB heap size)
+PASS test/audit-opcm1-117-674.spec.ts (342 MB heap size)
+
+Test Suites: 3 failed, 14 passed, 17 total
+Tests:       5 failed, 152 passed, 157 total
+Snapshots:   0 total
+Time:        10.39 s
+Ran all test suites matching test/audit-opus-cm8-120-674-reconcile.spec.ts|test/audit-opus-cm-118-674.spec.ts|test/audit-opus-cm-118-674-send.spec.ts|test/audit-b-cm7-120-adapted-opus-118-674-send.spec.ts|test/audit-opcm1-117-674.spec.ts|test/audit-cm1-674-reversal-mirror.spec.ts|test/transfer-reversal-found-slot.spec.ts|test/transfer-reversal-slot-base.spec.ts|test/refund-reversal-send-time.spec.ts|test/refund-reversal-first-pass.spec.ts|test/refund-reversal-once.spec.ts|test/dispute-transfer-reversal-once.spec.ts|test/refund-dispute-handler.service.spec.ts|test/split-ledger.service.spec.ts|test/cancel-pending-on-refund.spec.ts|test/s-fee-r4-money-protocol.spec.ts|test/s-fee-r11-reversal-admission-diagnostics.spec.ts.
+##[error]Process completed with exit code 1.
+targeted	Post Run actions/checkout@v6	﻿2026-10-05T17:43:40.9837348Z Post job cleanup.
+[command]/usr/bin/git version
+git version 2.55.0
+Temporarily overriding HOME='/home/runner/work/_temp/2739cd6c-4132-4f12-aff0-dfa94cf058a0' before making global git config changes
+Adding repository directory to the temporary git global config as a safe directory
+[command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+Removing SSH command configuration
+[command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Removing HTTP extra header
+[command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Removing includeIf entries pointing to credentials config files
+[command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+includeif.gitdir:/github/workspace/.git.path
+includeif.gitdir:/github/workspace/.git/worktrees/*.path
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+/home/runner/work/_temp/git-credentials-3dc08f1c-93a6-4c09-a2b9-2594a3164edd.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-3dc08f1c-93a6-4c09-a2b9-2594a3164edd.config
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+/home/runner/work/_temp/git-credentials-3dc08f1c-93a6-4c09-a2b9-2594a3164edd.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-3dc08f1c-93a6-4c09-a2b9-2594a3164edd.config
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+/github/runner_temp/git-credentials-3dc08f1c-93a6-4c09-a2b9-2594a3164edd.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-3dc08f1c-93a6-4c09-a2b9-2594a3164edd.config
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+/github/runner_temp/git-credentials-3dc08f1c-93a6-4c09-a2b9-2594a3164edd.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-3dc08f1c-93a6-4c09-a2b9-2594a3164edd.config
+[command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Removing credentials config '/home/runner/work/_temp/git-credentials-3dc08f1c-93a6-4c09-a2b9-2594a3164edd.config'
+targeted	Stop containers	﻿2026-10-05T17:43:41.1896894Z Print service container logs: 400bb1b3f7344c819f78328c5ff1c895_redis7alpine_67f9c8
+##[command]/usr/bin/docker logs --details f180478969f94e4669c4e20996b4b9fb0d5da40ed1bc2f8e28f78350e51ac26a
+ 1:C 05 Oct 2026 17:42:41.199 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+ 1:C 05 Oct 2026 17:42:41.199 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+ 1:C 05 Oct 2026 17:42:41.199 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+ 1:C 05 Oct 2026 17:42:41.199 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+ 1:M 05 Oct 2026 17:42:41.200 * monotonic clock: POSIX clock_gettime
+ 1:M 05 Oct 2026 17:42:41.200 * Running mode=standalone, port=6379.
+ 1:M 05 Oct 2026 17:42:41.200 * Server initialized
+ 1:M 05 Oct 2026 17:42:41.201 * Ready to accept connections tcp
+Stop and remove container: 400bb1b3f7344c819f78328c5ff1c895_redis7alpine_67f9c8
+##[command]/usr/bin/docker rm --force f180478969f94e4669c4e20996b4b9fb0d5da40ed1bc2f8e28f78350e51ac26a
+f180478969f94e4669c4e20996b4b9fb0d5da40ed1bc2f8e28f78350e51ac26a
+Remove container network: github_network_2076a1c581af4bd9bd4bb99ee4185bae
+##[command]/usr/bin/docker network rm github_network_2076a1c581af4bd9bd4bb99ee4185bae
+github_network_2076a1c581af4bd9bd4bb99ee4185bae
+targeted	Complete job	﻿2026-10-05T17:43:41.4530849Z Cleaning up orphan processes

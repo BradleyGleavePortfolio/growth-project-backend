@@ -1,0 +1,2 @@
+run 37355800424 in_progress https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37355800424
+watch: gh run watch <id> -R BradleyGleavePortfolio/growth-project-mobile --exit-status ; logs: gh run view <id> --log-failed

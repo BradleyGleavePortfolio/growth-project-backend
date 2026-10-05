@@ -1,0 +1,6 @@
+remote: 
+remote: Create a pull request for 'ci/AUD-SOL-PUSH3-120-p2-2' on GitHub by visiting:        
+remote:      https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/new/ci/AUD-SOL-PUSH3-120-p2-2        
+remote: 
+run 37354299393 in_progress https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37354299393
+watch: gh run watch <id> -R BradleyGleavePortfolio/growth-project-backend --exit-status ; logs: gh run view <id> --log-failed

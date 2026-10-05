@@ -1,0 +1,308 @@
+diff --git a/prisma/migrations/20270307000000_push_outbox_quiet_hours/migration.sql b/prisma/migrations/20270307000000_push_outbox_quiet_hours/migration.sql
+index 612e075d..7fed9f8d 100644
+--- a/prisma/migrations/20270307000000_push_outbox_quiet_hours/migration.sql
++++ b/prisma/migrations/20270307000000_push_outbox_quiet_hours/migration.sql
+@@ -84,6 +84,9 @@ CREATE INDEX IF NOT EXISTS "PushOutbox_user_id_sent_at_idx" ON "PushOutbox"("use
+ -- CreateIndex
+ CREATE INDEX IF NOT EXISTS "PushOutbox_sent_at_receipt_checked_at_idx" ON "PushOutbox"("sent_at", "receipt_checked_at");
+ 
++-- CreateIndex
++CREATE INDEX IF NOT EXISTS "PushOutbox_result_code_idx" ON "PushOutbox"("result_code");
++
+ -- CreateIndex
+ CREATE UNIQUE INDEX IF NOT EXISTS "PushOutbox_user_id_dedupe_key_key" ON "PushOutbox"("user_id", "dedupe_key");
+ 
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+index 9901a53a..4aaf110a 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -2171,6 +2171,8 @@ model PushOutbox {
+   handed_off_at      DateTime?
+   attempts           Int       @default(0)
+   // Last outcome code (sent, no-token, device-not-registered, ...).
++  // token-cleanup-pending: Expo reported DeviceNotRegistered but clearing the
++  // token failed; the receipt sweep retries the clear (never the send).
+   result_code        String?
+   ticket_id          String?
+   token              String?
+@@ -2184,6 +2186,7 @@ model PushOutbox {
+   @@index([user_id, collapse_key, created_at])
+   @@index([user_id, sent_at])
+   @@index([sent_at, receipt_checked_at])
++  @@index([result_code])
+ }
+ 
+ model NotificationDigestLog {
+diff --git a/src/notifications/push/lock-screen-copy.ts b/src/notifications/push/lock-screen-copy.ts
+index 6922186a..adf9e587 100644
+--- a/src/notifications/push/lock-screen-copy.ts
++++ b/src/notifications/push/lock-screen-copy.ts
+@@ -3,15 +3,15 @@ import { dayLabel, formatClock, usableTimeZone } from '../local-time';
+ 
+ // What a push shows on the lock screen (C-643-2 / push delivery).
+ //
+-// A lock screen is readable by anyone holding the phone, so push copy is
+-// quieter than the inbox row:
+-//   - never a health detail (weight, check-in contents, streaks, milestone
+-//     values, meal or workout contents, coach-written text);
+-//   - never message text;
+-//   - booking copy keeps the other party's name and the local time, because
+-//     the reminder is useless without them and neither is a health detail.
+-// The full detail stays in the inbox row the push opens. Copy rules: no
+-// emojis, no exclamation marks, plain warm words.
++// A lock screen is readable by anyone holding the phone, so push copy comes
++// ONLY from the fixed templates below, one per notification kind (Sol
++// B-692-1). No caller-supplied text reaches it: not the inbox body, not a
++// display name (a profile name is free-form and can hold an email address or
++// a health detail), not message text, not coach-written text, not a health
++// value. The only variable part is a session time, rendered here from the
++// stored instant and a validated zone. Unknown kinds get the generic line.
++// The full detail stays in the inbox row the push opens, inside the app.
++// Copy rules: no emojis, no exclamation marks, no first person.
+ 
+ export interface LockScreenCopy {
+   title: string;
+@@ -19,33 +19,42 @@ export interface LockScreenCopy {
+ }
+ 
+ const OPEN = 'Open the app to see it.';
++const DETAILS = 'Open the app to see the details.';
+ 
+-// Kinds whose inbox body is already lock-screen safe (names and times only).
+-const SAFE_BODY_KINDS: ReadonlySet<string> = new Set([
+-  NotificationKind.BOOKING_REQUESTED,
+-  NotificationKind.BOOKING_CONFIRMED,
+-  NotificationKind.BOOKING_DECLINED,
+-  NotificationKind.BOOKING_CANCELLED,
+-  NotificationKind.BOOKING_RESCHEDULED,
+-  NotificationKind.BOOKING_REMINDER_24H,
+-  NotificationKind.BOOKING_REMINDER_1H,
+-  NotificationKind.MESSAGE_RECEIVED, // "New message from <name>", never the text
+-]);
+-
+-const TITLES: Record<string, string> = {
+-  [NotificationKind.BOOKING_REQUESTED]: 'Session request',
+-  [NotificationKind.BOOKING_CONFIRMED]: 'Session confirmed',
+-  [NotificationKind.BOOKING_DECLINED]: 'Session request',
+-  [NotificationKind.BOOKING_CANCELLED]: 'Session cancelled',
+-  [NotificationKind.BOOKING_RESCHEDULED]: 'Session moved',
+-  [NotificationKind.BOOKING_REMINDER_24H]: 'Session reminder',
+-  [NotificationKind.BOOKING_REMINDER_1H]: 'Session starting soon',
+-  [NotificationKind.MESSAGE_RECEIVED]: 'New message',
+-};
+-
+-// Fixed quiet copy for kinds whose inbox body carries personal or health
+-// detail.
+-const QUIET: Record<string, LockScreenCopy> = {
++// Fixed copy per kind. Every kind a push can carry has a template here.
++const TEMPLATES: Record<string, LockScreenCopy> = {
++  [NotificationKind.MESSAGE_RECEIVED]: {
++    title: 'New message',
++    body: 'You have a new message. Open the app to read it.',
++  },
++  [NotificationKind.BOOKING_REQUESTED]: {
++    title: 'Session request',
++    body: `There is a new session request. ${OPEN}`,
++  },
++  [NotificationKind.BOOKING_CONFIRMED]: {
++    title: 'Session confirmed',
++    body: `Your session is confirmed. ${DETAILS}`,
++  },
++  [NotificationKind.BOOKING_DECLINED]: {
++    title: 'Session request',
++    body: `Your session request was declined. ${DETAILS}`,
++  },
++  [NotificationKind.BOOKING_CANCELLED]: {
++    title: 'Session cancelled',
++    body: `A session was cancelled. ${DETAILS}`,
++  },
++  [NotificationKind.BOOKING_RESCHEDULED]: {
++    title: 'Session moved',
++    body: `A session has a new time. ${OPEN}`,
++  },
++  [NotificationKind.BOOKING_REMINDER_24H]: {
++    title: 'Session reminder',
++    body: `You have a session in about 24 hours. ${DETAILS}`,
++  },
++  [NotificationKind.BOOKING_REMINDER_1H]: {
++    title: 'Session starting soon',
++    body: `Your session starts in about an hour. ${DETAILS}`,
++  },
+   [NotificationKind.MILESTONE_REACHED]: {
+     title: 'New milestone',
+     body: `You reached a milestone. ${OPEN}`,
+@@ -86,10 +95,11 @@ const DEFAULT_COPY: LockScreenCopy = {
+ };
+ 
+ /**
+- * Booking context stored with a push (B-NOTIF-5), so the lock-screen line is
++ * Booking context stored with a push (B-NOTIF-5), so a reminder's time is
+  * rendered at the moment it is sent: a 24 h reminder deferred by quiet hours
+  * still says "today" or "tomorrow" correctly, and the stored inbox row keeps
+- * the absolute date (C-647-3).
++ * the absolute date (C-647-3). `otherPartyDisplayName` is accepted for older
++ * rows but never rendered (B-692-1).
+  */
+ export interface PushContext {
+   sessionId?: string;
+@@ -100,49 +110,37 @@ export interface PushContext {
+   otherPartyDisplayName?: string;
+ }
+ 
+-function contextTime(context: PushContext | null | undefined): {
+-  at: Date;
+-  tz: string;
+-  name: string;
+-} | null {
+-  if (!context?.scheduledAt || !context.otherPartyDisplayName) return null;
++function contextTime(context: PushContext | null | undefined): { at: Date; tz: string } | null {
++  if (!context?.scheduledAt) return null;
+   const tz = usableTimeZone(context.timeZone);
+   const at = new Date(context.scheduledAt);
+   if (!tz || Number.isNaN(at.getTime())) return null;
+-  return { at, tz, name: context.otherPartyDisplayName };
++  return { at, tz };
+ }
+ 
++/**
++ * The lock-screen title and body for a push. `_inboxBody` is deliberately
++ * ignored (B-692-1): inbox text can carry names, message text or health
++ * details, so it never reaches a lock screen.
++ */
+ export function lockScreenCopy(
+   kind: string,
+-  inboxBody: string,
++  _inboxBody: string,
+   context?: PushContext | null,
+   now: Date = new Date(),
+ ): LockScreenCopy {
+   const timed = contextTime(context);
+   if (timed && kind === NotificationKind.BOOKING_REMINDER_24H) {
+     return {
+-      title: TITLES[kind],
+-      body: `Your session with ${timed.name} is ${dayLabel(timed.at, timed.tz, now)} at ${formatClock(timed.at, timed.tz)}.`.slice(
+-        0,
+-        160,
+-      ),
++      title: TEMPLATES[kind].title,
++      body: `Your session is ${dayLabel(timed.at, timed.tz, now)} at ${formatClock(timed.at, timed.tz)}.`,
+     };
+   }
+   if (timed && kind === NotificationKind.BOOKING_REMINDER_1H) {
+     return {
+-      title: TITLES[kind],
+-      body: `Your session with ${timed.name} starts at ${formatClock(timed.at, timed.tz)}.`.slice(
+-        0,
+-        160,
+-      ),
+-    };
+-  }
+-  if (SAFE_BODY_KINDS.has(kind)) {
+-    const body = inboxBody.trim().slice(0, 160);
+-    return {
+-      title: TITLES[kind] ?? DEFAULT_COPY.title,
+-      body: body.length > 0 ? body : DEFAULT_COPY.body,
++      title: TEMPLATES[kind].title,
++      body: `Your session starts at ${formatClock(timed.at, timed.tz)}.`,
+     };
+   }
+-  return QUIET[kind] ?? DEFAULT_COPY;
++  return TEMPLATES[kind] ?? DEFAULT_COPY;
+ }
+diff --git a/test/push-lock-screen-copy.spec.ts b/test/push-lock-screen-copy.spec.ts
+new file mode 100644
+index 00000000..989d59df
+--- /dev/null
++++ b/test/push-lock-screen-copy.spec.ts
+@@ -0,0 +1,91 @@
++import { NotificationKind } from '../src/notifications/notification-kind';
++import { lockScreenCopy } from '../src/notifications/push/lock-screen-copy';
++
++// B-692-1 (Sol): the lock screen shows only fixed per-kind templates. No
++// caller text (inbox body, display name, message text) can reach it.
++
++const PRIVATE = 'Jamie jamie@example.test diagnosis: diabetes, 212 lb, "please call me"';
++const LEAK = /@|diabetes|diagnosis|jamie|212|lb|please/i;
++const NOW = new Date('2026-06-02T18:00:00Z');
++
++const ALL_KINDS = [
++  ...Object.values(NotificationKind),
++  'unknown_kind',
++];
++const BOOKING_KINDS = ALL_KINDS.filter((k) => k.startsWith('booking_'));
++
++describe('lock-screen copy is template-only (B-692-1)', () => {
++  it('never shows the inbox body or a display name, for every kind, with and without context', () => {
++    for (const kind of ALL_KINDS) {
++      for (const context of [
++        null,
++        {
++          sessionId: 's-1',
++          scheduledAt: '2026-06-03T19:00:00Z',
++          newScheduledAt: '2026-06-03T19:00:00Z',
++          oldScheduledAt: '2026-06-02T19:00:00Z',
++          timeZone: 'America/New_York',
++          otherPartyDisplayName: PRIVATE,
++        },
++      ]) {
++        const copy = lockScreenCopy(kind, `New message from ${PRIVATE}`, context, NOW);
++        expect(`${copy.title} ${copy.body}`).not.toMatch(LEAK);
++        expect(copy.title.length).toBeGreaterThan(0);
++        expect(copy.body.length).toBeGreaterThan(0);
++      }
++    }
++  });
++
++  it('message pushes say only that a message arrived', () => {
++    expect(lockScreenCopy(NotificationKind.MESSAGE_RECEIVED, `New message from ${PRIVATE}`)).toEqual({
++      title: 'New message',
++      body: 'You have a new message. Open the app to read it.',
++    });
++  });
++
++  it('every booking kind has its own fixed template, whatever the inbox text', () => {
++    for (const kind of BOOKING_KINDS) {
++      const a = lockScreenCopy(kind, 'Coach K moved the session to Tue at 3:00 PM EDT.');
++      const b = lockScreenCopy(kind, PRIVATE);
++      expect(a).toEqual(b);
++      expect(a.title).not.toBe('The Growth Project');
++    }
++  });
++
++  it('reminders keep the session time, rendered from the stored instant in the recipient zone', () => {
++    const context = {
++      scheduledAt: '2026-06-03T19:00:00Z',
++      timeZone: 'America/New_York',
++      otherPartyDisplayName: PRIVATE,
++    };
++    expect(lockScreenCopy(NotificationKind.BOOKING_REMINDER_24H, PRIVATE, context, NOW)).toEqual({
++      title: 'Session reminder',
++      body: 'Your session is tomorrow at 3:00 PM EDT.',
++    });
++    expect(lockScreenCopy(NotificationKind.BOOKING_REMINDER_1H, PRIVATE, context, NOW)).toEqual({
++      title: 'Session starting soon',
++      body: 'Your session starts at 3:00 PM EDT.',
++    });
++    // No usable zone: no clock time, still no caller text.
++    expect(
++      lockScreenCopy(NotificationKind.BOOKING_REMINDER_1H, PRIVATE, { ...context, timeZone: 'UTC' }, NOW).body,
++    ).toBe('Your session starts in about an hour. Open the app to see the details.');
++  });
++
++  it('unknown kinds get the generic line', () => {
++    expect(lockScreenCopy('something_new', PRIVATE)).toEqual({
++      title: 'The Growth Project',
++      body: 'You have a new notification. Open the app to see it.',
++    });
++  });
++
++  it('copy rules: no exclamation marks, no emojis, no first person', () => {
++    for (const kind of ALL_KINDS) {
++      const { title, body } = lockScreenCopy(kind, '');
++      const text = `${title} ${body}`;
++      expect(text).not.toMatch(/!/);
++      expect(text).not.toMatch(/\p{Extended_Pictographic}/u);
++      expect(text).not.toMatch(/\b(we|our|us|I)\b/);
++    }
++  });
++});

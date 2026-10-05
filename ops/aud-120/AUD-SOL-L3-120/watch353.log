@@ -1,0 +1,34 @@
+Refreshing run status every 60 seconds. Press Ctrl+C to quit.
+
+* audit/AUD-SOL-L3-120/353-1-replay ci-lane · 37355825712
+Triggered via push less than a minute ago
+
+JOBS
+* targeted (ID 111917847527)
+  ✓ Set up job
+  ✓ Run actions/checkout@v6
+  ✓ Run actions/setup-node@v6
+  * Run npm ci
+  * Type-check (only when .ci-lane-tsc exists)
+  * Targeted jest
+  * Post Run actions/setup-node@v6
+  * Post Run actions/checkout@v6
+✓ audit/AUD-SOL-L3-120/353-1-replay ci-lane · 37355825712
+Triggered via push about 1 minute ago
+
+JOBS
+✓ targeted in 1m36s (ID 111917847527)
+  ✓ Set up job
+  ✓ Run actions/checkout@v6
+  ✓ Run actions/setup-node@v6
+  ✓ Run npm ci
+  - Type-check (only when .ci-lane-tsc exists)
+  ✓ Targeted jest
+  ✓ Post Run actions/setup-node@v6
+  ✓ Post Run actions/checkout@v6
+  ✓ Complete job
+
+ANNOTATIONS
+- "The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748"
+targeted: .github#1
+

@@ -1,0 +1,1072 @@
+diff --git a/.ci-lane-tsc b/.ci-lane-tsc
+new file mode 100644
+index 00000000..4047c55d
+--- /dev/null
++++ b/.ci-lane-tsc
+@@ -0,0 +1 @@
++Sol agent 120 exact composed-tree probe typecheck.
+diff --git a/test/aud-sol-118-owner-boundaries.live.spec.ts b/test/aud-sol-118-owner-boundaries.live.spec.ts
+new file mode 100644
+index 00000000..e541e76a
+--- /dev/null
++++ b/test/aud-sol-118-owner-boundaries.live.spec.ts
+@@ -0,0 +1,75 @@
++// Independent agent 118 Sol probe: complete activated-owner selection and
++// recovery rollback on exact #702 source (which includes exact #661 source).
++import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
++import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++import { PurchaseFanoutService } from '../src/packages/purchase-fanout.service';
++import { PrismaService } from '../src/prisma.service';
++import { bootstrapTestSchema } from './utils/bootstrap-test-schema';
++import { resetPublicSchema } from './utils/reset-public-schema';
++
++const url = process.env.MWB3_TEST_DATABASE_URL || '';
++const live = url ? describe : describe.skip;
++live('AUD-SOL-661-118 complete recovery boundary', () => {
++  let prisma: PrismaService;
++  let handler: CheckoutWebhookHandlerService;
++  let fanout: PurchaseFanoutService;
++  const CLIENT = 'sol118-client', COACH = 'sol118-coach', PKG = 'sol118-pkg';
++  const success = (id: string) => ({
++    id: `evt_${id}`, type: 'payment_intent.succeeded', data: { object: { id } },
++  });
++  beforeAll(async () => {
++    prisma = new PrismaService({ datasources: { db: { url } } });
++    await prisma.$connect();
++    await resetPublicSchema(prisma);
++    await bootstrapTestSchema(prisma);
++    for (const id of [CLIENT, COACH]) {
++      await prisma.user.create({ data: { id, supabase_id: id, email: `${id}@example.test`, name: id } });
++    }
++    await prisma.coachPackage.create({ data: { id: PKG, coach_id: COACH, name: 'Probe', amount_cents: 5000 } });
++    fanout = new PurchaseFanoutService(undefined, undefined, undefined, prisma);
++    handler = new CheckoutWebhookHandlerService(prisma, new StripeConnectApiService(), undefined, undefined, undefined, fanout);
++  }, 180_000);
++  afterAll(async () => { if (prisma) await prisma.$disconnect(); });
++  async function seed(id: string, pi: string, billing = 'one_time', subscription: string | null = null, activated = true) {
++    await prisma.clientPurchase.create({ data: {
++      id, client_user_id: CLIENT, coach_user_id: COACH, package_id: PKG, amount_cents: 5000,
++      idempotency_key: id, stripe_checkout_session_id: `cs_${id}`, stripe_payment_intent_id: pi,
++      status: 'payment_failed', billing_type: billing, stripe_subscription_id: subscription,
++      entitlement_active: false, stripe_client_secret: `${pi}_secret_test`, stripe_ephemeral_key: 'ek_test_test',
++    } });
++    if (activated) await prisma.purchaseFanout.create({ data: { purchase_id: id, entrypoint: 'in_app_hosted', state: 'succeeded' } });
++  }
++  it('over ten activated recurring/subscribed distractors cannot hide a one-time owner; two workers recover once', async () => {
++    const pi = 'pi_118_mixed';
++    // Physical insertion order is adversarial: distractors precede the owner.
++    for (let i = 0; i < 12; i += 1) await seed(`recurring-${i}`, pi, 'recurring');
++    for (let i = 0; i < 12; i += 1) await seed(`subscribed-${i}`, pi, 'one_time', `sub_118_${i}`);
++    for (let i = 0; i < 12; i += 1) await seed(`unactivated-${i}`, pi, 'one_time', null, false);
++    await seed('owner', pi);
++    await prisma.scheduledDrop.create({ data: {
++      id: 'drop-owner', client_purchase_id: 'owner', content_id: 'owner', asset_type: 'workout',
++      asset_id: 'asset', cadence_kind: 'offset_days', cadence_payload: {}, fire_at: new Date(),
++      status: 'canceled', failure_reason: 'canceled:payment_failed',
++    } });
++    const result = await Promise.all([1, 2].map(() =>
++      prisma.$transaction((tx) => handler.handle(success(pi), tx)),
++    ));
++    expect(result.filter((r) => r.reason === 'payment_recovered')).toHaveLength(1);
++    expect(await prisma.clientPurchase.findUniqueOrThrow({ where: { id: 'owner' } }))
++      .toMatchObject({ status: 'paid', entitlement_active: true, stripe_client_secret: null, stripe_ephemeral_key: null });
++    expect(await prisma.scheduledDrop.findUniqueOrThrow({ where: { id: 'drop-owner' } }))
++      .toMatchObject({ status: 'pending', failure_reason: null });
++    expect(await prisma.clientPurchase.count({ where: { stripe_payment_intent_id: pi, entitlement_active: true } })).toBe(1);
++    expect(await prisma.clientPurchase.count({ where: { stripe_payment_intent_id: pi, status: 'payment_failed' } })).toBe(36);
++  }, 60_000);
++  it('drop restoration failure rolls back paid access and credential erasure; retry recovers', async () => {
++    const pi = 'pi_118_rollback';
++    await seed('rollback-owner', pi);
++    jest.spyOn(fanout, 'restoreAfterPaymentRecovered').mockRejectedValueOnce(new Error('probe_restore_failed'));
++    await expect(prisma.$transaction((tx) => handler.handle(success(pi), tx))).rejects.toThrow('probe_restore_failed');
++    expect(await prisma.clientPurchase.findUniqueOrThrow({ where: { id: 'rollback-owner' } }))
++      .toMatchObject({ status: 'payment_failed', entitlement_active: false, stripe_client_secret: `${pi}_secret_test` });
++    expect(await prisma.$transaction((tx) => handler.handle(success(pi), tx)))
++      .toMatchObject({ claimed: true, reason: 'payment_recovered' });
++  }, 60_000);
++});
+diff --git a/test/aud-sol-661d-120-composition.live.spec.ts b/test/aud-sol-661d-120-composition.live.spec.ts
+new file mode 100644
+index 00000000..11cf9f8a
+--- /dev/null
++++ b/test/aud-sol-661d-120-composition.live.spec.ts
+@@ -0,0 +1,204 @@
++// Independent Sol agent 120 probe on exact #661/#702 composed source.
++// Only the CI runner's disposable PostgreSQL; no application/provider calls.
++import type { Prisma } from '@prisma/client';
++import { ConflictException } from '@nestjs/common';
++import {
++  CheckoutWebhookHandlerService,
++} from '../src/checkout/checkout-webhook-handler.service';
++import {
++  classifyPaymentReplay,
++  isRecurringPackage,
++} from '../src/checkout/checkout.service';
++import {
++  StripeConnectApiService,
++  type StripeSubscriptionCheckoutObject,
++} from '../src/connect/stripe-connect-api.service';
++import { PurchaseFanoutService } from '../src/packages/purchase-fanout.service';
++import { PrismaService } from '../src/prisma.service';
++import { bootstrapTestSchema } from './utils/bootstrap-test-schema';
++import { resetPublicSchema } from './utils/reset-public-schema';
++
++const url = process.env.MWB3_TEST_DATABASE_URL || '';
++const live = url ? describe : describe.skip;
++const [CLIENT, COACH, PKG] = ['sol120-client', 'sol120-coach', 'sol120-pkg'];
++type Event = { id: string; type: string; data: { object: Record<string, unknown> } };
++class StripeStub extends StripeConnectApiService {
++  sub: StripeSubscriptionCheckoutObject = { id: 'sub_unused', status: 'active' };
++  retrieveSubscription = jest.fn(async () => this.sub);
++  retrieveSubscriptionForCheckout = jest.fn(async () => this.sub);
++}
++
++live('AUD-SOL-661D-120 conflict composition: credential lifecycle and recurring ownership', () => {
++  let prisma: PrismaService;
++  let handler: CheckoutWebhookHandlerService;
++  const stripe = new StripeStub();
++  let seq = 0;
++  const event = (type: string, object: Record<string, unknown>): Event => ({
++    id: `evt_sol120_${seq += 1}`, type, data: { object },
++  });
++  const transaction = <T>(fn: (tx: Prisma.TransactionClient) => Promise<T>) =>
++    prisma.$transaction(fn, { timeout: 30_000 });
++  async function deliver(e: Event) {
++    const pre = await handler.prefetchForOuterTx(e);
++    return transaction((tx) => handler.handle(e, tx, pre));
++  }
++  async function seed(id: string, options: Prisma.ClientPurchaseUncheckedCreateInput = {
++    client_user_id: CLIENT, coach_user_id: COACH, package_id: PKG,
++    amount_cents: 4900, stripe_checkout_session_id: `sub_${id}`, idempotency_key: id,
++  }) {
++    return prisma.clientPurchase.create({ data: {
++      ...options, id,
++      client_user_id: CLIENT, coach_user_id: COACH, package_id: PKG,
++      amount_cents: 4900, idempotency_key: id,
++      stripe_checkout_session_id: `sub_${id}`, stripe_subscription_id: `sub_${id}`,
++      stripe_payment_intent_id: `pi_${id}`, stripe_customer_id: 'cus_sol120',
++      billing_type: 'recurring', status: options.status ?? 'pending',
++      entitlement_active: options.entitlement_active ?? false,
++      stripe_client_secret: options.stripe_client_secret ?? `pi_${id}_secret_canary`,
++      stripe_ephemeral_key: 'ek_test_sol120_canary',
++    } });
++  }
++  const persisted = (id: string) => prisma.clientPurchase.findUniqueOrThrow({ where: { id } });
++  function snapshot(id: string, trial = false): StripeSubscriptionCheckoutObject {
++    return {
++      id: `sub_${id}`, status: trial ? 'trialing' : 'active',
++      customer: 'cus_sol120', default_payment_method: 'pm_saved',
++      cancel_at_period_end: false, current_period_end: Math.floor(Date.now() / 1000) + 86_400,
++      ...(trial ? { trial_start: Math.floor(Date.now() / 1000) } : {}),
++    };
++  }
++  beforeAll(async () => {
++    if (process.env.GITHUB_ACTIONS !== 'true') throw new Error('CI-only disposable fixture');
++    prisma = new PrismaService({ datasources: { db: { url } } });
++    await prisma.$connect();
++    await resetPublicSchema(prisma);
++    await bootstrapTestSchema(prisma);
++    for (const id of [CLIENT, COACH]) {
++      await prisma.user.create({ data: { id, supabase_id: id, email: `${id}@example.test`, name: id } });
++    }
++    await prisma.coachPackage.create({ data: {
++      id: PKG, coach_id: COACH, name: 'Composition fixture', amount_cents: 4900, billing_type: 'recurring',
++    } });
++    const fanout = new PurchaseFanoutService(undefined, undefined, undefined, prisma);
++    handler = new CheckoutWebhookHandlerService(prisma, stripe, undefined, undefined, undefined, fanout);
++  }, 180_000);
++  afterAll(async () => { await prisma?.$disconnect(); });
++
++  it.each(['invoice.paid', 'customer.subscription.updated'])(
++    '%s grants the paid plan and atomically erases both consumed sheet credentials',
++    async (type) => {
++      const id = `paid-${type.replaceAll('.', '-')}`;
++      await seed(id);
++      stripe.sub = snapshot(id);
++      const e = type === 'invoice.paid'
++        ? event(type, { id: `in_${id}`, subscription: `sub_${id}`, amount_paid: 4900, currency: 'usd' })
++        : event(type, stripe.sub);
++      expect((await deliver(e)).claimed).toBe(true);
++      expect(await persisted(id)).toMatchObject({ status: 'active', entitlement_active: true });
++      expect(await prisma.purchaseFanout.count({ where: { purchase_id: id } })).toBe(1);
++      expect(await persisted(id)).toMatchObject({ stripe_client_secret: null, stripe_ephemeral_key: null });
++    },
++  );
++
++  it.each(['invoice.paid', 'customer.subscription.updated'])(
++    '%s starts the card-confirmed trial and erases the spent SetupIntent credentials',
++    async (type) => {
++      const id = `trial-${type.replaceAll('.', '-')}`;
++      await seed(id, {
++        client_user_id: CLIENT, coach_user_id: COACH, package_id: PKG, amount_cents: 4900,
++        stripe_checkout_session_id: `sub_${id}`, idempotency_key: id,
++        trial_days: 7, stripe_client_secret: `seti_${id}_secret_canary`,
++      });
++      stripe.sub = snapshot(id, true);
++      const e = type === 'invoice.paid'
++        ? event(type, { id: `in_${id}`, subscription: `sub_${id}`, amount_paid: 0, currency: 'usd' })
++        : event(type, stripe.sub);
++      expect((await deliver(e)).claimed).toBe(true);
++      expect(await persisted(id)).toMatchObject({ status: 'trialing', entitlement_active: true });
++      expect((await persisted(id)).trial_started_at).toBeInstanceOf(Date);
++      expect(await persisted(id)).toMatchObject({ stripe_client_secret: null, stripe_ephemeral_key: null });
++    },
++  );
++
++  it.each(['pending', 'active'])(
++    'subscription deletion of a %s attempt preserves expiration/churn semantics and erases credentials',
++    async (status) => {
++      const id = `end-${status}`;
++      await seed(id, {
++        client_user_id: CLIENT, coach_user_id: COACH, package_id: PKG, amount_cents: 4900,
++        stripe_checkout_session_id: `sub_${id}`, idempotency_key: id,
++        status, entitlement_active: status === 'active',
++      });
++      await deliver(event('customer.subscription.deleted', { id: `sub_${id}` }));
++      expect(await persisted(id)).toMatchObject({
++        status: status === 'pending' ? 'expired' : 'canceled', entitlement_active: false,
++        stripe_client_secret: null, stripe_ephemeral_key: null,
++      });
++    },
++  );
++
++  it.each(['invoice.paid', 'customer.subscription.updated'])(
++    '%s keeps the payable SetupIntent while a trial card has not been confirmed',
++    async (type) => {
++      const id = `unconfirmed-${type.replaceAll('.', '-')}`;
++      const secret = `seti_${id}_secret_canary`;
++      await seed(id, {
++        client_user_id: CLIENT, coach_user_id: COACH, package_id: PKG, amount_cents: 4900,
++        stripe_checkout_session_id: `sub_${id}`, idempotency_key: id,
++        trial_days: 7, stripe_client_secret: secret,
++      });
++      for (const defaultCard of [null, 'pm_unconfirmed']) {
++        stripe.sub = {
++          ...snapshot(id, true), default_payment_method: defaultCard, cancel_at_period_end: true,
++        };
++        const e = type === 'invoice.paid'
++          ? event(type, { id: `in_${id}`, subscription: `sub_${id}`, amount_paid: 0, currency: 'usd' })
++          : event(type, stripe.sub);
++        await deliver(e);
++        expect(await persisted(id)).toMatchObject({
++          status: 'trialing', entitlement_active: false, trial_started_at: null,
++          stripe_client_secret: secret, stripe_ephemeral_key: 'ek_test_sol120_canary',
++        });
++        expect(await prisma.purchaseFanout.count({ where: { purchase_id: id } })).toBe(0);
++      }
++    },
++  );
++
++  it('first-invoice PI success/decline stay invoice-owned and never recover a recurring fanout as one-time', async () => {
++    const id = 'invoice-owned';
++    await seed(id);
++    const success = await transaction((tx) => handler.handle(event('payment_intent.succeeded', { id: `pi_${id}` }), tx));
++    expect(success).toMatchObject({ reason: 'subscription_invoice_owned_by_invoice_paid' });
++    expect(success.deferredSplit).toBeUndefined();
++    expect(await persisted(id)).toMatchObject({ status: 'pending', entitlement_active: false });
++    const failed = await transaction((tx) => handler.handle(event('payment_intent.payment_failed', {
++      id: `pi_${id}`, last_payment_error: { message: 'card_declined' },
++    }), tx));
++    expect(failed).toMatchObject({ reason: 'subscription_invoice_owned_by_invoice_events' });
++    expect(await persisted(id)).toMatchObject({
++      status: 'pending', entitlement_active: false, last_error: 'card_declined',
++      stripe_client_secret: `pi_${id}_secret_canary`,
++    });
++  });
++
++  it('replay reply codes survive next to the recurring guard without returning credentials', () => {
++    for (const [status, code] of [
++      ['paid', 'PAYMENT_ALREADY_COMPLETE'],
++      ['refunded', 'PAYMENT_REFUNDED_OR_IN_REVIEW'],
++      ['disputed', 'PAYMENT_REFUNDED_OR_IN_REVIEW'],
++      ['expired', 'PAYMENT_CHECKOUT_CLOSED'],
++    ]) {
++      const reply = classifyPaymentReplay({
++        status, stripe_client_secret: 'pi_complete_secret_canary',
++        stripe_ephemeral_key: 'ek_test_canary', stripe_customer_id: 'cus_sol120',
++      });
++      expect(reply.kind).toBe('finished');
++      if (reply.kind !== 'finished') throw new Error('unexpected credential resume');
++      expect(reply.error).toBeInstanceOf(ConflictException);
++      expect(reply.error.getResponse()).toMatchObject({ error: code });
++      expect(JSON.stringify(reply.error.getResponse())).not.toContain('secret_canary');
++    }
++    expect(isRecurringPackage({ billing_type: 'one_time', recurring_amount_cents: 4900, recurring_interval: 'month' })).toBe(true);
++    expect(isRecurringPackage({ billing_type: 'one_time', recurring_amount_cents: 0, recurring_interval: 'month' })).toBe(false);
++  });
++});
+diff --git a/test/aud-sol-661e-120-recovery.live.spec.ts b/test/aud-sol-661e-120-recovery.live.spec.ts
+new file mode 100644
+index 00000000..4db783c5
+--- /dev/null
++++ b/test/aud-sol-661e-120-recovery.live.spec.ts
+@@ -0,0 +1,155 @@
++// Independent Sol agent 120 round-9 boundary probe. Disposable CI PostgreSQL only.
++import type { Prisma } from '@prisma/client';
++import { clearSpentPaymentCredentials } from '../scripts/clear-spent-payment-credentials';
++import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
++import {
++  StripeConnectApiService,
++  type StripeSubscriptionCheckoutObject,
++} from '../src/connect/stripe-connect-api.service';
++import { PurchaseFanoutService } from '../src/packages/purchase-fanout.service';
++import { PrismaService } from '../src/prisma.service';
++import { bootstrapTestSchema } from './utils/bootstrap-test-schema';
++import { resetPublicSchema } from './utils/reset-public-schema';
++
++const url = process.env.MWB3_TEST_DATABASE_URL || '';
++const live = url ? describe : describe.skip;
++class StripeStub extends StripeConnectApiService {
++  sub: StripeSubscriptionCheckoutObject = { id: 'sub_unused', status: 'active' };
++  retrieveSubscription = jest.fn(async () => this.sub);
++  retrieveSubscriptionForCheckout = jest.fn(async () => this.sub);
++}
++type Event = { id: string; type: string; data: { object: Record<string, unknown> } };
++live('AUD-SOL-661E-120 atomic grant erase and cleanup race', () => {
++  let prisma: PrismaService;
++  let handler: CheckoutWebhookHandlerService;
++  let fanout: PurchaseFanoutService;
++  const stripe = new StripeStub();
++  let seq = 0;
++  const [CLIENT, COACH, PKG] = ['sol120e-client', 'sol120e-coach', 'sol120e-pkg'];
++  const EK = 'ek_test_sol120e_canary';
++  const seed = (id: string, over: Partial<Prisma.ClientPurchaseUncheckedCreateInput> = {}) =>
++    prisma.clientPurchase.create({ data: {
++      id, client_user_id: CLIENT, coach_user_id: COACH, package_id: PKG,
++      amount_cents: 4900, billing_type: 'recurring', idempotency_key: id,
++      stripe_checkout_session_id: `sub_${id}`, stripe_subscription_id: `sub_${id}`,
++      stripe_payment_intent_id: `pi_${id}`, stripe_customer_id: 'cus_sol120e',
++      stripe_client_secret: `pi_${id}_secret_canary`, stripe_ephemeral_key: EK, ...over,
++    } });
++  const persisted = (id: string) => prisma.clientPurchase.findUniqueOrThrow({ where: { id } });
++  const snapshot = (id: string): StripeSubscriptionCheckoutObject => ({
++    id: `sub_${id}`, status: 'active', customer: 'cus_sol120e',
++    default_payment_method: 'pm_saved', cancel_at_period_end: false,
++    current_period_end: Math.floor(Date.now() / 1000) + 86400,
++  });
++  const event = (type: string, id: string): Event => ({
++    id: `evt_sol120e_${seq += 1}`, type,
++    data: { object: type === 'invoice.paid'
++      ? { id: `in_${id}`, subscription: `sub_${id}`, amount_paid: 4900, currency: 'usd' }
++      : { ...stripe.sub } },
++  });
++  async function deliver(e: Event) {
++    const pre = await handler.prefetchForOuterTx(e);
++    return prisma.$transaction((tx) => handler.handle(e, tx, pre), { timeout: 30000 });
++  }
++  beforeAll(async () => {
++    if (process.env.GITHUB_ACTIONS !== 'true') throw new Error('CI-only disposable fixture');
++    prisma = new PrismaService({ datasources: { db: { url } } });
++    await prisma.$connect();
++    await resetPublicSchema(prisma);
++    await bootstrapTestSchema(prisma);
++    for (const id of [CLIENT, COACH]) {
++      await prisma.user.create({ data: { id, supabase_id: id, email: `${id}@example.test`, name: id } });
++    }
++    await prisma.coachPackage.create({ data: {
++      id: PKG, coach_id: COACH, name: 'Round 9 fixture', amount_cents: 4900, billing_type: 'recurring',
++    } });
++    fanout = new PurchaseFanoutService(undefined, undefined, undefined, prisma);
++    handler = new CheckoutWebhookHandlerService(prisma, stripe, undefined, undefined, undefined, fanout);
++  }, 180000);
++  afterAll(async () => { await prisma?.$disconnect(); });
++  afterEach(() => jest.restoreAllMocks());
++
++  it.each(['invoice.paid', 'customer.subscription.updated'])(
++    '%s fanout failure rolls back access and both erasures; redelivery then commits once',
++    async (type) => {
++      const id = `rollback-${type.replaceAll('.', '-')}`;
++      await seed(id);
++      stripe.sub = snapshot(id);
++      jest.spyOn(fanout, 'onPurchaseEntitled').mockRejectedValueOnce(new Error('probe_fanout_failed'));
++      const e = event(type, id);
++      await expect(deliver(e)).rejects.toThrow('probe_fanout_failed');
++      expect(await persisted(id)).toMatchObject({
++        status: 'pending', entitlement_active: false,
++        stripe_client_secret: `pi_${id}_secret_canary`, stripe_ephemeral_key: EK,
++      });
++      expect(await prisma.purchaseFanout.count({ where: { purchase_id: id } })).toBe(0);
++      await deliver(e);
++      expect(await persisted(id)).toMatchObject({
++        status: 'active', entitlement_active: true, stripe_client_secret: null, stripe_ephemeral_key: null,
++      });
++      expect(await prisma.purchaseFanout.count({ where: { purchase_id: id } })).toBe(1);
++    },
++  );
++
++  it('invoice first then subscription update and their replays cannot restore credentials or fan out twice', async () => {
++    const id = 'invoice-first';
++    await seed(id);
++    stripe.sub = snapshot(id);
++    const invoice = event('invoice.paid', id);
++    const subscription = event('customer.subscription.updated', id);
++    for (const e of [invoice, subscription, invoice, subscription]) await deliver(e);
++    expect(await persisted(id)).toMatchObject({
++      status: 'active', entitlement_active: true, stripe_client_secret: null, stripe_ephemeral_key: null,
++    });
++    expect(await prisma.purchaseFanout.count({ where: { purchase_id: id } })).toBe(1);
++  });
++
++  it('two event owners with prefetched same revision serialize to one grant and one fanout', async () => {
++    const id = 'two-workers';
++    await seed(id);
++    stripe.sub = snapshot(id);
++    const events = [event('invoice.paid', id), event('customer.subscription.updated', id)];
++    const pre = await Promise.all(events.map((e) => handler.prefetchForOuterTx(e)));
++    await Promise.all(events.map((e, i) =>
++      prisma.$transaction((tx) => handler.handle(e, tx, pre[i]), { timeout: 30000 })));
++    expect(await persisted(id)).toMatchObject({
++      status: 'active', entitlement_active: true, stripe_client_secret: null, stripe_ephemeral_key: null,
++    });
++    expect(await prisma.purchaseFanout.count({ where: { purchase_id: id } })).toBe(1);
++  }, 60000);
++
++  it.each(['one_time', 'recurring'])(
++    'cleanup rechecks after %s selected row becomes payable; no state/credential clobber',
++    async (billing) => {
++      const id = `cleanup-race-${billing}`;
++      await seed(id, {
++        status: 'active', entitlement_active: true, billing_type: billing,
++        stripe_subscription_id: billing === 'recurring' ? `sub_${id}` : null,
++      });
++      let transitioned = false;
++      const clientPurchase = new Proxy(prisma.clientPurchase, {
++        get(target, key, receiver) {
++          if (key !== 'findMany') return Reflect.get(target, key, receiver);
++          return async (args: Prisma.ClientPurchaseFindManyArgs) => {
++            const result = await target.findMany(args);
++            if (!transitioned) {
++              transitioned = true;
++              expect(result.some((row) => row.id === id)).toBe(true);
++              await target.update({ where: { id }, data: {
++                status: billing === 'recurring' ? 'trialing' : 'payment_failed',
++                entitlement_active: false, trial_started_at: null,
++                stripe_client_secret: `retry_${id}_secret_canary`, stripe_ephemeral_key: EK,
++              } });
++            }
++            return result;
++          };
++        },
++      });
++      await clearSpentPaymentCredentials({ clientPurchase }, { apply: true, batchSize: 1 });
++      expect(await persisted(id)).toMatchObject({
++        status: billing === 'recurring' ? 'trialing' : 'payment_failed', entitlement_active: false,
++        trial_started_at: null, stripe_client_secret: `retry_${id}_secret_canary`, stripe_ephemeral_key: EK,
++      });
++    },
++  );
++});
+diff --git a/test/aud-sol-661r5-postgres.spec.ts b/test/aud-sol-661r5-postgres.spec.ts
+new file mode 100644
+index 00000000..471fe2cb
+--- /dev/null
++++ b/test/aud-sol-661r5-postgres.spec.ts
+@@ -0,0 +1,358 @@
++// Independent AUD-SOL-661R5-117 proof. CI runner's disposable PostgreSQL only.
++// Real generated Prisma Client, real handler and real recovery/cancellation.
++// The three physical fixture tables contain every scalar field of their
++// candidate models but intentionally no unrelated FKs/RLS/migration history.
++import { execFileSync } from 'child_process';
++import { Prisma, PrismaClient } from '@prisma/client';
++import { ServiceUnavailableException } from '@nestjs/common';
++import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
++import { PurchaseFanoutService } from '../src/packages/purchase-fanout.service';
++import { PartialRefundDecisionService } from '../src/regimes/partial-refund-decision.service';
++import { StripeConnectApiService, StripeConnectApiError } from '../src/connect/stripe-connect-api.service';
++
++jest.setTimeout(30000);
++const url = 'postgresql://aud_sol_661r5:synthetic_only@127.0.0.1:5432/aud_sol_661r5_disposable?connection_limit=8';
++let prisma: PrismaClient;
++let other: PrismaClient;
++const q = (s: string) => `"${s.replace(/"/g, '""')}"`;
++const literal = (s: string) => `'${s.replace(/'/g, "''")}'`;
++const sqlTypes: Record<string, string> = {
++  String: 'TEXT', Int: 'INTEGER', Boolean: 'BOOLEAN', DateTime: 'TIMESTAMP(3)',
++  Json: 'JSONB', Float: 'DOUBLE PRECISION', Decimal: 'DECIMAL', BigInt: 'BIGINT', Bytes: 'BYTEA',
++};
++
++beforeAll(async () => {
++  if (process.env.GITHUB_ACTIONS !== 'true') throw new Error('CI-only disposable fixture; no application database allowed');
++  execFileSync('sudo', ['systemctl', 'start', 'postgresql'], { stdio: 'pipe' });
++  execFileSync('sudo', ['-u', 'postgres', 'psql', '-v', 'ON_ERROR_STOP=1', '-c',
++    "CREATE ROLE aud_sol_661r5 LOGIN PASSWORD 'synthetic_only';"], { stdio: 'pipe' });
++  execFileSync('sudo', ['-u', 'postgres', 'createdb', '-O', 'aud_sol_661r5', 'aud_sol_661r5_disposable'], { stdio: 'pipe' });
++  prisma = new PrismaClient({ datasources: { db: { url } } });
++  other = new PrismaClient({ datasources: { db: { url } } });
++  const identity = await prisma.$queryRaw<Array<{ db: string; address: string; version: string }>>`
++    SELECT current_database() AS db, host(inet_server_addr()) AS address, version() AS version`;
++  expect(identity[0].db).toBe('aud_sol_661r5_disposable');
++  expect(identity[0].address).toBe('127.0.0.1');
++  console.log('DISPOSABLE_POSTGRES', identity[0]);
++  for (const modelName of ['ClientPurchase', 'PurchaseFanout', 'ScheduledDrop', 'PartialRefundDecision']) {
++    const model = Prisma.dmmf.datamodel.models.find(m => m.name === modelName)!;
++    const columns = model.fields.filter(f => f.kind === 'scalar').map(f => {
++      const type = sqlTypes[f.type];
++      if (!type) throw new Error(`Unhandled fixture scalar ${f.type}`);
++      let def = '';
++      if (typeof f.default === 'string') def = ` DEFAULT ${literal(f.default)}`;
++      else if (typeof f.default === 'number' || typeof f.default === 'boolean') def = ` DEFAULT ${String(f.default)}`;
++      else if (f.default && typeof f.default === 'object' && 'name' in f.default && f.default.name === 'now') def = ' DEFAULT CURRENT_TIMESTAMP';
++      return `${q(f.name)} ${type}${f.isRequired ? ' NOT NULL' : ''}${f.isId ? ' PRIMARY KEY' : ''}${f.isUnique ? ' UNIQUE' : ''}${def}`;
++    });
++    await prisma.$executeRawUnsafe(`CREATE TABLE ${q(modelName)} (${columns.join(',')})`);
++  }
++});
++afterAll(async () => {
++  await prisma?.$disconnect();
++  await other?.$disconnect();
++});
++beforeEach(async () => {
++  await prisma.$executeRawUnsafe('TRUNCATE "ScheduledDrop", "PurchaseFanout", "ClientPurchase", "PartialRefundDecision"');
++});
++afterEach(() => jest.restoreAllMocks());
++
++function fixture<T>(value: object): T { return value as T; }
++class StripeStub extends StripeConnectApiService {
++  statusNow = 'requires_payment_method';
++  retrievePaymentIntent = jest.fn(async (id: string) => ({ id, status: this.statusNow, latest_charge: 'ch_synthetic' }));
++}
++function wiring(db: Prisma.TransactionClient | PrismaClient) {
++  return {
++    clientPurchase: db.clientPurchase,
++    purchaseFanout: db.purchaseFanout,
++    scheduledDrop: db.scheduledDrop,
++    $queryRaw: db.$queryRaw.bind(db),
++    coachPackage: { findUnique: jest.fn(async () => ({ id: 'pkg', billing_type: 'one_time', duration_periods: 4 })) },
++    coachPackageContent: { findMany: jest.fn(async () => []) },
++  };
++}
++function harness() {
++  const stripe = new StripeStub();
++  const fanout = new PurchaseFanoutService();
++  const entitled = jest.spyOn(fanout, 'onPurchaseEntitled');
++  const restored = jest.spyOn(fanout, 'restoreAfterPaymentRecovered');
++  const splits = { onChargeSucceeded: jest.fn() };
++  const first = { tryEmitFirstPayment: jest.fn() };
++  const real = { ...wiring(prisma), $transaction: prisma.$transaction.bind(prisma) };
++  type C = ConstructorParameters<typeof CheckoutWebhookHandlerService>;
++  const svc = new CheckoutWebhookHandlerService(
++    fixture<C[0]>(real), stripe, fixture<C[2]>(splits), undefined, undefined, fanout,
++    undefined, undefined, fixture<C[8]>(first),
++  );
++  return { stripe, fanout, svc, entitled, restored, splits, first };
++}
++const pi = 'pi_synthetic';
++const failed = (id = 'evt_decline') => ({ id, type: 'payment_intent.payment_failed', data: { object: { id: pi, last_payment_error: { message: 'card_declined' } } } });
++const succeeded = (id = 'evt_success') => ({ id, type: 'payment_intent.succeeded', data: { object: { id: pi, latest_charge: 'ch_synthetic' } } });
++const completed = { id: 'evt_completed', type: 'checkout.session.completed', data: { object: { id: 'cs_synthetic', payment_intent: pi, mode: 'payment' } } };
++async function seed(status = 'paid', hosted = true) {
++  return prisma.clientPurchase.create({ data: {
++    id: 'purchase', client_user_id: 'client', coach_user_id: 'coach', package_id: 'pkg',
++    amount_cents: 10000, idempotency_key: 'synthetic-key',
++    billing_type: 'one_time', status, entitlement_active: status === 'paid',
++    stripe_checkout_session_id: hosted ? 'cs_synthetic' : pi, stripe_payment_intent_id: pi,
++    stripe_client_secret: hosted ? null : 'pi_synthetic_secret_canary',
++    stripe_ephemeral_key: hosted ? null : 'ek_test_canary',
++  } });
++}
++async function activateMarker() {
++  await prisma.purchaseFanout.create({ data: { purchase_id: 'purchase', entrypoint: 'in_app_hosted', state: 'succeeded' } });
++}
++type Event = { id: string; type: string; data: { object: Record<string, unknown> } };
++async function deliver(h: ReturnType<typeof harness>, event: Event) {
++  const prefetch = await h.svc.prefetchForOuterTx(event);
++  return prisma.$transaction(tx => h.svc.handle(event, fixture<Prisma.TransactionClient>(wiring(tx)), prefetch));
++}
++async function version() {
++  return (await prisma.$queryRaw<Array<{ row_version: string }>>`SELECT xmin::text AS row_version FROM "ClientPurchase" WHERE id = 'purchase'`)[0].row_version;
++}
++function deferred<T>() {
++  let resolve!: (value: T) => void;
++  const promise = new Promise<T>(r => { resolve = r; });
++  return { promise, resolve };
++}
++
++describe('independent exact-head PostgreSQL settlement acceptance', () => {
++  it('xmin changes on a committed same-clock same-value write but not a row lock, and rolled-back writes do not invalidate it', async () => {
++    const row = await seed();
++    const before = await version();
++    await prisma.$transaction(tx => tx.$queryRaw`SELECT id FROM "ClientPurchase" WHERE id = 'purchase' FOR UPDATE`);
++    expect(await version()).toBe(before);
++    await other.clientPurchase.update({ where: { id: 'purchase' }, data: { updated_at: row.updated_at } });
++    expect(await version()).not.toBe(before);
++    const committed = await version();
++    await expect(other.$transaction(async tx => {
++      await tx.clientPurchase.update({ where: { id: 'purchase' }, data: { status: 'payment_failed' } });
++      throw new Error('synthetic rollback');
++    })).rejects.toThrow('synthetic rollback');
++    expect(await version()).toBe(committed);
++  });
++
++  it('equal application-clock successful settlement invalidates old prefetched decline evidence', async () => {
++    const h = harness();
++    const row = await seed();
++    const old = failed();
++    const prefetched = await h.svc.prefetchForOuterTx(old);
++    await other.clientPurchase.update({ where: { id: 'purchase' }, data: { updated_at: row.updated_at } });
++    await expect(prisma.$transaction(tx => h.svc.handle(old, fixture<Prisma.TransactionClient>(wiring(tx)), prefetched)))
++      .rejects.toBeInstanceOf(ServiceUnavailableException);
++    expect(await prisma.clientPurchase.findUnique({ where: { id: 'purchase' } })).toMatchObject({ status: 'paid', entitlement_active: true });
++  });
++
++  it('an actual success handler between prefetch and decline makes the old evidence retry, then fresh delivery no-ops', async () => {
++    const h = harness();
++    await seed();
++    const old = failed();
++    const prefetched = await h.svc.prefetchForOuterTx(old);
++    h.stripe.statusNow = 'succeeded';
++    await deliver(h, succeeded());
++    await expect(prisma.$transaction(tx => h.svc.handle(old, fixture<Prisma.TransactionClient>(wiring(tx)), prefetched)))
++      .rejects.toMatchObject({ response: { reason: 'purchase_changed' } });
++    expect((await deliver(h, old)).reason).toBe('stale_failure');
++    expect(await prisma.clientPurchase.findUnique({ where: { id: 'purchase' } })).toMatchObject({ status: 'paid', entitlement_active: true });
++  });
++
++  it('the no-outer-tx decline does not call Stripe under its short transaction and cancels drops atomically', async () => {
++    const h = harness();
++    await seed();
++    let inside = false;
++    const raw = { ...wiring(prisma), $transaction: async <T>(cb: (tx: object) => Promise<T>) => {
++      inside = true;
++      try { return await prisma.$transaction(tx => cb(wiring(tx))); } finally { inside = false; }
++    } };
++    type C = ConstructorParameters<typeof CheckoutWebhookHandlerService>;
++    const svc = new CheckoutWebhookHandlerService(fixture<C[0]>(raw), h.stripe, undefined, undefined, undefined, h.fanout);
++    h.stripe.retrievePaymentIntent.mockImplementation(async (id: string) => {
++      expect(inside).toBe(false);
++      return { id, status: 'requires_payment_method', latest_charge: 'ch_synthetic' };
++    });
++    await svc.handle(failed());
++    expect(await prisma.clientPurchase.findUnique({ where: { id: 'purchase' } })).toMatchObject({ status: 'payment_failed', entitlement_active: false });
++  });
++
++  it('real failure then successful hosted recovery restores only failure-canceled drops with no second activation/split/notification', async () => {
++    const h = harness();
++    await seed();
++    await activateMarker();
++    for (const [id, status, reason] of [
++      ['drop_pending', 'pending', null], ['drop_due', 'due', null],
++      ['drop_refund', 'canceled', 'canceled:refund'], ['drop_decision', 'canceled', 'canceled:partial_refund_decision'],
++      ['drop_fired', 'fired', null],
++    ]) {
++      await prisma.scheduledDrop.create({ data: {
++        id: id!, client_purchase_id: 'purchase', content_id: id!, asset_type: 'pdf', asset_id: 'asset',
++        cadence_kind: 'relative_to_purchase', cadence_payload: {}, status: status!, failure_reason: reason,
++        fire_at: new Date(0),
++      } });
++    }
++    await deliver(h, failed());
++    h.stripe.statusNow = 'succeeded';
++    expect(await deliver(h, succeeded())).toMatchObject({ reason: 'payment_recovered', claimed: true });
++    const drops = await prisma.scheduledDrop.findMany({ orderBy: { id: 'asc' } });
++    expect(drops.map(d => [d.id, d.status, d.failure_reason])).toEqual([
++      ['drop_decision', 'canceled', 'canceled:partial_refund_decision'], ['drop_due', 'pending', null],
++      ['drop_fired', 'fired', null], ['drop_pending', 'pending', null], ['drop_refund', 'canceled', 'canceled:refund'],
++    ]);
++    expect(h.entitled).not.toHaveBeenCalled();
++    expect(h.first.tryEmitFirstPayment).not.toHaveBeenCalled();
++    expect(h.splits.onChargeSucceeded).not.toHaveBeenCalled();
++    expect(h.restored).toHaveBeenCalledTimes(1);
++    expect(await prisma.purchaseFanout.count()).toBe(1);
++    await deliver(h, succeeded('evt_success_2'));
++    expect(h.restored).toHaveBeenCalledTimes(1);
++  });
++
++  it('restoration failure rolls back the recovery write, then a fresh attempt recovers successfully', async () => {
++    const h = harness();
++    await seed('payment_failed');
++    await activateMarker();
++    h.stripe.statusNow = 'succeeded';
++    h.restored.mockRejectedValueOnce(new Error('synthetic restoration unavailable'));
++    await expect(deliver(h, succeeded())).rejects.toThrow('synthetic restoration unavailable');
++    expect(await prisma.clientPurchase.findUnique({ where: { id: 'purchase' } })).toMatchObject({ status: 'payment_failed', entitlement_active: false });
++    expect((await deliver(h, succeeded())).reason).toBe('payment_recovered');
++  });
++
++  it('a committed coach unassign decision during payment failure must remain authoritative after payment recovery', async () => {
++    const h = harness();
++    await seed();
++    await activateMarker();
++    await prisma.partialRefundDecision.create({ data: {
++      client_purchase_id: 'purchase', stripe_refund_id: 're_synthetic', decision: 'pending',
++    } });
++    await prisma.scheduledDrop.create({ data: {
++      id: 'drop_unassigned', client_purchase_id: 'purchase', content_id: 'content', asset_type: 'pdf',
++      asset_id: 'asset', cadence_kind: 'relative_to_purchase', cadence_payload: {}, fire_at: new Date(0),
++    } });
++    await deliver(h, failed());
++    expect(await prisma.scheduledDrop.findUnique({ where: { id: 'drop_unassigned' } })).toMatchObject({
++      status: 'canceled', failure_reason: 'canceled:payment_failed',
++    });
++    type DC = ConstructorParameters<typeof PartialRefundDecisionService>;
++    const decisions = new PartialRefundDecisionService(fixture<DC[0]>(prisma), h.fanout);
++    const result = await decisions.decide('coach', 're_synthetic', 'unassign_drops');
++    expect(result.decision).toBe('unassign_drops');
++    expect(await prisma.partialRefundDecision.findUnique({ where: { stripe_refund_id: 're_synthetic' } }))
++      .toMatchObject({ decision: 'unassign_drops' });
++    h.stripe.statusNow = 'succeeded';
++    expect((await deliver(h, succeeded())).reason).toBe('payment_recovered');
++    // No mock here: actual decision writer, cancel predicate, restore SQL,
++    // and persisted records. Coach's removal is not merely a test annotation.
++    expect(await prisma.scheduledDrop.findUnique({ where: { id: 'drop_unassigned' } }))
++      .toMatchObject({ status: 'canceled' });
++  });
++
++  it('(control) a coach unassign decision before the payment failure remains canceled after recovery', async () => {
++    const h = harness();
++    await seed();
++    await activateMarker();
++    await prisma.partialRefundDecision.create({ data: {
++      client_purchase_id: 'purchase', stripe_refund_id: 're_synthetic', decision: 'pending',
++    } });
++    await prisma.scheduledDrop.create({ data: {
++      id: 'drop_unassigned', client_purchase_id: 'purchase', content_id: 'content', asset_type: 'pdf',
++      asset_id: 'asset', cadence_kind: 'relative_to_purchase', cadence_payload: {}, fire_at: new Date(0),
++    } });
++    type DC = ConstructorParameters<typeof PartialRefundDecisionService>;
++    const decisions = new PartialRefundDecisionService(fixture<DC[0]>(prisma), h.fanout);
++    await decisions.decide('coach', 're_synthetic', 'unassign_drops');
++    await deliver(h, failed());
++    h.stripe.statusNow = 'succeeded';
++    await deliver(h, succeeded());
++    expect(await prisma.scheduledDrop.findUnique({ where: { id: 'drop_unassigned' } }))
++      .toMatchObject({ status: 'canceled', failure_reason: 'canceled:partial_refund_decision' });
++  });
++
++  it.each(['refunded', 'canceled', 'expired', 'disputed', 'chargeback_lost'])('a real committed %s wins before the success row lock/read', async terminal => {
++    const h = harness();
++    await seed('payment_failed', false);
++    await other.clientPurchase.update({ where: { id: 'purchase' }, data: { status: terminal, entitlement_active: terminal === 'disputed' } });
++    expect((await deliver(h, succeeded())).claimed).toBe(false);
++    expect(await prisma.clientPurchase.findUnique({ where: { id: 'purchase' } })).toMatchObject({ status: terminal, entitlement_active: terminal === 'disputed' });
++    expect(h.entitled).not.toHaveBeenCalled();
++  });
++
++  it('real concurrent refund blocks on the success lock and becomes authoritative after success commits', async () => {
++    const h = harness();
++    await seed('payment_failed', false);
++    const locked = deferred<void>();
++    const release = deferred<void>();
++    const successRun = prisma.$transaction(async tx => {
++      const result = await h.svc.handle(succeeded(), fixture<Prisma.TransactionClient>(wiring(tx)), {});
++      locked.resolve();
++      await release.promise;
++      return result;
++    }, { timeout: 15000 });
++    await locked.promise;
++    let refundFinished = false;
++    const refundRun = other.clientPurchase.update({ where: { id: 'purchase' }, data: { status: 'refunded', entitlement_active: false } })
++      .then(row => { refundFinished = true; return row; });
++    await new Promise(r => setTimeout(r, 150));
++    expect(refundFinished).toBe(false);
++    release.resolve();
++    expect((await successRun).claimed).toBe(true);
++    await refundRun;
++    expect(await prisma.clientPurchase.findUnique({ where: { id: 'purchase' } })).toMatchObject({ status: 'refunded', entitlement_active: false });
++    expect(h.entitled).toHaveBeenCalledTimes(1);
++  });
++
++  it('two real simultaneous successful retries activate once', async () => {
++    const h = harness();
++    await seed('payment_failed', false);
++    const results = await Promise.all([deliver(h, succeeded('evt_a')), deliver(h, succeeded('evt_b'))]);
++    expect(results.filter(r => r.claimed)).toHaveLength(1);
++    expect(h.entitled).toHaveBeenCalledTimes(1);
++    expect(await prisma.purchaseFanout.count()).toBe(1);
++  });
++
++  it('never-activated hosted rows still await owning completion; failure after prior activation prevents late reactivation', async () => {
++    const h = harness();
++    await seed('payment_failed');
++    expect((await deliver(h, succeeded())).reason).toBe('checkout_session_activates');
++    await activateMarker();
++    expect((await deliver(h, completed)).reason).toBe('already_progressed');
++    expect(h.entitled).not.toHaveBeenCalled();
++  });
++
++  it.each([401, 403, 429, 500])('Stripe %s remains retryable with no entitlement write', async code => {
++    const h = harness();
++    await seed();
++    h.stripe.retrievePaymentIntent.mockRejectedValue(new StripeConnectApiError('synthetic-key-canary', code, 'api_key_invalid', 'authentication_error'));
++    await expect(deliver(h, failed())).rejects.toBeInstanceOf(ServiceUnavailableException);
++    expect(await prisma.clientPurchase.findUnique({ where: { id: 'purchase' } })).toMatchObject({ status: 'paid', entitlement_active: true });
++  });
++
++  it('a migrated two-row PaymentIntent association must not hide recovery of the activated owning purchase', async () => {
++    const h = harness();
++    await seed('payment_failed');
++    await activateMarker();
++    // This is the live two-open-session adoption shape in the candidate's
++    // own hosted regression: A owns the session, B was adopted by metadata.
++    await prisma.clientPurchase.create({ data: {
++      id: 'adopted', client_user_id: 'client', coach_user_id: 'coach', package_id: 'pkg', amount_cents: 10000,
++      idempotency_key: 'second-session', stripe_checkout_session_id: 'cs_other', stripe_payment_intent_id: pi,
++      status: 'payment_failed', entitlement_active: false,
++    } });
++    // PostgreSQL is allowed to answer findFirst with either row (no order).
++    // Make the legal B-first selection explicit, without changing writes,
++    // lock SQL, activation marker, or the owning purchase.
++    const wire = wiring(prisma);
++    const delegate = { ...wire.clientPurchase, findFirst: jest.fn(async () => prisma.clientPurchase.findUnique({ where: { id: 'adopted' } })) };
++    type C = ConstructorParameters<typeof CheckoutWebhookHandlerService>;
++    const svc = new CheckoutWebhookHandlerService(
++      fixture<C[0]>({ ...wire, clientPurchase: delegate }), h.stripe, undefined, undefined, undefined, h.fanout,
++    );
++    await prisma.$transaction(tx => svc.handle(succeeded(), fixture<Prisma.TransactionClient>({
++      ...wiring(tx), clientPurchase: { ...tx.clientPurchase, findFirst: delegate.findFirst },
++    }), {}));
++    // Acceptance assertion: real owner is recovered; B remains unentitled.
++    expect(await prisma.clientPurchase.findUnique({ where: { id: 'purchase' } })).toMatchObject({ status: 'paid', entitlement_active: true });
++    expect(await prisma.clientPurchase.findUnique({ where: { id: 'adopted' } })).toMatchObject({ status: 'payment_failed', entitlement_active: false });
++  });
++});
+diff --git a/test/aud-sol-661r6-selection.live.spec.ts b/test/aud-sol-661r6-selection.live.spec.ts
+new file mode 100644
+index 00000000..93c688ca
+--- /dev/null
++++ b/test/aud-sol-661r6-selection.live.spec.ts
+@@ -0,0 +1,213 @@
++// Independent #661 r6 probe. Real PostgreSQL, full schema and real services.
++// Only un-ordered query answers are pinned to legal result orders: oldest
++// findFirst and newest-first findMany. Existing explicit ordering is unchanged.
++// All extra PaymentIntent associations are generated by the real decline
++// metadata-fallback path in concurrent, separately held transactions.
++import type { Prisma } from '@prisma/client';
++import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
++import { CheckoutService } from '../src/checkout/checkout.service';
++import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
++import { PurchaseFanoutService } from '../src/packages/purchase-fanout.service';
++import { PrismaService } from '../src/prisma.service';
++import { bootstrapTestSchema } from './utils/bootstrap-test-schema';
++import { resetPublicSchema } from './utils/reset-public-schema';
++
++const url = process.env.MWB3_TEST_DATABASE_URL || '';
++const live = url ? describe : describe.skip;
++class StripeStub extends StripeConnectApiService {
++  status = 'requires_payment_method';
++  retrievePaymentIntent = jest.fn(async (id: string) => ({ id, status: this.status }));
++  createPaymentIntent = jest.fn(async (
++    _args: Parameters<StripeConnectApiService['createPaymentIntent']>[0],
++  ) => ({ id: 'pi_unused', client_secret: 'pi_unused_secret_test' }));
++  createEphemeralKey = jest.fn(async () => ({ secret: 'ek_test_solr6' }));
++}
++function wiring<T>(value: object): T { return value as T; }
++function legalOrder<T extends { clientPurchase: Prisma.TransactionClient['clientPurchase'] }>(
++  client: T,
++): T {
++  return new Proxy(client, {
++    get(target, key, receiver) {
++      const value = Reflect.get(target, key, receiver);
++      if (key === 'clientPurchase') {
++        return new Proxy(target.clientPurchase, {
++          get(delegate, method) {
++            const original = Reflect.get(delegate, method);
++            if (method === 'findFirst' || method === 'findMany') {
++              return (args: Prisma.ClientPurchaseFindManyArgs) =>
++                original.call(delegate, {
++                  ...args,
++                  orderBy: args.orderBy ?? { created_at: method === 'findFirst' ? 'asc' : 'desc' },
++                });
++            }
++            return typeof original === 'function' ? original.bind(delegate) : original;
++          },
++        });
++      }
++      return typeof value === 'function' ? value.bind(target) : value;
++    },
++  });
++}
++function deferred() {
++  let open: () => void = () => undefined;
++  const opened = new Promise<void>((r) => (open = r));
++  return { open, opened };
++}
++type Ev = { id: string; type: string; data: { object: Record<string, unknown> } };
++let seq = 0;
++const ev = (type: string, id: string, rest: Record<string, unknown> = {}): Ev => ({
++  id: `evt_solr6_${(seq += 1)}`, type, data: { object: { id, ...rest } },
++});
++
++live('AUD-SOL-661R6-117: filter the activation owner before applying a read cap', () => {
++  let prisma: PrismaService;
++  let handler: CheckoutWebhookHandlerService;
++  let checkout: CheckoutService;
++  const stripe = new StripeStub();
++  const CLIENT = 'solr6-client', COACH = 'solr6-coach', PKG = 'solr6-pkg';
++  const txRun = <T>(fn: (tx: Prisma.TransactionClient) => Promise<T>) =>
++    prisma.$transaction(fn, { timeout: 60_000, maxWait: 10_000 });
++  const deliver = async (e: Ev) => {
++    const pre = await handler.prefetchForOuterTx(e);
++    return txRun((tx) => handler.handle(e, legalOrder(tx), pre));
++  };
++  beforeAll(async () => {
++    prisma = new PrismaService({
++      datasources: { db: { url: `${url}${url.includes('?') ? '&' : '?'}connection_limit=16` } },
++    });
++    await prisma.$connect();
++    await resetPublicSchema(prisma);
++    await bootstrapTestSchema(prisma);
++    for (const id of [CLIENT, COACH]) {
++      await prisma.user.create({
++        data: { id, supabase_id: id, email: `${id}@example.test`, name: id },
++      });
++    }
++    await prisma.coachPackage.create({
++      data: { id: PKG, coach_id: COACH, name: 'Audit package', amount_cents: 5000,
++        published_at: new Date() },
++    });
++    await prisma.user.update({ where: { id: CLIENT }, data: { coach_id: COACH } });
++    await prisma.connectAccount.create({
++      data: { coach_user_id: COACH, stripe_account_id: 'acct_solr6', charges_enabled: true },
++    });
++    await prisma.connectCustomer.create({
++      data: { client_user_id: CLIENT, stripe_customer_id: 'cus_solr6' },
++    });
++    const orderedPrisma = legalOrder(prisma);
++    const fanout = new PurchaseFanoutService(undefined, undefined, undefined, orderedPrisma);
++    handler = new CheckoutWebhookHandlerService(
++      orderedPrisma, stripe, undefined, undefined, undefined, fanout,
++    );
++    type C = ConstructorParameters<typeof CheckoutService>;
++    checkout = new CheckoutService(
++      prisma, stripe,
++      wiring<C[2]>({ getById: (id: string) => prisma.coachPackage.findUnique({ where: { id } }) }),
++      wiring<C[3]>({ ready: true, reason: null }),
++      wiring<C[4]>({ planFor: async () => ({
++        application_fee_cents: 100, head_coach_split_cents: 0,
++      }) }),
++      wiring<C[5]>({ evaluate: async () => ({ ok: true }) }),
++    );
++  }, 180_000);
++  afterAll(async () => {
++    if (prisma) await prisma.$disconnect();
++  });
++
++  it.each([9, 10])(
++    'the activated owner still recovers with %i concurrent real PaymentSheet reservations adopted by declines',
++    async (adoptionCount) => {
++      stripe.status = 'requires_payment_method';
++      const pi = `pi_solr6_${adoptionCount}`;
++      const owner = `owner-${adoptionCount}`;
++      const baseTime = Date.now();
++      const makePending = (id: string, time: number) =>
++        prisma.clientPurchase.create({ data: {
++          id, client_user_id: CLIENT, coach_user_id: COACH, package_id: PKG,
++          amount_cents: 5000, stripe_checkout_session_id: `cs_${id}`,
++          stripe_customer_id: 'cus_solr6', idempotency_key: id, created_at: new Date(time),
++        } });
++      await makePending(owner, baseTime);
++      const release = deferred();
++      const releaseMint = deferred();
++      const adopting: Promise<void>[] = [];
++      const creating: Array<ReturnType<CheckoutService['createPaymentIntentForClient']>> = [];
++      try {
++        for (let i = 0; i < adoptionCount; i += 1) {
++          const minted = deferred();
++          const key = `00000000-0000-4000-8000-${String(adoptionCount * 100 + i).padStart(12, '0')}`;
++          stripe.createPaymentIntent.mockImplementationOnce(async () => {
++            minted.open();
++            await releaseMint.opened;
++            return { id: `pi_other_${adoptionCount}_${i}`, client_secret: 'pi_other_secret_test' };
++          });
++          const create = checkout.createPaymentIntentForClient(CLIENT, {
++            package_id: PKG, idempotency_key: key,
++          });
++          creating.push(create);
++          await Promise.race([minted.opened, create]);
++          const reserved = await prisma.clientPurchase.findUniqueOrThrow({
++            where: { idempotency_key: `pi-${CLIENT}-${key}` },
++          });
++          const id = reserved.id;
++          expect(reserved).toMatchObject({
++            status: 'pending', stripe_payment_intent_id: null,
++            stripe_checkout_session_id: `pi-reserved-pi-${CLIENT}-${key}`,
++          });
++          const held = deferred();
++          const failed = ev('payment_intent.payment_failed', pi, {
++            metadata: { tgp_package_id: PKG, tgp_client_user_id: CLIENT },
++          });
++          const adoption = txRun(async (tx) => {
++            const result = await handler.handle(failed, legalOrder(tx), {});
++            expect(result).toEqual({ claimed: true, purchase_id: id });
++            held.open();
++            await release.opened;
++          });
++          adopting.push(adoption);
++          await Promise.race([held.opened, adoption]);
++        }
++        release.open();
++        await Promise.all(adopting);
++        // Owning completion and failure run through the real handler while
++        // the unrelated native requests are still awaiting provider replies.
++        await deliver(ev('checkout.session.completed', `cs_${owner}`, {
++          payment_intent: pi, mode: 'payment', customer: 'cus_solr6',
++        }));
++        expect(await prisma.purchaseFanout.count({ where: { purchase_id: owner } })).toBe(1);
++        await prisma.scheduledDrop.create({ data: {
++          id: `drop-${owner}`, client_purchase_id: owner, content_id: owner, asset_type: 'workout',
++          asset_id: 'asset', cadence_kind: 'offset_days', cadence_payload: {},
++          fire_at: new Date(baseTime + 86_400_000),
++        } });
++        await deliver(ev('payment_intent.payment_failed', pi));
++        expect(await prisma.clientPurchase.count({
++          where: { stripe_payment_intent_id: pi, status: 'payment_failed' },
++        })).toBe(adoptionCount + 1);
++        expect(await prisma.clientPurchase.count({
++          where: { stripe_payment_intent_id: pi, entitlement_active: true },
++        })).toBe(0);
++        stripe.status = 'succeeded';
++        const result = await deliver(ev('payment_intent.succeeded', pi));
++        // The unrelated provider replies now publish their own PI ids.
++        // They cannot fix an already consumed success for the hosted owner.
++        releaseMint.open();
++        await Promise.all(creating);
++        const persisted = await prisma.clientPurchase.findUniqueOrThrow({ where: { id: owner } });
++        const drop = await prisma.scheduledDrop.findUniqueOrThrow({ where: { id: `drop-${owner}` } });
++        expect({ result, status: persisted.status, entitled: persisted.entitlement_active,
++          drop: drop.status }).toEqual({
++          result: { claimed: true, purchase_id: owner, reason: 'payment_recovered' },
++          status: 'paid', entitled: true, drop: 'pending',
++        });
++        expect(await prisma.clientPurchase.count({
++          where: { stripe_payment_intent_id: pi, entitlement_active: true, id: { not: owner } },
++        })).toBe(0);
++      } finally {
++        release.open();
++        releaseMint.open();
++        await Promise.all([...adopting, ...creating]);
++      }
++    }, 120_000,
++  );
++});
+diff --git a/test/zz-aud-sol120-pg.global.js b/test/zz-aud-sol120-pg.global.js
+new file mode 100644
+index 00000000..34f9e8f4
+--- /dev/null
++++ b/test/zz-aud-sol120-pg.global.js
+@@ -0,0 +1,24 @@
++// CI lane only (B-661-R6-117; never in the PR): start the runner's own
++// PostgreSQL and point the MWB3 live gate at a throwaway database, the way
++// the mwb-3-live-tests job's service container does.
++const { execSync } = require('child_process');
++module.exports = async () => {
++  const sh = (c) => execSync(c, { stdio: 'inherit', cwd: '/tmp' });
++  sh('sudo systemctl start postgresql.service');
++  for (let i = 0; i < 60; i += 1) {
++    try {
++      execSync('sudo -u postgres psql -tAc "select 1"', { stdio: 'ignore', cwd: '/tmp' });
++      break;
++    } catch (err) {
++      execSync('sleep 1');
++    }
++  }
++  sh(`sudo -u postgres psql -v ON_ERROR_STOP=1 -c "ALTER USER postgres WITH PASSWORD 'postgres'"`);
++  sh('sudo -u postgres psql -c "DROP DATABASE IF EXISTS l661"');
++  sh('sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE l661"');
++  sh('sudo -u postgres psql -tAc "select version()"');
++  const url = 'postgresql://postgres:postgres@localhost:5432/l661';
++  process.env.MWB3_TEST_DATABASE_URL = url;
++  process.env.DATABASE_URL = url;
++  process.env.DIRECT_URL = url;
++};

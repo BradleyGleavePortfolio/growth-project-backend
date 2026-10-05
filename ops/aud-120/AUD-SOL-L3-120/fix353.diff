@@ -1,0 +1,694 @@
+diff --git a/src/entitlements/dunning/DunningBanner.tsx b/src/entitlements/dunning/DunningBanner.tsx
+index 10bb6f4a..59a495fe 100644
+--- a/src/entitlements/dunning/DunningBanner.tsx
++++ b/src/entitlements/dunning/DunningBanner.tsx
+@@ -2,8 +2,8 @@ import React, { useCallback, useMemo } from 'react';
+ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+ import { useTheme } from '../../theme/ThemeProvider';
+ import type { SemanticTokens } from '../../theme/tokens';
+-import { SUPPORT_EMAIL } from '../../constants/support';
+ import { formatDunningAmount, formatDunningDate, type ClientDunningStatus } from './dunningApi';
++import { disputePauseFacts } from './dunningErrorCopy';
+ import { useDunning } from './DunningLockoutProvider';
+ import { isDisputeCycle } from './DunningLockoutScreen';
+ 
+@@ -23,13 +23,12 @@ export function bannerCopy(status: ClientDunningStatus, now: number = Date.now()
+   const amount = formatDunningAmount(status.amount_cents, status.currency);
+   const lockOn = upcomingLockDate(status, now);
+   if (isDisputeCycle(status)) {
+-    // B-353-2: a reversed payment is not fixed by a new card (backend B-628-8).
+-    const what = amount ? `Your bank reversed an earlier payment of ${amount}.` : 'Your bank reversed an earlier payment.';
+-    const when = lockOn ? ` Access pauses on ${lockOn} unless it is sorted out by then.` : '';
+-    return {
+-      title: 'A payment was reversed',
+-      body: `${what} Saving a new card does not settle it. Email ${SUPPORT_EMAIL} or message your coach to sort it out.${when}`,
+-    };
++    // R-DISPUTE-PAUSE (B-353-3 / B-353-6): access to the disputed plan has
++    // already ended, so no lock date, no condition and no card fix.
++    const what = `Your bank reversed a payment${amount ? ` of ${amount}` : ''}${
++      status.coach_name ? ` to ${status.coach_name}` : ''
++    }.`;
++    return { title: 'A payment was reversed', body: `${what} ${disputePauseFacts(status.coach_name, 'plan')}` };
+   }
+   const failedOn = formatDunningDate(status.failed_at);
+   const charge = amount ? `Your payment of ${amount} did not go through` : 'Your last payment did not go through';
+diff --git a/src/entitlements/dunning/DunningLockoutProvider.tsx b/src/entitlements/dunning/DunningLockoutProvider.tsx
+index 29755530..5447d6c7 100644
+--- a/src/entitlements/dunning/DunningLockoutProvider.tsx
++++ b/src/entitlements/dunning/DunningLockoutProvider.tsx
+@@ -29,6 +29,16 @@ export type EndPlanResult =
+    */
+   | { ok: false; retired: true; error: null };
+ 
++/**
++ * B-353-2: who asked to end the plan, bound when the confirmation opened: the
++ * plan it showed and whether that screen and account are still current. A
++ * retired owner sends no cancel.
++ */
++export interface EndPlanOwner {
++  purchaseId: string | null;
++  isCurrent: () => boolean;
++}
++
+ export interface DunningContextValue {
+   status: ClientDunningStatus | null;
+   locked: boolean;
+@@ -37,7 +47,7 @@ export interface DunningContextValue {
+   /** Open the native Update card screen and start the card form. */
+   updateCard: (surface: string) => void;
+   /** End the plan in dunning (2A): void the unpaid invoice, access ends now. */
+-  endPlan: (surface: string) => Promise<EndPlanResult>;
++  endPlan: (surface: string, owner: EndPlanOwner) => Promise<EndPlanResult>;
+   messageCoach: () => void;
+ }
+ 
+@@ -200,16 +210,21 @@ export function DunningLockoutProvider({
+   );
+ 
+   const endPlan = useCallback(
+-    async (surface: string): Promise<EndPlanResult> => {
+-      const purchaseId = status?.purchase_id;
+-      if (!purchaseId) return { ok: false, error: localDunningError('PLAN_NOT_LOADED') };
++    async (surface: string, owner: EndPlanOwner): Promise<EndPlanResult> => {
+       const generation = dunningLockoutStore.currentGeneration();
+-      const owns = () => aliveRef.current && generation === dunningLockoutStore.currentGeneration();
++      const providerOwns = () => aliveRef.current && generation === dunningLockoutStore.currentGeneration();
++      const owns = () => owner.isCurrent() && providerOwns();
++      // B-353-2: a confirmation that outlived its screen, this provider or the
++      // account sends nothing; it never acquires a new owner here.
++      if (!owns()) return { ok: false, retired: true, error: null };
++      // The plan the client confirmed, never one that loaded since.
++      const purchaseId = owner.purchaseId;
++      if (!purchaseId) return { ok: false, error: localDunningError('PLAN_NOT_LOADED') };
+       try {
+         const response = await dunningApi.cancelPlan(purchaseId);
+-        // B-353-1: a late answer for a retired provider or account is not shown.
+-        if (!owns()) return { ok: false, retired: true, error: null };
+-        await refresh();
++        // Once sent, the same account's provider re-reads the server truth even
++        // if the screen left; a retired screen or account is shown nothing.
++        if (providerOwns()) await refresh();
+         if (!owns()) return { ok: false, retired: true, error: null };
+         return { ok: true, response };
+       } catch (err) {
+@@ -217,14 +232,13 @@ export function DunningLockoutProvider({
+         if (error.report) {
+           captureError(err, { surface, dunning_error_code: error.code, request_id: error.reference });
+         }
+-        if (!owns()) return { ok: false, retired: true, error: null };
+         // A lost answer may still have ended the plan: show the truth.
+-        await refresh();
++        if (providerOwns()) await refresh();
+         if (!owns()) return { ok: false, retired: true, error: null };
+         return { ok: false, error };
+       }
+     },
+-    [status?.purchase_id, refresh],
++    [refresh],
+   );
+ 
+   const value = useMemo<DunningContextValue>(
+diff --git a/src/entitlements/dunning/DunningLockoutScreen.tsx b/src/entitlements/dunning/DunningLockoutScreen.tsx
+index 06c76d6c..dc216fa8 100644
+--- a/src/entitlements/dunning/DunningLockoutScreen.tsx
++++ b/src/entitlements/dunning/DunningLockoutScreen.tsx
+@@ -14,8 +14,9 @@ import type { SemanticTokens } from '../../theme/tokens';
+ import { formatDunningAmount, formatDunningDate, type ClientDunningStatus } from './dunningApi';
+ import { SupportEmailFallback, useSupportEmail } from '../../components/support/SupportEmailFallback';
+ import { SUPPORT_EMAIL } from '../../constants/support';
+-import { cancelOutcomeCopy, type DunningErrorCopy } from './dunningErrorCopy';
+-import type { EndPlanResult } from './DunningLockoutProvider';
++import { cancelOutcomeCopy, disputePauseFacts, type DunningErrorCopy } from './dunningErrorCopy';
++import { dunningLockoutStore } from './dunningLockoutStore';
++import type { EndPlanOwner, EndPlanResult } from './DunningLockoutProvider';
+ 
+ export interface DunningLockoutScreenProps {
+   status: ClientDunningStatus | null;
+@@ -24,8 +25,11 @@ export interface DunningLockoutScreenProps {
+   onRefresh: () => Promise<void> | void;
+   /** Opens the native Update card screen (reachable while locked). */
+   onUpdateCard: (surface: string) => void;
+-  /** 2A: void the unpaid invoice and end the plan now. */
+-  onEndPlan: (surface: string) => Promise<EndPlanResult>;
++  /**
++   * 2A: void the unpaid invoice and end the plan now. `owner` is bound when
++   * the confirmation opens (B-353-2): a retired owner sends nothing.
++   */
++  onEndPlan: (surface: string, owner: EndPlanOwner) => Promise<EndPlanResult>;
+   onMessageCoach: () => void;
+   onOpenDataExport: () => void;
+   onOpenDeleteAccount: () => void;
+@@ -34,9 +38,17 @@ export interface DunningLockoutScreenProps {
+   supportReference: string | null;
+ }
+ 
+-/** True when the cycle is a payment the bank reversed (a new card does not settle it). */
++/**
++ * True when the cycle is a payment the bank reversed (R-DISPUTE-PAUSE:
++ * access has ended, billing is paused, the coach decides on restarting).
++ */
+ export function isDisputeCycle(status: ClientDunningStatus | null | undefined): boolean {
+-  return status?.kind === 'dispute';
++  return status?.kind === 'dispute' || status?.reason === 'dispute_paused';
++}
++
++/** 'account' when the dispute locks the whole app, 'plan' when another plan keeps access. */
++export function disputeScope(status: ClientDunningStatus | null | undefined): 'account' | 'plan' {
++  return status?.state === 'locked' && !status.lock_waived ? 'account' : 'plan';
+ }
+ 
+ /** True while a payment is overdue or reversed and the plan is not ended. */
+@@ -55,8 +67,11 @@ export function lockoutSummary(status: ClientDunningStatus | null): string {
+   const amount = formatDunningAmount(status.amount_cents ?? null, status.currency ?? null);
+   const coach = status.coach_name ?? 'your coach';
+   if (isDisputeCycle(status)) {
+-    // B-353-2: the bank took back a payment already made (backend B-628-8).
+-    return `Your bank reversed an earlier payment${amount ? ` of ${amount}` : ''} to ${coach}, so your plan is paused. ${safe}`;
++    // R-DISPUTE-PAUSE (B-353-3 / B-353-6): the three facts, no lock date, no card fix.
++    return `Your bank reversed a payment${amount ? ` of ${amount}` : ''} to ${coach}. ${disputePauseFacts(
++      status.coach_name,
++      disputeScope(status),
++    )} ${safe}`;
+   }
+   const since = formatDunningDate(status.failed_at ?? null);
+   const what = amount ? `Your payment of ${amount} to ${coach}` : `Your payment to ${coach}`;
+@@ -67,13 +82,14 @@ export function lockoutSummary(status: ClientDunningStatus | null): string {
+ /**
+  * The next step, true for the lock kind. A failed payment: a working card is
+  * charged right away and the plan comes back once it clears (ruling D12). A
+- * reversed payment: a new card does not settle it, so the step is support.
++ * reversed payment: only the coach restarts the plan, so the step is a
++ * message to the coach; support answers questions, it does not restore access.
+  */
+ export function lockoutNextStep(status: ClientDunningStatus | null): string {
+   if (!status) return 'Pull down to load the details, or email support.';
+   if (isDisputeCycle(status)) {
+-    const coach = status.coach_name ? `message ${status.coach_name}` : 'message your coach';
+-    return `Saving a new card does not settle it. To sort it out, email ${SUPPORT_EMAIL} or ${coach}.`;
++    const coach = status.coach_name ? `Message ${status.coach_name}` : 'Message your coach';
++    return `${coach} to talk about restarting. For any other question, email ${SUPPORT_EMAIL}.`;
+   }
+   return 'To restore access, tap Update card and add a card that works. The card is charged right away, and your plan comes back as soon as the payment clears.';
+ }
+@@ -81,14 +97,16 @@ export function lockoutNextStep(status: ClientDunningStatus | null): string {
+ /**
+  * The End my plan confirmation, shared by the lockout and the Update card
+  * screen. In dunning (2A) access ends now; a payment that landed in the
+- * meantime keeps the paid period (backend cancel rule). A reversed payment
+- * also ends now, and ending the plan does not settle it (backend B-628-8).
+- * Outside dunning (option A) access runs to the end of the paid period.
++ * meantime keeps the paid period (backend cancel rule). A reversed payment:
++ * access has already ended and billing is paused (R-DISPUTE-PAUSE); the
++ * screens offer no End my plan for it (D2c has no cancel route), so this
++ * body only keeps any older entry point truthful. Outside dunning (option A)
++ * access runs to the end of the paid period.
+  */
+ export function endPlanAlertBody(status: ClientDunningStatus | null | undefined): string {
+   const amount = formatDunningAmount(status?.amount_cents ?? null, status?.currency ?? null);
+   if (inDunning(status) && isDisputeCycle(status)) {
+-    return `Your access ends now. Ending the plan does not settle the payment your bank reversed. Email ${SUPPORT_EMAIL} to sort it out. Your data stays in your account.`;
++    return `Access to this plan has already ended and its billing is paused. Your coach decides whether to restart it. If you end it, the plan ends now instead. Your data stays in your account.`;
+   }
+   if (inDunning(status)) {
+     return `${amount ? `The unpaid ${amount} is canceled, so you are not charged for it.` : 'The unpaid balance is canceled, so you are not charged for it.'} Your access ends now. If a payment went through in the meantime, you keep the period you paid for instead. Your data stays in your account.`;
+@@ -145,17 +163,24 @@ export function DunningLockoutScreen({
+ 
+   const handleEndPlan = useCallback(() => {
+     if (ending) return;
++    // B-353-2: the confirmation belongs to this screen, this account and the
++    // plan on screen when it opened. Accepted after any of them is gone, it
++    // sends nothing.
++    const generation = dunningLockoutStore.currentGeneration();
++    const isCurrent = () => aliveRef.current && generation === dunningLockoutStore.currentGeneration();
++    const owner: EndPlanOwner = { purchaseId: status?.purchase_id ?? null, isCurrent };
+     Alert.alert('End your plan now?', endPlanAlertBody(status), [
+       { text: 'Keep my plan', style: 'cancel' },
+       {
+         text: 'End my plan',
+         style: 'destructive',
+         onPress: () => {
++          if (!isCurrent()) return;
+           setEnding(true);
+           setEndError(null);
+-          void onEndPlan('DunningLockoutScreen')
++          void onEndPlan('DunningLockoutScreen', owner)
+             .then((out) => {
+-              if (!aliveRef.current || ('retired' in out && out.retired)) return;
++              if (!isCurrent() || ('retired' in out && out.retired)) return;
+               if (out.ok) {
+                 const c = cancelOutcomeCopy(out.response, { dispute });
+                 Alert.alert(c.title, c.body);
+@@ -164,7 +189,7 @@ export function DunningLockoutScreen({
+               }
+             })
+             .finally(() => {
+-              if (aliveRef.current) setEnding(false);
++              if (isCurrent()) setEnding(false);
+             });
+         },
+       },
+@@ -190,7 +215,7 @@ export function DunningLockoutScreen({
+       >
+         <Text style={styles.eyebrow}>Payment</Text>
+         <Text style={styles.title} accessibilityRole="header">
+-          Your plan is paused
++          {dispute ? 'Your access has ended' : 'Your plan is paused'}
+         </Text>
+         <Text style={styles.body} testID="dunning-lockout-summary">
+           {lockoutSummary(status)}
+@@ -205,54 +230,51 @@ export function DunningLockoutScreen({
+           </Text>
+         ) : null}
+ 
+-        {dispute ? (
++        {/* R-DISPUTE-PAUSE: for a reversed payment the coach is the only way
++            back, so Message coach leads and there is no card or End my plan
++            path (D2c sends neither route). */}
++        {dispute ? null : (
+           <TouchableOpacity
+             style={styles.primary}
+-            onPress={handleContactSupport}
++            onPress={handleUpdateCard}
+             accessibilityRole="button"
+-            testID="dunning-lockout-support-primary"
++            testID="dunning-lockout-update-card"
+           >
+-            <Text style={styles.primaryText}>Email support</Text>
++            <Text style={styles.primaryText}>Update card</Text>
+           </TouchableOpacity>
+-        ) : null}
+-        <TouchableOpacity
+-          style={dispute ? styles.secondary : styles.primary}
+-          onPress={handleUpdateCard}
+-          accessibilityRole="button"
+-          testID="dunning-lockout-update-card"
+-        >
+-          <Text style={dispute ? styles.secondaryText : styles.primaryText}>Update card</Text>
+-        </TouchableOpacity>
++        )}
+ 
+         <TouchableOpacity
+-          style={styles.secondary}
++          style={dispute ? styles.primary : styles.secondary}
+           onPress={onMessageCoach}
+           accessibilityRole="button"
+           testID="dunning-lockout-message-coach"
+         >
+-          <Text style={styles.secondaryText}>{coachLabel}</Text>
++          <Text style={dispute ? styles.primaryText : styles.secondaryText}>{coachLabel}</Text>
+         </TouchableOpacity>
+ 
+-        <TouchableOpacity
+-          style={[styles.secondary, ending && styles.disabled]}
+-          onPress={handleEndPlan}
+-          disabled={ending}
+-          accessibilityRole="button"
+-          testID="dunning-lockout-end-plan"
+-        >
+-          {ending ? (
+-            <ActivityIndicator color={semanticColors.textPrimary} />
+-          ) : (
+-            <Text style={styles.secondaryText}>End my plan</Text>
+-          )}
+-        </TouchableOpacity>
++        {dispute ? null : (
++          <TouchableOpacity
++            style={[styles.secondary, ending && styles.disabled]}
++            onPress={handleEndPlan}
++            disabled={ending}
++            accessibilityRole="button"
++            testID="dunning-lockout-end-plan"
++          >
++            {ending ? (
++              <ActivityIndicator color={semanticColors.textPrimary} />
++            ) : (
++              <Text style={styles.secondaryText}>End my plan</Text>
++            )}
++          </TouchableOpacity>
++        )}
+         {endError ? (
+           <Text style={styles.notice} testID="dunning-lockout-end-error">
+             {endError.message}
+           </Text>
+         ) : null}
+ 
+-        <Text style={styles.sectionLabel}>Still available while your plan is paused</Text>
++        <Text style={styles.sectionLabel}>{dispute ? 'Still available' : 'Still available while your plan is paused'}</Text>
+         <Row label="Download my data" onPress={onOpenDataExport} styles={styles} testID="dunning-lockout-data-export" />
+         <Row label="Delete my account" onPress={onOpenDeleteAccount} styles={styles} testID="dunning-lockout-delete-account" />
+         <Row label="Email support" onPress={handleContactSupport} styles={styles} testID="dunning-lockout-support" />
+@@ -269,9 +291,7 @@ export function DunningLockoutScreen({
+         ) : null}
+         <Row label="Sign out" onPress={onSignOut} styles={styles} testID="dunning-lockout-sign-out" />
+ 
+-        <Text style={styles.footnote}>
+-          Already paid? Pull down to check again.
+-        </Text>
++        {dispute ? null : <Text style={styles.footnote}>Already paid? Pull down to check again.</Text>}
+       </ScrollView>
+     </SafeAreaView>
+   );
+diff --git a/src/entitlements/dunning/UpdateCardScreen.tsx b/src/entitlements/dunning/UpdateCardScreen.tsx
+index d9966246..5c2fc035 100644
+--- a/src/entitlements/dunning/UpdateCardScreen.tsx
++++ b/src/entitlements/dunning/UpdateCardScreen.tsx
+@@ -27,6 +27,8 @@ import {
+   cancelOutcomeCopy,
+   cardUpdateOutcomeCopy,
+   describeDunningError,
++  disputeNotSettledLine,
++  disputePauseFacts,
+   type DunningErrorCopy,
+ } from './dunningErrorCopy';
+ import { useDunning } from './DunningLockoutProvider';
+@@ -36,6 +38,7 @@ import {
+   DUNNING_SUPPORT_SUBJECT,
+   dunningSupportBody,
+   dunningSupportReferenceNote,
++  disputeScope,
+   endPlanAlertBody,
+   isDisputeCycle,
+ } from './DunningLockoutScreen';
+@@ -83,9 +86,12 @@ export function updateCardIntro(status: ClientDunningStatus | null | undefined):
+   const amount = formatDunningAmount(status?.amount_cents ?? null, status?.currency ?? null);
+   const coach = status?.coach_name ?? 'your coach';
+   if (inDunning(status) && isDisputeCycle(status)) {
+-    // B-353-2: a new card does not settle a payment the bank took back, so
+-    // no charge and no comeback are promised (backend B-628-8).
+-    return `Your bank took back an earlier payment${amount ? ` of ${amount}` : ''} to ${coach}${status?.state === 'locked' ? ', so your plan is paused' : ''}. A new card does not settle that; email support to sort it out. A card saved here is used for your future payments.`;
++    // R-DISPUTE-PAUSE (B-353-3 / B-353-7): the three facts; no charge, no
++    // comeback, no support fix and no future-payment line are promised.
++    return `Your bank took back a payment${amount ? ` of ${amount}` : ''} to ${coach}. ${disputePauseFacts(
++      status?.coach_name,
++      disputeScope(status),
++    )}`;
+   }
+   if (inDunning(status) && status?.state === 'locked') {
+     return amount
+@@ -289,17 +295,22 @@ export function UpdateCardScreen({ route, navigation }: UpdateCardScreenProps) {
+ 
+   const endPlan = useCallback(() => {
+     if (!dunning || busy) return;
++    // B-353-2: owned from the moment the confirmation opens, by this screen,
++    // this account and the plan it shows. Accepted after the screen left or
++    // the account changed, it sends nothing.
++    const isCurrent = claimOwner();
++    const purchaseId = status?.purchase_id ?? null;
+     Alert.alert(inDunning(status) ? 'End your plan now?' : 'End your plan?', endPlanAlertBody(status), [
+       { text: 'Keep my plan', style: 'cancel' },
+       {
+         text: 'End my plan',
+         style: 'destructive',
+         onPress: () => {
+-          const isCurrent = claimOwner();
++          if (!isCurrent()) return;
+           setBusy('cancel');
+           setError(null);
+           void dunning
+-            .endPlan('UpdateCardScreen')
++            .endPlan('UpdateCardScreen', { purchaseId, isCurrent })
+             .then((out) => {
+               // B-353-2: a retired screen shows no late answer and does not navigate.
+               if (!isCurrent() || ('retired' in out && out.retired)) return;
+@@ -330,13 +341,10 @@ export function UpdateCardScreen({ route, navigation }: UpdateCardScreenProps) {
+   }, [supportEmail]);
+ 
+   // B-353-2: disputes the confirm reports (or the quote read before the card
+-  // form named) stay in the outcome: saving a card does not settle them.
++  // form named) stay in the outcome with the R-DISPUTE-PAUSE facts.
+   const outcome = result ? cardUpdateOutcomeCopy(result.response, quote?.disputes ?? []) : null;
+   const dispute = isDisputeCycle(status);
+-  const quoteDisputeNote =
+-    !outcome && !dispute && quote && quote.disputes.length > 0
+-      ? 'Another plan has a payment your bank reversed. Saving a card does not settle that; email support to sort it out.'
+-      : null;
++  const quoteDisputeNote = !outcome && !dispute && quote ? disputeNotSettledLine(quote.disputes) : null;
+   const settled = !pending && result && ['paid', 'saved', 'processing'].includes(result.response.outcome);
+   const needsBank = pending?.kind === 'bank';
+   const quoteTotal = formatDunningTotals(quote?.totals ?? []);
+@@ -466,7 +474,21 @@ export function UpdateCardScreen({ route, navigation }: UpdateCardScreenProps) {
+           </TouchableOpacity>
+         )}
+ 
+-        {inDunning(status) && status?.purchase_id && !settled ? (
++        {dispute && inDunning(status) ? (
++          <TouchableOpacity
++            style={styles.secondary}
++            onPress={dunning?.messageCoach}
++            accessibilityRole="button"
++            testID="update-card-message-coach"
++          >
++            <Text style={styles.secondaryText}>
++              {status?.coach_name ? `Message ${status.coach_name}` : 'Message your coach'}
++            </Text>
++          </TouchableOpacity>
++        ) : null}
++
++        {/* R-DISPUTE-PAUSE: no End my plan for a reversed payment (D2c has no cancel route). */}
++        {inDunning(status) && !dispute && status?.purchase_id && !settled ? (
+           <TouchableOpacity
+             style={styles.secondary}
+             onPress={endPlan}
+diff --git a/src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx b/src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx
+index c45cb5ce..5302511c 100644
+--- a/src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx
++++ b/src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx
+@@ -1,7 +1,8 @@
+ /**
+- * B-LOCK-118 (#353): the lockout belongs to the signed-in account and the
+- * mounted screens (B-353-1, B-353-2), a reversed payment is described as one
+- * (B-353-2 / B-353-3 Sol), no first person in client copy (B-353-3), the
++ * B-LOCK-118 / B-LOCK2-120 (#353): the lockout belongs to the signed-in
++ * account and the mounted screens (B-353-1, B-353-2, including an End my plan
++ * confirmation), a reversed payment says R-DISPUTE-PAUSE on every surface
++ * (B-353-3 / B-353-6 / B-353-7), no first person in client copy (B-353-3), the
+  * overlay is modal for screen readers (B-353-4), and the screens stay
+  * truthful against today's production backend (no dunning routes, flag off).
+  */
+@@ -9,6 +10,7 @@ import React from 'react';
+ import { Alert, Text } from 'react-native';
+ import { act, fireEvent, isHiddenFromAccessibility, render, waitFor } from '@testing-library/react-native';
+ import { authEvents } from '../../../utils/authEvents';
++import { SUPPORT_EMAIL } from '../../../constants/support';
+ import type { ClientDunningStatus } from '../dunningApi';
+ import { dunningLockoutStore } from '../dunningLockoutStore';
+ import { DunningLockoutProvider, useDunning } from '../DunningLockoutProvider';
+@@ -387,23 +389,138 @@ describe('B-353-2: a retired Update card screen starts no further step', () => {
+   });
+ });
+ 
++describe('B-353-2: an End my plan confirmation belongs to the screen, account and plan that opened it', () => {
++  const ENDED = { outcome: 'ended', purchase_id: 'p1', voided_invoice_count: 1, voided_amount_cents: 15000, currency: 'usd' };
++  let alert: jest.SpyInstance;
++  beforeEach(() => {
++    alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
++  });
++  afterEach(() => alert.mockRestore());
++  const confirmOf = (call = 0) =>
++    (alert.mock.calls[call][2] as Array<{ style?: string; onPress?: () => void }>).find((b) => b.style === 'destructive')
++      ?.onPress;
++  const cancels = () => mockPost.mock.calls.filter(([url]) => String(url).endsWith('/cancel'));
++
++  it('Update card: accepted after the screen left (provider still mounted), no cancel is sent', async () => {
++    route = 'UpdateCard';
++    mockGet.mockResolvedValue({ data: LOCKED });
++    const screen = await render(<Provider><UpdateCardScreen /></Provider>);
++    await fireEvent.press(await screen.findByTestId('update-card-end-plan'));
++    const confirm = confirmOf();
++    await screen.rerender(<Provider><Text>elsewhere</Text></Provider>);
++    await act(async () => confirm?.());
++    expect(cancels()).toEqual([]);
++  });
++
++  it('Update card and lockout: accepted after the account changed, no cancel for either account', async () => {
++    route = 'UpdateCard';
++    mockGet.mockResolvedValue({ data: LOCKED });
++    const card = await render(<Provider><UpdateCardScreen /></Provider>);
++    await fireEvent.press(await card.findByTestId('update-card-end-plan'));
++    const props = lockoutProps(LOCKED);
++    const lockout = await render(<DunningLockoutScreen {...props} />);
++    await fireEvent.press(lockout.getByTestId('dunning-lockout-end-plan'));
++    await act(async () => {
++      authEvents.emit('logout');
++    });
++    await act(async () => {
++      confirmOf(0)?.();
++      confirmOf(1)?.();
++    });
++    expect(cancels()).toEqual([]);
++    expect(props.onEndPlan).not.toHaveBeenCalled();
++  });
++
++  it('lockout: accepted after the lockout lifted, no cancel; the plan sent is the one the dialog showed', async () => {
++    mockGet.mockResolvedValue({ data: LOCKED });
++    mockPost.mockResolvedValue({ data: ENDED });
++    const screen = await render(<Provider><Reader /></Provider>);
++    await fireEvent.press(await screen.findByTestId('dunning-lockout-end-plan'));
++    const stale = confirmOf();
++    await act(async () => {
++      dunningLockoutStore.clear();
++    });
++    await act(async () => stale?.());
++    expect(cancels()).toEqual([]);
++    // Live: the status moves to another plan while the dialog is open; the confirmed plan is the one sent.
++    await act(async () => {
++      dunningLockoutStore.reportLocked({ requestId: 'req-2' });
++    });
++    await fireEvent.press(await screen.findByTestId('dunning-lockout-end-plan'));
++    mockGet.mockResolvedValue({ data: { ...LOCKED, purchase_id: 'p2' } });
++    await act(async () => {
++      await ctx?.refresh();
++    });
++    await act(async () => confirmOf(1)?.());
++    expect(cancels()).toEqual([['/v1/checkout/subscriptions/p1/cancel', {}]]);
++  });
++
++  it('a cancel already sent when the screen leaves: no late dialog, and the provider re-reads the server truth', async () => {
++    route = 'UpdateCard';
++    mockGet.mockResolvedValue({ data: LOCKED });
++    const sent = deferred<{ data: typeof ENDED }>();
++    mockPost.mockImplementation(() => sent.promise);
++    const screen = await render(<Provider><UpdateCardScreen /></Provider>);
++    await fireEvent.press(await screen.findByTestId('update-card-end-plan'));
++    await act(async () => confirmOf()?.());
++    expect(cancels()).toHaveLength(1);
++    await screen.rerender(<Provider><Text>elsewhere</Text></Provider>);
++    const reads = mockGet.mock.calls.length;
++    mockGet.mockResolvedValue({ data: CLEAR });
++    await act(async () => sent.resolve({ data: ENDED }));
++    expect(alert).toHaveBeenCalledTimes(1);
++    expect(mockGet.mock.calls.length).toBeGreaterThan(reads);
++  });
++
++  it('CONTROL: a live confirmation on Update card cancels the plan it showed and shows the outcome', async () => {
++    route = 'UpdateCard';
++    mockGet.mockResolvedValue({ data: LOCKED });
++    mockPost.mockResolvedValue({ data: ENDED });
++    const screen = await render(<Provider><UpdateCardScreen /></Provider>);
++    await fireEvent.press(await screen.findByTestId('update-card-end-plan'));
++    await act(async () => confirmOf()?.());
++    expect(cancels()).toEqual([['/v1/checkout/subscriptions/p1/cancel', {}]]);
++    await waitFor(() => expect(alert).toHaveBeenCalledTimes(2));
++  });
++});
++
+ describe('B-353-2 / B-353-3 (Sol): a reversed payment is described as one', () => {
+-  it('the dispute lockout names the reversal, does not promise a card fix, and leads with support', async () => {
++  it('the dispute lockout states R-DISPUTE-PAUSE, leads with Message coach, offers no card or cancel path', async () => {
+     mockGet.mockResolvedValue({ data: DISPUTE_LOCKED });
+     const screen = await render(<Provider><Reader /></Provider>);
+     await screen.findByTestId('dunning-lockout-screen');
+     const text = textOf(screen.toJSON());
+-    expect(text).toContain('Your bank reversed an earlier payment of $150.00 to Avery');
++    expect(text).toContain('Your access has ended');
++    expect(text).toContain(
++      'Your bank reversed a payment of $150.00 to Avery. Your access has ended and billing is paused. Your coach, Avery, decides whether to restart it. It does not restart on its own or with a new card.',
++    );
+     expect(text).not.toMatch(/has not gone through|was declined|charged right away|add a card that works/i);
+-    expect(screen.getByTestId('dunning-lockout-next-step').props.children).toContain('Saving a new card does not settle it');
+-    expect(screen.getByTestId('dunning-lockout-support-primary')).toBeTruthy();
++    expect(text).not.toMatch(/sort it out|settle|Already paid|Access pauses on/i);
++    expect(screen.getByTestId('dunning-lockout-next-step').props.children).toBe(
++      `Message Avery to talk about restarting. For any other question, email ${SUPPORT_EMAIL}.`,
++    );
++    expect(screen.getByTestId('dunning-lockout-message-coach')).toBeTruthy();
++    expect(screen.queryByTestId('dunning-lockout-update-card')).toBeNull();
++    expect(screen.queryByTestId('dunning-lockout-end-plan')).toBeNull();
++    expect(screen.getByTestId('dunning-lockout-support')).toBeTruthy();
+   });
+ 
+-  it('End my plan for a reversed payment: access ends now and the reversal is not settled', () => {
++  it('D2c dispute pause (reason dispute_paused, no amount, no lock date): same facts; a payment lock keeps its card path', async () => {
++    const d2c = { ...DISPUTE_LOCKED, kind: null, reason: 'dispute_paused' as const, amount_cents: null, lockout_at: null };
++    const screen = await render(<DunningLockoutScreen {...lockoutProps(d2c)} />);
++    expect(textOf(screen.toJSON())).toMatch(/Your bank reversed a payment to Avery\. Your access has ended and billing is paused\./);
++    expect(screen.queryByTestId('dunning-lockout-update-card')).toBeNull();
++    const payment = await render(<DunningLockoutScreen {...lockoutProps(LOCKED)} />);
++    expect(payment.getByTestId('dunning-lockout-update-card')).toBeTruthy();
++    expect(payment.getByTestId('dunning-lockout-end-plan')).toBeTruthy();
++    expect(textOf(payment.toJSON())).toContain('Already paid? Pull down to check again.');
++  });
++
++  it('End my plan body for a reversed payment (no screen offers it): access already ended, the coach decides', () => {
+     const body = endPlanAlertBody(DISPUTE_LOCKED);
+-    expect(body).toContain('Your access ends now');
+-    expect(body).toContain('does not settle the payment your bank reversed');
+-    expect(body).not.toMatch(/end of the period you already paid for|unpaid \$150\.00 is canceled/);
++    expect(body).toContain('Access to this plan has already ended and its billing is paused. Your coach decides whether to restart it.');
++    expect(body).toContain('If you end it, the plan ends now instead.');
++    expect(body).not.toMatch(/sort it out|settle|Your access ends now|unpaid \$150\.00 is canceled/);
+   });
+ 
+   it('the lockout End my plan dialog keeps the paid-in-the-meantime caveat (one shared body)', async () => {
+@@ -415,14 +532,40 @@ describe('B-353-2 / B-353-3 (Sol): a reversed payment is described as one', () =
+     alert.mockRestore();
+   });
+ 
+-  it('Update card intro and banner for a reversed payment promise no charge, comeback, or card fix', () => {
+-    for (const s of [DISPUTE_LOCKED, DISPUTE_PAST_DUE]) {
+-      expect(updateCardIntro(s)).not.toMatch(/charged to it right away|comes back|did not go through/);
+-      expect(updateCardIntro(s)).toContain('A new card does not settle that');
++  it('Update card intro and banner for a reversed payment: the three facts, no date, no charge, no card or support fix', () => {
++    expect(updateCardIntro(DISPUTE_LOCKED)).toBe(
++      'Your bank took back a payment of $150.00 to Avery. Your access has ended and billing is paused. Your coach, Avery, decides whether to restart it. It does not restart on its own or with a new card.',
++    );
++    for (const s of [DISPUTE_LOCKED, DISPUTE_PAST_DUE, { ...DISPUTE_LOCKED, lock_waived: true }]) {
++      const intro = updateCardIntro(s);
++      expect(intro).toMatch(/access has ended and billing is paused/i);
++      expect(intro).not.toMatch(/charged to it right away|comes back|did not go through|future payments|sort it out|settle/);
+     }
++    // A dispute on one plan while another keeps access: the facts are scoped to that plan.
++    expect(updateCardIntro({ ...DISPUTE_LOCKED, lock_waived: true })).toContain('For that plan, access has ended');
+     const banner = bannerCopy(DISPUTE_PAST_DUE, NOW);
+-    expect(banner.body).toContain('Your bank reversed an earlier payment of $150.00.');
+-    expect(banner.body).not.toMatch(/Update your card|did not go through/);
++    expect(banner.body).toBe(
++      'Your bank reversed a payment of $150.00 to Avery. For that plan, access has ended and billing is paused. Your coach, Avery, decides whether to restart it. It does not restart on its own or with a new card.',
++    );
++    expect(banner.body).not.toMatch(/Update your card|did not go through|Access pauses on|unless|Oct/);
++  });
++
++  it('the dispute banner offers Message coach only; a dispute that closes stays paused (no automatic restore)', async () => {
++    mockGet.mockResolvedValue({ data: { ...DISPUTE_PAST_DUE, lock_waived: true } });
++    const screen = await render(
++      <Provider>
++        <Reader />
++        <DunningBanner surface="HomeScreen" />
++      </Provider>,
++    );
++    await screen.findByTestId('dunning-banner');
++    expect(screen.queryByTestId('dunning-banner-update-card')).toBeNull();
++    // The bank closes the dispute: D2c still reports the pause until the coach restarts the plan.
++    mockGet.mockResolvedValue({ data: { ...DISPUTE_PAST_DUE, lock_waived: true, reason: 'dispute_paused' } });
++    await act(async () => {
++      await ctx?.refresh();
++    });
++    expect(textOf(screen.getByTestId('dunning-banner'))).toContain('access has ended and billing is paused');
+   });
+ 
+   it('a dispute-only Save card shows what happened: nothing charged, the reversal still open', async () => {
+@@ -452,8 +595,10 @@ describe('B-353-2 / B-353-3 (Sol): a reversed payment is described as one', () =
+     const result = await screen.findByTestId('update-card-result-saved');
+     const body = textOf(result);
+     expect(body).toContain('There was no open invoice to pay, so nothing was charged.');
+-    expect(body).toContain('Saving a card does not settle that.');
+-    expect(textOf(screen.toJSON())).not.toContain('was declined');
++    expect(body).toContain('For that plan, access has ended and billing is paused.');
++    expect(textOf(screen.toJSON())).not.toMatch(/was declined|sort it out|settle/);
++    expect(screen.queryByTestId('update-card-end-plan')).toBeNull();
++    expect(screen.getByTestId('update-card-message-coach')).toBeTruthy();
+   });
+ 
+   it('a payment plan whose quote also names a reversed payment says so before the card form', async () => {
+@@ -466,7 +611,10 @@ describe('B-353-2 / B-353-3 (Sol): a reversed payment is described as one', () =
+     })(LOCKED);
+     const screen = await render(<Provider><UpdateCardScreen /></Provider>);
+     void fireEvent.press(screen.getByTestId('update-card-add'));
+-    await screen.findByTestId('update-card-quote-dispute');
++    const note = await screen.findByTestId('update-card-quote-dispute');
++    expect(note.props.children).toBe(
++      'Your bank reversed a payment of $90.00 to Blake. For that plan, access has ended and billing is paused. Your coach, Blake, decides whether to restart it. It does not restart on its own or with a new card.',
++    );
+     await act(async () => present.resolve({ error: { code: 'Canceled' } }));
+   });
+ });

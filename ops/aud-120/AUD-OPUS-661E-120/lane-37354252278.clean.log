@@ -1,0 +1,430 @@
+Current runner version: '2.337.0'
+##[group]Runner Image Provisioner
+Hosted Compute Agent
+Version: 20260901.588
+Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+Build Date: 2026-09-01T19:56:44Z
+Worker ID: {ed741f68-ff8c-4d5f-8c6a-5f545ce6c93f}
+Azure Region: westcentralus
+##[endgroup]
+##[group]Operating System
+Ubuntu
+24.04.5
+LTS
+##[endgroup]
+##[group]Runner Image
+Image: ubuntu-24.04
+Version: 20260927.320.1
+Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+##[endgroup]
+##[group]GITHUB_TOKEN Permissions
+Contents: read
+Metadata: read
+Packages: read
+##[endgroup]
+Secret source: Actions
+Cache mode: write
+Prepare workflow directory
+Prepare all required actions
+Getting action download info
+Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+Complete job name: targeted
+##[group]Checking docker version
+##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+'1.48'
+Docker daemon API version: '1.48'
+##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+'1.48'
+Docker client API version: '1.48'
+##[endgroup]
+##[group]Clean up resources from previous jobs
+##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=76e36b"
+##[command]/usr/bin/docker network prune --force --filter "label=76e36b"
+##[endgroup]
+##[group]Create local container network
+##[command]/usr/bin/docker network create --label 76e36b github_network_8e4a796672be4691843b16e2a5e944f4
+89eaf3453c64efffe856dd281b15ec15a047ea68bf7e8046ff4380ae342b806d
+##[endgroup]
+##[group]Starting redis service container
+##[command]/usr/bin/docker pull redis:7-alpine
+7-alpine: Pulling from library/redis
+16333ee0c00f: Pulling fs layer
+83234986c742: Pulling fs layer
+7eb50503c2b0: Pulling fs layer
+1522f9c6f453: Pulling fs layer
+9928009b15c8: Pulling fs layer
+4f4fb700ef54: Pulling fs layer
+4eb14bae0e1d: Pulling fs layer
+9928009b15c8: Waiting
+4f4fb700ef54: Waiting
+1522f9c6f453: Waiting
+4eb14bae0e1d: Waiting
+83234986c742: Verifying Checksum
+83234986c742: Download complete
+7eb50503c2b0: Download complete
+16333ee0c00f: Download complete
+9928009b15c8: Verifying Checksum
+9928009b15c8: Download complete
+16333ee0c00f: Pull complete
+4f4fb700ef54: Verifying Checksum
+4f4fb700ef54: Download complete
+4eb14bae0e1d: Verifying Checksum
+4eb14bae0e1d: Download complete
+1522f9c6f453: Verifying Checksum
+1522f9c6f453: Download complete
+83234986c742: Pull complete
+7eb50503c2b0: Pull complete
+1522f9c6f453: Pull complete
+9928009b15c8: Pull complete
+4f4fb700ef54: Pull complete
+4eb14bae0e1d: Pull complete
+Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+Status: Downloaded newer image for redis:7-alpine
+docker.io/library/redis:7-alpine
+##[command]/usr/bin/docker create --name f18588e594fa4187a706787e57177ae1_redis7alpine_e08b40 --label 76e36b --network github_network_8e4a796672be4691843b16e2a5e944f4 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+8dcf8cd5ce212f636d5bd64f21f143b29b0c10a52111d19d842057ca1fd14483
+##[command]/usr/bin/docker start 8dcf8cd5ce212f636d5bd64f21f143b29b0c10a52111d19d842057ca1fd14483
+8dcf8cd5ce212f636d5bd64f21f143b29b0c10a52111d19d842057ca1fd14483
+##[command]/usr/bin/docker ps --all --filter id=8dcf8cd5ce212f636d5bd64f21f143b29b0c10a52111d19d842057ca1fd14483 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+8dcf8cd5ce212f636d5bd64f21f143b29b0c10a52111d19d842057ca1fd14483 Up Less than a second (health: starting)
+##[command]/usr/bin/docker port 8dcf8cd5ce212f636d5bd64f21f143b29b0c10a52111d19d842057ca1fd14483
+6379/tcp -> 0.0.0.0:6379
+6379/tcp -> [::]:6379
+##[endgroup]
+##[group]Waiting for all services to be ready
+##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 8dcf8cd5ce212f636d5bd64f21f143b29b0c10a52111d19d842057ca1fd14483
+starting
+redis service is starting, waiting 2 seconds before checking again.
+##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 8dcf8cd5ce212f636d5bd64f21f143b29b0c10a52111d19d842057ca1fd14483
+starting
+redis service is starting, waiting 3 seconds before checking again.
+##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 8dcf8cd5ce212f636d5bd64f21f143b29b0c10a52111d19d842057ca1fd14483
+healthy
+redis service is healthy.
+##[endgroup]
+##[group]Run actions/checkout@v6
+with:
+  repository: BradleyGleavePortfolio/growth-project-backend
+  token: ***
+  ssh-strict: true
+  ssh-user: git
+  persist-credentials: true
+  clean: true
+  sparse-checkout-cone-mode: true
+  fetch-depth: 1
+  fetch-tags: false
+  show-progress: true
+  lfs: false
+  submodules: false
+  set-safe-directory: true
+  allow-unsafe-pr-checkout: false
+##[endgroup]
+Syncing repository: BradleyGleavePortfolio/growth-project-backend
+##[group]Getting Git version info
+Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+[command]/usr/bin/git version
+git version 2.55.0
+##[endgroup]
+Temporarily overriding HOME='/home/runner/work/_temp/854ce87d-ed31-41cd-9a53-48e1881df36d' before making global git config changes
+Adding repository directory to the temporary git global config as a safe directory
+[command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+##[group]Determining repository object format
+##[endgroup]
+##[group]Initializing the repository
+[command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+[command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+##[endgroup]
+##[group]Disabling automatic garbage collection
+[command]/usr/bin/git config --local gc.auto 0
+##[endgroup]
+##[group]Setting up auth
+Removing SSH command configuration
+[command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Removing HTTP extra header
+[command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Removing includeIf entries pointing to credentials config files
+[command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+[command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+[command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-9855effd-2b4f-4a65-80e8-7fbb0f6fbcd7.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+[command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-9855effd-2b4f-4a65-80e8-7fbb0f6fbcd7.config
+[command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-9855effd-2b4f-4a65-80e8-7fbb0f6fbcd7.config
+[command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-9855effd-2b4f-4a65-80e8-7fbb0f6fbcd7.config
+[command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-9855effd-2b4f-4a65-80e8-7fbb0f6fbcd7.config
+##[endgroup]
+##[group]Fetching the repository
+[command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +4c459a02526d361756f5d084a8cdf1e7b52fd18e:refs/remotes/origin/audit/AUD-OPUS-661E-120/2-backfill-legacy
+From https://github.com/BradleyGleavePortfolio/growth-project-backend
+ * [new ref]         4c459a02526d361756f5d084a8cdf1e7b52fd18e -> origin/audit/AUD-OPUS-661E-120/2-backfill-legacy
+[command]/usr/bin/git branch --list --remote origin/audit/AUD-OPUS-661E-120/2-backfill-legacy
+  origin/audit/AUD-OPUS-661E-120/2-backfill-legacy
+[command]/usr/bin/git rev-parse refs/remotes/origin/audit/AUD-OPUS-661E-120/2-backfill-legacy
+4c459a02526d361756f5d084a8cdf1e7b52fd18e
+##[endgroup]
+##[group]Determining the checkout info
+##[endgroup]
+[command]/usr/bin/git sparse-checkout disable
+[command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+##[group]Checking out the ref
+[command]/usr/bin/git checkout --progress --force -B audit/AUD-OPUS-661E-120/2-backfill-legacy refs/remotes/origin/audit/AUD-OPUS-661E-120/2-backfill-legacy
+Switched to a new branch 'audit/AUD-OPUS-661E-120/2-backfill-legacy'
+branch 'audit/AUD-OPUS-661E-120/2-backfill-legacy' set up to track 'origin/audit/AUD-OPUS-661E-120/2-backfill-legacy'.
+##[endgroup]
+[command]/usr/bin/git log -1 --format=%H
+4c459a02526d361756f5d084a8cdf1e7b52fd18e
+##[group]Run actions/setup-node@v6
+with:
+  node-version: 20
+  cache: npm
+  check-latest: false
+  token: ***
+  package-manager-cache: true
+##[endgroup]
+Attempting to download 20...
+Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+Extracting ...
+[command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/30e49397-12d1-48a6-b02f-8a672257fc7d -f /home/runner/work/_temp/b62337df-386d-4759-aae4-5c1ba2829504
+Adding to the cache ...
+##[group]Environment details
+node: v20.20.2
+npm: 10.8.2
+yarn: 1.22.22
+##[endgroup]
+[command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+/home/runner/.npm
+Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+Received 33554432 of 86828135 (38.6%), 32.0 MBs/sec
+Received 86828135 of 86828135 (100.0%), 55.7 MBs/sec
+Cache Size: ~83 MB (86828135 B)
+[command]/usr/bin/tar -xf /home/runner/work/_temp/631722a3-c07a-43aa-b9ca-5b4ca569de0c/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+Cache restored successfully
+Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+##[group]Run npm ci
+^[[36;1mnpm ci^[[0m
+shell: /usr/bin/bash -e {0}
+##[endgroup]
+npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+
+> growth-project-backend@1.0.0 postinstall
+> prisma generate
+
+Prisma schema loaded from prisma/schema.prisma
+┌─────────────────────────────────────────────────────────┐
+│  Update available 6.19.3 -> 8.0.0-rc.20                 │
+│                                                         │
+│  This is a major update - please follow the guide at    │
+│  https://pris.ly/d/major-version-upgrade                │
+│                                                         │
+│  Run the following to update                            │
+│    npm i --save-dev prisma@latest                       │
+│    npm i @prisma/client@latest                          │
+└─────────────────────────────────────────────────────────┘
+
+✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.12s
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+
+
+> growth-project-backend@1.0.0 prepare
+> lefthook install
+
+sync hooks: ✔️(commit-msg, pre-commit)
+
+added 1115 packages, and audited 1116 packages in 28s
+
+202 packages are looking for funding
+  run `npm fund` for details
+
+3 high severity vulnerabilities
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+##[group]Run npx prisma generate
+^[[36;1mnpx prisma generate^[[0m
+shell: /usr/bin/bash -e {0}
+##[endgroup]
+Prisma schema loaded from prisma/schema.prisma
+
+✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.11s
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+
+##[group]Run set -euo pipefail
+^[[36;1mset -euo pipefail^[[0m
+^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+env:
+  NODE_OPTIONS: --max-old-space-size=4096
+  THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+##[endgroup]
+specs: --globalSetup=./test/zz-aud-opus661e-120-pg.global.js test/aud-opus-661e-120-backfill.live.spec.ts test/aud-opus-661e-120-legacy116.spec.ts test/checkout-settlement.live.spec.ts test/aud-opus-661e-120-r2.spec.ts
+ALTER ROLE
+NOTICE:  database "ao661e" does not exist, skipping
+DROP DATABASE
+CREATE DATABASE
+PostgreSQL 16.15 (Ubuntu 16.15-1.pgdg24.04+2) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=v reason=payment_failed^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mcheckout.session.completed: purchase=v not activated again (activated before, status=payment_failed)^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=v^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=v recovered after a failed payment of pi_v^[[39m
+^[[95m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=l661-pkg has no contents — purchase=t^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=owner-adopted^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=owner-adopted recovered after a failed payment of pi_two_adopted^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=owner-owner^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=owner-owner recovered after a failed payment of pi_two_owner^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=s-unassign_drops reason=payment_failed^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=s-unassign_drops reason=partial_refund_decision^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PartialRefundDecisionService] ^[[39m^[[32mdecide: refund=re_s-unassign_drops decision=unassign_drops drops_canceled=1 by coach=l661-coach^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 0 drop(s) pending again for purchase=s-unassign_drops^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=s-unassign_drops recovered after a failed payment of pi_s-unassign_drops^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=s-keep_drops reason=payment_failed^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PartialRefundDecisionService] ^[[39m^[[32mdecide: refund=re_s-keep_drops decision=keep_drops drops_canceled=0 by coach=l661-coach^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=s-keep_drops^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=s-keep_drops recovered after a failed payment of pi_s-keep_drops^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=race-recovery reason=payment_failed^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=race-recovery^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=race-recovery recovered after a failed payment of pi_race-recovery^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=race-recovery reason=partial_refund_decision^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PartialRefundDecisionService] ^[[39m^[[32mdecide: refund=re_race-recovery decision=unassign_drops drops_canceled=1 by coach=l661-coach^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=race-decision reason=payment_failed^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=race-decision reason=partial_refund_decision^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PartialRefundDecisionService] ^[[39m^[[32mdecide: refund=re_race-decision decision=unassign_drops drops_canceled=1 by coach=l661-coach^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 0 drop(s) pending again for purchase=race-decision^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=race-decision recovered after a failed payment of pi_race-decision^[[39m
+^[[95m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=l661-pkg has no contents — purchase=owner-list-9^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=owner-list-9 reason=payment_failed^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=owner-list-9^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:05 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=owner-list-9 recovered after a failed payment of pi_list_9^[[39m
+^[[95m[Nest] 3134  - ^[[39m10/05/2026, 6:14:06 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=l661-pkg has no contents — purchase=owner-list-10^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:06 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=owner-list-10 reason=payment_failed^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:06 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=owner-list-10^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:06 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=owner-list-10 recovered after a failed payment of pi_list_10^[[39m
+^[[95m[Nest] 3134  - ^[[39m10/05/2026, 6:14:06 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=l661-pkg has no contents — purchase=owner-list-12^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:06 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=owner-list-12 reason=payment_failed^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:06 PM ^[[32m    LOG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[32mrestoreAfterPaymentRecovered: 1 drop(s) pending again for purchase=owner-list-12^[[39m
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:06 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mpayment_intent.succeeded: purchase=owner-list-12 recovered after a failed payment of pi_list_12^[[39m
+^[[95m[Nest] 3134  - ^[[39m10/05/2026, 6:14:10 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=r2-pkg has no contents — purchase=paid-invoice-paid^[[39m
+^[[95m[Nest] 3134  - ^[[39m10/05/2026, 6:14:10 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=r2-pkg has no contents — purchase=paid-customer-subscription-updated^[[39m
+^[[95m[Nest] 3134  - ^[[39m10/05/2026, 6:14:10 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=r2-pkg has no contents — purchase=trial-invoice-paid^[[39m
+^[[95m[Nest] 3134  - ^[[39m10/05/2026, 6:14:10 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=r2-pkg has no contents — purchase=trial-customer-subscription-updated^[[39m
+PASS test/checkout-settlement.live.spec.ts (11.187 s, 113 MB heap size)
+FAIL test/aud-opus-661e-120-r2.spec.ts (159 MB heap size)
+  ● AUD-OPUS-661E-120 R4: a granted plan that went unpaid, then its first key is replayed › R4b (copy, C) the replay answers ALREADY_ACTIVE like a new key does, with no Stripe write
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+    -   "code": "SUBSCRIPTION_ALREADY_ACTIVE",
+    +   "code": "SUBSCRIPTION_ATTEMPT_EXPIRED",
+        "message": Any<String>,
+      }
+
+    ^[[0m ^[[90m 254 |^[[39m     expect(fresh^[[33m.^[[39mbody^[[33m.^[[39mcode)^[[33m.^[[39mtoBe(^[[32m'SUBSCRIPTION_ALREADY_ACTIVE'^[[39m)^[[33m;^[[39m
+     ^[[90m 255 |^[[39m     ^[[36mconst^[[39m same ^[[33m=^[[39m ^[[36mawait^[[39m codeOf(h^[[33m.^[[39msvc^[[33m.^[[39mcreateSubscriptionIntent(^[[33mCLIENT^[[39m^[[33m,^[[39m { package_id^[[33m:^[[39m ^[[33mPKG^[[39m^[[33m,^[[39m idempotency_key^[[33m:^[[39m ^[[33mKEY1^[[39m }))^[[33m;^[[39m
+    ^[[31m^[[1m>^[[22m^[[39m^[[90m 256 |^[[39m     expect({ code^[[33m:^[[39m same^[[33m.^[[39mbody^[[33m.^[[39mcode^[[33m,^[[39m message^[[33m:^[[39m same^[[33m.^[[39mbody^[[33m.^[[39mmessage })^[[33m.^[[39mtoEqual({ code^[[33m:^[[39m ^[[32m'SUBSCRIPTION_ALREADY_ACTIVE'^[[39m^[[33m,^[[39m message^[[33m:^[[39m expect^[[33m.^[[39many(^[[33mString^[[39m) })^[[33m;^[[39m
+     ^[[90m     |^[[39m                                                                  ^[[31m^[[1m^^[[22m^[[39m
+     ^[[90m 257 |^[[39m     expect(h^[[33m.^[[39mstripeWrites())^[[33m.^[[39mtoEqual(writes)^[[33m;^[[39m
+     ^[[90m 258 |^[[39m   })^[[33m;^[[39m
+     ^[[90m 259 |^[[39m })^[[33m;^[[39m^[[0m
+
+      at Object.<anonymous> (test/aud-opus-661e-120-r2.spec.ts:256:66)
+
+^[[32m[Nest] 3134  - ^[[39m10/05/2026, 6:14:10 PM ^[[32m    LOG^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[32mbilling.trial_card_attached purchase=00000000-0000-4000-8000-000000000001 via=webhook^[[39m
+PASS test/aud-opus-661e-120-legacy116.spec.ts (186 MB heap size)
+^[[33m[Nest] 3134  - ^[[39m10/05/2026, 6:14:11 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mprefetchForOuterTx: charge-id pre-resolution failed for checkout.session.completed cs_test_h: Cannot read properties of undefined (reading 'latest_charge')^[[39m
+^[[95m[Nest] 3134  - ^[[39m10/05/2026, 6:14:11 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=pkg-h has no contents — purchase=cp-h^[[39m
+^[[33m[Nest] 3134  - ^[[39m10/05/2026, 6:14:11 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mprefetchForOuterTx: charge-id pre-resolution failed for checkout.session.completed cs_A: Cannot read properties of undefined (reading 'latest_charge')^[[39m
+^[[95m[Nest] 3134  - ^[[39m10/05/2026, 6:14:11 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=pkg-h has no contents — purchase=cp-A^[[39m
+^[[95m[Nest] 3134  - ^[[39m10/05/2026, 6:14:11 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=pkg-h has no contents — purchase=cp-ps^[[39m
+PASS test/aud-opus-661e-120-backfill.live.spec.ts (14.284 s, 201 MB heap size)
+
+Test Suites: 1 failed, 3 passed, 4 total
+Tests:       1 failed, 33 passed, 34 total
+Snapshots:   0 total
+Time:        26.619 s
+Ran all test suites matching test/aud-opus-661e-120-backfill.live.spec.ts|test/aud-opus-661e-120-legacy116.spec.ts|test/checkout-settlement.live.spec.ts|test/aud-opus-661e-120-r2.spec.ts.
+##[error]Process completed with exit code 1.
+Post job cleanup.
+[command]/usr/bin/git version
+git version 2.55.0
+Temporarily overriding HOME='/home/runner/work/_temp/c6271c44-92cf-4296-a1eb-42170e8e840c' before making global git config changes
+Adding repository directory to the temporary git global config as a safe directory
+[command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+Removing SSH command configuration
+[command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Removing HTTP extra header
+[command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+[command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Removing includeIf entries pointing to credentials config files
+[command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+includeif.gitdir:/github/workspace/.git.path
+includeif.gitdir:/github/workspace/.git/worktrees/*.path
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+/home/runner/work/_temp/git-credentials-9855effd-2b4f-4a65-80e8-7fbb0f6fbcd7.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-9855effd-2b4f-4a65-80e8-7fbb0f6fbcd7.config
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+/home/runner/work/_temp/git-credentials-9855effd-2b4f-4a65-80e8-7fbb0f6fbcd7.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-9855effd-2b4f-4a65-80e8-7fbb0f6fbcd7.config
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+/github/runner_temp/git-credentials-9855effd-2b4f-4a65-80e8-7fbb0f6fbcd7.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-9855effd-2b4f-4a65-80e8-7fbb0f6fbcd7.config
+[command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+/github/runner_temp/git-credentials-9855effd-2b4f-4a65-80e8-7fbb0f6fbcd7.config
+[command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-9855effd-2b4f-4a65-80e8-7fbb0f6fbcd7.config
+[command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Removing credentials config '/home/runner/work/_temp/git-credentials-9855effd-2b4f-4a65-80e8-7fbb0f6fbcd7.config'
+Print service container logs: f18588e594fa4187a706787e57177ae1_redis7alpine_e08b40
+##[command]/usr/bin/docker logs --details 8dcf8cd5ce212f636d5bd64f21f143b29b0c10a52111d19d842057ca1fd14483
+ 1:C 05 Oct 2026 18:13:05.832 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+ 1:C 05 Oct 2026 18:13:05.832 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+ 1:C 05 Oct 2026 18:13:05.832 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+ 1:C 05 Oct 2026 18:13:05.832 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+ 1:M 05 Oct 2026 18:13:05.832 * monotonic clock: POSIX clock_gettime
+ 1:M 05 Oct 2026 18:13:05.833 * Running mode=standalone, port=6379.
+ 1:M 05 Oct 2026 18:13:05.833 * Server initialized
+ 1:M 05 Oct 2026 18:13:05.833 * Ready to accept connections tcp
+Stop and remove container: f18588e594fa4187a706787e57177ae1_redis7alpine_e08b40
+##[command]/usr/bin/docker rm --force 8dcf8cd5ce212f636d5bd64f21f143b29b0c10a52111d19d842057ca1fd14483
+8dcf8cd5ce212f636d5bd64f21f143b29b0c10a52111d19d842057ca1fd14483
+Remove container network: github_network_8e4a796672be4691843b16e2a5e944f4
+##[command]/usr/bin/docker network rm github_network_8e4a796672be4691843b16e2a5e944f4
+github_network_8e4a796672be4691843b16e2a5e944f4
+Cleaning up orphan processes

@@ -1,0 +1,117 @@
+diff --git a/scripts/clear-spent-payment-credentials.ts b/scripts/clear-spent-payment-credentials.ts
+new file mode 100644
+index 00000000..aa02659e
+--- /dev/null
++++ b/scripts/clear-spent-payment-credentials.ts
+@@ -0,0 +1,89 @@
++/**
++ * scripts/clear-spent-payment-credentials.ts (C-661-2, B-661-14/15)
++ *
++ * Erases the cached PaymentSheet client secret and ephemeral key from every
++ * ClientPurchase row whose sheet can no longer be used. Since #661 the
++ * webhooks erase them on every success, grant and end; rows written before
++ * that keep them at rest. A credential is still live (kept) only on:
++ *   - a one-time PaymentIntent attempt in pending / payment_failed (the
++ *     replay resumes the same PaymentIntent);
++ *   - a native subscription attempt that never granted access (open status,
++ *     not entitled, no trial started): an unpaid first invoice, a declined
++ *     first attempt, or a trial whose card is not saved yet.
++ *
++ * Deploy window only, with operator approval. Dry run by default (counts,
++ * writes nothing); `--apply` erases in bounded batches. Idempotent. Logs
++ * counts only, never a credential.
++ *
++ *   npx ts-node scripts/clear-spent-payment-credentials.ts [--apply]
++ */
++import { PrismaClient, type Prisma } from '@prisma/client';
++import { CLEARED_PAYMENT_SECRETS } from '../src/checkout/admin-purchase.select';
++import { errorLabel } from '../src/checkout/error-label';
++import { OPEN_ATTEMPT_STATUSES } from '../src/checkout/subscription-plan';
++
++export const SPENT_PAYMENT_CREDENTIALS: Prisma.ClientPurchaseWhereInput = {
++  OR: [{ stripe_client_secret: { not: null } }, { stripe_ephemeral_key: { not: null } }],
++  NOT: [
++    { stripe_subscription_id: null, status: { in: ['pending', 'payment_failed'] } },
++    {
++      stripe_subscription_id: { not: null },
++      status: { in: [...OPEN_ATTEMPT_STATUSES] },
++      entitlement_active: false,
++      trial_started_at: null,
++    },
++  ],
++};
++
++export interface ClearSpentResult {
++  matched: number;
++  cleared: number;
++  applied: boolean;
++}
++
++export async function clearSpentPaymentCredentials(
++  prisma: Pick<PrismaClient, 'clientPurchase'>,
++  opts: { apply: boolean; batchSize?: number },
++): Promise<ClearSpentResult> {
++  const matched = await prisma.clientPurchase.count({ where: SPENT_PAYMENT_CREDENTIALS });
++  if (!opts.apply) return { matched, cleared: 0, applied: false };
++  const take = Math.max(1, Math.min(opts.batchSize ?? 500, 5_000));
++  let cleared = 0;
++  for (;;) {
++    const ids = await prisma.clientPurchase.findMany({
++      where: SPENT_PAYMENT_CREDENTIALS,
++      select: { id: true },
++      orderBy: { id: 'asc' },
++      take,
++    });
++    if (ids.length === 0) break;
++    // The predicate is re-checked in the write: a row that changed since the
++    // read is left to the webhook that changed it.
++    const res = await prisma.clientPurchase.updateMany({
++      where: { AND: [SPENT_PAYMENT_CREDENTIALS, { id: { in: ids.map((r) => r.id) } }] },
++      data: CLEARED_PAYMENT_SECRETS,
++    });
++    cleared += res.count;
++    if (ids.length < take) break;
++  }
++  return { matched, cleared, applied: true };
++}
++
++async function main() {
++  const prisma = new PrismaClient();
++  try {
++    const result = await clearSpentPaymentCredentials(prisma, {
++      apply: process.argv.includes('--apply'),
++    });
++    console.log(`[clear-spent-payment-credentials] ${JSON.stringify(result)}`);
++  } finally {
++    await prisma.$disconnect();
++  }
++}
++
++if (require.main === module) {
++  main().catch((err: unknown) => {
++    console.error(`[clear-spent-payment-credentials] failed error=${errorLabel(err)}`);
++    process.exit(1);
++  });
++}
+diff --git a/src/checkout/checkout-webhook-handler.service.ts b/src/checkout/checkout-webhook-handler.service.ts
+index 096f3db0..5f0ee2d5 100644
+--- a/src/checkout/checkout-webhook-handler.service.ts
++++ b/src/checkout/checkout-webhook-handler.service.ts
+@@ -1650,6 +1650,8 @@ export class CheckoutWebhookHandlerService {
+           canceled_at: canceledAt,
+           access_expires_at: accessExpiresAt,
+           ...trialStartPatch(fresh, sub, entitled),
++          // B-661-14/15 — a grant means the sheet's intent was paid or its card saved: erase both.
++          ...(entitled ? CLEARED_PAYMENT_SECRETS : {}),
+           updated_at: nextVersion(fresh),
+         },
+       });
+@@ -2287,6 +2289,8 @@ export class CheckoutWebhookHandlerService {
+             status,
+             entitlement_active: entitled,
+             ...trial,
++            // B-661-14/15 — same erase as applySubscriptionUpdated; an unsaved trial card keeps them.
++            ...(entitled ? CLEARED_PAYMENT_SECRETS : {}),
+             current_period_end: currentPeriodEnd,
+             access_expires_at: this.computeAccessExpiry(pkg, fresh, true, currentPeriodEnd),
+             last_error: null,

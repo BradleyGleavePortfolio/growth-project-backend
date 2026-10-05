@@ -1,0 +1,30 @@
+AUDIT Claude Opus 5.5 — growth-project-backend#687 @ f3c7fd37777ef1cde75ec5fb984edf5cb973f864 — VERDICT: REQUEST CHANGES
+A/B/C = 0/1/2
+
+Agent 120, job AUD-OPUS-D6-120 (T4 audit lens). Exact-head review of D1 (dunning foundation) after FR2, FR3 and the main refresh f3c7fd37 (merge of ee55f814). Reviewed against R-DISPUTE-PAUSE and owner rulings 5-7 of 10-05.
+
+**Prior Opus findings (verdict 5982478903 @ f8e47bf4), decided first**
+- B-687-5 (dispute email promised that a card update fixes it): closed. `src/email/templates/dunning-v2-client.hbs:5-13` hides the card button and the End my plan line when `dispute`; dispute copy `src/checkout/dunning-v2/dunning-v2.copy.ts:179-207` says access has ended, billing is paused and the coach decides; every `lr_*` key renders dispute copy (`dunning-v2.renderer.ts:198,214`); the dispatcher passes `dispute: ctx.isLateReversalCycle` and shows the dispute blocker at every dispute step.
+- C-687-6, C-687-7: closed. The coach push carries display copy and reads the Expo ticket verdict (`src/notifications/emitters/coach-alert.emitter.ts:85-104`).
+- C-688-10: closed. The coach email names the in-app route, no `tgp://` link (`dunning-v2.copy.ts:149,151,206`).
+- C-687-4: carried as a note (below).
+
+**Merge check (f3c7fd37)**
+`git show --remerge-diff` touches only `stripe-connect-api.service.ts`, `email.service.ts`, `email.types.ts`. Main's `on_behalf_of` forms, `StripeSubscriptionCheckoutObject` and main's SetupIntent / subscription default card / void methods are kept; `retrieveInvoice` now expands `payment_intent`, and its only main caller (`checkout-webhook-handler.service.ts:739`) reads `status` alone. The migration folder is byte-identical to f8e47bf4; all four new tables enable and force RLS with service-role and anon-deny policies.
+
+## Findings
+
+**B-687-8** `src/checkout/dunning-v2/dunning-v2.copy.ts:184,188-189,196,200,203,206` and `src/checkout/dunning-v2/dunning-v2.dispatcher.ts:406` — every dispute-cycle message tells the client and the coach that a payment "was reversed" by the bank. Owner ruling 6 (09:43 PDT 10-05) pauses the plan on a dispute inquiry too, and the stack does exactly that (`test/dunning-v2-dispute-pause.spec.ts:269` on #705). An inquiry (`warning_needs_response`) moves no money; Stripe states inquiries "don't have any financial impact" (https://docs.stripe.com/disputes/withdrawing).
+Counterexample: an inquiry on a renewal charge sends the client the subject "Your recent payment was reversed" and the coach "{clientName}'s bank reversed a payment after a dispute". Both are false.
+Fix rule: dispute-cycle copy and the client subject make no reversal claim. Say the bank opened a dispute or inquiry about a recent payment (true in both cases), and keep "access has ended, billing is paused, the coach decides".
+
+## Follow-ups (C)
+- **C-687-4** (carried, note only) `prisma/migrations/20270215000000_dunning_billing_actions` sorts before the applied `20270311000000_subscription_checkout_terms`; `prisma migrate deploy` applies it out of order (OR-113-4 keeps the prefix).
+- **C-687-9** `dunning-v2.copy.ts:184,189,196` with the `coachName` fallback `'your coach'` (`dunning-v2.service.ts:1657` on #705): with no coach name a sentence starts in lower case ("billing is paused. your coach decides ..."). Fix rule: a sentence-initial fallback is capitalised.
+
+## Proof
+- Replay of this lens's AUD-OPUS-D12-118 #687 probe at this head: 3/3 pass, https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37351709272 (branch `audit/AUD-OPUS-D6-120/687-replay-1`, deleted after the run).
+- B-687-8 is a copy-truth finding from the quoted source lines plus Stripe's documented inquiry semantics; no probe is needed to show the text.
+- PR checks at this head: all green (build-and-test, CodeQL, banned casts, schema parity, forward and reversible migrations, RLS floor, rls-live, npm audit).
+
+Evidence reused (G09): this lens's own D12-118 probe replayed unchanged, because the D1 renderer and dispatcher paths it covers were only extended. Builder lanes from B-DUNMR-120 were read for context only. The Sol D6-120 output was not read before this verdict.

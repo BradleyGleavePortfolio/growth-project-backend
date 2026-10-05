@@ -1,0 +1,20 @@
+Banned cast tokens (R75 / R100.A2)	completed	success	https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37348560769/job/111893301325
+CodeQL	completed	success	https://github.com/BradleyGleavePortfolio/growth-project-backend/runs/111895063741
+CodeQL JS/TS (javascript-typescript)	completed	success	https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37348560709/job/111893300348
+Schema parity (migrations match schema.prisma)	completed	success	https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37348560774/job/111893300864
+actionlint (.github/workflows/*.yml)	completed	success	https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37348560836/job/111893303184
+build-and-test	completed	success	https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37348561009/job/111893302388
+build-sbom	completed	success	https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37348560718/job/111893300430
+comment-deploy-readiness	completed	success	https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37348560797/job/111893697325
+community-live-tests	completed	success	https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37348561009/job/111893302117
+danger	completed	success	https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37348560825/job/111893300918
+danger dry-run (dangerfile.js)	completed	success	https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37348560836/job/111893302701
+deploy-readiness-gate	completed	skipped	https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37348560797/job/111893303248
+mwb-3-live-tests	completed	success	https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37348561009/job/111893302515
+npm audit (high+critical, whole graph)	completed	success	https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37348560870/job/111893301988
+rls-floor-guard	completed	success	https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37348561009/job/111893302415
+rls-live-tests	completed	success	https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37348561009/job/111893302455
+shellcheck (scripts/*.sh)	completed	success	https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37348560836/job/111893303026
+size-label	completed	success	https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37348560699/job/111893300391
+size-label	completed	success	https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37350465697/job/111899737257
+test-deploy-readiness	completed	success	https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37348560797/job/111893301530

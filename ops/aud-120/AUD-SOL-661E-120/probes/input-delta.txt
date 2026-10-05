@@ -1,0 +1,7 @@
+A	.ci-lane-tsc
+A	test/aud-sol-118-owner-boundaries.live.spec.ts
+A	test/aud-sol-661d-120-composition.live.spec.ts
+A	test/aud-sol-661e-120-recovery.live.spec.ts
+A	test/aud-sol-661r5-postgres.spec.ts
+A	test/aud-sol-661r6-selection.live.spec.ts
+A	test/zz-aud-sol120-pg.global.js

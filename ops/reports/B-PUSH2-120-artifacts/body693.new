@@ -1,0 +1,28 @@
+Tier: T4
+Why: Sends device pushes to locked screens from a shared outbox with consent, quiet hours and token cleanup; a fault leaks private detail, ignores a mute, or sends to a dead or reassigned device.
+T4 trigger scan: lock-screen copy at send, push tokens (DeviceNotRegistered cleanup), consent at send time, multi-replica claim/lease concurrency, inbox visibility of stored notifications.
+T3 trigger scan: booking lifecycle emitters, drip, purchase and payout notice writers.
+Bounded T1: NO.
+Canonical builder: T4 builder lane B-PUSH2-120 (agent 120 wave).
+Parent owner: operator (agent 120 wave).
+Acceptance evidence: test/push-delivery-round5.spec.ts (15 cases), Sol P2 probe 7/7, Opus U1/U4 and live L1-L6 on Postgres at 53796f1e (ci-lane run 37352088482); every required PR check green at the exact head; Opus and Sol verdicts at the exact head.
+Promotion triggers: already T4. Any change to the claim SQL, consent checks, token handling or lock-screen copy needs fresh dual exact-head verdicts.
+
+## Fix rounds
+| Round | Head | Finding | Change |
+|---|---|---|---|
+| 5 (B-PUSH2-120) | c2cef1d1 | main refresh | merged P1 (with main ee55f814); conflict in CreateNotificationInput resolved keeping main's `throttle_key` and P2's `push_twin`; main's channelGate/gateFrom/describeFailure kept |
+| 5 | c2cef1d1 | Opus B-693-1 channelId | per-kind Android channel from the app's own set (coach-messages, client-bot, milestones, system); `default` removed; set pinned by a test |
+| 5 | c2cef1d1 | Sol B-693-1 reschedule dedupe | dedupe identity per move (`booking_rescheduled:<session>:<session updated_at>`); fallback old>new times |
+| 5 | c2cef1d1 | Sol B-648-7 hidden sole rows | `push_twin` hides a push row only when its inapp counterpart (same user, kind, link, text, last hour) is stored; drip and purchase writers pass whether their inapp row was written |
+| 5 | c2cef1d1 | Sol B-693-2 failed token clear | a failed clear is kept as `token-cleanup-pending` and retried by the receipt sweep (clear only, never the push) |
+| 5 | c2cef1d1 | Sol B-648-9 consent during preparation | preferences and token read again after the handoff write; mute, per-kind switch off or sign-out stops the send |
+| 5 | c2cef1d1 | Sol B-692-1 (defense in depth) | worker always renders the kind's template at send; booking push context no longer stores display names |
+| 5 | c2cef1d1 | Opus C-693-2 (operator-approved) | payout notice push row `push_twin: true` |
+| 5 | 53796f1e | main guard test/privacy/no-pii-in-logs.spec.ts | onModuleInit log variable renamed (same text) |
+
+## Split description (written at 13417e7b; counts in it are from that head)
+Split of #648 (device push delivery with quiet hours; 3,197 lines at FIX ROUND 4 `22de1182`, already current with main) under the owner's PR size rule: over 3,000 changed lines is an automatic fail (MODEL_ROUTING.md 8.2, tgp-agent-context). Stack: P1 -> P2; merge back to back, deploy after P2. Migration 20270307000000 was edited in place during #648's fix rounds; confirm it is absent from production `_prisma_migrations` before deploy (read-only check). Tree at P2 = #648 head. Prior verdicts (Sol RC 0/1/0 at ab607b34) do not carry; each piece needs Opus 5.5 and Sol audits at its exact head. `tsc --noEmit` passes at both pieces; every existing spec importing a changed file was run locally.
+
+**P2 (base P1, 2,876 lines at 53796f1e):** push delivery service, notifications service and emitter wiring; delivery, send-time, emitter and booking-emitter specs. Locally 35 suites pass (528 tests; 4 live suites skipped without a database).
+

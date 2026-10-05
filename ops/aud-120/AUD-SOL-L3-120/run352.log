@@ -1,0 +1,579 @@
+targeted	Set up job	﻿2026-10-05T18:25:33.5187906Z Current runner version: '2.337.0'
+targeted	Set up job	2026-10-05T18:25:33.5209279Z ##[group]Runner Image Provisioner
+targeted	Set up job	2026-10-05T18:25:33.5210005Z Hosted Compute Agent
+targeted	Set up job	2026-10-05T18:25:33.5210522Z Version: 20260901.588
+targeted	Set up job	2026-10-05T18:25:33.5211131Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+targeted	Set up job	2026-10-05T18:25:33.5211728Z Build Date: 2026-09-01T19:56:44Z
+targeted	Set up job	2026-10-05T18:25:33.5212307Z Worker ID: {bed2ba9e-05eb-41ec-9469-29f89a21f5ea}
+targeted	Set up job	2026-10-05T18:25:33.5212920Z Azure Region: mexicocentral
+targeted	Set up job	2026-10-05T18:25:33.5213483Z ##[endgroup]
+targeted	Set up job	2026-10-05T18:25:33.5214700Z ##[group]Operating System
+targeted	Set up job	2026-10-05T18:25:33.5215311Z Ubuntu
+targeted	Set up job	2026-10-05T18:25:33.5215731Z 24.04.5
+targeted	Set up job	2026-10-05T18:25:33.5216219Z LTS
+targeted	Set up job	2026-10-05T18:25:33.5216682Z ##[endgroup]
+targeted	Set up job	2026-10-05T18:25:33.5217377Z ##[group]Runner Image
+targeted	Set up job	2026-10-05T18:25:33.5217884Z Image: ubuntu-24.04
+targeted	Set up job	2026-10-05T18:25:33.5218340Z Version: 20260927.320.1
+targeted	Set up job	2026-10-05T18:25:33.5219252Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+targeted	Set up job	2026-10-05T18:25:33.5220705Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+targeted	Set up job	2026-10-05T18:25:33.5221506Z ##[endgroup]
+targeted	Set up job	2026-10-05T18:25:33.5222470Z ##[group]GITHUB_TOKEN Permissions
+targeted	Set up job	2026-10-05T18:25:33.5224244Z Contents: read
+targeted	Set up job	2026-10-05T18:25:33.5224716Z Metadata: read
+targeted	Set up job	2026-10-05T18:25:33.5225526Z Packages: read
+targeted	Set up job	2026-10-05T18:25:33.5225984Z ##[endgroup]
+targeted	Set up job	2026-10-05T18:25:33.5227952Z Secret source: Actions
+targeted	Set up job	2026-10-05T18:25:33.5228808Z Cache mode: write
+targeted	Set up job	2026-10-05T18:25:33.5229564Z Prepare workflow directory
+targeted	Set up job	2026-10-05T18:25:33.5500904Z Prepare all required actions
+targeted	Set up job	2026-10-05T18:25:33.5556364Z Getting action download info
+targeted	Set up job	2026-10-05T18:25:33.8435357Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+targeted	Set up job	2026-10-05T18:25:34.1423209Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+targeted	Set up job	2026-10-05T18:25:34.3934553Z Complete job name: targeted
+targeted	Run actions/checkout@v6	﻿2026-10-05T18:25:34.4524062Z ##[group]Run actions/checkout@v6
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.4524763Z with:
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.4525205Z   repository: BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.4528738Z   token: ***
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.4529089Z   ssh-strict: true
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.4529438Z   ssh-user: git
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.4529794Z   persist-credentials: true
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.4530174Z   clean: true
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.4530529Z   sparse-checkout-cone-mode: true
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.4530942Z   fetch-depth: 1
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.4531281Z   fetch-tags: false
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.4531625Z   show-progress: true
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.4531978Z   lfs: false
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.4532304Z   submodules: false
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.4532662Z   set-safe-directory: true
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.4533055Z   allow-unsafe-pr-checkout: false
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.4533610Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.5314633Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.5316255Z ##[group]Getting Git version info
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.5317161Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.5318101Z [command]/usr/bin/git version
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.5680092Z git version 2.55.0
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.5706026Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.5721684Z Temporarily overriding HOME='/home/runner/work/_temp/f3c2fa6f-5c7e-44c7-9ab9-ce71a6dd4c1a' before making global git config changes
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.5727159Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.5728281Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.5775439Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.5779953Z ##[group]Determining repository object format
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.5782329Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.5783190Z ##[group]Initializing the repository
+targeted	Run actions/checkout@v6	2026-10-05T18:25:34.5787179Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0057705Z hint: Using 'master' as the name for the initial branch. This default branch name
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0059137Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0060252Z hint: to use in all of your new repositories, which will suppress this warning,
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0061102Z hint: call:
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0061598Z hint:
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0062222Z hint: 	git config --global init.defaultBranch <name>
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0062943Z hint:
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0063636Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0064668Z hint: 'development'. The just-created branch can be renamed via this command:
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0065555Z hint:
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0066081Z hint: 	git branch -m <name>
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0066646Z hint:
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0067576Z hint: Disable this message with "git config set advice.defaultBranchName false"
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0069017Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0071468Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0114175Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0115110Z ##[group]Disabling automatic garbage collection
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0118033Z [command]/usr/bin/git config --local gc.auto 0
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0143693Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0144595Z ##[group]Setting up auth
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0145249Z Removing SSH command configuration
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0149953Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0176149Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0630779Z Removing HTTP extra header
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0636595Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0663959Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0847261Z Removing includeIf entries pointing to credentials config files
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0853732Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.0880260Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.1067441Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-42423606-b862-4fca-88e2-e2dd7cbf1042.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.1097927Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-42423606-b862-4fca-88e2-e2dd7cbf1042.config
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.1123175Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-42423606-b862-4fca-88e2-e2dd7cbf1042.config
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.1151789Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-42423606-b862-4fca-88e2-e2dd7cbf1042.config
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.1178287Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-42423606-b862-4fca-88e2-e2dd7cbf1042.config
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.1206764Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.1207815Z ##[group]Fetching the repository
+targeted	Run actions/checkout@v6	2026-10-05T18:25:35.1213608Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +aeb349c215b22f43f46710bddccf6f31ee672ead:refs/remotes/origin/audit/AUD-SOL-L3-120/352-1-presentation
+targeted	Run actions/checkout@v6	2026-10-05T18:25:36.9588475Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+targeted	Run actions/checkout@v6	2026-10-05T18:25:36.9589436Z  * [new ref]         aeb349c215b22f43f46710bddccf6f31ee672ead -> origin/audit/AUD-SOL-L3-120/352-1-presentation
+targeted	Run actions/checkout@v6	2026-10-05T18:25:36.9598889Z [command]/usr/bin/git branch --list --remote origin/audit/AUD-SOL-L3-120/352-1-presentation
+targeted	Run actions/checkout@v6	2026-10-05T18:25:36.9621011Z   origin/audit/AUD-SOL-L3-120/352-1-presentation
+targeted	Run actions/checkout@v6	2026-10-05T18:25:36.9628575Z [command]/usr/bin/git rev-parse refs/remotes/origin/audit/AUD-SOL-L3-120/352-1-presentation
+targeted	Run actions/checkout@v6	2026-10-05T18:25:36.9647346Z aeb349c215b22f43f46710bddccf6f31ee672ead
+targeted	Run actions/checkout@v6	2026-10-05T18:25:36.9654918Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T18:25:36.9655367Z ##[group]Determining the checkout info
+targeted	Run actions/checkout@v6	2026-10-05T18:25:36.9655860Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T18:25:36.9661800Z [command]/usr/bin/git sparse-checkout disable
+targeted	Run actions/checkout@v6	2026-10-05T18:25:37.0488678Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+targeted	Run actions/checkout@v6	2026-10-05T18:25:37.0517204Z ##[group]Checking out the ref
+targeted	Run actions/checkout@v6	2026-10-05T18:25:37.0521158Z [command]/usr/bin/git checkout --progress --force -B audit/AUD-SOL-L3-120/352-1-presentation refs/remotes/origin/audit/AUD-SOL-L3-120/352-1-presentation
+targeted	Run actions/checkout@v6	2026-10-05T18:25:37.1379768Z Switched to a new branch 'audit/AUD-SOL-L3-120/352-1-presentation'
+targeted	Run actions/checkout@v6	2026-10-05T18:25:37.1383504Z branch 'audit/AUD-SOL-L3-120/352-1-presentation' set up to track 'origin/audit/AUD-SOL-L3-120/352-1-presentation'.
+targeted	Run actions/checkout@v6	2026-10-05T18:25:37.1390827Z ##[endgroup]
+targeted	Run actions/checkout@v6	2026-10-05T18:25:37.1428500Z [command]/usr/bin/git log -1 --format=%H
+targeted	Run actions/checkout@v6	2026-10-05T18:25:37.1449470Z aeb349c215b22f43f46710bddccf6f31ee672ead
+targeted	Run actions/setup-node@v6	﻿2026-10-05T18:25:37.1685144Z ##[group]Run actions/setup-node@v6
+targeted	Run actions/setup-node@v6	2026-10-05T18:25:37.1685499Z with:
+targeted	Run actions/setup-node@v6	2026-10-05T18:25:37.1685734Z   node-version: 22.13
+targeted	Run actions/setup-node@v6	2026-10-05T18:25:37.1685977Z   cache: npm
+targeted	Run actions/setup-node@v6	2026-10-05T18:25:37.1686209Z   check-latest: false
+targeted	Run actions/setup-node@v6	2026-10-05T18:25:37.1688976Z   token: ***
+targeted	Run actions/setup-node@v6	2026-10-05T18:25:37.1689251Z   package-manager-cache: true
+targeted	Run actions/setup-node@v6	2026-10-05T18:25:37.1689550Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-05T18:25:37.2833590Z Attempting to download 22.13...
+targeted	Run actions/setup-node@v6	2026-10-05T18:25:38.3667216Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+targeted	Run actions/setup-node@v6	2026-10-05T18:25:38.8406035Z Extracting ...
+targeted	Run actions/setup-node@v6	2026-10-05T18:25:38.8501052Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/0ace0d48-ad2b-401b-9f80-47802f7eaff7 -f /home/runner/work/_temp/3c0f732a-bac5-49a7-8354-b5388263cb1f
+targeted	Run actions/setup-node@v6	2026-10-05T18:25:39.8330429Z Adding to the cache ...
+targeted	Run actions/setup-node@v6	2026-10-05T18:25:41.8124358Z ##[group]Environment details
+targeted	Run actions/setup-node@v6	2026-10-05T18:25:42.2065728Z node: v22.13.1
+targeted	Run actions/setup-node@v6	2026-10-05T18:25:42.2066442Z npm: 10.9.2
+targeted	Run actions/setup-node@v6	2026-10-05T18:25:42.2066746Z yarn: 1.22.22
+targeted	Run actions/setup-node@v6	2026-10-05T18:25:42.2067595Z ##[endgroup]
+targeted	Run actions/setup-node@v6	2026-10-05T18:25:42.2082024Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+targeted	Run actions/setup-node@v6	2026-10-05T18:25:42.2808018Z /home/runner/.npm
+targeted	Run actions/setup-node@v6	2026-10-05T18:25:42.4959809Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+targeted	Run actions/setup-node@v6	2026-10-05T18:25:43.7101895Z Received 33554432 of 241027159 (13.9%), 32.0 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-05T18:25:44.7106463Z Received 201326592 of 241027159 (83.5%), 96.0 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-05T18:25:44.9253602Z Received 241027159 of 241027159 (100.0%), 103.8 MBs/sec
+targeted	Run actions/setup-node@v6	2026-10-05T18:25:44.9254326Z Cache Size: ~230 MB (241027159 B)
+targeted	Run actions/setup-node@v6	2026-10-05T18:25:44.9280499Z [command]/usr/bin/tar -xf /home/runner/work/_temp/ceb60bde-d0bf-4c9c-96b8-fb2d484b78e4/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+targeted	Run actions/setup-node@v6	2026-10-05T18:25:45.4872181Z Cache restored successfully
+targeted	Run actions/setup-node@v6	2026-10-05T18:25:45.4972959Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+targeted	Run npm ci	﻿2026-10-05T18:25:45.5157716Z ##[group]Run npm ci
+targeted	Run npm ci	2026-10-05T18:25:45.5158017Z ^[[36;1mnpm ci^[[0m
+targeted	Run npm ci	2026-10-05T18:25:45.5411002Z shell: /usr/bin/bash -e {0}
+targeted	Run npm ci	2026-10-05T18:25:45.5411522Z ##[endgroup]
+targeted	Run npm ci	2026-10-05T18:25:49.5554029Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+targeted	Run npm ci	2026-10-05T18:25:49.7247958Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+targeted	Run npm ci	2026-10-05T18:25:49.7456385Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+targeted	Run npm ci	2026-10-05T18:25:49.7494639Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+targeted	Run npm ci	2026-10-05T18:25:49.7726007Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+targeted	Run npm ci	2026-10-05T18:25:49.8496833Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+targeted	Run npm ci	2026-10-05T18:25:49.8521559Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-05T18:25:49.8549080Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-05T18:25:49.8551024Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-05T18:25:49.8552788Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-05T18:25:49.8558940Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-05T18:25:49.8857435Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+targeted	Run npm ci	2026-10-05T18:25:49.9343568Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+targeted	Run npm ci	2026-10-05T18:25:50.2429876Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+targeted	Run npm ci	2026-10-05T18:25:50.6586112Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+targeted	Run npm ci	2026-10-05T18:25:54.0454407Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+targeted	Run npm ci	2026-10-05T18:26:38.3415654Z 
+targeted	Run npm ci	2026-10-05T18:26:38.3416736Z added 1108 packages, and audited 1109 packages in 53s
+targeted	Run npm ci	2026-10-05T18:26:38.3418332Z 
+targeted	Run npm ci	2026-10-05T18:26:38.3418736Z 187 packages are looking for funding
+targeted	Run npm ci	2026-10-05T18:26:38.3419290Z   run `npm fund` for details
+targeted	Run npm ci	2026-10-05T18:26:38.6776531Z 
+targeted	Run npm ci	2026-10-05T18:26:38.6777807Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+targeted	Run npm ci	2026-10-05T18:26:38.6778059Z 
+targeted	Run npm ci	2026-10-05T18:26:38.6778241Z To address issues that do not require attention, run:
+targeted	Run npm ci	2026-10-05T18:26:38.6778513Z   npm audit fix
+targeted	Run npm ci	2026-10-05T18:26:38.6779111Z 
+targeted	Run npm ci	2026-10-05T18:26:38.6779294Z To address all issues (including breaking changes), run:
+targeted	Run npm ci	2026-10-05T18:26:38.6779568Z   npm audit fix --force
+targeted	Run npm ci	2026-10-05T18:26:38.6780047Z 
+targeted	Run npm ci	2026-10-05T18:26:38.6780174Z Run `npm audit` for details.
+targeted	Targeted jest	﻿2026-10-05T18:26:38.8412885Z ##[group]Run set -euo pipefail
+targeted	Targeted jest	2026-10-05T18:26:38.8413174Z ^[[36;1mset -euo pipefail^[[0m
+targeted	Targeted jest	2026-10-05T18:26:38.8413490Z ^[[36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }^[[0m
+targeted	Targeted jest	2026-10-05T18:26:38.8413901Z ^[[36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)^[[0m
+targeted	Targeted jest	2026-10-05T18:26:38.8414189Z ^[[36;1mecho "specs: ${SPECS[*]}"^[[0m
+targeted	Targeted jest	2026-10-05T18:26:38.8414402Z ^[[36;1mnpx jest --ci "${SPECS[@]}"^[[0m
+targeted	Targeted jest	2026-10-05T18:26:38.8472972Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+targeted	Targeted jest	2026-10-05T18:26:38.8473270Z ##[endgroup]
+targeted	Targeted jest	2026-10-05T18:26:38.8561507Z specs: src/entitlements/dunning/__tests__/auditSol120Boundaries.test.ts src/entitlements/dunning/__tests__/auditSol120PresentationOwner.test.ts src/entitlements/dunning/__tests__/aud119OpusL12_352.probe.test.ts src/services/__tests__/auditSol117DunningIdentity.test.ts src/entitlements/dunning/__tests__/dunningL1Contract.test.ts src/services/__tests__/api.lockedDunning.test.ts src/services/__tests__/authActions.signOut.test.ts
+targeted	Targeted jest	2026-10-05T18:26:43.0288472Z PASS src/services/__tests__/authActions.signOut.test.ts
+targeted	Targeted jest	2026-10-05T18:26:43.0495429Z   ● Console
+targeted	Targeted jest	2026-10-05T18:26:43.0495800Z 
+targeted	Targeted jest	2026-10-05T18:26:43.0495923Z     console.warn
+targeted	Targeted jest	2026-10-05T18:26:43.0496688Z       [AuthActions] clearUserScopedKeys: storage sweep failed TypeError: storage.getAllKeys is not a function
+targeted	Targeted jest	2026-10-05T18:26:43.0498092Z           at getAllKeys (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:191:45)
+targeted	Targeted jest	2026-10-05T18:26:43.0498916Z           at Generator.next (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0499970Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.0501546Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0502944Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T18:26:43.0503822Z           at new Promise (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0504729Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T18:26:43.0505964Z           at _loop (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:200:8)
+targeted	Targeted jest	2026-10-05T18:26:43.0506717Z           at _loop.next (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0507646Z           at _loop (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:182:42)
+targeted	Targeted jest	2026-10-05T18:26:43.0508442Z           at Generator.next (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0509454Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.0510873Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0512242Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T18:26:43.0513085Z           at new Promise (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0513977Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T18:26:43.0515189Z           at apply (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:223:2)
+targeted	Targeted jest	2026-10-05T18:26:43.0516296Z           at apply (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:178:42)
+targeted	Targeted jest	2026-10-05T18:26:43.0517863Z           at clearUserScopedKeys (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:379:7)
+targeted	Targeted jest	2026-10-05T18:26:43.0519131Z           at Generator.next (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0520162Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.0521879Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0522947Z           at processTicksAndRejections (node:internal/process/task_queues:105:5)
+targeted	Targeted jest	2026-10-05T18:26:43.0523374Z 
+targeted	Targeted jest	2026-10-05T18:26:43.0524346Z     ^[[0m ^[[90m 16 |^[[39m ^[[36mfunction^[[39m log(level^[[33m:^[[39m ^[[33mLogLevel^[[39m^[[33m,^[[39m context^[[33m:^[[39m string^[[33m,^[[39m ^[[33m...^[[39margs^[[33m:^[[39m unknown[]) {
+targeted	Targeted jest	2026-10-05T18:26:43.0525294Z      ^[[90m 17 |^[[39m   ^[[36mif^[[39m (__DEV__) {
+targeted	Targeted jest	2026-10-05T18:26:43.0526165Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 18 |^[[39m     console[level](^[[32m`[${context}]`^[[39m^[[33m,^[[39m ^[[33m...^[[39margs)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.0527142Z      ^[[90m    |^[[39m                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.0528021Z      ^[[90m 19 |^[[39m   }
+targeted	Targeted jest	2026-10-05T18:26:43.0528690Z      ^[[90m 20 |^[[39m   ^[[90m// In production, could forward to Sentry breadcrumbs here^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.0529283Z      ^[[90m 21 |^[[39m }^[[0m
+targeted	Targeted jest	2026-10-05T18:26:43.0529598Z 
+targeted	Targeted jest	2026-10-05T18:26:43.0529759Z       at log (src/utils/logger.ts:18:19)
+targeted	Targeted jest	2026-10-05T18:26:43.0530207Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+targeted	Targeted jest	2026-10-05T18:26:43.0530687Z       at warn (src/services/authActions.ts:198:18)
+targeted	Targeted jest	2026-10-05T18:26:43.0531324Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.0532097Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0532760Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T18:26:43.0533407Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T18:26:43.0533968Z       at _loop (src/services/authActions.ts:200:8)
+targeted	Targeted jest	2026-10-05T18:26:43.0534405Z           at _loop.next (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0534842Z       at _loop (src/services/authActions.ts:182:42)
+targeted	Targeted jest	2026-10-05T18:26:43.0535523Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.0536291Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0537082Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T18:26:43.0537681Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T18:26:43.0538235Z       at apply (src/services/authActions.ts:223:2)
+targeted	Targeted jest	2026-10-05T18:26:43.0538697Z       at apply (src/services/authActions.ts:178:42)
+targeted	Targeted jest	2026-10-05T18:26:43.0539212Z       at clearUserScopedKeys (src/services/authActions.ts:379:7)
+targeted	Targeted jest	2026-10-05T18:26:43.0539915Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.0540695Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0541058Z 
+targeted	Targeted jest	2026-10-05T18:26:43.0541187Z     console.warn
+targeted	Targeted jest	2026-10-05T18:26:43.0541866Z       [AuthActions] clearUserScopedKeys: storage sweep failed TypeError: storage.getAllKeys is not a function
+targeted	Targeted jest	2026-10-05T18:26:43.0560561Z           at getAllKeys (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:191:45)
+targeted	Targeted jest	2026-10-05T18:26:43.0561387Z           at Generator.next (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0562402Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.0563788Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0565048Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T18:26:43.0566063Z           at new Promise (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0567176Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T18:26:43.0568311Z           at _loop (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:200:8)
+targeted	Targeted jest	2026-10-05T18:26:43.0568995Z           at _loop.next (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0569693Z           at _loop (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:182:42)
+targeted	Targeted jest	2026-10-05T18:26:43.0570380Z           at Generator.next (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0571324Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.0572656Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0573898Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T18:26:43.0574692Z           at new Promise (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0575516Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T18:26:43.0576633Z           at apply (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:223:2)
+targeted	Targeted jest	2026-10-05T18:26:43.0578737Z           at apply (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:178:42)
+targeted	Targeted jest	2026-10-05T18:26:43.0579942Z           at clearUserScopedKeys (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:379:7)
+targeted	Targeted jest	2026-10-05T18:26:43.0580762Z           at Generator.next (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0581759Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.0583173Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0584180Z           at processTicksAndRejections (node:internal/process/task_queues:105:5)
+targeted	Targeted jest	2026-10-05T18:26:43.0584572Z 
+targeted	Targeted jest	2026-10-05T18:26:43.0585470Z     ^[[0m ^[[90m 16 |^[[39m ^[[36mfunction^[[39m log(level^[[33m:^[[39m ^[[33mLogLevel^[[39m^[[33m,^[[39m context^[[33m:^[[39m string^[[33m,^[[39m ^[[33m...^[[39margs^[[33m:^[[39m unknown[]) {
+targeted	Targeted jest	2026-10-05T18:26:43.0586424Z      ^[[90m 17 |^[[39m   ^[[36mif^[[39m (__DEV__) {
+targeted	Targeted jest	2026-10-05T18:26:43.0587619Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 18 |^[[39m     console[level](^[[32m`[${context}]`^[[39m^[[33m,^[[39m ^[[33m...^[[39margs)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.0588409Z      ^[[90m    |^[[39m                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.0588817Z      ^[[90m 19 |^[[39m   }
+targeted	Targeted jest	2026-10-05T18:26:43.0589420Z      ^[[90m 20 |^[[39m   ^[[90m// In production, could forward to Sentry breadcrumbs here^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.0589978Z      ^[[90m 21 |^[[39m }^[[0m
+targeted	Targeted jest	2026-10-05T18:26:43.0590160Z 
+targeted	Targeted jest	2026-10-05T18:26:43.0590330Z       at log (src/utils/logger.ts:18:19)
+targeted	Targeted jest	2026-10-05T18:26:43.0590792Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+targeted	Targeted jest	2026-10-05T18:26:43.0591279Z       at warn (src/services/authActions.ts:198:18)
+targeted	Targeted jest	2026-10-05T18:26:43.0591918Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.0592683Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0593336Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T18:26:43.0593956Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T18:26:43.0594499Z       at _loop (src/services/authActions.ts:200:8)
+targeted	Targeted jest	2026-10-05T18:26:43.0594928Z           at _loop.next (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0595579Z       at _loop (src/services/authActions.ts:182:42)
+targeted	Targeted jest	2026-10-05T18:26:43.0596218Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.0597239Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0597928Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T18:26:43.0598567Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T18:26:43.0599108Z       at apply (src/services/authActions.ts:223:2)
+targeted	Targeted jest	2026-10-05T18:26:43.0599572Z       at apply (src/services/authActions.ts:178:42)
+targeted	Targeted jest	2026-10-05T18:26:43.0600102Z       at clearUserScopedKeys (src/services/authActions.ts:379:7)
+targeted	Targeted jest	2026-10-05T18:26:43.0600833Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.0601591Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0601977Z 
+targeted	Targeted jest	2026-10-05T18:26:43.0602105Z     console.warn
+targeted	Targeted jest	2026-10-05T18:26:43.0602766Z       [AuthActions] clearUserScopedKeys: storage sweep failed TypeError: storage.getAllKeys is not a function
+targeted	Targeted jest	2026-10-05T18:26:43.0603911Z           at getAllKeys (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:191:45)
+targeted	Targeted jest	2026-10-05T18:26:43.0604692Z           at Generator.next (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0605698Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.0607295Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0608621Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T18:26:43.0609432Z           at new Promise (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0610300Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T18:26:43.0611487Z           at _loop (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:200:8)
+targeted	Targeted jest	2026-10-05T18:26:43.0612202Z           at _loop.next (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0612935Z           at _loop (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:182:42)
+targeted	Targeted jest	2026-10-05T18:26:43.0613649Z           at Generator.next (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0614626Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.0616007Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0617567Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T18:26:43.0618436Z           at new Promise (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0619297Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T18:26:43.0620477Z           at apply (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:178:42)
+targeted	Targeted jest	2026-10-05T18:26:43.0621684Z           at clearUserScopedKeys (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:379:7)
+targeted	Targeted jest	2026-10-05T18:26:43.0622515Z           at Generator.next (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0623491Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.0624942Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0626234Z           at processTicksAndRejections (node:internal/process/task_queues:105:5)
+targeted	Targeted jest	2026-10-05T18:26:43.0626788Z 
+targeted	Targeted jest	2026-10-05T18:26:43.0627834Z     ^[[0m ^[[90m 16 |^[[39m ^[[36mfunction^[[39m log(level^[[33m:^[[39m ^[[33mLogLevel^[[39m^[[33m,^[[39m context^[[33m:^[[39m string^[[33m,^[[39m ^[[33m...^[[39margs^[[33m:^[[39m unknown[]) {
+targeted	Targeted jest	2026-10-05T18:26:43.0628702Z      ^[[90m 17 |^[[39m   ^[[36mif^[[39m (__DEV__) {
+targeted	Targeted jest	2026-10-05T18:26:43.0629511Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 18 |^[[39m     console[level](^[[32m`[${context}]`^[[39m^[[33m,^[[39m ^[[33m...^[[39margs)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.0630227Z      ^[[90m    |^[[39m                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.0630635Z      ^[[90m 19 |^[[39m   }
+targeted	Targeted jest	2026-10-05T18:26:43.0631260Z      ^[[90m 20 |^[[39m   ^[[90m// In production, could forward to Sentry breadcrumbs here^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.0631829Z      ^[[90m 21 |^[[39m }^[[0m
+targeted	Targeted jest	2026-10-05T18:26:43.0632025Z 
+targeted	Targeted jest	2026-10-05T18:26:43.0632199Z       at log (src/utils/logger.ts:18:19)
+targeted	Targeted jest	2026-10-05T18:26:43.0632683Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+targeted	Targeted jest	2026-10-05T18:26:43.0633185Z       at warn (src/services/authActions.ts:198:18)
+targeted	Targeted jest	2026-10-05T18:26:43.0633879Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.0634667Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0635349Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T18:26:43.0636006Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T18:26:43.0636605Z       at _loop (src/services/authActions.ts:200:8)
+targeted	Targeted jest	2026-10-05T18:26:43.0637241Z           at _loop.next (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0637694Z       at _loop (src/services/authActions.ts:182:42)
+targeted	Targeted jest	2026-10-05T18:26:43.0638393Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.0639191Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0639831Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T18:26:43.0640469Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T18:26:43.0641011Z       at apply (src/services/authActions.ts:178:42)
+targeted	Targeted jest	2026-10-05T18:26:43.0641544Z       at clearUserScopedKeys (src/services/authActions.ts:379:7)
+targeted	Targeted jest	2026-10-05T18:26:43.0642258Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.0643028Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0643413Z 
+targeted	Targeted jest	2026-10-05T18:26:43.0643532Z     console.warn
+targeted	Targeted jest	2026-10-05T18:26:43.0644203Z       [AuthActions] clearUserScopedKeys: storage sweep failed TypeError: storage.getAllKeys is not a function
+targeted	Targeted jest	2026-10-05T18:26:43.0645329Z           at getAllKeys (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:191:45)
+targeted	Targeted jest	2026-10-05T18:26:43.0646101Z           at Generator.next (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0647415Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.0648888Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0650261Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T18:26:43.0651100Z           at new Promise (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0652004Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T18:26:43.0653205Z           at _loop (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:200:8)
+targeted	Targeted jest	2026-10-05T18:26:43.0653940Z           at _loop.next (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0654712Z           at _loop (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:182:42)
+targeted	Targeted jest	2026-10-05T18:26:43.0655699Z           at Generator.next (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0657073Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.0658560Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0659892Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T18:26:43.0660729Z           at new Promise (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0661640Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T18:26:43.0662848Z           at apply (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:178:42)
+targeted	Targeted jest	2026-10-05T18:26:43.0664082Z           at clearUserScopedKeys (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:379:7)
+targeted	Targeted jest	2026-10-05T18:26:43.0664936Z           at Generator.next (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0665977Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.0667582Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0668639Z           at processTicksAndRejections (node:internal/process/task_queues:105:5)
+targeted	Targeted jest	2026-10-05T18:26:43.0669067Z 
+targeted	Targeted jest	2026-10-05T18:26:43.0669999Z     ^[[0m ^[[90m 16 |^[[39m ^[[36mfunction^[[39m log(level^[[33m:^[[39m ^[[33mLogLevel^[[39m^[[33m,^[[39m context^[[33m:^[[39m string^[[33m,^[[39m ^[[33m...^[[39margs^[[33m:^[[39m unknown[]) {
+targeted	Targeted jest	2026-10-05T18:26:43.0670982Z      ^[[90m 17 |^[[39m   ^[[36mif^[[39m (__DEV__) {
+targeted	Targeted jest	2026-10-05T18:26:43.0671865Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 18 |^[[39m     console[level](^[[32m`[${context}]`^[[39m^[[33m,^[[39m ^[[33m...^[[39margs)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.0672683Z      ^[[90m    |^[[39m                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.0673146Z      ^[[90m 19 |^[[39m   }
+targeted	Targeted jest	2026-10-05T18:26:43.0673794Z      ^[[90m 20 |^[[39m   ^[[90m// In production, could forward to Sentry breadcrumbs here^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.0674405Z      ^[[90m 21 |^[[39m }^[[0m
+targeted	Targeted jest	2026-10-05T18:26:43.0674603Z 
+targeted	Targeted jest	2026-10-05T18:26:43.0674787Z       at log (src/utils/logger.ts:18:19)
+targeted	Targeted jest	2026-10-05T18:26:43.0675266Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+targeted	Targeted jest	2026-10-05T18:26:43.0675780Z       at warn (src/services/authActions.ts:198:18)
+targeted	Targeted jest	2026-10-05T18:26:43.0676473Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.0707703Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0708476Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T18:26:43.0709156Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T18:26:43.0709742Z       at _loop (src/services/authActions.ts:200:8)
+targeted	Targeted jest	2026-10-05T18:26:43.0710204Z           at _loop.next (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0710651Z       at _loop (src/services/authActions.ts:182:42)
+targeted	Targeted jest	2026-10-05T18:26:43.0711336Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.0712140Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0712821Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+targeted	Targeted jest	2026-10-05T18:26:43.0713478Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+targeted	Targeted jest	2026-10-05T18:26:43.0714055Z       at apply (src/services/authActions.ts:178:42)
+targeted	Targeted jest	2026-10-05T18:26:43.0714622Z       at clearUserScopedKeys (src/services/authActions.ts:379:7)
+targeted	Targeted jest	2026-10-05T18:26:43.0715641Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.0716572Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0717118Z 
+targeted	Targeted jest	2026-10-05T18:26:43.0717248Z     console.warn
+targeted	Targeted jest	2026-10-05T18:26:43.0717783Z       [AuthActions] resetUserScopedStores: coachStore reset failed Error: boom
+targeted	Targeted jest	2026-10-05T18:26:43.0719029Z           at Object.reset (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/__tests__/authActions.signOut.test.ts:175:15)
+targeted	Targeted jest	2026-10-05T18:26:43.0720351Z           at reset (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:437:51)
+targeted	Targeted jest	2026-10-05T18:26:43.0721496Z           at reset (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:446:7)
+targeted	Targeted jest	2026-10-05T18:26:43.0722736Z           at resetUserScopedStores (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:409:3)
+targeted	Targeted jest	2026-10-05T18:26:43.0723624Z           at Generator.next (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0724657Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.0726142Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0727395Z           at processTicksAndRejections (node:internal/process/task_queues:105:5)
+targeted	Targeted jest	2026-10-05T18:26:43.0727828Z 
+targeted	Targeted jest	2026-10-05T18:26:43.0728796Z     ^[[0m ^[[90m 16 |^[[39m ^[[36mfunction^[[39m log(level^[[33m:^[[39m ^[[33mLogLevel^[[39m^[[33m,^[[39m context^[[33m:^[[39m string^[[33m,^[[39m ^[[33m...^[[39margs^[[33m:^[[39m unknown[]) {
+targeted	Targeted jest	2026-10-05T18:26:43.0729779Z      ^[[90m 17 |^[[39m   ^[[36mif^[[39m (__DEV__) {
+targeted	Targeted jest	2026-10-05T18:26:43.0730636Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 18 |^[[39m     console[level](^[[32m`[${context}]`^[[39m^[[33m,^[[39m ^[[33m...^[[39margs)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.0731446Z      ^[[90m    |^[[39m                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.0731910Z      ^[[90m 19 |^[[39m   }
+targeted	Targeted jest	2026-10-05T18:26:43.0732563Z      ^[[90m 20 |^[[39m   ^[[90m// In production, could forward to Sentry breadcrumbs here^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.0733176Z      ^[[90m 21 |^[[39m }^[[0m
+targeted	Targeted jest	2026-10-05T18:26:43.0733379Z 
+targeted	Targeted jest	2026-10-05T18:26:43.0733563Z       at log (src/utils/logger.ts:18:19)
+targeted	Targeted jest	2026-10-05T18:26:43.0734036Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+targeted	Targeted jest	2026-10-05T18:26:43.0734540Z       at warn (src/services/authActions.ts:448:14)
+targeted	Targeted jest	2026-10-05T18:26:43.0735116Z       at resetUserScopedStores (src/services/authActions.ts:409:3)
+targeted	Targeted jest	2026-10-05T18:26:43.0735894Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.0736696Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0742205Z 
+targeted	Targeted jest	2026-10-05T18:26:43.0742366Z     console.warn
+targeted	Targeted jest	2026-10-05T18:26:43.0742989Z       [AuthActions] resetUserScopedStores: coachStore reset failed Error: coach reset boom
+targeted	Targeted jest	2026-10-05T18:26:43.0744220Z           at Object.reset (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/__tests__/authActions.signOut.test.ts:192:15)
+targeted	Targeted jest	2026-10-05T18:26:43.0745575Z           at reset (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:437:51)
+targeted	Targeted jest	2026-10-05T18:26:43.0746724Z           at reset (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:446:7)
+targeted	Targeted jest	2026-10-05T18:26:43.0748107Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/src/services/__tests__/authActions.signOut.test.ts:196:39
+targeted	Targeted jest	2026-10-05T18:26:43.0749567Z           at Object.<anonymous> (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/expect/build/toThrowMatchers.js:74:11)
+targeted	Targeted jest	2026-10-05T18:26:43.0751050Z           at Object.throwingMatcher [as toThrow] (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/expect/build/index.js:320:21)
+targeted	Targeted jest	2026-10-05T18:26:43.0752861Z           at Object.toThrow (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/__tests__/authActions.signOut.test.ts:196:47)
+targeted	Targeted jest	2026-10-05T18:26:43.0754548Z           at Promise.then.completed (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/utils.js:298:28)
+targeted	Targeted jest	2026-10-05T18:26:43.0755467Z           at new Promise (<anonymous>)
+targeted	Targeted jest	2026-10-05T18:26:43.0756417Z           at callAsyncCircusFn (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/utils.js:231:10)
+targeted	Targeted jest	2026-10-05T18:26:43.0757918Z           at _callCircusTest (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/run.js:316:40)
+targeted	Targeted jest	2026-10-05T18:26:43.0758961Z           at processTicksAndRejections (node:internal/process/task_queues:105:5)
+targeted	Targeted jest	2026-10-05T18:26:43.0759968Z           at _runTest (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/run.js:252:3)
+targeted	Targeted jest	2026-10-05T18:26:43.0761333Z           at _runTestsForDescribeBlock (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/run.js:126:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0762782Z           at _runTestsForDescribeBlock (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/run.js:121:9)
+targeted	Targeted jest	2026-10-05T18:26:43.0764101Z           at run (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/run.js:71:3)
+targeted	Targeted jest	2026-10-05T18:26:43.0765744Z           at runAndTransformResultsToJestFormat (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)
+targeted	Targeted jest	2026-10-05T18:26:43.0767857Z           at jestAdapter (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)
+targeted	Targeted jest	2026-10-05T18:26:43.0769379Z           at runTestInternal (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-runner/build/runTest.js:367:16)
+targeted	Targeted jest	2026-10-05T18:26:43.0770748Z           at runTest (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-runner/build/runTest.js:444:34)
+targeted	Targeted jest	2026-10-05T18:26:43.0772101Z           at Object.worker (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/jest-runner/build/testWorker.js:106:12)
+targeted	Targeted jest	2026-10-05T18:26:43.0772827Z 
+targeted	Targeted jest	2026-10-05T18:26:43.0773765Z     ^[[0m ^[[90m 16 |^[[39m ^[[36mfunction^[[39m log(level^[[33m:^[[39m ^[[33mLogLevel^[[39m^[[33m,^[[39m context^[[33m:^[[39m string^[[33m,^[[39m ^[[33m...^[[39margs^[[33m:^[[39m unknown[]) {
+targeted	Targeted jest	2026-10-05T18:26:43.0774710Z      ^[[90m 17 |^[[39m   ^[[36mif^[[39m (__DEV__) {
+targeted	Targeted jest	2026-10-05T18:26:43.0775552Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 18 |^[[39m     console[level](^[[32m`[${context}]`^[[39m^[[33m,^[[39m ^[[33m...^[[39margs)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.0776327Z      ^[[90m    |^[[39m                   ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.0776762Z      ^[[90m 19 |^[[39m   }
+targeted	Targeted jest	2026-10-05T18:26:43.0777531Z      ^[[90m 20 |^[[39m   ^[[90m// In production, could forward to Sentry breadcrumbs here^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.0778092Z      ^[[90m 21 |^[[39m }^[[0m
+targeted	Targeted jest	2026-10-05T18:26:43.0778273Z 
+targeted	Targeted jest	2026-10-05T18:26:43.0778451Z       at log (src/utils/logger.ts:18:19)
+targeted	Targeted jest	2026-10-05T18:26:43.0778917Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+targeted	Targeted jest	2026-10-05T18:26:43.0779429Z       at warn (src/services/authActions.ts:448:14)
+targeted	Targeted jest	2026-10-05T18:26:43.0779988Z       at src/services/__tests__/authActions.signOut.test.ts:196:39
+targeted	Targeted jest	2026-10-05T18:26:43.0780686Z       at Object.<anonymous> (node_modules/expect/build/toThrowMatchers.js:74:11)
+targeted	Targeted jest	2026-10-05T18:26:43.0781493Z       at Object.throwingMatcher [as toThrow] (node_modules/expect/build/index.js:320:21)
+targeted	Targeted jest	2026-10-05T18:26:43.0782301Z       at Object.toThrow (src/services/__tests__/authActions.signOut.test.ts:196:47)
+targeted	Targeted jest	2026-10-05T18:26:43.0782727Z 
+targeted	Targeted jest	2026-10-05T18:26:43.0783150Z PASS src/entitlements/dunning/__tests__/dunningL1Contract.test.ts
+targeted	Targeted jest	2026-10-05T18:26:43.0784055Z PASS src/services/__tests__/api.lockedDunning.test.ts
+targeted	Targeted jest	2026-10-05T18:26:43.1858471Z PASS src/entitlements/dunning/__tests__/aud119OpusL12_352.probe.test.ts
+targeted	Targeted jest	2026-10-05T18:26:43.2343100Z PASS src/entitlements/dunning/__tests__/auditSol120Boundaries.test.ts
+targeted	Targeted jest	2026-10-05T18:26:43.2548773Z FAIL src/entitlements/dunning/__tests__/auditSol120PresentationOwner.test.ts
+targeted	Targeted jest	2026-10-05T18:26:43.2550379Z   ● B-352-3: retired A presentation teardown must not erase current B native sheet
+targeted	Targeted jest	2026-10-05T18:26:43.2550989Z 
+targeted	Targeted jest	2026-10-05T18:26:43.2551356Z     expect(received).toBe(expected) // Object.is equality
+targeted	Targeted jest	2026-10-05T18:26:43.2551869Z 
+targeted	Targeted jest	2026-10-05T18:26:43.2552123Z     Expected: "done"
+targeted	Targeted jest	2026-10-05T18:26:43.2552537Z     Received: "error"
+targeted	Targeted jest	2026-10-05T18:26:43.2552847Z 
+targeted	Targeted jest	2026-10-05T18:26:43.2553687Z     ^[[0m ^[[90m 91 |^[[39m   expect(^[[36mawait^[[39m a)^[[33m.^[[39mtoEqual({ kind^[[33m:^[[39m ^[[32m'retired'^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.2554656Z      ^[[90m 92 |^[[39m   finishBInit^[[33m.^[[39mresolve({})^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.2555753Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 93 |^[[39m   expect((^[[36mawait^[[39m b)^[[33m.^[[39mkind)^[[33m.^[[39mtoBe(^[[32m'done'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.2556720Z      ^[[90m    |^[[39m                          ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.2557890Z      ^[[90m 94 |^[[39m   expect(shown)^[[33m.^[[39mtoEqual([^[[32m'cus_A'^[[39m^[[33m,^[[39m ^[[32m'cus_B'^[[39m])^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.2559220Z      ^[[90m 95 |^[[39m   expect(mockPost)^[[33m.^[[39mtoHaveBeenCalledWith(^[[32m'/v1/checkout/payment-method/confirm'^[[39m^[[33m,^[[39m {
+targeted	Targeted jest	2026-10-05T18:26:43.2560573Z      ^[[90m 96 |^[[39m     setup_intent_id^[[33m:^[[39m ^[[32m'seti_B'^[[39m^[[33m,^[[39m approved_invoices^[[33m:^[[39m []^[[33m,^[[39m^[[0m
+targeted	Targeted jest	2026-10-05T18:26:43.2561227Z 
+targeted	Targeted jest	2026-10-05T18:26:43.2561858Z       at Object.toBe (src/entitlements/dunning/__tests__/auditSol120PresentationOwner.test.ts:93:26)
+targeted	Targeted jest	2026-10-05T18:26:43.2562939Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.2563902Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.2564440Z 
+targeted	Targeted jest	2026-10-05T18:26:43.2565080Z   ● B-352-3: a superseded but still mounted presentation cannot confirm its old setup
+targeted	Targeted jest	2026-10-05T18:26:43.2565657Z 
+targeted	Targeted jest	2026-10-05T18:26:43.2566018Z     expect(received).toEqual(expected) // deep equality
+targeted	Targeted jest	2026-10-05T18:26:43.2566452Z 
+targeted	Targeted jest	2026-10-05T18:26:43.2566718Z     - Expected  -  1
+targeted	Targeted jest	2026-10-05T18:26:43.2567317Z     + Received  + 19
+targeted	Targeted jest	2026-10-05T18:26:43.2567621Z 
+targeted	Targeted jest	2026-10-05T18:26:43.2591902Z       Object {
+targeted	Targeted jest	2026-10-05T18:26:43.2594956Z     -   "kind": "retired",
+targeted	Targeted jest	2026-10-05T18:26:43.2595442Z     +   "kind": "done",
+targeted	Targeted jest	2026-10-05T18:26:43.2595868Z     +   "response": Object {
+targeted	Targeted jest	2026-10-05T18:26:43.2596425Z     +     "access_restored": false,
+targeted	Targeted jest	2026-10-05T18:26:43.2597101Z     +     "access_state": "unchanged",
+targeted	Targeted jest	2026-10-05T18:26:43.2597710Z     +     "amount_due_cents": 0,
+targeted	Targeted jest	2026-10-05T18:26:43.2598080Z     +     "amount_paid_cents": 0,
+targeted	Targeted jest	2026-10-05T18:26:43.2598389Z     +     "card_brand": null,
+targeted	Targeted jest	2026-10-05T18:26:43.2598764Z     +     "card_last4": null,
+targeted	Targeted jest	2026-10-05T18:26:43.2598971Z     +     "currency": null,
+targeted	Targeted jest	2026-10-05T18:26:43.2599206Z     +     "decline_code": null,
+targeted	Targeted jest	2026-10-05T18:26:43.2599415Z     +     "disputes": null,
+targeted	Targeted jest	2026-10-05T18:26:43.2599627Z     +     "due_totals": Array [],
+targeted	Targeted jest	2026-10-05T18:26:43.2599834Z     +     "message": null,
+targeted	Targeted jest	2026-10-05T18:26:43.2600024Z     +     "outcome": "saved",
+targeted	Targeted jest	2026-10-05T18:26:43.2600236Z     +     "paid_totals": Array [],
+targeted	Targeted jest	2026-10-05T18:26:43.2600488Z     +     "payment_intent_client_secret": null,
+targeted	Targeted jest	2026-10-05T18:26:43.2600730Z     +     "quote": null,
+targeted	Targeted jest	2026-10-05T18:26:43.2600912Z     +   },
+targeted	Targeted jest	2026-10-05T18:26:43.2601103Z     +   "setupIntentId": "seti_A",
+targeted	Targeted jest	2026-10-05T18:26:43.2601305Z       }
+targeted	Targeted jest	2026-10-05T18:26:43.2601397Z 
+targeted	Targeted jest	2026-10-05T18:26:43.2601660Z     ^[[0m ^[[90m 128 |^[[39m   finishA^[[33m.^[[39mresolve()^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.2602273Z      ^[[90m 129 |^[[39m   ^[[36mconst^[[39m outcomes ^[[33m=^[[39m ^[[36mawait^[[39m ^[[33mPromise^[[39m^[[33m.^[[39mall([a^[[33m,^[[39m b])^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.2603421Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 130 |^[[39m   expect(outcomes[^[[35m0^[[39m])^[[33m.^[[39mtoEqual({ kind^[[33m:^[[39m ^[[32m'retired'^[[39m })^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.2604056Z      ^[[90m     |^[[39m                       ^[[31m^[[1m^^[[22m^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.2604573Z      ^[[90m 131 |^[[39m   expect(outcomes[^[[35m1^[[39m]^[[33m.^[[39mkind)^[[33m.^[[39mtoBe(^[[32m'done'^[[39m)^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.2605473Z      ^[[90m 132 |^[[39m   ^[[36mconst^[[39m confirms ^[[33m=^[[39m mockPost^[[33m.^[[39mmock^[[33m.^[[39mcalls^[[33m.^[[39mfilter(([url]) ^[[33m=>^[[39m ^[[33mString^[[39m(url)^[[33m.^[[39mendsWith(^[[32m'/confirm'^[[39m))^[[33m;^[[39m
+targeted	Targeted jest	2026-10-05T18:26:43.2606359Z      ^[[90m 133 |^[[39m   expect(confirms)^[[33m.^[[39mtoEqual([[^[[32m'/v1/checkout/payment-method/confirm'^[[39m^[[33m,^[[39m {^[[0m
+targeted	Targeted jest	2026-10-05T18:26:43.2606684Z 
+targeted	Targeted jest	2026-10-05T18:26:43.2607341Z       at Object.toEqual (src/entitlements/dunning/__tests__/auditSol120PresentationOwner.test.ts:130:23)
+targeted	Targeted jest	2026-10-05T18:26:43.2607959Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+targeted	Targeted jest	2026-10-05T18:26:43.2608417Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+targeted	Targeted jest	2026-10-05T18:26:43.2608650Z 
+targeted	Targeted jest	2026-10-05T18:26:43.3222621Z PASS src/services/__tests__/auditSol117DunningIdentity.test.ts
+targeted	Targeted jest	2026-10-05T18:26:43.3525847Z 
+targeted	Targeted jest	2026-10-05T18:26:43.3532075Z Test Suites: 1 failed, 6 passed, 7 total
+targeted	Targeted jest	2026-10-05T18:26:43.3532510Z Tests:       2 failed, 45 passed, 47 total
+targeted	Targeted jest	2026-10-05T18:26:43.3532762Z Snapshots:   0 total
+targeted	Targeted jest	2026-10-05T18:26:43.3532966Z Time:        3.585 s
+targeted	Targeted jest	2026-10-05T18:26:43.3534648Z Ran all test suites matching /src\/entitlements\/dunning\/__tests__\/auditSol120Boundaries.test.ts|src\/entitlements\/dunning\/__tests__\/auditSol120PresentationOwner.test.ts|src\/entitlements\/dunning\/__tests__\/aud119OpusL12_352.probe.test.ts|src\/services\/__tests__\/auditSol117DunningIdentity.test.ts|src\/entitlements\/dunning\/__tests__\/dunningL1Contract.test.ts|src\/services\/__tests__\/api.lockedDunning.test.ts|src\/services\/__tests__\/authActions.signOut.test.ts/i.
+targeted	Targeted jest	2026-10-05T18:26:43.4237979Z ##[error]Process completed with exit code 1.
+targeted	Post Run actions/checkout@v6	﻿2026-10-05T18:26:43.4354664Z Post job cleanup.
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5027259Z [command]/usr/bin/git version
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5057359Z git version 2.55.0
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5087467Z Temporarily overriding HOME='/home/runner/work/_temp/f2d19faf-7929-443c-a21f-292cf7df7780' before making global git config changes
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5088673Z Adding repository directory to the temporary git global config as a safe directory
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5092165Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5118094Z Removing SSH command configuration
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5123082Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5152058Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5347321Z Removing HTTP extra header
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5351293Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5379263Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5567546Z Removing includeIf entries pointing to credentials config files
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5573195Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5596800Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5598169Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5599371Z includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5600074Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5604779Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5623987Z /home/runner/work/_temp/git-credentials-42423606-b862-4fca-88e2-e2dd7cbf1042.config
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5632538Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-42423606-b862-4fca-88e2-e2dd7cbf1042.config
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5662304Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5679914Z /home/runner/work/_temp/git-credentials-42423606-b862-4fca-88e2-e2dd7cbf1042.config
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5687418Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-42423606-b862-4fca-88e2-e2dd7cbf1042.config
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5714348Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5732170Z /github/runner_temp/git-credentials-42423606-b862-4fca-88e2-e2dd7cbf1042.config
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5738942Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-42423606-b862-4fca-88e2-e2dd7cbf1042.config
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5765977Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5783447Z /github/runner_temp/git-credentials-42423606-b862-4fca-88e2-e2dd7cbf1042.config
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5791575Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-42423606-b862-4fca-88e2-e2dd7cbf1042.config
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.5819850Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+targeted	Post Run actions/checkout@v6	2026-10-05T18:26:43.6007597Z Removing credentials config '/home/runner/work/_temp/git-credentials-42423606-b862-4fca-88e2-e2dd7cbf1042.config'
+targeted	Complete job	﻿2026-10-05T18:26:43.6141761Z Cleaning up orphan processes

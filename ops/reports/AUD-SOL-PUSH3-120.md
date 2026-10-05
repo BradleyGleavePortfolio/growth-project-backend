@@ -1,0 +1,62 @@
+# AUD-SOL-PUSH3-120 — agent 120, Sol T4 lens
+
+## Scope and current state
+
+- Started 2026-10-05 11:06:29 PDT (from `date`).
+- Both verdicts posted by 2026-10-05 11:15:43 PDT (from `date`), after immediate REST head confirmation.
+- Mandate: exact-head fix-round review of backend #692 and #693 only, replay the Sol probes and explicitly close or retain the prior Bs.
+- Expected #692 head: `346cf4a8ee462c8f241de65df6ffda95988257f3`, base main `ee55f814eb02b530e6578a168dc16c7ea7e2b07b`, 910 changed lines, grandfathered 3,000 ceiling. [Candidate](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/692)
+- Expected #693 head: `53796f1e278c12ebb56d701724df032675dcedf1`, base #692, 2,876 changed lines, grandfathered 3,000 ceiling. [Candidate](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/693)
+- Read common 120 → 119 → 116/118, LAW, audit rules, standing orders, merge guide, assigned JOBS120 entry, earlier Sol report/probes and builder report.
+- Source snapshots and probe evidence: `ops/aud-120/AUD-SOL-PUSH3-120/`.
+- No local heavy work, candidate-source edits, merge, deploy or production actions.
+
+## Verdicts
+
+| PR | Exact head | Sol verdict | A/B/C | Comment |
+|---|---|---|---|---|
+| #692 | `346cf4a8ee462c8f241de65df6ffda95988257f3` | APPROVE | 0/0/0 | [Posted P1 verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/692#issuecomment-6000373524) |
+| #693 | `53796f1e278c12ebb56d701724df032675dcedf1` | REQUEST CHANGES | 0/1/2 | [Posted P2 verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/693#issuecomment-6000395449) |
+
+## Prior finding disposition
+
+- **B-692-1 CLOSED**, `lock-screen-copy.ts:125-146`: fixed per-kind templates, no free-form body or display name; original counterexamples pass, fixed-copy and deletion suites 29/29. [Posted closure](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/692#issuecomment-6000373524)
+- **B-693-1 CLOSED**, `booking.emitter.ts:195-197,280-293` plus lifecycle `:378-386`: production caller supplies committed move identity, repeated cycles and same-ID replay regressions pass. [Posted closure](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/693#issuecomment-6000395449)
+- **B-648-7 CLOSED**, `notifications.service.ts:530-533,998-1020`: stored in-app counterpart proof plus actual writer result propagation keeps failed/suppressed sole rows visible, positive counterpart and payout-throttle controls pass. [Posted closure](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/693#issuecomment-6000395449)
+- **B-693-2 CLOSED**, `push-delivery.service.ts:677-679,724-732,750-751,769-814`: failed receipt/ticket token cleanup remains durably pending; [0,1] recovery, no resend, replacement-token CAS tests pass. [Posted closure](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/693#issuecomment-6000395449)
+- **B-648-9 CLOSED for its prior interleaving**, `push-delivery.service.ts:533-545`: master/per-kind mute and sign-out committed during the original preparation read are observed before provider send; all original probe and candidate regression controls pass. This is not a blanket proof for the new post-CAS row-authority boundary. [Posted scoped closure](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/693#issuecomment-6000395449)
+
+## Evidence and verification
+
+- Claimed both assigned heads and created detached worktrees `wt/AUD-SOL-PUSH3-120-{1,2}`; no dependencies linked.
+- Read P1 fix `32863d3c..346cf4a8`, P2 fix `b2c167c6..53796f1e`, both restack parentages and the only conflict resolution (`60fb8fe9`, preserving main's `throttle_key` alongside `push_twin`). Fix diff snapshots are preserved in the evidence directory. [P1 fix round](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/692#issuecomment-6000090214), [P2 fix round](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/693#issuecomment-6000199795)
+- P1 probe commit `b3593219`, unique branch `ci/AUD-SOL-PUSH3-120-p1-1`: prior six probes plus fixed-copy and deletion-manifest/FK suites. [P1 lane 37353631853](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37353631853)
+- P2 probe commit `c978d6e9`, unique branch `ci/AUD-SOL-PUSH3-120-p2-1`: all seven prior probes, four new post-handoff authority probes and nine candidate/regression suites. [P2 lane 37353805224](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37353805224)
+- New adversarial question: `push-delivery.service.ts:533-542` adds unbounded reads **after** the lease/deletion-fenced handoff; after they complete, `:577` calls Expo without another row-authority CAS. Probes challenge a swept/expired row and erasure during the final token-read result delay, with under-lease and current-null-token controls. [P2 candidate](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/693)
+- Candidate checks captured directly: #692 named required checks green; #693 applicable stacked checks green, main-only CodeQL/banned casts/SBOM/Danger and migration workflow absent, to run after #692 lands and its base becomes main. The optional deploy-readiness-gate is skipped, not claimed as executed. [P1 CI](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37350476563), [P2 CI](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37352037508)
+- No prior APPROVE reused. Earlier review decisions on unchanged code are risk-scoped history, not an approval inherited from REQUEST CHANGES.
+- P1 first lane completed successfully: only the two copy suites actually ran (12/12); initially supplied deletion-suite filenames were incorrect, so those suites are **not** claimed as executed in that run. The corrected second unique lane runs all four intended suites. [First P1 lane](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37353631853), [Corrected P1 lane 37354027225](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37354027225)
+- P2 first lane completed: 9 suites pass, audit suite has exactly two new counterexample failures; 180 passed / 2 failed, 182 total. All seven earlier Sol probes, all fifteen builder round-5 regressions, both old delivery suites and both new positive controls pass. Both expiry and erasure probes observe one external provider call when zero was permitted. [P2 counterexample run](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37353805224)
+- Published **B-648-8 reopened**, `push-delivery.service.ts:526-539,550-578`: final preference/token awaits occur after the last outbox authority CAS. A stalled final token read survives a replica closing its 120-second lease; a captured final token result also survives committed erasure of both the token and outbox row. A resumes and sends without current row authority. These are two consequences of one root cause, counted as one B. Minimal fix: the final lease/deletion-fenced external handoff must happen after all preparatory awaits; do not mark a provider attempt as begun before slow preparation is over, and suppress an expired/deleted/lost claim. Preserve the consent check, final quiet-hours clock check and actual late-provider completion path. [Current worker](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/53796f1e278c12ebb56d701724df032675dcedf1/src/notifications/push/push-delivery.service.ts), [Published finding](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/693#issuecomment-6000395449)
+- Supplemental probe refinement removes assumptions that a future fix must keep the early `handed_off_at` marker; replica sends are counted separately. This preserves the same customer outcome assertions and permits a correctly reordered handoff.
+- Refined probe commit `d22b3203`, branch `ci/AUD-SOL-PUSH3-120-p2-2`, workflow head `c71f25b658b28a3788bacea24a1e417d9cbdabd5`: **2 failed / 9 passed, 11 tests**, exactly the same expiry/erasure failures, all seven prior probes plus two new controls pass. [Refined lane 37354299393](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37354299393)
+- Corrected P1 lane workflow head `5ab84a3e40a402b35d8a6aa8c506f237f861a2a8`: **4 suites / 29 tests passed**. P2 broad-lane workflow head `08d66a8c09d2155a865795f96f5abd6447c163f0`: **9 suites passed, 1 failed; 180 passed / 2 failed**. [P1](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37354027225), [P2](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37353805224)
+- Main applicability: reconstructed `27156167 + ee55f814` tree `f1689b71a722a7a4eaecfd0a5ecddabe438cfb03` matches P1 refresh `32863d3c`; reconstructed `60fb8fe9 + 346cf4a8` tree `a03bd6e76a66dcf50cf9992e30a846d99d9da510` matches P2 restack `b2c167c6`. The only main conflict keeps both API fields; no unaccounted candidate commits remain. [Published applicability attestations](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/693#issuecomment-6000395449)
+
+## Follow-ups (C)
+
+- **C-693-1**, `push-delivery.service.ts:246-262,500-510`: conversation collapse and user burst admission remain non-atomic across replicas. Fix rule: atomic conversation admission and shared per-user reservation/advisory lock if the cap is strict. Code-derived, not a new live-DB concurrency claim. [Current admission code](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/53796f1e278c12ebb56d701724df032675dcedf1/src/notifications/push/push-delivery.service.ts)
+- **C-693-2 (outside this diff)**, `notifications.service.ts:744-778,803-858`: legacy raw senders still bypass outbox privacy/quiet-hours/receipt/consent policy. Fix rule: separately owned T4 unification preserving delivered-versus-queued contracts; no universal notification-privacy claim. [Current raw senders](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/53796f1e278c12ebb56d701724df032675dcedf1/src/notifications/notifications.service.ts)
+- The Opus U2/U3 failures remain explicitly ruled follow-up Cs in the builder's exact-head mixed bundle; neither is silently represented as passing. [Builder probe/ruling record](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/693#issuecomment-6000199795)
+
+## Operator default and cleanup
+
+- Recommended default: hold the push train, fix reopened B-648-8, replay both lenses' probes, obtain fresh exact-head verdicts and main-only gates, then land #692/#693 back to back and deploy only after #693 with migrations. No new owner decision is needed for this bounded fix. [Published recommendation](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/693#issuecomment-6000395449)
+- Keep the approved reminder-time/no-name copy and one-hour runtime twin proof window; Android delivery still needs one device qualification before announcement, and mobile #341 supplies recipient zone. [Builder rollout boundaries](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/693#issuecomment-6000199795)
+- Cleanup completed at 2026-10-05 11:16:54 PDT (from `date`): all four owned remote CI branches deleted, both detached owned worktrees removed, and no owned refs/worktrees remain; no other lane touched. All test sources, logs, check snapshots, pre-post head snapshots, exact outbound payloads and `cleanup-receipt.md` remain under `ops/aud-120/AUD-SOL-PUSH3-120/`.
+
+## HANDOFF
+
+Review complete: #692 APPROVE 0/0/0 at `346cf4a8ee462c8f241de65df6ffda95988257f3`; #693 REQUEST CHANGES 0/1/2 at `53796f1e278c12ebb56d701724df032675dcedf1`, with B-648-8 reopened by post-authority preparation awaits. Both heads were re-read immediately before posting one verdict each. [P1 verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/692#issuecomment-6000373524), [P2 verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/693#issuecomment-6000395449)
+
+Next: fresh builder fixes B-648-8 in P2 with failing-before/passing-after proof using the refined probe, stays under 3,000 changed lines and replays both lenses. Fresh lenses audit the next head; the stacked piece still needs main-only gates before merge. All four lane runs have completed and all owned branch/worktree cleanup is done. This job ends; no waiting for later fix heads.

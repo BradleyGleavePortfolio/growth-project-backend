@@ -1,0 +1,1395 @@
+diff --git a/src/services/health/__tests__/onDeviceSync.test.ts b/src/services/health/__tests__/onDeviceSync.test.ts
+index a42c57a2..ff10da17 100644
+--- a/src/services/health/__tests__/onDeviceSync.test.ts
++++ b/src/services/health/__tests__/onDeviceSync.test.ts
+@@ -291,6 +291,68 @@ describe('connectOnDevice (explicit Connect tap)', () => {
+   });
+ });
+ 
++describe('import passes — H8 (late data, resumable import)', () => {
++  const hcPass = (normalizedCount: number, more: boolean, failed: boolean) => ({
++    normalizedCount,
++    complete: !more && !failed,
++    hasMore: more,
++    failed,
++  });
++
++  it('a later pass reads only the types left at the page bound', async () => {
++    const syncHealthConnect = jest
++      .fn()
++      .mockResolvedValueOnce(hcPass(40, true, false))
++      .mockResolvedValueOnce(hcPass(10, false, false));
++    const out = await connect('HEALTH_CONNECT', {
++      register: jest.fn().mockResolvedValue(connection('HEALTH_CONNECT')),
++      syncHealthConnect,
++      readUserId: user('user-a'),
++    });
++    expect(syncHealthConnect.mock.calls.map((c) => c[2])).toEqual([
++      { resumeOnly: false },
++      { resumeOnly: true },
++    ]);
++    expect(out).toMatchObject({ kind: 'imported', postedCount: 50, complete: true });
++  });
++
++  it('a pass that is incomplete only because a read failed is not repeated', async () => {
++    const syncHealthConnect = jest.fn().mockResolvedValue(hcPass(40, false, true));
++    const out = await connect('HEALTH_CONNECT', {
++      register: jest.fn().mockResolvedValue(connection('HEALTH_CONNECT')),
++      syncHealthConnect,
++      readUserId: user('user-a'),
++    });
++    expect(syncHealthConnect).toHaveBeenCalledTimes(1);
++    expect(out).toMatchObject({ kind: 'imported', postedCount: 40, complete: false });
++  });
++
++  it('a type that failed in pass 1 keeps the import incomplete after a resume-only pass completes', async () => {
++    const syncHealthConnect = jest
++      .fn()
++      .mockResolvedValueOnce(hcPass(40, true, true))
++      .mockResolvedValueOnce(hcPass(10, false, false));
++    const out = await connect('HEALTH_CONNECT', {
++      register: jest.fn().mockResolvedValue(connection('HEALTH_CONNECT')),
++      syncHealthConnect,
++      readUserId: user('user-a'),
++    });
++    expect(syncHealthConnect).toHaveBeenCalledTimes(2);
++    expect(out).toMatchObject({ kind: 'imported', postedCount: 50, complete: false });
++  });
++
++  it('Apple Health reads its whole window in one pass, even when a metric failed', async () => {
++    const syncHealthKit = jest.fn().mockResolvedValue({ postedCount: 12, complete: false });
++    const out = await connect('APPLE_HEALTHKIT', {
++      register: jest.fn().mockResolvedValue(connection('APPLE_HEALTHKIT')),
++      syncHealthKit,
++      readUserId: user('user-a'),
++    });
++    expect(syncHealthKit).toHaveBeenCalledTimes(1);
++    expect(out).toMatchObject({ kind: 'imported', postedCount: 12, complete: false });
++  });
++});
++
+ describe('refreshOnDevice (Health screen open) — A-317-1', () => {
+   const remote = [connection('APPLE_HEALTHKIT', 'conn-1')];
+ 
+diff --git a/src/services/health/healthConnect/__tests__/healthConnectSyncService.h8.test.ts b/src/services/health/healthConnect/__tests__/healthConnectSyncService.h8.test.ts
+new file mode 100644
+index 00000000..25c215f2
+--- /dev/null
++++ b/src/services/health/healthConnect/__tests__/healthConnectSyncService.h8.test.ts
+@@ -0,0 +1,227 @@
++// H8 — Health Connect late data (C-360-1) and resumable import (C-360-2).
++//
++// A fake Health Connect store holds records and pages them the way the
++// library does (a page token per page). Its `between` filter keeps a record
++// only when it lies wholly inside the range (the strictest reading), so a
++// late record is found only if the read starts before it. Progress lives in
++// the (jest) AsyncStorage via `../../onDeviceState`.
++
++import { Platform } from 'react-native';
++import AsyncStorage from '@react-native-async-storage/async-storage';
++
++jest.mock('expo-constants', () => ({
++  __esModule: true,
++  default: { expoConfig: { extra: { healthConnectEnabled: true } } },
++}));
++jest.mock('../../../../utils/logger', () => ({
++  logger: { log: jest.fn(), warn: jest.fn(), error: jest.fn() },
++}));
++
++import { syncHealthConnect, type HealthConnectSyncDeps } from '../healthConnectSyncService';
++import { getSyncProgress, setSyncProgress, type OnDeviceScope } from '../../onDeviceState';
++import { OnDeviceSessionChangedError, type SessionFence } from '../../sessionFence';
++
++const SCOPE: OnDeviceScope = { userId: 'user-a', connectionId: 'c', source: 'HEALTH_CONNECT' };
++const PAGE_SIZE = 2;
++
++interface StoredRecord {
++  startTime: string;
++  endTime: string;
++  count?: number;
++}
++
++/** A fake store: `records` by type; reads page PAGE_SIZE records at a time. */
++function makeStore(records: Partial<Record<string, StoredRecord[]>>) {
++  const failOn = new Map<string, number>();
++  const readRecordsPaged = jest.fn(
++    async (
++      recordType: string,
++      range: { startTime: string; endTime: string },
++      resumeFrom?: string,
++      _stop?: unknown,
++      maxPages = 20,
++    ) => {
++      const inRange = (records[recordType] ?? []).filter(
++        (r) => r.startTime >= range.startTime && r.endTime <= range.endTime,
++      );
++      let offset = resumeFrom ? Number(resumeFrom) : 0;
++      const out: StoredRecord[] = [];
++      for (let page = 0; page < maxPages; page += 1) {
++        const fail = failOn.get(`${recordType}@${offset}`);
++        if (fail !== undefined) {
++          failOn.delete(`${recordType}@${offset}`);
++          throw new Error('native read failed');
++        }
++        out.push(...inRange.slice(offset, offset + PAGE_SIZE));
++        offset += PAGE_SIZE;
++        if (offset >= inRange.length) return { records: out };
++      }
++      return { records: out, nextPageToken: String(offset) };
++    },
++  );
++  const granted = Object.keys(records).map((recordType) => ({ accessType: 'read', recordType }));
++  return {
++    client: {
++      isHealthConnectSupported: jest.fn(() => true),
++      buildReadPermissions: jest.fn(() => granted),
++      initialize: jest.fn().mockResolvedValue(true),
++      requestPermission: jest.fn().mockResolvedValue(granted),
++      getGrantedPermissions: jest.fn().mockResolvedValue(granted),
++      readRecords: jest.fn().mockResolvedValue([]),
++      readRecordsPaged,
++      readAllSupportedRecords: jest.fn().mockResolvedValue({}),
++    },
++    /** Make the page that starts at record `offset` of `recordType` reject once. */
++    failPageAt: (recordType: string, offset: number) => failOn.set(`${recordType}@${offset}`, 1),
++  };
++}
++
++function okFence(): SessionFence {
++  return {
++    userId: SCOPE.userId,
++    assertCurrent: jest.fn(async () => undefined),
++    throwIfStopped: jest.fn(),
++    cancel: jest.fn(),
++  };
++}
++
++function deps(
++  client: unknown,
++  now: Date,
++  ingest: jest.Mock = jest.fn(async (s: unknown[]) => ({ inserted: s.length, skipped: 0 })),
++  extra: Partial<HealthConnectSyncDeps> = {},
++): HealthConnectSyncDeps {
++  return { client: client as never, ingestApi: { ingest }, now: () => now, fence: okFence(), ...extra };
++}
++
++type Posted = { metric: string; value: number; startAt: Date };
++const posted = (ingest: jest.Mock): Posted[] => ingest.mock.calls.flatMap((call) => call[0] as Posted[]);
++
++/** `n` one-minute Steps records from `from`, one per minute. */
++function stepsRecords(from: string, n: number): StoredRecord[] {
++  return Array.from({ length: n }, (_, i) => {
++    const s = Date.parse(from) + i * 60_000;
++    return { startTime: new Date(s).toISOString(), endTime: new Date(s + 60_000).toISOString(), count: i + 1 };
++  });
++}
++
++beforeEach(async () => {
++  jest.clearAllMocks();
++  await AsyncStorage.clear();
++  Object.defineProperty(Platform, 'OS', { get: () => 'android', configurable: true });
++});
++
++describe('C-360-1: a record written after the last sync is still read', () => {
++  it('a night of sleep written after waking is posted on the next refresh', async () => {
++    // The last refresh finished at 07:15; the watch wrote the night (23:00 to
++    // 07:00) at 07:30. The next refresh runs at 08:00.
++    await setSyncProgress(SCOPE, {
++      v: 1,
++      completedThrough: { SleepSession: '2026-05-10T07:15:00.000Z' },
++      resume: {},
++    });
++    const store = makeStore({
++      SleepSession: [{ startTime: '2026-05-09T23:00:00.000Z', endTime: '2026-05-10T07:00:00.000Z' }],
++    });
++    const ingest = jest.fn(async (s: unknown[]) => ({ inserted: s.length, skipped: 0 }));
++    await syncHealthConnect(SCOPE, deps(store.client, new Date('2026-05-10T08:00:00.000Z'), ingest));
++    expect(posted(ingest)).toEqual([
++      expect.objectContaining({ metric: 'SLEEP_TOTAL_MIN', value: 480, startAt: new Date('2026-05-09T23:00:00.000Z') }),
++    ]);
++  });
++
++  it('a watch record that synced 20 hours late is posted; progress then ends at now', async () => {
++    await setSyncProgress(SCOPE, { v: 1, completedThrough: { Steps: '2026-05-10T12:00:00.000Z' }, resume: {} });
++    const store = makeStore({ Steps: stepsRecords('2026-05-09T16:30:00.000Z', 1) });
++    const ingest = jest.fn(async (s: unknown[]) => ({ inserted: s.length, skipped: 0 }));
++    const now = new Date('2026-05-10T12:30:00.000Z');
++    await syncHealthConnect(SCOPE, deps(store.client, now, ingest));
++    expect(posted(ingest)).toHaveLength(1);
++    expect((await getSyncProgress(SCOPE)).completedThrough.Steps).toBe(now.toISOString());
++  });
++});
++
++describe('C-360-2: progress is saved after every page, so an interrupted import resumes', () => {
++  const NOW = new Date('2026-05-10T12:00:00.000Z');
++
++  it('a failed POST on page 3 keeps pages 1 and 2 saved; the next run reads only page 3 on', async () => {
++    const store = makeStore({ Steps: stepsRecords('2026-05-01T00:00:00.000Z', 6) });
++    let calls = 0;
++    const failing = jest.fn(async (s: unknown[]) => {
++      calls += 1;
++      if (calls === 3) throw new Error('network');
++      return { inserted: s.length, skipped: 0 };
++    });
++    await expect(syncHealthConnect(SCOPE, deps(store.client, NOW, failing))).rejects.toThrow('network');
++    expect(posted(failing)).toHaveLength(6); // pages 1 and 2 posted; page 3 was handed in, then rejected
++    const saved = await getSyncProgress(SCOPE);
++    expect(saved.resume.Steps).toEqual(expect.objectContaining({ pageToken: '4' }));
++    expect(saved.completedThrough.Steps).toBeUndefined();
++
++    const ingest = jest.fn(async (s: unknown[]) => ({ inserted: s.length, skipped: 0 }));
++    const res = await syncHealthConnect(SCOPE, deps(store.client, new Date(NOW.getTime() + 60_000), ingest));
++    expect(posted(ingest).map((s) => s.value)).toEqual([5, 6]);
++    expect(res.complete).toBe(true);
++    const after = await getSyncProgress(SCOPE);
++    expect(after.resume.Steps).toBeUndefined();
++    expect(after.completedThrough.Steps).toBe(NOW.toISOString());
++  });
++
++  it('a failed native read on page 3 keeps pages 1 and 2 posted and saved, and the type is incomplete', async () => {
++    const store = makeStore({ Steps: stepsRecords('2026-05-01T00:00:00.000Z', 6) });
++    store.failPageAt('Steps', 4);
++    const ingest = jest.fn(async (s: unknown[]) => ({ inserted: s.length, skipped: 0 }));
++    const res = await syncHealthConnect(SCOPE, deps(store.client, NOW, ingest));
++    expect(res.complete).toBe(false);
++    expect(res.failedRecordTypes).toEqual(['Steps']);
++    expect(posted(ingest).map((s) => s.value)).toEqual([1, 2, 3, 4]);
++    // The token this run saved is kept: the next run goes on from page 3.
++    expect((await getSyncProgress(SCOPE)).resume.Steps).toEqual(expect.objectContaining({ pageToken: '4' }));
++    const next = jest.fn(async (s: unknown[]) => ({ inserted: s.length, skipped: 0 }));
++    const res2 = await syncHealthConnect(SCOPE, deps(store.client, NOW, next));
++    expect(posted(next).map((s) => s.value)).toEqual([5, 6]);
++    expect(res2.complete).toBe(true);
++  });
++
++  it('sign-out while page 2 is read keeps page 1 saved and saves nothing after the stop', async () => {
++    const store = makeStore({ Steps: stepsRecords('2026-05-01T00:00:00.000Z', 6) });
++    let stopped = false;
++    const fence: SessionFence = {
++      userId: SCOPE.userId,
++      assertCurrent: jest.fn(async () => {
++        if (stopped) throw new OnDeviceSessionChangedError();
++      }),
++      throwIfStopped: jest.fn(() => {
++        if (stopped) throw new OnDeviceSessionChangedError();
++      }),
++      cancel: jest.fn(),
++    };
++    const inner = store.client.readRecordsPaged.getMockImplementation()!;
++    store.client.readRecordsPaged.mockImplementation(async (...args) => {
++      const out = await inner(...args);
++      if (args[2] === '2') stopped = true; // Log out tapped while page 2 was being read
++      return out;
++    });
++    const ingest = jest.fn(async (s: unknown[]) => ({ inserted: s.length, skipped: 0 }));
++    await expect(syncHealthConnect(SCOPE, deps(store.client, NOW, ingest, { fence }))).rejects.toBeInstanceOf(
++      OnDeviceSessionChangedError,
++    );
++    expect(posted(ingest).map((s) => s.value)).toEqual([1, 2]);
++    expect((await getSyncProgress(SCOPE)).resume.Steps).toEqual(expect.objectContaining({ pageToken: '2' }));
++  });
++
++  it('a resume-only pass reads only the types that still hold a resume token', async () => {
++    await setSyncProgress(SCOPE, {
++      v: 1,
++      completedThrough: { Weight: NOW.toISOString() },
++      resume: { Steps: { startTime: '2026-04-10T12:00:00.000Z', endTime: NOW.toISOString(), pageToken: '2' } },
++    });
++    const store = makeStore({
++      Steps: stepsRecords('2026-05-01T00:00:00.000Z', 4),
++      Weight: [],
++    });
++    const res = await syncHealthConnect(SCOPE, deps(store.client, NOW, undefined, { resumeOnly: true }));
++    expect(store.client.readRecordsPaged.mock.calls.map((c) => c[0])).toEqual(['Steps']);
++    expect(res.complete).toBe(true);
++  });
++});
+diff --git a/src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts b/src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts
+index a007f16e..530197f7 100644
+--- a/src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts
++++ b/src/services/health/healthConnect/__tests__/healthConnectSyncService.test.ts
+@@ -153,6 +153,7 @@ describe('permission-denied path', () => {
+       expect.anything(),
+       undefined,
+       expect.objectContaining({ throwIfStopped: expect.any(Function) }),
++      1, // H8: one page per read, saved before the next
+     );
+     expect(res.normalizedCount).toBe(1);
+     expect(res.complete).toBe(true);
+@@ -222,6 +223,7 @@ describe('B-317-2 completeness', () => {
+       { startTime: IMPORT_START, endTime: NOW.toISOString() },
+       'tok-21',
+       expect.anything(),
++      1,
+     );
+     expect(res2.complete).toBe(true);
+     const after = await getSyncProgress(SCOPE);
+diff --git a/src/services/health/healthConnect/healthConnectClient.ts b/src/services/health/healthConnect/healthConnectClient.ts
+index 19d8dafe..b632d6d9 100644
+--- a/src/services/health/healthConnect/healthConnectClient.ts
++++ b/src/services/health/healthConnect/healthConnectClient.ts
+@@ -280,9 +280,10 @@ export interface PagedReadStop {
+ 
+ /**
+  * Read records of a single type within `[startTime, endTime)`, following
+- * `pageToken` for up to {@link MAX_READ_PAGES} pages, optionally resuming
+- * from a token a previous run returned. Uses the library's `'between'`
+- * time-range filter.
++ * `pageToken` for up to `maxPages` pages (default {@link MAX_READ_PAGES}),
++ * optionally resuming from a token a previous run returned. Uses the
++ * library's `'between'` time-range filter. H8 (C-360-2): the sync service
++ * reads one page per call so it can post and save progress after each page.
+  *
+  * The records are typed `unknown[]` deliberately: only the normalizer
+  * understands each record type's field shape, and it defends against missing
+@@ -294,6 +295,7 @@ export async function readRecordsPaged(
+   range: TimeRange,
+   resumeFrom?: string,
+   stop?: PagedReadStop,
++  maxPages: number = MAX_READ_PAGES,
+ ): Promise<PagedReadResult> {
+   assertSupported();
+   // The library accepts a record-type string + options; result is
+@@ -311,7 +313,8 @@ export async function readRecordsPaged(
+   const out: unknown[] = [];
+   let pageToken: string | undefined =
+     typeof resumeFrom === 'string' && resumeFrom.length > 0 ? resumeFrom : undefined;
+-  for (let page = 0; page < MAX_READ_PAGES; page += 1) {
++  const pageBound = Math.max(1, Math.min(MAX_READ_PAGES, Math.floor(maxPages) || 1));
++  for (let page = 0; page < pageBound; page += 1) {
+     // S-WEAR-3 (Sol B-317-7): no new page starts after sign-out, an account
+     // switch or a cancelled Connect. A request already handed to the native
+     // module is not undone; its records are dropped by the caller.
+diff --git a/src/services/health/healthConnect/healthConnectSyncService.ts b/src/services/health/healthConnect/healthConnectSyncService.ts
+index 1ffb1cb9..3f698ba6 100644
+--- a/src/services/health/healthConnect/healthConnectSyncService.ts
++++ b/src/services/health/healthConnect/healthConnectSyncService.ts
+@@ -9,6 +9,10 @@
+ // read failed keeps its progress; a type whose read stopped at the page bound
+ // keeps a resume token and is read on from there next time (B-317-2). The
+ // run reports `complete` only when every granted type was read to the end.
++// H8 (C-360-2): each page is posted and its progress saved before the next
++// page is read, so an interrupted import resumes after the last saved page.
++// H8 (C-360-1): every read starts a day behind the saved progress, so data
++// written late is still read (`../syncWindows.ts`).
+ // Platform-guarded (Android only).
+ 
+ import { Platform } from 'react-native';
+@@ -20,6 +24,7 @@ import {
+   type SyncProgress,
+ } from '../onDeviceState';
+ import { isOnDeviceStop, OnDeviceSessionChangedError, type SessionFence } from '../sessionFence';
++import { LATE_DATA_LOOKBACK_MINUTES } from '../syncWindows';
+ import { logger } from '../../../utils/logger';
+ import {
+   HealthConnectPermissionDeniedError,
+@@ -27,12 +32,13 @@ import {
+ } from './errors';
+ import {
+   HEALTH_CONNECT_RECORD_TYPES,
++  MAX_READ_PAGES,
+   healthConnectClient as defaultClient,
+   type HealthConnectClient,
+   type HealthConnectRecordType,
+ } from './healthConnectClient';
+ import {
+-  normalizeAll,
++  normalizeRecords,
+   type NormalizeContext,
+ } from './healthConnectNormalizer';
+ import {
+@@ -57,12 +63,12 @@ export const LAST_SYNC_AT_KEY = 'health_connect_last_sync_at';
+ export const DEFAULT_BACKFILL_DAYS = 30;
+ 
+ /**
+- * Overlap re-read, in minutes. We rewind the read-window start by this much
+- * past the persisted `lastSyncAt` so a sample written slightly late on the
+- * device (or a clock skew) is not missed. Safe because ingestion is idempotent
+- * (dedup_key), so the overlap never double-counts.
++ * Re-read behind each type's saved progress, in minutes. H8 (C-360-1): was 5
++ * minutes, so a record written later than that (a night's sleep written after
++ * waking, a watch that synced hours later) was never read. Now one day; see
++ * `../syncWindows.ts` for the bound and why re-reading never double-counts.
+  */
+-export const SYNC_OVERLAP_MINUTES = 5;
++export const SYNC_OVERLAP_MINUTES = LATE_DATA_LOOKBACK_MINUTES;
+ 
+ /**
+  * B-360-1: the closed set logged for a failed Health Connect read. A native
+@@ -114,6 +120,12 @@ export interface HealthConnectSyncDeps {
+    * Its user must be the scope's user.
+    */
+   fence: SessionFence;
++  /**
++   * H8: read only the types that hold a resume token (a later pass of the
++   * same visit continues a page-bounded import without re-reading the day
++   * behind every other type that pass one just read).
++   */
++  resumeOnly?: boolean;
+ }
+ 
+ /** Result of a sync run. */
+@@ -179,13 +191,17 @@ function grantedReadRecordTypes(
+  *      tap). If NONE of our read types is granted → throw
+  *      HealthConnectPermissionDeniedError.
+  *   3. For every granted type: resume a truncated read, or read from its
+- *      progress (or the 30-day import start) to now.
+- *   4. Normalize → POST in batches (the fence runs before every request).
+- *   5. Save progress: completed types advance; truncated types keep a resume
+- *      token; failed types keep their old progress.
++ *      progress minus the late-data look-back (or the 30-day import start)
++ *      to now, one page at a time, oldest first, up to MAX_READ_PAGES pages.
++ *   4. After each page: normalize → POST in batches (the fence runs before
++ *      every request) → save that type's progress: a resume token while
++ *      pages remain, its window end once the last page is read.
++ *   5. A failed read keeps the type's saved progress (a failed resume from
++ *      a previous run drops its token) and the run goes on to the next type.
+  *
+- * Nothing is saved if the POST fails or the session changed, so the next run
+- * re-reads the same windows (ingest is idempotent).
++ * A failed POST or a session change ends the run: the page in hand is not
++ * saved, so the next run re-reads it (ingest is idempotent); every page
++ * saved before it stays saved (H8, C-360-2).
+  */
+ export async function syncHealthConnect(
+   scope: OnDeviceScope,
+@@ -230,68 +246,91 @@ export async function syncHealthConnect(
+     completedThrough: { ...progress.completedThrough },
+     resume: { ...progress.resume },
+   };
+-  const byType: Partial<Record<HealthConnectRecordType, unknown[]>> = {};
++  const ctx: NormalizeContext = { connectionId: scope.connectionId };
+   const failedRecordTypes: HealthConnectRecordType[] = [];
+   const truncatedRecordTypes: HealthConnectRecordType[] = [];
+   let earliest = now.getTime();
++  let normalizedCount = 0;
++  let inserted = 0;
++  let skipped = 0;
+ 
+-  for (const recordType of grantedRecordTypes) {
++  const readTypes = deps.resumeOnly
++    ? grantedRecordTypes.filter((rt) => Boolean(progress.resume[rt]))
++    : grantedRecordTypes;
++  for (const recordType of readTypes) {
+     // S-WEAR-3 (Sol B-317-7): re-check before every record type, including
+     // the first one after the awaited progress read.
+     await fence.assertCurrent();
+-    const resume = progress.resume[recordType];
+-    const range = resume
+-      ? { startTime: resume.startTime, endTime: resume.endTime }
++    const stored = progress.resume[recordType];
++    const range = stored
++      ? { startTime: stored.startTime, endTime: stored.endTime }
+       : { startTime: typeWindowStart(progress, recordType, now).toISOString(), endTime: now.toISOString() };
+     earliest = Math.min(earliest, Date.parse(range.startTime));
+-    try {
+-      const read = await client.readRecordsPaged(recordType, range, resume?.pageToken, fence);
+-      // A page that was already in flight when the session stopped is dropped.
+-      fence.throwIfStopped();
+-      byType[recordType] = read.records;
++    let pageToken = stored?.pageToken;
++    for (let page = 0; ; page += 1) {
++      let read: { records: unknown[]; nextPageToken?: string };
++      try {
++        read = await client.readRecordsPaged(recordType, range, pageToken, fence, 1);
++        // A page that was already in flight when the session stopped is dropped.
++        fence.throwIfStopped();
++      } catch (err) {
++        // B-360-1: the fence first, synchronously. A page that rejects after
++        // sign-out, an account switch or a cancelled Connect ends the run here:
++        // nothing is classified, recorded or logged for it.
++        fence.throwIfStopped();
++        // A stop (sign-out, account switch, cancelled Connect) ends the whole
++        // run; it is never an ordinary per-type read failure (Sol B-317-7).
++        if (isOnDeviceStop(err)) throw err;
++        // Degrade per type (#50) but never count it as read: keep its saved
++        // progress. A failed RESUME of a token saved by an earlier run drops
++        // the token (it may have expired) so the next run re-reads that type's
++        // window from its saved progress; a token this run saved is kept.
++        const resumedFromStore = page === 0 && Boolean(stored);
++        failedRecordTypes.push(recordType);
++        if (resumedFromStore) {
++          delete next.resume[recordType];
++          await fence.assertCurrent();
++          await setSyncProgress(scope, next);
++        }
++        logger.error('healthConnectSync', 'readRecords failed', {
++          recordType,
++          resumed: Boolean(stored),
++          error: healthConnectReadErrorClass(err),
++        });
++        break;
++      }
++
++      const samples: NormalizedSample[] = normalizeRecords(ctx, recordType, read.records);
++      const posted = await ingestApi.ingest(samples, {
++        beforeEachRequest: () => fence.assertCurrent(),
++      });
++      normalizedCount += samples.length;
++      inserted += posted.inserted;
++      skipped += posted.skipped;
++
++      // H8 (C-360-2): save this page's progress before reading the next one.
+       if (read.nextPageToken) {
+         next.resume[recordType] = { ...range, pageToken: read.nextPageToken };
+-        truncatedRecordTypes.push(recordType);
+       } else {
+         delete next.resume[recordType];
+         next.completedThrough[recordType] = range.endTime;
+       }
+-    } catch (err) {
+-      // B-360-1: the fence first, synchronously. A page that rejects after
+-      // sign-out, an account switch or a cancelled Connect ends the run here:
+-      // nothing is classified, recorded or logged for it.
+-      fence.throwIfStopped();
+-      // A stop (sign-out, account switch, cancelled Connect) ends the whole
+-      // run; it is never an ordinary per-type read failure (Sol B-317-7).
+-      if (isOnDeviceStop(err)) throw err;
+-      // Degrade per type (#50) but never count it as read: keep its progress.
+-      // A failed RESUME drops the token (it may have expired) so the next run
+-      // re-reads that type's window from its saved progress.
+-      byType[recordType] = [];
+-      failedRecordTypes.push(recordType);
+-      if (resume) delete next.resume[recordType];
+-      logger.error('healthConnectSync', 'readRecords failed', {
+-        recordType,
+-        resumed: Boolean(resume),
+-        error: healthConnectReadErrorClass(err),
+-      });
++      await fence.assertCurrent();
++      await setSyncProgress(scope, next);
++
++      if (!read.nextPageToken) break;
++      pageToken = read.nextPageToken;
++      if (page + 1 >= MAX_READ_PAGES) {
++        truncatedRecordTypes.push(recordType);
++        break;
++      }
+     }
+   }
+-
+   fence.throwIfStopped();
+-  const ctx: NormalizeContext = { connectionId: scope.connectionId };
+-  const samples: NormalizedSample[] = normalizeAll(ctx, byType);
+-
+-  const { inserted, skipped } = await ingestApi.ingest(samples, {
+-    beforeEachRequest: () => fence.assertCurrent(),
+-  });
+-
+-  await fence.assertCurrent();
+-  await setSyncProgress(scope, next);
+ 
+   const complete = failedRecordTypes.length === 0 && truncatedRecordTypes.length === 0;
+   logger.log('healthConnectSync', 'sync pass done', {
+-    normalizedCount: samples.length,
++    normalizedCount,
+     inserted,
+     skipped,
+     grantedRecordTypes: grantedRecordTypes.length,
+@@ -301,7 +340,7 @@ export async function syncHealthConnect(
+   });
+ 
+   return {
+-    normalizedCount: samples.length,
++    normalizedCount,
+     inserted,
+     skipped,
+     grantedRecordTypes,
+diff --git a/src/services/health/healthkit/__tests__/healthKitSyncService.h8.test.ts b/src/services/health/healthkit/__tests__/healthKitSyncService.h8.test.ts
+new file mode 100644
+index 00000000..63e81b5c
+--- /dev/null
++++ b/src/services/health/healthkit/__tests__/healthKitSyncService.h8.test.ts
+@@ -0,0 +1,222 @@
++/**
++ * H8 — HealthKit late data (C-360-1) and resumable import (C-360-2).
++ *
++ * A fake Apple Health store answers each read the way the native queries do:
++ * a sample is returned when its START lies in [since, until)
++ * (HKQueryOptionStrictStartDate), and an hourly sum only once its hour ended
++ * by `until`. Progress lives in the (jest) AsyncStorage via
++ * `../../onDeviceState`; the axios `api.post` is stubbed.
++ */
++import { Platform } from 'react-native';
++import AsyncStorage from '@react-native-async-storage/async-storage';
++import type { HealthKitQueryWindow, HealthKitReadResult, HealthKitSample } from '../healthKitClient';
++
++const mockPost = jest.fn();
++jest.mock('../../../api', () => ({
++  __esModule: true,
++  default: { post: (...args: unknown[]) => mockPost(...args) },
++}));
++
++import {
++  CUMULATIVE_SETTLE_MINUTES,
++  HEALTHKIT_METRIC_KEYS,
++  HealthKitSyncService,
++  IMPORT_PIECE_HOURS,
++  floorToLocalHour,
++} from '../healthKitSyncService';
++import { getSyncProgress, setSyncProgress, type OnDeviceScope } from '../../onDeviceState';
++import { OnDeviceSessionChangedError, type SessionFence } from '../../sessionFence';
++
++const SCOPE: OnDeviceScope = { userId: 'user-a', connectionId: 'conn-1', source: 'APPLE_HEALTHKIT' };
++const HOUR = 60 * 60_000;
++const NOW = new Date('2026-05-31T12:00:00.000Z');
++
++type Store = { heartRate?: HealthKitSample[]; steps?: HealthKitSample[]; weight?: HealthKitSample[] };
++
++/** A fake store whose reads honour each window (see the header). */
++function makeClient(store: Store) {
++  const inWindow = (w: HealthKitQueryWindow) => (s: HealthKitSample) => {
++    const start = Date.parse(s.startDate);
++    return start >= w.since.getTime() && start < w.until.getTime();
++  };
++  return {
++    requestAuth: jest.fn(async (_types?: unknown): Promise<void> => undefined),
++    readSamples: jest.fn(
++      async (w: HealthKitQueryWindow): Promise<HealthKitReadResult> => ({
++        heartRate: (store.heartRate ?? []).filter(inWindow(w)),
++        weight: (store.weight ?? []).filter(inWindow(w)),
++        steps: (store.steps ?? [])
++          .filter(inWindow(w))
++          .filter((b) => Date.parse(b.endDate) <= w.until.getTime()),
++      }),
++    ),
++  };
++}
++
++const hr = (iso: string, value = 70): HealthKitSample => ({ value, startDate: iso, endDate: iso });
++const stepsHour = (startIso: string, value: number): HealthKitSample => ({
++  value,
++  startDate: startIso,
++  endDate: new Date(Date.parse(startIso) + HOUR).toISOString(),
++});
++
++function okFence(): SessionFence {
++  return {
++    userId: SCOPE.userId,
++    assertCurrent: jest.fn(async () => undefined),
++    throwIfStopped: jest.fn(),
++    cancel: jest.fn(),
++  };
++}
++
++async function seedAllThrough(iso: string) {
++  const completedThrough: Record<string, string> = {};
++  for (const k of HEALTHKIT_METRIC_KEYS) completedThrough[k] = iso;
++  await setSyncProgress(SCOPE, { v: 1, completedThrough, resume: {} });
++}
++
++type Posted = { metric: string; value: number; startAt: string };
++const posted = (): Posted[] => mockPost.mock.calls.flatMap((call) => call[1] as Posted[]);
++
++beforeEach(async () => {
++  await AsyncStorage.clear();
++  jest.clearAllMocks();
++  Object.defineProperty(Platform, 'OS', { value: 'ios', configurable: true });
++  mockPost.mockResolvedValue({ data: { accepted: 1 } });
++});
++
++describe('C-360-1: a sample that reaches Apple Health after the last sync is still read', () => {
++  it('a watch heart rate that synced 5 hours late is posted on the next refresh', async () => {
++    await seedAllThrough('2026-05-31T10:25:00.000Z');
++    const client = makeClient({ heartRate: [hr('2026-05-31T06:00:00.000Z', 64)] });
++    await new HealthKitSyncService(client as never).sync({ scope: SCOPE, now: NOW, fence: okFence() });
++    expect(posted()).toEqual([
++      expect.objectContaining({ metric: 'HEART_RATE_BPM', value: 64, startAt: '2026-05-31T06:00:00.000Z' }),
++    ]);
++  });
++
++  it('an hourly steps sum waits to settle, then posts once with the late watch share included', async () => {
++    const lastHour = floorToLocalHour(new Date(NOW.getTime() - HOUR)).toISOString();
++    // A heart rate in the same hour, so the run posts and saves progress.
++    const store: Store = { steps: [stepsHour(lastHour, 100)], heartRate: [hr(lastHour)] };
++    const first = makeClient(store);
++    await new HealthKitSyncService(first as never).sync({ scope: SCOPE, now: NOW, fence: okFence() });
++    expect(posted().filter((s) => s.metric === 'STEPS')).toEqual([]);
++    const settled = floorToLocalHour(new Date(NOW.getTime() - CUMULATIVE_SETTLE_MINUTES * 60_000));
++    const saved = await getSyncProgress(SCOPE);
++    expect(Date.parse(saved.completedThrough.steps)).toBeLessThanOrEqual(settled.getTime());
++
++    // The watch's share of that hour arrives; the next refresh is after it settles.
++    store.steps = [stepsHour(lastHour, 160)];
++    const later = new Date(NOW.getTime() + CUMULATIVE_SETTLE_MINUTES * 60_000 + HOUR);
++    await new HealthKitSyncService(makeClient(store) as never).sync({ scope: SCOPE, now: later, fence: okFence() });
++    expect(posted().filter((s) => s.metric === 'STEPS').map((s) => s.value)).toEqual([160]);
++  });
++});
++
++describe('C-360-2: progress is saved after every day-sized piece, so an interrupted import resumes', () => {
++  /** One heart-rate sample at the start of each of the first `n` pieces of a 30-day import. */
++  function importStore(n: number): { store: Store; since: Date } {
++    const since = floorToLocalHour(new Date(NOW.getTime() - 30 * 24 * HOUR));
++    const heartRate = Array.from({ length: n }, (_, i) =>
++      hr(new Date(since.getTime() + i * IMPORT_PIECE_HOURS * HOUR + HOUR).toISOString(), 60 + i),
++    );
++    return { store: { heartRate }, since };
++  }
++  const pieceEndAfter = (since: Date, pieces: number) =>
++    floorToLocalHour(new Date(since.getTime() + pieces * IMPORT_PIECE_HOURS * HOUR));
++
++  it('reads oldest first in contiguous pieces of at most one day, ending at now', async () => {
++    const { store, since } = importStore(3);
++    const client = makeClient(store);
++    await new HealthKitSyncService(client as never).sync({ scope: SCOPE, now: NOW, fence: okFence() });
++    const windows = client.readSamples.mock.calls.map(([w]) => w);
++    expect(windows[0].since.toISOString()).toBe(since.toISOString());
++    expect(windows[windows.length - 1].until.toISOString()).toBe(NOW.toISOString());
++    windows.forEach((w, i) => {
++      expect(w.until.getTime() - w.since.getTime()).toBeLessThanOrEqual(IMPORT_PIECE_HOURS * HOUR);
++      if (i > 0) expect(w.since.getTime()).toBe(windows[i - 1].until.getTime());
++    });
++    expect(posted().map((s) => s.value)).toEqual([60, 61, 62]);
++  });
++
++  it('a failed POST in piece 3 keeps pieces 1 and 2 saved; the next run starts from there', async () => {
++    const { store, since } = importStore(3);
++    mockPost
++      .mockResolvedValueOnce({ data: { accepted: 1 } })
++      .mockResolvedValueOnce({ data: { accepted: 1 } })
++      .mockRejectedValueOnce(new Error('500 ingest down'));
++    await expect(
++      new HealthKitSyncService(makeClient(store) as never).sync({ scope: SCOPE, now: NOW, fence: okFence() }),
++    ).rejects.toThrow('500 ingest down');
++    const through = pieceEndAfter(since, 2).toISOString();
++    expect((await getSyncProgress(SCOPE)).completedThrough.heartRate).toBe(through);
++
++    const again = makeClient(store);
++    await new HealthKitSyncService(again as never).sync({ scope: SCOPE, now: NOW, fence: okFence() });
++    expect(again.readSamples.mock.calls[0][0].since.getTime()).toBeGreaterThan(since.getTime());
++    expect((await getSyncProgress(SCOPE)).completedThrough.heartRate).toBe(NOW.toISOString());
++  });
++
++  it('a failed native read in piece 3 keeps pieces 1 and 2 saved', async () => {
++    const { store, since } = importStore(3);
++    const client = makeClient(store);
++    const inner = client.readSamples.getMockImplementation()!;
++    let reads = 0;
++    client.readSamples.mockImplementation(async (w) => {
++      reads += 1;
++      if (reads === 3) throw new Error('read failed');
++      return inner(w);
++    });
++    await expect(
++      new HealthKitSyncService(client as never).sync({ scope: SCOPE, now: NOW, fence: okFence() }),
++    ).rejects.toThrow('read failed');
++    expect((await getSyncProgress(SCOPE)).completedThrough.heartRate).toBe(pieceEndAfter(since, 2).toISOString());
++  });
++
++  it('a metric that fails in piece 2 keeps its progress for the rest of the run; the others reach now', async () => {
++    const { store, since } = importStore(3);
++    const client = makeClient(store);
++    const inner = client.readSamples.getMockImplementation()!;
++    let reads = 0;
++    client.readSamples.mockImplementation(async (w) => {
++      reads += 1;
++      const out = await inner(w);
++      return reads === 2 ? { ...out, failed: ['weight'] } : out;
++    });
++    const res = await new HealthKitSyncService(client as never).sync({ scope: SCOPE, now: NOW, fence: okFence() });
++    expect(res.complete).toBe(false);
++    const saved = await getSyncProgress(SCOPE);
++    expect(saved.completedThrough.weight).toBe(pieceEndAfter(since, 1).toISOString());
++    expect(saved.completedThrough.heartRate).toBe(NOW.toISOString());
++  });
++
++  it('sign-out while piece 2 is read keeps piece 1 saved and sends nothing more', async () => {
++    const { store, since } = importStore(3);
++    let stopped = false;
++    const fence: SessionFence = {
++      userId: SCOPE.userId,
++      assertCurrent: jest.fn(async () => {
++        if (stopped) throw new OnDeviceSessionChangedError();
++      }),
++      throwIfStopped: jest.fn(() => {
++        if (stopped) throw new OnDeviceSessionChangedError();
++      }),
++      cancel: jest.fn(),
++    };
++    const client = makeClient(store);
++    const inner = client.readSamples.getMockImplementation()!;
++    let reads = 0;
++    client.readSamples.mockImplementation(async (w) => {
++      reads += 1;
++      if (reads === 2) stopped = true; // Log out tapped while piece 2 was read
++      return inner(w);
++    });
++    await expect(
++      new HealthKitSyncService(client as never).sync({ scope: SCOPE, now: NOW, fence }),
++    ).rejects.toBeInstanceOf(OnDeviceSessionChangedError);
++    expect(client.readSamples).toHaveBeenCalledTimes(2);
++    expect(posted().map((s) => s.value)).toEqual([60]);
++    expect((await getSyncProgress(SCOPE)).completedThrough.heartRate).toBe(pieceEndAfter(since, 1).toISOString());
++  });
++});
+diff --git a/src/services/health/healthkit/__tests__/healthKitSyncService.test.ts b/src/services/health/healthkit/__tests__/healthKitSyncService.test.ts
+index 523f137d..3038339c 100644
+--- a/src/services/health/healthkit/__tests__/healthKitSyncService.test.ts
++++ b/src/services/health/healthkit/__tests__/healthKitSyncService.test.ts
+@@ -29,6 +29,8 @@ import {
+   SYNC_OVERLAP_MINUTES,
+   floorToLocalHour,
+   DEFAULT_BACKFILL_DAYS,
++  CUMULATIVE_METRIC_KEYS,
++  CUMULATIVE_SETTLE_MINUTES,
+ } from '../healthKitSyncService';
+ import {
+   getSyncProgress,
+@@ -48,16 +50,35 @@ async function seedAllThrough(iso: string, scope: OnDeviceScope = SCOPE) {
+ 
+ const NOW = new Date('2026-05-31T12:00:00.000Z');
+ 
+-/** A fake client whose auth/read are jest-controllable. */
++/**
++ * A fake client whose auth/read are jest-controllable. H8: the window is read
++ * in day-sized pieces, so each read returns only the samples that START in
++ * its window (HKQueryOptionStrictStartDate), as the native queries do.
++ */
+ function makeClient(read: HealthKitReadResult) {
+   return {
+     requestAuth: jest.fn(async (_types?: unknown): Promise<void> => undefined),
+-    readSamples: jest.fn(
+-      async (_window: HealthKitQueryWindow): Promise<HealthKitReadResult> => read,
+-    ),
++    readSamples: jest.fn(async (w: HealthKitQueryWindow): Promise<HealthKitReadResult> => {
++      const out: Record<string, unknown> = {};
++      for (const [key, value] of Object.entries(read)) {
++        out[key] =
++          key === 'failed' || !Array.isArray(value)
++            ? value
++            : value.filter((x: { startDate: string }) => {
++                const t = Date.parse(x.startDate);
++                return t >= w.since.getTime() && t < w.until.getTime();
++              });
++      }
++      return out as HealthKitReadResult;
++    }),
+   };
+ }
+ 
++/** H8: hourly sums are complete only through the settled hour. */
++const SETTLED = floorToLocalHour(new Date(NOW.getTime() - CUMULATIVE_SETTLE_MINUTES * 60_000)).toISOString();
++const doneThrough = (k: string): string =>
++  (CUMULATIVE_METRIC_KEYS as readonly string[]).includes(k) ? SETTLED : NOW.toISOString();
++
+ const SAMPLE_READ: HealthKitReadResult = {
+   steps: [{ value: 8000, startDate: '2026-05-30T00:00:00.000Z', endDate: '2026-05-31T00:00:00.000Z' }],
+   heartRate: [{ value: 70, startDate: '2026-05-30T00:00:00.000Z', endDate: '2026-05-30T00:00:00.000Z' }],
+@@ -90,7 +111,7 @@ describe('HealthKitSyncService.sync — happy path', () => {
+     const result = await svc.sync(OPTS);
+ 
+     expect(client.requestAuth).toHaveBeenCalledTimes(1);
+-    expect(client.readSamples).toHaveBeenCalledTimes(1);
++    expect(client.readSamples).toHaveBeenCalled();
+     expect(mockPost).toHaveBeenCalledTimes(1);
+ 
+     const [path, body] = mockPost.mock.calls[0];
+@@ -118,7 +139,7 @@ describe('HealthKitSyncService.sync — happy path', () => {
+     const svc = new HealthKitSyncService(makeClient(SAMPLE_READ) as never);
+     const result = await svc.sync(OPTS);
+     const progress = await getSyncProgress(SCOPE);
+-    for (const k of HEALTHKIT_METRIC_KEYS) expect(progress.completedThrough[k]).toBe(NOW.toISOString());
++    for (const k of HEALTHKIT_METRIC_KEYS) expect(progress.completedThrough[k]).toBe(doneThrough(k));
+     expect(result.complete).toBe(true);
+     expect(result.failedMetrics).toEqual([]);
+   });
+@@ -128,7 +149,8 @@ describe('HealthKitSyncService.sync — read window', () => {
+   it('backfills DEFAULT_BACKFILL_DAYS on the first run (no stored cursor)', async () => {
+     const client = makeClient(SAMPLE_READ);
+     await new HealthKitSyncService(client as never).sync(OPTS);
+-    const [{ since, until }] = client.readSamples.mock.calls[0];
++    const [{ since }] = client.readSamples.mock.calls[0];
++    const [{ until }] = client.readSamples.mock.calls[client.readSamples.mock.calls.length - 1];
+     const expectedSince = floorToLocalHour(
+       new Date(NOW.getTime() - DEFAULT_BACKFILL_DAYS * 86400000),
+     );
+@@ -206,7 +228,7 @@ describe('HealthKitSyncService.sync — read window', () => {
+     expect(result.failedMetrics).toEqual(['weight']);
+     const progress = await getSyncProgress(SCOPE);
+     expect(progress.completedThrough.weight).toBe(prior);
+-    expect(progress.completedThrough.steps).toBe(NOW.toISOString());
++    expect(progress.completedThrough.steps).toBe(SETTLED);
+     // The next run re-reads from the failed metric's progress.
+     const again = makeClient(SAMPLE_READ);
+     await new HealthKitSyncService(again as never).sync({ ...OPTS, now: new Date(NOW.getTime() + 3600_000) });
+@@ -220,13 +242,12 @@ describe('HealthKitSyncService.sync — read window', () => {
+       startDate: new Date(Date.parse('2026-05-30T00:00:00.000Z') + i * 60_000).toISOString(),
+       endDate: new Date(Date.parse('2026-05-30T00:00:00.000Z') + i * 60_000).toISOString(),
+     }));
+-    let checks = 0;
+     const fence: SessionFence = {
+       userId: SCOPE.userId,
+-      // 1: before progress, 2: before the native read, 3: first request, 4: second request.
++      // The session changes once the first request went out (H8: the window
++      // is read in day pieces, each checked, so a check count no longer fits).
+       assertCurrent: jest.fn(async () => {
+-        checks += 1;
+-        if (checks >= 4) throw new OnDeviceSessionChangedError();
++        if (mockPost.mock.calls.length >= 1) throw new OnDeviceSessionChangedError();
+       }),
+       throwIfStopped: jest.fn(),
+       cancel: jest.fn(),
+diff --git a/src/services/health/healthkit/healthKitSyncService.ts b/src/services/health/healthkit/healthKitSyncService.ts
+index ff87bc63..515ec7ca 100644
+--- a/src/services/health/healthkit/healthKitSyncService.ts
++++ b/src/services/health/healthkit/healthKitSyncService.ts
+@@ -22,10 +22,13 @@
+  *    mark the backend endpoint as a STUB to be implemented in the integration
+  *    PR (see {@link HEALTHKIT_INGEST_PATH} TODO below).
+  *  - S14: progress is stored per account + connection + provider
+- *    (`../onDeviceState.ts`), per metric, never provider-global. A metric's
+- *    "completed through" instant is advanced to the sync's `until` boundary
+- *    ONLY after every batch was posted, and NOT for a metric whose native
+- *    read failed (B-317-2). The legacy provider-global
++ *    (`../onDeviceState.ts`), per metric, never provider-global. H8
++ *    (C-360-2): the window is read oldest first in day-sized pieces; after
++ *    each piece is posted, every metric read without failure this run is
++ *    saved as completed through that piece's end, so an interrupted import
++ *    resumes after the last saved piece. A metric whose native read failed
++ *    keeps its saved progress for the rest of the run (B-317-2). The legacy
++ *    provider-global
+  *    {@link HEALTHKIT_LAST_SYNC_KEY} is no longer read (sign-out removes it). On any failure (auth, read, or POST) it is left
+  *    untouched so the next run safely re-pulls the same window (fail-explicit,
+  *    UNIFIED lock "Fail-explicit on errors, never silent"; 50-Failures #42).
+@@ -42,12 +45,15 @@ import {
+   type SyncProgress,
+ } from '../onDeviceState';
+ import { OnDeviceSessionChangedError, type SessionFence } from '../sessionFence';
++import { LATE_DATA_LOOKBACK_MINUTES } from '../syncWindows';
+ import {
+   HEALTHKIT_READ_PERMISSIONS,
+   HealthKitReadPermission,
+   healthKitClient,
+   type HealthKitClient,
+   type HealthKitMetricKey,
++  type HealthKitReadResult,
++  type HealthKitSample,
+ } from './healthKitClient';
+ import {
+   normalizeHealthKitResult,
+@@ -74,12 +80,32 @@ export const HEALTHKIT_INGEST_PATH = WEARABLES_INGEST_PATH;
+ export const DEFAULT_BACKFILL_DAYS = 30;
+ 
+ /**
+- * Re-read overlap behind the stored progress. Apple Watch data often reaches
+- * the phone's Health store minutes to an hour after it was recorded, with a
+- * start time before our last sync; re-reading the last hour picks those
+- * samples up. Safe because ingest is idempotent on the backend dedup key.
++ * Re-read behind the stored progress. Apple Watch data reaches the phone's
++ * Health store minutes to hours after it was recorded (a watch out of range,
++ * a partner app that syncs on its own schedule), with a start time before
++ * the last sync. H8 (C-360-1): was one hour; now one day, see
++ * `../syncWindows.ts` for the bound and why re-reading never double-counts.
+  */
+-export const SYNC_OVERLAP_MINUTES = 60;
++export const SYNC_OVERLAP_MINUTES = LATE_DATA_LOOKBACK_MINUTES;
++
++/**
++ * H8 (C-360-1): how long an hourly steps or active-energy sum waits after its
++ * hour ends before it is posted. The backend keeps the first value posted for
++ * an hour and never replaces it, so an hour posted before a watch or partner
++ * app wrote its share would stay short for good. Data reaching Apple Health
++ * within this long of the hour's end is counted; the hour shows up in the app
++ * this much later. Every other metric posts as soon as it is read.
++ */
++export const CUMULATIVE_SETTLE_MINUTES = 120;
++
++/** The hourly-sum metrics that wait {@link CUMULATIVE_SETTLE_MINUTES}. */
++export const CUMULATIVE_METRIC_KEYS: readonly HealthKitMetricKey[] = ['steps', 'activeEnergy'];
++
++/**
++ * H8 (C-360-2): length of one import piece. A 30-day import is read, posted
++ * and saved one day at a time, oldest first.
++ */
++export const IMPORT_PIECE_HOURS = 24;
+ 
+ /** Every metric the HealthKit client reads (progress is tracked per metric). */
+ export const HEALTHKIT_METRIC_KEYS: readonly HealthKitMetricKey[] = [
+@@ -112,6 +138,28 @@ export function floorToLocalHour(d: Date): Date {
+ 
+ const MS_PER_DAY = 24 * 60 * 60 * 1000;
+ 
++/**
++ * End of the import piece starting at `start` (a local hour boundary): the
++ * local hour boundary one piece later, never past `until`. Hourly buckets are
++ * anchored at each piece's start, so every piece keeps local-hour buckets.
++ */
++function pieceEnd(start: Date, until: Date): Date {
++  const next = floorToLocalHour(new Date(start.getTime() + IMPORT_PIECE_HOURS * 60 * 60_000));
++  const end = next.getTime() > start.getTime() ? next : new Date(start.getTime() + IMPORT_PIECE_HOURS * 60 * 60_000);
++  return end.getTime() < until.getTime() ? end : until;
++}
++
++/** Keep only hourly sums whose hour ended at or before `settledThrough`. */
++function settledOnly(
++  buckets: HealthKitSample[] | undefined,
++  settledThrough: number,
++): HealthKitSample[] | undefined {
++  return buckets?.filter((b) => {
++    const end = Date.parse(b.endDate);
++    return Number.isFinite(end) && end <= settledThrough;
++  });
++}
++
+ /** Inputs needed to attribute and route the sync. */
+ export interface HealthKitSyncOptions {
+   /**
+@@ -146,11 +194,11 @@ export interface HealthKitSyncOptions {
+ export interface HealthKitSyncResult {
+   /** Number of normalized samples POSTed. */
+   postedCount: number;
+-  /** Inclusive lower bound of the window that was read. */
++  /** Inclusive lower bound of the window that was read (all pieces). */
+   since: string;
+-  /** Exclusive upper bound of the window that was read. */
++  /** Exclusive upper bound of the window that was read (all pieces). */
+   until: string;
+-  /** Whether progress was advanced (false when there was nothing to post). */
++  /** Whether progress was saved at least once (false when nothing was posted). */
+   cursorAdvanced: boolean;
+   /** True only when every metric read succeeded (B-317-2). */
+   complete: boolean;
+@@ -186,8 +234,9 @@ export class HealthKitSyncService {
+    * Run one full HealthKit sync pass for a scope.
+    *
+    * Throws {@link HealthKitUnsupportedError} immediately on non-iOS platforms
+-   * (surfaced from the client's platform guard). Any auth/POST failure, or a
+-   * session change, propagates WITHOUT advancing progress.
++   * (surfaced from the client's platform guard). Any auth/read/POST failure,
++   * or a session change, propagates without saving the piece in hand; pieces
++   * saved before it stay saved (H8, C-360-2), so the next run resumes there.
+    */
+   async sync(options: HealthKitSyncOptions): Promise<HealthKitSyncResult> {
+     const { scope, fence, sourceTz = null } = options;
+@@ -204,68 +253,92 @@ export class HealthKitSyncService {
+     fence.throwIfStopped();
+     await this.client.requestAuth(permissions);
+ 
+-    // 2) Read raw samples for the window, only if the same person is still
+-    //    signed in after the (possible) permission sheet. The synchronous
+-    //    check runs immediately before the native queries start (S-WEAR-3,
+-    //    Sol B-317-7); every metric query starts in that same tick, so no
+-    //    new read can start after sign-out begins. Results that arrive after
+-    //    a stop are dropped, never normalized or sent.
+-    await fence.assertCurrent();
+-    fence.throwIfStopped();
+-    const raw = await this.client.readSamples({ since, until });
+-    fence.throwIfStopped();
+-    const failedMetrics = [...(raw.failed ?? [])];
+-
+-    // 3) Normalize to the canonical wire contract.
+     const ctx: NormalizationContext = { connectionId: scope.connectionId, sourceTz };
+-    const samples: NormalizedSample[] = normalizeHealthKitResult(raw, ctx);
+-
+-    const sinceIso = since.toISOString();
+-    const untilIso = until.toISOString();
+-    const complete = failedMetrics.length === 0;
+-
+-    // Nothing to post: do NOT advance progress — the next run re-attempts the
+-    // same (still-empty) window cheaply and picks up late samples.
+-    if (samples.length === 0) {
+-      return {
+-        postedCount: 0,
+-        since: sinceIso,
+-        until: untilIso,
+-        cursorAdvanced: false,
+-        complete,
+-        failedMetrics,
+-      };
+-    }
+-
+-    // 4) POST in request-sized batches. The fence runs before every request
+-    //    so a sign-out or account switch stops the upload.
+-    await postIngestBatches(samples, {
+-      ...options.ingestDeps,
+-      beforeEachRequest: async () => {
+-        await fence.assertCurrent();
+-        if (options.ingestDeps?.beforeEachRequest) await options.ingestDeps.beforeEachRequest();
+-      },
+-    });
+-
+-    // 5) Persist progress ONLY after every batch resolved, and only for the
+-    //    metrics that were actually read.
+-    await fence.assertCurrent();
++    // Hourly sums are posted only once settled (CUMULATIVE_SETTLE_MINUTES).
++    const settledThrough = floorToLocalHour(
++      new Date(until.getTime() - CUMULATIVE_SETTLE_MINUTES * 60_000),
++    ).getTime();
+     const next: SyncProgress = {
+       v: 1,
+       completedThrough: { ...progress.completedThrough },
+       resume: {},
+     };
+-    for (const key of HEALTHKIT_METRIC_KEYS) {
+-      if (!failedMetrics.includes(key)) next.completedThrough[key] = untilIso;
++    const failed = new Set<HealthKitMetricKey>();
++    let postedCount = 0;
++    let cursorAdvanced = false;
++    let savedThrough = since.getTime();
++    // 5) Save every metric read without failure this run as complete through
++    //    `through`, never moving one back; hourly sums only through the
++    //    settled hour. Only after the fence passed (same person signed in).
++    const save = async (through: number): Promise<void> => {
++      await fence.assertCurrent();
++      for (const key of HEALTHKIT_METRIC_KEYS) {
++        if (failed.has(key)) continue;
++        const t = CUMULATIVE_METRIC_KEYS.includes(key) ? Math.min(through, settledThrough) : through;
++        const saved = next.completedThrough[key] ? Date.parse(next.completedThrough[key]) : -Infinity;
++        if (t > saved) next.completedThrough[key] = new Date(t).toISOString();
++      }
++      await setSyncProgress(scope, next);
++      savedThrough = through;
++      cursorAdvanced = true;
++    };
++
++    // 2) Read the window oldest first, one piece at a time (H8, C-360-2).
++    //    Each piece is read only if the same person is still signed in
++    //    (after the possible permission sheet, then after every save). The
++    //    synchronous check runs immediately before the native queries start
++    //    (S-WEAR-3, Sol B-317-7); every metric query of a piece starts in
++    //    that same tick, so no new read can start after sign-out begins.
++    //    Results that arrive after a stop are dropped, never normalized or
++    //    sent.
++    for (let start = since; start.getTime() < until.getTime(); ) {
++      const end = pieceEnd(start, until);
++      await fence.assertCurrent();
++      fence.throwIfStopped();
++      const raw: HealthKitReadResult = await this.client.readSamples({ since: start, until: end });
++      fence.throwIfStopped();
++      for (const key of raw.failed ?? []) failed.add(key);
++
++      // 3) Normalize to the canonical wire contract (unsettled hours wait).
++      const samples: NormalizedSample[] = normalizeHealthKitResult(
++        {
++          ...raw,
++          steps: settledOnly(raw.steps, settledThrough),
++          activeEnergy: settledOnly(raw.activeEnergy, settledThrough),
++        },
++        ctx,
++      );
++
++      // A piece with nothing to post saves nothing by itself: the next piece
++      // that posts saves through its own end, the end of the run saves the
++      // empty pieces after the last one that posted, and a run that posts
++      // nothing re-reads the same (still empty) window next time.
++      if (samples.length > 0) {
++        // 4) POST in request-sized batches. The fence runs before every
++        //    request so a sign-out or account switch stops the upload.
++        await postIngestBatches(samples, {
++          ...options.ingestDeps,
++          beforeEachRequest: async () => {
++            await fence.assertCurrent();
++            if (options.ingestDeps?.beforeEachRequest) await options.ingestDeps.beforeEachRequest();
++          },
++        });
++
++        // Saved only after every batch of this piece resolved.
++        await save(end.getTime());
++        postedCount += samples.length;
++      }
++      start = end;
+     }
+-    await setSyncProgress(scope, next);
++    if (cursorAdvanced && savedThrough < until.getTime()) await save(until.getTime());
+ 
++    const failedMetrics = HEALTHKIT_METRIC_KEYS.filter((key) => failed.has(key));
+     return {
+-      postedCount: samples.length,
+-      since: sinceIso,
+-      until: untilIso,
+-      cursorAdvanced: true,
+-      complete,
++      postedCount,
++      since: since.toISOString(),
++      until: until.toISOString(),
++      cursorAdvanced,
++      complete: failedMetrics.length === 0,
+       failedMetrics,
+     };
+   }
+diff --git a/src/services/health/onDeviceSync.ts b/src/services/health/onDeviceSync.ts
+index 14d70e70..6d703897 100644
+--- a/src/services/health/onDeviceSync.ts
++++ b/src/services/health/onDeviceSync.ts
+@@ -131,48 +131,85 @@ export interface OnDeviceImportDeps {
+     scope: OnDeviceScope,
+     fence: SessionFence,
+   ) => Promise<{ postedCount: number; complete: boolean }>;
++  /**
++   * `resumeOnly` (H8): a later pass reads only the types that stopped at the
++   * page bound. `hasMore` / `failed` (optional): whether any type stopped at
++   * the page bound / failed to read; when absent, an incomplete pass is
++   * treated as having more to read.
++   */
+   syncHealthConnect?: (
+     scope: OnDeviceScope,
+     fence: SessionFence,
+-  ) => Promise<{ normalizedCount: number; complete: boolean }>;
++    options?: { resumeOnly: boolean },
++  ) => Promise<{ normalizedCount: number; complete: boolean; hasMore?: boolean; failed?: boolean }>;
+ }
+ 
+ /**
+  * Passes per Connect or refresh. A pass that stopped at the Health Connect
+  * page bound resumes in the next pass, so a large history finishes in one
+  * visit; a pass that posted nothing stops the loop (a failing read would only
+- * fail again).
++ * fail again). H8: only a pass that left pages to read continues, and the
++ * later passes read only those types, so the day re-read behind every other
++ * type (late data, `syncWindows.ts`) happens once per visit.
+  */
+ export const MAX_IMPORT_PASSES = 3;
+ 
++/**
++ * Whether a result list names a type. A result without the list (a stub of
++ * the service) reads as unknown: an incomplete pass then counts as having
++ * more to read, as before H8.
++ */
++function listed(list: readonly string[] | undefined): boolean | undefined {
++  return list === undefined ? undefined : list.length > 0;
++}
++
++/** One pass: its outcome, whether pages remain, whether a type failed. */
++interface SyncPass {
++  outcome: OnDeviceImportOutcome;
++  hasMore: boolean;
++  failed: boolean;
++}
++
+ async function runSyncPasses(
+   scope: OnDeviceScope,
+   fence: SessionFence,
+   deps: OnDeviceImportDeps,
+ ): Promise<OnDeviceImportOutcome> {
+   let total = 0;
+-  let last: OnDeviceImportOutcome = {
+-    kind: 'imported',
+-    source: scope.source,
+-    connectionId: scope.connectionId,
+-    postedCount: 0,
+-    complete: false,
++  let anyFailed = false;
++  let last: SyncPass = {
++    outcome: {
++      kind: 'imported',
++      source: scope.source,
++      connectionId: scope.connectionId,
++      postedCount: 0,
++      complete: false,
++    },
++    hasMore: false,
++    failed: false,
+   };
+   for (let pass = 0; pass < MAX_IMPORT_PASSES; pass += 1) {
+-    last = await runSync(scope, fence, deps);
+-    if (last.kind !== 'imported') return last;
+-    total += last.postedCount;
+-    if (last.complete || last.postedCount === 0) break;
++    last = await runSync(scope, fence, deps, pass > 0);
++    const { outcome } = last;
++    if (outcome.kind !== 'imported') return outcome;
++    total += outcome.postedCount;
++    anyFailed = anyFailed || last.failed;
++    if (outcome.complete || outcome.postedCount === 0 || !last.hasMore) break;
+     await fence.assertCurrent();
+   }
+-  return last.kind === 'imported' ? { ...last, postedCount: total } : last;
++  const { outcome } = last;
++  if (outcome.kind !== 'imported') return outcome;
++  // A later resume-only pass reports only the types it read: a type that
++  // failed in an earlier pass still leaves the import incomplete.
++  return { ...outcome, postedCount: total, complete: outcome.complete && !anyFailed };
+ }
+ 
+ async function runSync(
+   scope: OnDeviceScope,
+   fence: SessionFence,
+   deps: OnDeviceImportDeps,
+-): Promise<OnDeviceImportOutcome> {
++  resumeOnly: boolean,
++): Promise<SyncPass> {
+   const { source } = scope;
+   try {
+     if (source === 'APPLE_HEALTHKIT') {
+@@ -185,21 +222,39 @@ async function runSync(
+             sourceTz: Intl.DateTimeFormat().resolvedOptions().timeZone ?? null,
+           }));
+       const { postedCount, complete } = await run(scope, fence);
+-      return { kind: 'imported', source, connectionId: scope.connectionId, postedCount, complete };
++      // Apple Health reads the whole window in one pass (day pieces, H8);
++      // nothing is left at a page bound, so a second pass would only re-read.
++      return {
++        outcome: { kind: 'imported', source, connectionId: scope.connectionId, postedCount, complete },
++        hasMore: false,
++        failed: !complete,
++      };
+     }
+     const run =
+       deps.syncHealthConnect ??
+-      ((sc: OnDeviceScope, f: SessionFence) => syncHealthConnect(sc, { fence: f }));
+-    const { normalizedCount, complete } = await run(scope, fence);
++      (async (sc: OnDeviceScope, f: SessionFence, options?: { resumeOnly: boolean }) => {
++        const res = await syncHealthConnect(sc, { fence: f, resumeOnly: options?.resumeOnly ?? false });
++        return {
++          normalizedCount: res.normalizedCount,
++          complete: res.complete,
++          hasMore: listed(res.truncatedRecordTypes),
++          failed: listed(res.failedRecordTypes),
++        };
++      });
++    const res = await run(scope, fence, { resumeOnly });
+     return {
+-      kind: 'imported',
+-      source,
+-      connectionId: scope.connectionId,
+-      postedCount: normalizedCount,
+-      complete,
++      outcome: {
++        kind: 'imported',
++        source,
++        connectionId: scope.connectionId,
++        postedCount: res.normalizedCount,
++        complete: res.complete,
++      },
++      hasMore: res.hasMore ?? !res.complete,
++      failed: res.failed ?? false,
+     };
+   } catch (err) {
+-    if (isIngestDisabledError(err)) return { kind: 'disabled', source };
++    if (isIngestDisabledError(err)) return { outcome: { kind: 'disabled', source }, hasMore: false, failed: false };
+     throw err;
+   }
+ }
+diff --git a/src/services/health/syncWindows.ts b/src/services/health/syncWindows.ts
+new file mode 100644
+index 00000000..4ec3d528
+--- /dev/null
++++ b/src/services/health/syncWindows.ts
+@@ -0,0 +1,26 @@
++/**
++ * H8 (C-360-1) — how far behind its saved progress an on-device read starts.
++ *
++ * Progress is an EVENT-time instant, but phone health stores receive data
++ * late: a watch that was out of range syncs hours later, a partner app
++ * writes on its own schedule, and a night's sleep is written after waking
++ * (a session that began 10 hours before it was written). HealthKit selects a
++ * sample by its start (`HKQueryOptionStrictStartDate`); a Health Connect
++ * `between` filter selects a record inside the range at the strictest. Either
++ * way, a read that starts this far behind the saved progress and ends now
++ * picks up every finished sample written within this long of its START.
++ * Anything written later than that is not read.
++ *
++ * Re-reading is safe: the backend keys every sample on
++ * sha256(user | provider | metric | start | end) with a UNIQUE index and
++ * inserts with `createMany({ skipDuplicates: true })`, so a sample read again
++ * is skipped, never counted twice (growth-project-backend
++ * `src/wearables/ingestion/dedup.util.ts`, `ingestion.service.ts`). The same
++ * rule means a posted value is never replaced, which is why HealthKit's
++ * hourly sums wait to settle before they are posted
++ * (`healthkit/healthKitSyncService.ts` CUMULATIVE_SETTLE_MINUTES).
++ *
++ * Cost: one extra day of each type per refresh (refresh runs when Health
++ * opens), at most a few dozen ingest requests for a watch wearer.
++ */
++export const LATE_DATA_LOOKBACK_MINUTES = 24 * 60;

@@ -1,0 +1,20 @@
+FAIL test/zz-aud661ci-hosted-probe.spec.ts
+  ● AUD 661 probe — payment_intent.succeeded now claims hosted Checkout rows (round 2 widening) › DEFECT (single session): hosted decline -> in-page retry succeeds -> payment_intent.succeeded activates the hosted row through the PaymentSheet path; checkout.session.completed then activates it a second time
+    TypeError: db.clientPurchase.findMany is not a function
+  ● AUD 661 probe — payment_intent.succeeded now claims hosted Checkout rows (round 2 widening) › DEFECT (two open sessions): the success of session A activates the row of session B that a decline adopted, so one payment entitles two rows and defers two splits on one charge
+    TypeError: db.clientPurchase.findMany is not a function
+  ● AUD 661 probe — payment_intent.succeeded now claims hosted Checkout rows (round 2 widening) › (control) a PaymentSheet row (stripe_checkout_session_id === PaymentIntent id) is the row the round-2 widening was meant for
+    TypeError: db.clientPurchase.findMany is not a function
+FAIL test/aud-sol-661-r4-settlement-acceptance.spec.ts
+  ● independent Sol round-4 settlement acceptance › a previously completed hosted purchase regains access when its failed PI subsequently succeeds
+    ServiceUnavailableException: This payment failure event cannot be applied yet. Stripe redelivers it.
+  ● independent Sol round-4 settlement acceptance › a delayed duplicate completion cannot resurrect a hosted purchase after a real async failure
+    ServiceUnavailableException: This payment failure event cannot be applied yet. Stripe redelivers it.
+FAIL test/aud-sol-661-r3-provider-snapshot.spec.ts
+  ● independent Sol B-661-3 round-3 provider-snapshot boundary › control: a fresh succeeded provider snapshot preserves paid access
+    ServiceUnavailableException: This payment failure event cannot be applied yet. Stripe redelivers it.
+  ● independent Sol B-661-3 round-3 provider-snapshot boundary › a prefetched old decline must not undo a failed -> successful retry committed before its transaction starts
+    Expected: "requires_payment_method"
+    Received: undefined
+Test Suites: 3 failed, 3 total
+Tests:       7 failed, 10 passed, 17 total

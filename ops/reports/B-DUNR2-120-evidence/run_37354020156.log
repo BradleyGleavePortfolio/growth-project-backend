@@ -1,0 +1,736 @@
+﻿2026-10-05T18:11:06.8325927Z Current runner version: '2.337.0'
+2026-10-05T18:11:06.8351536Z ##[group]Runner Image Provisioner
+2026-10-05T18:11:06.8352462Z Hosted Compute Agent
+2026-10-05T18:11:06.8353186Z Version: 20260901.588
+2026-10-05T18:11:06.8353840Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-05T18:11:06.8354766Z Build Date: 2026-09-01T19:56:44Z
+2026-10-05T18:11:06.8355517Z Worker ID: {b5d68da5-c68f-45e1-b9b5-97e88cde38d1}
+2026-10-05T18:11:06.8356273Z Azure Region: eastus
+2026-10-05T18:11:06.8356831Z ##[endgroup]
+2026-10-05T18:11:06.8358635Z ##[group]Operating System
+2026-10-05T18:11:06.8359292Z Ubuntu
+2026-10-05T18:11:06.8360267Z 24.04.5
+2026-10-05T18:11:06.8360892Z LTS
+2026-10-05T18:11:06.8361411Z ##[endgroup]
+2026-10-05T18:11:06.8362058Z ##[group]Runner Image
+2026-10-05T18:11:06.8362664Z Image: ubuntu-24.04
+2026-10-05T18:11:06.8363254Z Version: 20260927.320.1
+2026-10-05T18:11:06.8365026Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-05T18:11:06.8366756Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-05T18:11:06.8367736Z ##[endgroup]
+2026-10-05T18:11:06.8369052Z ##[group]GITHUB_TOKEN Permissions
+2026-10-05T18:11:06.8371252Z Contents: read
+2026-10-05T18:11:06.8371926Z Metadata: read
+2026-10-05T18:11:06.8372517Z Packages: read
+2026-10-05T18:11:06.8373067Z ##[endgroup]
+2026-10-05T18:11:06.8375489Z Secret source: Actions
+2026-10-05T18:11:06.8376551Z Cache mode: write
+2026-10-05T18:11:06.8377678Z Prepare workflow directory
+2026-10-05T18:11:06.8805658Z Prepare all required actions
+2026-10-05T18:11:06.8853480Z Getting action download info
+2026-10-05T18:11:07.1179979Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-05T18:11:07.2263726Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-05T18:11:07.4615020Z Complete job name: targeted
+2026-10-05T18:11:07.5137971Z ##[group]Checking docker version
+2026-10-05T18:11:07.5151275Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-05T18:11:07.6029360Z '1.48'
+2026-10-05T18:11:07.6040621Z Docker daemon API version: '1.48'
+2026-10-05T18:11:07.6041500Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-05T18:11:07.6204465Z '1.48'
+2026-10-05T18:11:07.6216866Z Docker client API version: '1.48'
+2026-10-05T18:11:07.6222014Z ##[endgroup]
+2026-10-05T18:11:07.6225448Z ##[group]Clean up resources from previous jobs
+2026-10-05T18:11:07.6231187Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=ace54f"
+2026-10-05T18:11:07.6370378Z ##[command]/usr/bin/docker network prune --force --filter "label=ace54f"
+2026-10-05T18:11:07.6499563Z ##[endgroup]
+2026-10-05T18:11:07.6500113Z ##[group]Create local container network
+2026-10-05T18:11:07.6510085Z ##[command]/usr/bin/docker network create --label ace54f github_network_6d08a36e3a5344ed880764f6bd41ec71
+2026-10-05T18:11:07.7032337Z ae9cead28ba95ce0e653bac10b70cc06fa5331cf831b1be71c5369850771b04b
+2026-10-05T18:11:07.7054826Z ##[endgroup]
+2026-10-05T18:11:07.7079720Z ##[group]Starting redis service container
+2026-10-05T18:11:07.7101069Z ##[command]/usr/bin/docker pull redis:7-alpine
+2026-10-05T18:11:07.9543019Z 7-alpine: Pulling from library/redis
+2026-10-05T18:11:08.0288766Z 16333ee0c00f: Pulling fs layer
+2026-10-05T18:11:08.0290387Z 83234986c742: Pulling fs layer
+2026-10-05T18:11:08.0291648Z 7eb50503c2b0: Pulling fs layer
+2026-10-05T18:11:08.0292408Z 1522f9c6f453: Pulling fs layer
+2026-10-05T18:11:08.0293049Z 9928009b15c8: Pulling fs layer
+2026-10-05T18:11:08.0294102Z 4f4fb700ef54: Pulling fs layer
+2026-10-05T18:11:08.0295304Z 4eb14bae0e1d: Pulling fs layer
+2026-10-05T18:11:08.0296058Z 1522f9c6f453: Waiting
+2026-10-05T18:11:08.0296654Z 4f4fb700ef54: Waiting
+2026-10-05T18:11:08.0297121Z 9928009b15c8: Waiting
+2026-10-05T18:11:08.0297598Z 4eb14bae0e1d: Waiting
+2026-10-05T18:11:08.0539884Z 83234986c742: Verifying Checksum
+2026-10-05T18:11:08.0541419Z 83234986c742: Download complete
+2026-10-05T18:11:08.0570122Z 7eb50503c2b0: Verifying Checksum
+2026-10-05T18:11:08.0570876Z 7eb50503c2b0: Download complete
+2026-10-05T18:11:08.0821860Z 16333ee0c00f: Download complete
+2026-10-05T18:11:08.0828011Z 9928009b15c8: Verifying Checksum
+2026-10-05T18:11:08.0829493Z 9928009b15c8: Download complete
+2026-10-05T18:11:08.1068644Z 4f4fb700ef54: Verifying Checksum
+2026-10-05T18:11:08.1069745Z 4f4fb700ef54: Download complete
+2026-10-05T18:11:08.1112808Z 4eb14bae0e1d: Verifying Checksum
+2026-10-05T18:11:08.1115834Z 4eb14bae0e1d: Download complete
+2026-10-05T18:11:08.1289133Z 1522f9c6f453: Verifying Checksum
+2026-10-05T18:11:08.1290090Z 1522f9c6f453: Download complete
+2026-10-05T18:11:08.1979053Z 16333ee0c00f: Pull complete
+2026-10-05T18:11:08.2253655Z 83234986c742: Pull complete
+2026-10-05T18:11:08.3690799Z 7eb50503c2b0: Pull complete
+2026-10-05T18:11:08.5581495Z 1522f9c6f453: Pull complete
+2026-10-05T18:11:08.5652787Z 9928009b15c8: Pull complete
+2026-10-05T18:11:08.5728978Z 4f4fb700ef54: Pull complete
+2026-10-05T18:11:08.5822274Z 4eb14bae0e1d: Pull complete
+2026-10-05T18:11:08.5889894Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+2026-10-05T18:11:08.5902781Z Status: Downloaded newer image for redis:7-alpine
+2026-10-05T18:11:08.5910343Z docker.io/library/redis:7-alpine
+2026-10-05T18:11:08.5945441Z ##[command]/usr/bin/docker create --name 840c0eb5673747d3b143352080fbb975_redis7alpine_9bc44c --label ace54f --network github_network_6d08a36e3a5344ed880764f6bd41ec71 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+2026-10-05T18:11:08.6191437Z b0f48d24495a23a6a810a1fe30805cf9b8e09b7844c8dae5d1459fa6062893ab
+2026-10-05T18:11:08.6212673Z ##[command]/usr/bin/docker start b0f48d24495a23a6a810a1fe30805cf9b8e09b7844c8dae5d1459fa6062893ab
+2026-10-05T18:11:08.8420300Z b0f48d24495a23a6a810a1fe30805cf9b8e09b7844c8dae5d1459fa6062893ab
+2026-10-05T18:11:08.8438833Z ##[command]/usr/bin/docker ps --all --filter id=b0f48d24495a23a6a810a1fe30805cf9b8e09b7844c8dae5d1459fa6062893ab --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-05T18:11:08.8558624Z b0f48d24495a23a6a810a1fe30805cf9b8e09b7844c8dae5d1459fa6062893ab Up Less than a second (health: starting)
+2026-10-05T18:11:08.8577954Z ##[command]/usr/bin/docker port b0f48d24495a23a6a810a1fe30805cf9b8e09b7844c8dae5d1459fa6062893ab
+2026-10-05T18:11:08.8705699Z 6379/tcp -> 0.0.0.0:6379
+2026-10-05T18:11:08.8706584Z 6379/tcp -> [::]:6379
+2026-10-05T18:11:08.8755825Z ##[endgroup]
+2026-10-05T18:11:08.8764265Z ##[group]Waiting for all services to be ready
+2026-10-05T18:11:08.8778232Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" b0f48d24495a23a6a810a1fe30805cf9b8e09b7844c8dae5d1459fa6062893ab
+2026-10-05T18:11:08.8895348Z starting
+2026-10-05T18:11:08.8915785Z redis service is starting, waiting 2 seconds before checking again.
+2026-10-05T18:11:10.8911984Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" b0f48d24495a23a6a810a1fe30805cf9b8e09b7844c8dae5d1459fa6062893ab
+2026-10-05T18:11:10.9029213Z starting
+2026-10-05T18:11:10.9041427Z redis service is starting, waiting 3 seconds before checking again.
+2026-10-05T18:11:14.5762704Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" b0f48d24495a23a6a810a1fe30805cf9b8e09b7844c8dae5d1459fa6062893ab
+2026-10-05T18:11:14.5886508Z healthy
+2026-10-05T18:11:14.5902082Z redis service is healthy.
+2026-10-05T18:11:14.5902867Z ##[endgroup]
+2026-10-05T18:11:14.6187243Z ##[group]Run actions/checkout@v6
+2026-10-05T18:11:14.6187830Z with:
+2026-10-05T18:11:14.6188138Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-05T18:11:14.6190920Z   token: ***
+2026-10-05T18:11:14.6191128Z   ssh-strict: true
+2026-10-05T18:11:14.6191333Z   ssh-user: git
+2026-10-05T18:11:14.6191546Z   persist-credentials: true
+2026-10-05T18:11:14.6192050Z   clean: true
+2026-10-05T18:11:14.6192285Z   sparse-checkout-cone-mode: true
+2026-10-05T18:11:14.6192535Z   fetch-depth: 1
+2026-10-05T18:11:14.6192736Z   fetch-tags: false
+2026-10-05T18:11:14.6192951Z   show-progress: true
+2026-10-05T18:11:14.6193160Z   lfs: false
+2026-10-05T18:11:14.6193348Z   submodules: false
+2026-10-05T18:11:14.6193559Z   set-safe-directory: true
+2026-10-05T18:11:14.6193806Z   allow-unsafe-pr-checkout: false
+2026-10-05T18:11:14.6194504Z ##[endgroup]
+2026-10-05T18:11:14.7268264Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-05T18:11:14.7270135Z ##[group]Getting Git version info
+2026-10-05T18:11:14.7270680Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-05T18:11:14.7271371Z [command]/usr/bin/git version
+2026-10-05T18:11:14.7271632Z git version 2.55.0
+2026-10-05T18:11:14.7279468Z ##[endgroup]
+2026-10-05T18:11:14.7294716Z Temporarily overriding HOME='/home/runner/work/_temp/f75b118f-5b13-4670-bb19-fe9270675c2c' before making global git config changes
+2026-10-05T18:11:14.7295837Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T18:11:14.7300809Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-05T18:11:14.7351157Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-05T18:11:14.7356011Z ##[group]Determining repository object format
+2026-10-05T18:11:14.7358289Z ##[endgroup]
+2026-10-05T18:11:14.7358957Z ##[group]Initializing the repository
+2026-10-05T18:11:14.7363414Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-05T18:11:14.7466287Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-05T18:11:14.7467570Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-05T18:11:14.7468592Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-05T18:11:14.7469383Z hint: call:
+2026-10-05T18:11:14.7469740Z hint:
+2026-10-05T18:11:14.7470281Z hint: 	git config --global init.defaultBranch <name>
+2026-10-05T18:11:14.7470884Z hint:
+2026-10-05T18:11:14.7471432Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-05T18:11:14.7472341Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-05T18:11:14.7472911Z hint:
+2026-10-05T18:11:14.7473140Z hint: 	git branch -m <name>
+2026-10-05T18:11:14.7473396Z hint:
+2026-10-05T18:11:14.7473767Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-05T18:11:14.7474901Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-05T18:11:14.7482226Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-05T18:11:14.7527142Z ##[endgroup]
+2026-10-05T18:11:14.7527841Z ##[group]Disabling automatic garbage collection
+2026-10-05T18:11:14.7531236Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-05T18:11:14.7560003Z ##[endgroup]
+2026-10-05T18:11:14.7560639Z ##[group]Setting up auth
+2026-10-05T18:11:14.7561113Z Removing SSH command configuration
+2026-10-05T18:11:14.7567943Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T18:11:14.7597996Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T18:11:14.7956008Z Removing HTTP extra header
+2026-10-05T18:11:14.7960711Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T18:11:14.7990883Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T18:11:14.8202042Z Removing includeIf entries pointing to credentials config files
+2026-10-05T18:11:14.8209843Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T18:11:14.8241896Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T18:11:14.8462634Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-bd0527fc-ab90-4f92-a7a8-9a407d8e1395.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-05T18:11:14.8498428Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-bd0527fc-ab90-4f92-a7a8-9a407d8e1395.config
+2026-10-05T18:11:14.8528166Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-bd0527fc-ab90-4f92-a7a8-9a407d8e1395.config
+2026-10-05T18:11:14.8562251Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-bd0527fc-ab90-4f92-a7a8-9a407d8e1395.config
+2026-10-05T18:11:14.8594653Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-bd0527fc-ab90-4f92-a7a8-9a407d8e1395.config
+2026-10-05T18:11:14.8628597Z ##[endgroup]
+2026-10-05T18:11:14.8629263Z ##[group]Fetching the repository
+2026-10-05T18:11:14.8637355Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +b492f2046ad46a177628e164e1e6d052bc9fd7f5:refs/remotes/origin/ci/B-DUNR2-120-1
+2026-10-05T18:11:16.2351526Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-05T18:11:16.2352630Z  * [new ref]         b492f2046ad46a177628e164e1e6d052bc9fd7f5 -> origin/ci/B-DUNR2-120-1
+2026-10-05T18:11:16.2362944Z [command]/usr/bin/git branch --list --remote origin/ci/B-DUNR2-120-1
+2026-10-05T18:11:16.2386899Z   origin/ci/B-DUNR2-120-1
+2026-10-05T18:11:16.2395059Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-DUNR2-120-1
+2026-10-05T18:11:16.2417274Z b492f2046ad46a177628e164e1e6d052bc9fd7f5
+2026-10-05T18:11:16.2422362Z ##[endgroup]
+2026-10-05T18:11:16.2423164Z ##[group]Determining the checkout info
+2026-10-05T18:11:16.2424054Z ##[endgroup]
+2026-10-05T18:11:16.2428786Z [command]/usr/bin/git sparse-checkout disable
+2026-10-05T18:11:16.2478239Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-05T18:11:16.2506374Z ##[group]Checking out the ref
+2026-10-05T18:11:16.2515868Z [command]/usr/bin/git checkout --progress --force -B ci/B-DUNR2-120-1 refs/remotes/origin/ci/B-DUNR2-120-1
+2026-10-05T18:11:16.4728677Z Switched to a new branch 'ci/B-DUNR2-120-1'
+2026-10-05T18:11:16.4733230Z branch 'ci/B-DUNR2-120-1' set up to track 'origin/ci/B-DUNR2-120-1'.
+2026-10-05T18:11:16.4743671Z ##[endgroup]
+2026-10-05T18:11:16.4788280Z [command]/usr/bin/git log -1 --format=%H
+2026-10-05T18:11:16.4812351Z b492f2046ad46a177628e164e1e6d052bc9fd7f5
+2026-10-05T18:11:16.5070359Z ##[group]Run actions/setup-node@v6
+2026-10-05T18:11:16.5070664Z with:
+2026-10-05T18:11:16.5070859Z   node-version: 20
+2026-10-05T18:11:16.5071065Z   cache: npm
+2026-10-05T18:11:16.5071266Z   check-latest: false
+2026-10-05T18:11:16.5073906Z   token: ***
+2026-10-05T18:11:16.5074132Z   package-manager-cache: true
+2026-10-05T18:11:16.5074720Z ##[endgroup]
+2026-10-05T18:11:16.6450665Z Attempting to download 20...
+2026-10-05T18:11:17.1374894Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-05T18:11:17.4722505Z Extracting ...
+2026-10-05T18:11:17.4864076Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/427d7272-a39c-4f6b-9352-2541433b5754 -f /home/runner/work/_temp/88cdf0ec-1787-40ba-9915-e78f3f88f789
+2026-10-05T18:11:18.5307442Z Adding to the cache ...
+2026-10-05T18:11:20.3592830Z ##[group]Environment details
+2026-10-05T18:11:20.5756846Z node: v20.20.2
+2026-10-05T18:11:20.5757195Z npm: 10.8.2
+2026-10-05T18:11:20.5757427Z yarn: 1.22.22
+2026-10-05T18:11:20.5758164Z ##[endgroup]
+2026-10-05T18:11:20.5777331Z [command]/opt/hostedtoolcache/node/20.20.2/x64/bin/npm config get cache
+2026-10-05T18:11:20.6809466Z /home/runner/.npm
+2026-10-05T18:11:20.8025906Z Cache hit for: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-05T18:11:21.3670405Z Received 86828135 of 86828135 (100.0%), 172.5 MBs/sec
+2026-10-05T18:11:21.3671650Z Cache Size: ~83 MB (86828135 B)
+2026-10-05T18:11:21.3781234Z [command]/usr/bin/tar -xf /home/runner/work/_temp/b953e087-19f7-4aff-8e89-3dda162510e8/cache.tzst -P -C /home/runner/work/growth-project-backend/growth-project-backend --use-compress-program unzstd
+2026-10-05T18:11:21.5601907Z Cache restored successfully
+2026-10-05T18:11:21.5648070Z Cache restored from key: node-cache-Linux-x64-npm-07f78abbac5e2cbfcef112b8b919e298f8da38fa5e6aaf98a3625ef672bd5b12
+2026-10-05T18:11:21.5833048Z ##[group]Run npm ci
+2026-10-05T18:11:21.5833346Z npm ci
+2026-10-05T18:11:21.6050414Z shell: /usr/bin/bash -e {0}
+2026-10-05T18:11:21.6050752Z ##[endgroup]
+2026-10-05T18:11:27.3675466Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-05T18:11:28.3998412Z npm warn deprecated jpeg-exif@1.1.4: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-05T18:11:29.4821127Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T18:11:30.7991908Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T18:11:30.8206084Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T18:11:30.8676598Z npm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T18:11:43.9065491Z 
+2026-10-05T18:11:43.9066371Z > growth-project-backend@1.0.0 postinstall
+2026-10-05T18:11:43.9066790Z > prisma generate
+2026-10-05T18:11:43.9066949Z 
+2026-10-05T18:11:44.8509615Z Prisma schema loaded from prisma/schema.prisma
+2026-10-05T18:11:48.7147119Z ┌─────────────────────────────────────────────────────────┐
+2026-10-05T18:11:48.7148515Z │  Update available 6.19.3 -> 8.0.0-rc.20                 │
+2026-10-05T18:11:48.7149655Z │                                                         │
+2026-10-05T18:11:48.7150800Z │  This is a major update - please follow the guide at    │
+2026-10-05T18:11:48.7152018Z │  https://pris.ly/d/major-version-upgrade                │
+2026-10-05T18:11:48.7153098Z │                                                         │
+2026-10-05T18:11:48.7154096Z │  Run the following to update                            │
+2026-10-05T18:11:48.7155517Z │    npm i --save-dev prisma@latest                       │
+2026-10-05T18:11:48.7156440Z │    npm i @prisma/client@latest                          │
+2026-10-05T18:11:48.7157628Z └─────────────────────────────────────────────────────────┘
+2026-10-05T18:11:48.7157937Z 
+2026-10-05T18:11:48.7158419Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.11s
+2026-10-05T18:11:48.7158813Z 
+2026-10-05T18:11:48.7159241Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-05T18:11:48.7159659Z 
+2026-10-05T18:11:48.7160299Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+2026-10-05T18:11:48.7160868Z 
+2026-10-05T18:11:48.7693741Z 
+2026-10-05T18:11:48.7694705Z > growth-project-backend@1.0.0 prepare
+2026-10-05T18:11:48.7695360Z > lefthook install
+2026-10-05T18:11:48.7695612Z 
+2026-10-05T18:11:48.8198562Z sync hooks: ✔️(commit-msg, pre-commit)
+2026-10-05T18:11:48.8361246Z 
+2026-10-05T18:11:48.8361971Z added 1115 packages, and audited 1116 packages in 27s
+2026-10-05T18:11:48.8362465Z 
+2026-10-05T18:11:48.8362640Z 202 packages are looking for funding
+2026-10-05T18:11:48.8363013Z   run `npm fund` for details
+2026-10-05T18:11:48.8395311Z 
+2026-10-05T18:11:48.8395724Z 3 high severity vulnerabilities
+2026-10-05T18:11:48.8396337Z 
+2026-10-05T18:11:48.8396952Z To address all issues (including breaking changes), run:
+2026-10-05T18:11:48.8397710Z   npm audit fix --force
+2026-10-05T18:11:48.8397964Z 
+2026-10-05T18:11:48.8398174Z Run `npm audit` for details.
+2026-10-05T18:11:48.9025931Z ##[group]Run npx prisma generate
+2026-10-05T18:11:48.9026276Z npx prisma generate
+2026-10-05T18:11:48.9088947Z shell: /usr/bin/bash -e {0}
+2026-10-05T18:11:48.9089220Z ##[endgroup]
+2026-10-05T18:11:50.1812361Z Prisma schema loaded from prisma/schema.prisma
+2026-10-05T18:11:54.0871112Z 
+2026-10-05T18:11:54.0872359Z ✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 2.15s
+2026-10-05T18:11:54.0872843Z 
+2026-10-05T18:11:54.0873314Z Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+2026-10-05T18:11:54.0873804Z 
+2026-10-05T18:11:54.0874916Z Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+2026-10-05T18:11:54.0875564Z 
+2026-10-05T18:11:54.2164782Z ##[group]Run set -euo pipefail
+2026-10-05T18:11:54.2165161Z set -euo pipefail
+2026-10-05T18:11:54.2165562Z test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+2026-10-05T18:11:54.2166053Z mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+2026-10-05T18:11:54.2166410Z echo "specs: ${SPECS[*]}"
+2026-10-05T18:11:54.2166710Z npx jest --ci --runInBand "${SPECS[@]}"
+2026-10-05T18:11:54.2230069Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-05T18:11:54.2230442Z env:
+2026-10-05T18:11:54.2230688Z   NODE_OPTIONS: --max-old-space-size=4096
+2026-10-05T18:11:54.2231068Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+2026-10-05T18:11:54.2231403Z ##[endgroup]
+2026-10-05T18:11:54.2324119Z specs: test/dunning-v2-foundation-fixes.spec.ts test/dunning-v2-copy.spec.ts
+2026-10-05T18:11:56.9868300Z [Nest] 3136  - 10/05/2026, 6:11:56 PM   ERROR [NotificationsService] pushToUser ticket error for user coach-a: unknown
+2026-10-05T18:11:57.1592298Z FAIL test/dunning-v2-foundation-fixes.spec.ts (141 MB heap size)
+2026-10-05T18:11:57.1594271Z   ● B-687-4 (Sol) / B-687-5 (Opus) / C-687-6: copy claims nothing before it is true › dispute cycle step 0: no card or cancel promise
+2026-10-05T18:11:57.1595475Z 
+2026-10-05T18:11:57.1595776Z     expect(received).toMatch(expected)
+2026-10-05T18:11:57.1596152Z 
+2026-10-05T18:11:57.1596527Z     Expected pattern: /Restarting it is up to Morgan Coach/
+2026-10-05T18:11:57.1598233Z     Received string:  "Avery, a recent payment was reversed by the bank after a dispute. Access has ended and billing is paused. Morgan Coach decides whether to restart it."
+2026-10-05T18:11:57.1599415Z 
+2026-10-05T18:11:57.1600348Z       391 |     // R-DISPUTE-PAUSE: access has ended, billing is paused, the coach decides.
+2026-10-05T18:11:57.1602543Z       392 |     expect(text).toMatch(/Access has ended and billing (for the plan )?is paused/);
+2026-10-05T18:11:57.1604802Z     > 393 |     expect(text).toMatch(/Restarting it is up to Morgan Coach/);
+2026-10-05T18:11:57.1606141Z           |                  ^
+2026-10-05T18:11:57.1607349Z       394 |     // Step 3 adds the coach channels: the coach is told the restart is theirs.
+2026-10-05T18:11:57.1609129Z       395 |     if (stepIndex === 3) expect(text).toMatch(/Restarting is your decision/);
+2026-10-05T18:11:57.1610613Z       396 |     expect(text).not.toMatch(
+2026-10-05T18:11:57.1611091Z 
+2026-10-05T18:11:57.1611448Z       at test/dunning-v2-foundation-fixes.spec.ts:393:18
+2026-10-05T18:11:57.1611902Z 
+2026-10-05T18:11:57.1612980Z   ● B-687-4 (Sol) / B-687-5 (Opus) / C-687-6: copy claims nothing before it is true › dispute cycle step 1: no card or cancel promise
+2026-10-05T18:11:57.1613814Z 
+2026-10-05T18:11:57.1614067Z     expect(received).toMatch(expected)
+2026-10-05T18:11:57.1614697Z 
+2026-10-05T18:11:57.1615049Z     Expected pattern: /Restarting it is up to Morgan Coach/
+2026-10-05T18:11:57.1616634Z     Received string:  "Avery, a recent payment was reversed by the bank after a dispute. Access has ended and billing is paused. Morgan Coach decides whether to restart it.
+2026-10-05T18:11:57.1618262Z     Your recent payment was reversed········
+2026-10-05T18:11:57.1618845Z          Good day, Avery.·
+2026-10-05T18:11:57.1620288Z     A recent payment was reversed by the bank after a dispute. It was for your plan with Morgan Coach. Access has ended and billing for the plan is paused.·
+2026-10-05T18:11:57.1622096Z     Morgan Coach decides whether to restart it. The dispute closing does not restart it on its own.·
+2026-10-05T18:11:57.1623263Z     — Roman, on behalf of Morgan Coach············
+2026-10-05T18:11:57.1625067Z          Questions about this payment? Reply to this email to reach a person who can help.·······
+2026-10-05T18:11:57.1626039Z     "
+2026-10-05T18:11:57.1626239Z 
+2026-10-05T18:11:57.1627121Z       391 |     // R-DISPUTE-PAUSE: access has ended, billing is paused, the coach decides.
+2026-10-05T18:11:57.1628840Z       392 |     expect(text).toMatch(/Access has ended and billing (for the plan )?is paused/);
+2026-10-05T18:11:57.1630608Z     > 393 |     expect(text).toMatch(/Restarting it is up to Morgan Coach/);
+2026-10-05T18:11:57.1631789Z           |                  ^
+2026-10-05T18:11:57.1632937Z       394 |     // Step 3 adds the coach channels: the coach is told the restart is theirs.
+2026-10-05T18:11:57.1635019Z       395 |     if (stepIndex === 3) expect(text).toMatch(/Restarting is your decision/);
+2026-10-05T18:11:57.1636483Z       396 |     expect(text).not.toMatch(
+2026-10-05T18:11:57.1636979Z 
+2026-10-05T18:11:57.1637325Z       at test/dunning-v2-foundation-fixes.spec.ts:393:18
+2026-10-05T18:11:57.1637772Z 
+2026-10-05T18:11:57.1638770Z   ● B-687-4 (Sol) / B-687-5 (Opus) / C-687-6: copy claims nothing before it is true › dispute cycle step 2: no card or cancel promise
+2026-10-05T18:11:57.1639605Z 
+2026-10-05T18:11:57.1639844Z     expect(received).toMatch(expected)
+2026-10-05T18:11:57.1640187Z 
+2026-10-05T18:11:57.1640537Z     Expected pattern: /Restarting it is up to Morgan Coach/
+2026-10-05T18:11:57.1642097Z     Received string:  "Avery, a recent payment was reversed by the bank after a dispute. Access has ended and billing is paused. Morgan Coach decides whether to restart it.
+2026-10-05T18:11:57.1643997Z     Your recent payment was reversed········
+2026-10-05T18:11:57.1644939Z          Good day, Avery.·
+2026-10-05T18:11:57.1646411Z     A recent payment was reversed by the bank after a dispute. It was for your plan with Morgan Coach. Access has ended and billing for the plan is paused.·
+2026-10-05T18:11:57.1648214Z     Morgan Coach decides whether to restart it. The dispute closing does not restart it on its own.·
+2026-10-05T18:11:57.1649405Z     — Roman, on behalf of Morgan Coach············
+2026-10-05T18:11:57.1650590Z          Questions about this payment? Reply to this email to reach a person who can help.········
+2026-10-05T18:11:57.1653301Z     A recent payment was reversed after a dispute. Access has ended and billing is paused. Morgan Coach decides whether to restart it. {\"headline\":\"A payment was reversed after a dispute.\",\"primaryCta\":\"See details\",\"secondaryCta\":\"Not now\",\"variant\":\"lr_day3\",\"dunningStateId\":\"ds-1\"}"
+2026-10-05T18:11:57.1655457Z 
+2026-10-05T18:11:57.1656358Z       391 |     // R-DISPUTE-PAUSE: access has ended, billing is paused, the coach decides.
+2026-10-05T18:11:57.1658135Z       392 |     expect(text).toMatch(/Access has ended and billing (for the plan )?is paused/);
+2026-10-05T18:11:57.1660018Z     > 393 |     expect(text).toMatch(/Restarting it is up to Morgan Coach/);
+2026-10-05T18:11:57.1661302Z           |                  ^
+2026-10-05T18:11:57.1662493Z       394 |     // Step 3 adds the coach channels: the coach is told the restart is theirs.
+2026-10-05T18:11:57.1664631Z       395 |     if (stepIndex === 3) expect(text).toMatch(/Restarting is your decision/);
+2026-10-05T18:11:57.1666152Z       396 |     expect(text).not.toMatch(
+2026-10-05T18:11:57.1666639Z 
+2026-10-05T18:11:57.1667017Z       at test/dunning-v2-foundation-fixes.spec.ts:393:18
+2026-10-05T18:11:57.1667481Z 
+2026-10-05T18:11:57.1668793Z   ● B-687-4 (Sol) / B-687-5 (Opus) / C-687-6: copy claims nothing before it is true › dispute cycle step 3: no card or cancel promise
+2026-10-05T18:11:57.1669666Z 
+2026-10-05T18:11:57.1669891Z     expect(received).toMatch(expected)
+2026-10-05T18:11:57.1670236Z 
+2026-10-05T18:11:57.1670607Z     Expected pattern: /Restarting it is up to Morgan Coach/
+2026-10-05T18:11:57.1672212Z     Received string:  "Avery, a recent payment was reversed by the bank after a dispute. Access has ended and billing is paused. Morgan Coach decides whether to restart it.
+2026-10-05T18:11:57.1673845Z     Your recent payment was reversed········
+2026-10-05T18:11:57.1674716Z          Good day, Avery.·
+2026-10-05T18:11:57.1676155Z     A recent payment was reversed by the bank after a dispute. It was for your plan with Morgan Coach. Access has ended and billing for the plan is paused.·
+2026-10-05T18:11:57.1678019Z     Morgan Coach decides whether to restart it. The dispute closing does not restart it on its own.·
+2026-10-05T18:11:57.1679268Z     — Roman, on behalf of Morgan Coach············
+2026-10-05T18:11:57.1680526Z          Questions about this payment? Reply to this email to reach a person who can help.········
+2026-10-05T18:11:57.1683173Z     A recent payment was reversed after a dispute. Access has ended and billing is paused. Morgan Coach decides whether to restart it. {\"headline\":\"A payment was reversed after a dispute.\",\"primaryCta\":\"See details\",\"secondaryCta\":\"Not now\",\"variant\":\"lr_day3\",\"dunningStateId\":\"ds-1\"}
+2026-10-05T18:11:57.1687240Z     Avery Client's bank reversed a payment after a dispute. Their access has ended and billing for the plan is paused. Restarting is your decision. {\"alertId\":\"coach_notify:ds-1:1791081000000\",\"alertType\":\"dunning_step7\",\"severity\":\"warning\",\"clientUserId\":\"client-a\"}
+2026-10-05T18:11:57.1689891Z     Avery Client: a payment was reversed after a dispute. Access has ended and billing is paused. Restarting is your decision.
+2026-10-05T18:11:57.1693514Z     Avery Client's bank reversed a payment after a dispute. Their access has ended and billing for the plan is paused. Restarting is your decision. {\"alertId\":\"coach_notify:ds-1:1791081000000\",\"alertType\":\"dunning_step7\",\"severity\":\"warning\",\"clientUserId\":\"client-a\"}·········
+2026-10-05T18:11:57.1696047Z          Good day, Morgan Coach.·
+2026-10-05T18:11:57.1698125Z     The bank of one of your clients, Avery Client, reversed a recent payment after a dispute. Their access has ended and billing for the plan is paused. It stays that way when the dispute closes, won or lost.·
+2026-10-05T18:11:57.1700475Z     Restarting access and billing is your decision. The full record is in the app: open Clients, then Avery Client.·
+2026-10-05T18:11:57.1701604Z     — Roman·······
+2026-10-05T18:11:57.1702810Z          Your client has the same details in the app. Questions? Reply to this email to reach a person who can help.·······
+2026-10-05T18:11:57.1703851Z     "
+2026-10-05T18:11:57.1704062Z 
+2026-10-05T18:11:57.1705205Z       391 |     // R-DISPUTE-PAUSE: access has ended, billing is paused, the coach decides.
+2026-10-05T18:11:57.1706990Z       392 |     expect(text).toMatch(/Access has ended and billing (for the plan )?is paused/);
+2026-10-05T18:11:57.1708900Z     > 393 |     expect(text).toMatch(/Restarting it is up to Morgan Coach/);
+2026-10-05T18:11:57.1710224Z           |                  ^
+2026-10-05T18:11:57.1711488Z       394 |     // Step 3 adds the coach channels: the coach is told the restart is theirs.
+2026-10-05T18:11:57.1713450Z       395 |     if (stepIndex === 3) expect(text).toMatch(/Restarting is your decision/);
+2026-10-05T18:11:57.1715224Z       396 |     expect(text).not.toMatch(
+2026-10-05T18:11:57.1715706Z 
+2026-10-05T18:11:57.1716321Z       at test/dunning-v2-foundation-fixes.spec.ts:393:18
+2026-10-05T18:11:57.1716820Z 
+2026-10-05T18:11:57.1717994Z   ● B-687-8 (Opus) / C-687-9: dispute copy is true for an inquiry too › dispute cycle step 0: no reversal claim, names a dispute or inquiry
+2026-10-05T18:11:57.1718986Z 
+2026-10-05T18:11:57.1719281Z     expect(received).not.toMatch(expected)
+2026-10-05T18:11:57.1719689Z 
+2026-10-05T18:11:57.1719947Z     Expected pattern: not /revers/i
+2026-10-05T18:11:57.1721524Z     Received string:      "Avery, a recent payment was reversed by the bank after a dispute. Access has ended and billing is paused. Morgan Coach decides whether to restart it."
+2026-10-05T18:11:57.1722758Z 
+2026-10-05T18:11:57.1723711Z       413 |       // Owner ruling 6 (10-05): an inquiry pauses the plan, and an inquiry moves no money.
+2026-10-05T18:11:57.1726094Z       414 |       const text = await renderStep({ stepIndex, isLateReversalCycle: true });
+2026-10-05T18:11:57.1728106Z     > 415 |       expect(text).not.toMatch(/revers/i);
+2026-10-05T18:11:57.1729294Z           |                        ^
+2026-10-05T18:11:57.1730459Z       416 |       expect(text).toMatch(/dispute or inquiry/);
+2026-10-05T18:11:57.1731475Z       417 |     },
+2026-10-05T18:11:57.1732107Z       418 |   );
+2026-10-05T18:11:57.1732447Z 
+2026-10-05T18:11:57.1732804Z       at test/dunning-v2-foundation-fixes.spec.ts:415:24
+2026-10-05T18:11:57.1733288Z 
+2026-10-05T18:11:57.1734961Z   ● B-687-8 (Opus) / C-687-9: dispute copy is true for an inquiry too › dispute cycle step 1: no reversal claim, names a dispute or inquiry
+2026-10-05T18:11:57.1735732Z 
+2026-10-05T18:11:57.1736191Z     expect(received).not.toMatch(expected)
+2026-10-05T18:11:57.1736473Z 
+2026-10-05T18:11:57.1736653Z     Expected pattern: not /revers/i
+2026-10-05T18:11:57.1737752Z     Received string:      "Avery, a recent payment was reversed by the bank after a dispute. Access has ended and billing is paused. Morgan Coach decides whether to restart it.
+2026-10-05T18:11:57.1738759Z     Your recent payment was reversed
+2026-10-05T18:11:57.1739096Z      
+2026-10-05T18:11:57.1739328Z      
+2026-10-05T18:11:57.1739550Z        
+2026-10-05T18:11:57.1739800Z          Good day, Avery.
+2026-10-05T18:11:57.1739996Z 
+2026-10-05T18:11:57.1740737Z     A recent payment was reversed by the bank after a dispute. It was for your plan with Morgan Coach. Access has ended and billing for the plan is paused.
+2026-10-05T18:11:57.1741483Z 
+2026-10-05T18:11:57.1741929Z     Morgan Coach decides whether to restart it. The dispute closing does not restart it on its own.
+2026-10-05T18:11:57.1742437Z 
+2026-10-05T18:11:57.1742709Z     — Roman, on behalf of Morgan Coach 
+2026-10-05T18:11:57.1743063Z         
+2026-10-05T18:11:57.1743292Z          
+2026-10-05T18:11:57.1743818Z          Questions about this payment? Reply to this email to reach a person who can help. 
+2026-10-05T18:11:57.1744577Z        
+2026-10-05T18:11:57.1744803Z      
+2026-10-05T18:11:57.1745017Z     "
+2026-10-05T18:11:57.1745137Z 
+2026-10-05T18:11:57.1745732Z       413 |       // Owner ruling 6 (10-05): an inquiry pauses the plan, and an inquiry moves no money.
+2026-10-05T18:11:57.1747057Z       414 |       const text = await renderStep({ stepIndex, isLateReversalCycle: true });
+2026-10-05T18:11:57.1748264Z     > 415 |       expect(text).not.toMatch(/revers/i);
+2026-10-05T18:11:57.1749018Z           |                        ^
+2026-10-05T18:11:57.1749730Z       416 |       expect(text).toMatch(/dispute or inquiry/);
+2026-10-05T18:11:57.1750472Z       417 |     },
+2026-10-05T18:11:57.1750879Z       418 |   );
+2026-10-05T18:11:57.1751091Z 
+2026-10-05T18:11:57.1751321Z       at test/dunning-v2-foundation-fixes.spec.ts:415:24
+2026-10-05T18:11:57.1751619Z 
+2026-10-05T18:11:57.1752323Z   ● B-687-8 (Opus) / C-687-9: dispute copy is true for an inquiry too › dispute cycle step 2: no reversal claim, names a dispute or inquiry
+2026-10-05T18:11:57.1752932Z 
+2026-10-05T18:11:57.1753100Z     expect(received).not.toMatch(expected)
+2026-10-05T18:11:57.1753345Z 
+2026-10-05T18:11:57.1753493Z     Expected pattern: not /revers/i
+2026-10-05T18:11:57.1754650Z     Received string:      "Avery, a recent payment was reversed by the bank after a dispute. Access has ended and billing is paused. Morgan Coach decides whether to restart it.
+2026-10-05T18:11:57.1755442Z     Your recent payment was reversed
+2026-10-05T18:11:57.1755702Z      
+2026-10-05T18:11:57.1755935Z      
+2026-10-05T18:11:57.1756105Z        
+2026-10-05T18:11:57.1756304Z          Good day, Avery.
+2026-10-05T18:11:57.1756456Z 
+2026-10-05T18:11:57.1756997Z     A recent payment was reversed by the bank after a dispute. It was for your plan with Morgan Coach. Access has ended and billing for the plan is paused.
+2026-10-05T18:11:57.1757544Z 
+2026-10-05T18:11:57.1757867Z     Morgan Coach decides whether to restart it. The dispute closing does not restart it on its own.
+2026-10-05T18:11:57.1758243Z 
+2026-10-05T18:11:57.1758428Z     — Roman, on behalf of Morgan Coach 
+2026-10-05T18:11:57.1758686Z         
+2026-10-05T18:11:57.1758864Z          
+2026-10-05T18:11:57.1759260Z          Questions about this payment? Reply to this email to reach a person who can help. 
+2026-10-05T18:11:57.1759680Z        
+2026-10-05T18:11:57.1759856Z      
+2026-10-05T18:11:57.1759963Z 
+2026-10-05T18:11:57.1761040Z     A recent payment was reversed after a dispute. Access has ended and billing is paused. Morgan Coach decides whether to restart it. {\"headline\":\"A payment was reversed after a dispute.\",\"primaryCta\":\"See details\",\"secondaryCta\":\"Not now\",\"variant\":\"lr_day3\",\"dunningStateId\":\"ds-1\"}"
+2026-10-05T18:11:57.1762227Z 
+2026-10-05T18:11:57.1762717Z       413 |       // Owner ruling 6 (10-05): an inquiry pauses the plan, and an inquiry moves no money.
+2026-10-05T18:11:57.1763775Z       414 |       const text = await renderStep({ stepIndex, isLateReversalCycle: true });
+2026-10-05T18:11:57.1764949Z     > 415 |       expect(text).not.toMatch(/revers/i);
+2026-10-05T18:11:57.1765556Z           |                        ^
+2026-10-05T18:11:57.1766142Z       416 |       expect(text).toMatch(/dispute or inquiry/);
+2026-10-05T18:11:57.1766628Z       417 |     },
+2026-10-05T18:11:57.1766952Z       418 |   );
+2026-10-05T18:11:57.1767135Z 
+2026-10-05T18:11:57.1767335Z       at test/dunning-v2-foundation-fixes.spec.ts:415:24
+2026-10-05T18:11:57.1767574Z 
+2026-10-05T18:11:57.1768154Z   ● B-687-8 (Opus) / C-687-9: dispute copy is true for an inquiry too › dispute cycle step 3: no reversal claim, names a dispute or inquiry
+2026-10-05T18:11:57.1768642Z 
+2026-10-05T18:11:57.1768784Z     expect(received).not.toMatch(expected)
+2026-10-05T18:11:57.1768980Z 
+2026-10-05T18:11:57.1769110Z     Expected pattern: not /revers/i
+2026-10-05T18:11:57.1769895Z     Received string:      "Avery, a recent payment was reversed by the bank after a dispute. Access has ended and billing is paused. Morgan Coach decides whether to restart it.
+2026-10-05T18:11:57.1770628Z     Your recent payment was reversed
+2026-10-05T18:11:57.1770883Z      
+2026-10-05T18:11:57.1771059Z      
+2026-10-05T18:11:57.1771232Z        
+2026-10-05T18:11:57.1771440Z          Good day, Avery.
+2026-10-05T18:11:57.1771583Z 
+2026-10-05T18:11:57.1772253Z     A recent payment was reversed by the bank after a dispute. It was for your plan with Morgan Coach. Access has ended and billing for the plan is paused.
+2026-10-05T18:11:57.1772806Z 
+2026-10-05T18:11:57.1773143Z     Morgan Coach decides whether to restart it. The dispute closing does not restart it on its own.
+2026-10-05T18:11:57.1773512Z 
+2026-10-05T18:11:57.1773690Z     — Roman, on behalf of Morgan Coach 
+2026-10-05T18:11:57.1773952Z         
+2026-10-05T18:11:57.1774137Z          
+2026-10-05T18:11:57.1774673Z          Questions about this payment? Reply to this email to reach a person who can help. 
+2026-10-05T18:11:57.1775091Z        
+2026-10-05T18:11:57.1775258Z      
+2026-10-05T18:11:57.1775360Z 
+2026-10-05T18:11:57.1776421Z     A recent payment was reversed after a dispute. Access has ended and billing is paused. Morgan Coach decides whether to restart it. {\"headline\":\"A payment was reversed after a dispute.\",\"primaryCta\":\"See details\",\"secondaryCta\":\"Not now\",\"variant\":\"lr_day3\",\"dunningStateId\":\"ds-1\"}
+2026-10-05T18:11:57.1778416Z     Avery Client's bank reversed a payment after a dispute. Their access has ended and billing for the plan is paused. Restarting is your decision. {\"alertId\":\"coach_notify:ds-1:1791081000000\",\"alertType\":\"dunning_step7\",\"severity\":\"warning\",\"clientUserId\":\"client-a\"}
+2026-10-05T18:11:57.1779781Z     Avery Client: a payment was reversed after a dispute. Access has ended and billing is paused. Restarting is your decision.
+2026-10-05T18:11:57.1781223Z     Avery Client's bank reversed a payment after a dispute. Their access has ended and billing for the plan is paused. Restarting is your decision. {\"alertId\":\"coach_notify:ds-1:1791081000000\",\"alertType\":\"dunning_step7\",\"severity\":\"warning\",\"clientUserId\":\"client-a\"}
+2026-10-05T18:11:57.1782160Z 
+2026-10-05T18:11:57.1782239Z      
+2026-10-05T18:11:57.1782411Z      
+2026-10-05T18:11:57.1782708Z        
+2026-10-05T18:11:57.1782920Z          Good day, Morgan Coach.
+2026-10-05T18:11:57.1783091Z 
+2026-10-05T18:11:57.1783824Z     The bank of one of your clients, Avery Client, reversed a recent payment after a dispute. Their access has ended and billing for the plan is paused. It stays that way when the dispute closes, won or lost.
+2026-10-05T18:11:57.1784683Z 
+2026-10-05T18:11:57.1785072Z     Restarting access and billing is your decision. The full record is in the app: open Clients, then Avery Client.
+2026-10-05T18:11:57.1785496Z 
+2026-10-05T18:11:57.1785620Z     — Roman 
+2026-10-05T18:11:57.1785808Z          
+2026-10-05T18:11:57.1786285Z          Your client has the same details in the app. Questions? Reply to this email to reach a person who can help. 
+2026-10-05T18:11:57.1786775Z        
+2026-10-05T18:11:57.1786946Z      
+2026-10-05T18:11:57.1787120Z     "
+2026-10-05T18:11:57.1787223Z 
+2026-10-05T18:11:57.1787698Z       413 |       // Owner ruling 6 (10-05): an inquiry pauses the plan, and an inquiry moves no money.
+2026-10-05T18:11:57.1788762Z       414 |       const text = await renderStep({ stepIndex, isLateReversalCycle: true });
+2026-10-05T18:11:57.1789730Z     > 415 |       expect(text).not.toMatch(/revers/i);
+2026-10-05T18:11:57.1790331Z           |                        ^
+2026-10-05T18:11:57.1790903Z       416 |       expect(text).toMatch(/dispute or inquiry/);
+2026-10-05T18:11:57.1791384Z       417 |     },
+2026-10-05T18:11:57.1791717Z       418 |   );
+2026-10-05T18:11:57.1791890Z 
+2026-10-05T18:11:57.1792084Z       at test/dunning-v2-foundation-fixes.spec.ts:415:24
+2026-10-05T18:11:57.1792328Z 
+2026-10-05T18:11:57.1792860Z   ● B-687-8 (Opus) / C-687-9: dispute copy is true for an inquiry too › the dispute email subject makes no reversal claim
+2026-10-05T18:11:57.1793289Z 
+2026-10-05T18:11:57.1793427Z     expect(received).toMatch(expected)
+2026-10-05T18:11:57.1793742Z 
+2026-10-05T18:11:57.1794008Z     Expected pattern: /Your plan is paused after a payment dispute or inquiry/
+2026-10-05T18:11:57.1795209Z     Received string:  "Avery, a recent payment was reversed by the bank after a dispute. Access has ended and billing is paused. Morgan Coach decides whether to restart it.
+2026-10-05T18:11:57.1796332Z     Avery, a recent payment was reversed by the bank after a dispute. Access has ended and billing is paused. Morgan Coach decides whether to restart it.
+2026-10-05T18:11:57.1797097Z     Your recent payment was reversed········
+2026-10-05T18:11:57.1797420Z          Good day, Avery.·
+2026-10-05T18:11:57.1798158Z     A recent payment was reversed by the bank after a dispute. It was for your plan with Morgan Coach. Access has ended and billing for the plan is paused.·
+2026-10-05T18:11:57.1799076Z     Morgan Coach decides whether to restart it. The dispute closing does not restart it on its own.·
+2026-10-05T18:11:57.1799705Z     — Roman, on behalf of Morgan Coach············
+2026-10-05T18:11:57.1800322Z          Questions about this payment? Reply to this email to reach a person who can help.········
+2026-10-05T18:11:57.1801207Z     Avery, a recent payment was reversed by the bank after a dispute. Access has ended and billing is paused. Morgan Coach decides whether to restart it.
+2026-10-05T18:11:57.1801940Z     Your recent payment was reversed········
+2026-10-05T18:11:57.1802249Z          Good day, Avery.·
+2026-10-05T18:11:57.1802976Z     A recent payment was reversed by the bank after a dispute. It was for your plan with Morgan Coach. Access has ended and billing for the plan is paused.·
+2026-10-05T18:11:57.1803882Z     Morgan Coach decides whether to restart it. The dispute closing does not restart it on its own.·
+2026-10-05T18:11:57.1804660Z     — Roman, on behalf of Morgan Coach············
+2026-10-05T18:11:57.1805466Z          Questions about this payment? Reply to this email to reach a person who can help.········
+2026-10-05T18:11:57.1806908Z     A recent payment was reversed after a dispute. Access has ended and billing is paused. Morgan Coach decides whether to restart it. {\"headline\":\"A payment was reversed after a dispute.\",\"primaryCta\":\"See details\",\"secondaryCta\":\"Not now\",\"variant\":\"lr_day3\",\"dunningStateId\":\"ds-1\"}
+2026-10-05T18:11:57.1808424Z     Avery, a recent payment was reversed by the bank after a dispute. Access has ended and billing is paused. Morgan Coach decides whether to restart it.
+2026-10-05T18:11:57.1809161Z     Your recent payment was reversed········
+2026-10-05T18:11:57.1809472Z          Good day, Avery.·
+2026-10-05T18:11:57.1810207Z     A recent payment was reversed by the bank after a dispute. It was for your plan with Morgan Coach. Access has ended and billing for the plan is paused.·
+2026-10-05T18:11:57.1811111Z     Morgan Coach decides whether to restart it. The dispute closing does not restart it on its own.·
+2026-10-05T18:11:57.1811688Z     — Roman, on behalf of Morgan Coach············
+2026-10-05T18:11:57.1812293Z          Questions about this payment? Reply to this email to reach a person who can help.········
+2026-10-05T18:11:57.1813702Z     A recent payment was reversed after a dispute. Access has ended and billing is paused. Morgan Coach decides whether to restart it. {\"headline\":\"A payment was reversed after a dispute.\",\"primaryCta\":\"See details\",\"secondaryCta\":\"Not now\",\"variant\":\"lr_day3\",\"dunningStateId\":\"ds-1\"}
+2026-10-05T18:11:57.1815860Z     Avery Client's bank reversed a payment after a dispute. Their access has ended and billing for the plan is paused. Restarting is your decision. {\"alertId\":\"coach_notify:ds-1:1791081000000\",\"alertType\":\"dunning_step7\",\"severity\":\"warning\",\"clientUserId\":\"client-a\"}
+2026-10-05T18:11:57.1817230Z     Avery Client: a payment was reversed after a dispute. Access has ended and billing is paused. Restarting is your decision.
+2026-10-05T18:11:57.1819045Z     Avery Client's bank reversed a payment after a dispute. Their access has ended and billing for the plan is paused. Restarting is your decision. {\"alertId\":\"coach_notify:ds-1:1791081000000\",\"alertType\":\"dunning_step7\",\"severity\":\"warning\",\"clientUserId\":\"client-a\"}·········
+2026-10-05T18:11:57.1820160Z          Good day, Morgan Coach.·
+2026-10-05T18:11:57.1821129Z     The bank of one of your clients, Avery Client, reversed a recent payment after a dispute. Their access has ended and billing for the plan is paused. It stays that way when the dispute closes, won or lost.·
+2026-10-05T18:11:57.1823152Z     Restarting access and billing is your decision. The full record is in the app: open Clients, then Avery Client.·
+2026-10-05T18:11:57.1824256Z     — Roman·······
+2026-10-05T18:11:57.1825781Z          Your client has the same details in the app. Questions? Reply to this email to reach a person who can help.·······
+2026-10-05T18:11:57.1826782Z     "
+2026-10-05T18:11:57.1826983Z 
+2026-10-05T18:11:57.1828763Z       421 |       [0, 1, 2, 3].map((stepIndex) => renderStep({ stepIndex, isLateReversalCycle: true })),
+2026-10-05T18:11:57.1830450Z       422 |     );
+2026-10-05T18:11:57.1832056Z     > 423 |     expect(texts.join('\n')).toMatch(/Your plan is paused after a payment dispute or inquiry/);
+2026-10-05T18:11:57.1833573Z           |                              ^
+2026-10-05T18:11:57.1834287Z       424 |   });
+2026-10-05T18:11:57.1835645Z       425 |   it.each([0, 1, 2, 3])(
+2026-10-05T18:11:57.1837156Z       426 |     'step %i: the lower-case coach fallback never starts a sentence',
+2026-10-05T18:11:57.1838121Z 
+2026-10-05T18:11:57.1838637Z       at Object.<anonymous> (test/dunning-v2-foundation-fixes.spec.ts:423:30)
+2026-10-05T18:11:57.1839217Z 
+2026-10-05T18:11:57.1840248Z   ● B-687-8 (Opus) / C-687-9: dispute copy is true for an inquiry too › step 0: the lower-case coach fallback never starts a sentence
+2026-10-05T18:11:57.1841079Z 
+2026-10-05T18:11:57.1841326Z     expect(received).toMatch(expected)
+2026-10-05T18:11:57.1841666Z 
+2026-10-05T18:11:57.1841894Z     Expected pattern: /up to your coach/
+2026-10-05T18:11:57.1843371Z     Received string:  "Avery, a recent payment was reversed by the bank after a dispute. Access has ended and billing is paused. your coach decides whether to restart it."
+2026-10-05T18:11:57.1844747Z 
+2026-10-05T18:11:57.1846403Z       428 |       const tokens = { firstName: 'Avery', clientName: 'Avery Client', coachName: 'your coach' };
+2026-10-05T18:11:57.1849081Z       429 |       const text = await renderStep({ stepIndex, isLateReversalCycle: true, tokens });
+2026-10-05T18:11:57.1851014Z     > 430 |       expect(text).toMatch(/up to your coach/);
+2026-10-05T18:11:57.1852069Z           |                    ^
+2026-10-05T18:11:57.1853239Z       431 |       expect(text).not.toMatch(/(^|[.?]\s+)your coach/m);
+2026-10-05T18:11:57.1854209Z       432 |     },
+2026-10-05T18:11:57.1855055Z       433 |   );
+2026-10-05T18:11:57.1855378Z 
+2026-10-05T18:11:57.1855721Z       at test/dunning-v2-foundation-fixes.spec.ts:430:20
+2026-10-05T18:11:57.1856163Z 
+2026-10-05T18:11:57.1857158Z   ● B-687-8 (Opus) / C-687-9: dispute copy is true for an inquiry too › step 1: the lower-case coach fallback never starts a sentence
+2026-10-05T18:11:57.1858018Z 
+2026-10-05T18:11:57.1858474Z     expect(received).toMatch(expected)
+2026-10-05T18:11:57.1858827Z 
+2026-10-05T18:11:57.1859075Z     Expected pattern: /up to your coach/
+2026-10-05T18:11:57.1860555Z     Received string:  "Avery, a recent payment was reversed by the bank after a dispute. Access has ended and billing is paused. your coach decides whether to restart it.
+2026-10-05T18:11:57.1862053Z     Your recent payment was reversed········
+2026-10-05T18:11:57.1862624Z          Good day, Avery.·
+2026-10-05T18:11:57.1864015Z     A recent payment was reversed by the bank after a dispute. It was for your plan with your coach. Access has ended and billing for the plan is paused.·
+2026-10-05T18:11:57.1865939Z     your coach decides whether to restart it. The dispute closing does not restart it on its own.·
+2026-10-05T18:11:57.1867041Z     — Roman, on behalf of your coach············
+2026-10-05T18:11:57.1868195Z          Questions about this payment? Reply to this email to reach a person who can help.·······
+2026-10-05T18:11:57.1869027Z     "
+2026-10-05T18:11:57.1869243Z 
+2026-10-05T18:11:57.1870901Z       428 |       const tokens = { firstName: 'Avery', clientName: 'Avery Client', coachName: 'your coach' };
+2026-10-05T18:11:57.1873528Z       429 |       const text = await renderStep({ stepIndex, isLateReversalCycle: true, tokens });
+2026-10-05T18:11:57.1875626Z     > 430 |       expect(text).toMatch(/up to your coach/);
+2026-10-05T18:11:57.1876729Z           |                    ^
+2026-10-05T18:11:57.1877939Z       431 |       expect(text).not.toMatch(/(^|[.?]\s+)your coach/m);
+2026-10-05T18:11:57.1879162Z       432 |     },
+2026-10-05T18:11:57.1879764Z       433 |   );
+2026-10-05T18:11:57.1880090Z 
+2026-10-05T18:11:57.1880439Z       at test/dunning-v2-foundation-fixes.spec.ts:430:20
+2026-10-05T18:11:57.1880883Z 
+2026-10-05T18:11:57.1881883Z   ● B-687-8 (Opus) / C-687-9: dispute copy is true for an inquiry too › step 2: the lower-case coach fallback never starts a sentence
+2026-10-05T18:11:57.1882745Z 
+2026-10-05T18:11:57.1882997Z     expect(received).toMatch(expected)
+2026-10-05T18:11:57.1883343Z 
+2026-10-05T18:11:57.1883580Z     Expected pattern: /up to your coach/
+2026-10-05T18:11:57.1885284Z     Received string:  "Avery, a recent payment was reversed by the bank after a dispute. Access has ended and billing is paused. your coach decides whether to restart it.
+2026-10-05T18:11:57.1886799Z     Your recent payment was reversed········
+2026-10-05T18:11:57.1887370Z          Good day, Avery.·
+2026-10-05T18:11:57.1888741Z     A recent payment was reversed by the bank after a dispute. It was for your plan with your coach. Access has ended and billing for the plan is paused.·
+2026-10-05T18:11:57.1890479Z     your coach decides whether to restart it. The dispute closing does not restart it on its own.·
+2026-10-05T18:11:57.1891528Z     — Roman, on behalf of your coach············
+2026-10-05T18:11:57.1892622Z          Questions about this payment? Reply to this email to reach a person who can help.········
+2026-10-05T18:11:57.1895605Z     A recent payment was reversed after a dispute. Access has ended and billing is paused. your coach decides whether to restart it. {\"headline\":\"A payment was reversed after a dispute.\",\"primaryCta\":\"See details\",\"secondaryCta\":\"Not now\",\"variant\":\"lr_day3\",\"dunningStateId\":\"ds-1\"}"
+2026-10-05T18:11:57.1897479Z 
+2026-10-05T18:11:57.1899149Z       428 |       const tokens = { firstName: 'Avery', clientName: 'Avery Client', coachName: 'your coach' };
+2026-10-05T18:11:57.1900901Z       429 |       const text = await renderStep({ stepIndex, isLateReversalCycle: true, tokens });
+2026-10-05T18:11:57.1901948Z     > 430 |       expect(text).toMatch(/up to your coach/);
+2026-10-05T18:11:57.1902541Z           |                    ^
+2026-10-05T18:11:57.1903183Z       431 |       expect(text).not.toMatch(/(^|[.?]\s+)your coach/m);
+2026-10-05T18:11:57.1903712Z       432 |     },
+2026-10-05T18:11:57.1904035Z       433 |   );
+2026-10-05T18:11:57.1904216Z 
+2026-10-05T18:11:57.1904631Z       at test/dunning-v2-foundation-fixes.spec.ts:430:20
+2026-10-05T18:11:57.1904875Z 
+2026-10-05T18:11:57.1905441Z   ● B-687-8 (Opus) / C-687-9: dispute copy is true for an inquiry too › step 3: the lower-case coach fallback never starts a sentence
+2026-10-05T18:11:57.1905923Z 
+2026-10-05T18:11:57.1906067Z     expect(received).toMatch(expected)
+2026-10-05T18:11:57.1906252Z 
+2026-10-05T18:11:57.1906389Z     Expected pattern: /up to your coach/
+2026-10-05T18:11:57.1907169Z     Received string:  "Avery, a recent payment was reversed by the bank after a dispute. Access has ended and billing is paused. your coach decides whether to restart it.
+2026-10-05T18:11:57.1907963Z     Your recent payment was reversed········
+2026-10-05T18:11:57.1908280Z          Good day, Avery.·
+2026-10-05T18:11:57.1909004Z     A recent payment was reversed by the bank after a dispute. It was for your plan with your coach. Access has ended and billing for the plan is paused.·
+2026-10-05T18:11:57.1909896Z     your coach decides whether to restart it. The dispute closing does not restart it on its own.·
+2026-10-05T18:11:57.1910461Z     — Roman, on behalf of your coach············
+2026-10-05T18:11:57.1911210Z          Questions about this payment? Reply to this email to reach a person who can help.········
+2026-10-05T18:11:57.1912632Z     A recent payment was reversed after a dispute. Access has ended and billing is paused. your coach decides whether to restart it. {\"headline\":\"A payment was reversed after a dispute.\",\"primaryCta\":\"See details\",\"secondaryCta\":\"Not now\",\"variant\":\"lr_day3\",\"dunningStateId\":\"ds-1\"}
+2026-10-05T18:11:57.1914757Z     Avery Client's bank reversed a payment after a dispute. Their access has ended and billing for the plan is paused. Restarting is your decision. {\"alertId\":\"coach_notify:ds-1:1791081000000\",\"alertType\":\"dunning_step7\",\"severity\":\"warning\",\"clientUserId\":\"client-a\"}
+2026-10-05T18:11:57.1916134Z     Avery Client: a payment was reversed after a dispute. Access has ended and billing is paused. Restarting is your decision.
+2026-10-05T18:11:57.1917801Z     Avery Client's bank reversed a payment after a dispute. Their access has ended and billing for the plan is paused. Restarting is your decision. {\"alertId\":\"coach_notify:ds-1:1791081000000\",\"alertType\":\"dunning_step7\",\"severity\":\"warning\",\"clientUserId\":\"client-a\"}·········
+2026-10-05T18:11:57.1918910Z          Good day, your coach.·
+2026-10-05T18:11:57.1919867Z     The bank of one of your clients, Avery Client, reversed a recent payment after a dispute. Their access has ended and billing for the plan is paused. It stays that way when the dispute closes, won or lost.·
+2026-10-05T18:11:57.1921023Z     Restarting access and billing is your decision. The full record is in the app: open Clients, then Avery Client.·
+2026-10-05T18:11:57.1921573Z     — Roman·······
+2026-10-05T18:11:57.1922188Z          Your client has the same details in the app. Questions? Reply to this email to reach a person who can help.·······
+2026-10-05T18:11:57.1922703Z     "
+2026-10-05T18:11:57.1922805Z 
+2026-10-05T18:11:57.1923791Z       428 |       const tokens = { firstName: 'Avery', clientName: 'Avery Client', coachName: 'your coach' };
+2026-10-05T18:11:57.1925343Z       429 |       const text = await renderStep({ stepIndex, isLateReversalCycle: true, tokens });
+2026-10-05T18:11:57.1926351Z     > 430 |       expect(text).toMatch(/up to your coach/);
+2026-10-05T18:11:57.1926923Z           |                    ^
+2026-10-05T18:11:57.1927568Z       431 |       expect(text).not.toMatch(/(^|[.?]\s+)your coach/m);
+2026-10-05T18:11:57.1928092Z       432 |     },
+2026-10-05T18:11:57.1928421Z       433 |   );
+2026-10-05T18:11:57.1928594Z 
+2026-10-05T18:11:57.1928783Z       at test/dunning-v2-foundation-fixes.spec.ts:430:20
+2026-10-05T18:11:57.1929032Z 
+2026-10-05T18:11:57.3534202Z PASS test/dunning-v2-copy.spec.ts (147 MB heap size)
+2026-10-05T18:11:57.3557271Z 
+2026-10-05T18:11:57.3565845Z Test Suites: 1 failed, 1 passed, 2 total
+2026-10-05T18:11:57.3566473Z Tests:       13 failed, 59 passed, 72 total
+2026-10-05T18:11:57.3566799Z Snapshots:   0 total
+2026-10-05T18:11:57.3567039Z Time:        2.307 s
+2026-10-05T18:11:57.3567596Z Ran all test suites matching test/dunning-v2-foundation-fixes.spec.ts|test/dunning-v2-copy.spec.ts.
+2026-10-05T18:11:57.4885580Z ##[error]Process completed with exit code 1.
+2026-10-05T18:11:57.5001862Z Post job cleanup.
+2026-10-05T18:11:57.5889278Z [command]/usr/bin/git version
+2026-10-05T18:11:57.5925953Z git version 2.55.0
+2026-10-05T18:11:57.5966865Z Temporarily overriding HOME='/home/runner/work/_temp/eababdb2-d4e9-454d-8c03-4b21424163a3' before making global git config changes
+2026-10-05T18:11:57.5968744Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T18:11:57.5973146Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-05T18:11:57.6004815Z Removing SSH command configuration
+2026-10-05T18:11:57.6011186Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T18:11:57.6048461Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T18:11:57.6270975Z Removing HTTP extra header
+2026-10-05T18:11:57.6276269Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T18:11:57.6309650Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T18:11:57.6525905Z Removing includeIf entries pointing to credentials config files
+2026-10-05T18:11:57.6532391Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T18:11:57.6560596Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-05T18:11:57.6562459Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-05T18:11:57.6563857Z includeif.gitdir:/github/workspace/.git.path
+2026-10-05T18:11:57.6565145Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T18:11:57.6571289Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-05T18:11:57.6593468Z /home/runner/work/_temp/git-credentials-bd0527fc-ab90-4f92-a7a8-9a407d8e1395.config
+2026-10-05T18:11:57.6604698Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-bd0527fc-ab90-4f92-a7a8-9a407d8e1395.config
+2026-10-05T18:11:57.6639282Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-05T18:11:57.6659474Z /home/runner/work/_temp/git-credentials-bd0527fc-ab90-4f92-a7a8-9a407d8e1395.config
+2026-10-05T18:11:57.6668854Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-bd0527fc-ab90-4f92-a7a8-9a407d8e1395.config
+2026-10-05T18:11:57.6700014Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-05T18:11:57.6720579Z /github/runner_temp/git-credentials-bd0527fc-ab90-4f92-a7a8-9a407d8e1395.config
+2026-10-05T18:11:57.6727958Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-bd0527fc-ab90-4f92-a7a8-9a407d8e1395.config
+2026-10-05T18:11:57.6758623Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T18:11:57.6778498Z /github/runner_temp/git-credentials-bd0527fc-ab90-4f92-a7a8-9a407d8e1395.config
+2026-10-05T18:11:57.6787461Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-bd0527fc-ab90-4f92-a7a8-9a407d8e1395.config
+2026-10-05T18:11:57.6818912Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T18:11:57.7042795Z Removing credentials config '/home/runner/work/_temp/git-credentials-bd0527fc-ab90-4f92-a7a8-9a407d8e1395.config'
+2026-10-05T18:11:57.7185798Z Print service container logs: 840c0eb5673747d3b143352080fbb975_redis7alpine_9bc44c
+2026-10-05T18:11:57.7190745Z ##[command]/usr/bin/docker logs --details b0f48d24495a23a6a810a1fe30805cf9b8e09b7844c8dae5d1459fa6062893ab
+2026-10-05T18:11:57.7315734Z  1:C 05 Oct 2026 18:11:08.847 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+2026-10-05T18:11:57.7318910Z  1:C 05 Oct 2026 18:11:08.847 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+2026-10-05T18:11:57.7319871Z  1:C 05 Oct 2026 18:11:08.847 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+2026-10-05T18:11:57.7321399Z  1:C 05 Oct 2026 18:11:08.847 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+2026-10-05T18:11:57.7322669Z  1:M 05 Oct 2026 18:11:08.847 * monotonic clock: POSIX clock_gettime
+2026-10-05T18:11:57.7323431Z  1:M 05 Oct 2026 18:11:08.848 * Running mode=standalone, port=6379.
+2026-10-05T18:11:57.7324081Z  1:M 05 Oct 2026 18:11:08.848 * Server initialized
+2026-10-05T18:11:57.7324857Z  1:M 05 Oct 2026 18:11:08.848 * Ready to accept connections tcp
+2026-10-05T18:11:57.7333316Z Stop and remove container: 840c0eb5673747d3b143352080fbb975_redis7alpine_9bc44c
+2026-10-05T18:11:57.7338767Z ##[command]/usr/bin/docker rm --force b0f48d24495a23a6a810a1fe30805cf9b8e09b7844c8dae5d1459fa6062893ab
+2026-10-05T18:11:59.3801674Z b0f48d24495a23a6a810a1fe30805cf9b8e09b7844c8dae5d1459fa6062893ab
+2026-10-05T18:11:59.3829136Z Remove container network: github_network_6d08a36e3a5344ed880764f6bd41ec71
+2026-10-05T18:11:59.3833357Z ##[command]/usr/bin/docker network rm github_network_6d08a36e3a5344ed880764f6bd41ec71
+2026-10-05T18:11:59.4918605Z github_network_6d08a36e3a5344ed880764f6bd41ec71
+2026-10-05T18:11:59.4990476Z Cleaning up orphan processes

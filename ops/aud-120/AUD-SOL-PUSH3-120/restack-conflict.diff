@@ -1,0 +1,52 @@
+commit 60fb8fe95d9f61b7cfeb0b26aa1f36ff3e324694
+Merge: 13417e7b 32863d3c
+Author: Bradley Gleave <bradley@bradleytgpcoaching.com>
+Date:   Mon Oct 5 17:21:52 2026 +0000
+
+    Merge push P1 (#692, main ee55f814 refresh) into push P2 (#693)
+    
+    # Conflicts:
+    #       src/notifications/notifications.service.ts
+
+diff --cc src/notifications/notifications.service.ts
+index e7b35fa7,b8e5d4bd..66d8f9f3
+--- a/src/notifications/notifications.service.ts
++++ b/src/notifications/notifications.service.ts
+@@@ -26,11 -25,8 +26,12 @@@ import { NotificationKindValue } from '
+  import { NotificationCategory, DEFAULT_NOTIFICATION_CATEGORY } from './notification-category.enum';
+  import { PushAbortedError, PushDeliveryResult } from './push-delivery.types';
+  import { VoicePolicyService } from '../roman/voice/voice-policy.service';
+ +import { EnqueueResult, PushDeliveryService } from './push/push-delivery.service';
+ +import { PushContext, lockScreenCopy } from './push/lock-screen-copy';
+ +import { resolveRecipientTimeZone } from './recipient-timezone';
+ +import { notificationPrefsPrefix, pushAllowedByPreferences } from './push/push-preferences';
+  import { RomanCopyPayload } from '../roman/voice/voice-policy.constants';
++ import { describeFailure } from '../observability/log-pii';
+  
+  // Phase 6B: PushPayload is the minimal envelope CoachAlertsService.tryPush
+  // passes through. It intentionally contains no PII — only the alert
+@@@ -58,14 -54,18 +59,24 @@@ export interface CreateNotificationInpu
+    payload?: Record<string, unknown>;
+    deep_link?: string;
+    channel?: 'push' | 'email' | 'inapp';
++   /**
++    * S-FEE round 6 (#627 B-627-6 / C-627-7): narrows the per-process 60 s push
++    * limiter to one logical alert (for example a payout notice id), so two
++    * different alerts of the same kind to the same user are never collapsed.
++    * Unset keeps the default (one push per user per kind per minute).
++    */
++   throttle_key?: string;
+ +  /**
+ +   * B-648-7: true when this `push` row duplicates an `inapp` row the same
+ +   * writer stored for the same event. The row is kept (history) but hidden
+ +   * from the inbox and the unread counts.
+ +   */
+ +  push_twin?: boolean;
+  }
+  
++ /** Whether a user receives a kind on a channel (createNotification's gate). */
++ export type NotificationChannelGate = 'enabled' | 'muted' | 'off';
++ 
+  // Rate-limit guard: at most 1 push per user per kind per minute.
+  // Tracked in-process (per replica). At scale: move to Redis with a
+  // sorted-set TTL key: `notif:rate:<userId>:<kind>`.

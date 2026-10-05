@@ -1,0 +1,5 @@
+2026-10-05 10:54:54 PDT
+Remote own lane refs:
+Own worktree path absent:
+yes
+Worktree registry references:

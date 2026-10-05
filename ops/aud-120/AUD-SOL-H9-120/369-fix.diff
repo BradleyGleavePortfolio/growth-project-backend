@@ -1,0 +1,196 @@
+diff --git a/src/services/health/__tests__/onDeviceState.authorityStore.test.ts b/src/services/health/__tests__/onDeviceState.authorityStore.test.ts
+index 94a30e16..5b6a47ca 100644
+--- a/src/services/health/__tests__/onDeviceState.authorityStore.test.ts
++++ b/src/services/health/__tests__/onDeviceState.authorityStore.test.ts
+@@ -18,6 +18,7 @@ import {
+   retireOnDeviceState,
+   retireOnDeviceStateAtSignOut,
+ } from "../onDeviceState";
++import { OnDeviceSessionChangedError } from "../sessionFence";
+ 
+ const old = {
+   userId: "authority-user",
+@@ -136,35 +137,68 @@ it("the authority is revoked at once: an app exit while sign-out waits behind a
+   expect(afterExit).toBeNull();
+ });
+ 
+-it("a grant write in flight that starts a new authority after the first revocation is revoked again in the chain", async () => {
+-  await recordLocalAuthorization(old, D1); // the session exists
+-  const reading = deferred();
+-  const release = deferred();
+-  const get = AsyncStorage.getItem.bind(AsyncStorage);
+-  jest.spyOn(AsyncStorage, "getItem").mockImplementationOnce(async (k) => {
+-    reading.resolve();
+-    await release.promise; // the session read of the next grant write is held
+-    return get(k);
+-  });
+-  const writing = recordLocalAuthorization(fresh, D2);
+-  await reading.promise;
+-  // Only the grant write itself reaches disk; every sign-out mutation fails.
+-  asyncStorageMutationOutage((k) => k === grantKey);
+-  const signingOut = retireOnDeviceStateAtSignOut();
+-  await new Promise<void>((r) => setTimeout(r, 0));
+-  release.resolve();
+-  await Promise.all([writing, signingOut]);
+-  jest.restoreAllMocks();
+-  expect(
+-    JSON.parse((await AsyncStorage.getItem(grantKey)) ?? "null")?.connectionId,
+-  ).toBe(fresh.connectionId);
+-  expect(
+-    await SecureStore.getItemAsync(ON_DEVICE_CONSENT_AUTHORITY_KEY),
+-  ).toBeNull();
+-  expect(
+-    await restart().getLocalAuthorization(fresh.userId, fresh.source),
+-  ).toBeNull();
+-});
++/**
++ * Sol B-369-2 (probe AUD-SOL-H7-120, lanes 37341997614 and 37342514128): a
++ * Connect write already running when sign-out starts, held at its session
++ * read or at the authority it creates. It used to go on, create an authority
++ * after the immediate revocation and bind the new grant to it, so an app exit
++ * before the chain's second revocation kept consent. Now it stops at the next
++ * step: no grant is written after sign-out starts.
++ */
++it.each(["session read", "authority creation"] as const)(
++  "B-369-2: a Connect write held at its %s when sign-out starts leaves no consent, even at an exit before the chain's second revocation",
++  async (mode) => {
++    await recordLocalAuthorization(old, D1); // the session and the authority exist
++    const held = deferred();
++    const release = deferred();
++    if (mode === "session read") {
++      const get = AsyncStorage.getItem.bind(AsyncStorage);
++      jest.spyOn(AsyncStorage, "getItem").mockImplementationOnce(async (k) => {
++        const value = await get(k); // read before the sign-out, delivered after it
++        held.resolve();
++        await release.promise;
++        return value;
++      });
++    } else {
++      await SecureStore.deleteItemAsync(ON_DEVICE_CONSENT_AUTHORITY_KEY); // the write must create one
++      secure.setItemAsync.mockImplementationOnce(async (k, v) => {
++        held.resolve();
++        await release.promise; // lands after the immediate revocation
++        secureMap.set(k, v);
++      });
++    }
++    const chainRevoke = deferred();
++    const chainHeld = deferred();
++    let deletes = 0;
++    secure.deleteItemAsync.mockImplementation(async (k) => {
++      deletes += 1; // 1: the immediate revocation, 2: the chain's second one
++      if (deletes === 2) {
++        chainRevoke.resolve();
++        await chainHeld.promise;
++      }
++      secureMap.delete(k);
++    });
++    const writing = recordLocalAuthorization(fresh, D2).catch((e: unknown) => e);
++    await held.promise;
++    const signingOut = retireOnDeviceStateAtSignOut();
++    release.resolve();
++    await chainRevoke.promise; // the app exits here
++    let atExit: Awaited<ReturnType<typeof getLocalAuthorization>> | undefined;
++    try {
++      atExit = await restart().getLocalAuthorization(fresh.userId, fresh.source);
++    } finally {
++      chainHeld.resolve(); // always release, even when the invariant fails
++    }
++    await signingOut;
++    expect(await writing).toBeInstanceOf(OnDeviceSessionChangedError);
++    expect(atExit).toBeNull();
++    expect(JSON.parse((await AsyncStorage.getItem(grantKey)) ?? "null")?.connectionId).not.toBe(
++      fresh.connectionId,
++    );
++    expect(await SecureStore.getItemAsync(ON_DEVICE_CONSENT_AUTHORITY_KEY)).toBeNull();
++    expect(await restart().getLocalAuthorization(old.userId, old.source)).toBeNull();
++  },
++);
+ 
+ it("a failed SecureStore delete at sign-out writes a new authority, so the grant stays void after a restart", async () => {
+   await recordLocalAuthorization(old, D1);
+diff --git a/src/services/health/__tests__/onDeviceState.signOutDrain.test.ts b/src/services/health/__tests__/onDeviceState.signOutDrain.test.ts
+index 3b0fc5ad..48763995 100644
+--- a/src/services/health/__tests__/onDeviceState.signOutDrain.test.ts
++++ b/src/services/health/__tests__/onDeviceState.signOutDrain.test.ts
+@@ -57,9 +57,9 @@ beforeEach(async () => {
+ });
+ afterEach(() => jest.restoreAllMocks());
+ 
+-it('a grant write in flight at sign-out is removed after it commits, and the sweep waits for it', async () => {
++it('a grant write in flight at sign-out stops after its native step commits, and the sweep waits for it', async () => {
+   const held = holdNextSet();
+-  const writing = recordLocalAuthorization(old, new Date(D3));
++  const writing = recordLocalAuthorization(old, new Date(D3)).then(() => null, (e: unknown) => e);
+   await held.invoked;
+   let retired = false;
+   const sweeping = retireOnDeviceStateAtSignOut().then(() => {
+@@ -68,7 +68,9 @@ it('a grant write in flight at sign-out is removed after it commits, and the swe
+   for (let i = 0; i < 5; i += 1) await tick();
+   expect(retired).toBe(false); // the sweep is behind the native write, not beside it
+   held.commit();
+-  await Promise.all([writing, sweeping]);
++  await sweeping;
++  // Sol B-369-2: the write creates nothing more once sign-out started.
++  expect(await writing).toBeInstanceOf(OnDeviceSessionChangedError);
+   expect(await healthKeys()).toEqual([]);
+   expect(await getLocalAuthorization(old.userId, source)).toBeNull();
+ });
+diff --git a/src/services/health/onDeviceState.ts b/src/services/health/onDeviceState.ts
+index 1e54217e..b92c6332 100644
+--- a/src/services/health/onDeviceState.ts
++++ b/src/services/health/onDeviceState.ts
+@@ -181,11 +181,21 @@ let signOutEpoch = 0;
+ /** No grant written at or before this sequence is honoured after a sign-out. */
+ let signedOutThroughSeq = 0;
+ 
+-function serialWrite(op: () => Promise<void>): Promise<void> {
++/**
++ * Run `op` in the chain unless a sign-out started since the call. Sol B-369-2:
++ * `op` gets `current`, which throws once a sign-out has started; a write that
++ * awaits more than one native step calls it after every await and right
++ * before every write, so a write already running when sign-out starts never
++ * creates consent state after the immediate authority revocation.
++ */
++function serialWrite(op: (current: () => void) => Promise<void>): Promise<void> {
+   const epoch = signOutEpoch;
+-  return serialStorage(() => {
++  const current = (): void => {
+     if (epoch !== signOutEpoch) throw new OnDeviceSessionChangedError();
+-    return op();
++  };
++  return serialStorage(() => {
++    current();
++    return op(current);
+   });
+ }
+ 
+@@ -211,21 +221,28 @@ export async function recordLocalAuthorization(
+   const seq = authWriteSeq;
+   authWrittenAt.set(key, seq);
+   try {
+-    await serialWrite(async () => {
++    await serialWrite(async (current) => {
+       // Sol B-362-8: bind the grant to the current consent session (start one
+       // when none is stored). A sign-out that starts meanwhile is queued
+       // behind this write and replaces that session, so the grant stays void.
+       let session = await readConsentSession();
++      current();
+       if (session == null) {
+         session = newConsentSession();
+         await AsyncStorage.setItem(ON_DEVICE_CONSENT_SESSION_KEY, session);
++        current();
+       }
+       // Sol B-369-1: and to the SecureStore authority (same rule).
+       let authority = await readConsentAuthority();
++      current();
+       if (authority == null) {
+         authority = newConsentSession();
+         await SecureStore.setItemAsync(ON_DEVICE_CONSENT_AUTHORITY_KEY, authority);
++        // Sol B-369-2: an authority created while sign-out began binds no grant.
++        current();
+       }
++      // Sol B-369-2: no await between this check and the grant write, so the
++      // grant is bound only to an authority sign-out has not yet revoked.
+       await AsyncStorage.setItem(key, JSON.stringify({ ...record, session, authority }));
+       authCommittedAt.set(key, seq);
+     });

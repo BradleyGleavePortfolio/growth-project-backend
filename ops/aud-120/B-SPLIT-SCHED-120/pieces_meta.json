@@ -1,0 +1,65 @@
+{
+ "1": {
+  "title": "S-SCHED-2 split 1/9: feat(scheduling): schema, migration, types, diagnostics, slot rules and access",
+  "head": "agent120/sched-split-1-foundation",
+  "base": "main",
+  "sha": "7fd99dce284405f018c545d31cdc1d3d25432f68",
+  "lines": 1359
+ },
+ "2": {
+  "title": "S-SCHED-2 split 2/9: test(scheduling): in-memory scheduling DB, service spec harness, seed script",
+  "head": "agent120/sched-split-2-test-infra",
+  "base": "agent120/sched-split-1-foundation",
+  "sha": "a7c8b33afbac44f3086036eb59ca617809320411",
+  "lines": 1274
+ },
+ "3": {
+  "title": "S-SCHED-2 split 3/9: feat(notifications): booking emitter with push, tap targets and local-time copy",
+  "head": "agent120/sched-split-3-emitter",
+  "base": "agent120/sched-split-2-test-infra",
+  "sha": "55dfbdce84b644f2c25826e11040a9ef8b597e0f",
+  "lines": 1382
+ },
+ "4": {
+  "title": "S-SCHED-2 split 4/9: feat(scheduling): session lifecycle integrity",
+  "head": "agent120/sched-split-4-lifecycle",
+  "base": "agent120/sched-split-3-emitter",
+  "sha": "8040f14912b9bca649f0578685cc9056fdc9fd84",
+  "lines": 1355
+ },
+ "5": {
+  "title": "S-SCHED-2 split 5/9: feat(scheduling): recoverable reminder delivery",
+  "head": "agent120/sched-split-5-reminder-job",
+  "base": "agent120/sched-split-4-lifecycle",
+  "sha": "31318708e96c29b73ae4d1e9eb64fe34f87f6deb",
+  "lines": 1402
+ },
+ "6": {
+  "title": "S-SCHED-2 split 6/9: feat(scheduling): scheduling service, routes and session view",
+  "head": "agent120/sched-split-6-service-api",
+  "base": "agent120/sched-split-5-reminder-job",
+  "sha": "112e0452a473d2ab7226750a80e03043812a9470",
+  "lines": 1068
+ },
+ "7": {
+  "title": "S-SCHED-2 split 7/9: test(scheduling): lifecycle integrity spec, booking matrix to lifecycle rules",
+  "head": "agent120/sched-split-7-integrity-tests-a",
+  "base": "agent120/sched-split-6-service-api",
+  "sha": "6feb18bb9b259c662230fb1e79ff3a4cddc290ea",
+  "lines": 1062
+ },
+ "8": {
+  "title": "S-SCHED-2 split 8/9: test(scheduling): lifecycle integrity spec, fix-round regressions S-SCHED-3 to S-SCHED-5",
+  "head": "agent120/sched-split-8-integrity-tests-b",
+  "base": "agent120/sched-split-7-integrity-tests-a",
+  "sha": "c79c3e67efca90eddcdb89f3a2dc5ff0591ce3b2",
+  "lines": 1148
+ },
+ "9": {
+  "title": "S-SCHED-2 split 9/9: test(scheduling): lifecycle integrity spec end, live no-double-booking proof",
+  "head": "agent120/sched-split-9-integrity-tests-c-live",
+  "base": "agent120/sched-split-8-integrity-tests-b",
+  "sha": "c2b271936f47ecf1827f7a46607d29add381579f",
+  "lines": 1218
+ }
+}

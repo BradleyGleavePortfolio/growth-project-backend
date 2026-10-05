@@ -87,3 +87,25 @@ Queue (next when slots free / gates open)
 - 10:34 launched AUD-OPUS-D6-120. Active 7.
 - B-HC10-120 DONE: #369 a2bfe2fa FR2 READY (B-369-2 fixed), #370 c7014623 H8 OPENING READY. H9 lens pair queued (jumps queue: H1-H7 lands on #369 dual approve).
 - 10:40 launched AUD-SOL-H9-120 (lens_sol_health_connect_h9_muvjd06r). Active 7: B-SPLIT-SCHED, B-661R2, B-PUSH2, Opus CM8, Sol D6, Opus D6, Sol H9. Next: Opus H9, B-TR8, L3 pair, B-MSG2, B-MWB409, B-PROG2, ...
+- AUD-SOL-D6-120 DONE: #687 APPROVE 0/0/3, #688 APPROVE 0/0/1, #704 APPROVE 0/0/0, #705 RC 0/5/1 (5999840529). D-fix builder after Opus D6.
+- 10:43 launched AUD-OPUS-H9-120. Active 7.
+- B-661R2-120 DONE: #661 e0cc97e1 FR9, #702 b96611de FR2 READY. 661E lens pair queued (jumps queue).
+- 10:46 launched AUD-SOL-661E-120 (lens_sol_card_secrets_661e_muvjju7t). Active 7: B-SPLIT-SCHED, B-PUSH2, Opus CM8, Opus D6, Sol H9, Opus H9, Sol 661E. Next: Opus 661E, D-fix builder (after Opus D6), CM-fix builder (after Opus CM8), B-TR8, L3 pair, B-MSG2, ...
+- AUD-SOL-H9-120 DONE: #369 APPROVE 0/0/2 (5999981148), #370 APPROVE 0/0/3 (5999981686); H1-H7 clear from Sol.
+- 10:52 launched AUD-OPUS-661E-120. Active 7.
+- AUD-SOL-661E-120 DONE: #661 APPROVE 0/0/1 (6000049021), #702 APPROVE 0/0/0 (6000049484).
+- 10:55 launched B-TR8-120. Active 7.
+- AUD-OPUS-CM8-120 DONE: #674 RC 0/1/7 B-674-15 (6000051266); #676/#677/#703 APPROVE -> DUAL APPROVE. B-CM9-120 launched.
+- 10:56 launched B-CM9-120 (coach_674_fix_round_6_muvjwrzv). Active 7: B-SPLIT-SCHED, B-PUSH2, Opus D6, Opus H9, Opus 661E, B-TR8, B-CM9.
+- AUD-OPUS-D6-120 DONE: #687 RC 0/1/2, #688 APPROVE, #704 APPROVE, #705 RC 0/4/2. #688/#704 DUAL APPROVE. B-DUNR2-120 launching.
+- 11:05 launched B-DUNR2-120 (dunning_687_705_fix_round_muvk8q6d). Active 7: B-SPLIT-SCHED, B-PUSH2, Opus H9, Opus 661E, B-TR8, B-CM9, B-DUNR2.
+- B-PUSH2-120 DONE: #692 346cf4a8 (910), #693 53796f1e (2,876) READY. PUSH3 lens pair launching. Decisions 1-5 accepted (Android device check -> owner to-do after deploy).
+- 11:05 launched AUD-SOL-PUSH3-120 (lens_sol_push_push3_muvk93zq). Active 7: B-SPLIT-SCHED, Opus H9, Opus 661E, B-TR8, B-CM9, B-DUNR2, Sol PUSH3. Next: Opus PUSH3, L3 pair, B-MSG2, INV3 pair, B-MWB409, B-PROG2, ...
+- AUD-SOL-PUSH3-120 DONE: #692 APPROVE 0/0/0 (6000373524), #693 RC 0/1/2 B-648-8 (6000395449). B-PUSH3-120 launching; Opus PUSH3 next slot (#692 + new #693).
+- 11:17 launched B-PUSH3-120 (push_693_fix_b_648_8_muvkoncf). Active 7: B-SPLIT-SCHED, Opus H9, Opus 661E, B-TR8, B-CM9, B-DUNR2, B-PUSH3.
+- B-SPLIT-SCHED-120 DONE: #712-#720 (9 pieces < 1,500, tree == #634+main), #653 restacked 9a23e3b2. SCHA/SCHB lens pairs queued; D1 keep migration name (lenses verify).
+- AUD-OPUS-661E-120 DONE: #661 APPROVE 0/0/6 (6000477221), #702 APPROVE 0/0/1 (6000477550) -> DUAL. 11:22 #661 branch ff to b96611de (#702 merged into it).
+- AUD-OPUS-H9-120 DONE: #369 APPROVE (6000464490), #370 APPROVE (6000483411) -> H1-H8 all DUAL. 11:23 land_hc120.sh A: #359 head 8fc5409e (tree check PASS). Waiting for checks.
+- 11:24 launched AUD-OPUS-L3-120 (lens_opus_mobile_lockout_l3_muvkukpn).
+- 11:24 launched B-MSG2-120 (messaging_rls_fix_708_muvkwqxh). Active 7: B-TR8, B-CM9, B-DUNR2, B-PUSH3, Sol L3, Opus L3, B-MSG2.
+- 11:28 owner credits 37.7k/45k: STOP LAUNCHING. Cancelled B-MSG2, Sol L3, Opus L3. #661 MERGED 11:28 (5da537d6). H1-H8 MERGED 11:29 (b79ca594). Handoff v3 e4a080f.

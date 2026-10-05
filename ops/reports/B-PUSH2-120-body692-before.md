@@ -1,0 +1,4 @@
+Split of #648 (device push delivery with quiet hours; 3,197 lines at FIX ROUND 4 `22de1182`, already current with main) under the owner's PR size rule: over 3,000 changed lines is an automatic fail (MODEL_ROUTING.md 8.2, tgp-agent-context). Stack: P1 -> P2; merge back to back, deploy after P2. Migration 20270307000000 was edited in place during #648's fix rounds; confirm it is absent from production `_prisma_migrations` before deploy (read-only check). Tree at P2 = #648 head. Prior verdicts (Sol RC 0/1/0 at ab607b34) do not carry; each piece needs Opus 5.5 and Sol audits at its exact head. `tsc --noEmit` passes at both pieces; every existing spec importing a changed file was run locally.
+
+**P1 (this PR, base main, 815 lines):** migration + schema, quiet hours and preference rules, lock-screen copy, Expo push client, deletion manifest entries, outbox test fake. New files only; inert. 6 importing suites pass (37 tests).
+

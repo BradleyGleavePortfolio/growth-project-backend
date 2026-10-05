@@ -1,0 +1,164 @@
+286-targeted	Targeted jest	2026-10-05T17:35:05.0941399Z ^[[36;1mnpx jest --ci --runInBand "${SPECS[@]}"^[[0m
+287-targeted	Targeted jest	2026-10-05T17:35:05.0996724Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+288-targeted	Targeted jest	2026-10-05T17:35:05.0997008Z env:
+289-targeted	Targeted jest	2026-10-05T17:35:05.0997195Z   NODE_OPTIONS: --max-old-space-size=4096
+290-targeted	Targeted jest	2026-10-05T17:35:05.0997482Z   THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+291-targeted	Targeted jest	2026-10-05T17:35:05.0997741Z ##[endgroup]
+292-targeted	Targeted jest	2026-10-05T17:35:05.1079370Z specs: --globalSetup=./test/zz-aud-sol120-pg.global.js test/aud-sol-661-r3-provider-snapshot.spec.ts test/aud-sol-661-r4-settlement-acceptance.spec.ts test/zz-aud661ci-hosted-probe.spec.ts
+293-targeted	Targeted jest	2026-10-05T17:35:08.9169796Z ALTER ROLE
+294-targeted	Targeted jest	2026-10-05T17:35:08.9553738Z NOTICE:  database "l661" does not exist, skipping
+295-targeted	Targeted jest	2026-10-05T17:35:08.9554141Z DROP DATABASE
+296-targeted	Targeted jest	2026-10-05T17:35:09.2550599Z CREATE DATABASE
+297-targeted	Targeted jest	2026-10-05T17:35:09.3198226Z PostgreSQL 16.15 (Ubuntu 16.15-1.pgdg24.04+2) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit
+298:targeted	Targeted jest	2026-10-05T17:35:11.1399510Z FAIL test/zz-aud661ci-hosted-probe.spec.ts (158 MB heap size)
+299-targeted	Targeted jest	2026-10-05T17:35:11.1401986Z   ● AUD 661 probe — payment_intent.succeeded now claims hosted Checkout rows (round 2 widening) › DEFECT (single session): hosted decline -> in-page retry succeeds -> payment_intent.succeeded activates the hosted row through the PaymentSheet path; checkout.session.completed then activates it a second time
+300-targeted	Targeted jest	2026-10-05T17:35:11.1402841Z 
+301:targeted	Targeted jest	2026-10-05T17:35:11.1403028Z     TypeError: db.clientPurchase.findMany is not a function
+302-targeted	Targeted jest	2026-10-05T17:35:11.1403567Z 
+303-targeted	Targeted jest	2026-10-05T17:35:11.1403888Z     ^[[0m ^[[90m 1966 |^[[39m   )^[[33m:^[[39m ^[[33mPromise^[[39m^[[33m<^[[39m^[[33mstring^[[39m[]^[[33m>^[[39m {
+304-targeted	Targeted jest	2026-10-05T17:35:11.1404680Z      ^[[90m 1967 |^[[39m     ^[[36mif^[[39m (^[[33m!^[[39m(db ^[[36mas^[[39m { purchaseFanout^[[33m?^[[39m^[[33m:^[[39m unknown })^[[33m.^[[39mpurchaseFanout) ^[[36mreturn^[[39m []^[[33m;^[[39m
+305-targeted	Targeted jest	2026-10-05T17:35:11.1405509Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 1968 |^[[39m     ^[[36mconst^[[39m owners ^[[33m=^[[39m ^[[36mawait^[[39m db^[[33m.^[[39mclientPurchase^[[33m.^[[39mfindMany({
+306-targeted	Targeted jest	2026-10-05T17:35:11.1406075Z      ^[[90m      |^[[39m                                            ^[[31m^[[1m^^[[22m^[[39m
+307-targeted	Targeted jest	2026-10-05T17:35:11.1406429Z      ^[[90m 1969 |^[[39m       where^[[33m:^[[39m {
+308-targeted	Targeted jest	2026-10-05T17:35:11.1406871Z      ^[[90m 1970 |^[[39m         stripe_payment_intent_id^[[33m:^[[39m paymentIntentId^[[33m,^[[39m
+309-targeted	Targeted jest	2026-10-05T17:35:11.1407412Z      ^[[90m 1971 |^[[39m         status^[[33m:^[[39m ^[[32m'payment_failed'^[[39m^[[33m,^[[39m^[[0m
+310-targeted	Targeted jest	2026-10-05T17:35:11.1407641Z 
+311-targeted	Targeted jest	2026-10-05T17:35:11.1408020Z       at CheckoutWebhookHandlerService.activatedFailedPurchases (src/checkout/checkout-webhook-handler.service.ts:1968:44)
+312-targeted	Targeted jest	2026-10-05T17:35:11.1408783Z       at CheckoutWebhookHandlerService.applyPaymentIntentSucceeded (src/checkout/checkout-webhook-handler.service.ts:1868:31)
+313-targeted	Targeted jest	2026-10-05T17:35:11.1409359Z       at Object.<anonymous> (test/zz-aud661ci-hosted-probe.spec.ts:175:15)
+314-targeted	Targeted jest	2026-10-05T17:35:11.1409589Z 
+315-targeted	Targeted jest	2026-10-05T17:35:11.1410491Z   ● AUD 661 probe — payment_intent.succeeded now claims hosted Checkout rows (round 2 widening) › DEFECT (two open sessions): the success of session A activates the row of session B that a decline adopted, so one payment entitles two rows and defers two splits on one charge
+316-targeted	Targeted jest	2026-10-05T17:35:11.1411379Z 
+317:targeted	Targeted jest	2026-10-05T17:35:11.1411542Z     TypeError: db.clientPurchase.findMany is not a function
+318-targeted	Targeted jest	2026-10-05T17:35:11.1411747Z 
+319-targeted	Targeted jest	2026-10-05T17:35:11.1412043Z     ^[[0m ^[[90m 1966 |^[[39m   )^[[33m:^[[39m ^[[33mPromise^[[39m^[[33m<^[[39m^[[33mstring^[[39m[]^[[33m>^[[39m {
+320-targeted	Targeted jest	2026-10-05T17:35:11.1412802Z      ^[[90m 1967 |^[[39m     ^[[36mif^[[39m (^[[33m!^[[39m(db ^[[36mas^[[39m { purchaseFanout^[[33m?^[[39m^[[33m:^[[39m unknown })^[[33m.^[[39mpurchaseFanout) ^[[36mreturn^[[39m []^[[33m;^[[39m
+321-targeted	Targeted jest	2026-10-05T17:35:11.1413823Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 1968 |^[[39m     ^[[36mconst^[[39m owners ^[[33m=^[[39m ^[[36mawait^[[39m db^[[33m.^[[39mclientPurchase^[[33m.^[[39mfindMany({
+322-targeted	Targeted jest	2026-10-05T17:35:11.1414380Z      ^[[90m      |^[[39m                                            ^[[31m^[[1m^^[[22m^[[39m
+323-targeted	Targeted jest	2026-10-05T17:35:11.1414816Z      ^[[90m 1969 |^[[39m       where^[[33m:^[[39m {
+324-targeted	Targeted jest	2026-10-05T17:35:11.1415243Z      ^[[90m 1970 |^[[39m         stripe_payment_intent_id^[[33m:^[[39m paymentIntentId^[[33m,^[[39m
+325-targeted	Targeted jest	2026-10-05T17:35:11.1415733Z      ^[[90m 1971 |^[[39m         status^[[33m:^[[39m ^[[32m'payment_failed'^[[39m^[[33m,^[[39m^[[0m
+326-targeted	Targeted jest	2026-10-05T17:35:11.1415963Z 
+327-targeted	Targeted jest	2026-10-05T17:35:11.1416329Z       at CheckoutWebhookHandlerService.activatedFailedPurchases (src/checkout/checkout-webhook-handler.service.ts:1968:44)
+328-targeted	Targeted jest	2026-10-05T17:35:11.1417098Z       at CheckoutWebhookHandlerService.applyPaymentIntentSucceeded (src/checkout/checkout-webhook-handler.service.ts:1868:31)
+329-targeted	Targeted jest	2026-10-05T17:35:11.1417705Z       at Object.<anonymous> (test/zz-aud661ci-hosted-probe.spec.ts:215:15)
+330-targeted	Targeted jest	2026-10-05T17:35:11.1417943Z 
+331-targeted	Targeted jest	2026-10-05T17:35:11.1418666Z   ● AUD 661 probe — payment_intent.succeeded now claims hosted Checkout rows (round 2 widening) › (control) a PaymentSheet row (stripe_checkout_session_id === PaymentIntent id) is the row the round-2 widening was meant for
+332-targeted	Targeted jest	2026-10-05T17:35:11.1419228Z 
+333:targeted	Targeted jest	2026-10-05T17:35:11.1419388Z     TypeError: db.clientPurchase.findMany is not a function
+334-targeted	Targeted jest	2026-10-05T17:35:11.1419590Z 
+335-targeted	Targeted jest	2026-10-05T17:35:11.1419874Z     ^[[0m ^[[90m 1966 |^[[39m   )^[[33m:^[[39m ^[[33mPromise^[[39m^[[33m<^[[39m^[[33mstring^[[39m[]^[[33m>^[[39m {
+336-targeted	Targeted jest	2026-10-05T17:35:11.1420603Z      ^[[90m 1967 |^[[39m     ^[[36mif^[[39m (^[[33m!^[[39m(db ^[[36mas^[[39m { purchaseFanout^[[33m?^[[39m^[[33m:^[[39m unknown })^[[33m.^[[39mpurchaseFanout) ^[[36mreturn^[[39m []^[[33m;^[[39m
+337-targeted	Targeted jest	2026-10-05T17:35:11.1421771Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 1968 |^[[39m     ^[[36mconst^[[39m owners ^[[33m=^[[39m ^[[36mawait^[[39m db^[[33m.^[[39mclientPurchase^[[33m.^[[39mfindMany({
+338-targeted	Targeted jest	2026-10-05T17:35:11.1422344Z      ^[[90m      |^[[39m                                            ^[[31m^[[1m^^[[22m^[[39m
+339-targeted	Targeted jest	2026-10-05T17:35:11.1422681Z      ^[[90m 1969 |^[[39m       where^[[33m:^[[39m {
+340-targeted	Targeted jest	2026-10-05T17:35:11.1423104Z      ^[[90m 1970 |^[[39m         stripe_payment_intent_id^[[33m:^[[39m paymentIntentId^[[33m,^[[39m
+341-targeted	Targeted jest	2026-10-05T17:35:11.1423577Z      ^[[90m 1971 |^[[39m         status^[[33m:^[[39m ^[[32m'payment_failed'^[[39m^[[33m,^[[39m^[[0m
+342-targeted	Targeted jest	2026-10-05T17:35:11.1423796Z 
+343-targeted	Targeted jest	2026-10-05T17:35:11.1424162Z       at CheckoutWebhookHandlerService.activatedFailedPurchases (src/checkout/checkout-webhook-handler.service.ts:1968:44)
+344-targeted	Targeted jest	2026-10-05T17:35:11.1424914Z       at CheckoutWebhookHandlerService.applyPaymentIntentSucceeded (src/checkout/checkout-webhook-handler.service.ts:1868:31)
+345-targeted	Targeted jest	2026-10-05T17:35:11.1425484Z       at Object.<anonymous> (test/zz-aud661ci-hosted-probe.spec.ts:232:15)
+346-targeted	Targeted jest	2026-10-05T17:35:11.1425717Z 
+347-targeted	Targeted jest	2026-10-05T17:35:11.1426762Z ^[[33m[Nest] 2847  - ^[[39m10/05/2026, 5:35:11 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mprefetchForOuterTx: charge-id pre-resolution failed for checkout.session.completed cs_A: Cannot read properties of undefined (reading 'latest_charge')^[[39m
+348-targeted	Targeted jest	2026-10-05T17:35:11.1428025Z ^[[95m[Nest] 2847  - ^[[39m10/05/2026, 5:35:11 PM ^[[95m  DEBUG^[[39m ^[[38;5;3m[PurchaseFanoutService] ^[[39m^[[95mfanout: package=pkg-h has no contents — purchase=cp-A^[[39m
+349-targeted	Targeted jest	2026-10-05T17:35:11.5343499Z ^[[33m[Nest] 2847  - ^[[39m10/05/2026, 5:35:11 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mpayment_intent.succeeded pi_r4: purchase changed before the write; Stripe redelivers^[[39m
+350-targeted	Targeted jest	2026-10-05T17:35:11.5344869Z ^[[33m[Nest] 2847  - ^[[39m10/05/2026, 5:35:11 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mpayment_intent.succeeded pi_r4: purchase changed before the write; Stripe redelivers^[[39m
+351-targeted	Targeted jest	2026-10-05T17:35:11.5346468Z ^[[33m[Nest] 2847  - ^[[39m10/05/2026, 5:35:11 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mpayment_intent.succeeded pi_r4: purchase changed before the write; Stripe redelivers^[[39m
+352-targeted	Targeted jest	2026-10-05T17:35:11.5348021Z ^[[33m[Nest] 2847  - ^[[39m10/05/2026, 5:35:11 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mpayment_intent.succeeded pi_r4: purchase changed before the write; Stripe redelivers^[[39m
+353-targeted	Targeted jest	2026-10-05T17:35:11.5349199Z ^[[33m[Nest] 2847  - ^[[39m10/05/2026, 5:35:11 PM ^[[33m   WARN^[[39m ^[[38;5;3m[CheckoutWebhookHandlerService] ^[[39m^[[33mpayment_intent.succeeded pi_r4: purchase changed before the write; Stripe redelivers^[[39m
+354:targeted	Targeted jest	2026-10-05T17:35:11.5349973Z FAIL test/aud-sol-661-r4-settlement-acceptance.spec.ts (119 MB heap size)
+355-targeted	Targeted jest	2026-10-05T17:35:11.5350966Z   ● independent Sol round-4 settlement acceptance › a previously completed hosted purchase regains access when its failed PI subsequently succeeds
+356-targeted	Targeted jest	2026-10-05T17:35:11.5351394Z 
+357-targeted	Targeted jest	2026-10-05T17:35:11.5351721Z     ServiceUnavailableException: This payment failure event cannot be applied yet. Stripe redelivers it.
+358-targeted	Targeted jest	2026-10-05T17:35:11.5352032Z 
+359-targeted	Targeted jest	2026-10-05T17:35:11.5352331Z     ^[[0m ^[[90m 117 |^[[39m ^[[90m// runs again. Ids and codes only: no Stripe or client text.^[[39m
+360-targeted	Targeted jest	2026-10-05T17:35:11.5353126Z      ^[[90m 118 |^[[39m ^[[36mfunction^[[39m declineRetryLater(reason^[[33m:^[[39m string^[[33m,^[[39m paymentIntentId^[[33m:^[[39m string)^[[33m:^[[39m ^[[33mServiceUnavailableException^[[39m {
+361-targeted	Targeted jest	2026-10-05T17:35:11.5353884Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 119 |^[[39m   ^[[36mreturn^[[39m ^[[36mnew^[[39m ^[[33mServiceUnavailableException^[[39m({
+362-targeted	Targeted jest	2026-10-05T17:35:11.5354307Z      ^[[90m     |^[[39m          ^[[31m^[[1m^^[[22m^[[39m
+363:targeted	Targeted jest	2026-10-05T17:35:11.5354728Z      ^[[90m 120 |^[[39m     error^[[33m:^[[39m ^[[32m'PAYMENT_FAILURE_RETRY'^[[39m^[[33m,^[[39m
+364-targeted	Targeted jest	2026-10-05T17:35:11.5355106Z      ^[[90m 121 |^[[39m     reason^[[33m,^[[39m
+365-targeted	Targeted jest	2026-10-05T17:35:11.5355490Z      ^[[90m 122 |^[[39m     payment_intent_id^[[33m:^[[39m paymentIntentId^[[33m,^[[39m^[[0m
+366-targeted	Targeted jest	2026-10-05T17:35:11.5355874Z 
+367-targeted	Targeted jest	2026-10-05T17:35:11.5356098Z       at declineRetryLater (src/checkout/checkout-webhook-handler.service.ts:119:10)
+368-targeted	Targeted jest	2026-10-05T17:35:11.5356721Z       at CheckoutWebhookHandlerService.applyPaymentIntentFailed (src/checkout/checkout-webhook-handler.service.ts:2131:13)
+369-targeted	Targeted jest	2026-10-05T17:35:11.5357116Z 
+370-targeted	Targeted jest	2026-10-05T17:35:11.5357596Z   ● independent Sol round-4 settlement acceptance › a delayed duplicate completion cannot resurrect a hosted purchase after a real async failure
+371-targeted	Targeted jest	2026-10-05T17:35:11.5357998Z 
+372-targeted	Targeted jest	2026-10-05T17:35:11.5358290Z     ServiceUnavailableException: This payment failure event cannot be applied yet. Stripe redelivers it.
+373-targeted	Targeted jest	2026-10-05T17:35:11.5358591Z 
+374-targeted	Targeted jest	2026-10-05T17:35:11.5358870Z     ^[[0m ^[[90m 117 |^[[39m ^[[90m// runs again. Ids and codes only: no Stripe or client text.^[[39m
+375-targeted	Targeted jest	2026-10-05T17:35:11.5359649Z      ^[[90m 118 |^[[39m ^[[36mfunction^[[39m declineRetryLater(reason^[[33m:^[[39m string^[[33m,^[[39m paymentIntentId^[[33m:^[[39m string)^[[33m:^[[39m ^[[33mServiceUnavailableException^[[39m {
+376-targeted	Targeted jest	2026-10-05T17:35:11.5360396Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 119 |^[[39m   ^[[36mreturn^[[39m ^[[36mnew^[[39m ^[[33mServiceUnavailableException^[[39m({
+377-targeted	Targeted jest	2026-10-05T17:35:11.5360956Z      ^[[90m     |^[[39m          ^[[31m^[[1m^^[[22m^[[39m
+378:targeted	Targeted jest	2026-10-05T17:35:11.5361362Z      ^[[90m 120 |^[[39m     error^[[33m:^[[39m ^[[32m'PAYMENT_FAILURE_RETRY'^[[39m^[[33m,^[[39m
+379-targeted	Targeted jest	2026-10-05T17:35:11.5361718Z      ^[[90m 121 |^[[39m     reason^[[33m,^[[39m
+380-targeted	Targeted jest	2026-10-05T17:35:11.5362096Z      ^[[90m 122 |^[[39m     payment_intent_id^[[33m:^[[39m paymentIntentId^[[33m,^[[39m^[[0m
+381-targeted	Targeted jest	2026-10-05T17:35:11.5362316Z 
+382-targeted	Targeted jest	2026-10-05T17:35:11.5362540Z       at declineRetryLater (src/checkout/checkout-webhook-handler.service.ts:119:10)
+383-targeted	Targeted jest	2026-10-05T17:35:11.5363143Z       at CheckoutWebhookHandlerService.applyPaymentIntentFailed (src/checkout/checkout-webhook-handler.service.ts:2131:13)
+384-targeted	Targeted jest	2026-10-05T17:35:11.5363526Z 
+385:targeted	Targeted jest	2026-10-05T17:35:11.8686593Z FAIL test/aud-sol-661-r3-provider-snapshot.spec.ts (150 MB heap size)
+386-targeted	Targeted jest	2026-10-05T17:35:11.8688147Z   ● independent Sol B-661-3 round-3 provider-snapshot boundary › control: a fresh succeeded provider snapshot preserves paid access
+387-targeted	Targeted jest	2026-10-05T17:35:11.8706163Z 
+388-targeted	Targeted jest	2026-10-05T17:35:11.8706911Z     ServiceUnavailableException: This payment failure event cannot be applied yet. Stripe redelivers it.
+389-targeted	Targeted jest	2026-10-05T17:35:11.8708195Z 
+390-targeted	Targeted jest	2026-10-05T17:35:11.8708841Z     ^[[0m ^[[90m 117 |^[[39m ^[[90m// runs again. Ids and codes only: no Stripe or client text.^[[39m
+391-targeted	Targeted jest	2026-10-05T17:35:11.8710315Z      ^[[90m 118 |^[[39m ^[[36mfunction^[[39m declineRetryLater(reason^[[33m:^[[39m string^[[33m,^[[39m paymentIntentId^[[33m:^[[39m string)^[[33m:^[[39m ^[[33mServiceUnavailableException^[[39m {
+392-targeted	Targeted jest	2026-10-05T17:35:11.8712035Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 119 |^[[39m   ^[[36mreturn^[[39m ^[[36mnew^[[39m ^[[33mServiceUnavailableException^[[39m({
+393-targeted	Targeted jest	2026-10-05T17:35:11.8712899Z      ^[[90m     |^[[39m          ^[[31m^[[1m^^[[22m^[[39m
+394:targeted	Targeted jest	2026-10-05T17:35:11.8713685Z      ^[[90m 120 |^[[39m     error^[[33m:^[[39m ^[[32m'PAYMENT_FAILURE_RETRY'^[[39m^[[33m,^[[39m
+395-targeted	Targeted jest	2026-10-05T17:35:11.8714413Z      ^[[90m 121 |^[[39m     reason^[[33m,^[[39m
+396-targeted	Targeted jest	2026-10-05T17:35:11.8715216Z      ^[[90m 122 |^[[39m     payment_intent_id^[[33m:^[[39m paymentIntentId^[[33m,^[[39m^[[0m
+397-targeted	Targeted jest	2026-10-05T17:35:11.8715714Z 
+398-targeted	Targeted jest	2026-10-05T17:35:11.8716227Z       at declineRetryLater (src/checkout/checkout-webhook-handler.service.ts:119:10)
+399-targeted	Targeted jest	2026-10-05T17:35:11.8717374Z       at CheckoutWebhookHandlerService.applyPaymentIntentFailed (src/checkout/checkout-webhook-handler.service.ts:2131:13)
+400-targeted	Targeted jest	2026-10-05T17:35:11.8718137Z 
+401-targeted	Targeted jest	2026-10-05T17:35:11.8719212Z   ● independent Sol B-661-3 round-3 provider-snapshot boundary › a prefetched old decline must not undo a failed -> successful retry committed before its transaction starts
+402-targeted	Targeted jest	2026-10-05T17:35:11.8720151Z 
+403-targeted	Targeted jest	2026-10-05T17:35:11.8720545Z     expect(received).toBe(expected) // Object.is equality
+404-targeted	Targeted jest	2026-10-05T17:35:11.8721141Z 
+405:targeted	Targeted jest	2026-10-05T17:35:11.8721457Z     Expected: "requires_payment_method"
+406:targeted	Targeted jest	2026-10-05T17:35:11.8721931Z     Received: undefined
+407-targeted	Targeted jest	2026-10-05T17:35:11.8722244Z 
+408-targeted	Targeted jest	2026-10-05T17:35:11.8722918Z     ^[[0m ^[[90m 84 |^[[39m     ^[[90m// Delivery A starts while the PI is failed, but its transaction is delayed.^[[39m
+409-targeted	Targeted jest	2026-10-05T17:35:11.8724064Z      ^[[90m 85 |^[[39m     ^[[36mconst^[[39m stalePrefetch ^[[33m=^[[39m ^[[36mawait^[[39m svc^[[33m.^[[39mprefetchForOuterTx(oldDecline)^[[33m;^[[39m
+410-targeted	Targeted jest	2026-10-05T17:35:11.8725126Z     ^[[31m^[[1m>^[[22m^[[39m^[[90m 86 |^[[39m     expect(stalePrefetch^[[33m.^[[39mpaymentIntentStatusById^[[33m?^[[39m^[[33m.^[[39mpi_snapshot)^[[33m.^[[39mtoBe(^[[32m'requires_payment_method'^[[39m)^[[33m;^[[39m
+411-targeted	Targeted jest	2026-10-05T17:35:11.8725905Z      ^[[90m    |^[[39m                                                                ^[[31m^[[1m^^[[22m^[[39m
+412-targeted	Targeted jest	2026-10-05T17:35:11.8726320Z      ^[[90m 87 |^[[39m
+413-targeted	Targeted jest	2026-10-05T17:35:11.8726860Z      ^[[90m 88 |^[[39m     ^[[90m// Delivery B commits the ordinary real failure on the same provisional purchase.^[[39m
+414-targeted	Targeted jest	2026-10-05T17:35:11.8727596Z      ^[[90m 89 |^[[39m     ^[[36mconst^[[39m otherDecline ^[[33m=^[[39m decline(^[[32m'evt_snapshot_other'^[[39m)^[[33m;^[[39m^[[0m
+415-targeted	Targeted jest	2026-10-05T17:35:11.8727958Z 
+416-targeted	Targeted jest	2026-10-05T17:35:11.8728276Z       at Object.<anonymous> (test/aud-sol-661-r3-provider-snapshot.spec.ts:86:64)
+417-targeted	Targeted jest	2026-10-05T17:35:11.8728592Z 
+418:targeted	Targeted jest	2026-10-05T17:35:11.8728838Z Test Suites: 3 failed, 3 total
+419:targeted	Targeted jest	2026-10-05T17:35:11.8729173Z Tests:       7 failed, 10 passed, 17 total
+420-targeted	Targeted jest	2026-10-05T17:35:11.8729521Z Snapshots:   0 total
+421-targeted	Targeted jest	2026-10-05T17:35:11.8729778Z Time:        2.543 s
+422-targeted	Targeted jest	2026-10-05T17:35:11.8730512Z Ran all test suites matching test/aud-sol-661-r3-provider-snapshot.spec.ts|test/aud-sol-661-r4-settlement-acceptance.spec.ts|test/zz-aud661ci-hosted-probe.spec.ts.
+423-targeted	Targeted jest	2026-10-05T17:35:12.0027578Z ##[error]Process completed with exit code 1.
+424-targeted	Post Run actions/checkout@v6	﻿2026-10-05T17:35:12.0118949Z Post job cleanup.
+425-targeted	Post Run actions/checkout@v6	2026-10-05T17:35:12.0802638Z [command]/usr/bin/git version
+426-targeted	Post Run actions/checkout@v6	2026-10-05T17:35:12.0832987Z git version 2.55.0
+427-targeted	Post Run actions/checkout@v6	2026-10-05T17:35:12.0863369Z Temporarily overriding HOME='/home/runner/work/_temp/f5937ba5-1961-4791-bc54-2c4c2d570bf2' before making global git config changes
+428-targeted	Post Run actions/checkout@v6	2026-10-05T17:35:12.0864521Z Adding repository directory to the temporary git global config as a safe directory
+429-targeted	Post Run actions/checkout@v6	2026-10-05T17:35:12.0867733Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+430-targeted	Post Run actions/checkout@v6	2026-10-05T17:35:12.0892985Z Removing SSH command configuration
+431-targeted	Post Run actions/checkout@v6	2026-10-05T17:35:12.0898686Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+432-targeted	Post Run actions/checkout@v6	2026-10-05T17:35:12.0925356Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+433-targeted	Post Run actions/checkout@v6	2026-10-05T17:35:12.1113623Z Removing HTTP extra header
+434-targeted	Post Run actions/checkout@v6	2026-10-05T17:35:12.1117155Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+435-targeted	Post Run actions/checkout@v6	2026-10-05T17:35:12.1145051Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+436-targeted	Post Run actions/checkout@v6	2026-10-05T17:35:12.1331593Z Removing includeIf entries pointing to credentials config files
+437-targeted	Post Run actions/checkout@v6	2026-10-05T17:35:12.1336261Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+438-targeted	Post Run actions/checkout@v6	2026-10-05T17:35:12.1410096Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+439-targeted	Post Run actions/checkout@v6	2026-10-05T17:35:12.1410982Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+440-targeted	Post Run actions/checkout@v6	2026-10-05T17:35:12.1411485Z includeif.gitdir:/github/workspace/.git.path
+441-targeted	Post Run actions/checkout@v6	2026-10-05T17:35:12.1411846Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+442-targeted	Post Run actions/checkout@v6	2026-10-05T17:35:12.1417801Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+443-targeted	Post Run actions/checkout@v6	2026-10-05T17:35:12.1467316Z /home/runner/work/_temp/git-credentials-9fb68e04-fdec-46bd-8977-41584e90006c.config
+444-targeted	Post Run actions/checkout@v6	2026-10-05T17:35:12.1475138Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-9fb68e04-fdec-46bd-8977-41584e90006c.config
+445-targeted	Post Run actions/checkout@v6	2026-10-05T17:35:12.1503972Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+446-targeted	Post Run actions/checkout@v6	2026-10-05T17:35:12.1522212Z /home/runner/work/_temp/git-credentials-9fb68e04-fdec-46bd-8977-41584e90006c.config
+447-targeted	Post Run actions/checkout@v6	2026-10-05T17:35:12.1529089Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-9fb68e04-fdec-46bd-8977-41584e90006c.config
+448-targeted	Post Run actions/checkout@v6	2026-10-05T17:35:12.1555323Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+449-targeted	Post Run actions/checkout@v6	2026-10-05T17:35:12.1572033Z /github/runner_temp/git-credentials-9fb68e04-fdec-46bd-8977-41584e90006c.config

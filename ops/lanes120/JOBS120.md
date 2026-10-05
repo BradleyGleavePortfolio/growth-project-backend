@@ -262,6 +262,12 @@ purchases/invoices or other users' rows (docs/roman-client-context.md in #667).
   #669 and #670 go green; FIX ROUND + READY. Then AUD pair on #669 + #670.
 - B-SPLIT-ROMANCHATS-120 (Opus builder): split mobile #331 into pieces under 1,500 and fix every A/B from its Opus RC and Sol BLOCK.
 - AUD-*-RADJ-120 (pair): backend #655 + mobile #337 first full review (flag FEATURE_ROMAN_ADJUST_ENABLED stays off until landed).
+- M-ROMANCAP-120 (owner 11:20, day 1; T3 mobile + backend contract check): when a client hits the daily AI cap, every AI entry point shows
+  a graceful pop-up with the owner's words "You've used your maximum AI allotment today." (plus when it resets, local time), never a generic
+  error or "Roman is unavailable". Backend #669 returns 503 ROMAN_CAPACITY_REACHED from assertDailyCapacity (roman.controller.ts ~137) and
+  AI_DAILY_QUOTA_EXCEEDED from ai.service.ts:677/703 for other AI features; mobile main maps only 429 (romanApi.ts rateLimited). Map both
+  codes to the pop-up in the Roman chat and every other AI surface; crisis turns stay exempt (already). The cap must be per client and high
+  enough to be rare: report the configured value and the env name. Under 1,500 lines. After #669's fix round.
 - Operator after landing: flag PR for FEATURE_ROMAN_CHAT_ENABLED / EXPO_PUBLIC_FF_ROMAN_CHAT and FEATURE_ROMAN_ADJUST_ENABLED; confirm
   the Anthropic key is present in production (fly-env-desired-state.json), never set secrets ourselves.
 
@@ -389,3 +395,78 @@ approve 5998888651 is in the H1-H7 composition). Five known by-design probe fail
 (1-day look-back), C-360-2 resumable import (Health Connect per page, Apple Health per day piece); no backend change. Full first review.
 Operator rulings on B-HC10 decisions (defaults): 1-day look-back; Apple Health hourly steps/energy wait 2 h before posting; backend
 "replace rewritten Health Connect records" is a follow-up ticket. One verdict comment per PR at the exact head.
+
+## AUD-OPUS-661E-120 / AUD-SOL-661E-120 — backend #661 FIX ROUND 9 + #702 RESTACK/FIX ROUND 2 (T4: secrets at rest, money)
+#661 e0cc97e150384d049823327b274ac47511ee952e (2,942 of 3,000; one commit on bc399edd; FIX ROUND 9 5999860654; 11/11 required green).
+#702 b96611de95d7d5f31fd623a2a7a6b0f7d8a03db8 (831; merges the #661 fix then adds tests; 5999875028; stacked checks green, live specs on
+real PostgreSQL). Report ops/reports/B-661R2-120.md. Closes Sol B-661-14 and Opus B-661-15 (both recurring first-grant writes erase the
+client secret and ephemeral key, only when access is actually granted) + scripts/clear-spent-payment-credentials.ts for old rows
+(C-661-2; production ClientPurchase has 0 rows). Review: full delta since bc399edd / 9ddda117 + replay of your own earlier probes.
+Older 116/117 probes fail the same 7 tests before and after (setup predates rounds 4-7): judge that claim. Operator rulings: land #661 and
+#702 together after dual approval at both heads; the cleanup script runs dry-run then --apply in the deploy window.
+
+## B-CM9-120 — coach #674 FIX ROUND 6 (Sol 3 B + Opus B-674-15), tests in #703, restack #676/#677/#703 (T4: money) (stack lock: coach)
+Verdicts at e35c37a1 / 0ee4933d / b17888ab / 88940c3f: #674 RC both: Sol 0/3/2 (5999606262: head-slice publication/recovery, full owner
+source-post recovery, prior-operation refund starvation; lanes 37347220951, 37347512251, 37347397861; report ops/reports/AUD-SOL-CM8-120.md,
+evidence ops/aud-120/AUD-SOL-CM8-120/) and Opus 0/1/7 (6000051266: B-674-15 refund-dispute-handler.service.ts:1340-1348 vs :1360-1375,
+reconcile computes what is owed before checking the refund's own reversal operation, so a refund closes as nothing_owed with no posting and
+no bound Stripe id; fix = own-operation check first; Opus probe lanes 37350431169 / 37350491962; report ops/reports/AUD-OPUS-CM8-120.md).
+#676, #677, #703 are DUAL APPROVE at their heads (Sol 5999606722/5999607261/5999607867, Opus 6000051724/6000052146/6000052530).
+Rules: source fixes in #674 only (2,965 of 3,000: keep it under; if any fix would push it over, stop and report); every new regression
+spec goes in #703 (953 of 1,500); then restack #676 -> #677 -> #703 merge-only (no content change to those PRs) so lenses can do fast
+deltas. C-674-16/17 and other Cs wait for after the freeze. Replay both lenses' CM8 probes. FIX ROUND 6 on #674, RESTACK comments on the
+others, READY FOR AUDIT.
+
+## B-DUNR2-120 — dunning FIX ROUND: #687 (B-687-8) + #705 (Sol 5 B + Opus 4 B), restack (T4: money, access) (stack lock: dunning)
+D6 verdicts at f3c7fd37 / 21714f7b / 49d0b66e / 5138947c: #688 and #704 DUAL APPROVE (Sol 5999796953/5999797427, Opus 6000205609/
+6000205846). #687 Sol APPROVE 0/0/3 (5999796451), Opus RC 0/1/2 (6000205361): B-687-8 dispute messages say a payment "was reversed", but
+inquiries also pause (owner ruling 6) and move no money: copy must be true for both. #705 RC both: Sol 0/5/1 (5999840529: flag-off access
+restoration; cached compensation keys; stale pause overtaking restart; unconfirmed billing-paused claims; successful restart still failing
+the entitlement guard) and Opus 0/4/2 (6000206086: B-705-1 re-pause after restart reuses the first pause's Stripe idempotency key; B-705-2
+restart can leave two billing subscriptions for one package; B-705-3 lost closure after restart ends access while billing continues; B-705-4
+pause check depends on the flag). Reports ops/reports/AUD-SOL-D6-120.md, ops/reports/AUD-OPUS-D6-120.md; probes under ops/aud-120/.
+Operator rulings (Opus defaults): B-705-3 a lost closure leaves a coach-restarted plan's access unchanged; B-705-2 re-buying is allowed and
+the restart refuses when another live plan exists for that package; the pause check runs regardless of FEATURE_DUNNING_V2 (already ruled);
+if #705 would pass 1,500 lines, move the restart fixes into a new D2d PR on #705 (fixes only; decision 7 stays its own later piece).
+Then merge-only restack #688 -> #704 -> #705 after the #687 copy fix. Replay both lenses' D6 probes. FIX ROUND / RESTACK comments, READY.
+The stack lands as one (C-688-12). After this: B-DUNB-120.
+
+## AUD-OPUS-PUSH3-120 / AUD-SOL-PUSH3-120 — backend push #692 + #693 at FIX ROUND heads (T4: PII on lock screens, consent, delivery)
+#692 346cf4a8ee462c8f241de65df6ffda95988257f3 (910, base main, main refresh included; FIX ROUND 6000090214): Sol B-692-1 lock screens show
+only fixed per-kind text; tier header added. #693 53796f1e278c12ebb56d701724df032675dcedf1 (2,876 of 3,000, base #692; FIX ROUND + RESTACK
+6000199795): Sol B-693-1 reschedule dedupe, B-648-7 hidden sole notifications, B-693-2 failed token cleanup, B-648-9 mute/sign-out during
+send preparation; Opus B-693-1 Android channelId; payout-notice push_twin. Report ops/reports/B-PUSH2-120.md. Prior verdicts: Sol
+5999124539/5999124426, Opus 5999369595/5999369928. Review the full delta since 27156167/13417e7b + replay your own earlier probes (Opus U2/U3
+remain red by design: ruled Cs). Operator rulings (builder defaults): reminder pushes keep the session time, no name; a push is hidden behind
+its in-app twin only if the twin was stored within 1 hour (backfill 10 s); merge #692 then #693 back to back, deploy after #693 with
+migrations; Android push is announced only after one device check. #693's main-only checks run after #692 merges: say so in the verdict.
+
+## B-PUSH3-120 — push #693 FIX ROUND for reopened B-648-8 (T4) (stack lock: push)
+Sol PUSH3: #692 346cf4a8 APPROVE 0/0/0 (6000373524); #693 53796f1e RC 0/1/2 (6000395449): B-648-8 reopened: new post-handoff awaits permit
+sending after lease authority expires or after the token/outbox row is erased (two counterexamples: one provider call instead of zero;
+proof run 37354299393; probes ops/aud-120/AUD-SOL-PUSH3-120/). Fix rule: re-check lease authority (fenced token/claim) and the existence
+of the token and outbox row after the last await before the provider call, inside the same fence; a lost lease or erased row = zero
+provider calls. Fix in #693 only (#692 must not move: it is Sol-approved and awaiting Opus). Replay Sol's PUSH and PUSH3 probes and Opus's
+probes. FIX ROUND comment, READY FOR AUDIT. Opus PUSH3 then reviews #692 + new #693; Sol does a #693 delta.
+
+## AUD-*-SCHA-120 and AUD-*-SCHB-120 — scheduling backend split, first full review (two lens pairs) (T4: access control, concurrency, schema)
+B-SPLIT-SCHED-120 split #634 into #712 7fd99dce (1/9 foundation, base main, 1,359, 11/11 checks) -> #713 a7c8b33a (2/9 test infra, 1,274) ->
+#714 55dfbdce (3/9 emitter, 1,382) -> #715 8040f149 (4/9 lifecycle, 1,355) -> #716 31318708 (5/9 reminder job, 1,402) -> #717 112e0452
+(6/9 service and routes, 1,068) -> #718 6feb18bb (7/9 integrity tests A, 1,062) -> #719 c79c3e67 (8/9 integrity tests B, 1,148) -> #720
+c2b27193 (9/9 tests, live spec, ci.yml, 1,218) -> #653 9a23e3b2 (auto-expiry, restacked, 1,437; 2 conflict fixes + 3 follow-through edits
+listed in its RESTACK comment). Tree of #720 == #634 merged with main (6fc88c45; tree 0595cfd7). Report ops/reports/B-SPLIT-SCHED-120.md.
+Temporary test lines in pieces 2, 3, 7, 8 (one source line: reminder.job.ts type change in piece 3) are replaced by later pieces: judge
+the stack as a whole and each piece as safe to sit on main alone (pieces land as one train). Operator ruling D1: keep migration
+20270222000000 (sorts before the applied 20270301000000): lenses verify the two commute and that `prisma migrate deploy` applies it on a
+database that already has 20270301000000 (CI lane against a copy of the production migration history). PR body describes the read-only
+preflight queries (overlaps, inverted ranges) that must return zero rows in production before deploy.
+- SCHA pair: #712-#716 (foundation, test infra, emitter, lifecycle, reminder job).
+- SCHB pair: #717-#720 + #653 (service and routes, integrity tests, live no-double-booking spec, ci.yml, auto-expiry).
+Coaches decide their times (S-AVAIL-120 later adds notice/window/buffers/daily max); no onboarding gate.
+
+## B-HC12-120 — mobile Health Connect follow-up before the clinic build: C-370-2 + C-370-3 (T4: health data) (after H1-H8 land)
+Opus H9 (ops/reports/AUD-OPUS-H9-120.md): C-370-2 each Health open re-posts a day of every data type (about 70 requests for a 5-second heart
+rate watch) against the backend's 60/min limit: batch per type/day and respect 429 Retry-After with resumable progress; C-370-3 a night's
+sleep can be counted twice (probe: 330 + 180 minutes for one night): dedupe overlapping sleep sessions per night before posting (rule
+predates H8). Sleep totals feed Roman and coach views, so both land before the clinic Android build. New PR on main after H1-H8 land,
+under 1,500 lines. Also ticket (not built): backend replace for rewritten Health Connect records (C-370-1 / H8-C1).
