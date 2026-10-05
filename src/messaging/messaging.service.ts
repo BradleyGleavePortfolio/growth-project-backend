@@ -437,22 +437,19 @@ export class MessagingService {
 
   /**
    * After a thread mutation that is not a new message (edit, delete, pin,
-   * read): ping the other participant with an ID-only `thread-updated` event
-   * and, when coach-authored content changed, bust the client's AI context
-   * cache so Roman never quotes an edited or deleted coach message.
-   * Fire-and-forget; never fails the request.
+   * read): ping the other participant with an empty `thread-updated` event
+   * (B-709-1: public channel, so no ids; `_kind` / `_messageId` document the
+   * call site only) and, when coach-authored content changed, bust the
+   * client's AI context cache so Roman never quotes an edited or deleted
+   * coach message. Fire-and-forget; never fails the request.
    */
   notifyThreadUpdated(
     thread: ResolvedThread,
-    kind: ThreadUpdateKind,
-    messageId: string | null,
+    _kind: ThreadUpdateKind,
+    _messageId: string | null,
     opts: { coachContentChanged?: boolean } = {},
   ): void {
-    void broadcastThreadUpdated(this.supabase, thread.otherPartyId, {
-      kind,
-      thread_client_id: thread.clientId,
-      message_id: messageId,
-    });
+    void broadcastThreadUpdated(this.supabase, thread.otherPartyId);
     if (opts.coachContentChanged) {
       this.aiContext.invalidateForUser(thread.clientId);
     }
