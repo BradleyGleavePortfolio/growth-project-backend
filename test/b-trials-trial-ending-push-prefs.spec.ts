@@ -20,7 +20,8 @@ describe('trial_ending notice through main notification and push senders', () =>
       user: { findUnique: jest.fn(async () => ({ expo_push_token: 'ExponentPushToken[trial]' })) },
     };
     const svc = new NotificationsService(prisma as never);
-    const expo = (svc as unknown as { expo: { sendPushNotificationsAsync: () => unknown } }).expo;
+    type Sender = { sendPushNotificationsAsync: (...a: unknown[]) => Promise<unknown> };
+    const expo = (svc as unknown as { expo: Sender }).expo;
     const send = jest.spyOn(expo, 'sendPushNotificationsAsync').mockResolvedValue([{ status: 'ok' }]);
     const body = 'Your free trial ends in 3 days.';
     const row = await svc.createNotification({ user_id: 'client-1', kind, body, channel: 'inapp' });
