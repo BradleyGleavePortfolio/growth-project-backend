@@ -167,6 +167,7 @@ describe('RegimesService', () => {
       const prisma = asPrismaDouble({
         user: { findUnique: jest.fn(async () => COACH) },
         workoutProgram: { findFirst, updateMany },
+        clinicProgramSet: { findMany: jest.fn(async () => []) },
       });
       const service = new RegimesService(prisma, retentionDouble());
 
@@ -182,6 +183,38 @@ describe('RegimesService', () => {
           }),
         }),
       );
+    });
+    it('S-MWB-3 B-640-11: refuses a regime an active clinic consultation set uses', async () => {
+      const updateMany = jest.fn(async () => ({ count: 1 }));
+      const findFirst = jest.fn().mockResolvedValueOnce({
+        id: 'reg-1',
+        name: 'Base',
+        regime_display_name: null,
+        weeks: 12,
+        days_per_week: 4,
+        head_revision_id: null,
+        archived_at: null,
+        owner_user_id: 'coach-1',
+      });
+      const setFindMany = jest.fn(async () => [
+        { programs: { strength: { program_id: 'reg-1', cohort_id: 'c1', name: 'Base' } } },
+      ]);
+      const prisma = asPrismaDouble({
+        user: { findUnique: jest.fn(async () => COACH) },
+        workoutProgram: { findFirst, updateMany },
+        clinicProgramSet: { findMany: setFindMany },
+      });
+      const service = new RegimesService(prisma, retentionDouble());
+
+      await expect(service.archiveRegime('coach-1', 'reg-1')).rejects.toMatchObject({
+        status: 409,
+        response: { code: 'program_in_clinic_set' },
+      });
+      expect(updateMany).not.toHaveBeenCalled();
+      expect(setFindMany).toHaveBeenCalledWith({
+        where: { coach_id: { in: ['coach-1'] }, active: true },
+        select: { programs: true },
+      });
     });
   });
 

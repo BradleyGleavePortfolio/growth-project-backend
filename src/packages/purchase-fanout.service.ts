@@ -317,7 +317,7 @@ export class PurchaseFanoutService {
           `PurchaseFanout: AssignableAssetResolverRegistry not wired; cannot materialise drop=${drop.id} type=${drop.asset_type}`,
         );
       }
-      const result = await this.resolvers.materialise(drop.asset_type, {
+      const materialiseInput = {
         clientId: purchaseRow.client_user_id,
         coachId: purchaseRow.coach_user_id,
         assetId: drop.asset_id,
@@ -335,7 +335,20 @@ export class PurchaseFanoutService {
         clientPurchaseId: purchase.id,
         contentId: drop.content_id,
         tx: tx as Prisma.TransactionClient,
-      });
+      };
+      // S-MWB Programs (B-640-4 / C-640-6): a whole program is never copied
+      // inside this checkout / $0-grant transaction. The drop stays `pending`
+      // (due now) and the one-minute drip dispatcher delivers it in its own
+      // transaction with retries + a coach alert, so a large or broken program
+      // can never time out or roll back the purchase. Its buyer alert fires
+      // when the dispatcher delivers it.
+      if (await this.resolvers.shouldDeferInline(drop.asset_type, materialiseInput)) {
+        this.logger.log(
+          `PurchaseFanout: drop=${drop.id} type=${drop.asset_type} left pending for the drip dispatcher (program delivery runs in its own transaction)`,
+        );
+        continue;
+      }
+      const result = await this.resolvers.materialise(drop.asset_type, materialiseInput);
 
       await tx.scheduledDrop.update({
         where: { id: drop.id },
@@ -575,11 +588,18 @@ export class PurchaseFanoutService {
       );
       return 0;
     }
+    // B-661-9 (Sol, round 6): any other cancel (refund, dispute, cancel,
+    // coach decision, grant revoke) also takes over the drops a payment
+    // failure canceled, so recovering that payment never brings them back
+    // (restoreAfterPaymentRecovered). One statement: a restore that commits
+    // first left them pending (matched here); one that waits on these rows
+    // no longer matches them.
+    const cancelable: Prisma.ScheduledDropWhereInput[] = [{ status: { in: ['pending', 'due'] } }];
+    if (reason !== 'payment_failed') {
+      cancelable.push({ status: 'canceled', failure_reason: 'canceled:payment_failed' });
+    }
     const result = await db.scheduledDrop.updateMany({
-      where: {
-        client_purchase_id: clientPurchaseId,
-        status: { in: ['pending', 'due'] },
-      },
+      where: { client_purchase_id: clientPurchaseId, OR: cancelable },
       data: {
         status: 'canceled',
         failure_reason: `canceled:${reason}`,
@@ -596,6 +616,41 @@ export class PurchaseFanoutService {
         `cancelPendingForPurchase: no pending/due drops for purchase=${clientPurchaseId} (replay or never-entitled) reason=${reason}`,
       );
     }
+    return result.count;
+  }
+
+  // B-661-3 (round 5) — a payment that failed after its purchase was
+  // activated, then succeeded (the same PaymentIntent). The drops that
+  // failure canceled (`canceled:payment_failed`) are pending again; the drip
+  // dispatcher delivers the ones already due on its next tick. Drops
+  // canceled for any other reason (refund, dispute, cancel, coach decision,
+  // grant revoke), also after the failure (B-661-9), stay canceled.
+  // Idempotent: a replay finds none.
+  async restoreAfterPaymentRecovered(
+    clientPurchaseId: string,
+    tx?: TxOrPrisma | Prisma.TransactionClient,
+  ): Promise<number> {
+    const db: { scheduledDrop: Prisma.TransactionClient['scheduledDrop'] } | undefined =
+      (tx as TxOrPrisma | undefined)?.scheduledDrop
+        ? (tx as TxOrPrisma)
+        : this.prisma;
+    if (!db || !db.scheduledDrop) {
+      this.logger.warn(
+        `restoreAfterPaymentRecovered: no scheduledDrop client available (purchase=${clientPurchaseId}) — skipping`,
+      );
+      return 0;
+    }
+    const result = await db.scheduledDrop.updateMany({
+      where: {
+        client_purchase_id: clientPurchaseId,
+        status: 'canceled',
+        failure_reason: 'canceled:payment_failed',
+      },
+      data: { status: 'pending', failure_reason: null, next_retry_at: null, locked_at: null },
+    });
+    this.logger.log(
+      `restoreAfterPaymentRecovered: ${result.count} drop(s) pending again for purchase=${clientPurchaseId}`,
+    );
     return result.count;
   }
 

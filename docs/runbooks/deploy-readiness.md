@@ -139,7 +139,7 @@ With that in mind, the operator actions after this merges:
 
 1. `deploy-readiness-gate` is already enforced by its own workflow trigger — there is nothing to add to branch protection for it. Do **not** add it to `scripts/setup-branch-protection.sh`; doing so would permanently block every pull request. The strict prod-deploy block is live the moment the workflow is on `main`.
 
-2. `test-deploy-readiness` is the PR-eligible check and is already listed in the canonical required-check list in `scripts/setup-branch-protection.sh`. Running that script makes it a required check that blocks merges. If you want to keep it informational for longer during the pre-launch burn-down, comment its line out of `REQUIRED_CHECKS` before running the script, and re-add it once the board has been stable for a while.
+2. `test-deploy-readiness` is the PR-eligible check, but it is informational: live branch protection on `main` does not require it (read back 2026-10-02), so it is not in `REQUIRED_CHECKS` in `scripts/setup-branch-protection.sh` (that list mirrors the 11 live required checks; `test/ci/branch-protection-checks.spec.ts` pins it). To make it blocking later, add it to the live protection and to `REQUIRED_CHECKS` and the spec in the same change.
 
 ---
 

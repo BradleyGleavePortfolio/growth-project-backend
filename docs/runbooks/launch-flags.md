@@ -120,6 +120,8 @@ FEATURE_COMMUNITY_CLASSROOM_POSTS | off | fly secrets unset -a backend-spring-la
 BOOKING_REMINDERS_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 BOOKING_REMINDERS_ENABLED | "BOOKING_REMINDERS_ENABLED": "unset"
 SIGNUP_ROLE_CHOICE_ENABLED | on | fly secrets set -a backend-spring-lake-3890 SIGNUP_ROLE_CHOICE_ENABLED=false (never unset: that turns it on) | "SIGNUP_ROLE_CHOICE_ENABLED": "false"
 FEATURE_COACHLESS_HOME | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COACHLESS_HOME | "FEATURE_COACHLESS_HOME": "unset"
+COACH_WELCOME_SCHEDULER_ENABLED | on | fly secrets set -a backend-spring-lake-3890 COACH_WELCOME_SCHEDULER_ENABLED=false (never unset: that turns it on) | "COACH_WELCOME_SCHEDULER_ENABLED": "false"
+WORKOUT_REMINDERS_ENABLED | on | fly secrets set -a backend-spring-lake-3890 WORKOUT_REMINDERS_ENABLED=false (never unset: that turns it on) | "WORKOUT_REMINDERS_ENABLED": "false"
 FEATURE_WEARABLES_INGEST_POST | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_WEARABLES_INGEST_POST | "FEATURE_WEARABLES_INGEST_POST": "unset"
 FEATURE_MWB_TEMPLATES | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_MWB_TEMPLATES | "FEATURE_MWB_TEMPLATES": "unset"
 FEATURE_MWB_AUTOSAVE_UNDO | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_MWB_AUTOSAVE_UNDO | "FEATURE_MWB_AUTOSAVE_UNDO": "unset"

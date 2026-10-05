@@ -318,6 +318,17 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20270212000000_clinic_onboarding_intake/migration.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/ci/onboarding-intake-live-grants.sql
 
+      - name: Bootstrap + apply the clinic engagement migration (#609)
+        # Minimal NotificationPreferences and CoachMessage (the migration adds
+        # columns to both) and "User".deletion_scheduled_at, then the
+        # engagement migration VERBATIM (three tables and their RLS policies),
+        # then the Supabase-default table grants so RLS (not a missing GRANT)
+        # decides. Runs after the onboarding step, which adds "User".deleted_at.
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/ci/clinic-engagement-live-bootstrap.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20270213000000_clinic_engagement/migration.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/ci/clinic-engagement-live-grants.sql
+
       - name: Run live RLS regression suite
         # Use the dedicated rls-live jest config (jest.rls.config.js), which
         # selects the DB-requiring RLS specs the default build-and-test job now
@@ -353,6 +364,32 @@ jobs:
         # FeaturedCoachConfig, no non-service writes, anon deny, CHECK/unique/
         # FK cascade behaviour and down/up. Refuses to skip under CI=true.
         run: npx jest --config jest.rls.config.js test/rls/coachless-rls.spec.ts --runInBand --testTimeout=60000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Run clinic engagement live RLS suite (#609)
+        # Proves the 20270213000000 policies on the real migration output:
+        # RLS enabled + forced, the exact policy set, who reads which rows
+        # (coach-self welcome setting, owner-only welcome jobs, client-self
+        # reminder ledger), anon denied, no INSERT / UPDATE / DELETE for any
+        # non-service principal, service_role read/write, column defaults and
+        # the idempotency unique keys (incl. CoachMessage.welcome_job_id), and
+        # that the reminder claim's FOR SHARE eligibility lock blocks a
+        # concurrent deletion UPDATE. Refuses to skip under CI=true.
+        run: npx jest --config jest.rls.config.js test/rls/clinic-engagement-rls.spec.ts --runInBand --testTimeout=60000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Run data-exports bucket fence + verifier live suite (A-636-1)
+        # Builds a Supabase-like storage schema (RLS on, broad API-role grants),
+        # applies prisma/migrations/20270221000000_data_export_storage_bucket
+        # {migration,verify,down}.sql verbatim and proves anon/authenticated/
+        # custom roles see zero data-exports objects even under `OR true`
+        # policies, and that the release verifier fails on every exposing
+        # state (fence dropped/altered, RLS off, public bucket, RLS-escaping
+        # roles or views, service_role without BYPASSRLS). Refuses to skip
+        # under CI=true.
+        run: npx jest --config jest.rls.config.js test/rls/data-export-storage-bucket-rls.spec.ts --runInBand --testTimeout=60000
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
@@ -520,6 +557,8 @@ jobs:
         # And test/onboarding-tenancy-fence.live.spec.ts (#607 A607-3): the
         # completion tenancy fence (User FOR SHARE) blocks a concurrent coach
         # transfer on real Postgres; same gate and bootstrap.
+        # And test/checkout-settlement.live.spec.ts (#661 C-661-12): payment
+        # settlement row versions, row locks and recovery on real Postgres.
         # The five test/mwb-3-*.spec.ts files run under the DEFAULT jest config
         # (jest.config.js matches them via testRegex). With MWB3_TEST_DATABASE_URL
         # set they execute their live blocks instead of skipping. --runInBand so
@@ -535,6 +574,7 @@ jobs:
             test/mwb-3-revision-prune.cron.spec.ts \
             test/profile-put-concurrency.live.spec.ts \
             test/onboarding-tenancy-fence.live.spec.ts \
+            test/checkout-settlement.live.spec.ts \
             --runInBand --testTimeout=120000
         env:
           NODE_OPTIONS: --max-old-space-size=4096
