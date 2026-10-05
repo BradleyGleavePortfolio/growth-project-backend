@@ -154,7 +154,13 @@ export function pushOutboxWorld(opts: {
         ).slice(0, args.take ?? Infinity),
     ),
     updateMany: jest.fn(async (args: { where?: Where; data: Record<string, unknown> }) => {
-      const hit = rows.filter((r) => matches(r, args.where));
+      // The handoff CAS's relation filter: the user still holds that token.
+      const { user, ...where } = (args.where ?? {}) as Where & {
+        user?: { is: { expo_push_token: string } };
+      };
+      const hit = rows.filter(
+        (r) => matches(r, where) && (!user || tokens[r.user_id] === user.is.expo_push_token),
+      );
       hit.forEach((r) => apply(r, args.data));
       return { count: hit.length };
     }),

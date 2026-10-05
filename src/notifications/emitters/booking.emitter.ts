@@ -57,6 +57,13 @@ export interface BookingRescheduledPayload {
   sessionId: string;
   oldScheduledAt: Date;
   newScheduledAt: Date;
+  /**
+   * Sol B-693-1: identity of this reschedule, persisted with it (the session
+   * row's updated_at after the move). The same move always has the same id;
+   * a later move, even back to an earlier time, has a new one, so each move
+   * is pushed once. Without it the old and new times identify the move.
+   */
+  rescheduleEventId?: string;
 }
 
 export interface BookingReminderPayload {
@@ -185,6 +192,9 @@ export class BookingEmitter {
         newScheduledAt: payload.newScheduledAt.toISOString(),
         timeZone: tz,
       },
+      pushEventId:
+        payload.rescheduleEventId ??
+        `${payload.oldScheduledAt.toISOString()}>${payload.newScheduledAt.toISOString()}`,
     });
   }
 
@@ -243,6 +253,8 @@ export class BookingEmitter {
     body: string;
     deepLink: string;
     payload: Record<string, unknown>;
+    /** The event's own identity when the session and time do not give one. */
+    pushEventId?: string;
   }): Promise<void> {
     try {
       await this.notifications.createNotification({
@@ -252,6 +264,32 @@ export class BookingEmitter {
         payload: args.payload,
         deep_link: args.deepLink,
         channel: 'inapp',
+      });
+      // C-643-2: and one device push (quiet lock-screen copy, booking_push
+      // preference, at most once). Reminders reach this once per claim in
+      // NotificationDeliveryLog, so each reminder is pushed once.
+      // B-NOTIF-5: the push carries the booking context (re-rendered and
+      // re-checked if quiet hours defer it) and an exactly-once identity per
+      // session and time (a reschedule: per move, B-693-1), so two sessions
+      // or two moves never collapse into one push. No display name goes into
+      // the push (B-692-1): the lock screen never shows one.
+      const p = args.payload;
+      const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+      const when =
+        str(p.newScheduledAt) ?? str(p.scheduledAt) ?? str(p.requestedAt) ?? '';
+      await this.notifications.sendPush({
+        user_id: args.userId,
+        kind: args.kind,
+        body: args.body,
+        deep_link: args.deepLink,
+        context: {
+          sessionId: str(p.sessionId),
+          scheduledAt: str(p.scheduledAt),
+          newScheduledAt: str(p.newScheduledAt),
+          oldScheduledAt: str(p.oldScheduledAt),
+          timeZone: str(p.timeZone) ?? null,
+        },
+        dedupe_key: `${args.kind}:${str(p.sessionId) ?? ''}:${args.pushEventId ?? when}`,
       });
     } catch (err) {
       // Emitters never propagate errors — booking lifecycle must not

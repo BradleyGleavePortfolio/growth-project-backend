@@ -667,8 +667,10 @@ export class PurchaseFanoutService {
     const deep_link = `tgp://coach/purchases/${alert.purchaseId}`;
 
     void (async () => {
+      // B-648-7: the push row below is hidden only behind a stored inapp row.
+      let inappStored = false;
       try {
-        await this.notifications!.createNotification({
+        const inapp = await this.notifications!.createNotification({
           user_id: alert.coachId,
           kind: NotificationKind.COACH_NEW_PURCHASE,
           body: body.slice(0, 160),
@@ -676,6 +678,7 @@ export class PurchaseFanoutService {
           deep_link,
           channel: 'inapp',
         });
+        inappStored = inapp !== null;
       } catch (err) {
         this.logger.warn(
           `coach_new_purchase in-app row failed coach=${alert.coachId} purchase=${alert.purchaseId}: ${(err as Error).message}`,
@@ -699,6 +702,8 @@ export class PurchaseFanoutService {
           payload,
           deep_link,
           channel: 'push',
+          // B-648-7: a twin only when the inapp row above was stored.
+          push_twin: inappStored,
         });
       } catch (err) {
         this.logger.warn(

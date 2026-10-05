@@ -14,8 +14,12 @@ import type { CreateNotificationInput } from '../src/notifications/notifications
 
 const createNotificationMock = jest.fn().mockResolvedValue({ id: 'notif-1' });
 
+// C-643-2: device delivery (writes no row).
+const sendPushMock = jest.fn().mockResolvedValue({ sent: true, code: 'sent' });
+
 const mockNotificationsService = {
   createNotification: createNotificationMock,
+  sendPush: sendPushMock,
 } as never;
 
 function calls(): CreateNotificationInput[] {
@@ -26,6 +30,7 @@ function calls(): CreateNotificationInput[] {
 
 beforeEach(() => {
   createNotificationMock.mockClear();
+  sendPushMock.mockClear();
 });
 
 const FIXED_REQUESTED_AT = new Date('2026-06-01T12:00:00Z');
@@ -156,6 +161,40 @@ describe('BookingEmitter', () => {
     for (const w of written) {
       expect(w.deep_link).toBe('tgp://sessions/sess-6');
       expect(w.body.length).toBeLessThanOrEqual(160);
+    }
+    // C-643-2: each reminder is also pushed to the device exactly once,
+    // with the same local-time copy (lock-screen safe for booking kinds).
+    expect(sendPushMock.mock.calls.map((c) => c[0])).toEqual([
+      expect.objectContaining({
+        user_id: 'client-1',
+        kind: NotificationKind.BOOKING_REMINDER_24H,
+        body: written[0].body,
+        deep_link: 'tgp://sessions/sess-6',
+        // B-NOTIF-5: an exactly-once identity per session and start time,
+        // and the booking context the worker re-renders and re-checks.
+        dedupe_key: `${NotificationKind.BOOKING_REMINDER_24H}:sess-6:${FIXED_SCHEDULED_AT.toISOString()}`,
+        context: expect.objectContaining({
+          sessionId: 'sess-6',
+          scheduledAt: FIXED_SCHEDULED_AT.toISOString(),
+        }),
+      }),
+      expect.objectContaining({
+        user_id: 'client-1',
+        kind: NotificationKind.BOOKING_REMINDER_1H,
+        body: written[1].body,
+        deep_link: 'tgp://sessions/sess-6',
+        // B-NOTIF-5: an exactly-once identity per session and start time,
+        // and the booking context the worker re-renders and re-checks.
+        dedupe_key: `${NotificationKind.BOOKING_REMINDER_1H}:sess-6:${FIXED_SCHEDULED_AT.toISOString()}`,
+        context: expect.objectContaining({
+          sessionId: 'sess-6',
+          scheduledAt: FIXED_SCHEDULED_AT.toISOString(),
+        }),
+      }),
+    ]);
+    // B-692-1: no display name is stored with a push.
+    for (const [push] of sendPushMock.mock.calls) {
+      expect(push.context).not.toHaveProperty('otherPartyDisplayName');
     }
   });
 

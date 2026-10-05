@@ -38,9 +38,7 @@ export class CoachAlertEmitter {
   async emit(payload: CoachAlertNotificationPayload): Promise<void> {
     try {
       const { coachId, alertId, alertType, message, severity, clientUserId } = payload;
-      const deepLink = clientUserId
-        ? `tgp://coach/clients/${clientUserId}`
-        : 'tgp://coach/alerts';
+      const deepLink = clientUserId ? `tgp://coach/clients/${clientUserId}` : 'tgp://coach/alerts';
 
       await this.notifications.createNotification({
         user_id: coachId,
@@ -51,22 +49,16 @@ export class CoachAlertEmitter {
         channel: 'inapp',
       });
 
-      // Push via Phase 6B path.
-      await this.notifications.pushToCoach(coachId, {
-        alertId,
-        alertType,
-        severity,
-        message: message.slice(0, 160),
-      });
-
-      // Also create a push Notification row so the read state is tracked.
-      await this.notifications.createNotification({
+      // C-643-2: one device push with quiet lock-screen copy (the alert
+      // text can carry client detail, so it stays in the inbox row), gated
+      // by the coach_alert_push preference. Replaces the raw pushToCoach
+      // call (alert text as the lock-screen title) and the second `push`
+      // inbox row that listed every alert twice.
+      await this.notifications.sendPush({
         user_id: coachId,
         kind: NotificationKind.COACH_ALERT,
         body: message.slice(0, 160),
-        payload: { alertId, alertType, severity, clientUserId },
         deep_link: deepLink,
-        channel: 'push',
       });
     } catch (err) {
       this.logger.warn(
