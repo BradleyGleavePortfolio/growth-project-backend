@@ -1,0 +1,2 @@
+Mon Oct  5 13:20:52 PDT 2026
+[heavy] waiting for a slot: npx jest --ci --runInBand test/roman/audit-opus-ra121.probe.spec.ts

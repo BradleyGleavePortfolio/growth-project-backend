@@ -1,0 +1,168 @@
+[heavy] waiting for a slot: npx jest --ci src/entitlements/dunning/__tests__/aud121OpusL3_353.probe.test.tsx
+  console.warn
+    SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead. See https://github.com/AppAndFlow/react-native-safe-area-context
+
+    [0m [90m 209 |[39m
+     [90m 210 |[39m   [36mreturn[39m (
+    [31m[1m>[22m[39m[90m 211 |[39m     [33m<[39m[33mSafeAreaView[39m style[33m=[39m{styles[33m.[39mroot} testID[33m=[39m[32m"dunning-lockout-screen"[39m[33m>[39m
+     [90m     |[39m      [31m[1m^[22m[39m
+     [90m 212 |[39m       [33m<[39m[33mScrollView[39m
+     [90m 213 |[39m         contentContainerStyle[33m=[39m{styles[33m.[39mcontent}
+     [90m 214 |[39m         refreshControl[33m=[39m{[33m<[39m[33mRefreshControl[39m refreshing[33m=[39m{refreshing} onRefresh[33m=[39m{onRefresh} [33m/[39m[33m>[39m}[0m
+
+      at warn (../../deps/mobile/node_modules/react-native/Libraries/Utilities/warnOnce.js:27:11)
+      at Object.warnOnce [as SafeAreaView] (../../deps/mobile/node_modules/react-native/index.js:101:5)
+      at SafeAreaView (src/entitlements/dunning/DunningLockoutScreen.tsx:211:6)
+      at Object.react_stack_bottom_frame (../../deps/mobile/node_modules/react-reconciler/cjs/react-reconciler.development.js:17596:20)
+      at renderWithHooks (../../deps/mobile/node_modules/react-reconciler/cjs/react-reconciler.development.js:5335:22)
+      at updateFunctionComponent (../../deps/mobile/node_modules/react-reconciler/cjs/react-reconciler.development.js:7720:19)
+      at beginWork (../../deps/mobile/node_modules/react-reconciler/cjs/react-reconciler.development.js:9277:18)
+      at runWithFiberInDEV (../../deps/mobile/node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+      at performUnitOfWork (../../deps/mobile/node_modules/react-reconciler/cjs/react-reconciler.development.js:15273:22)
+      at workLoopSync (../../deps/mobile/node_modules/react-reconciler/cjs/react-reconciler.development.js:15099:41)
+      at renderRootSync (../../deps/mobile/node_modules/react-reconciler/cjs/react-reconciler.development.js:15080:11)
+      at performWorkOnRoot (../../deps/mobile/node_modules/react-reconciler/cjs/react-reconciler.development.js:14165:11)
+      at performWorkOnRootViaSchedulerTask (../../deps/mobile/node_modules/react-reconciler/cjs/react-reconciler.development.js:3335:7)
+      at flushActQueue (../../deps/mobile/node_modules/react/cjs/react.development.js:590:34)
+      at ../../deps/mobile/node_modules/react/cjs/react.development.js:847:21
+
+  console.error
+    You seem to have overlapping act() calls, this is not supported. Be sure to await previous act() calls before making a new one.
+
+      at popActScope (../../deps/mobile/node_modules/react/cjs/react.development.js:556:17)
+      at ../../deps/mobile/node_modules/react/cjs/react.development.js:844:17
+
+  console.error
+    You seem to have overlapping act() calls, this is not supported. Be sure to await previous act() calls before making a new one.
+
+      at popActScope (../../deps/mobile/node_modules/react/cjs/react.development.js:556:17)
+      at ../../deps/mobile/node_modules/react/cjs/react.development.js:844:17
+
+FAIL src/entitlements/dunning/__tests__/aud121OpusL3_353.probe.test.tsx
+  B-353-9 (Opus 121): every dispute surface is true for an inquiry (no claim that money moved)
+    ✓ CONTROL: the failed-payment lockout copy is untouched (22 ms)
+    ✕ PROBE: banner title + body does not claim the bank reversed or took back a payment (2 ms)
+    ✕ PROBE: lockout summary does not claim the bank reversed or took back a payment (1 ms)
+    ✕ PROBE: Update card intro (locked) does not claim the bank reversed or took back a payment (1 ms)
+    ✕ PROBE: Update card intro (waived) does not claim the bank reversed or took back a payment (4 ms)
+  VERIFY B-353-3 / B-353-6 / B-353-7: R-DISPUTE-PAUSE on every dispute surface
+    ✓ banner title + body: no settle / sort it out, no first person, no "!" (1 ms)
+    ✓ lockout summary: no settle / sort it out, no first person, no "!" (1 ms)
+    ✓ lockout next step: no settle / sort it out, no first person, no "!" (1 ms)
+    ✓ Update card intro (locked): no settle / sort it out, no first person, no "!"
+    ✓ Update card intro (waived): no settle / sort it out, no first person, no "!" (7 ms)
+    ✓ End my plan dialog: no settle / sort it out, no first person, no "!" (2 ms)
+    ✓ banner, lockout summary and Update card intro state the three facts and no date (1 ms)
+    ✓ an older envelope (past_due dispute with a grace date) shows no lock date on the banner (1 ms)
+    ✓ the rendered dispute lockout: title "Your access has ended", Message coach first, no Update card, no End my plan, no "Already paid" (484 ms)
+    ✓ CONTROL: the failed-payment lockout keeps Update card and End my plan (10 ms)
+  VERIFY B-353-2: the End my plan confirmation is owned from the moment it opens
+    ✓ accepted after the lockout unmounted: no cancel is sent (22 ms)
+    ✕ accepted after the account changed (generation bump): no cancel is sent (2 ms)
+    ✕ the plan sent is the plan the confirmation showed, not one that loaded since
+
+  ● B-353-9 (Opus 121): every dispute surface is true for an inquiry (no claim that money moved) › PROBE: banner title + body does not claim the bank reversed or took back a payment
+
+    expect(received).not.toMatch(expected)
+
+    Expected pattern: not /\b(revers\w*|took back|taken back|refund\w*|charged back|chargeback)\b/i
+    Received string:      "A payment was reversed Your bank reversed a payment to Avery. For that plan, access has ended and billing is paused. Your coach, Avery, decides whether to restart it. It does not restart on its own or with a new card."
+
+    [0m [90m 112 |[39m
+     [90m 113 |[39m   it[33m.[39meach([33mWHAT_SURFACES[39m)([32m'PROBE: %s does not claim the bank reversed or took back a payment'[39m[33m,[39m (_name[33m,[39m text) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 114 |[39m     expect(text())[33m.[39mnot[33m.[39mtoMatch([33mMONEY_MOVED[39m)[33m;[39m
+     [90m     |[39m                        [31m[1m^[22m[39m
+     [90m 115 |[39m   })[33m;[39m
+     [90m 116 |[39m })[33m;[39m
+     [90m 117 |[39m[0m
+
+      at toMatch (src/entitlements/dunning/__tests__/aud121OpusL3_353.probe.test.tsx:114:24)
+
+  ● B-353-9 (Opus 121): every dispute surface is true for an inquiry (no claim that money moved) › PROBE: lockout summary does not claim the bank reversed or took back a payment
+
+    expect(received).not.toMatch(expected)
+
+    Expected pattern: not /\b(revers\w*|took back|taken back|refund\w*|charged back|chargeback)\b/i
+    Received string:      "Your bank reversed a payment to Avery. Your access has ended and billing is paused. Your coach, Avery, decides whether to restart it. It does not restart on its own or with a new card. Your data is safe and nothing has been deleted."
+
+    [0m [90m 112 |[39m
+     [90m 113 |[39m   it[33m.[39meach([33mWHAT_SURFACES[39m)([32m'PROBE: %s does not claim the bank reversed or took back a payment'[39m[33m,[39m (_name[33m,[39m text) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 114 |[39m     expect(text())[33m.[39mnot[33m.[39mtoMatch([33mMONEY_MOVED[39m)[33m;[39m
+     [90m     |[39m                        [31m[1m^[22m[39m
+     [90m 115 |[39m   })[33m;[39m
+     [90m 116 |[39m })[33m;[39m
+     [90m 117 |[39m[0m
+
+      at toMatch (src/entitlements/dunning/__tests__/aud121OpusL3_353.probe.test.tsx:114:24)
+
+  ● B-353-9 (Opus 121): every dispute surface is true for an inquiry (no claim that money moved) › PROBE: Update card intro (locked) does not claim the bank reversed or took back a payment
+
+    expect(received).not.toMatch(expected)
+
+    Expected pattern: not /\b(revers\w*|took back|taken back|refund\w*|charged back|chargeback)\b/i
+    Received string:      "Your bank took back a payment to Avery. Your access has ended and billing is paused. Your coach, Avery, decides whether to restart it. It does not restart on its own or with a new card."
+
+    [0m [90m 112 |[39m
+     [90m 113 |[39m   it[33m.[39meach([33mWHAT_SURFACES[39m)([32m'PROBE: %s does not claim the bank reversed or took back a payment'[39m[33m,[39m (_name[33m,[39m text) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 114 |[39m     expect(text())[33m.[39mnot[33m.[39mtoMatch([33mMONEY_MOVED[39m)[33m;[39m
+     [90m     |[39m                        [31m[1m^[22m[39m
+     [90m 115 |[39m   })[33m;[39m
+     [90m 116 |[39m })[33m;[39m
+     [90m 117 |[39m[0m
+
+      at toMatch (src/entitlements/dunning/__tests__/aud121OpusL3_353.probe.test.tsx:114:24)
+
+  ● B-353-9 (Opus 121): every dispute surface is true for an inquiry (no claim that money moved) › PROBE: Update card intro (waived) does not claim the bank reversed or took back a payment
+
+    expect(received).not.toMatch(expected)
+
+    Expected pattern: not /\b(revers\w*|took back|taken back|refund\w*|charged back|chargeback)\b/i
+    Received string:      "Your bank took back a payment to Avery. For that plan, access has ended and billing is paused. Your coach, Avery, decides whether to restart it. It does not restart on its own or with a new card."
+
+    [0m [90m 112 |[39m
+     [90m 113 |[39m   it[33m.[39meach([33mWHAT_SURFACES[39m)([32m'PROBE: %s does not claim the bank reversed or took back a payment'[39m[33m,[39m (_name[33m,[39m text) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 114 |[39m     expect(text())[33m.[39mnot[33m.[39mtoMatch([33mMONEY_MOVED[39m)[33m;[39m
+     [90m     |[39m                        [31m[1m^[22m[39m
+     [90m 115 |[39m   })[33m;[39m
+     [90m 116 |[39m })[33m;[39m
+     [90m 117 |[39m[0m
+
+      at toMatch (src/entitlements/dunning/__tests__/aud121OpusL3_353.probe.test.tsx:114:24)
+
+  ● VERIFY B-353-2: the End my plan confirmation is owned from the moment it opens › accepted after the account changed (generation bump): no cancel is sent
+
+    Unable to find an element with testID: dunning-lockout-end-plan
+
+    [0m [90m 181 |[39m     [36mconst[39m props [33m=[39m lockoutProps([33mLOCKED[39m)[33m;[39m
+     [90m 182 |[39m     [36mconst[39m screen [33m=[39m [36mawait[39m render([33m<[39m[33mDunningLockoutScreen[39m {[33m...[39mprops} [33m/[39m[33m>[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 183 |[39m     fireEvent[33m.[39mpress(screen[33m.[39mgetByTestId([32m'dunning-lockout-end-plan'[39m))[33m;[39m
+     [90m     |[39m                            [31m[1m^[22m[39m
+     [90m 184 |[39m     expect(calls)[33m.[39mtoHaveLength([35m1[39m)[33m;[39m
+     [90m 185 |[39m     [90m// the sign-out / sign-in identity boundary (authEvents 'logout' calls retire())[39m
+     [90m 186 |[39m     dunningLockoutStore[33m.[39mretire()[33m;[39m[0m
+
+      at Object.getByTestId (src/entitlements/dunning/__tests__/aud121OpusL3_353.probe.test.tsx:183:28)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+  ● VERIFY B-353-2: the End my plan confirmation is owned from the moment it opens › the plan sent is the plan the confirmation showed, not one that loaded since
+
+    Unable to find an element with testID: dunning-lockout-end-plan
+
+    [0m [90m 193 |[39m     [36mconst[39m props [33m=[39m lockoutProps([33mLOCKED[39m)[33m;[39m
+     [90m 194 |[39m     [36mconst[39m screen [33m=[39m [36mawait[39m render([33m<[39m[33mDunningLockoutScreen[39m {[33m...[39mprops} [33m/[39m[33m>[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 195 |[39m     fireEvent[33m.[39mpress(screen[33m.[39mgetByTestId([32m'dunning-lockout-end-plan'[39m))[33m;[39m
+     [90m     |[39m                            [31m[1m^[22m[39m
+     [90m 196 |[39m     [36mawait[39m screen[33m.[39mrerender([33m<[39m[33mDunningLockoutScreen[39m {[33m...[39mprops} status[33m=[39m{{ [33m...[39m[33mLOCKED[39m[33m,[39m purchase_id[33m:[39m [32m'p2'[39m }} [33m/[39m[33m>[39m)[33m;[39m
+     [90m 197 |[39m     calls[[35m0[39m][33m.[39mfind((b) [33m=>[39m b[33m.[39mtext [33m===[39m [32m'End my plan'[39m)[33m?[39m[33m.[39monPress[33m?[39m[33m.[39m()[33m;[39m
+     [90m 198 |[39m     expect(props[33m.[39monEndPlan)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)[33m;[39m[0m
+
+      at Object.getByTestId (src/entitlements/dunning/__tests__/aud121OpusL3_353.probe.test.tsx:195:28)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+Test Suites: 1 failed, 1 total
+Tests:       6 failed, 12 passed, 18 total
+Snapshots:   0 total
+Time:        3.799 s, estimated 13 s
+Ran all test suites matching /src\/entitlements\/dunning\/__tests__\/aud121OpusL3_353.probe.test.tsx/i.

@@ -1,1 +1,224 @@
 [heavy] waiting for a slot: npx jest --runInBand --forceExit --runTestsByPath src/services/__tests__/secureStorage.migration.fence.test.ts src/services/__tests__/sessionFence.refresh.test.ts src/services/__tests__/secureStorage.test.ts src/services/__tests__/authActions.signOut.fence.test.ts src/services/__tests__/api.refresh.test.ts src/services/__tests__/accountBinding.transport.test.ts
+PASS src/services/__tests__/sessionFence.refresh.test.ts (36.073 s)
+PASS src/services/__tests__/api.refresh.test.ts
+PASS src/services/__tests__/accountBinding.transport.test.ts
+PASS src/services/__tests__/secureStorage.migration.fence.test.ts
+PASS src/services/__tests__/secureStorage.test.ts
+PASS src/services/__tests__/authActions.signOut.fence.test.ts
+  ● Console
+
+    console.warn
+      [AuthActions] clearUserScopedKeys: storage sweep failed TypeError: storage.getAllKeys is not a function
+          at getAllKeys (/home/user/workspace/wt/B-SPLIT-ROMANCHATS-121-1/src/services/authActions.ts:204:45)
+          at Generator.next (<anonymous>)
+          at asyncGeneratorStep (/home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+          at _next (/home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+          at /home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+          at new Promise (<anonymous>)
+          at /home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+          at _loop (/home/user/workspace/wt/B-SPLIT-ROMANCHATS-121-1/src/services/authActions.ts:213:8)
+          at _loop.next (<anonymous>)
+          at _loop (/home/user/workspace/wt/B-SPLIT-ROMANCHATS-121-1/src/services/authActions.ts:195:42)
+          at Generator.next (<anonymous>)
+          at asyncGeneratorStep (/home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+          at _next (/home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+          at /home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+          at new Promise (<anonymous>)
+          at /home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+          at apply (/home/user/workspace/wt/B-SPLIT-ROMANCHATS-121-1/src/services/authActions.ts:236:2)
+          at apply (/home/user/workspace/wt/B-SPLIT-ROMANCHATS-121-1/src/services/authActions.ts:191:42)
+          at clearUserScopedKeys (/home/user/workspace/wt/B-SPLIT-ROMANCHATS-121-1/src/services/authActions.ts:428:7)
+          at Generator.next (<anonymous>)
+          at asyncGeneratorStep (/home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+          at _next (/home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+    [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+     [90m 17 |[39m   [36mif[39m (__DEV__) {
+    [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+     [90m    |[39m                   [31m[1m^[22m[39m
+     [90m 19 |[39m   }
+     [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+     [90m 21 |[39m }[0m
+
+      at log (src/utils/logger.ts:18:19)
+      at Object.log [as warn] (src/utils/logger.ts:25:50)
+      at warn (src/services/authActions.ts:211:18)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+      at ../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+      at ../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+      at _loop (src/services/authActions.ts:213:8)
+          at _loop.next (<anonymous>)
+      at _loop (src/services/authActions.ts:195:42)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+      at ../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+      at ../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+      at apply (src/services/authActions.ts:236:2)
+      at apply (src/services/authActions.ts:191:42)
+      at clearUserScopedKeys (src/services/authActions.ts:428:7)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+    console.warn
+      [AuthActions] clearUserScopedKeys: storage sweep failed TypeError: storage.getAllKeys is not a function
+          at getAllKeys (/home/user/workspace/wt/B-SPLIT-ROMANCHATS-121-1/src/services/authActions.ts:204:45)
+          at Generator.next (<anonymous>)
+          at asyncGeneratorStep (/home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+          at _next (/home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+          at /home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+          at new Promise (<anonymous>)
+          at /home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+          at _loop (/home/user/workspace/wt/B-SPLIT-ROMANCHATS-121-1/src/services/authActions.ts:213:8)
+          at _loop.next (<anonymous>)
+          at _loop (/home/user/workspace/wt/B-SPLIT-ROMANCHATS-121-1/src/services/authActions.ts:195:42)
+          at Generator.next (<anonymous>)
+          at asyncGeneratorStep (/home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+          at _next (/home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+          at /home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+          at new Promise (<anonymous>)
+          at /home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+          at apply (/home/user/workspace/wt/B-SPLIT-ROMANCHATS-121-1/src/services/authActions.ts:236:2)
+          at apply (/home/user/workspace/wt/B-SPLIT-ROMANCHATS-121-1/src/services/authActions.ts:191:42)
+          at clearUserScopedKeys (/home/user/workspace/wt/B-SPLIT-ROMANCHATS-121-1/src/services/authActions.ts:428:7)
+          at Generator.next (<anonymous>)
+          at asyncGeneratorStep (/home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+          at _next (/home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+    [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+     [90m 17 |[39m   [36mif[39m (__DEV__) {
+    [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+     [90m    |[39m                   [31m[1m^[22m[39m
+     [90m 19 |[39m   }
+     [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+     [90m 21 |[39m }[0m
+
+      at log (src/utils/logger.ts:18:19)
+      at Object.log [as warn] (src/utils/logger.ts:25:50)
+      at warn (src/services/authActions.ts:211:18)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+      at ../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+      at ../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+      at _loop (src/services/authActions.ts:213:8)
+          at _loop.next (<anonymous>)
+      at _loop (src/services/authActions.ts:195:42)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+      at ../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+      at ../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+      at apply (src/services/authActions.ts:236:2)
+      at apply (src/services/authActions.ts:191:42)
+      at clearUserScopedKeys (src/services/authActions.ts:428:7)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+    console.warn
+      [AuthActions] clearUserScopedKeys: storage sweep failed TypeError: storage.getAllKeys is not a function
+          at getAllKeys (/home/user/workspace/wt/B-SPLIT-ROMANCHATS-121-1/src/services/authActions.ts:204:45)
+          at Generator.next (<anonymous>)
+          at asyncGeneratorStep (/home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+          at _next (/home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+          at /home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+          at new Promise (<anonymous>)
+          at /home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+          at _loop (/home/user/workspace/wt/B-SPLIT-ROMANCHATS-121-1/src/services/authActions.ts:213:8)
+          at _loop.next (<anonymous>)
+          at _loop (/home/user/workspace/wt/B-SPLIT-ROMANCHATS-121-1/src/services/authActions.ts:195:42)
+          at Generator.next (<anonymous>)
+          at asyncGeneratorStep (/home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+          at _next (/home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+          at /home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+          at new Promise (<anonymous>)
+          at /home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+          at apply (/home/user/workspace/wt/B-SPLIT-ROMANCHATS-121-1/src/services/authActions.ts:191:42)
+          at clearUserScopedKeys (/home/user/workspace/wt/B-SPLIT-ROMANCHATS-121-1/src/services/authActions.ts:428:7)
+          at Generator.next (<anonymous>)
+          at asyncGeneratorStep (/home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+          at _next (/home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+    [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+     [90m 17 |[39m   [36mif[39m (__DEV__) {
+    [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+     [90m    |[39m                   [31m[1m^[22m[39m
+     [90m 19 |[39m   }
+     [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+     [90m 21 |[39m }[0m
+
+      at log (src/utils/logger.ts:18:19)
+      at Object.log [as warn] (src/utils/logger.ts:25:50)
+      at warn (src/services/authActions.ts:211:18)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+      at ../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+      at ../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+      at _loop (src/services/authActions.ts:213:8)
+          at _loop.next (<anonymous>)
+      at _loop (src/services/authActions.ts:195:42)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+      at ../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+      at ../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+      at apply (src/services/authActions.ts:191:42)
+      at clearUserScopedKeys (src/services/authActions.ts:428:7)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+    console.warn
+      [AuthActions] clearUserScopedKeys: storage sweep failed TypeError: storage.getAllKeys is not a function
+          at getAllKeys (/home/user/workspace/wt/B-SPLIT-ROMANCHATS-121-1/src/services/authActions.ts:204:45)
+          at Generator.next (<anonymous>)
+          at asyncGeneratorStep (/home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+          at _next (/home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+          at /home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+          at new Promise (<anonymous>)
+          at /home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+          at _loop (/home/user/workspace/wt/B-SPLIT-ROMANCHATS-121-1/src/services/authActions.ts:213:8)
+          at _loop.next (<anonymous>)
+          at _loop (/home/user/workspace/wt/B-SPLIT-ROMANCHATS-121-1/src/services/authActions.ts:195:42)
+          at Generator.next (<anonymous>)
+          at asyncGeneratorStep (/home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+          at _next (/home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+          at /home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+          at new Promise (<anonymous>)
+          at /home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+          at apply (/home/user/workspace/wt/B-SPLIT-ROMANCHATS-121-1/src/services/authActions.ts:191:42)
+          at clearUserScopedKeys (/home/user/workspace/wt/B-SPLIT-ROMANCHATS-121-1/src/services/authActions.ts:428:7)
+          at Generator.next (<anonymous>)
+          at asyncGeneratorStep (/home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+          at _next (/home/user/workspace/deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+    [0m [90m 16 |[39m [36mfunction[39m log(level[33m:[39m [33mLogLevel[39m[33m,[39m context[33m:[39m string[33m,[39m [33m...[39margs[33m:[39m unknown[]) {
+     [90m 17 |[39m   [36mif[39m (__DEV__) {
+    [31m[1m>[22m[39m[90m 18 |[39m     console[level]([32m`[${context}]`[39m[33m,[39m [33m...[39margs)[33m;[39m
+     [90m    |[39m                   [31m[1m^[22m[39m
+     [90m 19 |[39m   }
+     [90m 20 |[39m   [90m// In production, could forward to Sentry breadcrumbs here[39m
+     [90m 21 |[39m }[0m
+
+      at log (src/utils/logger.ts:18:19)
+      at Object.log [as warn] (src/utils/logger.ts:25:50)
+      at warn (src/services/authActions.ts:211:18)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+      at ../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+      at ../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+      at _loop (src/services/authActions.ts:213:8)
+          at _loop.next (<anonymous>)
+      at _loop (src/services/authActions.ts:195:42)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+      at ../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+      at ../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+      at apply (src/services/authActions.ts:191:42)
+      at clearUserScopedKeys (src/services/authActions.ts:428:7)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+
+Test Suites: 6 passed, 6 total
+Tests:       50 passed, 50 total
+Snapshots:   0 total
+Time:        79.628 s
+Ran all test suites within paths "src/services/__tests__/secureStorage.migration.fence.test.ts", "src/services/__tests__/sessionFence.refresh.test.ts", "src/services/__tests__/secureStorage.test.ts", "src/services/__tests__/authActions.signOut.fence.test.ts", "src/services/__tests__/api.refresh.test.ts", "src/services/__tests__/accountBinding.transport.test.ts".
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

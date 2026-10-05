@@ -1,0 +1,377 @@
+[heavy] waiting for a slot: npx jest test/broadcasts/dispatcher-delivery.spec.ts --runInBand
+[33m[Nest] 19029  - [39m10/05/2026, 8:29:20 PM [33m   WARN[39m [38;5;3m[BroadcastDispatcherService] [39m[33mbroadcast delivery d1 attempt 0 failed: db down[39m
+[31m[Nest] 19029  - [39m10/05/2026, 8:29:20 PM [31m  ERROR[39m [38;5;3m[BroadcastDispatcherService] [39m[31mbroadcast tick failed: Cannot read properties of undefined (reading 'findMany')[39m
+FAIL test/broadcasts/dispatcher-delivery.spec.ts (135 MB heap size)
+  BroadcastDispatcherService.deliverOne
+    ✓ defers a non-urgent delivery to 08:00 in the RECIPIENT time zone (New York) (7 ms)
+    ✓ the same instant delivers to a recipient whose local time is daytime (Tokyo) (8 ms)
+    ✓ early morning (06:59 Tokyo) defers to 08:00 the same local day (2 ms)
+    ✓ urgent broadcasts bypass quiet hours (3 ms)
+    ✓ a muted recipient gets the message silently (no push) (2 ms)
+    ✓ a block in either direction skips without writing a message (1 ms)
+    ✓ a client who left the roster is skipped (1 ms)
+    ✓ a lost lease rolls the message back and never pushes (10 ms)
+    ✓ a canceled broadcast skips its remaining deliveries (5 ms)
+    ✕ B-659-1: an edit after the claim never changes the copy; the run payload is sent (4 ms)
+    ✕ B-659-1: urgency is the run snapshot too (an edit to urgent does not skip quiet hours) (1 ms)
+    ✕ B-659-8: a cancel committed during the preference lookup writes no message, card, realtime or push (2 ms)
+    ✕ B-659-8: a pause committed before the transaction parks the copy without spending an attempt (1 ms)
+    ✕ B-659-8: the fence reads the broadcast row FOR SHARE before the message insert (2 ms)
+    ✕ A-659-7: a client reassigned away from the author while deferred gets no copy (1 ms)
+    ✕ A-659-7: an author who left the team sends nothing (2 ms)
+    ✕ A-659-7: a removed author (author_user_id null) is never replaced by the head coach (1 ms)
+    ✕ B-659-9: an OFF flip between await points stops the write and parks without spending an attempt (1 ms)
+    ✕ B-659-9: with the flag off a delivery is not even claimed (1 ms)
+    ✕ B-659-9: turning it back on resumes the parked delivery, once (1 ms)
+    ✕ C-659-3: a claim, a quiet-hours deferral and a pause spend no attempt (2 ms)
+    ✕ C-659-3: a failed send counts one attempt and fails for good at the limit (4 ms)
+  BroadcastDispatcherService.tick (B-659-9)
+    ✕ an OFF flip during an enabled tick stops every later phase (real cron entry) (1 ms)
+    ✕ an OFF flip during fan-out never reaches delivery (2 ms)
+  personalize
+    ✓ uses the first name or a warm fallback
+  claimDue / fanOutRun (B-659-1, A-659-7)
+    ✕ the claim freezes the payload on the run and pins the definition it read (updated_at) (3 ms)
+    ✕ fan-out evaluates the audience frozen on the run, not the edited definition (4 ms)
+    ✕ fan-out of a run whose author was removed fails closed, never as the head coach (1 ms)
+
+  ● BroadcastDispatcherService.deliverOne › B-659-1: an edit after the claim never changes the copy; the run payload is sent
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "Morning Sarah, new block starts Monday."
+    Received: "EDITED Sarah"
+
+    [0m [90m 243 |[39m     expect([36mawait[39m h[33m.[39msvc[33m.[39mdeliverOne([32m'd1'[39m[33m,[39m lateNy))[33m.[39mtoBe([32m'delivered'[39m)[33m;[39m
+     [90m 244 |[39m     expect(h[33m.[39mcreated)[33m.[39mtoHaveLength([35m1[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 245 |[39m     expect(h[33m.[39mcreated[[35m0[39m][33m.[39mbody)[33m.[39mtoBe([32m'Morning Sarah, new block starts Monday.'[39m)[33m;[39m
+     [90m     |[39m                               [31m[1m^[22m[39m
+     [90m 246 |[39m   })[33m;[39m
+     [90m 247 |[39m
+     [90m 248 |[39m   it([32m'B-659-1: urgency is the run snapshot too (an edit to urgent does not skip quiet hours)'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/broadcasts/dispatcher-delivery.spec.ts:245:31)
+
+  ● BroadcastDispatcherService.deliverOne › B-659-1: urgency is the run snapshot too (an edit to urgent does not skip quiet hours)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "deferred"
+    Received: "delivered"
+
+    [0m [90m 248 |[39m   it([32m'B-659-1: urgency is the run snapshot too (an edit to urgent does not skip quiet hours)'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 249 |[39m     [36mconst[39m h [33m=[39m harness({ edited[33m:[39m { body[33m:[39m [33mPAYLOAD[39m[33m.[39mbody[33m,[39m urgent[33m:[39m [36mtrue[39m } })[33m;[39m
+    [31m[1m>[22m[39m[90m 250 |[39m     expect([36mawait[39m h[33m.[39msvc[33m.[39mdeliverOne([32m'd1'[39m[33m,[39m lateNy))[33m.[39mtoBe([32m'deferred'[39m)[33m;[39m
+     [90m     |[39m                                                  [31m[1m^[22m[39m
+     [90m 251 |[39m     expect(h[33m.[39mcreated)[33m.[39mtoHaveLength([35m0[39m)[33m;[39m
+     [90m 252 |[39m   })[33m;[39m
+     [90m 253 |[39m[0m
+
+      at Object.<anonymous> (test/broadcasts/dispatcher-delivery.spec.ts:250:50)
+
+  ● BroadcastDispatcherService.deliverOne › B-659-8: a cancel committed during the preference lookup writes no message, card, realtime or push
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "skipped_ineligible"
+    Received: "delivered"
+
+    [0m [90m 256 |[39m   it([32m'B-659-8: a cancel committed during the preference lookup writes no message, card, realtime or push'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 257 |[39m     [36mconst[39m h [33m=[39m harness({ prefs[33m:[39m tokyo[33m,[39m duringPrefs[33m:[39m (live) [33m=>[39m (live[33m.[39mstatus [33m=[39m [32m'canceled'[39m) })[33m;[39m
+    [31m[1m>[22m[39m[90m 258 |[39m     expect([36mawait[39m h[33m.[39msvc[33m.[39mdeliverOne([32m'd1'[39m[33m,[39m lateNy))[33m.[39mtoBe([32m'skipped_ineligible'[39m)[33m;[39m
+     [90m     |[39m                                                  [31m[1m^[22m[39m
+     [90m 259 |[39m     expect(h[33m.[39mcreated)[33m.[39mtoHaveLength([35m0[39m)[33m;[39m
+     [90m 260 |[39m     expect(h[33m.[39mcards)[33m.[39mtoHaveLength([35m0[39m)[33m;[39m
+     [90m 261 |[39m     expect(h[33m.[39msupabase[33m.[39mbroadcastNewMessage)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m[0m
+
+      at Object.<anonymous> (test/broadcasts/dispatcher-delivery.spec.ts:258:50)
+
+  ● BroadcastDispatcherService.deliverOne › B-659-8: a pause committed before the transaction parks the copy without spending an attempt
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "parked"
+    Received: "delivered"
+
+    [0m [90m 269 |[39m   it([32m'B-659-8: a pause committed before the transaction parks the copy without spending an attempt'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 270 |[39m     [36mconst[39m h [33m=[39m harness({ prefs[33m:[39m tokyo[33m,[39m duringPrefs[33m:[39m (live) [33m=>[39m (live[33m.[39mstatus [33m=[39m [32m'paused'[39m) })[33m;[39m
+    [31m[1m>[22m[39m[90m 271 |[39m     expect([36mawait[39m h[33m.[39msvc[33m.[39mdeliverOne([32m'd1'[39m[33m,[39m lateNy))[33m.[39mtoBe([32m'parked'[39m)[33m;[39m
+     [90m     |[39m                                                  [31m[1m^[22m[39m
+     [90m 272 |[39m     expect(h[33m.[39mcreated)[33m.[39mtoHaveLength([35m0[39m)[33m;[39m
+     [90m 273 |[39m     expect(h[33m.[39memitter[33m.[39memit)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+     [90m 274 |[39m     expect(lastOf(h[33m.[39msettles))[33m.[39mnot[33m.[39mtoHaveProperty([32m'attempts'[39m)[33m;[39m[0m
+
+      at Object.<anonymous> (test/broadcasts/dispatcher-delivery.spec.ts:271:50)
+
+  ● BroadcastDispatcherService.deliverOne › B-659-8: the fence reads the broadcast row FOR SHARE before the message insert
+
+    TypeError: expect(received).toMatch(expected)
+
+    Matcher error: received value must be a string
+
+    Received has value: undefined
+
+    [0m [90m 280 |[39m     expect([36mawait[39m h[33m.[39msvc[33m.[39mdeliverOne([32m'd1'[39m[33m,[39m lateNy))[33m.[39mtoBe([32m'delivered'[39m)[33m;[39m
+     [90m 281 |[39m     [36mconst[39m sql [33m=[39m h[33m.[39mtx[33m.[39m$queryRaw[33m.[39mmock[33m.[39mcalls[33m.[39mmap((c) [33m=>[39m (c[[35m0[39m] [36mas[39m [33mTemplateStringsArray[39m)[33m.[39mjoin([32m'?'[39m))[33m;[39m
+    [31m[1m>[22m[39m[90m 282 |[39m     expect(sql[[35m0[39m])[33m.[39mtoMatch([35m/FROM "coach_broadcasts" WHERE "id" = \? FOR SHARE/[39m)[33m;[39m
+     [90m     |[39m                    [31m[1m^[22m[39m
+     [90m 283 |[39m   })[33m;[39m
+     [90m 284 |[39m
+     [90m 285 |[39m   [90m// ---- A-659-7: the author's authority is re-checked at send time -----------[39m[0m
+
+      at Object.<anonymous> (test/broadcasts/dispatcher-delivery.spec.ts:282:20)
+
+  ● BroadcastDispatcherService.deliverOne › A-659-7: a client reassigned away from the author while deferred gets no copy
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "skipped_ineligible"
+    Received: "delivered"
+
+    [0m [90m 287 |[39m   it([32m'A-659-7: a client reassigned away from the author while deferred gets no copy'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 288 |[39m     [36mconst[39m h [33m=[39m harness({ prefs[33m:[39m tokyo[33m,[39m refusal[33m:[39m [32m'author_not_assigned'[39m })[33m;[39m
+    [31m[1m>[22m[39m[90m 289 |[39m     expect([36mawait[39m h[33m.[39msvc[33m.[39mdeliverOne([32m'd1'[39m[33m,[39m lateNy))[33m.[39mtoBe([32m'skipped_ineligible'[39m)[33m;[39m
+     [90m     |[39m                                                  [31m[1m^[22m[39m
+     [90m 290 |[39m     expect(h[33m.[39mlockSendAuthority)[33m.[39mtoHaveBeenCalledWith(h[33m.[39mtx[33m,[39m [32m'coach-a'[39m[33m,[39m [32m'coach-a'[39m[33m,[39m [32m'client-1'[39m)[33m;[39m
+     [90m 291 |[39m     expect(h[33m.[39mcreated)[33m.[39mtoHaveLength([35m0[39m)[33m;[39m
+     [90m 292 |[39m     expect(h[33m.[39msupabase[33m.[39mbroadcastNewMessage)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m[0m
+
+      at Object.<anonymous> (test/broadcasts/dispatcher-delivery.spec.ts:289:50)
+
+  ● BroadcastDispatcherService.deliverOne › A-659-7: an author who left the team sends nothing
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "skipped_ineligible"
+    Received: "delivered"
+
+    [0m [90m 297 |[39m   it([32m'A-659-7: an author who left the team sends nothing'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 298 |[39m     [36mconst[39m h [33m=[39m harness({ prefs[33m:[39m tokyo[33m,[39m refusal[33m:[39m [32m'author_not_in_tenant'[39m })[33m;[39m
+    [31m[1m>[22m[39m[90m 299 |[39m     expect([36mawait[39m h[33m.[39msvc[33m.[39mdeliverOne([32m'd1'[39m[33m,[39m lateNy))[33m.[39mtoBe([32m'skipped_ineligible'[39m)[33m;[39m
+     [90m     |[39m                                                  [31m[1m^[22m[39m
+     [90m 300 |[39m     expect(h[33m.[39mcreated)[33m.[39mtoHaveLength([35m0[39m)[33m;[39m
+     [90m 301 |[39m   })[33m;[39m
+     [90m 302 |[39m[0m
+
+      at Object.<anonymous> (test/broadcasts/dispatcher-delivery.spec.ts:299:50)
+
+  ● BroadcastDispatcherService.deliverOne › A-659-7: a removed author (author_user_id null) is never replaced by the head coach
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "skipped_ineligible"
+    Received: "delivered"
+
+    [0m [90m 303 |[39m   it([32m'A-659-7: a removed author (author_user_id null) is never replaced by the head coach'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 304 |[39m     [36mconst[39m h [33m=[39m harness({ prefs[33m:[39m tokyo[33m,[39m authorId[33m:[39m [36mnull[39m })[33m;[39m
+    [31m[1m>[22m[39m[90m 305 |[39m     expect([36mawait[39m h[33m.[39msvc[33m.[39mdeliverOne([32m'd1'[39m[33m,[39m lateNy))[33m.[39mtoBe([32m'skipped_ineligible'[39m)[33m;[39m
+     [90m     |[39m                                                  [31m[1m^[22m[39m
+     [90m 306 |[39m     expect(h[33m.[39mcreated)[33m.[39mtoHaveLength([35m0[39m)[33m;[39m
+     [90m 307 |[39m     expect(lastOf(h[33m.[39msettles))[33m.[39mtoMatchObject({ failure_code[33m:[39m [32m'author_removed'[39m })[33m;[39m
+     [90m 308 |[39m   })[33m;[39m[0m
+
+      at Object.<anonymous> (test/broadcasts/dispatcher-delivery.spec.ts:305:50)
+
+  ● BroadcastDispatcherService.deliverOne › B-659-9: an OFF flip between await points stops the write and parks without spending an attempt
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "parked"
+    Received: "delivered"
+
+    [0m [90m 316 |[39m       duringPrefs[33m:[39m () [33m=>[39m (process[33m.[39menv[[33mFLAG[39m] [33m=[39m [32m'false'[39m)[33m,[39m
+     [90m 317 |[39m     })[33m;[39m
+    [31m[1m>[22m[39m[90m 318 |[39m     expect([36mawait[39m h[33m.[39msvc[33m.[39mdeliverOne([32m'd1'[39m[33m,[39m lateNy))[33m.[39mtoBe([32m'parked'[39m)[33m;[39m
+     [90m     |[39m                                                  [31m[1m^[22m[39m
+     [90m 319 |[39m     expect(h[33m.[39mcreated)[33m.[39mtoHaveLength([35m0[39m)[33m;[39m
+     [90m 320 |[39m     expect(h[33m.[39memitter[33m.[39memit)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+     [90m 321 |[39m     expect(lastOf(h[33m.[39msettles))[33m.[39mnot[33m.[39mtoHaveProperty([32m'attempts'[39m)[33m;[39m[0m
+
+      at Object.<anonymous> (test/broadcasts/dispatcher-delivery.spec.ts:318:50)
+
+  ● BroadcastDispatcherService.deliverOne › B-659-9: with the flag off a delivery is not even claimed
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "parked"
+    Received: "delivered"
+
+    [0m [90m 326 |[39m     process[33m.[39menv[[33mFLAG[39m] [33m=[39m [32m'false'[39m[33m;[39m
+     [90m 327 |[39m     [36mconst[39m h [33m=[39m harness({ prefs[33m:[39m tokyo[33m,[39m urgent[33m:[39m [36mtrue[39m })[33m;[39m
+    [31m[1m>[22m[39m[90m 328 |[39m     expect([36mawait[39m h[33m.[39msvc[33m.[39mdeliverOne([32m'd1'[39m[33m,[39m lateNy))[33m.[39mtoBe([32m'parked'[39m)[33m;[39m
+     [90m     |[39m                                                  [31m[1m^[22m[39m
+     [90m 329 |[39m     expect(h[33m.[39mclaims)[33m.[39mtoHaveLength([35m0[39m)[33m;[39m
+     [90m 330 |[39m     expect(h[33m.[39mcreated)[33m.[39mtoHaveLength([35m0[39m)[33m;[39m
+     [90m 331 |[39m   })[33m;[39m[0m
+
+      at Object.<anonymous> (test/broadcasts/dispatcher-delivery.spec.ts:328:50)
+
+  ● BroadcastDispatcherService.deliverOne › B-659-9: turning it back on resumes the parked delivery, once
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "parked"
+    Received: "delivered"
+
+    [0m [90m 337 |[39m       duringPrefs[33m:[39m () [33m=>[39m (process[33m.[39menv[[33mFLAG[39m] [33m=[39m [32m'false'[39m)[33m,[39m
+     [90m 338 |[39m     })[33m;[39m
+    [31m[1m>[22m[39m[90m 339 |[39m     expect([36mawait[39m h[33m.[39msvc[33m.[39mdeliverOne([32m'd1'[39m[33m,[39m lateNy))[33m.[39mtoBe([32m'parked'[39m)[33m;[39m
+     [90m     |[39m                                                  [31m[1m^[22m[39m
+     [90m 340 |[39m     process[33m.[39menv[[33mFLAG[39m] [33m=[39m [32m'true'[39m[33m;[39m
+     [90m 341 |[39m     [36mconst[39m again [33m=[39m harness({ prefs[33m:[39m tokyo[33m,[39m urgent[33m:[39m [36mtrue[39m })[33m;[39m
+     [90m 342 |[39m     expect([36mawait[39m again[33m.[39msvc[33m.[39mdeliverOne([32m'd1'[39m[33m,[39m lateNy))[33m.[39mtoBe([32m'delivered'[39m)[33m;[39m[0m
+
+      at Object.<anonymous> (test/broadcasts/dispatcher-delivery.spec.ts:339:50)
+
+  ● BroadcastDispatcherService.deliverOne › C-659-3: a claim, a quiet-hours deferral and a pause spend no attempt
+
+    expect(received).not.toHaveProperty(path)
+
+    Expected path: not "attempts"
+
+    Received value: {"increment": 1}
+
+    [0m [90m 349 |[39m     [36mconst[39m h [33m=[39m harness({})[33m;[39m
+     [90m 350 |[39m     expect([36mawait[39m h[33m.[39msvc[33m.[39mdeliverOne([32m'd1'[39m[33m,[39m lateNy))[33m.[39mtoBe([32m'deferred'[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 351 |[39m     expect(h[33m.[39mclaims[[35m0[39m])[33m.[39mnot[33m.[39mtoHaveProperty([32m'attempts'[39m)[33m;[39m
+     [90m     |[39m                             [31m[1m^[22m[39m
+     [90m 352 |[39m     expect(h[33m.[39msettles[[35m0[39m])[33m.[39mnot[33m.[39mtoHaveProperty([32m'attempts'[39m)[33m;[39m
+     [90m 353 |[39m   })[33m;[39m
+     [90m 354 |[39m[0m
+
+      at Object.<anonymous> (test/broadcasts/dispatcher-delivery.spec.ts:351:29)
+
+  ● BroadcastDispatcherService.deliverOne › C-659-3: a failed send counts one attempt and fails for good at the limit
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 2
+
+      Object {
+    -   "attempts": 1,
+    +   "deliver_after": 2027-01-15T03:31:00.000Z,
+    +   "lease_until": null,
+      }
+
+    [0m [90m 356 |[39m     [36mconst[39m h [33m=[39m harness({ prefs[33m:[39m tokyo[33m,[39m sendError[33m:[39m [36mnew[39m [33mError[39m([32m'db down'[39m) })[33m;[39m
+     [90m 357 |[39m     expect([36mawait[39m h[33m.[39msvc[33m.[39mdeliverOne([32m'd1'[39m[33m,[39m lateNy))[33m.[39mtoBe([32m'retry'[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 358 |[39m     expect(lastOf(h[33m.[39msettles))[33m.[39mtoMatchObject({ attempts[33m:[39m [35m1[39m })[33m;[39m
+     [90m     |[39m                               [31m[1m^[22m[39m
+     [90m 359 |[39m     [36mconst[39m last [33m=[39m harness({ prefs[33m:[39m tokyo[33m,[39m attempts[33m:[39m [35m4[39m[33m,[39m sendError[33m:[39m [36mnew[39m [33mError[39m([32m'db down'[39m) })[33m;[39m
+     [90m 360 |[39m     expect([36mawait[39m last[33m.[39msvc[33m.[39mdeliverOne([32m'd1'[39m[33m,[39m lateNy))[33m.[39mtoBe([32m'failed'[39m)[33m;[39m
+     [90m 361 |[39m     expect(lastOf(last[33m.[39msettles))[33m.[39mtoMatchObject({ status[33m:[39m [32m'failed'[39m[33m,[39m attempts[33m:[39m [35m5[39m })[33m;[39m[0m
+
+      at Object.<anonymous> (test/broadcasts/dispatcher-delivery.spec.ts:358:31)
+
+  ● BroadcastDispatcherService.tick (B-659-9) › an OFF flip during an enabled tick stops every later phase (real cron entry)
+
+    expect(jest.fn()).not.toHaveBeenCalled()
+
+    Expected number of calls: 0
+    Received number of calls: 1
+
+    1: 2026-10-05T20:29:20.934Z
+
+    [0m [90m 385 |[39m     [36mawait[39m svc[33m.[39monTick()[33m;[39m
+     [90m 386 |[39m     expect(claim)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 387 |[39m     expect(fan)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 388 |[39m     expect(deliver)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+     [90m 389 |[39m     expect(finalize)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+     [90m 390 |[39m   })[33m;[39m[0m
+
+      at Object.<anonymous> (test/broadcasts/dispatcher-delivery.spec.ts:387:21)
+
+  ● BroadcastDispatcherService.tick (B-659-9) › an OFF flip during fan-out never reaches delivery
+
+    TypeError: Cannot read properties of undefined (reading 'findMany')
+
+    [0m [90m 263 |[39m
+     [90m 264 |[39m   [36masync[39m deliverDue(now[33m:[39m [33mDate[39m)[33m:[39m [33mPromise[39m[33m<[39m[33mRecord[39m[33m<[39m[33mDeliveryOutcome[39m[33m,[39m number[33m>>[39m {
+    [31m[1m>[22m[39m[90m 265 |[39m     [36mconst[39m due [33m=[39m [36mawait[39m [36mthis[39m[33m.[39mprisma[33m.[39mcoachBroadcastDelivery[33m.[39mfindMany({
+     [90m     |[39m                                                          [31m[1m^[22m[39m
+     [90m 266 |[39m       where[33m:[39m {
+     [90m 267 |[39m         status[33m:[39m { [36min[39m[33m:[39m [[32m'pending'[39m[33m,[39m [32m'deferred'[39m] }[33m,[39m
+     [90m 268 |[39m         deliver_after[33m:[39m { lte[33m:[39m now }[33m,[39m[0m
+
+      at BroadcastDispatcherService.deliverDue (src/broadcasts/broadcast-dispatcher.service.ts:265:58)
+      at BroadcastDispatcherService.tick (src/broadcasts/broadcast-dispatcher.service.ts:107:16)
+      at Object.<anonymous> (test/broadcasts/dispatcher-delivery.spec.ts:400:5)
+
+  ● claimDue / fanOutRun (B-659-1, A-659-7) › the claim freezes the payload on the run and pins the definition it read (updated_at)
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 0
+
+      Object {
+        "id": "b1",
+        "next_run_at": 2027-01-15T16:00:00.000Z,
+    -   "updated_at": 2027-01-15T15:59:00.000Z,
+      }
+
+    [0m [90m 454 |[39m     )[33m;[39m
+     [90m 455 |[39m     expect([36mawait[39m svc[33m.[39mclaimDue(now))[33m.[39mtoBe([35m1[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 456 |[39m     expect(cas[[35m0[39m])[33m.[39mtoMatchObject({ id[33m:[39m [32m'b1'[39m[33m,[39m next_run_at[33m:[39m now[33m,[39m updated_at[33m:[39m row[33m.[39mupdated_at })[33m;[39m
+     [90m     |[39m                    [31m[1m^[22m[39m
+     [90m 457 |[39m     expect(runs[[35m0[39m])[33m.[39mtoMatchObject({
+     [90m 458 |[39m       body[33m:[39m [32m'Week 3 starts today.'[39m[33m,[39m
+     [90m 459 |[39m       segment[33m:[39m row[33m.[39msegment[33m,[39m[0m
+
+      at Object.<anonymous> (test/broadcasts/dispatcher-delivery.spec.ts:456:20)
+
+  ● claimDue / fanOutRun (B-659-1, A-659-7) › fan-out evaluates the audience frozen on the run, not the edited definition
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 8
+    + Received  + 1
+
+      Object {
+    -   "rules": Array [
+    -     Object {
+    -       "field": "tag",
+    -       "values": Array [
+    -         "vip",
+    -       ],
+    -     },
+    -   ],
+    +   "rules": Array [],
+      }
+
+    [0m [90m 503 |[39m     })[33m;[39m
+     [90m 504 |[39m     expect([36mawait[39m h[33m.[39msvc[33m.[39mfanOutRun([32m'r1'[39m[33m,[39m now))[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 505 |[39m     expect(h[33m.[39msegResolve[33m.[39mmock[33m.[39mcalls[[35m0[39m][[35m1[39m])[33m.[39mtoMatchObject({
+     [90m     |[39m                                           [31m[1m^[22m[39m
+     [90m 506 |[39m       rules[33m:[39m [{ field[33m:[39m [32m'tag'[39m[33m,[39m values[33m:[39m [[32m'vip'[39m] }][33m,[39m
+     [90m 507 |[39m     })[33m;[39m
+     [90m 508 |[39m   })[33m;[39m[0m
+
+      at Object.<anonymous> (test/broadcasts/dispatcher-delivery.spec.ts:505:43)
+
+  ● claimDue / fanOutRun (B-659-1, A-659-7) › fan-out of a run whose author was removed fails closed, never as the head coach
+
+    expect(jest.fn()).not.toHaveBeenCalled()
+
+    Expected number of calls: 0
+    Received number of calls: 1
+
+    1: "coach-a"
+
+    [0m [90m 515 |[39m     })[33m;[39m
+     [90m 516 |[39m     expect([36mawait[39m h[33m.[39msvc[33m.[39mfanOutRun([32m'r1'[39m[33m,[39m now))[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 517 |[39m     expect(h[33m.[39mresolve)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+     [90m     |[39m                           [31m[1m^[22m[39m
+     [90m 518 |[39m     expect(lastOf(h[33m.[39mrunUpdates))[33m.[39mtoMatchObject({
+     [90m 519 |[39m       status[33m:[39m [32m'failed'[39m[33m,[39m
+     [90m 520 |[39m       failure_code[33m:[39m [32m'author_removed'[39m[33m,[39m[0m
+
+      at Object.<anonymous> (test/broadcasts/dispatcher-delivery.spec.ts:517:27)
+
+Test Suites: 1 failed, 1 total
+Tests:       18 failed, 10 passed, 28 total
+Snapshots:   0 total
+Time:        3.06 s
+Ran all test suites matching test/broadcasts/dispatcher-delivery.spec.ts.

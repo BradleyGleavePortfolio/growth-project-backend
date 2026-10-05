@@ -1,0 +1,560 @@
+﻿2026-10-05T20:28:24.6146216Z Current runner version: '2.337.0'
+2026-10-05T20:28:24.6182751Z ##[group]Runner Image Provisioner
+2026-10-05T20:28:24.6184082Z Hosted Compute Agent
+2026-10-05T20:28:24.6185257Z Version: 20260901.588
+2026-10-05T20:28:24.6186786Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-05T20:28:24.6188128Z Build Date: 2026-09-01T19:56:44Z
+2026-10-05T20:28:24.6189546Z Worker ID: {42a143f8-edac-48bc-869a-bfc6e6347f6b}
+2026-10-05T20:28:24.6190854Z Azure Region: eastus2
+2026-10-05T20:28:24.6191970Z ##[endgroup]
+2026-10-05T20:28:24.6194734Z ##[group]Operating System
+2026-10-05T20:28:24.6196091Z Ubuntu
+2026-10-05T20:28:24.6197225Z 24.04.5
+2026-10-05T20:28:24.6198153Z LTS
+2026-10-05T20:28:24.6199284Z ##[endgroup]
+2026-10-05T20:28:24.6200376Z ##[group]Runner Image
+2026-10-05T20:28:24.6201485Z Image: ubuntu-24.04
+2026-10-05T20:28:24.6202665Z Version: 20260927.320.1
+2026-10-05T20:28:24.6204786Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-05T20:28:24.6208624Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-05T20:28:24.6210417Z ##[endgroup]
+2026-10-05T20:28:24.6212689Z ##[group]GITHUB_TOKEN Permissions
+2026-10-05T20:28:24.6215617Z Contents: read
+2026-10-05T20:28:24.6216943Z Metadata: read
+2026-10-05T20:28:24.6217953Z Packages: read
+2026-10-05T20:28:24.6219056Z ##[endgroup]
+2026-10-05T20:28:24.6221963Z Secret source: Actions
+2026-10-05T20:28:24.6223687Z Cache mode: write
+2026-10-05T20:28:24.6225467Z Prepare workflow directory
+2026-10-05T20:28:24.6701487Z Prepare all required actions
+2026-10-05T20:28:24.6772539Z Getting action download info
+2026-10-05T20:28:24.8975423Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-05T20:28:24.9993681Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-05T20:28:25.1896312Z Complete job name: targeted
+2026-10-05T20:28:25.2676928Z ##[group]Run actions/checkout@v6
+2026-10-05T20:28:25.2678029Z with:
+2026-10-05T20:28:25.2678718Z   repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T20:28:25.2682781Z   token: ***
+2026-10-05T20:28:25.2683341Z   ssh-strict: true
+2026-10-05T20:28:25.2683898Z   ssh-user: git
+2026-10-05T20:28:25.2684463Z   persist-credentials: true
+2026-10-05T20:28:25.2685058Z   clean: true
+2026-10-05T20:28:25.2685622Z   sparse-checkout-cone-mode: true
+2026-10-05T20:28:25.2686685Z   fetch-depth: 1
+2026-10-05T20:28:25.2687249Z   fetch-tags: false
+2026-10-05T20:28:25.2687817Z   show-progress: true
+2026-10-05T20:28:25.2688380Z   lfs: false
+2026-10-05T20:28:25.2688902Z   submodules: false
+2026-10-05T20:28:25.2689477Z   set-safe-directory: true
+2026-10-05T20:28:25.2690101Z   allow-unsafe-pr-checkout: false
+2026-10-05T20:28:25.2691070Z ##[endgroup]
+2026-10-05T20:28:25.3701318Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T20:28:25.3703284Z ##[group]Getting Git version info
+2026-10-05T20:28:25.3704233Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-05T20:28:25.3705425Z [command]/usr/bin/git version
+2026-10-05T20:28:25.3806128Z git version 2.55.0
+2026-10-05T20:28:25.3830750Z ##[endgroup]
+2026-10-05T20:28:25.3845682Z Temporarily overriding HOME='/home/runner/work/_temp/7d6893e6-388e-4e4b-ac2f-e230ba3b9f60' before making global git config changes
+2026-10-05T20:28:25.3847839Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T20:28:25.3851153Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T20:28:25.3904311Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-05T20:28:25.3909330Z ##[group]Determining repository object format
+2026-10-05T20:28:25.3911703Z ##[endgroup]
+2026-10-05T20:28:25.3912657Z ##[group]Initializing the repository
+2026-10-05T20:28:25.3916661Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T20:28:25.4056522Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-05T20:28:25.4057945Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-05T20:28:25.4059103Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-05T20:28:25.4060022Z hint: call:
+2026-10-05T20:28:25.4060518Z hint:
+2026-10-05T20:28:25.4061158Z hint: 	git config --global init.defaultBranch <name>
+2026-10-05T20:28:25.4061926Z hint:
+2026-10-05T20:28:25.4062642Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-05T20:28:25.4063806Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-05T20:28:25.4064732Z hint:
+2026-10-05T20:28:25.4065236Z hint: 	git branch -m <name>
+2026-10-05T20:28:25.4065817Z hint:
+2026-10-05T20:28:25.4066821Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-05T20:28:25.4073132Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+2026-10-05T20:28:25.4085383Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T20:28:25.4141904Z ##[endgroup]
+2026-10-05T20:28:25.4142753Z ##[group]Disabling automatic garbage collection
+2026-10-05T20:28:25.4146975Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-05T20:28:25.4178945Z ##[endgroup]
+2026-10-05T20:28:25.4180370Z ##[group]Setting up auth
+2026-10-05T20:28:25.4181123Z Removing SSH command configuration
+2026-10-05T20:28:25.4187798Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T20:28:25.4218658Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T20:28:25.4603778Z Removing HTTP extra header
+2026-10-05T20:28:25.4609798Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T20:28:25.4641837Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T20:28:25.4857033Z Removing includeIf entries pointing to credentials config files
+2026-10-05T20:28:25.4863054Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T20:28:25.4894193Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T20:28:25.5116161Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-3d6d0ba2-9e3b-4f2e-8fc9-3377e63e430f.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-05T20:28:25.5154291Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-3d6d0ba2-9e3b-4f2e-8fc9-3377e63e430f.config
+2026-10-05T20:28:25.5187848Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-3d6d0ba2-9e3b-4f2e-8fc9-3377e63e430f.config
+2026-10-05T20:28:25.5226585Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-3d6d0ba2-9e3b-4f2e-8fc9-3377e63e430f.config
+2026-10-05T20:28:25.5258608Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-3d6d0ba2-9e3b-4f2e-8fc9-3377e63e430f.config
+2026-10-05T20:28:25.5284765Z ##[endgroup]
+2026-10-05T20:28:25.5285532Z ##[group]Fetching the repository
+2026-10-05T20:28:25.5293324Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +2ec9a3b472a90b97f4b3aa127dd15d647289da3c:refs/remotes/origin/ci/B-SPLIT-ROMANCHATS-121-1
+2026-10-05T20:28:26.3131881Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-05T20:28:26.3134364Z  * [new ref]         2ec9a3b472a90b97f4b3aa127dd15d647289da3c -> origin/ci/B-SPLIT-ROMANCHATS-121-1
+2026-10-05T20:28:26.3157439Z [command]/usr/bin/git branch --list --remote origin/ci/B-SPLIT-ROMANCHATS-121-1
+2026-10-05T20:28:26.3169283Z   origin/ci/B-SPLIT-ROMANCHATS-121-1
+2026-10-05T20:28:26.3180267Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/B-SPLIT-ROMANCHATS-121-1
+2026-10-05T20:28:26.3206339Z 2ec9a3b472a90b97f4b3aa127dd15d647289da3c
+2026-10-05T20:28:26.3211333Z ##[endgroup]
+2026-10-05T20:28:26.3212714Z ##[group]Determining the checkout info
+2026-10-05T20:28:26.3214048Z ##[endgroup]
+2026-10-05T20:28:26.3218533Z [command]/usr/bin/git sparse-checkout disable
+2026-10-05T20:28:26.3280504Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-05T20:28:26.3313756Z ##[group]Checking out the ref
+2026-10-05T20:28:26.3318936Z [command]/usr/bin/git checkout --progress --force -B ci/B-SPLIT-ROMANCHATS-121-1 refs/remotes/origin/ci/B-SPLIT-ROMANCHATS-121-1
+2026-10-05T20:28:26.4417682Z Switched to a new branch 'ci/B-SPLIT-ROMANCHATS-121-1'
+2026-10-05T20:28:26.4421640Z branch 'ci/B-SPLIT-ROMANCHATS-121-1' set up to track 'origin/ci/B-SPLIT-ROMANCHATS-121-1'.
+2026-10-05T20:28:26.4431820Z ##[endgroup]
+2026-10-05T20:28:26.4478938Z [command]/usr/bin/git log -1 --format=%H
+2026-10-05T20:28:26.4502397Z 2ec9a3b472a90b97f4b3aa127dd15d647289da3c
+2026-10-05T20:28:26.4889713Z ##[group]Run actions/setup-node@v6
+2026-10-05T20:28:26.4891029Z with:
+2026-10-05T20:28:26.4892013Z   node-version: 22.13
+2026-10-05T20:28:26.4893081Z   cache: npm
+2026-10-05T20:28:26.4894071Z   check-latest: false
+2026-10-05T20:28:26.4904829Z   token: ***
+2026-10-05T20:28:26.4906026Z   package-manager-cache: true
+2026-10-05T20:28:26.4907227Z ##[endgroup]
+2026-10-05T20:28:26.6375278Z Attempting to download 22.13...
+2026-10-05T20:28:27.0989556Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+2026-10-05T20:28:27.6113951Z Extracting ...
+2026-10-05T20:28:27.6248426Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/29bbb304-8280-4613-97f7-55106d945d02 -f /home/runner/work/_temp/13eeb36d-c501-4dad-8b6d-37b2ab87697a
+2026-10-05T20:28:28.8037021Z Adding to the cache ...
+2026-10-05T20:28:30.8151184Z ##[group]Environment details
+2026-10-05T20:28:31.0375310Z node: v22.13.1
+2026-10-05T20:28:31.0376264Z npm: 10.9.2
+2026-10-05T20:28:31.0376635Z yarn: 1.22.22
+2026-10-05T20:28:31.0377360Z ##[endgroup]
+2026-10-05T20:28:31.0400479Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+2026-10-05T20:28:31.1375016Z /home/runner/.npm
+2026-10-05T20:28:31.2214771Z Cache hit for: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-05T20:28:32.2882074Z Received 241027159 of 241027159 (100.0%), 224.5 MBs/sec
+2026-10-05T20:28:32.2883205Z Cache Size: ~230 MB (241027159 B)
+2026-10-05T20:28:32.2957382Z [command]/usr/bin/tar -xf /home/runner/work/_temp/227a151f-dbac-49b5-b799-f31c99d5e557/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+2026-10-05T20:28:32.9669396Z Cache restored successfully
+2026-10-05T20:28:32.9780920Z Cache restored from key: node-cache-Linux-x64-npm-d337c1813e25f31cc43e8d80f8de0d0cb6af6de1f93566771485fa27a2bebc06
+2026-10-05T20:28:32.9990997Z ##[group]Run npm ci
+2026-10-05T20:28:32.9991342Z npm ci
+2026-10-05T20:28:33.0297363Z shell: /usr/bin/bash -e {0}
+2026-10-05T20:28:33.0297749Z ##[endgroup]
+2026-10-05T20:28:38.4083554Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-05T20:28:38.6393256Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+2026-10-05T20:28:38.6530000Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+2026-10-05T20:28:38.6582773Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+2026-10-05T20:28:38.6814004Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+2026-10-05T20:28:38.8257094Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+2026-10-05T20:28:38.8297796Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T20:28:38.8300848Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T20:28:38.8322451Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T20:28:38.8328090Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T20:28:38.8352848Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T20:28:38.8683442Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-05T20:28:38.9274945Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+2026-10-05T20:28:39.4106752Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+2026-10-05T20:28:39.9877929Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+2026-10-05T20:28:43.8258382Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+2026-10-05T20:29:34.8934840Z 
+2026-10-05T20:29:34.8936121Z added 1108 packages, and audited 1109 packages in 1m
+2026-10-05T20:29:34.8936645Z 
+2026-10-05T20:29:34.8937004Z 187 packages are looking for funding
+2026-10-05T20:29:34.8938211Z   run `npm fund` for details
+2026-10-05T20:29:35.2875969Z 
+2026-10-05T20:29:35.2877018Z 88 vulnerabilities (1 low, 16 moderate, 71 high)
+2026-10-05T20:29:35.2879091Z 
+2026-10-05T20:29:35.2879927Z To address issues that do not require attention, run:
+2026-10-05T20:29:35.2881166Z   npm audit fix
+2026-10-05T20:29:35.2881448Z 
+2026-10-05T20:29:35.2881897Z To address all issues (including breaking changes), run:
+2026-10-05T20:29:35.2882750Z   npm audit fix --force
+2026-10-05T20:29:35.2883055Z 
+2026-10-05T20:29:35.2883310Z Run `npm audit` for details.
+2026-10-05T20:29:35.4829573Z ##[group]Run set -euo pipefail
+2026-10-05T20:29:35.4829918Z set -euo pipefail
+2026-10-05T20:29:35.4830309Z test -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }
+2026-10-05T20:29:35.4830989Z mapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)
+2026-10-05T20:29:35.4831350Z echo "specs: ${SPECS[*]}"
+2026-10-05T20:29:35.4831612Z npx jest --ci "${SPECS[@]}"
+2026-10-05T20:29:35.4898819Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-05T20:29:35.4899177Z ##[endgroup]
+2026-10-05T20:29:35.5007981Z specs: src/services/__tests__/secureStorage.migration.fence.test.ts src/services/__tests__/sessionFence.refresh.test.ts src/services/__tests__/authActions.signOut.fence.test.ts src/services/__tests__/secureStorage.test.ts src/services/__tests__/api.refresh.test.ts
+2026-10-05T20:29:41.1488005Z PASS src/services/__tests__/api.refresh.test.ts
+2026-10-05T20:29:41.2872356Z FAIL src/services/__tests__/secureStorage.migration.fence.test.ts
+2026-10-05T20:29:41.2878243Z   ● legacy copy paused in its native write (Sol A-331-7 round 3, counterexamples 1 and 2) › B signs in while A's legacy copy is landing: B's writes wait for it and land last
+2026-10-05T20:29:41.2879396Z 
+2026-10-05T20:29:41.2879779Z     expect(received).toEqual(expected) // deep equality
+2026-10-05T20:29:41.2880210Z 
+2026-10-05T20:29:41.2880481Z     - Expected  - 2
+2026-10-05T20:29:41.2880950Z     + Received  + 2
+2026-10-05T20:29:41.2881182Z 
+2026-10-05T20:29:41.2881349Z       Object {
+2026-10-05T20:29:41.2881754Z     -   "access": undefined,
+2026-10-05T20:29:41.2882228Z     -   "refresh": undefined,
+2026-10-05T20:29:41.2883359Z     +   "access": "***",
+2026-10-05T20:29:41.2883851Z     +   "refresh": "refresh-b",
+2026-10-05T20:29:41.2884271Z       }
+2026-10-05T20:29:41.2884449Z 
+2026-10-05T20:29:41.2884926Z       165 |     await settle();
+2026-10-05T20:29:41.2886219Z       166 |     // B's first write waits for the copy that is landing.
+2026-10-05T20:29:41.2888046Z     > 167 |     expect(stored()).toEqual({ access: undefined, refresh: undefined });
+2026-10-05T20:29:41.2889387Z           |                      ^
+2026-10-05T20:29:41.2890163Z       168 |     p.release();
+2026-10-05T20:29:41.2890993Z       169 |     await bSignIn;
+2026-10-05T20:29:41.2891824Z       170 |     await read;
+2026-10-05T20:29:41.2892231Z 
+2026-10-05T20:29:41.2892829Z       at Object.toEqual (src/services/__tests__/secureStorage.migration.fence.test.ts:167:22)
+2026-10-05T20:29:41.2894077Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.2895184Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.2895709Z 
+2026-10-05T20:29:41.2897316Z   ● legacy copy paused in its native write (Sol A-331-7 round 3, counterexamples 1 and 2) › sign-out while A's legacy copy is landing: A's session never comes back
+2026-10-05T20:29:41.2898372Z 
+2026-10-05T20:29:41.2898701Z     expect(received).toEqual(expected) // deep equality
+2026-10-05T20:29:41.2899124Z 
+2026-10-05T20:29:41.2899289Z     - Expected  - 1
+2026-10-05T20:29:41.2899701Z     + Received  + 1
+2026-10-05T20:29:41.2899921Z 
+2026-10-05T20:29:41.2900063Z       Object {
+2026-10-05T20:29:41.2900417Z     -   "access": undefined,
+2026-10-05T20:29:41.2901248Z     +   "access": "***",
+2026-10-05T20:29:41.2901682Z         "refresh": undefined,
+2026-10-05T20:29:41.2902147Z       }
+2026-10-05T20:29:41.2902332Z 
+2026-10-05T20:29:41.2902766Z       187 |     await read;
+2026-10-05T20:29:41.2903548Z       188 |     await settle();
+2026-10-05T20:29:41.2905537Z     > 189 |     expect(stored()).toEqual({ access: undefined, refresh: undefined });
+2026-10-05T20:29:41.2907212Z           |                      ^
+2026-10-05T20:29:41.2909018Z       190 |     expect(mockNative.legacy.has('supabase_token')).toBe(false);
+2026-10-05T20:29:41.2910874Z       191 |     expect(await secureStorage.getItem('supabase_token')).toBeNull();
+2026-10-05T20:29:41.2912469Z       192 |     expect(sessionFenceHeld()).toBe(false);
+2026-10-05T20:29:41.2913101Z 
+2026-10-05T20:29:41.2913696Z       at Object.toEqual (src/services/__tests__/secureStorage.migration.fence.test.ts:189:22)
+2026-10-05T20:29:41.2914897Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.2916280Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.2916842Z 
+2026-10-05T20:29:41.2918073Z   ● legacy copy paused in its legacy read (Sol A-331-7 round 3) › sign-out during the legacy read: the stale value is never copied and nothing comes back
+2026-10-05T20:29:41.2919118Z 
+2026-10-05T20:29:41.2919376Z     expect(received).toBeNull()
+2026-10-05T20:29:41.2919686Z 
+2026-10-05T20:29:41.2920284Z     Received: "***"
+2026-10-05T20:29:41.2920545Z 
+2026-10-05T20:29:41.2921071Z       201 |     await signOutKeys();
+2026-10-05T20:29:41.2921960Z       202 |     p.release();
+2026-10-05T20:29:41.2923127Z     > 203 |     expect(await read).toBeNull();
+2026-10-05T20:29:41.2924242Z           |                        ^
+2026-10-05T20:29:41.2925137Z       204 |     await settle();
+2026-10-05T20:29:41.2927003Z       205 |     expect(stored()).toEqual({ access: undefined, refresh: undefined });
+2026-10-05T20:29:41.2929028Z       206 |     expect(await secureStorage.getItem('supabase_token')).toBeNull();
+2026-10-05T20:29:41.2929986Z 
+2026-10-05T20:29:41.2930623Z       at Object.toBeNull (src/services/__tests__/secureStorage.migration.fence.test.ts:203:24)
+2026-10-05T20:29:41.2931886Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.2932942Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.2933475Z 
+2026-10-05T20:29:41.2934696Z   ● legacy copy paused in its legacy read (Sol A-331-7 round 3) › B signs in during a request's legacy read: the stale value is refused and the request goes out as B
+2026-10-05T20:29:41.2935724Z 
+2026-10-05T20:29:41.2936321Z     expect(received).toEqual(expected) // deep equality
+2026-10-05T20:29:41.2936766Z 
+2026-10-05T20:29:41.2936977Z     - Expected  - 1
+2026-10-05T20:29:41.2937397Z     + Received  + 1
+2026-10-05T20:29:41.2937611Z 
+2026-10-05T20:29:41.2937776Z       Object {
+2026-10-05T20:29:41.2938571Z     -   "access": "***",
+2026-10-05T20:29:41.2939462Z     +   "access": "***",
+2026-10-05T20:29:41.2939967Z         "refresh": "refresh-b",
+2026-10-05T20:29:41.2940422Z       }
+2026-10-05T20:29:41.2940630Z 
+2026-10-05T20:29:41.2941145Z       216 |     await work;
+2026-10-05T20:29:41.2942080Z       217 |     await settle();
+2026-10-05T20:29:41.2943789Z     > 218 |     expect(stored()).toEqual({ access: B, refresh: 'refresh-b' });
+2026-10-05T20:29:41.2945290Z           |                      ^
+2026-10-05T20:29:41.2947752Z       219 |     expect(sent).toEqual([{ url: '/messages', authorization: `*** }]);
+2026-10-05T20:29:41.2949089Z       220 |   });
+2026-10-05T20:29:41.2949695Z       221 |
+2026-10-05T20:29:41.2950234Z 
+2026-10-05T20:29:41.2950871Z       at Object.toEqual (src/services/__tests__/secureStorage.migration.fence.test.ts:218:22)
+2026-10-05T20:29:41.2952182Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.2953360Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.2953926Z 
+2026-10-05T20:29:41.2955314Z   ● legacy copy paused in its legacy read (Sol A-331-7 round 3) › B signs in during the refresh token's legacy read: A's refresh token is never copied beside B's access
+2026-10-05T20:29:41.2956660Z 
+2026-10-05T20:29:41.2956923Z     expect(received).toBeNull()
+2026-10-05T20:29:41.2957239Z 
+2026-10-05T20:29:41.2957428Z     Received: "refresh-a"
+2026-10-05T20:29:41.2957707Z 
+2026-10-05T20:29:41.2958536Z       227 |     await signIn(B, 'refresh-b');
+2026-10-05T20:29:41.2959668Z       228 |     p.release();
+2026-10-05T20:29:41.2986066Z     > 229 |     expect(await read).toBeNull();
+2026-10-05T20:29:41.2987370Z           |                        ^
+2026-10-05T20:29:41.2988394Z       230 |     await settle();
+2026-10-05T20:29:41.2990011Z       231 |     expect(stored()).toEqual({ access: B, refresh: 'refresh-b' });
+2026-10-05T20:29:41.2991282Z       232 |   });
+2026-10-05T20:29:41.2991652Z 
+2026-10-05T20:29:41.2992294Z       at Object.toBeNull (src/services/__tests__/secureStorage.migration.fence.test.ts:229:24)
+2026-10-05T20:29:41.2993606Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.2994754Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.2995327Z 
+2026-10-05T20:29:41.3050188Z PASS src/services/__tests__/secureStorage.test.ts
+2026-10-05T20:29:41.4597638Z PASS src/services/__tests__/sessionFence.refresh.test.ts
+2026-10-05T20:29:41.9112619Z PASS src/services/__tests__/authActions.signOut.fence.test.ts
+2026-10-05T20:29:41.9378371Z   ● Console
+2026-10-05T20:29:41.9378673Z 
+2026-10-05T20:29:41.9378858Z     console.warn
+2026-10-05T20:29:41.9379740Z       [AuthActions] clearUserScopedKeys: storage sweep failed TypeError: storage.getAllKeys is not a function
+2026-10-05T20:29:41.9381350Z           at getAllKeys (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:204:45)
+2026-10-05T20:29:41.9382524Z           at Generator.next (<anonymous>)
+2026-10-05T20:29:41.9383844Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.9385693Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.9387828Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+2026-10-05T20:29:41.9388978Z           at new Promise (<anonymous>)
+2026-10-05T20:29:41.9390396Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+2026-10-05T20:29:41.9392253Z           at _loop (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:213:8)
+2026-10-05T20:29:41.9393243Z           at _loop.next (<anonymous>)
+2026-10-05T20:29:41.9394208Z           at _loop (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:195:42)
+2026-10-05T20:29:41.9395545Z           at Generator.next (<anonymous>)
+2026-10-05T20:29:41.9446941Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.9448563Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.9449708Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+2026-10-05T20:29:41.9450420Z           at new Promise (<anonymous>)
+2026-10-05T20:29:41.9451202Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+2026-10-05T20:29:41.9452190Z           at apply (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:236:2)
+2026-10-05T20:29:41.9453116Z           at apply (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:191:42)
+2026-10-05T20:29:41.9454142Z           at clearUserScopedKeys (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:428:7)
+2026-10-05T20:29:41.9454852Z           at Generator.next (<anonymous>)
+2026-10-05T20:29:41.9455671Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.9457252Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.9458125Z           at processTicksAndRejections (node:internal/process/task_queues:105:5)
+2026-10-05T20:29:41.9458484Z 
+2026-10-05T20:29:41.9459346Z       16 | function log(level: LogLevel, context: string, ...args: unknown[]) {
+2026-10-05T20:29:41.9460237Z       17 |   if (__DEV__) {
+2026-10-05T20:29:41.9460945Z     > 18 |     console[level](`[${context}]`, ...args);
+2026-10-05T20:29:41.9461621Z          |                   ^
+2026-10-05T20:29:41.9461994Z       19 |   }
+2026-10-05T20:29:41.9462525Z       20 |   // In production, could forward to Sentry breadcrumbs here
+2026-10-05T20:29:41.9462977Z       21 | }
+2026-10-05T20:29:41.9463123Z 
+2026-10-05T20:29:41.9463288Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T20:29:41.9463687Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T20:29:41.9464083Z       at warn (src/services/authActions.ts:211:18)
+2026-10-05T20:29:41.9464633Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.9465297Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.9486424Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+2026-10-05T20:29:41.9487579Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+2026-10-05T20:29:41.9488557Z       at _loop (src/services/authActions.ts:213:8)
+2026-10-05T20:29:41.9489267Z           at _loop.next (<anonymous>)
+2026-10-05T20:29:41.9489997Z       at _loop (src/services/authActions.ts:195:42)
+2026-10-05T20:29:41.9491000Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.9492333Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.9493462Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+2026-10-05T20:29:41.9494501Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+2026-10-05T20:29:41.9495439Z       at apply (src/services/authActions.ts:236:2)
+2026-10-05T20:29:41.9496529Z       at apply (src/services/authActions.ts:191:42)
+2026-10-05T20:29:41.9497690Z       at clearUserScopedKeys (src/services/authActions.ts:428:7)
+2026-10-05T20:29:41.9498945Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.9500477Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.9501173Z 
+2026-10-05T20:29:41.9501413Z     console.warn
+2026-10-05T20:29:41.9502534Z       [AuthActions] clearUserScopedKeys: storage sweep failed TypeError: storage.getAllKeys is not a function
+2026-10-05T20:29:41.9504384Z           at getAllKeys (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:204:45)
+2026-10-05T20:29:41.9505663Z           at Generator.next (<anonymous>)
+2026-10-05T20:29:41.9507494Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.9509924Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.9512156Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+2026-10-05T20:29:41.9513557Z           at new Promise (<anonymous>)
+2026-10-05T20:29:41.9515047Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+2026-10-05T20:29:41.9517260Z           at _loop (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:213:8)
+2026-10-05T20:29:41.9518529Z           at _loop.next (<anonymous>)
+2026-10-05T20:29:41.9519782Z           at _loop (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:195:42)
+2026-10-05T20:29:41.9521007Z           at Generator.next (<anonymous>)
+2026-10-05T20:29:41.9522678Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.9525058Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.9527721Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+2026-10-05T20:29:41.9529116Z           at new Promise (<anonymous>)
+2026-10-05T20:29:41.9530566Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+2026-10-05T20:29:41.9532567Z           at apply (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:236:2)
+2026-10-05T20:29:41.9534454Z           at apply (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:191:42)
+2026-10-05T20:29:41.9536726Z           at clearUserScopedKeys (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:428:7)
+2026-10-05T20:29:41.9538144Z           at Generator.next (<anonymous>)
+2026-10-05T20:29:41.9539800Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.9542226Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.9543934Z           at processTicksAndRejections (node:internal/process/task_queues:105:5)
+2026-10-05T20:29:41.9544693Z 
+2026-10-05T20:29:41.9546395Z       16 | function log(level: LogLevel, context: string, ...args: unknown[]) {
+2026-10-05T20:29:41.9547834Z       17 |   if (__DEV__) {
+2026-10-05T20:29:41.9549432Z     > 18 |     console[level](`[${context}]`, ...args);
+2026-10-05T20:29:41.9550741Z          |                   ^
+2026-10-05T20:29:41.9551411Z       19 |   }
+2026-10-05T20:29:41.9552718Z       20 |   // In production, could forward to Sentry breadcrumbs here
+2026-10-05T20:29:41.9553713Z       21 | }
+2026-10-05T20:29:41.9553964Z 
+2026-10-05T20:29:41.9554279Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T20:29:41.9555041Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T20:29:41.9556048Z       at warn (src/services/authActions.ts:211:18)
+2026-10-05T20:29:41.9557204Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.9558476Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.9559533Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+2026-10-05T20:29:41.9560540Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+2026-10-05T20:29:41.9561475Z       at _loop (src/services/authActions.ts:213:8)
+2026-10-05T20:29:41.9562194Z           at _loop.next (<anonymous>)
+2026-10-05T20:29:41.9562950Z       at _loop (src/services/authActions.ts:195:42)
+2026-10-05T20:29:41.9564098Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.9565362Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.9566785Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+2026-10-05T20:29:41.9567711Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+2026-10-05T20:29:41.9568523Z       at apply (src/services/authActions.ts:236:2)
+2026-10-05T20:29:41.9569234Z       at apply (src/services/authActions.ts:191:42)
+2026-10-05T20:29:41.9570129Z       at clearUserScopedKeys (src/services/authActions.ts:428:7)
+2026-10-05T20:29:41.9571360Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.9572646Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.9573301Z 
+2026-10-05T20:29:41.9573498Z     console.warn
+2026-10-05T20:29:41.9574586Z       [AuthActions] clearUserScopedKeys: storage sweep failed TypeError: storage.getAllKeys is not a function
+2026-10-05T20:29:41.9576601Z           at getAllKeys (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:204:45)
+2026-10-05T20:29:41.9578042Z           at Generator.next (<anonymous>)
+2026-10-05T20:29:41.9579739Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.9582104Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.9584314Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+2026-10-05T20:29:41.9585636Z           at new Promise (<anonymous>)
+2026-10-05T20:29:41.9587303Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+2026-10-05T20:29:41.9589290Z           at _loop (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:213:8)
+2026-10-05T20:29:41.9590486Z           at _loop.next (<anonymous>)
+2026-10-05T20:29:41.9591736Z           at _loop (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:195:42)
+2026-10-05T20:29:41.9592881Z           at Generator.next (<anonymous>)
+2026-10-05T20:29:41.9594540Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.9597397Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.9599696Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+2026-10-05T20:29:41.9601263Z           at new Promise (<anonymous>)
+2026-10-05T20:29:41.9602711Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+2026-10-05T20:29:41.9604703Z           at apply (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:191:42)
+2026-10-05T20:29:41.9606891Z           at clearUserScopedKeys (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:428:7)
+2026-10-05T20:29:41.9608205Z           at Generator.next (<anonymous>)
+2026-10-05T20:29:41.9609860Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.9612209Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.9613919Z           at processTicksAndRejections (node:internal/process/task_queues:105:5)
+2026-10-05T20:29:41.9614605Z 
+2026-10-05T20:29:41.9616387Z       16 | function log(level: LogLevel, context: string, ...args: unknown[]) {
+2026-10-05T20:29:41.9618063Z       17 |   if (__DEV__) {
+2026-10-05T20:29:41.9619392Z     > 18 |     console[level](`[${context}]`, ...args);
+2026-10-05T20:29:41.9620650Z          |                   ^
+2026-10-05T20:29:41.9621395Z       19 |   }
+2026-10-05T20:29:41.9622371Z       20 |   // In production, could forward to Sentry breadcrumbs here
+2026-10-05T20:29:41.9623334Z       21 | }
+2026-10-05T20:29:41.9623642Z 
+2026-10-05T20:29:41.9623899Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T20:29:41.9624685Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T20:29:41.9625513Z       at warn (src/services/authActions.ts:211:18)
+2026-10-05T20:29:41.9626791Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.9628083Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.9629147Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+2026-10-05T20:29:41.9630214Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+2026-10-05T20:29:41.9631065Z       at _loop (src/services/authActions.ts:213:8)
+2026-10-05T20:29:41.9631814Z           at _loop.next (<anonymous>)
+2026-10-05T20:29:41.9632496Z       at _loop (src/services/authActions.ts:195:42)
+2026-10-05T20:29:41.9633643Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.9634889Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.9636185Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+2026-10-05T20:29:41.9637240Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+2026-10-05T20:29:41.9638189Z       at apply (src/services/authActions.ts:191:42)
+2026-10-05T20:29:41.9639067Z       at clearUserScopedKeys (src/services/authActions.ts:428:7)
+2026-10-05T20:29:41.9640238Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.9641524Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.9642105Z 
+2026-10-05T20:29:41.9642314Z     console.warn
+2026-10-05T20:29:41.9643340Z       [AuthActions] clearUserScopedKeys: storage sweep failed TypeError: storage.getAllKeys is not a function
+2026-10-05T20:29:41.9645435Z           at getAllKeys (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:204:45)
+2026-10-05T20:29:41.9646959Z           at Generator.next (<anonymous>)
+2026-10-05T20:29:41.9648868Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.9651263Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.9653415Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+2026-10-05T20:29:41.9654761Z           at new Promise (<anonymous>)
+2026-10-05T20:29:41.9656393Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+2026-10-05T20:29:41.9658304Z           at _loop (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:213:8)
+2026-10-05T20:29:41.9659605Z           at _loop.next (<anonymous>)
+2026-10-05T20:29:41.9660832Z           at _loop (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:195:42)
+2026-10-05T20:29:41.9662009Z           at Generator.next (<anonymous>)
+2026-10-05T20:29:41.9663625Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.9666139Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.9668372Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+2026-10-05T20:29:41.9669642Z           at new Promise (<anonymous>)
+2026-10-05T20:29:41.9670950Z           at /home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+2026-10-05T20:29:41.9672786Z           at apply (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:191:42)
+2026-10-05T20:29:41.9674625Z           at clearUserScopedKeys (/home/runner/work/growth-project-mobile/growth-project-mobile/src/services/authActions.ts:428:7)
+2026-10-05T20:29:41.9676388Z           at Generator.next (<anonymous>)
+2026-10-05T20:29:41.9678069Z           at asyncGeneratorStep (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.9680339Z           at _next (/home/runner/work/growth-project-mobile/growth-project-mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.9681932Z           at processTicksAndRejections (node:internal/process/task_queues:105:5)
+2026-10-05T20:29:41.9682556Z 
+2026-10-05T20:29:41.9683887Z       16 | function log(level: LogLevel, context: string, ...args: unknown[]) {
+2026-10-05T20:29:41.9685324Z       17 |   if (__DEV__) {
+2026-10-05T20:29:41.9686799Z     > 18 |     console[level](`[${context}]`, ...args);
+2026-10-05T20:29:41.9687968Z          |                   ^
+2026-10-05T20:29:41.9688612Z       19 |   }
+2026-10-05T20:29:41.9689553Z       20 |   // In production, could forward to Sentry breadcrumbs here
+2026-10-05T20:29:41.9690399Z       21 | }
+2026-10-05T20:29:41.9690661Z 
+2026-10-05T20:29:41.9690921Z       at log (src/utils/logger.ts:18:19)
+2026-10-05T20:29:41.9691616Z       at Object.log [as warn] (src/utils/logger.ts:25:50)
+2026-10-05T20:29:41.9692353Z       at warn (src/services/authActions.ts:211:18)
+2026-10-05T20:29:41.9693509Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.9694511Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.9695515Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+2026-10-05T20:29:41.9696583Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+2026-10-05T20:29:41.9697345Z       at _loop (src/services/authActions.ts:213:8)
+2026-10-05T20:29:41.9697968Z           at _loop.next (<anonymous>)
+2026-10-05T20:29:41.9698547Z       at _loop (src/services/authActions.ts:195:42)
+2026-10-05T20:29:41.9699493Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.9700601Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.9701570Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+2026-10-05T20:29:41.9702493Z       at node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12
+2026-10-05T20:29:41.9703340Z       at apply (src/services/authActions.ts:191:42)
+2026-10-05T20:29:41.9704173Z       at clearUserScopedKeys (src/services/authActions.ts:428:7)
+2026-10-05T20:29:41.9705281Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-05T20:29:41.9706709Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-05T20:29:41.9707259Z 
+2026-10-05T20:29:41.9840779Z 
+2026-10-05T20:29:41.9846692Z Test Suites: 1 failed, 4 passed, 5 total
+2026-10-05T20:29:41.9847437Z Tests:       5 failed, 32 passed, 37 total
+2026-10-05T20:29:41.9848011Z Snapshots:   0 total
+2026-10-05T20:29:41.9876555Z Time:        5.265 s
+2026-10-05T20:29:41.9879361Z Ran all test suites matching /src\/services\/__tests__\/secureStorage.migration.fence.test.ts|src\/services\/__tests__\/sessionFence.refresh.test.ts|src\/services\/__tests__\/authActions.signOut.fence.test.ts|src\/services\/__tests__\/secureStorage.test.ts|src\/services\/__tests__\/api.refresh.test.ts/i.
+2026-10-05T20:29:42.0060909Z ##[error]Process completed with exit code 1.
+2026-10-05T20:29:42.0206872Z Post job cleanup.
+2026-10-05T20:29:42.1059169Z [command]/usr/bin/git version
+2026-10-05T20:29:42.1096229Z git version 2.55.0
+2026-10-05T20:29:42.1137066Z Temporarily overriding HOME='/home/runner/work/_temp/d82ef4fa-09da-4a9c-b660-67900036ca76' before making global git config changes
+2026-10-05T20:29:42.1138703Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-05T20:29:42.1142787Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-05T20:29:42.1173726Z Removing SSH command configuration
+2026-10-05T20:29:42.1180888Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-05T20:29:42.1216871Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-05T20:29:42.1444668Z Removing HTTP extra header
+2026-10-05T20:29:42.1450987Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-05T20:29:42.1487970Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-05T20:29:42.1707642Z Removing includeIf entries pointing to credentials config files
+2026-10-05T20:29:42.1715514Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-05T20:29:42.1745691Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-05T20:29:42.1746980Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-05T20:29:42.1747632Z includeif.gitdir:/github/workspace/.git.path
+2026-10-05T20:29:42.1748114Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T20:29:42.1757907Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-05T20:29:42.1779964Z /home/runner/work/_temp/git-credentials-3d6d0ba2-9e3b-4f2e-8fc9-3377e63e430f.config
+2026-10-05T20:29:42.1791715Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-3d6d0ba2-9e3b-4f2e-8fc9-3377e63e430f.config
+2026-10-05T20:29:42.1827713Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-05T20:29:42.1849980Z /home/runner/work/_temp/git-credentials-3d6d0ba2-9e3b-4f2e-8fc9-3377e63e430f.config
+2026-10-05T20:29:42.1860160Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-3d6d0ba2-9e3b-4f2e-8fc9-3377e63e430f.config
+2026-10-05T20:29:42.1894591Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-05T20:29:42.1916607Z /github/runner_temp/git-credentials-3d6d0ba2-9e3b-4f2e-8fc9-3377e63e430f.config
+2026-10-05T20:29:42.1925602Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-3d6d0ba2-9e3b-4f2e-8fc9-3377e63e430f.config
+2026-10-05T20:29:42.1958173Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-05T20:29:42.1979948Z /github/runner_temp/git-credentials-3d6d0ba2-9e3b-4f2e-8fc9-3377e63e430f.config
+2026-10-05T20:29:42.1988591Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-3d6d0ba2-9e3b-4f2e-8fc9-3377e63e430f.config
+2026-10-05T20:29:42.2023470Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-05T20:29:42.2254384Z Removing credentials config '/home/runner/work/_temp/git-credentials-3d6d0ba2-9e3b-4f2e-8fc9-3377e63e430f.config'
+2026-10-05T20:29:42.2401872Z Cleaning up orphan processes

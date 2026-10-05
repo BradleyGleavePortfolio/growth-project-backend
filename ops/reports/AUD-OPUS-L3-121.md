@@ -18,6 +18,19 @@ Notes / probes: ops/aud-121/AUD-OPUS-L3-121/.
 
 - 13:02 verdict drafts written: ops/aud-121/AUD-OPUS-L3-121/verdict_352_c89f719c.md (RC 0/1/8), verdict_353_9d47045b.md (RC 0/2/8), verdict_354_68c7f080.md (APPROVE 0/0/0). Placeholders {{RUN*}} wait for lane 37366349003 (queued since 12:54).
 
+- 13:14 lane 37366349003 still queued 20 min after push; deps/mobile READY; linked deps; ran single specs through heavy.sh (item 11). First runs of aud121OpusL3_353 showed 3 VERIFY B-353-2 failures from a probe harness error (un-awaited RNTL 14 fireEvent.press / unmount); fixed in the probe only (logs local_heavy_353{,b,c}.log).
+- 13:18 heavy.sh at worktree e5ad527d (68c7f080 + probes): aud121OpusL3_353 14 pass / 4 fail (exactly the B-353-9 PROBEs; log local_heavy_353d.log); aud121OpusL3_352 19 pass / 3 fail (exactly the B-352-9 PROBEs; log local_heavy_352.log). All VERIFY + CONTROL pass.
+- 13:18 cancelled 37366349003 (buggy harness), pushed corrected lane audit/AUD-OPUS-L3-121/2, run 37368919727 (queued). Deleted audit/AUD-OPUS-L3-121/1.
+- 13:21 heads re-read via REST (unchanged), verdicts posted:
+  - #352 @ c89f719c REQUEST CHANGES 0/1/8: https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/352#issuecomment-6002249084
+  - #353 @ 9d47045b REQUEST CHANGES 0/2/8: https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/353#issuecomment-6002249515
+  - #354 @ 68c7f080 APPROVE 0/0/0: https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/354#issuecomment-6002249905
+- 13:22 cancelled lane 37368919727 (no longer needed after posting; still queued, never started), deleted audit/AUD-OPUS-L3-121/2, removed worktree wt/AUD-OPUS-L3-121-1. The 119/117 replays did not run in a lane this round; the closures rest on the 121 VERIFY cases (heavy.sh) and PR CI.
+
+## CI state at the heads (13:21)
+- #352 c89f719c: Typecheck, lint, test; Analyze (javascript-typescript); Analyze (actions); CodeQL: all success. mergeable_state behind (main b79ca594); refresh = clean auto-merge (authActions.ts disjoint hunks), merge-only tree check.
+- #353 9d47045b, #354 68c7f080: Typecheck, lint, test success; clean. #353 overlaps main only in app.json (disjoint hunks).
+
 ## Findings (this lens, this round)
 - B-352-9: dunningErrorCopy.ts:491-493, :631 claim "Your bank reversed a payment"; owner decision 6 (inquiries pause too; Stripe inquiries move no money) makes it false for an inquiry. Fix: "Your bank opened a dispute or inquiry about a payment[ of $X] to <coach>" (backend B-687-8 wording).
 - B-353-9: same on DunningBanner.tsx:28-31 (title "A payment was reversed"), DunningLockoutScreen.tsx:71, UpdateCardScreen.tsx:91 ("took back").
@@ -32,7 +45,12 @@ Notes / probes: ops/aud-121/AUD-OPUS-L3-121/.
 - Carried: C-352-1/2/3/6/8, C-353-1/2rem/4/5/6/7.
 
 ## For other jobs (operator; not blocking these PRs)
-- Backend dunning (b#687/#705): DunningLockoutGuard.isClientLockedOut (dunning-lockout.guard.ts:171-184 @ 2a03d7dd, same on main) ignores effectiveLock / hasOtherLiveAccess, while getClientStatus uses effectiveLock (dunning-v2.service.ts:1559) and dunning-effective-access.ts:4-11 claims the guard shares it. A dispute-paused client with another live plan gets status past_due + lock_waived (banner) but 403 on every non-allowed route; the app then flips between banner and lockout. Route to the dunning lens pair.
+- Backend dunning (b#687/#705): DunningLockoutGuard.isClientLockedOut (dunning-lockout.guard.ts:171-184 @ 2a03d7dd; main not checked for this point) ignores effectiveLock / hasOtherLiveAccess, while getClientStatus uses effectiveLock (dunning-v2.service.ts:1559) and dunning-effective-access.ts:4-11 claims the guard shares it. A dispute-paused client with another live plan gets status past_due + lock_waived (banner) but 403 on every non-allowed route; the app then flips between banner and lockout. Route to the dunning lens pair.
+
+## Operator decisions (recommended defaults)
+1. B-353-10 fix location: default (a) backend dunning guard admits the locked client's own coach DM (GET/POST /messages, POST /messages/read, GET /messages/unread-count), mobile unchanged; alternative (b) mobile leads with Email support on a locked account.
+2. Backend guard ignores effectiveLock (waived dispute still 403s): route to the dunning backend lens pair (#687/#705); default fix in the dunning backend stack.
+3. Landing: #352 -> #354 as one (C-352-2) after the dunning backend (incl. D2c) deploys, FEATURE_DUNNING_V2 off; #352 main refresh by clean auto-merge + merge-only tree check, then restack #353/#354 (tree checks).
 
 ## HANDOFF
-- In progress. Probes: ops/aud-121/AUD-OPUS-L3-121/aud121OpusL3_352.probe.test.ts, aud121OpusL3_353.probe.test.tsx (copies in wt/AUD-OPUS-L3-121-1 commit 9d2f9d9e). Lane run 37366349003. Next: read lane result, post verdicts (#352 RC, #353 RC, #354 APPROVE expected), clean up branch + worktree.
+- DONE 13:22 PDT. Three verdicts posted (URLs above). Branches deleted, worktree removed, lane runs cancelled. Next round: builder fixes B-352-9, B-353-9 (and B-353-10 per operator decision); lens re-audits only the fix delta + replays aud121OpusL3_352.probe.test.ts / aud121OpusL3_353.probe.test.tsx (in ops/aud-121/AUD-OPUS-L3-121/) and the 119/117 probes in one lane; #354 needs a merge-only tree check after restack.

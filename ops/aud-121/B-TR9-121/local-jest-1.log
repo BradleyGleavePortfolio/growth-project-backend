@@ -1,0 +1,23 @@
+[heavy] waiting for a slot: npx jest --ci test/b-trials-8-shared-rule.spec.ts test/checkout-grant-credentials.spec.ts
+[31m[Nest] 19302  - [39m10/05/2026, 8:14:35 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase cp_4444 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+[31m[Nest] 19302  - [39m10/05/2026, 8:14:35 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase 00000000-0000-4000-8000-000000000001 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+[31m[Nest] 19302  - [39m10/05/2026, 8:14:35 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase cp_4444 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+[31m[Nest] 19302  - [39m10/05/2026, 8:14:35 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase cp_4444 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+[31m[Nest] 19302  - [39m10/05/2026, 8:14:35 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase cp_4444 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+[31m[Nest] 19302  - [39m10/05/2026, 8:14:35 PM [31m  ERROR[39m [38;5;3m[TrialUsageService] [39m[31mtrial conflict: purchase cp_4444 started a trial while another purchase holds this client's trial with the coach (TRIAL_ALREADY_USED)[39m
+PASS test/b-trials-8-shared-rule.spec.ts (9.676 s, 188 MB heap size)
+[32m[Nest] 19302  - [39m10/05/2026, 8:14:35 PM [32m    LOG[39m [38;5;3m[TrialCheckoutCapability] [39m[32mfree trials are sold by subscription-checkout[39m
+[32m[Nest] 19302  - [39m10/05/2026, 8:14:35 PM [32m    LOG[39m [38;5;3m[TrialCheckoutCapability] [39m[32mfree trials are sold by subscription-checkout[39m
+[32m[Nest] 19302  - [39m10/05/2026, 8:14:35 PM [32m    LOG[39m [38;5;3m[TrialCheckoutCapability] [39m[32mfree trials are sold by subscription-checkout[39m
+[32m[Nest] 19302  - [39m10/05/2026, 8:14:35 PM [32m    LOG[39m [38;5;3m[TrialCheckoutCapability] [39m[32mfree trials are sold by subscription-checkout[39m
+[32m[Nest] 19302  - [39m10/05/2026, 8:14:35 PM [32m    LOG[39m [38;5;3m[TrialCheckoutCapability] [39m[32mfree trials are sold by subscription-checkout[39m
+[32m[Nest] 19302  - [39m10/05/2026, 8:14:35 PM [32m    LOG[39m [38;5;3m[TrialCheckoutCapability] [39m[32mfree trials are sold by subscription-checkout[39m
+[32m[Nest] 19302  - [39m10/05/2026, 8:14:35 PM [32m    LOG[39m [38;5;3m[TrialCheckoutCapability] [39m[32mfree trials are sold by subscription-checkout[39m
+[32m[Nest] 19302  - [39m10/05/2026, 8:14:35 PM [32m    LOG[39m [38;5;3m[TrialCheckoutCapability] [39m[32mfree trials are sold by subscription-checkout[39m
+PASS test/checkout-grant-credentials.spec.ts (231 MB heap size)
+
+Test Suites: 2 passed, 2 total
+Tests:       18 passed, 18 total
+Snapshots:   0 total
+Time:        12.73 s
+Ran all test suites matching test/b-trials-8-shared-rule.spec.ts|test/checkout-grant-credentials.spec.ts.

@@ -1,0 +1,184 @@
+[heavy] waiting for a slot: npx jest --ci test/checkout test/stripe-webhook test/billing test/b-secrets-3 test/cancel-pending-on-refund test/purchase-fanout
+PASS test/checkout.service.spec.ts (94 MB heap size)
+[31m[Nest] 27489  - [39m10/05/2026, 8:17:15 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mrecovery single-use guard: Redis SET NX failed, denying (reason=fail-closed-store-unreachable): error=Error[39m
+[31m[Nest] 27489  - [39m10/05/2026, 8:17:15 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mrecovery single-use guard: Redis SET NX failed, denying (reason=fail-closed-store-unreachable): error=Error[39m
+[31m[Nest] 27489  - [39m10/05/2026, 8:17:15 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mrecovery single-use guard: Redis SET NX failed, denying (reason=fail-closed-store-unreachable): error=Error[39m
+[31m[Nest] 27489  - [39m10/05/2026, 8:17:15 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mrecovery single-use guard: Redis SET NX failed, denying (reason=fail-closed-store-unreachable): error=Error[39m
+[31m[Nest] 27489  - [39m10/05/2026, 8:17:15 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mCheckoutRecoveryService: REDIS_URL is required in production — refusing to boot. The in-memory single-use guard is single-process and unsafe across the Fly cluster.[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:15 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mrecovery single-use guard: replay attempt rejected (reason=jti-already-consumed-memory)[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:15 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mrecovery single-use guard: replay attempt rejected (reason=jti-already-consumed-memory)[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:15 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mrecovery single-use guard: replay attempt rejected (reason=jti-already-consumed-memory)[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:15 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mrecovery single-use guard: replay attempt rejected (reason=jti-already-consumed-memory)[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:15 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mrecovery single-use guard: replay attempt rejected (reason=jti-already-consumed)[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:15 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mrecovery single-use guard: replay attempt rejected (reason=jti-already-consumed)[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:15 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mrecovery single-use guard: replay attempt rejected (reason=jti-already-consumed-memory)[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:15 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mrecovery single-use guard: replay attempt rejected (reason=jti-already-consumed-memory)[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:15 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mrecovery single-use guard: replay attempt rejected (reason=jti-already-consumed)[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:15 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mrecovery single-use guard: replay attempt rejected (reason=jti-already-consumed-memory)[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:15 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mrecovery single-use guard: replay attempt rejected (reason=jti-already-consumed)[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:15 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mrecovery single-use guard: replay attempt rejected (reason=jti-already-consumed-memory)[39m
+[31m[Nest] 27489  - [39m10/05/2026, 8:17:16 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mCheckoutRecoveryService: Redis connect failed in production — refusing to boot: ECONNREFUSED 10.0.0.1:6379[39m
+[31m[Nest] 27489  - [39m10/05/2026, 8:17:16 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mCheckoutRecoveryService: REDIS_URL is required in <unset> — refusing to boot. The in-memory single-use guard is single-process and unsafe across the Fly cluster.[39m
+[31m[Nest] 27489  - [39m10/05/2026, 8:17:16 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mCheckoutRecoveryService: Redis connect failed in production — refusing to boot: ECONNREFUSED unset-env[39m
+[31m[Nest] 27489  - [39m10/05/2026, 8:17:16 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mCheckoutRecoveryService: REDIS_URL is required in staging — refusing to boot. The in-memory single-use guard is single-process and unsafe across the Fly cluster.[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:16 PM [32m    LOG[39m [38;5;3m[CheckoutRecoveryService] [39m[32mCheckoutRecoveryService: REDIS_URL unset — using in-memory single-use guard (single-process, dev/test only)[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:16 PM [32m    LOG[39m [38;5;3m[CheckoutRecoveryService] [39m[32mCheckoutRecoveryService: REDIS_URL unset — using in-memory single-use guard (single-process, dev/test only)[39m
+[31m[Nest] 27489  - [39m10/05/2026, 8:17:16 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mCheckoutRecoveryService: Redis connect failed in production — refusing to boot: ECONNREFUSED staging[39m
+[31m[Nest] 27489  - [39m10/05/2026, 8:17:16 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mCheckoutRecoveryService: REDIS_URL is required in production — refusing to boot. The in-memory single-use guard is single-process and unsafe across the Fly cluster.[39m
+[31m[Nest] 27489  - [39m10/05/2026, 8:17:16 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mCheckoutRecoveryService: REDIS_URL is required in production — refusing to boot. The in-memory single-use guard is single-process and unsafe across the Fly cluster.[39m
+[31m[Nest] 27489  - [39m10/05/2026, 8:17:16 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mCheckoutRecoveryService: REDIS_URL is required in staging — refusing to boot. The in-memory single-use guard is single-process and unsafe across the Fly cluster.[39m
+[31m[Nest] 27489  - [39m10/05/2026, 8:17:16 PM [31m  ERROR[39m [38;5;3m[CheckoutRecoveryService] [39m[31mCheckoutRecoveryService: REDIS_URL is required in <unset> — refusing to boot. The in-memory single-use guard is single-process and unsafe across the Fly cluster.[39m
+PASS test/checkout-recovery.service.spec.ts (137 MB heap size)
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:16 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mCheckoutRecoveryService: Redis unavailable in development, falling back to in-memory (dev/test only): ECONNREFUSED 127.0.0.1:6379[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:16 PM [32m    LOG[39m [38;5;3m[CheckoutRecoveryService] [39m[32mCheckoutRecoveryService: REDIS_URL unset — using in-memory single-use guard (single-process, dev/test only)[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:16 PM [32m    LOG[39m [38;5;3m[CheckoutRecoveryService] [39m[32mCheckoutRecoveryService: Redis client quit() OK[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:16 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mCheckoutRecoveryService: Redis quit() failed or timed out, forcing disconnect: broker hung[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:18 PM [33m   WARN[39m [38;5;3m[CheckoutRecoveryService] [39m[33mCheckoutRecoveryService: Redis quit() failed or timed out, forcing disconnect: quit-timeout[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:18 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-1 reason=refund[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:18 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-1 reason=dispute[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:18 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mcancelPendingForPurchase: no pending/due drops for purchase=pur-1 (replay or never-entitled) reason=dispute[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:18 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=refund[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:18 PM [33m   WARN[39m [38;5;3m[PurchaseFanoutService] [39m[33mcancelPendingForPurchase: no scheduledDrop client available (purchase=pur-1, reason=refund) — skipping[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:18 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-1 reason=refund[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:18 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-target reason=subscription_canceled[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:18 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=subscription_canceled[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:18 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=payment_failed[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:18 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=pur-target reason=dispute[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:18 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=refund[39m
+PASS test/cancel-pending-on-refund.spec.ts (232 MB heap size)
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:19 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 1 drop(s) for purchase=pur-1 reason=refund[39m
+[95m[Nest] 27489  - [39m10/04/2026, 5:00:00 AM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5[39m
+PASS test/checkout-settlement-round5.spec.ts (281 MB heap size)
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:20 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:20 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:20 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=cp-r5 reason=payment_failed[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:20 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:20 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=cp-r5 reason=payment_failed[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:20 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mrestoreAfterPaymentRecovered: 2 drop(s) pending again for purchase=cp-r5[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:20 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mpayment_intent.succeeded: purchase=cp-r5 recovered after a failed payment of pi_r5[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:20 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:20 PM [32m    LOG[39m [38;5;3m[PurchaseFanoutService] [39m[32mcancelPendingForPurchase: canceled 2 drop(s) for purchase=cp-r5 reason=payment_failed[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:20 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mcheckout.session.completed: purchase=cp-r5 not activated again (activated before, status=payment_failed)[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:20 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:20 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:20 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mpayment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:20 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mpayment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:20 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mpayment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:20 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mpayment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:20 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mpayment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:20 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mpayment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:20 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mpayment_intent.succeeded pi_r5: purchase changed before the write; Stripe redelivers[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:20 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:20 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:20 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mPaymentIntent status lookup failed for pi_r5 (stripe_401_api_key_invalid): Stripe redelivers[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:20 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:20 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mPaymentIntent status lookup failed for pi_r5 (stripe_403_api_key_invalid): Stripe redelivers[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:20 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:20 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-r5 has no contents — purchase=cp-r5[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:20 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mcheckout.session.completed: purchase=cp-r5 not activated again (status=refunded)[39m
+PASS test/purchase-fanout-rollback-retry.spec.ts (323 MB heap size)
+PASS test/purchase-fanout-real-body.spec.ts (163 MB heap size)
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:22 PM [33m   WARN[39m [38;5;3m[PurchaseFanoutService] [39m[33mdrip alert dispatch failed drop=drop-1: push_provider_blew_up[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:22 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-1 has no contents — purchase=pur-1[39m
+PASS test/stripe-webhook.spec.ts (215 MB heap size)
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:23 PM [33m   WARN[39m [38;5;3m[BillingService] [39m[33mSubscription sub_x for unknown customer cus_UNKNOWN[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:23 PM [33m   WARN[39m [38;5;3m[BillingService] [39m[33mtransfer.failed event=evt_tf_1 transfer=tr_stripe_1 coach=coach-HC amount_cents=5000 reason=account_closed: Destination account is closed[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:23 PM [33m   WARN[39m [38;5;3m[BillingService] [39m[33mtransfer.failed event=evt_tf_dup transfer=tr_stripe_1 coach=coach-HC amount_cents=5000 reason=account_closed: Destination account is closed[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:23 PM [33m   WARN[39m [38;5;3m[BillingService] [39m[33mtransfer.failed event=evt_tf_replay transfer=tr_stripe_1 coach=coach-HC amount_cents=5000 reason=account_closed: Destination account is closed[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:23 PM [33m   WARN[39m [38;5;3m[BillingService] [39m[33mtransfer.failed event=evt_tf_orphan transfer=tr_stripe_1: no matching ConnectTransfer row[39m
+PASS test/checkout-webhook-fee-split.spec.ts (263 MB heap size)
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:23 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mcheckout.session.completed: purchase=p1 not activated again (status=paid)[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:23 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mcheckout.session.completed: purchase=p1 not activated again (status=paid)[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:23 PM [32m    LOG[39m [38;5;3m[DunningService] [39m[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":0,"scheduled_for":"2026-10-05T20:17:23.817Z","kind":"soft"}[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:23 PM [32m    LOG[39m [38;5;3m[DunningService] [39m[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":1,"scheduled_for":"2026-10-08T20:17:23.817Z","kind":"urgent"}[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:23 PM [32m    LOG[39m [38;5;3m[DunningService] [39m[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":2,"scheduled_for":"2026-10-12T20:17:23.817Z","kind":"final"}[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:23 PM [32m    LOG[39m [38;5;3m[DunningService] [39m[32m{"event":"dunning.attempt_scheduled","purchase_id":"p1","dunning_state_id":"d-1","step_index":3,"scheduled_for":"2026-10-19T20:17:23.817Z","kind":"cancelled"}[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:23 PM [32m    LOG[39m [38;5;3m[DunningService] [39m[32m{"event":"dunning.opened","purchase_id":"p1","dunning_state_id":"d-1","invoice_id":"in_1","amount_cents":9900,"attempt_number":1}[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:23 PM [32m    LOG[39m [38;5;3m[DunningService] [39m[32m{"event":"dunning.recovered","purchase_id":"p1","dunning_state_id":"d1"}[39m
+PASS test/purchase-fanout-tx-plumbing.spec.ts (309 MB heap size)
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:24 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=undefined has no contents — purchase=cp-3[39m
+[31m[Nest] 27489  - [39m10/05/2026, 8:17:24 PM [31m  ERROR[39m [38;5;3m[BillingService] [39m[31mStripe event handler failed event=evt_boom type=customer.subscription.updated: checkout boom[39m
+PASS test/billing-checkout-routing.spec.ts (354 MB heap size)
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:24 PM [33m   WARN[39m [38;5;3m[BillingService] [39m[33mpayment_intent.succeeded GuestCheckout fallback lookup failed for pi_saas: Cannot read properties of undefined (reading 'findUnique')[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:24 PM [33m   WARN[39m [38;5;3m[BillingService] [39m[33mpreResolveReceiptUrl: lookup failed for pi=pi_guest: stripe down[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:24 PM [33m   WARN[39m [38;5;3m[BillingService] [39m[33mpreResolveReceiptUrl: lookup failed for pi=pi_guest: stripe down[39m
+PASS test/billing-payout-failed.spec.ts (400 MB heap size)
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:25 PM [33m   WARN[39m [38;5;3m[BillingService] [39m[33mpayout.failed event=evt_po_1 payout=po_123 account=acct_abc coach=coach-1 amount_cents=5000 reason=account_closed: The bank account has been closed.[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:25 PM [33m   WARN[39m [38;5;3m[BillingService] [39m[33mpayout.canceled event=evt_po_c payout=po_123 account=acct_abc coach=coach-1 amount_cents=5000 reason=account_closed: The bank account has been closed.[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:25 PM [33m   WARN[39m [38;5;3m[BillingService] [39m[33mpayout.failed event=evt_po_dup payout=po_123 account=acct_abc coach=coach-1 amount_cents=5000 reason=account_closed: The bank account has been closed.[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:25 PM [33m   WARN[39m [38;5;3m[BillingService] [39m[33mpayout.failed event=evt_po_a payout=po_123 account=acct_abc coach=coach-1 amount_cents=5000 reason=account_closed: The bank account has been closed.[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:25 PM [33m   WARN[39m [38;5;3m[BillingService] [39m[33mpayout.failed event=evt_po_null payout=po_123 account=acct_abc coach=coach-null amount_cents=5000 reason=account_closed: The bank account has been closed.[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:25 PM [33m   WARN[39m [38;5;3m[BillingService] [39m[33mpayout.failed event=evt_po_z payout=po_123 account=acct_abc coach=coach-z amount_cents=5000 reason=account_closed: The bank account has been closed.[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:25 PM [33m   WARN[39m [38;5;3m[BillingService] [39m[33mpayout.failed event=evt_po_nosnap payout=po_123 account=acct_abc: no matching PayoutSnapshot row[39m
+PASS test/checkout-hosted-activation-once.spec.ts (187 MB heap size)
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:26 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-h has no contents — purchase=cp-h[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:26 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mcheckout.session.completed: purchase=cp-h not activated again (status=paid)[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:26 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-h has no contents — purchase=cp-A[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:26 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg-h has no contents — purchase=cp-ps[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:26 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mcheckout.session.completed: purchase=cp-late not activated again (status=paid)[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:26 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mcheckout.session.completed: purchase=cp-late not activated again (status=refunded)[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:26 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mcheckout.session.completed: purchase=cp-late not activated again (status=disputed)[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:26 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mcheckout.session.completed: purchase=cp-late not activated again (status=chargeback_lost)[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:26 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mcheckout.session.completed: purchase=cp-late not activated again (status=canceled)[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:26 PM [32m    LOG[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[32mcheckout.session.completed: purchase=cp-late not activated again (status=expired)[39m
+PASS test/billing/subscription-guard.tier.spec.ts (204 MB heap size)
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:26 PM [33m   WARN[39m [38;5;3m[SubscriptionGuard] [39m[33m[enforce] coach=c state=none reason=missing_subscription route=unknown unknown[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:26 PM [33m   WARN[39m [38;5;3m[SubscriptionGuard] [39m[33m[observe] coach=c state=none reason=missing_subscription route=unknown unknown[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:26 PM [33m   WARN[39m [38;5;3m[SubscriptionGuard] [39m[33m[enforce] coach=c state=canceled reason=canceled route=unknown unknown[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:26 PM [33m   WARN[39m [38;5;3m[SubscriptionGuard] [39m[33m[enforce] coach=c state=past_due reason=past_due_grace_expired route=unknown unknown[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:26 PM [33m   WARN[39m [38;5;3m[SubscriptionGuard] [39m[33m[enforce] coach=c state=none reason=missing_subscription route=unknown unknown[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:26 PM [33m   WARN[39m [38;5;3m[SubscriptionGuard] [39m[33m[enforce] coach=c state=pro reason=tier_too_low route=unknown unknown[39m
+PASS test/purchase-fanout-coach-new-purchase.spec.ts (224 MB heap size)
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:26 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg_1 has no contents — purchase=pur_1[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:26 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg_1 has no contents — purchase=pur_1[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:26 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg_1 has no contents — purchase=pur_1[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:26 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mcoach_new_purchase: marker already claimed for purchase=pur_1 (webhook replay)[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:26 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg_1 has no contents — purchase=pur_1[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:26 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg_1 has no contents — purchase=pur_1[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:26 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: package=pkg_1 has no contents — purchase=pur_1[39m
+PASS test/checkout-buyer-drops.spec.ts (240 MB heap size)
+PASS test/stripe-webhook-fixtures.spec.ts (284 MB heap size)
+PASS test/checkout-rate-limiter.service.spec.ts (301 MB heap size)
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:28 PM [32m    LOG[39m [38;5;3m[CheckoutIpRateLimiterService] [39m[32mCheckoutIpRateLimiterService: REDIS_URL unset — using in-memory limiter[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:28 PM [32m    LOG[39m [38;5;3m[CheckoutIpRateLimiterService] [39m[32mCheckoutIpRateLimiterService: REDIS_URL unset — using in-memory limiter[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:28 PM [32m    LOG[39m [38;5;3m[CheckoutIpRateLimiterService] [39m[32mCheckoutIpRateLimiterService: REDIS_URL unset — using in-memory limiter[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:28 PM [32m    LOG[39m [38;5;3m[CheckoutIpRateLimiterService] [39m[32mCheckoutIpRateLimiterService: REDIS_URL unset — using in-memory limiter[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:28 PM [32m    LOG[39m [38;5;3m[CheckoutIpRateLimiterService] [39m[32mCheckoutIpRateLimiterService: REDIS_URL unset — using in-memory limiter[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:28 PM [32m    LOG[39m [38;5;3m[CheckoutIpRateLimiterService] [39m[32mCheckoutIpRateLimiterService: REDIS_URL unset — using in-memory limiter[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:28 PM [32m    LOG[39m [38;5;3m[CheckoutIpRateLimiterService] [39m[32mCheckoutIpRateLimiterService: REDIS_URL unset — using in-memory limiter[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:28 PM [32m    LOG[39m [38;5;3m[CheckoutIpRateLimiterService] [39m[32mCheckoutIpRateLimiterService: REDIS_URL unset — using in-memory limiter[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:28 PM [32m    LOG[39m [38;5;3m[CheckoutIpRateLimiterService] [39m[32mCheckoutIpRateLimiterService: REDIS_URL unset — using in-memory limiter[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:28 PM [32m    LOG[39m [38;5;3m[CheckoutIpRateLimiterService] [39m[32mCheckoutIpRateLimiterService: REDIS_URL unset — using in-memory limiter[39m
+[32m[Nest] 27489  - [39m10/05/2026, 8:17:28 PM [32m    LOG[39m [38;5;3m[CheckoutIpRateLimiterService] [39m[32mCheckoutIpRateLimiterService: REDIS_URL unset — using in-memory limiter[39m
+PASS test/billing/subscription-webhook.tier.spec.ts (342 MB heap size)
+PASS test/billing-audit.spec.ts (382 MB heap size)
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:31 PM [33m   WARN[39m [38;5;3m[BillingService] [39m[33mSubscription sub_x for unknown customer cus_unknown[39m
+PASS test/b-secrets-3-admin-credentials.spec.ts (423 MB heap size)
+PASS test/purchase-fanout-hooks.spec.ts (204 MB heap size)
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:35 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: skipping drop seed for purchase=cp-1 (no engine tables on tx)[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:35 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: skipping drop seed for purchase=cp-2 (no engine tables on tx)[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:35 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: skipping drop seed for purchase=cp-3 (no engine tables on tx)[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:35 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: skipping drop seed for purchase=cp-3 (no engine tables on tx)[39m
+[31m[Nest] 27489  - [39m10/05/2026, 8:17:36 PM [31m  ERROR[39m [38;5;3m[BillingService] [39m[31mStripe event handler failed event=evt_rb type=checkout.session.completed: rolled_back[39m
+PASS test/billing-drip-alert-flush.spec.ts (254 MB heap size)
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:36 PM [33m   WARN[39m [38;5;3m[BillingService] [39m[33mdrip alert flush failed purchase=cp-3: push provider down[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:36 PM [33m   WARN[39m [38;5;3m[BillingService] [39m[33mtx-rollback observability: event=evt_rb type=checkout.session.completed purchase=cp-rollback — splits/workout-ledger/auto-message-markers committed outside the outer tx will be reconciled by Stripe retry + per-resolver stable-key idempotency; check SplitLedgerEntry, WorkoutBuilderIdempotencyKey (key=drip:workout:p=cp-rollback:c=*), DripResolverMarker(purpose=auto_message, purchase_id=cp-rollback) on persistent failure[39m
+PASS test/purchase-fanout.service.spec.ts (265 MB heap size)
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:37 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: skipping drop seed for purchase=pur-1 (no engine tables on tx)[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:37 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: skipping drop seed for purchase=pur-1 (no engine tables on tx)[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:37 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: skipping drop seed for purchase=pur-1 (no engine tables on tx)[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:37 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: skipping drop seed for purchase=pur-2 (no engine tables on tx)[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:37 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: skipping drop seed for purchase=pur-a (no engine tables on tx)[39m
+[95m[Nest] 27489  - [39m10/05/2026, 8:17:37 PM [95m  DEBUG[39m [38;5;3m[PurchaseFanoutService] [39m[95mfanout: skipping drop seed for purchase=pur-b (no engine tables on tx)[39m
+PASS test/billing-throttle-metadata.spec.ts (326 MB heap size)
+[31m[Nest] 27489  - [39m10/05/2026, 8:17:41 PM [31m  ERROR[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[31mPaymentIntent pi_r3 cannot be read (stripe_404_resource_missing): its payment_intent.payment_failed is not applied[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:41 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mPaymentIntent status lookup failed for pi_r3 (Error): Stripe redelivers[39m
+[33m[Nest] 27489  - [39m10/05/2026, 8:17:41 PM [33m   WARN[39m [38;5;3m[CheckoutWebhookHandlerService] [39m[33mPaymentIntent status lookup failed for pi_r3 (stripe_429_rate_limit): Stripe redelivers[39m
+PASS test/checkout-webhook-handler.spec.ts (379 MB heap size)
+PASS test/checkout-grant-credentials.spec.ts (411 MB heap size)
+
+Test Suites: 1 skipped, 26 passed, 26 of 27 total
+Tests:       19 skipped, 342 passed, 361 total
+Snapshots:   0 total
+Time:        32.614 s
+Ran all test suites matching test/checkout|test/stripe-webhook|test/billing|test/b-secrets-3|test/cancel-pending-on-refund|test/purchase-fanout.

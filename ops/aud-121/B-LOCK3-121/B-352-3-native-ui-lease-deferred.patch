@@ -1,0 +1,431 @@
+diff --git a/src/entitlements/dunning/README.md b/src/entitlements/dunning/README.md
+index 93da071..616d3cd 100644
+--- a/src/entitlements/dunning/README.md
++++ b/src/entitlements/dunning/README.md
+@@ -8,13 +8,13 @@ Client-side half of the backend's 10-day non-payment sequence (`FEATURE_DUNNING_
+ | 10+ | `DunningLockoutGuard` answers non-allowed routes with `403 { code: 'LOCKED_DUNNING' }` | `DunningLockoutProvider` shows one full-screen `DunningLockoutScreen` |
+ | Paid | Saving a card in the app pays the open invoice right away (owner 1A); `invoice.paid` also clears the lock | `UpdateCardScreen` shows "Payment received", the status refresh clears the store, paid queries refetch |
+ | Cancel in dunning | Unpaid invoice voided, plan ends now (owner 2A) | "End my plan" on the lockout and Update card screens, with a confirm dialog |
+-| Dispute on a recurring plan | R-DISPUTE-PAUSE (D2c `reason: 'dispute_paused'`): access ends at once, billing is paused, nothing restarts on its own, the coach decides on restarting | One sentence on every surface (`disputePauseFacts`): access has ended, billing is paused, the coach decides; no lock date, no card or cancel path, Message coach first |
++| Dispute on a recurring plan | R-DISPUTE-PAUSE (D2c `reason: 'dispute_paused'`): access ends at once, billing is paused, nothing restarts on its own, the coach decides on restarting | One sentence on every surface (`disputePauseFacts`): access has ended, billing is paused, the coach decides; no lock date, no card or cancel path, Message coach first. The backend reports an inquiry the same way and an inquiry moves no money, so copy says the bank opened a dispute or inquiry, never that a payment was reversed (B-352-9) |
+ 
+ ## Files
+ 
+ - `dunningLockoutStore.ts`: module-level signal. The axios interceptor in `src/services/api.ts` calls `reportLocked` on every 403 `LOCKED_DUNNING`. `EntitlementProvider` reads it so the paywall sheet never stacks on top of the lockout.
+ - `dunningApi.ts`: `GET /v1/checkout/dunning` (status, reachable while locked), `POST /v1/checkout/payment-method/setup-intent`, `POST /v1/checkout/payment-method/confirm`, `POST /v1/checkout/subscriptions/:purchaseId/cancel`. Strict normalisers; money is integer minor units.
+-- `updateCard.ts`: the native card update (OR-110-2). The backend creates a SetupIntent on the client's platform Stripe customer. `@stripe/stripe-react-native` PaymentSheet collects the card (`initStripe` with the key from the backend, `initPaymentSheet` with `setupIntentClientSecret`, then `presentPaymentSheet`). Confirm then sets the default card and, in dunning, pays the open invoice. A `requires_action` answer runs `handleNextAction` on the returned PaymentIntent and confirms again. The SDK is required lazily, so a build without the native module shows "update the app" instead of crashing.
++- `updateCard.ts`: the native card update (OR-110-2). The backend creates a SetupIntent on the client's platform Stripe customer. `@stripe/stripe-react-native` PaymentSheet collects the card (`initStripe` with the key from the backend, `initPaymentSheet` with `setupIntentClientSecret`, then `presentPaymentSheet`). Confirm then sets the default card and, in dunning, pays the open invoice. A `requires_action` answer runs `handleNextAction` on the returned PaymentIntent and confirms again. The SDK is required lazily, so a build without the native module shows "update the app" instead of crashing. The SDK has one sheet for the whole app (B-352-3): each card update and each "Confirm with my bank" retry is an operation with its own session, and a newer one supersedes it before any further native or confirm step; the card form and the bank step hold one app-wide lease until the native call returns, and an update initializes only once no older card form or bank step is on screen, so a newer sheet never starts while an older one is shown.
+ - `paymentSheetAppearance.ts`: the PaymentSheet theme built from `theme/tokens` (light and dark semantic tokens, square primary button). Fonts are left to the OS, because Stripe looks fonts up by native name.
+ - `UpdateCardScreen.tsx`: route `UpdateCard` in the More stack. Deep links `tgp://billing/update-card`, `tgp://billing/update` and the universal link `https://app.trygrowthproject.com/billing/update-card` (dunning emails) open it. It says what will be charged before the client acts, shows the outcome (paid, saved, processing, bank confirmation, declined), and offers "Confirm with my bank" and "End my plan instead".
+ - `dunningErrorCopy.ts`: specific copy for every backend machine code (`CUSTOMER_NOT_FOUND`, `SETUP_INTENT_*`, `BILLING_ACTION_IN_PROGRESS`, `PURCHASE_NOT_FOUND`, `NOT_A_SUBSCRIPTION`, `CANCEL_INCOMPLETE`, `STRIPE_*` per step, `PAYMENTS_NOT_CONFIGURED`), for the native sheet, and for offline, rate-limited and session-ended. A lost answer on a payment never says "nothing changed". Unknown failures show the request reference and the support address, and are reported to Sentry.
+diff --git a/src/entitlements/dunning/__tests__/dunningL1Contract.test.ts b/src/entitlements/dunning/__tests__/dunningL1Contract.test.ts
+index 1813685..ace6244 100644
+--- a/src/entitlements/dunning/__tests__/dunningL1Contract.test.ts
++++ b/src/entitlements/dunning/__tests__/dunningL1Contract.test.ts
+@@ -140,7 +140,7 @@ describe('B-352-2 / B-352-7 / C-352-5: dispute outcomes say R-DISPUTE-PAUSE', ()
+     const c = cardUpdateOutcomeCopy(r);
+     expect(c.body).toContain('There was no open invoice to pay, so nothing was charged.');
+     expect(c.body).toContain(
+-      'Your bank reversed a payment of $150.00 to Avery. For that plan, access has ended and billing is paused. Your coach, Avery, decides whether to restart it.',
++      'Your bank opened a dispute or inquiry about a payment of $150.00 to Avery. For that plan, access has ended and billing is paused. Your coach, Avery, decides whether to restart it.',
+     );
+     expectDisputePause(c.body);
+     expect(c.body).not.toContain('Your next payment will use it');
+@@ -194,7 +194,7 @@ describe('B-352-2 / B-352-7 / C-352-5: dispute outcomes say R-DISPUTE-PAUSE', ()
+       { purchase_id: 'p2', coach_name: 'Blake', currency: 'eur', amount_cents: 8000 },
+     ]);
+     expect(line).toBe(
+-      'Your bank reversed payments of $150.00 and 80.00 EUR. For those plans, access has ended and billing is paused. Each coach decides whether to restart them. They do not restart on their own or with a new card.',
++      'Your bank opened disputes or inquiries about payments of $150.00 and 80.00 EUR. For those plans, access has ended and billing is paused. Each coach decides whether to restart them. They do not restart on their own or with a new card.',
+     );
+     expect(disputePauseFacts(null, 'account')).toBe(
+       'Your access has ended and billing is paused. Your coach decides whether to restart it. It does not restart on its own or with a new card.',
+@@ -212,7 +212,7 @@ describe('B-352-2 / B-352-7 / C-352-5: dispute outcomes say R-DISPUTE-PAUSE', ()
+       disputes: [{ purchase_id: 'p1', coach_name: null, currency: 'eur', amount_cents: 8000 }],
+     });
+     const body = cardUpdateOutcomeCopy(r, quote.disputes).body;
+-    expect(body).toContain('Your bank reversed a payment of 80.00 EUR. For that plan, access has ended');
++    expect(body).toContain('Your bank opened a dispute or inquiry about a payment of 80.00 EUR. For that plan, access has ended');
+     expectDisputePause(body);
+     expect(cardUpdateOutcomeCopy(r).body).toContain('Your next payment will use it');
+   });
+@@ -234,6 +234,44 @@ describe('B-352-2 / B-352-7 / C-352-5: dispute outcomes say R-DISPUTE-PAUSE', ()
+     expect(cancelOutcomeCopy(ended).body).not.toContain('reversed');
+     expect(disputeNotSettledLine([])).toBeNull();
+   });
++
++  it('B-352-9: an inquiry (same envelope, no amount, no money moved) is never called a reversal', () => {
++    const quote = normalizePaymentQuote({
++      quote_id: 'q_inquiry',
++      complete: true,
++      lines: [],
++      totals: [],
++      disputes: [{ purchase_id: 'p_inquiry', coach_name: 'Avery', amount_cents: null, currency: null }],
++    });
++    const line = disputeNotSettledLine(quote.disputes) ?? '';
++    expect(line).toBe(
++      'Your bank opened a dispute or inquiry about a payment to Avery. For that plan, access has ended and billing is paused. Your coach, Avery, decides whether to restart it. It does not restart on its own or with a new card.',
++    );
++    const saved = cardUpdateOutcomeCopy(
++      normalizeCardUpdate({
++        ...PAID,
++        outcome: 'saved',
++        amount_paid_cents: 0,
++        paid_totals: [],
++        access_restored: false,
++        access_state: 'unchanged',
++        quote: { quote_id: 'q_inquiry', complete: true, lines: [], totals: [], disputes: quote.disputes },
++        plans: [{ purchase_id: 'p_inquiry', dispute_open: true }],
++      }),
++    ).body;
++    const mixed = cardUpdateOutcomeCopy(normalizeCardUpdate({ ...PAID, plans: [{ purchase_id: 'p1' }, { purchase_id: 'p2', dispute_open: true }] })).body;
++    const cancel = cancelOutcomeCopy(
++      { outcome: 'ended', purchase_id: 'p_inquiry', access_ends_at: null, voided_invoice_count: 0, voided_amount_cents: 0, currency: null, paid_period_kept: false, message: null },
++      { dispute: true },
++    ).body;
++    const twoOnOnePlan = disputeNotSettledLine([quote.disputes[0], { ...quote.disputes[0], amount_cents: 5000, currency: 'usd' }]);
++    expect(twoOnOnePlan).toMatch(/^Your bank opened disputes or inquiries about payments of \$50\.00 to Avery\. For that plan,/);
++    expect(saved).toContain('nothing was charged');
++    expect(mixed).toContain('$150.00 went through');
++    expect(cancel).toContain('Your bank had opened a dispute or inquiry about a payment on this plan');
++    for (const body of [line, saved, mixed]) expectDisputePause(body);
++    for (const body of [line, saved, mixed, cancel]) expect(body).not.toMatch(/revers|took back|taken back|withdr|refund/i);
++  });
+ });
+ 
+ describe('R-DISPUTE-PAUSE status contract (backend D2c #705) and older envelopes', () => {
+@@ -409,6 +447,104 @@ describe('B-353-2: a retired screen starts no further native or payment step', (
+     expect(sdk.presentPaymentSheet).toHaveBeenCalledTimes(1);
+   });
+ 
++  /** Pinned iOS 0.64.0: one sheet; a completed presentation clears the CURRENT sheet, whoever set it. */
++  function iosSheet(gates: Record<string, Promise<void>>) {
++    const log: string[] = [];
++    let sheet: string | undefined;
++    const sdk = sdkDouble({
++      initPaymentSheet: jest.fn(async (p: { customerId?: string }) => {
++        sheet = p.customerId;
++        log.push(`init:${sheet}`);
++        return {};
++      }),
++      presentPaymentSheet: jest.fn(async () => {
++        const shown = sheet;
++        log.push(`present:${shown}`);
++        if (!shown) return { error: { code: 'Failed', message: 'No payment sheet has been initialized yet.' } };
++        await gates[shown];
++        sheet = undefined;
++        log.push(`closed:${shown}`);
++        return {};
++      }),
++      handleNextAction: jest.fn(async (secret: string) => {
++        log.push(`bank:${secret}`);
++        await gates[secret];
++        log.push(`bank-closed:${secret}`);
++        return { paymentIntent: { status: 'Succeeded' } };
++      }),
++    });
++    return { sdk, log };
++  }
++  const tick = () => new Promise((r) => setImmediate(r));
++  const account = (id: string) => ({ ...SETUP, setup_intent_id: `seti_${id}`, customer_id: `cus_${id}`, ephemeral_key: `ek_${id}` });
++  const BANK_A = { ...PAID, outcome: 'requires_action', amount_paid_cents: 0, paid_totals: [], payment_intent_client_secret: 'pi_A_secret' };
++  /** Setup intents in order; seti_A's confirm asks for the bank, every other confirm pays. */
++  function routes(...ids: string[]) {
++    const setups = ids.map(account);
++    mockPost.mockImplementation(async (url: string, body: { setup_intent_id?: string }) => ({
++      data: url.endsWith('/setup-intent') ? setups.shift() : body.setup_intent_id === 'seti_A' && bankFirst ? BANK_A : PAID,
++    }));
++  }
++  let bankFirst = false;
++  const confirms = () =>
++    mockPost.mock.calls.filter(([url]) => String(url).endsWith('/confirm')).map(([, body]) => body.setup_intent_id);
++
++  it.each([
++    ['retired', false],
++    ['superseded while its screen is still mounted', true],
++  ])('B-352-3: an older card form still on screen (%s) keeps the lease; its close never erases the newer sheet or confirms', async (_label, stillMounted) => {
++    bankFirst = false;
++    routes('A', 'B');
++    const closeA = deferred<void>();
++    const { sdk, log } = iosSheet({ cus_A: closeA.promise });
++    let aCurrent = true;
++    const a = runNativeCardUpdate({ ...base, sdk, isCurrent: () => aCurrent });
++    await tick();
++    aCurrent = stillMounted;
++    const b = runNativeCardUpdate({ ...base, sdk, isCurrent: () => true });
++    await tick();
++    expect(log).toEqual(['init:cus_A', 'present:cus_A']);
++    closeA.resolve();
++    expect(await a).toEqual({ kind: 'retired' });
++    expect((await b).kind).toBe('done');
++    expect(log).toEqual(['init:cus_A', 'present:cus_A', 'closed:cus_A', 'init:cus_B', 'present:cus_B', 'closed:cus_B']);
++    expect(confirms()).toEqual(['seti_B']);
++  });
++
++  it.each([
++    ['a card update', ['A', 'B'], ['seti_A', 'seti_B']],
++    ['a Confirm with my bank retry', ['B'], ['seti_B']],
++  ])('B-352-3: %s in its bank step keeps the lease; once superseded it sends no further confirm', async (_label, ids, sent) => {
++    bankFirst = true;
++    routes(...ids);
++    const bankA = deferred<void>();
++    const { sdk, log } = iosSheet({ pi_A_secret: bankA.promise, cus_A: Promise.resolve(), cus_B: Promise.resolve() });
++    const a =
++      ids.length === 2
++        ? runNativeCardUpdate({ ...base, sdk, isCurrent: () => true })
++        : confirmWithBank({ ...base, sdk, setupIntentId: 'seti_A', clientSecret: 'pi_A_secret', isCurrent: () => true });
++    while (!log.includes('bank:pi_A_secret')) await tick();
++    const b = runNativeCardUpdate({ ...base, sdk, isCurrent: () => true });
++    await tick();
++    expect(log).not.toContain('init:cus_B');
++    bankA.resolve();
++    expect(await a).toEqual({ kind: 'retired' });
++    expect((await b).kind).toBe('done');
++    expect(log.slice(-3)).toEqual(['init:cus_B', 'present:cus_B', 'closed:cus_B']);
++    expect(confirms()).toEqual(sent);
++  });
++
++  it.each([
++    ['the card form is closed', { presentPaymentSheet: jest.fn(async () => ({ error: { code: 'Canceled' } })) }, 'canceled'],
++    ['the sheet fails to initialize', { initPaymentSheet: jest.fn(async () => ({ error: { code: 'Failed' } })) }, 'error'],
++    ['initStripe rejects', { initStripe: jest.fn(async () => Promise.reject(new Error('native'))) }, 'error'],
++    ['the card form rejects', { presentPaymentSheet: jest.fn(async () => Promise.reject(new Error('native'))) }, 'error'],
++  ])('B-352-3: the lease is released when %s; the next update runs', async (_label, over, kind) => {
++    mockPost.mockImplementation(async (url: string) => ({ data: url.endsWith('/setup-intent') ? SETUP : PAID }));
++    expect((await runNativeCardUpdate({ ...base, sdk: sdkDouble(over), isCurrent: () => true })).kind).toBe(kind);
++    expect((await runNativeCardUpdate({ ...base, sdk: sdkDouble(), isCurrent: () => true })).kind).toBe('done');
++  });
++
+   it('CONTROL: a current screen completes the paid flow', async () => {
+     mockPost.mockImplementation(async (url: string) => ({ data: url.endsWith('/setup-intent') ? SETUP : PAID }));
+     const out = await runNativeCardUpdate({ ...base, sdk: sdkDouble(), isCurrent: () => true });
+diff --git a/src/entitlements/dunning/updateCard.ts b/src/entitlements/dunning/updateCard.ts
+index 794218a..051168e 100644
+--- a/src/entitlements/dunning/updateCard.ts
++++ b/src/entitlements/dunning/updateCard.ts
+@@ -25,6 +25,8 @@ import { buildPaymentSheetAppearance, sheetStyleFor } from './paymentSheetAppear
+  * card form, confirms or pays. A request already sent stays on the server
+  * (idempotent, account-bound); stopping here claims nothing about it, and
+  * the next status read shows the truth.
++ *
++ * B-352-3 (one native sheet): see `claimOperation` and `withNativeUi`.
+  */
+ 
+ export type StripeSdk = Pick<
+@@ -64,6 +66,7 @@ export function loadStripeSdk(): StripeSdk | null {
+ /** Test seam. */
+ export function __resetStripeSdkForTests(): void {
+   cachedSdk = undefined;
++  nativeUi = Promise.resolve();
+ }
+ 
+ export type NativeCardUpdateResult =
+@@ -117,13 +120,69 @@ const RETIRED = { kind: 'retired' } as const;
+ const always = () => true;
+ 
+ /**
+- * B-352-3: the native SDK owns ONE PaymentSheet for the whole app, not one
+- * per screen. Each card update takes the next session number before its
+- * first native step; only the newest session may initialize or present the
+- * sheet, so an older (retired or superseded) update that resumes late can
+- * never replace the customer, key or SetupIntent of the update on screen.
++ * B-352-3: the native SDK owns ONE PaymentSheet and one bank-step handler for
++ * the whole app, not one per screen, and the pinned iOS SDK clears whichever
++ * sheet is current when a presentation completes. Two rules keep an older
++ * update from touching a newer one:
++ *
++ * - Operation session (`claimOperation`): every card update, and every
++ *   "Confirm with my bank" retry, takes the next session number. A newer one
++ *   supersedes it. The session fences every later step: native init, the card
++ *   form, the confirm and its lost-answer retries, and the bank step. A
++ *   superseded update stops (`retired`), even while its screen is mounted.
++ * - Native UI lease (`withNativeUi`): the card form and the bank step run one
++ *   at a time and hold the lease until the native call has returned, on every
++ *   outcome (done, closed, error, rejected, retired). A newer update waits for
++ *   it before it initializes (`nativeUiIdle`), so it never initializes or
++ *   presents while an older sheet is on screen, and the owner is checked
++ *   again right after. Init itself does not hold the lease: native init calls
++ *   apply in call order (iOS assigns the sheet in the call, Android configures
++ *   it on the UI thread in order), so a newer init always replaces an older
++ *   one, and an older update stuck in init never blocks the newer one; the
++ *   session check after init stops the older one from presenting.
++ */
++let nativeSession = 0;
++/** Settles when the card form or bank step on screen has returned. */
++let nativeUi: Promise<void> = Promise.resolve();
++
++/** Claim the next operation session; the returned check is false once the caller retires or a newer operation starts. */
++function claimOperation(isCurrent: () => boolean): () => boolean {
++  nativeSession += 1;
++  const session = nativeSession;
++  return () => isCurrent() && session === nativeSession;
++}
++
++/** Wait until no card form or bank step is on screen (one may start while waiting). */
++async function nativeUiIdle(): Promise<void> {
++  let seen: Promise<void>;
++  do {
++    seen = nativeUi;
++    await seen;
++  } while (seen !== nativeUi);
++}
++
++/**
++ * Run one native UI call (card form or bank step) holding the lease. Waits
++ * for the one on screen to return, then re-checks `owns` with no await
++ * before the call: a retired or superseded operation shows nothing. The lease
++ * is released in `finally`.
+  */
+-let nativeSheetSession = 0;
++async function withNativeUi<T>(
++  owns: () => boolean,
++  work: () => Promise<T>,
++): Promise<{ owned: false } | { owned: true; value: T }> {
++  await nativeUiIdle();
++  if (!owns()) return { owned: false };
++  let release!: () => void;
++  nativeUi = new Promise<void>((done) => {
++    release = done;
++  });
++  try {
++    return { owned: true, value: await work() };
++  } finally {
++    release();
++  }
++}
+ 
+ function fail(error: DunningErrorCopy, surface: string, err: unknown, extra: Record<string, unknown> = {}) {
+   if (error.report) {
+@@ -186,18 +245,19 @@ export async function runNativeCardUpdate(opts: NativeCardUpdateOptions): Promis
+     return fail(localDunningError('PAYMENTS_NOT_CONFIGURED'), surface, null);
+   }
+ 
+-  nativeSheetSession += 1;
+-  const session = nativeSheetSession;
+-  const ownsSheet = () => isCurrent() && session === nativeSheetSession;
++  const owns = claimOperation(isCurrent);
++  // Never initialize while an older card form or bank step is on screen.
++  await nativeUiIdle();
++  if (!owns()) return RETIRED;
+   const init = await guarded(async () => {
+     await sdk.initStripe({
+       publishableKey,
+       urlScheme: STRIPE_URL_SCHEME,
+       setReturnUrlSchemeOnAndroid: true,
+     });
+-    // B-352-3: re-checked between the two native calls; a retired or
+-    // superseded update never initializes the shared sheet.
+-    if (!ownsSheet()) return null;
++    // Re-checked between the two native calls: a retired or superseded
++    // update never initializes the shared sheet.
++    if (!owns()) return null;
+     return sdk.initPaymentSheet({
+       merchantDisplayName: setup.merchant_display_name,
+       customerId: setup.customer_id,
+@@ -210,7 +270,7 @@ export async function runNativeCardUpdate(opts: NativeCardUpdateOptions): Promis
+       appearance: buildPaymentSheetAppearance(),
+     });
+   });
+-  if (!ownsSheet()) return RETIRED;
++  if (!owns()) return RETIRED;
+   if (!init.ok) {
+     return fail(localDunningError('CARD_SHEET_FAILED'), surface, init.err, {
+       step: 'sheet_init',
+@@ -221,12 +281,15 @@ export async function runNativeCardUpdate(opts: NativeCardUpdateOptions): Promis
+       stripe_error_code: init.value.error.code,
+     });
+   }
+-
+   if (init.value === null) return RETIRED;
+-  const presented = await guarded(() => sdk.presentPaymentSheet());
++
++  // The card form holds the native UI lease until it has closed.
++  const ui = await withNativeUi(owns, () => guarded(() => sdk.presentPaymentSheet()));
++  if (!ui.owned || !owns()) return RETIRED;
++  const presented = ui.value;
+   // The card form confirmed only the SetupIntent; nothing is charged until
+-  // the backend confirm below, which a retired screen never sends.
+-  if (!isCurrent()) return RETIRED;
++  // the backend confirm below, which a retired or superseded update never
++  // sends (checked above, after the form closed).
+   if (!presented.ok) {
+     return fail(localDunningError('CARD_SHEET_FAILED'), surface, presented.err, { step: 'sheet_present' });
+   }
+@@ -238,7 +301,8 @@ export async function runNativeCardUpdate(opts: NativeCardUpdateOptions): Promis
+   }
+   if ((presented.value as { didCancel?: boolean } | undefined)?.didCancel) return { kind: 'canceled' };
+ 
+-  return confirmWithBank({
++  // The confirm, its retries and any bank step stay fenced by this session.
++  return continueWithBank({
+     sdk,
+     surface,
+     setupIntentId: setup.setup_intent_id,
+@@ -246,7 +310,7 @@ export async function runNativeCardUpdate(opts: NativeCardUpdateOptions): Promis
+     approved: opts.approved,
+     onConfirming: opts.onConfirming,
+     retryDelaysMs: opts.retryDelaysMs,
+-    isCurrent,
++    isCurrent: owns,
+   });
+ }
+ 
+@@ -297,12 +361,7 @@ async function confirmOnce(args: {
+   };
+ }
+ 
+-/**
+- * Confirm the saved card with the backend, handling a bank confirmation
+- * (3DS) in between. With `clientSecret` set, starts with the bank step (the
+- * "Confirm with my bank" retry after the client closed the bank sheet).
+- */
+-export async function confirmWithBank(args: {
++export interface ConfirmWithBankArgs {
+   sdk?: StripeSdk | null;
+   surface: string;
+   setupIntentId: string;
+@@ -318,10 +377,27 @@ export async function confirmWithBank(args: {
+   lastKnown?: CardUpdateResponse | null;
+   /** False once the initiating screen or auth generation is retired (B-353-2). */
+   isCurrent?: () => boolean;
+-}): Promise<NativeCardUpdateResult> {
+-  const { surface, setupIntentId } = args;
++}
++
++/**
++ * Confirm the saved card with the backend, handling a bank confirmation
++ * (3DS) in between. With `clientSecret` set, starts with the bank step (the
++ * "Confirm with my bank" retry after the client closed the bank sheet).
++ * The retry is its own operation (B-352-3): a newer card update or retry
++ * supersedes it, and its bank step waits for the native UI lease.
++ */
++export async function confirmWithBank(args: ConfirmWithBankArgs): Promise<NativeCardUpdateResult> {
+   const isCurrent = args.isCurrent ?? always;
+   if (!isCurrent()) return RETIRED;
++  return continueWithBank({ ...args, isCurrent: claimOperation(isCurrent) });
++}
++
++/** The confirm and bank rounds of one operation; `isCurrent` already includes its session. */
++async function continueWithBank(
++  args: ConfirmWithBankArgs & { isCurrent: () => boolean },
++): Promise<NativeCardUpdateResult> {
++  const { surface, setupIntentId, isCurrent } = args;
++  if (!isCurrent()) return RETIRED;
+   const sdk = args.sdk === undefined ? loadStripeSdk() : args.sdk;
+   let pendingSecret = args.clientSecret;
+   let last: CardUpdateResponse | null = args.lastKnown ?? null;
+@@ -331,9 +407,11 @@ export async function confirmWithBank(args: {
+     if (pendingSecret) {
+       if (!sdk) return fail(localDunningError('CARD_SHEET_UNAVAILABLE'), surface, null);
+       const secret = pendingSecret;
+-      if (!isCurrent()) return RETIRED;
+-      const next = await guarded(() => sdk.handleNextAction(secret, STRIPE_RETURN_URL));
+-      if (!isCurrent()) return RETIRED;
++      // The bank step is native UI too: it waits for the lease, runs only for
++      // the current operation, and holds the lease until it returns.
++      const step = await withNativeUi(isCurrent, () => guarded(() => sdk.handleNextAction(secret, STRIPE_RETURN_URL)));
++      if (!step.owned || !isCurrent()) return RETIRED;
++      const next = step.value;
+       const nextError = next.ok ? next.value?.error : { code: 'Failed' };
+       if (nextError && nextError.code === 'Canceled') {
+         // The client closed the bank step. B-322-3: keep the SetupIntent and

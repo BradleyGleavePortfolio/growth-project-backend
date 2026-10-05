@@ -1,0 +1,105 @@
+[heavy] waiting for a slot: npx jest test/broadcasts/broadcast-scope.spec.ts --runInBand
+FAIL test/broadcasts/broadcast-scope.spec.ts (65 MB heap size)
+  BroadcastScopeService.lockSendAuthority (A-659-7)
+    ✕ the head coach may message a live client on the roster; every read is FOR SHARE (2 ms)
+    ✕ a client transferred to another coach or deleted is off the roster
+    ✕ a sub-coach with a live seat and an open assignment may message the client (1 ms)
+    ✕ a client reassigned away from the sub-coach is refused
+    ✕ a sub-coach who left the team (no membership) is refused, never treated as the head
+    ✕ a deleted author or one who is no longer a coach is refused
+
+  ● BroadcastScopeService.lockSendAuthority (A-659-7) › the head coach may message a live client on the roster; every read is FOR SHARE
+
+    TypeError: svc.lockSendAuthority is not a function
+
+    [0m [90m 35 |[39m   )[33m;[39m
+     [90m 36 |[39m   [36mconst[39m check [33m=[39m (authorId[33m:[39m string[33m,[39m clientId [33m=[39m [32m'client-1'[39m) [33m=>[39m
+    [31m[1m>[22m[39m[90m 37 |[39m     svc[33m.[39mlockSendAuthority(stub[33m<[39m[33mPrisma[39m[33m.[39m[33mTransactionClient[39m[33m>[39m(tx)[33m,[39m [32m'head-1'[39m[33m,[39m authorId[33m,[39m clientId)[33m;[39m
+     [90m    |[39m         [31m[1m^[22m[39m
+     [90m 38 |[39m   [36mreturn[39m { check[33m,[39m sql[33m,[39m lockMembershipHeadCoachIdInTx }[33m;[39m
+     [90m 39 |[39m }
+     [90m 40 |[39m[0m
+
+      at Object.check (test/broadcasts/broadcast-scope.spec.ts:37:9)
+      at Object.<anonymous> (test/broadcasts/broadcast-scope.spec.ts:48:20)
+
+  ● BroadcastScopeService.lockSendAuthority (A-659-7) › a client transferred to another coach or deleted is off the roster
+
+    TypeError: svc.lockSendAuthority is not a function
+
+    [0m [90m 35 |[39m   )[33m;[39m
+     [90m 36 |[39m   [36mconst[39m check [33m=[39m (authorId[33m:[39m string[33m,[39m clientId [33m=[39m [32m'client-1'[39m) [33m=>[39m
+    [31m[1m>[22m[39m[90m 37 |[39m     svc[33m.[39mlockSendAuthority(stub[33m<[39m[33mPrisma[39m[33m.[39m[33mTransactionClient[39m[33m>[39m(tx)[33m,[39m [32m'head-1'[39m[33m,[39m authorId[33m,[39m clientId)[33m;[39m
+     [90m    |[39m         [31m[1m^[22m[39m
+     [90m 38 |[39m   [36mreturn[39m { check[33m,[39m sql[33m,[39m lockMembershipHeadCoachIdInTx }[33m;[39m
+     [90m 39 |[39m }
+     [90m 40 |[39m[0m
+
+      at Object.check (test/broadcasts/broadcast-scope.spec.ts:37:9)
+      at Object.<anonymous> (test/broadcasts/broadcast-scope.spec.ts:57:10)
+
+  ● BroadcastScopeService.lockSendAuthority (A-659-7) › a sub-coach with a live seat and an open assignment may message the client
+
+    TypeError: svc.lockSendAuthority is not a function
+
+    [0m [90m 35 |[39m   )[33m;[39m
+     [90m 36 |[39m   [36mconst[39m check [33m=[39m (authorId[33m:[39m string[33m,[39m clientId [33m=[39m [32m'client-1'[39m) [33m=>[39m
+    [31m[1m>[22m[39m[90m 37 |[39m     svc[33m.[39mlockSendAuthority(stub[33m<[39m[33mPrisma[39m[33m.[39m[33mTransactionClient[39m[33m>[39m(tx)[33m,[39m [32m'head-1'[39m[33m,[39m authorId[33m,[39m clientId)[33m;[39m
+     [90m    |[39m         [31m[1m^[22m[39m
+     [90m 38 |[39m   [36mreturn[39m { check[33m,[39m sql[33m,[39m lockMembershipHeadCoachIdInTx }[33m;[39m
+     [90m 39 |[39m }
+     [90m 40 |[39m[0m
+
+      at Object.check (test/broadcasts/broadcast-scope.spec.ts:37:9)
+      at Object.<anonymous> (test/broadcasts/broadcast-scope.spec.ts:72:20)
+
+  ● BroadcastScopeService.lockSendAuthority (A-659-7) › a client reassigned away from the sub-coach is refused
+
+    TypeError: svc.lockSendAuthority is not a function
+
+    [0m [90m 35 |[39m   )[33m;[39m
+     [90m 36 |[39m   [36mconst[39m check [33m=[39m (authorId[33m:[39m string[33m,[39m clientId [33m=[39m [32m'client-1'[39m) [33m=>[39m
+    [31m[1m>[22m[39m[90m 37 |[39m     svc[33m.[39mlockSendAuthority(stub[33m<[39m[33mPrisma[39m[33m.[39m[33mTransactionClient[39m[33m>[39m(tx)[33m,[39m [32m'head-1'[39m[33m,[39m authorId[33m,[39m clientId)[33m;[39m
+     [90m    |[39m         [31m[1m^[22m[39m
+     [90m 38 |[39m   [36mreturn[39m { check[33m,[39m sql[33m,[39m lockMembershipHeadCoachIdInTx }[33m;[39m
+     [90m 39 |[39m }
+     [90m 40 |[39m[0m
+
+      at Object.check (test/broadcasts/broadcast-scope.spec.ts:37:9)
+      at Object.<anonymous> (test/broadcasts/broadcast-scope.spec.ts:87:20)
+
+  ● BroadcastScopeService.lockSendAuthority (A-659-7) › a sub-coach who left the team (no membership) is refused, never treated as the head
+
+    TypeError: svc.lockSendAuthority is not a function
+
+    [0m [90m 35 |[39m   )[33m;[39m
+     [90m 36 |[39m   [36mconst[39m check [33m=[39m (authorId[33m:[39m string[33m,[39m clientId [33m=[39m [32m'client-1'[39m) [33m=>[39m
+    [31m[1m>[22m[39m[90m 37 |[39m     svc[33m.[39mlockSendAuthority(stub[33m<[39m[33mPrisma[39m[33m.[39m[33mTransactionClient[39m[33m>[39m(tx)[33m,[39m [32m'head-1'[39m[33m,[39m authorId[33m,[39m clientId)[33m;[39m
+     [90m    |[39m         [31m[1m^[22m[39m
+     [90m 38 |[39m   [36mreturn[39m { check[33m,[39m sql[33m,[39m lockMembershipHeadCoachIdInTx }[33m;[39m
+     [90m 39 |[39m }
+     [90m 40 |[39m[0m
+
+      at Object.check (test/broadcasts/broadcast-scope.spec.ts:37:9)
+      at Object.<anonymous> (test/broadcasts/broadcast-scope.spec.ts:96:20)
+
+  ● BroadcastScopeService.lockSendAuthority (A-659-7) › a deleted author or one who is no longer a coach is refused
+
+    TypeError: svc.lockSendAuthority is not a function
+
+    [0m [90m 35 |[39m   )[33m;[39m
+     [90m 36 |[39m   [36mconst[39m check [33m=[39m (authorId[33m:[39m string[33m,[39m clientId [33m=[39m [32m'client-1'[39m) [33m=>[39m
+    [31m[1m>[22m[39m[90m 37 |[39m     svc[33m.[39mlockSendAuthority(stub[33m<[39m[33mPrisma[39m[33m.[39m[33mTransactionClient[39m[33m>[39m(tx)[33m,[39m [32m'head-1'[39m[33m,[39m authorId[33m,[39m clientId)[33m;[39m
+     [90m    |[39m         [31m[1m^[22m[39m
+     [90m 38 |[39m   [36mreturn[39m { check[33m,[39m sql[33m,[39m lockMembershipHeadCoachIdInTx }[33m;[39m
+     [90m 39 |[39m }
+     [90m 40 |[39m[0m
+
+      at Object.check (test/broadcasts/broadcast-scope.spec.ts:37:9)
+      at Object.<anonymous> (test/broadcasts/broadcast-scope.spec.ts:105:10)
+
+Test Suites: 1 failed, 1 total
+Tests:       6 failed, 6 total
+Snapshots:   0 total
+Time:        0.742 s
+Ran all test suites matching test/broadcasts/broadcast-scope.spec.ts.

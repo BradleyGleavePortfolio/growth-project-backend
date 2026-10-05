@@ -33,13 +33,13 @@ Lens: AUD-OPUS-INV3-121 (agent 121). Tier T4 (tenancy, a CI gate file, RLS, PII 
   - Active sub-coaches are refused on every billing and financial surface (`src/common/guards/no-active-sub-coach.guard.ts`: "Sub-coaches cannot access billing or financial surfaces.").
   - At 08534e17 a sub-coach could bind only their own packages.
   - The PR's own test asserts the escalation: `test/coach-code-tools.service.spec.ts:606-613` (`package_id: 'pkg-1', // the head coach's package`, created by `sub-1` with `grant_mode: 'free'`).
-  - Head-package ids are not secret. The public storefront lists them, and `GET /coach/codes` returns `package.id`.
+  - The only gate is that the package belongs to the head coach. A package id is an identifier, not a secret, so it is no access control.
 - **Probe:** `test/aud-opus-inv3-121.probe.spec.ts` uses the real CoachCodeToolsService, InviteCodesService and InviteGrantService.
   - **P1** expects a sub-coach create with the head's $500 package to be refused. It FAILS at this head: the create resolves and stores `{coach_id: head-1, invited_by_user_id: sub-1, package_id: <head pkg>, grant_mode: free}`.
   - **P2** passes: legacy `setBinding` refuses the same sub-coach on the same code with `INVITE_CODE_NOT_FOUND`.
   - **P3** passes and shows the cost: the sub-coach's code grants the head package at `amount_cents: 0`, `source: invite_grant:free`, `status: active`.
   - **P4** (B-658-1 replay) passes: a sub-coach cannot see, rotate or revoke the head's own code, and the head sees both codes and the link.
-  - Lane: LANE_LINE
+  - Evidence: lane audit/AUD-OPUS-INV3-121/658-1 ([run 37365771761](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37365771761)) sat queued for more than 20 minutes in the GitHub Actions runner incident, so under operator item 11 I ran this single spec locally through ops/heavy.sh at 4de7a6dc + probe (13:12 PDT). Result: 1 failed (P1: `Expected: 403, Received: "resolved"`; stored `{"coach_id":"head-1","invited_by_user_id":"sub-1","package_id":"11111111-…","grant_mode":"free"}`), 3 passed. P3 printed `{"status":"created"}` with `amount_cents: 0`, `source: invite_grant:free`, `status: active`. No full suite ran locally. The probe file is kept at `ops/aud-121/AUD-OPUS-INV3-121/aud-opus-inv3-121.probe.spec.ts`; it was not pushed to the PR.
 - **Fix rule:**
   - In `create`, when `scope.issuerId` is set and `input.package_id` or `input.grant_mode` is present, refuse before `assertBindablePackage` and write nothing. Answer `403 code_package_head_coach_only` with copy such as "Packages on codes are set by your head coach. Create the code without a package, or ask your head coach to add one."
   - The head coach keeps every binding path (A2 create, legacy setBinding).

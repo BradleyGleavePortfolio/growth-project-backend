@@ -62,3 +62,8 @@ no exclamation marks, no generic errors. One job = one agent = one or two PRs, t
     that single spec through heavy.sh (never a full suite) and say so in the verdict.
 12. CI queue discipline (12:47): at most one ci-lane run in flight per agent (all probes for a round in one push); never push a PR head
     only to re-trigger CI; never rerun or re-dispatch a queued run; one push per PR per round; cancel your own lane runs you no longer need.
+13. OWNER EDGE-CASE FREEZE (13:29 PDT 10-05; TGP_SOURCE_OF_TRUTH A2 override; binding until 10,000+ clients): a finding is a B only
+    if it happens in normal use AND touches money, private/health/payment data, safety/crisis routing, data loss, reachable security,
+    store/legal, a false customer-facing claim, or a core-flow dead end. Weird edge cases (same-instant races, timing/lease windows,
+    out-of-order provider retries, crash-at-this-line recovery, inputs nobody types, limits far above launch volume) are
+    "C (edge, deferred to 10k clients)". Re-reviews: prior Bs + changed lines only. One fix round is the target. Move faster.

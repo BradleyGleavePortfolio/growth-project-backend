@@ -1,0 +1,86 @@
+[heavy] waiting for a slot: npx jest --ci src/entitlements/dunning/__tests__/aud121OpusL3_352.probe.test.ts
+FAIL src/entitlements/dunning/__tests__/aud121OpusL3_352.probe.test.ts
+  B-352-9 (Opus 121): dispute copy is true for an inquiry (ruling 6: inquiries pause too and move no money)
+    ✓ CONTROL: no dispute, no dispute line (7 ms)
+    ✕ PROBE: the card-update dispute line does not claim the bank reversed or took back money (2 ms)
+    ✕ PROBE: the dispute line with two plans does not claim payments were reversed
+    ✕ PROBE: ending a disputed plan does not claim the bank had reversed a payment
+  VERIFY B-352-7: R-DISPUTE-PAUSE facts, no "settle", no support fix, in every outcome
+    ✓ outcome paid with a dispute open: three facts, no settle / sort it out, no first person, no "!" (2 ms)
+    ✓ outcome saved with a dispute open: three facts, no settle / sort it out, no first person, no "!" (1 ms)
+    ✓ outcome processing with a dispute open: three facts, no settle / sort it out, no first person, no "!" (1 ms)
+    ✓ outcome in_progress with a dispute open: three facts, no settle / sort it out, no first person, no "!" (1 ms)
+    ✓ outcome requires_action with a dispute open: three facts, no settle / sort it out, no first person, no "!" (1 ms)
+    ✓ outcome approval_required with a dispute open: three facts, no settle / sort it out, no first person, no "!" (1 ms)
+    ✓ outcome payment_uncertain with a dispute open: three facts, no settle / sort it out, no first person, no "!"
+    ✓ outcome failed with a dispute open: three facts, no settle / sort it out, no first person, no "!" (4 ms)
+    ✓ outcome declined with a dispute open: three facts, no settle / sort it out, no first person, no "!" (1 ms)
+    ✓ every disputePauseFacts scope states the three facts and no settle (2 ms)
+    ✓ ending a disputed plan: no settle, no support fix, coach restarts (5 ms)
+  VERIFY B-352-2: mixed paid + disputed keeps the paid amount and scopes access news to the paid plan
+    ✓ access_state updating: no "Your plan updates within a few minutes"
+    ✓ access_state partial: no "Your plan updates within a few minutes"
+    ✓ restored: only the paid plan is active again (1 ms)
+    ✓ processing with a dispute open: "The plan it pays for updates", never "Your plan updates"
+    ✓ CONTROL: without a dispute the plain plan wording stays
+  VERIFY: D2c status contract (reason dispute_paused, no lock date)
+    ✓ reason dispute_paused with kind null reads as a dispute and drops any lock date (1 ms)
+  VERIFY B-352-3: one owner for the shared native PaymentSheet (Opus 121 variant)
+    ✓ A already inside initPaymentSheet when B starts: A never presents and never confirms; B presents once with its own customer (19 ms)
+
+  ● B-352-9 (Opus 121): dispute copy is true for an inquiry (ruling 6: inquiries pause too and move no money) › PROBE: the card-update dispute line does not claim the bank reversed or took back money
+
+    expect(received).not.toMatch(expected)
+
+    Expected pattern: not /\b(revers\w*|took back|taken back|refund\w*|charged back|chargeback)\b/i
+    Received string:      "Your bank reversed a payment to Avery. For that plan, access has ended and billing is paused. Your coach, Avery, decides whether to restart it. It does not restart on its own or with a new card."
+
+    [0m [90m 71 |[39m
+     [90m 72 |[39m   it([32m'PROBE: the card-update dispute line does not claim the bank reversed or took back money'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 73 |[39m     expect(disputeNotSettledLine([[33mDISPUTE[39m]) [33m?[39m[33m?[39m [32m''[39m)[33m.[39mnot[33m.[39mtoMatch([33mMONEY_MOVED[39m)[33m;[39m
+     [90m    |[39m                                                        [31m[1m^[22m[39m
+     [90m 74 |[39m   })[33m;[39m
+     [90m 75 |[39m
+     [90m 76 |[39m   it([32m'PROBE: the dispute line with two plans does not claim payments were reversed'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.toMatch (src/entitlements/dunning/__tests__/aud121OpusL3_352.probe.test.ts:73:56)
+
+  ● B-352-9 (Opus 121): dispute copy is true for an inquiry (ruling 6: inquiries pause too and move no money) › PROBE: the dispute line with two plans does not claim payments were reversed
+
+    expect(received).not.toMatch(expected)
+
+    Expected pattern: not /\b(revers\w*|took back|taken back|refund\w*|charged back|chargeback)\b/i
+    Received string:      "Your bank reversed payments. For those plans, access has ended and billing is paused. Each coach decides whether to restart them. They do not restart on their own or with a new card."
+
+    [0m [90m 76 |[39m   it([32m'PROBE: the dispute line with two plans does not claim payments were reversed'[39m[33m,[39m () [33m=>[39m {
+     [90m 77 |[39m     [36mconst[39m two [33m=[39m [[33mDISPUTE[39m[33m,[39m { [33m...[39m[33mDISPUTE[39m[33m,[39m purchase_id[33m:[39m [32m'p2'[39m[33m,[39m coach_name[33m:[39m [32m'Blake'[39m }][33m;[39m
+    [31m[1m>[22m[39m[90m 78 |[39m     expect(disputeNotSettledLine(two) [33m?[39m[33m?[39m [32m''[39m)[33m.[39mnot[33m.[39mtoMatch([33mMONEY_MOVED[39m)[33m;[39m
+     [90m    |[39m                                                  [31m[1m^[22m[39m
+     [90m 79 |[39m   })[33m;[39m
+     [90m 80 |[39m
+     [90m 81 |[39m   it([32m'PROBE: ending a disputed plan does not claim the bank had reversed a payment'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.toMatch (src/entitlements/dunning/__tests__/aud121OpusL3_352.probe.test.ts:78:50)
+
+  ● B-352-9 (Opus 121): dispute copy is true for an inquiry (ruling 6: inquiries pause too and move no money) › PROBE: ending a disputed plan does not claim the bank had reversed a payment
+
+    expect(received).not.toMatch(expected)
+
+    Expected pattern: not /\b(revers\w*|took back|taken back|refund\w*|charged back|chargeback)\b/i
+    Received string:      "You will not be charged again. Your data stays in your account until you delete it. Your bank had reversed a payment on this plan, so its access had already ended and its billing was paused. Only your coach can restart it."
+
+    [0m [90m 80 |[39m
+     [90m 81 |[39m   it([32m'PROBE: ending a disputed plan does not claim the bank had reversed a payment'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 82 |[39m     expect(cancelOutcomeCopy([33mENDED[39m[33m,[39m { dispute[33m:[39m [36mtrue[39m })[33m.[39mbody)[33m.[39mnot[33m.[39mtoMatch([33mMONEY_MOVED[39m)[33m;[39m
+     [90m    |[39m                                                                  [31m[1m^[22m[39m
+     [90m 83 |[39m   })[33m;[39m
+     [90m 84 |[39m })[33m;[39m
+     [90m 85 |[39m[0m
+
+      at Object.toMatch (src/entitlements/dunning/__tests__/aud121OpusL3_352.probe.test.ts:82:66)
+
+Test Suites: 1 failed, 1 total
+Tests:       3 failed, 19 passed, 22 total
+Snapshots:   0 total
+Time:        1.887 s
+Ran all test suites matching /src\/entitlements\/dunning\/__tests__\/aud121OpusL3_352.probe.test.ts/i.

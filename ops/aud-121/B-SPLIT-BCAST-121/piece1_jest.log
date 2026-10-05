@@ -1,0 +1,229 @@
+[heavy] waiting for a slot: npx jest test/account-deletion/erasure-manifest-coverage.spec.ts --runInBand
+PASS test/account-deletion/erasure-manifest-coverage.spec.ts (60 MB heap size)
+  erasure manifest: schema coverage
+    ✓ finds the expected scale of user references (parser sanity) (23 ms)
+    ✓ every User relation, user-id-like column and email column has a manifest decision (9 ms)
+    ✓ every manifest entry names a real model, field path, data key and filter (4 ms)
+    ✓ dependent scrubs run before the rows they depend on are removed (3 ms)
+  erasure manifest: seeded execution
+    ✓ removes or detaches the deleted user from every column, except documented retention (9 ms)
+    ✓ every non-retained entry acted on at least one seeded row (8 ms)
+    ✓ leaves every row that belongs to someone else byte-identical (6 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       7 passed, 7 total
+Snapshots:   0 total
+Time:        1.322 s, estimated 2 s
+Ran all test suites matching test/account-deletion/erasure-manifest-coverage.spec.ts.
+[heavy] waiting for a slot: npx jest test/account-deletion/manifest-fk-order.spec.ts --runInBand
+PASS test/account-deletion/manifest-fk-order.spec.ts (66 MB heap size)
+  erasure manifest vs. migration foreign keys (A-608-3)
+    ✓ parses the real constraints from prisma/migrations (7 ms)
+    ✓ deletes every RESTRICT / NO ACTION child before its parent (26 ms)
+    ✓ WorkoutSession: the RESTRICT child ExerciseSet is deleted first through workout.user_id (1 ms)
+    ✓ Habit: the RESTRICT child HabitLog is deleted first through habit.user_id (1 ms)
+    ✓ catches the A-608-3 defect when the child steps are removed (13 ms)
+    ✓ catches a child step placed after its parent (17 ms)
+    ✓ the wearable prompt source RESTRICT FK is covered by a pre-step, not by luck (9 ms)
+    ✓ every pre-step matches a real RESTRICT / NO ACTION constraint (3 ms)
+    ✓ every exemption is still needed (5 ms)
+    ✓ executes the pre-step SQL before the manifest deletes the parent rows (17 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       10 passed, 10 total
+Snapshots:   0 total
+Time:        1.579 s, estimated 10 s
+Ran all test suites matching test/account-deletion/manifest-fk-order.spec.ts.
+[heavy] waiting for a slot: npx jest test/env-validation.spec.ts --runInBand
+PASS test/env-validation.spec.ts (64 MB heap size)
+  isProdLike
+    ✓ returns true for production / staging only (3 ms)
+  evaluateEnv
+    ✓ returns hard misses when required vars are absent (1 ms)
+    ✓ classifies feature-tier vars as missingFeature (not missingProd or missingHard) (3 ms)
+    ✓ reports a clean run when fullProdEnv is supplied (1 ms)
+    ✓ flags CORS_ORIGINS=* as a validation warning (1 ms)
+    ✓ accepts a hosted Stripe Customer Portal login link without warning (2 ms)
+    ✓ warns when STRIPE_CUSTOMER_PORTAL_LOGIN_URL points outside billing.stripe.com (1 ms)
+    ✓ treats whitespace-only values as missing (1 ms)
+    ✓ FINANCE_API_BASE_URL accepts http(s) URLs (1 ms)
+    ✓ FINANCE_API_BASE_URL warns on non-http schemes (1 ms)
+  assertEnv
+    ✓ throws on missing hard vars regardless of NODE_ENV (399 ms)
+    ✓ does NOT throw on most missing feature-tier vars under NODE_ENV=production (1 ms)
+    ✓ warns (does not throw) when feature-tier vars are missing under prod NODE_ENV (1 ms)
+    ✓ throws when prod-hardened URL config is missing under NODE_ENV=production (P0) (1 ms)
+    ✓ throws when REDIS_URL is missing under NODE_ENV=production (1 ms)
+    ✓ does not throw on missing prod vars in dev
+    ✓ does not throw when fullProdEnv is supplied
+    ✓ respects explicit enforceProd=false even when NODE_ENV=production (1 ms)
+  looksLikePlaceholder
+    ✓ flags angle-bracket placeholders
+    ✓ flags bare sentinels regardless of case
+    ✓ flags long runs of capital X (template marker)
+    ✓ does not flag genuine secret-shaped values (1 ms)
+    ✓ does not flag empty / whitespace (those are handled as missing)
+  evaluateEnv — placeholder detection
+    ✓ reports hard-tier placeholders separately from missing (1 ms)
+    ✓ does not flag placeholders for feature-tier vars (warn-only tier never blocks boot)
+    ✓ does not flag placeholders for optional-tier vars (1 ms)
+  assertEnv — placeholder enforcement
+    ✓ throws when a hard-tier var is a placeholder, regardless of NODE_ENV (1 ms)
+    ✓ does not throw when a feature-tier var contains placeholder text under prod (1 ms)
+    ✓ does not throw when a feature-tier var contains placeholder text in dev (1 ms)
+    ✓ does not throw when fullProdEnv has real-looking values
+  assertEnv — prod-tier validator failures are fatal (Audit #2 P2-B)
+    ✓ throws when RECENT_AUTH_SECRET is too short under NODE_ENV=production (1 ms)
+    ✓ throws when RECENT_AUTH_SECRET is too short under NODE_ENV=staging (1 ms)
+    ✓ throws when RECENT_AUTH_TTL_MS is out of range under production (1 ms)
+    ✓ throws when RECENT_AUTH_TTL_MS is not a finite integer under production (1 ms)
+    ✓ does NOT throw when prod-tier validator fails under NODE_ENV=development
+    ✓ does NOT throw when enforceProd=false even with a bad RECENT_AUTH_SECRET
+    ✓ evaluateEnv exposes validationErrorsProd for prod-tier validator failures (1 ms)
+  assertEnv — CHECKOUT_RECOVERY_SECRET boot-time gate (Audit A276-P1-1 + A276-F3-P2-1)
+    ✓ floor constant is exactly 43 chars (256-bit per RFC 7518 §3.2)
+    ✓ throws when CHECKOUT_RECOVERY_SECRET is unset under NODE_ENV=production (1 ms)
+    ✓ throws with ENV_PROD_HARDENED_MISSING code when CHECKOUT_RECOVERY_SECRET is unset under prod (A276-F3-P3-6)
+    ✓ throws when CHECKOUT_RECOVERY_SECRET is set but shorter than the floor under NODE_ENV=production (1 ms)
+    ✓ throws with distinct ENV_PROD_HARDENED_TOO_SHORT code and "set but too short" wording when value is below floor (A276-F3-P3-4) (1 ms)
+    ✓ throws when CHECKOUT_RECOVERY_SECRET is whitespace-padded short value under prod (trim parity) (1 ms)
+    ✓ surfaces a validationWarning under NODE_ENV=staging when CHECKOUT_RECOVERY_SECRET is too short
+    ✓ surfaces a validationWarning under NODE_ENV=development when CHECKOUT_RECOVERY_SECRET is too short (A276-F3-P3-5) (1 ms)
+    ✓ dev-mode does not throw when CHECKOUT_RECOVERY_SECRET is too short — only warns (A276-F3-P3-5)
+    ✓ does NOT throw when CHECKOUT_RECOVERY_SECRET is exactly at the floor under prod (boundary: 43)
+    ✓ does NOT throw when CHECKOUT_RECOVERY_SECRET is longer than the floor under prod (1 ms)
+    ✓ does NOT throw when CHECKOUT_RECOVERY_SECRET is missing in development
+    ✓ error message names CHECKOUT_RECOVERY_SECRET and references the audit codes (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       50 passed, 50 total
+Snapshots:   0 total
+Time:        1.514 s, estimated 2 s
+Ran all test suites matching test/env-validation.spec.ts.
+[heavy] waiting for a slot: npx jest test/ci/fly-env-manifest.spec.ts --runInBand
+PASS test/ci/fly-env-manifest.spec.ts (5.849 s, 108 MB heap size)
+  ENV_RULES extraction (runner side, no TypeScript)
+    ✓ reads exactly the names and closed value sets of the imported ENV_RULES (30 ms)
+    ✓ fails closed on a values line it cannot read (97 ms)
+    ✓ closed sets are exactly what the code distinguishes (2 ms)
+  emergency kill per flag (B-637-2): defaults-on switches are killed by a set, never an unset
+    ✓ every managed flag declares unsetIs, and exactly the defaults-on switches are "on" (2 ms)
+    ✓ unsetIs agrees with the registry default text of every managed flag (2 ms)
+    ✓ the real code readers: absent = on and the kill value = off for every defaults-on switch (2644 ms)
+    ✓ defaults-on kills are a set of the off value; defaults-off kills are an unset (4 ms)
+    ✓ validation rejects a managed flag without unsetIs, and a defaults-on flag with no off value (3 ms)
+    ✓ the kill-switches CLI, the plan and the runbook give the same per-flag kill (91 ms)
+  the checked-in manifest
+    ✓ parses, validates against ENV_RULES and passes every precondition (7 ms)
+    ✓ manages every Wave A / Wave B flag, GOOGLE_CLIENT_IDS and the MWB lock secret (11 ms)
+    ✓ every FEATURE_COMMUNITY_* name in ENV_RULES is managed or excluded with a reason (3 ms)
+    ✓ one path: no other workflow mentions a managed flag name (1795 ms)
+    ✓ the workflow passes exactly the manifest secrets to the plan and stage steps, each from the same-named GitHub secret (20 ms)
+  manifest parsing is strict
+    ✓ rejects a duplicated key with a Fix (2 ms)
+    ✓ rejects two entries on one line with a Fix (1 ms)
+    ✓ rejects invalid JSON with a Fix (1 ms)
+    ✓ rejects a missing top-level section with a Fix (1 ms)
+    ✓ rejects a non-string value with a Fix
+  validation errors are specific and carry a Fix
+    ✓ an unregistered flag (1 ms)
+    ✓ a value outside the closed set
+    ✓ a flag without a closed set (3 ms)
+    ✓ an unknown secret state
+    ✓ a flag listed as a secret (1 ms)
+    ✓ a managed name also excluded (1 ms)
+    ✓ a missing gate (1 ms)
+    ✓ a gate without an entry
+    ✓ a closed-set flag neither managed nor excluded
+    ✓ the wrong app (1 ms)
+    ✓ precondition: autosave without the lock secret (1 ms)
+    ✓ precondition: autosave with the lock secret from GitHub
+    ✓ precondition: autosave with the lock secret already present
+    ✓ precondition: voice notes without the API (1 ms)
+    ✓ precondition: the community core set (1 ms)
+    ✓ precondition: the API with the schema forced off (2 ms)
+    ✓ precondition: voice entitlement without voice notes
+    ✓ precondition: every Wave A / B launch value (1 ms)
+  source checks (GitHub secrets) return words, never values
+    ✓ {"GOOGLE_CLIENT_IDS":"a.apps.googleusercontent.com,b.apps.googleusercontent.com","MWB_AUTOSAVE_LOCK_TOKEN_SECRET":"abababababababababababababababababababababababababababababababab","METRICS_AUTH_TOKEN":"leakcanary-value-7d6c5b4a39213f2e"}
+    ✓ {"GOOGLE_CLIENT_IDS":"a,,b","MWB_AUTOSAVE_LOCK_TOKEN_SECRET":"short","METRICS_AUTH_TOKEN":"   "}
+    ✓ {}
+  in-machine check
+    ✓ the command is base64 only: no value and no plain hash input (1 ms)
+    ✓ the real program answers match / differs / absent / present and prints nothing else (58 ms)
+    ✓ bad input is reported as bad_input (never a guess) (32 ms)
+    ✓ parseCompareOutput rejects no marker line
+    ✓ parseCompareOutput rejects a non-JSON marker line (1 ms)
+    ✓ parseCompareOutput rejects another schema
+    ✓ parseCompareOutput rejects a missing name (1 ms)
+    ✓ parseCompareOutput rejects an unknown word
+  planChanges / verifyState matrix
+    ✓ declared value, Fly absent -> {} (1 ms)
+    ✓ declared value, Fly Deployed + match -> { FEATURE_AI_CONSENT_LEDGER_ENABLED: 'Deployed' } (1 ms)
+    ✓ declared value, Fly Deployed + differs -> { FEATURE_AI_CONSENT_LEDGER_ENABLED: 'Deployed' }
+    ✓ declared value, Fly Deployed + machine absent -> { FEATURE_AI_CONSENT_LEDGER_ENABLED: 'Deployed' }
+    ✓ declared value, Fly Deployed + check unavailable -> { FEATURE_AI_CONSENT_LEDGER_ENABLED: 'Deployed' } (1 ms)
+    ✓ declared value, Fly Staged -> { FEATURE_AI_CONSENT_LEDGER_ENABLED: 'Staged' }
+    ✓ declared value, Fly Unknown -> { FEATURE_AI_CONSENT_LEDGER_ENABLED: 'Unknown' }
+    ✓ declared unset, absent everywhere -> {} (1 ms)
+    ✓ declared unset, listed Deployed -> { FEATURE_DUNNING_V2: 'Deployed' } (1 ms)
+    ✓ declared unset, listed Staged -> { FEATURE_DUNNING_V2: 'Staged' }
+    ✓ declared unset, unset staged, machine still has it -> {} (1 ms)
+    ✓ declared present: absent on Fly is an error; listed but not live is pending (1 ms)
+    ✓ github-secret sources: empty / shape errors carry a Fix and never a value (1 ms)
+    ✓ other staged names are listed for deploy_staged; malformed names are counted, not shown (2 ms)
+    ✓ the plan prints declared states and words, never a value or digest (1 ms)
+    ✓ verifyState is exact: missing, extra, not-deployed and machine mismatches (1 ms)
+    ✓ deployed phase fails closed: every unproven case is a retry, and an error with a Fix on the last attempt (3 ms)
+    ✓ parseMachineList keeps valid ids and counts the rest without showing them (1 ms)
+    ✓ an absent listing with no in-machine check is unproven, never "absent, as declared" (B-637-1)
+
+Test Suites: 1 passed, 1 total
+Tests:       67 passed, 67 total
+Snapshots:   0 total
+Time:        6.092 s
+Ran all test suites matching test/ci/fly-env-manifest.spec.ts.
+[heavy] waiting for a slot: npx jest test/prod-readiness/env-registration.spec.ts --runInBand
+PASS test/prod-readiness/env-registration.spec.ts (10.675 s, 436 MB heap size)
+  env-registration scanner — read shapes
+    ✓ direct process.env property / element / const / destructuring (14 ms)
+    ✓ ConfigService get / getOrThrow with generic and default (1 ms)
+    ✓ ProcessEnv aliases (typed parameter, default parameter, local alias) (1 ms)
+    ✓ env-reading helpers: direct, method, arrow-property, transitive, config-backed, const-object args (2 ms)
+    ✓ template-built names expand over the wearables providers (1 ms)
+    ✓ for-of over a const string array and a same-file property table (1 ms)
+    ✓ reports unresolvable reads as dynamic sites instead of silently dropping them (1 ms)
+    ✓ imported helpers resolve across files only when imported by name (1 ms)
+  B-624-2: ProcessEnv alias keys and renamed helper bindings fail closed
+    ✓ an unresolvable key on a ProcessEnv alias is a dynamic site, exactly like process.env[expr] (2 ms)
+    ✓ typed-parameter, default-parameter, optional-chain, chained and spread-copy aliases all fail closed (1 ms)
+    ✓ a helper keyed through a ProcessEnv alias resolves at its call sites (numEnv(env, NAME, d)) (2 ms)
+    ✓ literal, const and computed keys on an alias and alias destructuring are names; a rest copy is dynamic (1 ms)
+    ✓ a helper imported under a local alias still resolves (import { envOn as readFlag }) (2 ms)
+    ✓ a namespace import (h.envOn) and a default import of a helper module resolve (2 ms)
+    repository scan (multi-file): export renames, re-exports, wrappers and default exports
+      ✓ finds every read and blocks against an empty registry (5 ms)
+  checkRegistration (pure)
+    ✓ flags an unregistered name, an unrecorded dynamic site, and stale / unregistered dynamic entries (1 ms)
+    ✓ is clean when everything is registered and every dynamic site is recorded
+  repository invariant: every env name src/ reads is registered in ENV_RULES
+    ✓ has zero unregistered env reads (add a rule to src/common/env-validation.ts) (1 ms)
+    ✓ has zero unrecorded dynamic env reads (list them in DYNAMIC_ENV_SITES)
+    ✓ scans a realistic surface (guards against a scanner that silently finds nothing) (1 ms)
+    ✓ follows the alias-keyed numEnv(env, NAME, d) reads in dunning.service.ts (dropped before B-624-2) (38 ms)
+    ✓ the pilot-coach dynamic site lists exactly the FEATURE_GATED_ROUTES flags (1 ms)
+  ENV_RULES hygiene
+    ✓ no duplicate names
+    ✓ every rule added after the legacy set records its real code default and a reason (1 ms)
+    ✓ inventory rules add no validators and no hard/prod tiers (no boot behaviour change)
+    ✓ providers not used in v1 are optional and say so (13 ms)
+    ✓ launch classification (operator 2026-10-01): sign-in audience required, reminders a switch, calendar optional (1 ms)
+    ✓ calendar flags are prod_default OFF in prod-switches.yml (must be unset or false) (1 ms)
+    ✓ the runner-side name extractor (no TS toolchain) matches the AST extraction (19 ms)
+    ✓ the AST extractor still parses the file (sanity) (5 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       30 passed, 30 total
+Snapshots:   0 total
+Time:        10.919 s, estimated 16 s
+Ran all test suites matching test/prod-readiness/env-registration.spec.ts.

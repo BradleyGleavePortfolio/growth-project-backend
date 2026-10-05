@@ -1,0 +1,143 @@
+[heavy] waiting for a slot: npx jest test/broadcasts/broadcasts.service.spec.ts --runInBand
+FAIL test/broadcasts/broadcasts.service.spec.ts (67 MB heap size)
+  BroadcastsService
+    ✓ refuses to schedule a broadcast nobody would receive (4 ms)
+    ✓ writes under the head coach tenant with the sub-coach as author, and arms next_run_at (2 ms)
+    ✓ a recurring series pins its anchor and first occurrence in the broadcast time zone (2 ms)
+    ✓ rejects a send time in the past and an invalid time zone with specific codes (1 ms)
+    ✓ a sub-coach only ever loads broadcasts they wrote (1 ms)
+    ✓ a sent broadcast cannot be edited or canceled (1 ms)
+  BroadcastsService idempotency (A-659-6)
+    ✕ a sibling sub-coach with the same key and text gets a broadcast of their own and learns nothing about the other (1 ms)
+    ✕ the head coach colliding with a sub-coach key is independent too (1 ms)
+    ✓ the same author replays the same broadcast (and a different text is a conflict) (1 ms)
+    ✓ a concurrent loser (P2002) of the same author replays the winner (1 ms)
+  BroadcastsService edit / resume after a claim (B-659-1)
+    ✕ pause mid-run, edit, resume: the edit of a started one-off is refused and nothing is re-armed (3 ms)
+    ✕ a series with a claimed occurrence cannot become a one-off (that would resend now) (1 ms)
+    ✕ a series edit applies from the next occurrence and never adds a second copy on a day already sent (1 ms)
+    ✓ a one-off that never started is still editable (1 ms)
+    ✕ resume never re-arms a one-off that already has a run (1 ms)
+    ✕ resume of a series skips to a day that has not had a copy yet (1 ms)
+
+  ● BroadcastsService idempotency (A-659-6) › a sibling sub-coach with the same key and text gets a broadcast of their own and learns nothing about the other
+
+    expect(received).not.toBe(expected) // Object.is equality
+
+    Expected: not "b-a"
+
+    [0m [90m 221 |[39m     [36mconst[39m prisma [33m=[39m store(rows)[33m;[39m
+     [90m 222 |[39m     [36mconst[39m out [33m=[39m [36mawait[39m svcFor(prisma[33m,[39m subB)[33m.[39mcreate([32m'sub-b'[39m[33m,[39m input[33m,[39m [32m'k1'[39m[33m,[39m [33mNOW[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 223 |[39m     expect(out[33m.[39mid)[33m.[39mnot[33m.[39mtoBe([32m'b-a'[39m)[33m;[39m
+     [90m     |[39m                        [31m[1m^[22m[39m
+     [90m 224 |[39m     expect(out[33m.[39mauthor_user_id)[33m.[39mtoBe([32m'sub-b'[39m)[33m;[39m
+     [90m 225 |[39m     expect([33mJSON[39m[33m.[39mstringify(out))[33m.[39mnot[33m.[39mtoContain([32m'private-client'[39m)[33m;[39m
+     [90m 226 |[39m     expect([33mJSON[39m[33m.[39mstringify(out))[33m.[39mnot[33m.[39mtoContain([32m'sub-a'[39m)[33m;[39m[0m
+
+      at Object.<anonymous> (test/broadcasts/broadcasts.service.spec.ts:223:24)
+
+  ● BroadcastsService idempotency (A-659-6) › the head coach colliding with a sub-coach key is independent too
+
+    expect(received).not.toBe(expected) // Object.is equality
+
+    Expected: not "b-a"
+
+    [0m [90m 231 |[39m     [36mconst[39m rows[33m:[39m [33mRow[39m[] [33m=[39m [{ [33m...[39mrowA }][33m;[39m
+     [90m 232 |[39m     [36mconst[39m out [33m=[39m [36mawait[39m svcFor(store(rows)[33m,[39m head)[33m.[39mcreate([32m'coach-a'[39m[33m,[39m input[33m,[39m [32m'k1'[39m[33m,[39m [33mNOW[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 233 |[39m     expect(out[33m.[39mid)[33m.[39mnot[33m.[39mtoBe([32m'b-a'[39m)[33m;[39m
+     [90m     |[39m                        [31m[1m^[22m[39m
+     [90m 234 |[39m     expect(out[33m.[39mauthor_user_id)[33m.[39mtoBe([32m'coach-a'[39m)[33m;[39m
+     [90m 235 |[39m   })[33m;[39m
+     [90m 236 |[39m[0m
+
+      at Object.<anonymous> (test/broadcasts/broadcasts.service.spec.ts:233:24)
+
+  ● BroadcastsService edit / resume after a claim (B-659-1) › pause mid-run, edit, resume: the edit of a started one-off is refused and nothing is re-armed
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "broadcast.already_sending"
+    Received: "resolved"
+
+    [0m [90m 284 |[39m       today0700[33m,[39m
+     [90m 285 |[39m     )[33m;[39m
+    [31m[1m>[22m[39m[90m 286 |[39m     expect([36mawait[39m code(h[33m.[39msvc[33m.[39mupdate([32m'coach-a'[39m[33m,[39m [32m'b1'[39m[33m,[39m { [33m...[39minput[33m,[39m body[33m:[39m [32m'Fixed typo'[39m }[33m,[39m [33mNOW[39m)))[33m.[39mtoBe(
+     [90m     |[39m                                                                                              [31m[1m^[22m[39m
+     [90m 287 |[39m       [32m'broadcast.already_sending'[39m[33m,[39m
+     [90m 288 |[39m     )[33m;[39m
+     [90m 289 |[39m     expect(h[33m.[39mprisma[33m.[39mcoachBroadcast[33m.[39mupdateMany)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m[0m
+
+      at Object.<anonymous> (test/broadcasts/broadcasts.service.spec.ts:286:94)
+
+  ● BroadcastsService edit / resume after a claim (B-659-1) › a series with a claimed occurrence cannot become a one-off (that would resend now)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "broadcast.series_started"
+    Received: "resolved"
+
+    [0m [90m 296 |[39m       today0700[33m,[39m
+     [90m 297 |[39m     )[33m;[39m
+    [31m[1m>[22m[39m[90m 298 |[39m     expect([36mawait[39m code(h[33m.[39msvc[33m.[39mupdate([32m'coach-a'[39m[33m,[39m [32m'b1'[39m[33m,[39m input[33m,[39m [33mNOW[39m)))[33m.[39mtoBe([32m'broadcast.series_started'[39m)[33m;[39m
+     [90m     |[39m                                                                   [31m[1m^[22m[39m
+     [90m 299 |[39m     expect(h[33m.[39mprisma[33m.[39mcoachBroadcast[33m.[39mupdateMany)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+     [90m 300 |[39m   })[33m;[39m
+     [90m 301 |[39m[0m
+
+      at Object.<anonymous> (test/broadcasts/broadcasts.service.spec.ts:298:67)
+
+  ● BroadcastsService edit / resume after a claim (B-659-1) › a series edit applies from the next occurrence and never adds a second copy on a day already sent
+
+    expect(received).toEqual(expected) // deep equality
+
+    Expected: 2027-02-02T16:00:00.000Z
+    Received: 2027-02-01T16:00:00.000Z
+
+    [0m [90m 318 |[39m       ]
+     [90m 319 |[39m     )[[35m0[39m][33m.[39mdata[33m;[39m
+    [31m[1m>[22m[39m[90m 320 |[39m     expect(data[33m.[39mnext_run_at)[33m.[39mtoEqual([36mnew[39m [33mDate[39m([32m'2027-02-02T16:00:00Z'[39m))[33m;[39m
+     [90m     |[39m                              [31m[1m^[22m[39m
+     [90m 321 |[39m   })[33m;[39m
+     [90m 322 |[39m
+     [90m 323 |[39m   it([32m'a one-off that never started is still editable'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/broadcasts/broadcasts.service.spec.ts:320:30)
+
+  ● BroadcastsService edit / resume after a claim (B-659-1) › resume never re-arms a one-off that already has a run
+
+    expect(received).toBeNull()
+
+    Received: 2027-02-01T15:00:00.000Z
+
+    [0m [90m 334 |[39m       ]
+     [90m 335 |[39m     )[[35m0[39m][33m.[39mdata[33m;[39m
+    [31m[1m>[22m[39m[90m 336 |[39m     expect(data[33m.[39mnext_run_at)[33m.[39mtoBeNull()[33m;[39m
+     [90m     |[39m                              [31m[1m^[22m[39m
+     [90m 337 |[39m     expect(data[33m.[39mstatus)[33m.[39mtoBe([32m'sending'[39m)[33m;[39m
+     [90m 338 |[39m   })[33m;[39m
+     [90m 339 |[39m[0m
+
+      at Object.<anonymous> (test/broadcasts/broadcasts.service.spec.ts:336:30)
+
+  ● BroadcastsService edit / resume after a claim (B-659-1) › resume of a series skips to a day that has not had a copy yet
+
+    expect(received).toEqual(expected) // deep equality
+
+    Expected: 2027-02-02T16:00:00.000Z
+    Received: 2027-02-01T16:00:00.000Z
+
+    [0m [90m 350 |[39m       ]
+     [90m 351 |[39m     )[[35m0[39m][33m.[39mdata[33m;[39m
+    [31m[1m>[22m[39m[90m 352 |[39m     expect(data[33m.[39mnext_run_at)[33m.[39mtoEqual([36mnew[39m [33mDate[39m([32m'2027-02-02T16:00:00Z'[39m))[33m;[39m
+     [90m     |[39m                              [31m[1m^[22m[39m
+     [90m 353 |[39m     expect(data[33m.[39mstatus)[33m.[39mtoBe([32m'scheduled'[39m)[33m;[39m
+     [90m 354 |[39m   })[33m;[39m
+     [90m 355 |[39m })[33m;[39m[0m
+
+      at Object.<anonymous> (test/broadcasts/broadcasts.service.spec.ts:352:30)
+
+Test Suites: 1 failed, 1 total
+Tests:       7 failed, 9 passed, 16 total
+Snapshots:   0 total
+Time:        0.892 s
+Ran all test suites matching test/broadcasts/broadcasts.service.spec.ts.

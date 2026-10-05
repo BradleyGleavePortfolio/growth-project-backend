@@ -7,7 +7,7 @@
  * (https://docs.stripe.com/disputes/withdrawing), so copy shown for `kind: 'dispute'` must be true for both.
  */
 import React from 'react';
-import { Alert } from 'react-native';
+import { Alert, View } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 import type { ClientDunningStatus } from '../dunningApi';
 import { bannerCopy } from '../DunningBanner';
@@ -169,9 +169,11 @@ describe('VERIFY B-353-2: the End my plan confirmation is owned from the moment 
     const calls = captureAlert();
     const props = lockoutProps(LOCKED);
     const screen = await render(<DunningLockoutScreen {...props} />);
-    fireEvent.press(screen.getByTestId('dunning-lockout-end-plan'));
+    await fireEvent.press(screen.getByTestId('dunning-lockout-end-plan'));
     expect(calls).toHaveLength(1);
-    screen.unmount();
+    // unmount the lockout itself (RNTL 14: a manual root unmount breaks later renders in this file)
+    await screen.rerender(<View />);
+    expect(screen.queryByTestId('dunning-lockout-screen')).toBeNull();
     calls[0].find((b) => b.text === 'End my plan')?.onPress?.();
     expect(props.onEndPlan).not.toHaveBeenCalled();
   });
@@ -180,7 +182,7 @@ describe('VERIFY B-353-2: the End my plan confirmation is owned from the moment 
     const calls = captureAlert();
     const props = lockoutProps(LOCKED);
     const screen = await render(<DunningLockoutScreen {...props} />);
-    fireEvent.press(screen.getByTestId('dunning-lockout-end-plan'));
+    await fireEvent.press(screen.getByTestId('dunning-lockout-end-plan'));
     expect(calls).toHaveLength(1);
     // the sign-out / sign-in identity boundary (authEvents 'logout' calls retire())
     dunningLockoutStore.retire();
@@ -192,7 +194,7 @@ describe('VERIFY B-353-2: the End my plan confirmation is owned from the moment 
     const calls = captureAlert();
     const props = lockoutProps(LOCKED);
     const screen = await render(<DunningLockoutScreen {...props} />);
-    fireEvent.press(screen.getByTestId('dunning-lockout-end-plan'));
+    await fireEvent.press(screen.getByTestId('dunning-lockout-end-plan'));
     await screen.rerender(<DunningLockoutScreen {...props} status={{ ...LOCKED, purchase_id: 'p2' }} />);
     calls[0].find((b) => b.text === 'End my plan')?.onPress?.();
     expect(props.onEndPlan).toHaveBeenCalledTimes(1);

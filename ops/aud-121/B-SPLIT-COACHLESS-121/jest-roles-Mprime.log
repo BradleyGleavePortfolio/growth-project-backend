@@ -1,0 +1,11 @@
+[heavy] waiting for a slot: npx jest --ci --runInBand test/roles-enforced.spec.ts
+PASS test/roles-enforced.spec.ts (5.313 s, 256 MB heap size)
+  RolesEnforced — every route has @Roles or @Public
+    ✓ every route handler has @Roles or @Public (or is in the legacy-guard allowlist) (5 ms)
+    ✓ RolesGuard is registered as a global APP_GUARD (3 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       2 passed, 2 total
+Snapshots:   0 total
+Time:        5.708 s, estimated 43 s
+Ran all test suites matching test/roles-enforced.spec.ts.

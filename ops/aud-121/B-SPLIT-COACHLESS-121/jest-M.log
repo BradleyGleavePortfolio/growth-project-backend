@@ -1,0 +1,43 @@
+[heavy] waiting for a slot: npx jest --ci test/coachless test/account-deletion/erasure-manifest-coverage.spec.ts test/account-deletion/manifest-fk-order.spec.ts test/privacy/no-pii-in-logs.spec.ts test/ci/fly-env-manifest.spec.ts src/feature-flags test/roles-enforced.spec.ts
+PASS test/ci/fly-env-manifest.spec.ts (8.626 s, 130 MB heap size)
+PASS test/privacy/no-pii-in-logs.spec.ts (185 MB heap size)
+FAIL test/roles-enforced.spec.ts (42.197 s, 517 MB heap size)
+  ● RolesEnforced — every route has @Roles or @Public › every route handler has @Roles or @Public (or is in the legacy-guard allowlist)
+
+
+
+    [RolesEnforced] 5 route(s) are missing role decoration:
+
+    Route is ungated: CoachlessController.getHome — add @Roles() or @Public()
+    Route is ungated: CoachlessController.check — add @Roles() or @Public()
+    Route is ungated: CoachlessController.redeem — add @Roles() or @Public()
+    Route is ungated: CoachlessController.romanSeen — add @Roles() or @Public()
+    Route is ungated: CoachlessController.romanNotNow — add @Roles() or @Public()
+
+    Fix: add @Roles("student"|"coach"|"owner") or @Public() to each listed handler.
+
+    [0m [90m 251 |[39m
+     [90m 252 |[39m     [36mif[39m (ungated[33m.[39mlength [33m>[39m [35m0[39m) {
+    [31m[1m>[22m[39m[90m 253 |[39m       [36mthrow[39m [36mnew[39m [33mError[39m(
+     [90m     |[39m             [31m[1m^[22m[39m
+     [90m 254 |[39m         [32m`\n\n[RolesEnforced] ${ungated.length} route(s) are missing role decoration:\n\n`[39m [33m+[39m
+     [90m 255 |[39m           ungated[33m.[39mjoin([32m'\n'[39m) [33m+[39m
+     [90m 256 |[39m           [32m'\n\nFix: add @Roles("student"|"coach"|"owner") or @Public() to each listed handler.\n'[39m[33m,[39m[0m
+
+      at Object.<anonymous> (test/roles-enforced.spec.ts:253:13)
+
+PASS test/account-deletion/erasure-manifest-coverage.spec.ts (525 MB heap size)
+PASS test/account-deletion/manifest-fk-order.spec.ts (5.06 s, 535 MB heap size)
+[31m[Nest] 11073  - [39m10/05/2026, 8:24:54 PM [31m  ERROR[39m [38;5;3m[CoachCodeRedemptionService] [39m[31mcoach code redemption failed unexpectedly user=stu request=req-test-1: error=Error[39m
+PASS test/coachless/coach-code-redemption.spec.ts (576 MB heap size)
+PASS test/coachless/coachless-home.spec.ts (609 MB heap size)
+PASS src/feature-flags/__tests__/feature-flags.service.spec.ts (618 MB heap size)
+PASS src/feature-flags/__tests__/feature-flags.controller.spec.ts (641 MB heap size)
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+
+Test Suites: 1 failed, 8 passed, 9 total
+Tests:       1 failed, 163 passed, 164 total
+Snapshots:   0 total
+Time:        70.807 s
+Ran all test suites matching test/coachless|test/account-deletion/erasure-manifest-coverage.spec.ts|test/account-deletion/manifest-fk-order.spec.ts|test/privacy/no-pii-in-logs.spec.ts|test/ci/fly-env-manifest.spec.ts|src/feature-flags|test/roles-enforced.spec.ts.
+rc=1

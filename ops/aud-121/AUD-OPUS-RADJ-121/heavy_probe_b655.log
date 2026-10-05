@@ -1,0 +1,250 @@
+Mon Oct  5 13:28:38 PDT 2026
+[heavy] waiting for a slot: npx prisma generate
+Prisma schema loaded from prisma/schema.prisma
+
+✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 14.24s
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+
+GEN_EXIT=0
+[heavy] waiting for a slot: npx jest --ci --runInBand test/roman-adjust/aud-opus-radj-121.probe.spec.ts
+FAIL test/roman-adjust/aud-opus-radj-121.probe.spec.ts (16.102 s, 98 MB heap size)
+  B-655-2 tenancy: the coach-client link is re-checked on read and on every decision
+    ✕ client moved to another coach: the old coach no longer lists her recovery metrics (17 ms)
+    ✕ client detached from the roster: the old coach no longer lists her recovery metrics (14 ms)
+    ✕ client moved to another coach: the old coach cannot approve and the workout stays unchanged (9 ms)
+    ✕ client detached from the roster: the old coach cannot approve and the workout stays unchanged (7 ms)
+  B-655-4 copy truth: WORKOUT_CHANGED promises a new suggestion after refresh
+    ✕ after the refusal, a refresh raises a new suggestion for the edited workout (as the copy says) (17 ms)
+  B-655-5 copy truth: Roman's sentence names the right day when the coach reads it
+    ✕ a Friday suggestion for Saturday's workout no longer says tomorrow's on Saturday morning (16 ms)
+  C-655 probes (not blocking)
+    ✕ C-655-a kill switch: 'TRUE' stays off (PR body + .env.example: only the exact value true) (1 ms)
+    ✕ C-655-b a database failure during approve is the coded ADJUSTMENTS_UNAVAILABLE reply, not a bare 500 (14 ms)
+    ✕ C-655-c an Edit can never raise volume (card copy reads "N% less volume") (17 ms)
+  controls (must PASS at head)
+    ✓ (control) approve, approve again, dismiss, undo twice: one write, one undo, coded refusals (17 ms)
+    ✓ (control) audit action names carry no health label; detail of a decision carries set counts only (15 ms)
+    ✓ (control) an unconsented client is never scanned: no wearable read for Omar (9 ms)
+    ✓ (control) the coach view never carries client chat text, prompts or memory fields (11 ms)
+
+  ● B-655-2 tenancy: the coach-client link is re-checked on read and on every decision › client moved to another coach: the old coach no longer lists her recovery metrics
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 9
+
+    - Array []
+    + Array [
+    +   Object {
+    +     "client": "client-maya",
+    +     "signals": Array [
+    +       "hrv_drop",
+    +       "rhr_rise",
+    +     ],
+    +   },
+    + ]
+
+    [0m [90m 188 |[39m     users[33m.[39mfind((u[33m:[39m any) [33m=>[39m u[33m.[39mid [33m===[39m [33mMAYA[39m)[33m.[39mcoach_id [33m=[39m nextCoach[33m;[39m
+     [90m 189 |[39m     [36mconst[39m { proposals } [33m=[39m [36mawait[39m w[33m.[39msvc[33m.[39mlistForCoach([33mCOACH[39m[33m,[39m [33mLATER[39m([35m6[39m [33m*[39m [35m60[39m_000))[33m;[39m
+    [31m[1m>[22m[39m[90m 190 |[39m     expect(proposals[33m.[39mmap((p) [33m=>[39m ({ client[33m:[39m p[33m.[39mclient[33m.[39mid[33m,[39m signals[33m:[39m p[33m.[39msignals[33m.[39mmap((s) [33m=>[39m s[33m.[39mkey) })))[33m.[39mtoEqual([])[33m;[39m
+     [90m     |[39m                                                                                                   [31m[1m^[22m[39m
+     [90m 191 |[39m   })[33m;[39m
+     [90m 192 |[39m
+     [90m 193 |[39m   it[33m.[39meach([[0m
+
+      at test/roman-adjust/aud-opus-radj-121.probe.spec.ts:190:99
+
+  ● B-655-2 tenancy: the coach-client link is re-checked on read and on every decision › client detached from the roster: the old coach no longer lists her recovery metrics
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 9
+
+    - Array []
+    + Array [
+    +   Object {
+    +     "client": "client-maya",
+    +     "signals": Array [
+    +       "hrv_drop",
+    +       "rhr_rise",
+    +     ],
+    +   },
+    + ]
+
+    [0m [90m 188 |[39m     users[33m.[39mfind((u[33m:[39m any) [33m=>[39m u[33m.[39mid [33m===[39m [33mMAYA[39m)[33m.[39mcoach_id [33m=[39m nextCoach[33m;[39m
+     [90m 189 |[39m     [36mconst[39m { proposals } [33m=[39m [36mawait[39m w[33m.[39msvc[33m.[39mlistForCoach([33mCOACH[39m[33m,[39m [33mLATER[39m([35m6[39m [33m*[39m [35m60[39m_000))[33m;[39m
+    [31m[1m>[22m[39m[90m 190 |[39m     expect(proposals[33m.[39mmap((p) [33m=>[39m ({ client[33m:[39m p[33m.[39mclient[33m.[39mid[33m,[39m signals[33m:[39m p[33m.[39msignals[33m.[39mmap((s) [33m=>[39m s[33m.[39mkey) })))[33m.[39mtoEqual([])[33m;[39m
+     [90m     |[39m                                                                                                   [31m[1m^[22m[39m
+     [90m 191 |[39m   })[33m;[39m
+     [90m 192 |[39m
+     [90m 193 |[39m   it[33m.[39meach([[0m
+
+      at test/roman-adjust/aud-opus-radj-121.probe.spec.ts:190:99
+
+  ● B-655-2 tenancy: the coach-client link is re-checked on read and on every decision › client moved to another coach: the old coach cannot approve and the workout stays unchanged
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 3
+    + Received  + 3
+
+      Object {
+    -   "outcome": "ADJUSTMENT_NOT_FOUND",
+    +   "outcome": "applied",
+        "sets": Array [
+    -     5,
+    -     4,
+    +     3,
+    +     3,
+          3,
+          3,
+          3,
+        ],
+      }
+
+    [0m [90m 204 |[39m       outcome [33m=[39m e[33m?[39m[33m.[39mresponse[33m?[39m[33m.[39mcode [33m?[39m[33m?[39m [33mString[39m(e)[33m;[39m
+     [90m 205 |[39m     }
+    [31m[1m>[22m[39m[90m 206 |[39m     expect({ outcome[33m,[39m sets[33m:[39m w[33m.[39msetsOf([32m'asg-maya'[39m) })[33m.[39mtoEqual({ outcome[33m:[39m [33mADJUST_ERRORS[39m[33m.[39m[33mNOT_FOUND[39m[33m.[39mcode[33m,[39m sets[33m:[39m [[35m5[39m[33m,[39m [35m4[39m[33m,[39m [35m3[39m[33m,[39m [35m3[39m[33m,[39m [35m3[39m] })[33m;[39m
+     [90m     |[39m                                                     [31m[1m^[22m[39m
+     [90m 207 |[39m   })[33m;[39m
+     [90m 208 |[39m })[33m;[39m
+     [90m 209 |[39m[0m
+
+      at test/roman-adjust/aud-opus-radj-121.probe.spec.ts:206:53
+
+  ● B-655-2 tenancy: the coach-client link is re-checked on read and on every decision › client detached from the roster: the old coach cannot approve and the workout stays unchanged
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 3
+    + Received  + 3
+
+      Object {
+    -   "outcome": "ADJUSTMENT_NOT_FOUND",
+    +   "outcome": "applied",
+        "sets": Array [
+    -     5,
+    -     4,
+    +     3,
+    +     3,
+          3,
+          3,
+          3,
+        ],
+      }
+
+    [0m [90m 204 |[39m       outcome [33m=[39m e[33m?[39m[33m.[39mresponse[33m?[39m[33m.[39mcode [33m?[39m[33m?[39m [33mString[39m(e)[33m;[39m
+     [90m 205 |[39m     }
+    [31m[1m>[22m[39m[90m 206 |[39m     expect({ outcome[33m,[39m sets[33m:[39m w[33m.[39msetsOf([32m'asg-maya'[39m) })[33m.[39mtoEqual({ outcome[33m:[39m [33mADJUST_ERRORS[39m[33m.[39m[33mNOT_FOUND[39m[33m.[39mcode[33m,[39m sets[33m:[39m [[35m5[39m[33m,[39m [35m4[39m[33m,[39m [35m3[39m[33m,[39m [35m3[39m[33m,[39m [35m3[39m] })[33m;[39m
+     [90m     |[39m                                                     [31m[1m^[22m[39m
+     [90m 207 |[39m   })[33m;[39m
+     [90m 208 |[39m })[33m;[39m
+     [90m 209 |[39m[0m
+
+      at test/roman-adjust/aud-opus-radj-121.probe.spec.ts:206:53
+
+  ● B-655-4 copy truth: WORKOUT_CHANGED promises a new suggestion after refresh › after the refusal, a refresh raises a new suggestion for the edited workout (as the copy says)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 1
+    Received: 0
+
+    [0m [90m 218 |[39m     [36mawait[39m w[33m.[39msvc[33m.[39mrefreshForCoach([33mCOACH[39m[33m,[39m [33mLATER[39m([35m6[39m [33m*[39m [35m60[39m_000)[33m,[39m [36mtrue[39m)[33m;[39m
+     [90m 219 |[39m     [36mconst[39m open [33m=[39m w[33m.[39mproposals[33m.[39mfilter((p) [33m=>[39m p[33m.[39massignment_id [33m===[39m [32m'asg-maya'[39m [33m&&[39m p[33m.[39mstatus [33m===[39m [32m'pending'[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 220 |[39m     expect(open[33m.[39mlength)[33m.[39mtoBe([35m1[39m)[33m;[39m
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 221 |[39m   })[33m;[39m
+     [90m 222 |[39m })[33m;[39m
+     [90m 223 |[39m[0m
+
+      at Object.<anonymous> (test/roman-adjust/aud-opus-radj-121.probe.spec.ts:220:25)
+
+  ● B-655-5 copy truth: Roman's sentence names the right day when the coach reads it › a Friday suggestion for Saturday's workout no longer says tomorrow's on Saturday morning
+
+    expect(received).not.toMatch(expected)
+
+    Expected pattern: not /tomorrow's/
+    Received string:      "Maya's recovery has dipped. Heart-rate variability is 23% below the usual and resting heart rate is up 6 bpm. I suggest trimming tomorrow's Lower Body A by 15%, from 18 to 15 sets. Reps and loads stay as you set them. Shall I apply it?"
+
+    [0m [90m 230 |[39m     [36mconst[39m { proposals } [33m=[39m [36mawait[39m w[33m.[39msvc[33m.[39mlistForCoach([33mCOACH[39m[33m,[39m sat)[33m;[39m
+     [90m 231 |[39m     expect(proposals)[33m.[39mtoHaveLength([35m1[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 232 |[39m     expect(proposals[[35m0[39m][33m.[39mroman_text)[33m.[39mnot[33m.[39mtoMatch([35m/tomorrow's/[39m)[33m;[39m
+     [90m     |[39m                                         [31m[1m^[22m[39m
+     [90m 233 |[39m   })[33m;[39m
+     [90m 234 |[39m })[33m;[39m
+     [90m 235 |[39m[0m
+
+      at Object.<anonymous> (test/roman-adjust/aud-opus-radj-121.probe.spec.ts:232:41)
+
+  ● C-655 probes (not blocking) › C-655-a kill switch: 'TRUE' stays off (PR body + .env.example: only the exact value true)
+
+    expect(received).toThrow(expected)
+
+    Expected constructor: NotFoundException
+
+    Received function did not throw
+
+    [0m [90m 243 |[39m   it([32m"C-655-a kill switch: 'TRUE' stays off (PR body + .env.example: only the exact value true)"[39m[33m,[39m () [33m=>[39m {
+     [90m 244 |[39m     process[33m.[39menv[[33mFEATURE_ROMAN_ADJUST_ENABLED_ENV[39m] [33m=[39m [32m'TRUE'[39m[33m;[39m
+    [31m[1m>[22m[39m[90m 245 |[39m     expect(() [33m=>[39m [36mnew[39m [33mRomanAdjustFeatureGuard[39m()[33m.[39mcanActivate())[33m.[39mtoThrow([33mNotFoundException[39m)[33m;[39m
+     [90m     |[39m                                                               [31m[1m^[22m[39m
+     [90m 246 |[39m   })[33m;[39m
+     [90m 247 |[39m
+     [90m 248 |[39m   it([32m'C-655-b a database failure during approve is the coded ADJUSTMENTS_UNAVAILABLE reply, not a bare 500'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/roman-adjust/aud-opus-radj-121.probe.spec.ts:245:63)
+
+  ● C-655 probes (not blocking) › C-655-b a database failure during approve is the coded ADJUSTMENTS_UNAVAILABLE reply, not a bare 500
+
+    expect(received).rejects.toMatchObject(expected)
+
+    - Expected  - 5
+    + Received  + 1
+
+    - Object {
+    -   "response": Object {
+    -     "code": "ADJUSTMENTS_UNAVAILABLE",
+    -   },
+    - }
+    + [Error: connection reset]
+
+    [0m [90m 249 |[39m     [36mconst[39m { w[33m,[39m id } [33m=[39m [36mawait[39m pendingWorld()[33m;[39m
+     [90m 250 |[39m     (w [36mas[39m any)[33m.[39mprisma[33m.[39mworkoutAdjustmentProposal[33m.[39mfindUnique[33m.[39mmockRejectedValueOnce([36mnew[39m [33mError[39m([32m'connection reset'[39m))[33m;[39m
+    [31m[1m>[22m[39m[90m 251 |[39m     [36mawait[39m expect(w[33m.[39msvc[33m.[39mapprove([33mCOACH[39m[33m,[39m id[33m,[39m [33mNOW[39m))[33m.[39mrejects[33m.[39mtoMatchObject({ response[33m:[39m { code[33m:[39m [33mADJUST_ERRORS[39m[33m.[39m[33mUNAVAILABLE[39m[33m.[39mcode } })[33m;[39m
+     [90m     |[39m                                                         [31m[1m^[22m[39m
+     [90m 252 |[39m   })[33m;[39m
+     [90m 253 |[39m
+     [90m 254 |[39m   it([32m'C-655-c an Edit can never raise volume (card copy reads "N% less volume")'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at Object.toMatchObject (../../deps/backend/node_modules/expect/build/index.js:2155:20)
+      at Object.<anonymous> (test/roman-adjust/aud-opus-radj-121.probe.spec.ts:251:57)
+
+  ● C-655 probes (not blocking) › C-655-c an Edit can never raise volume (card copy reads "N% less volume")
+
+    expect(received).toBeGreaterThanOrEqual(expected)
+
+    Expected: >= 0
+    Received:    -17
+
+    [0m [90m 261 |[39m       pct [33m=[39m [35m0[39m[33m;[39m
+     [90m 262 |[39m     }
+    [31m[1m>[22m[39m[90m 263 |[39m     expect(pct)[33m.[39mtoBeGreaterThanOrEqual([35m0[39m)[33m;[39m
+     [90m     |[39m                 [31m[1m^[22m[39m
+     [90m 264 |[39m   })[33m;[39m
+     [90m 265 |[39m })[33m;[39m
+     [90m 266 |[39m[0m
+
+      at Object.<anonymous> (test/roman-adjust/aud-opus-radj-121.probe.spec.ts:263:17)
+
+Test Suites: 1 failed, 1 total
+Tests:       9 failed, 4 passed, 13 total
+Snapshots:   0 total
+Time:        16.35 s
+Ran all test suites matching test/roman-adjust/aud-opus-radj-121.probe.spec.ts.
+JEST_EXIT=1

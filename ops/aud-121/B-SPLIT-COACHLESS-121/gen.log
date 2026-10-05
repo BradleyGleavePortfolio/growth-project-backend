@@ -1,1 +1,2 @@
-[heavy] waiting for a slot: npx prisma generate
+[heavy] prisma client served from cache 1ee6ef24108bf8e4 (no generate needed)
+rc=0

@@ -8,12 +8,12 @@ Lens AUD-OPUS-L3-121 (agent 121). Tier T4 (billing lockout, money copy, shared n
 - **Fix `c89f719c`, every line:** `dunningErrorCopy.ts`, `dunningApi.ts`, `updateCard.ts`, the dunning README, `dunningL1Contract.test.ts`.
 - **Copy rules.** Copy was judged against R-DISPUTE-PAUSE (disputes **and inquiries**: owner decision 6, 09:43 PDT 10-05) and the operator ruling that B-352-7 forbids "settle".
 
-**Probe run.** {{RUN352}}
+**Probe run.** Lane [37368919727](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37368919727) (branch `audit/AUD-OPUS-L3-121/2` = #354 head `68c7f080` + probe specs only; the L1 and L2 files are byte-identical at the #352, #353 and #354 heads) holds 12 specs: both Opus 121 probes, the Opus 119/117 replays and the PR suites. It is still queued in the GitHub Actions incident; the first push at 12:54 PDT was cancelled at 13:18 to fix a probe harness error. Under item 11 (lane queued over 20 minutes), one spec was run at a time through heavy.sh at worktree commit `e5ad527d`. `aud121OpusL3_352.probe.test.ts` (13:18 PDT): 19 pass, 3 fail. The 3 failures are exactly the B-352-9 PROBEs; every VERIFY and CONTROL passes. The 119/117 replays are in the queued lane only.
 
 ## Prior findings at ac244d22
 | ID | Status at c89f719c |
 |---|---|
-| B-352-7 (Opus): "Email support to sort it out"; the three ruling facts missing | **Closed.** One sentence, `disputePauseFacts` (`dunningErrorCopy.ts:463-478`), now appears in every outcome. It says access has ended, billing is paused, the coach decides, and nothing restarts on its own or with a new card. No dispute output contains "settle", "sort it out", "support", the first person or "!". The 119 probe passes 5/5, and the VERIFY cases pass for all 9 outcomes and every scope. |
+| B-352-7 (Opus): "Email support to sort it out"; the three ruling facts missing | **Closed.** One sentence, `disputePauseFacts` (`dunningErrorCopy.ts:463-478`), now appears in every outcome. It says access has ended, billing is paused, the coach decides, and nothing restarts on its own or with a new card. No dispute output contains "settle", "sort it out", "support", the first person or "!". The VERIFY cases pass for all 9 outcomes, every scope and ending a disputed plan (heavy.sh run above); the 119 replay is in the queued lane. |
 | B-352-2 (Sol): mixed paid + disputed outcomes | **Sound (delta reviewed).** The paid amount is kept. Access news is scoped to "The plan you paid for" (`:518-526`), and processing says "The plan it pays for updates" (`:526`, `:542-543`). The title no longer says "updating your plan" while a dispute is open. |
 | B-352-3 (Sol): an older update could replace the shared native sheet | **Sound (delta reviewed).** Each update takes a session number before its first native step (`updateCard.ts:126`, `:189-191`). The number is checked between `initStripe` and `initPaymentSheet` (`:200`) and again after init (`:213`, `:225`), with no await between the last check and `presentPaymentSheet`. A new variant also passes: A is already inside `initPaymentSheet` when B starts; A never presents or confirms, and B presents once, with its own customer and SetupIntent. |
 | C-352-1, C-352-2, C-352-3, C-352-6, C-352-8 | Open (frozen) |
@@ -30,7 +30,7 @@ Lens AUD-OPUS-L3-121 (agent 121). Tier T4 (billing lockout, money copy, shared n
 - **Counterexample:**
   - The client's bank opens an inquiry on a renewal. After a card save, the outcome reads "Your bank reversed a payment to Avery. For that plan, access has ended and billing is paused. ..."
   - No money moved, but the client is told that it did.
-  - 3 PROBEs fail: {{RUN352_PROBES}}.
+  - 3 PROBEs fail: "the card-update dispute line ...", "the dispute line with two plans ..." and "ending a disputed plan ...".
 - **Same fix on the backend:** the Opus lens raised B-687-8 there. #687 @ `d86b31a6` (`dunning-v2.copy.ts:182-193`) now says "the bank opened a dispute or inquiry about a recent payment".
 - **Fix rule:**
   - No dispute copy may claim money moved: no "reversed", "took back" or "refund".

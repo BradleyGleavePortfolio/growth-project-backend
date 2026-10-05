@@ -1,0 +1,145 @@
+[heavy] waiting for a slot: npx jest --ci src/services/health/__tests__/ingestPacing.hc12.test.ts
+FAIL src/services/health/__tests__/ingestPacing.hc12.test.ts
+  HC12-PACE-1 (failing before): a large post never sends more than the window allows
+    ✕ 60 requests (15,000 samples) leave at most 50 per 60 s, and all of them are sent (232 ms)
+  HC12-PACE-2 (failing before): Retry-After as an HTTP date
+    ✕ waits until the date the server gave, not the full bound (3 ms)
+    ✕ reads seconds, dates, and bounds every wait by one bucket window (4 ms)
+  HC12-PACE-3: one pacer shared by two runs
+    ✕ after a 429, no request from either run leaves before the Retry-After has passed
+    ✕ a run stopped by repeated 429s leaves the hold for the next run (2 ms)
+    ✕ counts requests across runs in the same window (1 ms)
+    ✕ a session stop while waiting sends nothing
+
+  ● HC12-PACE-1 (failing before): a large post never sends more than the window allows › 60 requests (15,000 samples) leave at most 50 per 60 s, and all of them are sent
+
+    expect(received).toBeLessThanOrEqual(expected)
+
+    Matcher error: expected value must be a number or bigint
+
+    Expected has value: undefined
+
+    [0m [90m 82 |[39m     expect(res[33m.[39minserted)[33m.[39mtoBe([35m15[39m_000)[33m;[39m
+     [90m 83 |[39m     [90m// Before the fix all 60 left at once, over the backend's 60-per-minute bucket edge.[39m
+    [31m[1m>[22m[39m[90m 84 |[39m     expect(busiestWindow(times))[33m.[39mtoBeLessThanOrEqual([33mINGEST_REQUESTS_PER_WINDOW[39m)[33m;[39m
+     [90m    |[39m                                  [31m[1m^[22m[39m
+     [90m 85 |[39m     expect(times[[33mINGEST_REQUESTS_PER_WINDOW[39m] [33m-[39m times[[35m0[39m])[33m.[39mtoBe([33mINGEST_WINDOW_MS[39m)[33m;[39m
+     [90m 86 |[39m   })[33m;[39m
+     [90m 87 |[39m })[33m;[39m[0m
+
+      at Object.toBeLessThanOrEqual (src/services/health/__tests__/ingestPacing.hc12.test.ts:84:34)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+  ● HC12-PACE-2 (failing before): Retry-After as an HTTP date › waits until the date the server gave, not the full bound
+
+    expect(jest.fn()).toHaveBeenCalledWith(...expected)
+
+    Expected: 20000
+    Received: 60000
+
+    Number of calls: 1
+
+    [0m [90m  96 |[39m     [36mawait[39m postIngestBatches([sample([35m0[39m)][33m,[39m { post[33m,[39m sleep })[33m;[39m
+     [90m  97 |[39m     expect(sleep)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m  98 |[39m     expect(sleep)[33m.[39mtoHaveBeenCalledWith([35m20[39m_000)[33m;[39m
+     [90m     |[39m                   [31m[1m^[22m[39m
+     [90m  99 |[39m   })[33m;[39m
+     [90m 100 |[39m
+     [90m 101 |[39m   it([32m'reads seconds, dates, and bounds every wait by one bucket window'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.toHaveBeenCalledWith (src/services/health/__tests__/ingestPacing.hc12.test.ts:98:19)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+  ● HC12-PACE-2 (failing before): Retry-After as an HTTP date › reads seconds, dates, and bounds every wait by one bucket window
+
+    TypeError: (0 , _ingestBatching.retryWaitMs) is not a function
+
+    [0m [90m 100 |[39m
+     [90m 101 |[39m   it([32m'reads seconds, dates, and bounds every wait by one bucket window'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 102 |[39m     expect(retryWaitMs(rateLimited([32m'7'[39m)[33m,[39m [33mT0[39m))[33m.[39mtoBe([35m7[39m_000)[33m;[39m
+     [90m     |[39m                       [31m[1m^[22m[39m
+     [90m 103 |[39m     expect(retryWaitMs(rateLimited([32m'3600'[39m)[33m,[39m [33mT0[39m))[33m.[39mtoBe([33mMAX_RETRY_WAIT_MS[39m)[33m;[39m
+     [90m 104 |[39m     expect(retryWaitMs(rateLimited([36mnew[39m [33mDate[39m([33mT0[39m [33m+[39m [35m5[39m_000)[33m.[39mtoUTCString())[33m,[39m [33mT0[39m))[33m.[39mtoBe([35m5[39m_000)[33m;[39m
+     [90m 105 |[39m     expect(retryWaitMs(rateLimited([36mnew[39m [33mDate[39m([33mT0[39m [33m-[39m [35m5[39m_000)[33m.[39mtoUTCString())[33m,[39m [33mT0[39m))[33m.[39mtoBe([35m0[39m)[33m;[39m[0m
+
+      at Object.<anonymous> (src/services/health/__tests__/ingestPacing.hc12.test.ts:102:23)
+
+  ● HC12-PACE-3: one pacer shared by two runs › after a 429, no request from either run leaves before the Retry-After has passed
+
+    TypeError: (0 , _ingestBatching.createIngestPacer) is not a function
+
+    [0m [90m 112 |[39m describe([32m'HC12-PACE-3: one pacer shared by two runs'[39m[33m,[39m () [33m=>[39m {
+     [90m 113 |[39m   it([32m'after a 429, no request from either run leaves before the Retry-After has passed'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 114 |[39m     [36mconst[39m pacer [33m=[39m createIngestPacer({ sleep })[33m;[39m
+     [90m     |[39m                                    [31m[1m^[22m[39m
+     [90m 115 |[39m     [36mconst[39m times[33m:[39m [33mArray[39m[33m<[39m[string[33m,[39m number][33m>[39m [33m=[39m [][33m;[39m
+     [90m 116 |[39m     [36mlet[39m first [33m=[39m [36mtrue[39m[33m;[39m
+     [90m 117 |[39m     [36mconst[39m postA [33m=[39m jest[33m.[39mfn([36masync[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (src/services/health/__tests__/ingestPacing.hc12.test.ts:114:36)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+      at ../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+      at Object.<anonymous> (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12)
+
+  ● HC12-PACE-3: one pacer shared by two runs › a run stopped by repeated 429s leaves the hold for the next run
+
+    TypeError: (0 , _ingestBatching.createIngestPacer) is not a function
+
+    [0m [90m 137 |[39m
+     [90m 138 |[39m   it([32m'a run stopped by repeated 429s leaves the hold for the next run'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 139 |[39m     [36mconst[39m pacer [33m=[39m createIngestPacer({ sleep })[33m;[39m
+     [90m     |[39m                                    [31m[1m^[22m[39m
+     [90m 140 |[39m     [36mconst[39m post [33m=[39m jest[33m.[39mfn()[33m.[39mmockRejectedValue(rateLimited([32m'45'[39m))[33m;[39m
+     [90m 141 |[39m     [36mawait[39m expect(postIngestBatches([sample([35m0[39m)][33m,[39m { post[33m,[39m pacer }))[33m.[39mrejects[33m.[39mtoBeInstanceOf([33mAxiosError[39m)[33m;[39m
+     [90m 142 |[39m     expect(post)[33m.[39mtoHaveBeenCalledTimes([35m3[39m)[33m;[39m[0m
+
+      at Object.<anonymous> (src/services/health/__tests__/ingestPacing.hc12.test.ts:139:36)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+      at ../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+      at Object.<anonymous> (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12)
+
+  ● HC12-PACE-3: one pacer shared by two runs › counts requests across runs in the same window
+
+    TypeError: (0 , _ingestBatching.createIngestPacer) is not a function
+
+    [0m [90m 153 |[39m
+     [90m 154 |[39m   it([32m'counts requests across runs in the same window'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 155 |[39m     [36mconst[39m pacer [33m=[39m createIngestPacer({ sleep })[33m;[39m
+     [90m     |[39m                                    [31m[1m^[22m[39m
+     [90m 156 |[39m     [36mconst[39m times[33m:[39m number[] [33m=[39m [][33m;[39m
+     [90m 157 |[39m     [36mconst[39m post [33m=[39m jest[33m.[39mfn([36masync[39m () [33m=>[39m {
+     [90m 158 |[39m       times[33m.[39mpush([33mDate[39m[33m.[39mnow())[33m;[39m[0m
+
+      at Object.<anonymous> (src/services/health/__tests__/ingestPacing.hc12.test.ts:155:36)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+      at ../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+      at Object.<anonymous> (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12)
+
+  ● HC12-PACE-3: one pacer shared by two runs › a session stop while waiting sends nothing
+
+    TypeError: (0 , _ingestBatching.createIngestPacer) is not a function
+
+    [0m [90m 167 |[39m
+     [90m 168 |[39m   it([32m'a session stop while waiting sends nothing'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 169 |[39m     [36mconst[39m pacer [33m=[39m createIngestPacer({ sleep[33m,[39m limit[33m:[39m [35m1[39m })[33m;[39m
+     [90m     |[39m                                    [31m[1m^[22m[39m
+     [90m 170 |[39m     [36mconst[39m post [33m=[39m jest[33m.[39mfn([36masync[39m () [33m=>[39m ({ data[33m:[39m { inserted[33m:[39m [35m1[39m[33m,[39m skipped[33m:[39m [35m0[39m } }))[33m;[39m
+     [90m 171 |[39m     [36mlet[39m calls [33m=[39m [35m0[39m[33m;[39m
+     [90m 172 |[39m     [36mconst[39m beforeEachRequest [33m=[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (src/services/health/__tests__/ingestPacing.hc12.test.ts:169:36)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+      at ../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+      at Object.<anonymous> (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12)
+
+Test Suites: 1 failed, 1 total
+Tests:       7 failed, 7 total
+Snapshots:   0 total
+Time:        3.275 s
+Ran all test suites matching /src\/services\/health\/__tests__\/ingestPacing.hc12.test.ts/i.

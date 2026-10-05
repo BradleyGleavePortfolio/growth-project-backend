@@ -1,0 +1,91 @@
+[heavy] waiting for a slot: npx jest --ci src/services/health/healthkit/__tests__/healthKitSyncService.hc12.test.ts
+FAIL src/services/health/healthkit/__tests__/healthKitSyncService.hc12.test.ts
+  HC12-HK-1 (C-370-3, failing before): a tail cut by a piece look-back is not posted again
+    ✕ 330 + 180 minutes for one night counts once (Opus H9-HK-4 at the fixed contract) (25 ms)
+  HC12-HK-2: every night is posted whole, once per run, across consecutive runs
+    ✕ pieces ending inside nights post each night once; the next run posts only the night after (10 ms)
+    ✓ a night that ends within 2 h of the run end waits for the next run (no gap between runs) (4 ms)
+  HC12-HK-3 (C-370-2): one pacer for the run
+    ✕ passes the run pacer to every post and waits through it (20 ms)
+
+  ● HC12-HK-1 (C-370-3, failing before): a tail cut by a piece look-back is not posted again › 330 + 180 minutes for one night counts once (Opus H9-HK-4 at the fixed contract)
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 0
+    + Received  + 4
+
+      Object {
+        "2026-06-06T23:00:00.000Z|2026-06-07T06:00:00.000Z": Array [
+          330,
+    +     330,
+    +   ],
+    +   "2026-06-07T03:00:00.000Z|2026-06-07T06:00:00.000Z": Array [
+    +     180,
+        ],
+      }
+
+    [0m [90m 142 |[39m     native[33m.[39mgetSleepSamples[33m.[39mmockImplementation(byStart([s1[33m,[39m s2]))[33m;[39m
+     [90m 143 |[39m     [36mconst[39m result [33m=[39m [36mawait[39m [36mnew[39m [33mHealthKitSyncService[39m([36mnew[39m [33mHealthKitClient[39m())[33m.[39msync({ scope[33m:[39m [33mSCOPE[39m[33m,[39m now[33m:[39m [33mNOW[39m[33m,[39m fence[33m:[39m okFence() })[33m;[39m
+    [31m[1m>[22m[39m[90m 144 |[39m     expect([33mObject[39m[33m.[39mfromEntries(sleepTotals()))[33m.[39mtoEqual({
+     [90m     |[39m                                               [31m[1m^[22m[39m
+     [90m 145 |[39m       [32m'2026-06-06T23:00:00.000Z|2026-06-07T06:00:00.000Z'[39m[33m:[39m [[35m330[39m][33m,[39m
+     [90m 146 |[39m     })[33m;[39m
+     [90m 147 |[39m     expect(result[33m.[39mcomplete)[33m.[39mtoBe([36mtrue[39m)[33m;[39m[0m
+
+      at Object.toEqual (src/services/health/healthkit/__tests__/healthKitSyncService.hc12.test.ts:144:47)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+  ● HC12-HK-2: every night is posted whole, once per run, across consecutive runs › pieces ending inside nights post each night once; the next run posts only the night after
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 0
+    + Received  + 1
+
+    @@ -1,6 +1,7 @@
+      Array [
+    +   "2026-06-03T22:00:00.000Z|2026-06-04T06:00:00.000Z",
+        "2026-06-04T22:00:00.000Z|2026-06-05T06:00:00.000Z",
+        "2026-06-05T22:00:00.000Z|2026-06-06T06:00:00.000Z",
+        "2026-06-06T22:00:00.000Z|2026-06-07T06:00:00.000Z",
+        "2026-06-07T22:00:00.000Z|2026-06-08T06:00:00.000Z",
+        "2026-06-08T22:00:00.000Z|2026-06-09T06:00:00.000Z",
+
+    [0m [90m 160 |[39m     [90m// Each night once, whole (480 min), from the piece in which it ends. The 06-03 night ended 21 h before[39m
+     [90m 161 |[39m     [90m// this window (an earlier run posted it); H9-HK-1 expected it again from the first piece's look-back.[39m
+    [31m[1m>[22m[39m[90m 162 |[39m     expect([[33m...[39mfirst[33m.[39mkeys()][33m.[39msort())[33m.[39mtoEqual([[32m'2026-06-04'[39m[33m,[39m [32m'2026-06-05'[39m[33m,[39m [32m'2026-06-06'[39m[33m,[39m [32m'2026-06-07'[39m[33m,[39m [32m'2026-06-08'[39m[33m,[39m [32m'2026-06-09'[39m][33m.[39mmap(nightKey))[33m;[39m
+     [90m     |[39m                                      [31m[1m^[22m[39m
+     [90m 163 |[39m     [36mfor[39m ([36mconst[39m values [36mof[39m first[33m.[39mvalues()) expect(values)[33m.[39mtoEqual([[35m480[39m])[33m;[39m
+     [90m 164 |[39m
+     [90m 165 |[39m     mockPost[33m.[39mmockClear()[33m;[39m[0m
+
+      at Object.toEqual (src/services/health/healthkit/__tests__/healthKitSyncService.hc12.test.ts:162:38)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+  ● HC12-HK-3 (C-370-2): one pacer for the run › passes the run pacer to every post and waits through it
+
+    expect(jest.fn()).toHaveBeenCalledTimes(expected)
+
+    Expected number of calls: 3
+    Received number of calls: 0
+
+    [0m [90m 205 |[39m     })[33m;[39m
+     [90m 206 |[39m     expect(mockPost)[33m.[39mtoHaveBeenCalledTimes([35m3[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 207 |[39m     expect(acquire)[33m.[39mtoHaveBeenCalledTimes([35m3[39m)[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 208 |[39m   })[33m;[39m
+     [90m 209 |[39m })[33m;[39m
+     [90m 210 |[39m[0m
+
+      at Object.toHaveBeenCalledTimes (src/services/health/healthkit/__tests__/healthKitSyncService.hc12.test.ts:207:21)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+Test Suites: 1 failed, 1 total
+Tests:       3 failed, 1 passed, 4 total
+Snapshots:   0 total
+Time:        2.348 s
+Ran all test suites matching /src\/services\/health\/healthkit\/__tests__\/healthKitSyncService.hc12.test.ts/i.

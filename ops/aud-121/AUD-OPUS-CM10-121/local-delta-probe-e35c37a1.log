@@ -1,0 +1,138 @@
+[heavy] waiting for a slot: npx jest --ci --runInBand test/audit-opus-cm10-121-674-delta.spec.ts
+[33m[Nest] 22452  - [39m10/05/2026, 8:15:58 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-h refund=r-h code=error[39m
+[33m[Nest] 22452  - [39m10/05/2026, 8:15:58 PM [33m   WARN[39m [38;5;3m[TransferOrchestratorService] [39m[33mlisting reversals of tr_p-u failed while reconciling op=tgp-tr-rev-refund-r-u: kind=unknown[39m
+[31m[Nest] 22452  - [39m10/05/2026, 8:15:58 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-u op=tgp-tr-rev-refund-r-u amount=122: reversal lookup unavailable: listing failed: kind=unknown; not re-sent[39m
+[33m[Nest] 22452  - [39m10/05/2026, 8:15:58 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-u refund=r-u code=SFEE_REVERSAL_UNCERTAIN[39m
+FAIL test/audit-opus-cm10-121-674-delta.spec.ts (13.691 s, 167 MB heap size)
+  AUD-OPUS-CM10-121 B-674-15: the -review operation is recorded first too
+    ✕ a -review operation a sibling re-drove (transfer now full) is recorded with its posting, not nothing_owed (55 ms)
+    ✕ two owners reconcile at once a refund whose own operation the sweep completed: one record, one posting (11 ms)
+  AUD-OPUS-CM10-121 B-674-1: the sweep found-record publishes the slice in its transaction
+    ✕ a failed slice write leaves nothing recorded; the next sweep records 122/122/122 once, no send (5 ms)
+  AUD-OPUS-CM10-121 B-674-16: a re-drive with Stripe unreadable is stamped and still reaches review
+    ✕ stamped at the sweep clock, moved to review at the window, then the owner records it once Stripe reads (7 ms)
+
+  ● AUD-OPUS-CM10-121 B-674-15: the -review operation is recorded first too › a -review operation a sibling re-drove (transfer now full) is recorded with its posting, not nothing_owed
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 7
+    + Received  + 5
+
+    @@ -1,19 +1,17 @@
+      Object {
+    -   "amount": 122,
+    -   "bound": "trr_1",
+    -   "id": "trr_1",
+    +   "amount": 0,
+    +   "bound": null,
+    +   "id": null,
+        "money": Object {
+          "slice": 245,
+          "stripe": 245,
+          "transfer": 245,
+        },
+    -   "outcome": "recorded_from_stripe",
+    +   "outcome": "nothing_owed",
+        "postings": Object {
+    -     "a": Array [
+    -       122,
+    -     ],
+    +     "a": Array [],
+          "b": Array [
+            123,
+          ],
+        },
+        "reversed": true,
+
+    [0m [90m 104 |[39m       money[33m:[39m money(h[33m,[39m [32m'p-r'[39m)[33m,[39m
+     [90m 105 |[39m       sends[33m:[39m h[33m.[39mreverseTransfer[33m.[39mmock[33m.[39mcalls[33m.[39mmap(([a]) [33m=>[39m a[33m.[39mamount)[33m,[39m
+    [31m[1m>[22m[39m[90m 106 |[39m     })[33m.[39mtoEqual({
+     [90m     |[39m        [31m[1m^[22m[39m
+     [90m 107 |[39m       outcome[33m:[39m [32m'recorded_from_stripe'[39m[33m,[39m
+     [90m 108 |[39m       amount[33m:[39m [35m122[39m[33m,[39m
+     [90m 109 |[39m       id[33m:[39m [32m'trr_1'[39m[33m,[39m[0m
+
+      at Object.<anonymous> (test/audit-opus-cm10-121-674-delta.spec.ts:106:8)
+
+  ● AUD-OPUS-CM10-121 B-674-15: the -review operation is recorded first too › two owners reconcile at once a refund whose own operation the sweep completed: one record, one posting
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "recorded_from_stripe"
+    Received: "nothing_owed"
+
+    [0m [90m 149 |[39m       )
+     [90m 150 |[39m       [33m.[39msort()[33m;[39m
+    [31m[1m>[22m[39m[90m 151 |[39m     expect(outcomes[[35m1[39m])[33m.[39mtoBe([32m'recorded_from_stripe'[39m)[33m;[39m
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 152 |[39m     expect([[32m'already_recorded'[39m[33m,[39m [32m'REFUND_TRANSFER_REVERSAL_ALREADY_RECORDED'[39m])[33m.[39mtoContain(outcomes[[35m0[39m])[33m;[39m
+     [90m 153 |[39m     expect({
+     [90m 154 |[39m       postings[33m:[39m postings(h[33m,[39m [32m'p-2'[39m)[33m,[39m[0m
+
+      at Object.<anonymous> (test/audit-opus-cm10-121-674-delta.spec.ts:151:25)
+
+  ● AUD-OPUS-CM10-121 B-674-1: the sweep found-record publishes the slice in its transaction › a failed slice write leaves nothing recorded; the next sweep records 122/122/122 once, no send
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 2
+    + Received  + 2
+
+      Object {
+        "armed": false,
+        "money": Object {
+          "slice": 0,
+          "stripe": 122,
+    -     "transfer": 0,
+    +     "transfer": 122,
+        },
+    -   "ops": 0,
+    +   "ops": 1,
+        "postings": Array [],
+        "reversed": false,
+      }
+
+    [0m [90m 193 |[39m       postings[33m:[39m postings(h[33m,[39m [32m'p-h'[39m)[33m,[39m
+     [90m 194 |[39m       reversed[33m:[39m h[33m.[39mrefund([32m'r-h'[39m)[33m.[39mtransfer_reversed[33m,[39m
+    [31m[1m>[22m[39m[90m 195 |[39m     })[33m.[39mtoEqual({
+     [90m     |[39m        [31m[1m^[22m[39m
+     [90m 196 |[39m       armed[33m:[39m [36mfalse[39m[33m,[39m
+     [90m 197 |[39m       ops[33m:[39m [35m0[39m[33m,[39m
+     [90m 198 |[39m       money[33m:[39m { stripe[33m:[39m [35m122[39m[33m,[39m transfer[33m:[39m [35m0[39m[33m,[39m slice[33m:[39m [35m0[39m }[33m,[39m[0m
+
+      at Object.<anonymous> (test/audit-opus-cm10-121-674-delta.spec.ts:195:8)
+
+  ● AUD-OPUS-CM10-121 B-674-16: a re-drive with Stripe unreadable is stamped and still reaches review › stamped at the sweep clock, moved to review at the window, then the owner records it once Stripe reads
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 1
+
+    @@ -4,7 +4,7 @@
+          "stripe": 122,
+          "transfer": 0,
+        },
+        "retried": 1,
+        "sends": 0,
+    -   "stamped": true,
+    +   "stamped": false,
+      }
+
+    [0m [90m 254 |[39m       money[33m:[39m money(h[33m,[39m [32m'p-u'[39m)[33m,[39m
+     [90m 255 |[39m       sends[33m:[39m h[33m.[39mreverseTransfer[33m.[39mmock[33m.[39mcalls[33m.[39mlength[33m,[39m
+    [31m[1m>[22m[39m[90m 256 |[39m     })[33m.[39mtoEqual({ retried[33m:[39m [35m1[39m[33m,[39m stamped[33m:[39m [36mtrue[39m[33m,[39m money[33m:[39m { stripe[33m:[39m [35m122[39m[33m,[39m transfer[33m:[39m [35m0[39m[33m,[39m slice[33m:[39m [35m0[39m }[33m,[39m sends[33m:[39m [35m0[39m })[33m;[39m
+     [90m     |[39m        [31m[1m^[22m[39m
+     [90m 257 |[39m     [90m// A second pass inside the same run window pages past it (stamp >= now1).[39m
+     [90m 258 |[39m     [36mconst[39m again [33m=[39m [36mawait[39m h[33m.[39msvc[33m.[39mretryPendingTransferReversals(now1)[33m;[39m
+     [90m 259 |[39m     expect(again[33m.[39mretried)[33m.[39mtoBe([35m0[39m)[33m;[39m[0m
+
+      at Object.<anonymous> (test/audit-opus-cm10-121-674-delta.spec.ts:256:8)
+
+Test Suites: 1 failed, 1 total
+Tests:       4 failed, 4 total
+Snapshots:   0 total
+Time:        14.005 s
+Ran all test suites matching test/audit-opus-cm10-121-674-delta.spec.ts.
+rc=1

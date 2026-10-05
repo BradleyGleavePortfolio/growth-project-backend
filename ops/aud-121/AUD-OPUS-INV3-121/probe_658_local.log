@@ -1,0 +1,40 @@
+[heavy] waiting for a slot: npx jest --ci --runInBand test/aud-opus-inv3-121.probe.spec.ts
+  console.log
+    P1 outcome resolved stored codes [{"coach_id":"head-1","invited_by_user_id":"sub-1","package_id":"11111111-1111-4111-8111-111111111111","grant_mode":"free"}]
+
+      at Object.<anonymous> (test/aud-opus-inv3-121.probe.spec.ts:160:13)
+
+  console.log
+    P3 outcome {"purchase_id":"cp-2","status":"created"} [{"package_id":"11111111-1111-4111-8111-111111111111","coach_user_id":"head-1","amount_cents":0,"source":"invite_grant:free","status":"active"}]
+
+      at Object.<anonymous> (test/aud-opus-inv3-121.probe.spec.ts:200:13)
+
+FAIL test/aud-opus-inv3-121.probe.spec.ts (7.808 s, 118 MB heap size)
+  AUD-OPUS-INV3-121 probe — B-658-9 sub-coach binds the head coach package
+    ✕ P1: a sub-coach cannot bind the head coach package to a code (expected FAIL at 4de7a6dc) (38 ms)
+    ✓ P2: legacy setBinding refuses the same sub-coach on a sub-issued head-tenant code (2 ms)
+    ✓ P4 (B-658-1 replay): a sub-coach cannot see, rotate or revoke the head coach own code (6 ms)
+    ✓ P3: the code the sub-coach created grants the head package for $0 (10 ms)
+
+  ● AUD-OPUS-INV3-121 probe — B-658-9 sub-coach binds the head coach package › P1: a sub-coach cannot bind the head coach package to a code (expected FAIL at 4de7a6dc)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: "resolved"
+
+    [0m [90m 161 |[39m       coach_id[33m:[39m c[33m.[39mcoach_id[33m,[39m invited_by_user_id[33m:[39m c[33m.[39minvited_by_user_id[33m,[39m package_id[33m:[39m c[33m.[39mpackage_id[33m,[39m grant_mode[33m:[39m c[33m.[39mgrant_mode[33m,[39m
+     [90m 162 |[39m     }))))[33m;[39m
+    [31m[1m>[22m[39m[90m 163 |[39m     expect(out)[33m.[39mtoBe([35m403[39m)[33m;[39m
+     [90m     |[39m                 [31m[1m^[22m[39m
+     [90m 164 |[39m     expect(w[33m.[39mcodes)[33m.[39mtoHaveLength([35m0[39m)[33m;[39m
+     [90m 165 |[39m   })[33m;[39m
+     [90m 166 |[39m[0m
+
+      at Object.<anonymous> (test/aud-opus-inv3-121.probe.spec.ts:163:17)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 3 passed, 4 total
+Snapshots:   0 total
+Time:        9.214 s
+Ran all test suites matching test/aud-opus-inv3-121.probe.spec.ts.

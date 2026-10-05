@@ -1,0 +1,23 @@
+[heavy] waiting for a slot: npx jest --ci --runInBand test/audit-opus-cm10-121-674-delta.spec.ts
+[33m[Nest] 20120  - [39m10/05/2026, 8:15:01 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-h refund=r-h code=error[39m
+[33m[Nest] 20120  - [39m10/05/2026, 8:15:01 PM [33m   WARN[39m [38;5;3m[TransferOrchestratorService] [39m[33mlisting reversals of tr_p-u failed while reconciling op=tgp-tr-rev-refund-r-u: kind=unknown[39m
+[31m[Nest] 20120  - [39m10/05/2026, 8:15:01 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-u op=tgp-tr-rev-refund-r-u amount=122: reversal lookup unavailable: listing failed: kind=unknown; not re-sent[39m
+[33m[Nest] 20120  - [39m10/05/2026, 8:15:01 PM [33m   WARN[39m [38;5;3m[RefundDisputeHandlerService] [39m[33mhead-coach transfer reverse pending purchase=p-u refund=r-u code=SFEE_REVERSAL_UNCERTAIN[39m
+[31m[Nest] 20120  - [39m10/05/2026, 8:15:01 PM [31m  ERROR[39m [38;5;3m[RefundDisputeHandlerService] [39m[31mhead-coach transfer reversal needs review refund=r-u purchase=p-u code=REFUND_TRANSFER_REVERSAL_REVIEW[39m
+[33m[Nest] 20120  - [39m10/05/2026, 8:15:01 PM [33m   WARN[39m [38;5;3m[TransferOrchestratorService] [39m[33mlisting reversals of tr_p-u failed while reconciling op=tgp-tr-rev-refund-r-u: kind=unknown[39m
+[31m[Nest] 20120  - [39m10/05/2026, 8:15:01 PM [31m  ERROR[39m [38;5;3m[TransferOrchestratorService] [39m[31mSFEE_REVERSAL_UNCERTAIN alert=true transfer=tr-p-u op=tgp-tr-rev-refund-r-u amount=122: reversal lookup unavailable: listing failed: kind=unknown; not re-sent[39m
+PASS test/audit-opus-cm10-121-674-delta.spec.ts (8.339 s, 168 MB heap size)
+  AUD-OPUS-CM10-121 B-674-15: the -review operation is recorded first too
+    ✓ a -review operation a sibling re-drove (transfer now full) is recorded with its posting, not nothing_owed (24 ms)
+    ✓ two owners reconcile at once a refund whose own operation the sweep completed: one record, one posting (3 ms)
+  AUD-OPUS-CM10-121 B-674-1: the sweep found-record publishes the slice in its transaction
+    ✓ a failed slice write leaves nothing recorded; the next sweep records 122/122/122 once, no send (4 ms)
+  AUD-OPUS-CM10-121 B-674-16: a re-drive with Stripe unreadable is stamped and still reaches review
+    ✓ stamped at the sweep clock, moved to review at the window, then the owner records it once Stripe reads (8 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       4 passed, 4 total
+Snapshots:   0 total
+Time:        9.062 s
+Ran all test suites matching test/audit-opus-cm10-121-674-delta.spec.ts.
+rc=0

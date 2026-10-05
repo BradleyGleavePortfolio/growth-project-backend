@@ -1,0 +1,223 @@
+[heavy] waiting for a slot: npx jest --ci test/aud-sol-t23-119-672-probe test/audit-opus-t12-116-672 test/audit-opus-t23-118-opus117-probe test/audit-opus-t23-118-672 test/audit-opus-t23d-119-672
+[33m[Nest] 8666  - [39m10/05/2026, 8:21:47 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+[33m[Nest] 8666  - [39m10/05/2026, 8:21:47 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-p code=card_state_unknown[39m
+[33m[Nest] 8666  - [39m10/05/2026, 8:21:47 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+[31m[Nest] 8666  - [39m10/09/2026, 5:00:30 PM [31m  ERROR[39m [38;5;3m[EmailService] [39m[31memail send failed template=trial-ending row=email-log-1: error=Error[39m
+FAIL test/aud-sol-t23-119-672-probe.spec.ts (6.683 s, 87 MB heap size)
+  ● AUD-SOL-T23-119 — customer-card truth across final preparation › does not promise a charge after the only customer default card is removed during the final purchase read
+
+    expect(received).not.toContain(expected) // indexOf
+
+    Expected substring: not "will be charged"
+    Received string:        "Your free trial ends on Oct 12. No card is saved, so nothing will be charged and your plan ends then."
+
+    [0m [90m 116 |[39m     expect(customerCard)[33m.[39mtoBeNull()[33m;[39m
+     [90m 117 |[39m     expect(w[33m.[39mnotifications[33m.[39mpushToUser)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 118 |[39m     expect([33mString[39m(w[33m.[39mnotifications[33m.[39mpushToUser[33m.[39mmock[33m.[39mcalls[[35m0[39m][[35m2[39m]))[33m.[39mnot[33m.[39mtoContain([32m'will be charged'[39m)[33m;[39m
+     [90m     |[39m                                                                     [31m[1m^[22m[39m
+     [90m 119 |[39m   })[33m;[39m
+     [90m 120 |[39m })[33m;[39m
+     [90m 121 |[39m [36mconst[39m tx [33m=[39m (w[33m:[39m [33mWorld[39m) [33m=>[39m stub[33m<[39m[33mParameters[39m[33m<[39m[33mTrialNoticeService[39m[[32m'recordNotice'[39m][33m>[39m[[35m0[39m][33m>[39m(w[33m.[39mprisma)[33m;[39m[0m
+
+      at Object.<anonymous> (test/aud-sol-t23-119-672-probe.spec.ts:118:69)
+
+[32m[Nest] 8666  - [39m10/09/2026, 5:00:30 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32memail sent template=trial-ending row=email-log-2 provider_id=synthetic-provider-id[39m
+[31m[Nest] 8666  - [39m10/09/2026, 5:00:30 PM [31m  ERROR[39m [38;5;3m[EmailService] [39m[31memail send failed template=trial-ending row=log-1: error=Error[39m
+[33m[Nest] 8666  - [39m10/09/2026, 5:00:35 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice push still running after abort notice=notice-p; lease held[39m
+[32m[Nest] 8666  - [39m10/09/2026, 5:00:30 PM [32m    LOG[39m [38;5;3m[EmailService] [39m[32memail sent template=trial-ending row=log-2 provider_id=msg-2[39m
+FAIL test/audit-opus-t23-118-672.spec.ts (123 MB heap size)
+  ● C-672-10 probe — a hung push that really delivered is not sent again › probe (expected red): after the late delivery, the next delivery sends no second push
+
+    expect(jest.fn()).toHaveBeenCalledTimes(expected)
+
+    Expected number of calls: 1
+    Received number of calls: 2
+
+    [0m [90m 130 |[39m     [36mawait[39m flush()[33m;[39m
+     [90m 131 |[39m     [36mawait[39m w[33m.[39mservice[33m.[39mdeliver(id)[33m;[39m
+    [31m[1m>[22m[39m[90m 132 |[39m     expect(w[33m.[39mnotifications[33m.[39mpushToUser)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)[33m;[39m
+     [90m     |[39m                                        [31m[1m^[22m[39m
+     [90m 133 |[39m   })[33m;[39m
+     [90m 134 |[39m })[33m;[39m
+     [90m 135 |[39m[0m
+
+      at Object.<anonymous> (test/audit-opus-t23-118-672.spec.ts:132:40)
+
+  ● C-672-11 probe — the in-app row is written for a trial that already converted › probe (expected red): a stale trial_will_end for an active (paid) purchase writes no "will be charged" row
+
+    expect(jest.fn()).not.toHaveBeenCalled()
+
+    Expected number of calls: 0
+    Received number of calls: 1
+
+    1: {"body": "Your free trial ends on Oct 12. Your card will be charged $49 then. Cancel anytime before.", "channel": "inapp", "deep_link": "tgp://plan", "kind": "trial_ending", "payload": {"actionScreen": "ClientPackages", "amount_cents": 4900, "card_on_file": true, "currency": "usd", "package_id": "pkg-a", "purchase_id": "p", "trial_ends_at": "2026-10-12T17:00:00.000Z", "will_charge": true}, "user_id": "client-a"}, {"$transaction": [Function mockConstructor], "clientPurchase": {"findMany": [Function findMany], "findUnique": [Function mockConstructor]}, "coachProfile": {"findUnique": [Function mockConstructor]}, "coachingSession": {"findUnique": [Function mockConstructor]}, "connectCustomer": {"findUnique": [Function mockConstructor]}, "notificationPreferences": {"findUnique": [Function mockConstructor]}, "packageTrialNotice": {"createMany": [Function createMany], "findFirst": [Function findUnique], "findMany": [Function findMany], "findUnique": [Function findUnique], "rows": [{"amount_cents": 4900, "client_user_id": "client-a", "created_at": 2026-10-05T20:21:48.171Z, "currency": "usd", "email_attempts": 0, "email_lease_token": null, "email_lease_until": null, "email_status": "pending", "id": "row_1", "last_error": null, "purchase_id": "p", "push_attempts": 0, "push_lease_token": null, "push_lease_until": null, "push_status": "pending", "source": "trial_will_end", "stripe_event_id": "evt-stale", "tax_may_apply": false, "trial_ends_at": 2026-10-12T17:00:00.000Z, "updated_at": 2026-10-05T20:21:48.171Z}], "update": [Function update], "updateMany": [Function updateMany]}, "user": {"findUnique": [Function mockConstructor]}}
+
+    [0m [90m 144 |[39m       now[33m:[39m [33mNOW[39m[33m,[39m
+     [90m 145 |[39m     })[33m;[39m
+    [31m[1m>[22m[39m[90m 146 |[39m     expect(w[33m.[39mnotifications[33m.[39mcreateNotification)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+     [90m     |[39m                                                    [31m[1m^[22m[39m
+     [90m 147 |[39m     expect(id)[33m.[39mtoBeNull()[33m;[39m
+     [90m 148 |[39m   })[33m;[39m
+     [90m 149 |[39m })[33m;[39m[0m
+
+      at Object.<anonymous> (test/audit-opus-t23-118-672.spec.ts:146:52)
+
+[31m[Nest] 8666  - [39m10/05/2026, 8:21:49 PM [31m  ERROR[39m [38;5;3m[TrialNoticeService] [39m[31mtrial notice delivery failed notice=notice-1: Error[39m
+[31m[Nest] 8666  - [39m10/05/2026, 8:21:49 PM [31m  ERROR[39m [38;5;3m[TrialNoticeService] [39m[31mtrial notice delivery failed notice=notice-1: Error[39m
+FAIL test/audit-opus-t23d-119-672.spec.ts (146 MB heap size)
+  ● AUD-OPUS-T23D-119 #672 — B-672-3 round 10 (snapshot admission) › N5 probe C-672-12 (expected RED): the snapshot rejects at admission: attempt should be given back, lease released
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 2
+    + Received  + 2
+
+      Object {
+    -   "push_attempts": 0,
+    -   "push_lease_token": null,
+    +   "push_attempts": 1,
+    +   "push_lease_token": "1ccbd49c-3bd3-4dbc-bedb-c0a63ecf7804",
+        "push_status": "pending",
+      }
+
+    [0m [90m 194 |[39m     [36mawait[39m w[33m.[39mservice[33m.[39mdeliver(id[33m,[39m [33mNOW[39m)[33m;[39m
+     [90m 195 |[39m     expect(w[33m.[39mnotifications[33m.[39mpushToUser)[33m.[39mnot[33m.[39mtoHaveBeenCalled()[33m;[39m
+    [31m[1m>[22m[39m[90m 196 |[39m     expect(w[33m.[39mnotices[33m.[39mrows[[35m0[39m])[33m.[39mtoMatchObject({ push_status[33m:[39m [32m'pending'[39m[33m,[39m push_attempts[33m:[39m [35m0[39m[33m,[39m push_lease_token[33m:[39m [36mnull[39m })[33m;[39m
+     [90m     |[39m                               [31m[1m^[22m[39m
+     [90m 197 |[39m   })[33m;[39m
+     [90m 198 |[39m })[33m;[39m
+     [90m 199 |[39m[0m
+
+      at Object.<anonymous> (test/audit-opus-t23d-119-672.spec.ts:196:31)
+
+[33m[Nest] 8666  - [39m10/05/2026, 8:21:49 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+[33m[Nest] 8666  - [39m10/05/2026, 8:21:49 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-1 code=card_state_unknown[39m
+[33m[Nest] 8666  - [39m10/05/2026, 8:21:49 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice card lookup failed: Error[39m
+[33m[Nest] 8666  - [39m10/05/2026, 8:21:49 PM [33m   WARN[39m [38;5;3m[TrialNoticeService] [39m[33mtrial notice delivery deferred notice=notice-1 code=card_state_unknown[39m
+FAIL test/audit-opus-t12-116-672.spec.ts (174 MB heap size)
+  ● PROBE B-672-1 — the trial-end date follows main's recipient time-zone rule (#647) › no preferences row, coach in New York: the notice must not name a date later than the real local end
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "ends on Oct 12."
+    Received string:    "Your free trial ends on Oct 12 at 9:30 PM EDT. Your card will be charged $49 then. Cancel anytime before."
+
+    [0m [90m 106 |[39m     [36mconst[39m expected [33m=[39m formatTrialDate(end[33m,[39m zone)[33m;[39m [90m// "Oct 12"[39m
+     [90m 107 |[39m     [36mawait[39m recordAndDeliver(w[33m,[39m end[33m,[39m [36mnew[39m [33mDate[39m([32m'2026-10-10T01:30:00Z'[39m))[33m;[39m
+    [31m[1m>[22m[39m[90m 108 |[39m     expect([33mString[39m(w[33m.[39minApp[[35m0[39m][33m.[39mbody))[33m.[39mtoContain([32m`ends on ${expected}.`[39m)[33m;[39m
+     [90m     |[39m                                     [31m[1m^[22m[39m
+     [90m 109 |[39m     expect(w[33m.[39mpushes[[35m0[39m])[33m.[39mtoContain([32m`ends on ${expected}.`[39m)[33m;[39m
+     [90m 110 |[39m     expect((w[33m.[39memails[[35m0[39m][33m.[39mdata [36mas[39m [33mRecord[39m[33m<[39m[33mstring[39m[33m,[39m unknown[33m>[39m)[33m.[39mtrial_end_date)[33m.[39mtoBe(expected)[33m;[39m
+     [90m 111 |[39m   })[33m;[39m[0m
+
+      at Object.<anonymous> (test/audit-opus-t12-116-672.spec.ts:108:37)
+
+  ● PROBE B-672-1 — the trial-end date follows main's recipient time-zone rule (#647) › an unstamped preferences row (schema default America/Los_Angeles) is not the client zone
+
+    expect(received).toContain(expected) // indexOf
+
+    Matcher error: received value must not be null nor undefined
+
+    Received has value: undefined
+
+    [0m [90m 125 |[39m     [36mconst[39m expected [33m=[39m formatTrialDate(end[33m,[39m zone)[33m;[39m [90m// "Oct 11"[39m
+     [90m 126 |[39m     [36mawait[39m recordAndDeliver(w[33m,[39m end[33m,[39m [36mnew[39m [33mDate[39m([32m'2026-10-09T08:00:00Z'[39m))[33m;[39m
+    [31m[1m>[22m[39m[90m 127 |[39m     expect(w[33m.[39mpushes[[35m0[39m])[33m.[39mtoContain([32m`ends on ${expected}.`[39m)[33m;[39m
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 128 |[39m   })[33m;[39m
+     [90m 129 |[39m })[33m;[39m
+     [90m 130 |[39m[0m
+
+      at Object.<anonymous> (test/audit-opus-t12-116-672.spec.ts:127:25)
+
+  ● PROBE C-672-2 — a claim made with a stale sweep clock is still exclusive › a delivery that claimed with the sweep start time cannot be doubled by a caller 3 minutes later
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 1
+    Received: 0
+
+    [0m [90m 158 |[39m     [36mconst[39m first [33m=[39m w[33m.[39msvc[33m.[39mdeliver(id [36mas[39m string[33m,[39m sweepStart)[33m;[39m
+     [90m 159 |[39m     [36mfor[39m ([36mlet[39m i [33m=[39m [35m0[39m[33m;[39m i [33m<[39m [35m100[39m [33m&&[39m calls [33m===[39m [35m0[39m[33m;[39m i [33m+=[39m [35m1[39m) [36mawait[39m [36mnew[39m [33mPromise[39m((r) [33m=>[39m setImmediate(r))[33m;[39m
+    [31m[1m>[22m[39m[90m 160 |[39m     expect(calls)[33m.[39mtoBe([35m1[39m)[33m;[39m
+     [90m     |[39m                   [31m[1m^[22m[39m
+     [90m 161 |[39m     [90m// A post-commit delivery or the next tick runs with the real clock.[39m
+     [90m 162 |[39m     [36mawait[39m w[33m.[39msvc[33m.[39mdeliver(id [36mas[39m string[33m,[39m [36mnew[39m [33mDate[39m(sweepStart[33m.[39mgetTime() [33m+[39m [35m3[39m [33m*[39m [35m60[39m [33m*[39m [35m1000[39m))[33m;[39m
+     [90m 163 |[39m     release({ delivered[33m:[39m [36mtrue[39m[33m,[39m code[33m:[39m [32m'delivered'[39m })[33m;[39m[0m
+
+      at Object.<anonymous> (test/audit-opus-t12-116-672.spec.ts:160:19)
+
+  ● PROBE C-672-5 — undeliverable rows do not starve the delivery sweep › 50 older notices of cancelled purchases do not hold back a due notice behind them
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 0
+    Received array:  []
+
+    [0m [90m 220 |[39m       [36mawait[39m w[33m.[39msvc[33m.[39msweep([36mnew[39m [33mDate[39m(now[33m.[39mgetTime() [33m+[39m tick [33m*[39m [35m10[39m [33m*[39m [35m60[39m [33m*[39m [35m1000[39m))[33m;[39m
+     [90m 221 |[39m     }
+    [31m[1m>[22m[39m[90m 222 |[39m     expect(w[33m.[39mpushes)[33m.[39mtoHaveLength([35m1[39m)[33m;[39m
+     [90m     |[39m                      [31m[1m^[22m[39m
+     [90m 223 |[39m   })[33m;[39m
+     [90m 224 |[39m })[33m;[39m
+     [90m 225 |[39m[0m
+
+      at Object.<anonymous> (test/audit-opus-t12-116-672.spec.ts:222:22)
+
+FAIL test/audit-opus-t23-118-opus117-probe.spec.ts (190 MB heap size)
+  ● C-671-4 probe — a never-started trial with a mirrored trial_end › probe (expected red): a cancelled attempt that never got access does not read "ended"
+
+    expect(received).not.toBe(expected) // Object.is equality
+
+    Expected: not "ended"
+
+    [0m [90m 122 |[39m       [33mNOW[39m[33m,[39m
+     [90m 123 |[39m     )[33m;[39m
+    [31m[1m>[22m[39m[90m 124 |[39m     expect(view[33m.[39mstate)[33m.[39mnot[33m.[39mtoBe([32m'ended'[39m)[33m;[39m
+     [90m     |[39m                            [31m[1m^[22m[39m
+     [90m 125 |[39m   })[33m;[39m
+     [90m 126 |[39m })[33m;[39m
+     [90m 127 |[39m[0m
+
+      at Object.<anonymous> (test/audit-opus-t23-118-opus117-probe.spec.ts:124:28)
+
+  ● C-672-7 probe — the coach-zone fallback can name a later day › probe (expected red): with no client-supplied zone the named day is never later than Oct 12
+
+    expect(received).not.toContain(expected) // indexOf
+
+    Expected substring: not "Oct 13"
+    Received string:        "Your free trial ends on Oct 13 at 12:30 AM EDT. Your card will be charged $49 then. Cancel anytime before."
+
+    [0m [90m 134 |[39m     [36mconst[39m id [33m=[39m [36mawait[39m record(w[33m,[39m p[33m,[39m [33mLATE_EVENING_PT[39m)[33m;[39m
+     [90m 135 |[39m     [36mawait[39m w[33m.[39mservice[33m.[39mdeliver(id[33m,[39m [33mNOW[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 136 |[39m     expect([33mString[39m(w[33m.[39mnotifications[33m.[39mpushToUser[33m.[39mmock[33m.[39mcalls[[35m0[39m][[35m2[39m]))[33m.[39mnot[33m.[39mtoContain([32m'Oct 13'[39m)[33m;[39m
+     [90m     |[39m                                                                     [31m[1m^[22m[39m
+     [90m 137 |[39m   })[33m;[39m
+     [90m 138 |[39m })[33m;[39m
+     [90m 139 |[39m[0m
+
+      at Object.<anonymous> (test/audit-opus-t23-118-opus117-probe.spec.ts:136:69)
+
+  ● C-672-8 probes — a notice that no longer describes the trial › control: an unchanged trialing purchase is delivered on both channels
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "Your free trial ends on Oct 12. Your card will be charged $49 then. Cancel anytime before."
+    Received: "Your free trial ends on Oct 12 at 1:00 PM EDT. Your card will be charged $49 then. Cancel anytime before."
+
+    [0m [90m 166 |[39m     expect(w[33m.[39mnotifications[33m.[39mpushToUser)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)[33m;[39m
+     [90m 167 |[39m     expect(w[33m.[39memail[33m.[39msend)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 168 |[39m     expect([33mString[39m(w[33m.[39mnotifications[33m.[39mpushToUser[33m.[39mmock[33m.[39mcalls[[35m0[39m][[35m2[39m]))[33m.[39mtoBe(
+     [90m     |[39m                                                                 [31m[1m^[22m[39m
+     [90m 169 |[39m       [32m'Your free trial ends on Oct 12. Your card will be charged $49 then. Cancel anytime before.'[39m[33m,[39m
+     [90m 170 |[39m     )[33m;[39m
+     [90m 171 |[39m   })[33m;[39m[0m
+
+      at Object.<anonymous> (test/audit-opus-t23-118-opus117-probe.spec.ts:168:65)
+
+Test Suites: 5 failed, 5 total
+Tests:       11 failed, 29 passed, 40 total
+Snapshots:   0 total
+Time:        11.202 s
+Ran all test suites matching test/aud-sol-t23-119-672-probe|test/audit-opus-t12-116-672|test/audit-opus-t23-118-opus117-probe|test/audit-opus-t23-118-672|test/audit-opus-t23d-119-672.

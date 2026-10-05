@@ -1,0 +1,60 @@
+    ✕ U2 [C-693-3, ruled C]: a deferred "Session confirmed" whose session was cancelled overnight is not put on the lock screen at 08:00 (11 ms)
+    ✕ U3 [C-693-4, ruled C]: a connection refused before the request reached Expo is retried, not dropped (17 ms)
+    ✓ U4 [control]: lock-screen copy for every emitter kind carries no health value and no message text (2 ms)
+  AUD-OPUS-PUSH4-121 new probes (#692 @ 346cf4a8 + #693 @ cc0a167f)
+    ✓ U5: every kind, fed PII inbox text and a PII display name, shows only fixed copy on the lock screen (12 ms)
+    ✓ U6 [ruling]: reminder pushes show the session time and no name (1 ms)
+    ✓ U7: quiet hours open between the handoff CAS and the send: zero sends, handoff cleared, attempt refunded, waits for 08:00 (11 ms)
+    ✓ U8: a handoff CAS write that throws sends nothing and schedules a bounded worker retry (12 ms)
+
+  ● AUD-OPUS-PUSH4-121 replay of AUD-OPUS-PUSH-120 (#693 @ cc0a167f) › U2 [C-693-3, ruled C]: a deferred "Session confirmed" whose session was cancelled overnight is not put on the lock screen at 08:00
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "Session confirmed",
+    + ]
+
+    [0m [90m 113 |[39m     clock[33m.[39mat [33m=[39m [33mNY_0800[39m[33m;[39m
+     [90m 114 |[39m     [36mawait[39m svc[33m.[39mdrain()[33m;[39m
+    [31m[1m>[22m[39m[90m 115 |[39m     expect(sent[33m.[39mmap((m) [33m=>[39m m[33m.[39mtitle))[33m.[39mtoEqual([])[33m;[39m
+     [90m     |[39m                                      [31m[1m^[22m[39m
+     [90m 116 |[39m   })[33m;[39m
+     [90m 117 |[39m
+     [90m 118 |[39m   it([32m'U3 [C-693-4, ruled C]: a connection refused before the request reached Expo is retried, not dropped'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/audit-opus-push4-121.probe.spec.ts:115:38)
+
+  ● AUD-OPUS-PUSH4-121 replay of AUD-OPUS-PUSH-120 (#693 @ cc0a167f) › U3 [C-693-4, ruled C]: a connection refused before the request reached Expo is retried, not dropped
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 2
+    + Received  + 2
+
+      Object {
+    -   "deferred_reason": "provider_retry",
+    -   "status": "pending",
+    +   "deferred_reason": null,
+    +   "status": "dropped",
+      }
+
+    [0m [90m 136 |[39m     })[33m;[39m
+     [90m 137 |[39m     [36mawait[39m svc[33m.[39mdrain()[33m;[39m
+    [31m[1m>[22m[39m[90m 138 |[39m     expect(w[33m.[39mrows[[35m0[39m])[33m.[39mtoMatchObject({ status[33m:[39m [32m'pending'[39m[33m,[39m deferred_reason[33m:[39m [32m'provider_retry'[39m })[33m;[39m
+     [90m     |[39m                       [31m[1m^[22m[39m
+     [90m 139 |[39m   })[33m;[39m
+     [90m 140 |[39m
+     [90m 141 |[39m   it([32m'U4 [control]: lock-screen copy for every emitter kind carries no health value and no message text'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/audit-opus-push4-121.probe.spec.ts:138:23)
+
+Test Suites: 1 failed, 1 total
+Tests:       2 failed, 6 passed, 8 total
+Snapshots:   0 total
+Time:        6.453 s
+Ran all test suites matching test/audit-opus-push4-121.probe.spec.ts.

@@ -1,0 +1,15 @@
+piece2 head c219d2f391c37edd700d5204f31b50286f280d82
+linked; now run: /home/user/workspace/ops/heavy.sh npx prisma generate (inside /home/user/workspace/wt/B-SPLIT-COACHLESS-121-2)
+[heavy] prisma client served from cache 1ee6ef24108bf8e4 (no generate needed)
+[heavy] waiting for a slot: npx jest --ci --runInBand test/coachless/coachless-home.spec.ts src/feature-flags test/ci/fly-env-manifest.spec.ts
+PASS test/ci/fly-env-manifest.spec.ts (7.54 s, 178 MB heap size)
+PASS test/coachless/coachless-home.spec.ts (134 MB heap size)
+PASS src/feature-flags/__tests__/feature-flags.service.spec.ts (152 MB heap size)
+PASS src/feature-flags/__tests__/feature-flags.controller.spec.ts (167 MB heap size)
+
+Test Suites: 4 passed, 4 total
+Tests:       105 passed, 105 total
+Snapshots:   0 total
+Time:        9.174 s
+Ran all test suites matching test/coachless/coachless-home.spec.ts|src/feature-flags|test/ci/fly-env-manifest.spec.ts.
+rc=0

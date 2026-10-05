@@ -1,0 +1,285 @@
+[heavy] waiting for a slot: npx jest --runInBand --forceExit --runTestsByPath src/services/__tests__/auditSol331SessionPublish.test.ts src/services/__tests__/auditSol331MidSigninPair.test.ts src/services/__tests__/zzAudOpus331R2Probe.test.ts src/services/__tests__/mobile331-independent-transport.test.tsx src/screens/settings/__tests__/mobile331-independent-boundaries.test.tsx
+PASS src/services/__tests__/auditSol331SessionPublish.test.ts (6.857 s)
+PASS src/services/__tests__/auditSol331MidSigninPair.test.ts
+PASS src/services/__tests__/zzAudOpus331R2Probe.test.ts
+FAIL src/screens/settings/__tests__/mobile331-independent-boundaries.test.tsx (21.218 s)
+  ● Console
+
+    console.info
+      AUD-SOL same-local-day labels Thursday, October 1 at 10:00 PM Friday, October 2 at 1:00 AM
+
+      at Object.info (src/screens/settings/__tests__/mobile331-independent-boundaries.test.tsx:49:11)
+
+  ● AUD-SOL: account A typed delete-all confirmation cannot authorize account B deletion
+
+    Unable to find an element with testID: roman-chats-delete-all
+
+    [36m<View[39m
+      [33mtestID[39m=[32m"roman-chats-screen"[39m
+    [36m>[39m
+      [36m<View>[39m
+        [36m<View>[39m
+          [36m<View[39m
+            [33maccessibilityLabel[39m=[32m"Back"[39m
+            [33maccessibilityRole[39m=[32m"button"[39m
+            [33maccessible[39m=[32m{true}[39m
+          [36m>[39m
+            [36m<Text>[39m
+              [0m[0m
+            [36m</Text>[39m
+          [36m</View>[39m
+        [36m</View>[39m
+        [36m<Text[39m
+          [33maccessibilityRole[39m=[32m"header"[39m
+        [36m>[39m
+          [0mYour conversations with Roman[0m
+        [36m</Text>[39m
+        [36m<View />[39m
+      [36m</View>[39m
+      [36m<View>[39m
+        [36m<Text[39m
+          [33mtestID[39m=[32m"roman-chats-signed-out"[39m
+        [36m>[39m
+          [0mYou are signed out, so your conversations with Roman are not shown. Sign in to see or delete them.[0m
+        [36m</Text>[39m
+      [36m</View>[39m
+    [36m</View>[39m
+
+    [0m [90m 55 |[39m   [36mconst[39m api [33m=[39m makeApi({ deleteAll[33m:[39m jest[33m.[39mfn([36masync[39m () [33m=>[39m { sentOwners[33m.[39mpush(user)[33m;[39m [36mreturn[39m ok([36mnull[39m)[33m;[39m }) })[33m;[39m
+     [90m 56 |[39m   [36mconst[39m screen [33m=[39m [36mawait[39m render([33m<[39m[33mRomanConversationsScreen[39m navigation[33m=[39m{navigation [36mas[39m never} api[33m=[39m{api} sessionUserId[33m=[39m{sessionUserId} [33m/[39m[33m>[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 57 |[39m   [36mawait[39m fireEvent[33m.[39mpress([36mawait[39m screen[33m.[39mfindByTestId([32m'roman-chats-delete-all'[39m))[33m;[39m
+     [90m    |[39m                                      [31m[1m^[22m[39m
+     [90m 58 |[39m   [36mawait[39m fireEvent[33m.[39mchangeText(screen[33m.[39mgetByTestId([32m'roman-chats-confirm-all-input'[39m)[33m,[39m [32m'DELETE'[39m)[33m;[39m
+     [90m 59 |[39m   user [33m=[39m [36mnull[39m[33m;[39m
+     [90m 60 |[39m   [36mawait[39m act([36masync[39m () [33m=>[39m authEvents[33m.[39memit([32m'logout'[39m))[33m;[39m[0m
+
+      at Object.findByTestId (src/screens/settings/__tests__/mobile331-independent-boundaries.test.tsx:57:38)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+  ● AUD-SOL: single-delete confirmation contains no old-account metadata after logout
+
+    Unable to find an element with testID: roman-chat-delete-cuserachat
+
+    [36m<View[39m
+      [33mtestID[39m=[32m"roman-chats-screen"[39m
+    [36m>[39m
+      [36m<View>[39m
+        [36m<View>[39m
+          [36m<View[39m
+            [33maccessibilityLabel[39m=[32m"Back"[39m
+            [33maccessibilityRole[39m=[32m"button"[39m
+            [33maccessible[39m=[32m{true}[39m
+          [36m>[39m
+            [36m<Text>[39m
+              [0m[0m
+            [36m</Text>[39m
+          [36m</View>[39m
+        [36m</View>[39m
+        [36m<Text[39m
+          [33maccessibilityRole[39m=[32m"header"[39m
+        [36m>[39m
+          [0mYour conversations with Roman[0m
+        [36m</Text>[39m
+        [36m<View />[39m
+      [36m</View>[39m
+      [36m<View>[39m
+        [36m<Text[39m
+          [33mtestID[39m=[32m"roman-chats-signed-out"[39m
+        [36m>[39m
+          [0mYou are signed out, so your conversations with Roman are not shown. Sign in to see or delete them.[0m
+        [36m</Text>[39m
+      [36m</View>[39m
+    [36m</View>[39m
+
+    [0m [90m 71 |[39m it([32m'AUD-SOL: single-delete confirmation contains no old-account metadata after logout'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 72 |[39m   [36mconst[39m screen [33m=[39m [36mawait[39m render([33m<[39m[33mRomanConversationsScreen[39m navigation[33m=[39m{navigation [36mas[39m never} api[33m=[39m{makeApi()} sessionUserId[33m=[39m{sessionUserId} [33m/[39m[33m>[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 73 |[39m   [36mawait[39m fireEvent[33m.[39mpress([36mawait[39m screen[33m.[39mfindByTestId([32m'roman-chat-delete-cuserachat'[39m))[33m;[39m
+     [90m    |[39m                                      [31m[1m^[22m[39m
+     [90m 74 |[39m   user [33m=[39m [36mnull[39m[33m;[39m
+     [90m 75 |[39m   [36mawait[39m act([36masync[39m () [33m=>[39m authEvents[33m.[39memit([32m'logout'[39m))[33m;[39m
+     [90m 76 |[39m   expect(screen[33m.[39mqueryByText([35m/This permanently deletes your conversation with Roman from/[39m))[33m.[39mtoBeNull()[33m;[39m[0m
+
+      at Object.findByTestId (src/screens/settings/__tests__/mobile331-independent-boundaries.test.tsx:73:38)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+  ● AUD-SOL: login refresh in flight cannot resurrect history after successful delete-all
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 10
+    + Received  +  1
+
+    - Array [
+    -   Object {
+    -     "dayKey": "2026-10-01",
+    -     "id": "cuserachat",
+    -     "lastActivityAt": "2026-10-01T08:01:00.000Z",
+    -     "messageCount": 2,
+    -     "startedAt": "2026-10-01T08:00:00.000Z",
+    -     "surface": "client",
+    -   },
+    - ]
+    + Array []
+
+    [0m [90m 85 |[39m   })[33m;[39m
+     [90m 86 |[39m   [36mconst[39m hook [33m=[39m [36mawait[39m renderHook(() [33m=>[39m useRomanChats({ api[33m,[39m sessionUserId }))[33m;[39m
+    [31m[1m>[22m[39m[90m 87 |[39m   [36mawait[39m waitFor(() [33m=>[39m expect(hook[33m.[39mresult[33m.[39mcurrent[33m.[39mchats)[33m.[39mtoEqual([[33mA[39m]))[33m;[39m
+     [90m    |[39m                [31m[1m^[22m[39m
+     [90m 88 |[39m   [36mawait[39m act([36masync[39m () [33m=>[39m hook[33m.[39mresult[33m.[39mcurrent[33m.[39mdeleteAll())[33m;[39m
+     [90m 89 |[39m   [36mawait[39m act([36masync[39m () [33m=>[39m authEvents[33m.[39memit([32m'login'[39m))[33m;[39m
+     [90m 90 |[39m   [36mawait[39m waitFor(() [33m=>[39m expect(api[33m.[39mlist)[33m.[39mtoHaveBeenCalledTimes([35m2[39m))[33m;[39m[0m
+
+      at Object.<anonymous> (src/screens/settings/__tests__/mobile331-independent-boundaries.test.tsx:87:16)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+  ● AUD-SOL: transcript delete completion from old account cannot navigate or publish a gone event
+
+    Unable to find an element with testID: roman-chat-transcript-delete
+
+    [36m<View[39m
+      [33mtestID[39m=[32m"roman-chat-transcript-screen"[39m
+    [36m>[39m
+      [36m<View>[39m
+        [36m<View>[39m
+          [36m<View[39m
+            [33maccessibilityLabel[39m=[32m"Back"[39m
+            [33maccessibilityRole[39m=[32m"button"[39m
+            [33maccessible[39m=[32m{true}[39m
+          [36m>[39m
+            [36m<Text>[39m
+              [0m[0m
+            [36m</Text>[39m
+          [36m</View>[39m
+        [36m</View>[39m
+        [36m<Text[39m
+          [33maccessibilityRole[39m=[32m"header"[39m
+        [36m>[39m
+          [0mConversation from Thursday, October 1 at 8:00 AM[0m
+        [36m</Text>[39m
+        [36m<View />[39m
+      [36m</View>[39m
+      [36m<View>[39m
+        [36m<Text[39m
+          [33mtestID[39m=[32m"roman-chat-transcript-other-account"[39m
+        [36m>[39m
+          [0mYou signed out or switched accounts after opening this conversation, so it is no longer shown. Go back to open it again.[0m
+        [36m</Text>[39m
+        [36m<View>[39m
+          [36m<View[39m
+            [33maccessibilityLabel[39m=[32m"Back"[39m
+            [33maccessibilityRole[39m=[32m"button"[39m
+            [33maccessible[39m=[32m{true}[39m
+            [33mtestID[39m=[32m"roman-chat-transcript-back"[39m
+          [36m>[39m
+            [36m<Text>[39m
+              [0mBack[0m
+            [36m</Text>[39m
+          [36m</View>[39m
+        [36m</View>[39m
+      [36m</View>[39m
+    [36m</View>[39m
+
+    [0m [90m 103 |[39m     [36mconst[39m params [33m=[39m { id[33m:[39m [33mA[39m[33m.[39mid[33m,[39m ownerId[33m:[39m [32m'user-a'[39m[33m,[39m startedAt[33m:[39m [33mA[39m[33m.[39mstartedAt[33m,[39m surface[33m:[39m [33mA[39m[33m.[39msurface[33m,[39m messageCount[33m:[39m [33mA[39m[33m.[39mmessageCount }[33m;[39m
+     [90m 104 |[39m     [36mconst[39m screen [33m=[39m [36mawait[39m render([33m<[39m[33mRomanConversationScreen[39m navigation[33m=[39m{navigation [36mas[39m never} route[33m=[39m{{ params }} api[33m=[39m{api} sessionUserId[33m=[39m{sessionUserId} [33m/[39m[33m>[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 105 |[39m     [36mawait[39m fireEvent[33m.[39mpress([36mawait[39m screen[33m.[39mfindByTestId([32m'roman-chat-transcript-delete'[39m))[33m;[39m
+     [90m     |[39m                                        [31m[1m^[22m[39m
+     [90m 106 |[39m     [36mawait[39m fireEvent[33m.[39mpress(screen[33m.[39mgetByTestId([32m'roman-chat-transcript-confirm-confirm'[39m))[33m;[39m
+     [90m 107 |[39m     user [33m=[39m [36mnull[39m[33m;[39m
+     [90m 108 |[39m     [36mawait[39m act([36masync[39m () [33m=>[39m authEvents[33m.[39memit([32m'logout'[39m))[33m;[39m[0m
+
+      at Object.findByTestId (src/screens/settings/__tests__/mobile331-independent-boundaries.test.tsx:105:40)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+  ● AUD-SOL positive: pending single erase cannot be reintroduced by a page while the delete is pending
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 10
+    + Received  +  1
+
+    - Array [
+    -   Object {
+    -     "dayKey": "2026-10-01",
+    -     "id": "cuserachat",
+    -     "lastActivityAt": "2026-10-01T08:01:00.000Z",
+    -     "messageCount": 2,
+    -     "startedAt": "2026-10-01T08:00:00.000Z",
+    -     "surface": "client",
+    -   },
+    - ]
+    + Array []
+
+    [0m [90m 120 |[39m   [36mconst[39m api [33m=[39m makeApi({ deleteOne[33m:[39m jest[33m.[39mfn(() [33m=>[39m del[33m.[39mpromise)[33m,[39m list[33m:[39m jest[33m.[39mfn([36masync[39m () [33m=>[39m page([[33mA[39m])) })[33m;[39m
+     [90m 121 |[39m   [36mconst[39m hook [33m=[39m [36mawait[39m renderHook(() [33m=>[39m useRomanChats({ api[33m,[39m sessionUserId }))[33m;[39m
+    [31m[1m>[22m[39m[90m 122 |[39m   [36mawait[39m waitFor(() [33m=>[39m expect(hook[33m.[39mresult[33m.[39mcurrent[33m.[39mchats)[33m.[39mtoEqual([[33mA[39m]))[33m;[39m
+     [90m     |[39m                [31m[1m^[22m[39m
+     [90m 123 |[39m   [36mawait[39m act([36masync[39m () [33m=>[39m hook[33m.[39mresult[33m.[39mcurrent[33m.[39mdeleteOne([33mA[39m))[33m;[39m
+     [90m 124 |[39m   [36mawait[39m act([36masync[39m () [33m=>[39m hook[33m.[39mresult[33m.[39mcurrent[33m.[39mreload())[33m;[39m
+     [90m 125 |[39m   expect(hook[33m.[39mresult[33m.[39mcurrent[33m.[39mchats)[33m.[39mtoEqual([])[33m;[39m[0m
+
+      at Object.<anonymous> (src/screens/settings/__tests__/mobile331-independent-boundaries.test.tsx:122:16)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+  ● AUD-SOL: a first-page answer taken before successful single erase cannot resurrect that erased row
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 10
+    + Received  +  1
+
+    - Array [
+    -   Object {
+    -     "dayKey": "2026-10-01",
+    -     "id": "cuserachat",
+    -     "lastActivityAt": "2026-10-01T08:01:00.000Z",
+    -     "messageCount": 2,
+    -     "startedAt": "2026-10-01T08:00:00.000Z",
+    -     "surface": "client",
+    -   },
+    - ]
+    + Array []
+
+    [0m [90m 136 |[39m   })[33m;[39m
+     [90m 137 |[39m   [36mconst[39m hook [33m=[39m [36mawait[39m renderHook(() [33m=>[39m useRomanChats({ api[33m,[39m sessionUserId }))[33m;[39m
+    [31m[1m>[22m[39m[90m 138 |[39m   [36mawait[39m waitFor(() [33m=>[39m expect(hook[33m.[39mresult[33m.[39mcurrent[33m.[39mchats)[33m.[39mtoEqual([[33mA[39m]))[33m;[39m
+     [90m     |[39m                [31m[1m^[22m[39m
+     [90m 139 |[39m   [36mawait[39m act([36masync[39m () [33m=>[39m hook[33m.[39mresult[33m.[39mcurrent[33m.[39mdeleteOne([33mA[39m))[33m;[39m
+     [90m 140 |[39m   [36mawait[39m act([36masync[39m () [33m=>[39m authEvents[33m.[39memit([32m'login'[39m))[33m;[39m
+     [90m 141 |[39m   [36mawait[39m act([36masync[39m () [33m=>[39m del[33m.[39mresolve(ok([36mnull[39m)))[33m;[39m[0m
+
+      at Object.<anonymous> (src/screens/settings/__tests__/mobile331-independent-boundaries.test.tsx:138:16)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+FAIL src/services/__tests__/mobile331-independent-transport.test.tsx
+  ● AUD-SOL: deleting A history cannot acquire B credentials during asynchronous secure-storage read
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+    [0m [90m 50 |[39m     pauseNextTokenRead [33m=[39m [36mtrue[39m[33m;[39m
+     [90m 51 |[39m     [36mawait[39m act([36masync[39m () [33m=>[39m hook[33m.[39mresult[33m.[39mcurrent[33m.[39mdeleteAll())[33m;[39m
+    [31m[1m>[22m[39m[90m 52 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(paused)[33m.[39mtoBe([36mtrue[39m))[33m;[39m
+     [90m    |[39m                  [31m[1m^[22m[39m
+     [90m 53 |[39m     user [33m=[39m [36mnull[39m[33m;[39m
+     [90m 54 |[39m     [36mawait[39m act([36masync[39m () [33m=>[39m authEvents[33m.[39memit([32m'logout'[39m))[33m;[39m
+     [90m 55 |[39m     user [33m=[39m [32m'user-b'[39m[33m;[39m[0m
+
+      at Object.<anonymous> (src/services/__tests__/mobile331-independent-transport.test.tsx:52:18)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+Test Suites: 2 failed, 3 passed, 5 total
+Tests:       7 failed, 26 passed, 33 total
+Snapshots:   0 total
+Time:        31.708 s
+Ran all test suites within paths "src/services/__tests__/auditSol331SessionPublish.test.ts", "src/services/__tests__/auditSol331MidSigninPair.test.ts", "src/services/__tests__/zzAudOpus331R2Probe.test.ts", "src/services/__tests__/mobile331-independent-transport.test.tsx", "src/screens/settings/__tests__/mobile331-independent-boundaries.test.tsx".
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+rc=1
