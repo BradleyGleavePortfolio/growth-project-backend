@@ -133,10 +133,10 @@ export class NotificationsService implements OnModuleInit {
    */
   onModuleInit(): void {
     if (this.pushDelivery) return;
-    const message =
+    const notWired =
       'NotificationsService started without PushDeliveryService: no inbox notification would reach a device.';
-    if (process.env.NODE_ENV === 'production') throw new Error(message);
-    this.logger.error(message);
+    if (process.env.NODE_ENV === 'production') throw new Error(notWired);
+    this.logger.error(notWired);
   }
 
   // ── Preferences ───────────────────────────────────────────────────────────
