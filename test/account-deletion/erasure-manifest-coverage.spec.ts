@@ -62,6 +62,7 @@ const ID_LIKE =
 // Columns the patterns flag that do not hold a user id or a person's email.
 const NOT_PERSONAL: Record<string, string> = {
   'DunningAttempt.email_idempotency_key': 'idempotency key for a dunning email, not an address',
+  'PayoutAdjustmentNotice.email_status': 'delivery status of a payout notice email, not an address',
 };
 
 interface UserRef {

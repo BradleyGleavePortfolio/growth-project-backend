@@ -443,6 +443,12 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Feature flag — when "false", the nightly PTM recompute cron and the admin teaching endpoints are disabled. Defaults to true (engine runs). Use to quickly disable the scoring engine if a heuristic regression is shipped.',
   },
   {
+    name: 'SFEE_SETTLEMENT_SWEEP_ENABLED',
+    tier: 'optional',
+    default: "on (unset = on; only the exact string 'false' pauses the scheduled sweep)",
+    reason: 'Kill switch — when "false", the 15-minute coach payout / settlement sweep (SettlementSweepCron) stops running on schedule; the admin run-sweeper endpoint still works by hand. Defaults to on.',
+  },
+  {
     name: 'PTM_SCORING_CRON',
     tier: 'optional',
     reason: 'Override for the nightly PTM recompute cron expression. Defaults to "0 4 * * *" (04:00 UTC, 1h after the GDPR scrub at 03:00 UTC). Must be a valid 5-field cron expression.',
@@ -1663,6 +1669,13 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     default: 'unset → SOC2 snapshot omits app/releases',
     reason: 'Fly app name (set by Fly at runtime) for the SOC2 evidence snapshot.',
+  },
+  {
+    name: 'FLY_MACHINE_ID',
+    tier: 'optional',
+    default: 'unset → os.hostname() (Fly sets it per machine at runtime)',
+    reason:
+      'Holder id for the S-FEE single-runner leases: the settlement sweep CronLease (SettlementSweepCron) and the per-charge money lock (ChargeLock), so each machine is told apart when it takes or fences a lease.',
   },
   {
     name: 'FLY_PRIMARY_REGION',
