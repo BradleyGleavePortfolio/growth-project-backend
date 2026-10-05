@@ -371,10 +371,12 @@ async function renderStep(over: Partial<DispatchContext>): Promise<string> {
       record(`${n.body} ${JSON.stringify(n.payload ?? {})}`, { id: 'n1' }),
   };
   const email = {
-    send: (m: { template: string; data: object }) =>
-      record(Handlebars.compile(String(hbs(m.template)))(m.data).replace(/<[^>]*>/g, ' '), {
-        status: 'sent',
-      }),
+    send: (m: { template: string; data: { subject?: string } }) =>
+      record(
+        // The subject is part of what the client sees (B-687-8).
+        `${m.data.subject ?? ''}\n${Handlebars.compile(String(hbs(m.template)))(m.data).replace(/<[^>]*>/g, ' ')}`,
+        { status: 'sent' },
+      ),
   };
   const channels = ['client_push', 'client_email', 'client_blocker', 'coach_alert'];
   const all = stub({ channels: [...channels, 'coach_push', 'coach_email'] });
@@ -388,7 +390,7 @@ describe('B-687-4 (Sol) / B-687-5 (Opus) / C-687-6: copy claims nothing before i
     expect(text).toMatch(/dispute/);
     // R-DISPUTE-PAUSE: access has ended, billing is paused, the coach decides.
     expect(text).toMatch(/Access has ended and billing (for the plan )?is paused/);
-    expect(text).toMatch(/decides whether to restart it/);
+    expect(text).toMatch(/Restarting it is up to Morgan Coach/);
     // Step 3 adds the coach channels: the coach is told the restart is theirs.
     if (stepIndex === 3) expect(text).toMatch(/Restarting is your decision/);
     expect(text).not.toMatch(
@@ -402,6 +404,33 @@ describe('B-687-4 (Sol) / B-687-5 (Opus) / C-687-6: copy claims nothing before i
     expect(text).toMatch(/once that payment goes through, your access stays on/);
     expect(text).toMatch(/nothing more is charged, and access ends right away/);
   });
+});
+
+describe('B-687-8 (Opus) / C-687-9: dispute copy is true for an inquiry too', () => {
+  it.each([0, 1, 2, 3])(
+    'dispute cycle step %i: no reversal claim, names a dispute or inquiry',
+    async (stepIndex) => {
+      // Owner ruling 6 (10-05): an inquiry pauses the plan, and an inquiry moves no money.
+      const text = await renderStep({ stepIndex, isLateReversalCycle: true });
+      expect(text).not.toMatch(/revers/i);
+      expect(text).toMatch(/dispute or inquiry/);
+    },
+  );
+  it('the dispute email subject makes no reversal claim', async () => {
+    const texts = await Promise.all(
+      [0, 1, 2, 3].map((stepIndex) => renderStep({ stepIndex, isLateReversalCycle: true })),
+    );
+    expect(texts.join('\n')).toMatch(/Your plan is paused after a payment dispute or inquiry/);
+  });
+  it.each([0, 1, 2, 3])(
+    'step %i: the lower-case coach fallback never starts a sentence',
+    async (stepIndex) => {
+      const tokens = { firstName: 'Avery', clientName: 'Avery Client', coachName: 'your coach' };
+      const text = await renderStep({ stepIndex, isLateReversalCycle: true, tokens });
+      expect(text).toMatch(/up to your coach/);
+      expect(text).not.toMatch(/(^|[.?]\s+)your coach/m);
+    },
+  );
 });
 
 describe('B-688-7 (Opus): no surface shows a raw token', () => {
