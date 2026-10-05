@@ -149,7 +149,8 @@ describe('B-D34-116 dunning D3 fix round (#689)', () => {
       dispute_open: true,
       access: 'unchanged',
     });
-    expect(res.message).toMatch(/reversed an earlier payment/);
+    expect(res.message).toMatch(/payment dispute or inquiry is open/);
+    expect(res.message).not.toMatch(/reversed/);
     expect(res.message).not.toMatch(/still updating/);
     expect(w.state()).toMatchObject({
       status: 'active',
@@ -266,7 +267,8 @@ describe('B-D34-116 dunning D3 fix round (#689)', () => {
     w.stripe.subs.get('sub_client')!.status = 'active';
     const res = await w.billing.cancelPlan('client', 'purchase');
     expect(res).toMatchObject({ outcome: 'ended', paid_period_kept: false });
-    expect(res.message).toMatch(/does not settle the payment your bank reversed/);
+    expect(res.message).toMatch(/does not settle the open payment dispute or inquiry/);
+    expect(res.message).not.toMatch(/reversed/);
     expect(w.stripe.subs.get('sub_client')?.status).toBe('canceled');
     expect(w.fake.find('clientPurchase', { id: 'purchase' })).toMatchObject({
       status: 'canceled',
