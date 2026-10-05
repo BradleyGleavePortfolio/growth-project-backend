@@ -3,6 +3,7 @@ import {
   HttpException,
   Injectable,
   Logger,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import type { ClientPurchase, CoachPackage, Prisma } from '@prisma/client';
@@ -13,6 +14,10 @@ import {
   type StripeSubscriptionCheckoutObject,
 } from '../connect/stripe-connect-api.service';
 import { PackagesService } from '../packages/packages.service';
+import {
+  SUBSCRIPTION_CHECKOUT_OWNER,
+  TrialCheckoutCapability,
+} from '../packages/trials/trial-checkout-capability';
 import { PrismaService } from '../prisma.service';
 import { CheckoutService, isRecurringPackage } from './checkout.service';
 import { errorLabel } from './error-label';
@@ -144,7 +149,13 @@ export class SubscriptionCheckoutService {
     private readonly state: ConnectModuleState,
     private readonly feePolicy: FeePolicyService,
     private readonly checkout: CheckoutService,
-  ) {}
+    // B-TR8-120 (C-673-1) — this checkout sends the package's trial to Stripe
+    // (card up front) under the one shared trial rule, so trial offers may
+    // say "offered". @Optional() for hand-built test wiring.
+    @Optional() trialCheckout?: TrialCheckoutCapability,
+  ) {
+    trialCheckout?.register(SUBSCRIPTION_CHECKOUT_OWNER);
+  }
 
   // ── POST /v1/checkout/subscription-intent ──────────────────────────────
 
@@ -283,8 +294,16 @@ export class SubscriptionCheckoutService {
     // R1-6 — trial attempts abandoned before the card was saved stay
     // `trialing` on Stripe until the trial ends (Stripe expires only
     // `incomplete` ones after 23 h). Retire the stale ones now. Best effort:
-    // it never blocks this checkout.
-    const cardSaved = await this.retireStaleTrialAttempts(client.id, coach.id, pkg.id);
+    // it never blocks this checkout. B-673-3: a plan that offers a trial also
+    // retires an unstarted trial attempt for another plan of this coach at
+    // once (that sheet was dismissed without a card), so the trial the offer
+    // showed for this plan is the trial this checkout sells.
+    const cardSaved = await this.retireStaleTrialAttempts(
+      client.id,
+      coach.id,
+      pkg.id,
+      pkgTrial > 0,
+    );
     // B-654-1 — a stale trial of THIS package whose card turned out saved is
     // the client's plan (the webhook grants it); never start a second one.
     const savedHere = cardSaved.find((r) => r.package_id === pkg.id);
@@ -1322,8 +1341,9 @@ export class SubscriptionCheckoutService {
   /**
    * R1-6 — cancel trial attempts older than the reuse window whose card was
    * never saved (Stripe `trialing`, no default payment method) and mark them
-   * expired. A trial whose card WAS saved is left alone (its webhook is only
-   * late; the webhook grants it). Bounded, out of any DB transaction, and
+   * expired. With `releaseOtherPlans` (B-673-3) an unstarted attempt for
+   * another plan of the coach counts at any age. A trial whose card WAS saved
+   * is left alone (its webhook is only late; the webhook grants it). Bounded, out of any DB transaction, and
    * never throws: a failure leaves the attempt to end with its trial
    * (`missing_payment_method=cancel`), exactly as before.
    */
@@ -1331,10 +1351,15 @@ export class SubscriptionCheckoutService {
     clientId: string,
     coachId: string,
     packageId: string,
+    releaseOtherPlans: boolean,
   ): Promise<ClientPurchase[]> {
     const cardSaved: ClientPurchase[] = [];
     try {
       const before = new Date(Date.now() - OPEN_ATTEMPT_MAX_AGE_MS);
+      // This plan's own open attempt keeps the reuse window (same-plan resume).
+      const age = releaseOtherPlans
+        ? { OR: [{ created_at: { lte: before } }, { package_id: { not: packageId } }] }
+        : { created_at: { lte: before } };
       const stale = await this.prisma.clientPurchase.findMany({
         where: {
           client_user_id: clientId,
@@ -1345,7 +1370,7 @@ export class SubscriptionCheckoutService {
           trial_days: { not: null },
           status: { in: [...OPEN_ATTEMPT_STATUSES] },
           idempotency_key: { startsWith: `sub-${clientId}-` },
-          created_at: { lte: before },
+          ...age,
         },
         orderBy: { created_at: 'desc' },
         take: STALE_TRIAL_RETIRE_LIMIT,
