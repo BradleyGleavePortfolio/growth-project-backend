@@ -975,7 +975,16 @@ export class DunningV2Service {
     }
     const wasLocked = state.locked_out_at != null;
 
+    let refused = false;
     const run = async (w: DunningV2Db) => {
+      // C-680-18: decided on the purchase as it is under its row lock. A plan
+      // that ended or was revoked (refund, lost dispute, dispute, cancel,
+      // expiry) is never handed access back, nor its lock lifted.
+      const purchase = await this.lockedPurchaseForClear(w, purchaseId);
+      if (!purchase || dunningPurchaseEnded(purchase)) {
+        refused = true;
+        return;
+      }
       if (wasLocked) {
         await w.dunningState.update({
           where: { id: state.id },
@@ -1014,6 +1023,12 @@ export class DunningV2Service {
     } else {
       await this.prisma.$transaction(async (tx) => run(tx));
     }
+    if (refused) {
+      this.logger.log(
+        JSON.stringify({ event: 'dunning_v2.clear_refused', purchase_id: purchaseId, via }),
+      );
+      return { liftedLockout: false };
+    }
 
     this.telemetry.recovered(state.purchase_id, via);
     if (wasLocked) {
@@ -1022,6 +1037,26 @@ export class DunningV2Service {
       });
     }
     return { liftedLockout: wasLocked };
+  }
+
+  /**
+   * C-680-18: the purchase under the row locks, in the dunning lock order
+   * (DunningState, then ClientPurchase). NO KEY UPDATE is the mode the
+   * webhook takes, so on the caller's transaction the purchase lock is the
+   * one it already holds.
+   */
+  private async lockedPurchaseForClear(
+    w: DunningV2Db,
+    purchaseId: string,
+  ): Promise<Pick<ClientPurchase, 'status' | 'entitlement_active'> | null> {
+    if (typeof (w as { $queryRaw?: unknown }).$queryRaw === 'function') {
+      await w.$queryRaw`SELECT "id" FROM "DunningState" WHERE "purchase_id" = ${purchaseId} FOR UPDATE`;
+      await w.$queryRaw`SELECT "id" FROM "ClientPurchase" WHERE "id" = ${purchaseId} FOR NO KEY UPDATE`;
+    }
+    return w.clientPurchase.findUnique({
+      where: { id: purchaseId },
+      select: { status: true, entitlement_active: true },
+    });
   }
 
   // ── §6 Late reversal (dispute on a cleared payment) ───────────────────────
