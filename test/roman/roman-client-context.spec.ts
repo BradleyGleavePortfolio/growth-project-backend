@@ -193,12 +193,29 @@ describe('R3 builder — P1 Maya golden facts', () => {
     ]);
     // ctx-v2: today's food entries by name, oldest first
     expect(ctx.today.entries).toEqual([
-      { meal: 'breakfast', name: 'Greek yogurt bowl', kcal: 320, protein_g: 30, logged_at: '2026-09-30T15:10:00.000Z' },
-      { meal: 'lunch', name: 'Chicken rice bowl', kcal: 460, protein_g: 32, logged_at: '2026-09-30T20:45:00.000Z' },
+      {
+        meal: 'breakfast',
+        name: 'Greek yogurt bowl',
+        kcal: 320,
+        protein_g: 30,
+        logged_at: '2026-09-30T15:10:00.000Z',
+      },
+      {
+        meal: 'lunch',
+        name: 'Chicken rice bowl',
+        kcal: 460,
+        protein_g: 32,
+        logged_at: '2026-09-30T20:45:00.000Z',
+      },
     ]);
     // ctx-v2: own community posts only (deleted and hidden excluded)
     expect(ctx.community_posts).toEqual([
-      { date: '2026-09-28', scope: 'cohort', title: 'Week 3 done', excerpt: 'Hit every session this week, first time ever.' },
+      {
+        date: '2026-09-28',
+        scope: 'cohort',
+        title: 'Week 3 done',
+        excerpt: 'Hit every session this week, first time ever.',
+      },
     ]);
     // ctx-v2: wearables as daily aggregates (sleep keyed to the morning it ends)
     expect(ctx.wearables).toMatchObject({
@@ -209,10 +226,34 @@ describe('R3 builder — P1 Maya golden facts', () => {
       latest_sleep: { date: '2026-09-30', hours: 6.3 },
     });
     expect(ctx.wearables.days).toEqual([
-      { date: '2026-09-29', steps: 8200, active_kcal: null, resting_hr_bpm: 58, hrv_ms: 44, sleep_hours: 6.7, sleep_efficiency_pct: null, recovery_score: 71, readiness_score: null },
-      { date: '2026-09-30', steps: 6100, active_kcal: null, resting_hr_bpm: 60, hrv_ms: null, sleep_hours: 6.3, sleep_efficiency_pct: 88, recovery_score: null, readiness_score: null },
+      {
+        date: '2026-09-29',
+        steps: 8200,
+        active_kcal: null,
+        resting_hr_bpm: 58,
+        hrv_ms: 44,
+        sleep_hours: 6.7,
+        sleep_efficiency_pct: null,
+        recovery_score: 71,
+        readiness_score: null,
+      },
+      {
+        date: '2026-09-30',
+        steps: 6100,
+        active_kcal: null,
+        resting_hr_bpm: 60,
+        hrv_ms: null,
+        sleep_hours: 6.3,
+        sleep_efficiency_pct: 88,
+        recovery_score: null,
+        readiness_score: null,
+      },
     ]);
-    expect(ctx.wearables.avg_7d).toMatchObject({ steps: 7150, resting_hr_bpm: 59, sleep_hours: 6.5 });
+    expect(ctx.wearables.avg_7d).toMatchObject({
+      steps: 7150,
+      resting_hr_bpm: 59,
+      sleep_hours: 6.5,
+    });
     // ctx-v2: consultation + safety-screen answers are the client's own
     expect(ctx.consultation).toEqual({
       completed: true,
@@ -269,7 +310,7 @@ describe('R3 builder — P1 Maya golden facts', () => {
     for (const w of byTable('macroTarget'))
       expect(w).toMatchObject({ client_id: P1, coach_id: 'coach-A', archived_at: null });
     for (const w of byTable('clientWorkoutAssignment'))
-      expect(w).toMatchObject({ client_id: P1, assigned_by_coach_id: 'coach-A' });
+      expect(w).toMatchObject({ client_id: P1, assigned_by_coach_id: { in: ['coach-A'] } });
     for (const w of byTable('coachGuideline'))
       expect(w).toMatchObject({ client_id: P1, coach_id: 'coach-A' });
     for (const w of byTable('coachMessage'))
@@ -279,8 +320,11 @@ describe('R3 builder — P1 Maya golden facts', () => {
         sender_id: { in: ['coach-A', P1] },
       });
     for (const w of byTable('dailyMealPlanAssignment'))
-      expect(w).toMatchObject({ client_id: P1, assigned_by_coach_id: 'coach-A' });
+      expect(w).toMatchObject({ client_id: P1, assigned_by_coach_id: { in: ['coach-A'] } });
+    for (const w of byTable('subCoachAssignment'))
+      expect(w).toMatchObject({ client_id: P1, unassigned_at: null });
     for (const t of [
+      'subCoachAssignment',
       'macroTarget',
       'clientWorkoutAssignment',
       'coachGuideline',
@@ -331,7 +375,15 @@ describe('R3 builder — canary absence and exclusion list', () => {
     expect(bundle.rendered).toContain('ZELDA-CANARY post');
     expect(bundle.rendered).toContain('ZELDA-CANARY screen answer');
     expect(bundle.rendered).toContain('31111');
-    for (const c of ['Maya', 'Greek yogurt', 'Week 3 done', 'CONSULT-ANSWER-MAYA', 'knee felt fine', '8200', '6100'])
+    for (const c of [
+      'Maya',
+      'Greek yogurt',
+      'Week 3 done',
+      'CONSULT-ANSWER-MAYA',
+      'knee felt fine',
+      '8200',
+      '6100',
+    ])
       expect(bundle.rendered).not.toContain(c);
   });
 
@@ -365,8 +417,8 @@ describe('R3 builder — canary absence and exclusion list', () => {
     const { context, query_count } = await svc.build(student('user-nobody'), NOW);
     expect(context.data_quality.missing).toContain('user');
     expect(context.targets.source).toBe('none');
-    expect(query_count).toBe(1);
-    expect(db.calls).toEqual(['user.findUnique']);
+    expect(query_count).toBe(2);
+    expect(db.calls).toEqual(['user.findUnique', 'subCoachAssignment.findFirst']);
   });
 });
 
@@ -395,8 +447,16 @@ describe('R3 builder — P2 Dan (clearance recommended) and P3 Lee (new client)'
       completed: true,
       clearance_recommended: true,
       screen_answers: [
-        { question: 'Bone or joint problem?', answer: 'Yes, left knee replacement 2019', flagged: true },
-        { question: 'Blood pressure or heart medication?', answer: 'Yes, lisinopril', flagged: true },
+        {
+          question: 'Bone or joint problem?',
+          answer: 'Yes, left knee replacement 2019',
+          flagged: true,
+        },
+        {
+          question: 'Blood pressure or heart medication?',
+          answer: 'Yes, lisinopril',
+          flagged: true,
+        },
         { question: 'Chest pain with activity?', answer: 'No' },
       ],
     });
@@ -713,7 +773,11 @@ describe('ctx-v3 upcoming sessions', () => {
     const { db, svc } = setup();
     const bundle = await svc.buildFresh(student(P1), NOW);
     expect(bundle.context.upcoming_sessions).toHaveLength(1);
-    expect(bundle.context.upcoming_sessions[0]).toMatchObject({ title: 'Form check: squat', status: 'confirmed', duration_minutes: 45 });
+    expect(bundle.context.upcoming_sessions[0]).toMatchObject({
+      title: 'Form check: squat',
+      status: 'confirmed',
+      duration_minutes: 45,
+    });
     expect(bundle.rendered).not.toContain('COACH-PRIVATE-CANARY');
     expect(bundle.rendered).not.toContain('PAST-SESSION-CANARY');
     const where = db.wheres.find((w) => w.table === 'coachingSession')?.where;
