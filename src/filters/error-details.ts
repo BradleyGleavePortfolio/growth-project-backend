@@ -10,6 +10,8 @@
 // exception body (Stripe codes, ids, internals) is dropped exactly as before.
 // Envelope keys can never be overridden by a detail.
 
+import { LOCK_TOKEN_RE, type MwbHeadConflictCode } from '../workout-builder/workout-builder-autosave.dto';
+
 type DetailCheck = (value: unknown) => boolean;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -26,6 +28,24 @@ const oneOf =
   (...allowed: string[]): DetailCheck =>
   (v) =>
     typeof v === 'string' && allowed.includes(v);
+const revisionIndex: DetailCheck = (v) =>
+  typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
+const lockToken: DetailCheck = (v) => typeof v === 'string' && LOCK_TOKEN_RE.test(v);
+
+// B-MWB409 — a workout-builder head conflict carries the plan's current head
+// index and the fresh optimistic-lock token for it, both already returned to
+// the same authorised coach on a 200, so the app rebases without a refetch.
+const MWB_HEAD_CONFLICT: Readonly<Record<string, DetailCheck>> = {
+  head_revision_index: revisionIndex,
+  lock_token: lockToken,
+};
+const MWB_HEAD_CONFLICT_DETAILS: Readonly<
+  Record<MwbHeadConflictCode, Readonly<Record<string, DetailCheck>>>
+> = {
+  autosave_lock_stale: MWB_HEAD_CONFLICT,
+  autosave_conflict_retry: MWB_HEAD_CONFLICT,
+  undo_head_moved: MWB_HEAD_CONFLICT,
+};
 
 /** code -> field name -> shape check. Extend only with client-safe facts. */
 export const ERROR_DETAIL_ALLOWLIST: Readonly<Record<string, Readonly<Record<string, DetailCheck>>>> =
@@ -55,6 +75,7 @@ export const ERROR_DETAIL_ALLOWLIST: Readonly<Record<string, Readonly<Record<str
     PACKAGE_COACH_NOT_CONNECTED: {
       reason: oneOf('no_coach', 'other_coach'),
     },
+    ...MWB_HEAD_CONFLICT_DETAILS,
   };
 
 const ENVELOPE_KEYS = new Set([
