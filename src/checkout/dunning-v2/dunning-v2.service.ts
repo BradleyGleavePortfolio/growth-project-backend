@@ -275,6 +275,27 @@ const PAID_STRIPE_STATUSES = new Set(['active', 'trialing']);
 /** `last_failure_reason` marker of a compressed late-reversal (dispute) cycle. */
 export const DUNNING_V2_REVERSAL_REASON = 'charge_disputed';
 
+/**
+ * C-680-18 (Opus R34D-119): a plan that ended or was revoked for money. With
+ * no access, no payment or card update hands it back. Same set as the
+ * webhook's `purchaseHasEnded` (REVOKED_STATUSES in
+ * checkout-webhook-handler.service.ts); a spec keeps the two equal.
+ */
+const DUNNING_V2_ENDED_STATUSES = new Set([
+  'canceled',
+  'expired',
+  'incomplete_expired',
+  'refunded',
+  'chargeback_lost',
+  'disputed',
+]);
+
+export function dunningPurchaseEnded(
+  purchase: Pick<ClientPurchase, 'status' | 'entitlement_active'>,
+): boolean {
+  return DUNNING_V2_ENDED_STATUSES.has(purchase.status) && !purchase.entitlement_active;
+}
+
 @Injectable()
 export class DunningV2Service {
   private readonly logger = new Logger(DunningV2Service.name);
