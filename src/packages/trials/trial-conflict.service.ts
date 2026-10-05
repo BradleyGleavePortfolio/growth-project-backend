@@ -272,7 +272,7 @@ export class TrialConflictService {
         const subId = row.stripe_subscription_id;
         const open = historic ? await readOrNull(this.stripe.listOpenInvoices(subId)) : null;
         const history = historic
-          ? trialPaidHistory(await readOrNull(this.stripe.listPaidInvoices(subId)))
+          ? trialPaidHistory(await readOrNull(this.stripe.listSubscriptionPaidInvoices(subId)))
           : undefined;
         // B-673-2 — the row must still be owed under this lease after the
         // reads, and (B-TR5-119) again after the voids, before the DELETE.
@@ -457,7 +457,9 @@ async function voidOpen(
   const budget = TRIAL_CONFLICT_CANCEL_TIMEOUT_MS * (ids.length + 1);
   if (clock().getTime() + budget >= until.getTime()) return 'lease_exhausted';
   for (const inv of ids) {
-    const res = await readOrNull(stripe.voidInvoice(String(inv?.id)));
+    // Main's voidInvoice is keyed: one void per invoice however often this retries.
+    const id = String(inv?.id);
+    const res = await readOrNull(stripe.voidInvoice(id, `tgp-trial-void-${id}`));
     if (res?.status !== 'void') return 'invoice_not_voided';
   }
   return 'ok';

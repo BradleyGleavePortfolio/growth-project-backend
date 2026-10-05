@@ -26,6 +26,7 @@ import { NotificationCategory, DEFAULT_NOTIFICATION_CATEGORY } from './notificat
 import { PushAbortedError, PushDeliveryResult } from './push-delivery.types';
 import { VoicePolicyService } from '../roman/voice/voice-policy.service';
 import { RomanCopyPayload } from '../roman/voice/voice-policy.constants';
+import { describeFailure } from '../observability/log-pii';
 
 // Phase 6B: PushPayload is the minimal envelope CoachAlertsService.tryPush
 // passes through. It intentionally contains no PII — only the alert
@@ -53,7 +54,17 @@ export interface CreateNotificationInput {
   payload?: Record<string, unknown>;
   deep_link?: string;
   channel?: 'push' | 'email' | 'inapp';
+  /**
+   * S-FEE round 6 (#627 B-627-6 / C-627-7): narrows the per-process 60 s push
+   * limiter to one logical alert (for example a payout notice id), so two
+   * different alerts of the same kind to the same user are never collapsed.
+   * Unset keeps the default (one push per user per kind per minute).
+   */
+  throttle_key?: string;
 }
+
+/** Whether a user receives a kind on a channel (createNotification's gate). */
+export type NotificationChannelGate = 'enabled' | 'muted' | 'off';
 
 // Rate-limit guard: at most 1 push per user per kind per minute.
 // Tracked in-process (per replica). At scale: move to Redis with a
@@ -398,20 +409,39 @@ export class NotificationsService {
    * behaviour is unchanged (autocommit on `this.prisma`), so every existing
    * callsite keeps working.
    */
+  /**
+   * The preference gate createNotification applies, without writing: lets a
+   * caller tell "the user turned this off" (done, nothing to retry) from a
+   * suppressed push (rate limit), which createNotification reports the same
+   * way (null).
+   */
+  async channelGate(
+    userId: string,
+    kind: NotificationKindValue,
+    channel: 'push' | 'email' | 'inapp',
+  ): Promise<NotificationChannelGate> {
+    return this.gateFrom(await this.getPreferences(userId), kind, channel);
+  }
+
+  private gateFrom(
+    prefs: Awaited<ReturnType<NotificationsService['getPreferences']>>,
+    kind: NotificationKindValue,
+    channel: 'push' | 'email' | 'inapp',
+  ): NotificationChannelGate {
+    // Global mute short-circuit.
+    if ((prefs as Record<string, unknown>).muted) return 'muted';
+    // Per-kind channel gate.
+    const enabledKey = `${this._kindToPrefsPrefix(kind)}_${channel}` as keyof typeof prefs;
+    return prefs[enabledKey] === false ? 'off' : 'enabled';
+  }
+
   async createNotification(input: CreateNotificationInput, tx?: Prisma.TransactionClient) {
     const db = tx ?? this.prisma;
     const prefs = await this.getPreferences(input.user_id, tx);
     const channel = input.channel ?? 'inapp';
 
-    // Global mute short-circuit.
-    if ((prefs as Record<string, unknown>).muted) {
-      return null;
-    }
-
-    // Per-kind channel gate.
-    const enabledKey = `${this._kindToPrefsPrefix(input.kind)}_${channel}` as keyof typeof prefs;
-    const enabled = prefs[enabledKey];
-    if (enabled === false) {
+    // Global mute and per-kind channel gate (shared with channelGate).
+    if (this.gateFrom(prefs, input.kind, channel) !== 'enabled') {
       return null;
     }
 
@@ -430,7 +460,9 @@ export class NotificationsService {
     // so generic per-process push throttling is both unnecessary and unsafe —
     // its state cannot roll back with the transaction.
     if (channel === 'push' && !tx) {
-      const key = `${input.user_id}:${input.kind}`;
+      const key = input.throttle_key
+        ? `${input.user_id}:${input.kind}:${input.throttle_key}`
+        : `${input.user_id}:${input.kind}`;
       const last = recentPushes.get(key) ?? 0;
       const now = Date.now();
       if (now - last < 60_000) {
@@ -609,7 +641,7 @@ export class NotificationsService {
       await this.pollReceipts(tickets, coachId);
       return true;
     } catch (err) {
-      this.logger.error(`pushToCoach failed for coach=${coachId}: ${(err as Error).message}`, err);
+      this.logger.error(`pushToCoach failed for coach=${coachId}: ${describeFailure(err)}`);
       return false;
     }
   }
@@ -686,14 +718,18 @@ export class NotificationsService {
       // the message and we must NOT report delivered=true.
       for (const ticket of tickets) {
         if (ticket.status === 'error') {
-          this.logger.error(`pushToUser ticket error for user ${userId}: ${ticket.message}`);
+          // C-611-17: Expo's ticket message quotes the push token
+          // ("ExponentPushToken[...] is not a registered ..."); log and
+          // return its error code only.
+          const errorCode = ticket.details?.error ?? 'unknown';
+          this.logger.error(`pushToUser ticket error for user ${userId}: ${errorCode}`);
           // Poll receipts on a best-effort basis so stale tokens get
           // cleared even though we report failure to the caller.
           await this.pollReceipts(tickets, userId);
           return {
             delivered: false,
             code: 'ticket-error',
-            detail: ticket.message,
+            detail: errorCode,
           };
         }
       }
@@ -703,10 +739,11 @@ export class NotificationsService {
       await this.pollReceipts(tickets, userId);
       return { delivered: true, code: 'delivered' };
     } catch (err) {
-      // R17: log the raw err for ops, return a scrubbed typed result to
-      // the caller. The `detail` field carries only the Error.name so we
-      // never leak stack traces or query text.
-      this.logger.error(`Push notification failed for user ${userId}`, err);
+      // R17: return a scrubbed typed result to the caller. The `detail`
+      // field carries only the Error.name so we never leak stack traces or
+      // query text. B-700-1: the log line holds the class and code only
+      // (an Expo error message quotes the push token).
+      this.logger.error(`Push notification failed for user ${userId}: ${describeFailure(err)}`);
       if (err instanceof PushAbortedError) {
         return { delivered: false, code: 'aborted', detail: err.name };
       }
@@ -741,12 +778,14 @@ export class NotificationsService {
                 data: { expo_push_token: null },
               });
             }
-            this.logger.error('Push receipt error:', receipt.message);
+            this.logger.error(
+              `Push receipt error for user ${userId}: ${receipt.details?.error ?? 'unknown'}`,
+            );
           }
         }
       }
     } catch (err) {
-      this.logger.warn('Failed to poll push receipts', err);
+      this.logger.warn(`Failed to poll push receipts: ${describeFailure(err)}`);
     }
   }
 
@@ -773,7 +812,7 @@ export class NotificationsService {
         // Unique constraint violation = window already claimed by another process.
         return false;
       }
-      this.logger.error('claimDigestWindow unexpected error', err);
+      this.logger.error(`claimDigestWindow unexpected error: ${describeFailure(err)}`);
       throw err;
     }
   }
