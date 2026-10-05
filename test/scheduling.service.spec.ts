@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, HttpException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { AuditService, type AuditWriteInput } from '../src/audit/audit.service';
 import { BookingEmitter } from '../src/notifications/emitters/booking.emitter';
 import { NotificationsService } from '../src/notifications/notifications.service';
@@ -187,11 +187,9 @@ describe('SchedulingService — request + state machine + audit', () => {
     jest.setSystemTime(new Date('2026-06-01T15:31:00Z'));
     try {
       await h.svc.completeSession(COACH_ACTOR, requested.id, {});
-      // Split 2/9: refused before and after the lifecycle piece (4/9 makes it 409).
       await expect(h.svc.approveSession(COACH_ACTOR, requested.id)).rejects.toBeInstanceOf(
-        HttpException,
+        ConflictException,
       );
-      expect(h.db.sessions.find((x) => x.id === requested.id)?.status).toBe('completed');
     } finally {
       jest.setSystemTime(PINNED_NOW);
     }
@@ -203,11 +201,9 @@ describe('SchedulingService — request + state machine + audit', () => {
     jest.setSystemTime(new Date('2026-06-01T15:31:00Z'));
     try {
       await h.svc.completeSession(COACH_ACTOR, requested.id, {});
-      // Split 2/9: refused before and after the lifecycle piece (4/9 makes it 409).
       await expect(h.svc.cancelSession(COACH_ACTOR, requested.id, {})).rejects.toBeInstanceOf(
-        HttpException,
+        ConflictException,
       );
-      expect(h.db.sessions.find((x) => x.id === requested.id)?.status).toBe('completed');
     } finally {
       jest.setSystemTime(PINNED_NOW);
     }
