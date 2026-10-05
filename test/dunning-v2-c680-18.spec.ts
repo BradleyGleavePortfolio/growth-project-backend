@@ -291,6 +291,19 @@ describe('C-680-18 through the webhook (invoice.paid, then customer.subscription
   const pause = (h: ReturnType<typeof harness>) =>
     Object.assign(h.states[0], { status: 'active', last_failure_reason: 'charge_disputed' });
   it.each(['active', 'paid'])(
+    'B-705-4 / Sol B-705-1: flag rolled back, a paused plan (%s) stays without access',
+    async (status) => {
+      const h = harness(status, false);
+      pause(h);
+      process.env.FEATURE_DUNNING_V2 = 'false';
+      await h.deliver(paid());
+      expect(h.row().entitlement_active).toBe(false);
+      h.row().updated_at = new Date(Date.now() - 30_000);
+      await h.deliver(ev('customer.subscription.updated', sub('active')));
+      expect(h.row().entitlement_active).toBe(false);
+    },
+  );
+  it.each(['active', 'paid'])(
     'a paused plan (%s, no access): invoice.paid and sub.updated(active) keep access ended',
     async (status) => {
       const h = harness(status, false);
