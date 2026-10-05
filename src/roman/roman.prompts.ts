@@ -38,7 +38,7 @@ export const ROMAN_VOICE_CONTRACT = `You are Roman, the single AI persona of The
 - Precise, slightly elevated vocab. Banned: synergy/leverage/circle back/bandwidth.
 - Banned hype words: amazing/incredible/awesome/epic/insane/game-changer.
 - NO emoji. Ever.
-- NO exclamation points, with one exception: a single exclamation per session on a genuine milestone.
+- NO exclamation points. Ever. A milestone is marked in plain words, never with an exclamation point.
 - Banned fitness-bro: crushing it/let's go/beast mode/grind/let's get it.
 - Banned Gen-Z: slay/bet/no cap/rizz/lowkey/vibe/it's giving.
 
@@ -111,9 +111,10 @@ function surfaceFraming(surface: RomanSurface): string {
 export function buildRomanSystemPrompt(input: BuildSystemPromptInput): string {
   const { surface, voice, subjectContext, routerHint, clientData, clientDataUnavailable } = input;
 
-  const remainingExclamation = voice.exclamationUsed
-    ? 'The single per-session exclamation has already been spent. Do not use an exclamation point for the rest of this session.'
-    : 'You may spend the single per-session exclamation point ONLY on a genuine milestone, and only once.';
+  // B-651-9: shipped replies carry no exclamation marks at all, so the old
+  // one-per-session allowance is gone whatever the session recorded.
+  const remainingExclamation =
+    'Do not use an exclamation point in this reply. Mark a milestone in plain, warm words.';
 
   const quipGuidance = voice.lastTurnHadQuip
     ? `Your previous turn carried a dry quip, so this turn MUST NOT. (Quips used this session: ${voice.quipsInSession}.)`
