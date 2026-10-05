@@ -1337,6 +1337,31 @@ export class RefundDisputeHandlerService {
           'This refund is still inside the automatic retry window. The retry sweep owns it; reconcile only rows in the review list.',
       });
     }
+    // B-674-15: an operation already written for this refund (sent, review or
+    // found) is finished (Stripe's list by key, never a second send) and recorded
+    // first, whatever the transfer has left. A receipt another refund holds is its.
+    const key = refundTransferReversalKey(row.id);
+    const own = await this.prisma.transferReversalOp.findMany({
+      where: {
+        OR: [{ idempotency_key: key }, { idempotency_key: { startsWith: `${key}-` } }],
+        status: { in: ['pending', 'succeeded'] },
+      },
+      orderBy: { seq: 'asc' },
+    });
+    for (const prior of own) {
+      const receipt = prior.stripe_reversal_id;
+      const holder = { transfer_reversal_stripe_id: receipt, NOT: { id: row.id } };
+      if (receipt && (await this.prisma.chargeRefund.findFirst({ where: holder }))) continue;
+      const res = await this.reconcileStep(() =>
+        this.transfers.reverse({
+          transfer_row_id: prior.transfer_id,
+          amount_cents: prior.amount_cents,
+          idempotency_key: prior.idempotency_key,
+          purpose: 'legacy',
+        }),
+      );
+      return this.recordReconciled(row, res, 'recorded_from_stripe');
+    }
     const owed = await this.owedHeadCoachReversal(row.purchase_id, row.amount_cents);
     if (!owed) {
       await this.markTransferReversalDone(this.prisma, row.id);
@@ -1355,24 +1380,6 @@ export class RefundDisputeHandlerService {
         message:
           'The head-coach transfer has no Stripe id, so there is nothing to reverse in Stripe.',
       });
-    }
-    // An operation already written under this refund's keys is the record:
-    // finish it first (Stripe's list by key, never a second send).
-    const key = refundTransferReversalKey(row.id);
-    for (const opKey of [key, `${key}-review`]) {
-      const prior = await this.prisma.transferReversalOp.findUnique({
-        where: { idempotency_key: opKey },
-      });
-      if (prior?.status !== 'pending' && prior?.status !== 'succeeded') continue;
-      const res = await this.reconcileStep(() =>
-        this.transfers.reverse({
-          transfer_row_id: prior.transfer_id,
-          amount_cents: prior.amount_cents,
-          idempotency_key: opKey,
-          purpose: 'legacy',
-        }),
-      );
-      return this.recordReconciled(row, res, 'recorded_from_stripe');
     }
     const reversals = await this.listAllTransferReversals(stripeTransferId);
     let match: { id: string; amount: number } | undefined;

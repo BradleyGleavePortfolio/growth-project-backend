@@ -49,6 +49,9 @@ function matchValue(actual: any, cond: any): boolean {
         case 'equals':
           if (!matchValue(actual, v)) return false;
           break;
+        case 'startsWith':
+          if (!(typeof actual === 'string' && actual.startsWith(v as string))) return false;
+          break;
         default:
           throw new Error(`stateful-prisma: unsupported operator ${op}`);
       }
@@ -79,7 +82,7 @@ export function matchWhere(row: Row, where: Row | undefined): boolean {
       !(cond instanceof Date) &&
       !Array.isArray(cond) &&
       Object.keys(cond).some(
-        (op) => !['lt', 'lte', 'gt', 'gte', 'in', 'notIn', 'not', 'equals'].includes(op),
+        (op) => !['lt', 'lte', 'gt', 'gte', 'in', 'notIn', 'not', 'equals', 'startsWith'].includes(op),
       )
     ) {
       // compound unique selector, e.g. { user_id_code: { user_id, code } }
