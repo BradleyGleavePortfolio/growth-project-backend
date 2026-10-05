@@ -12,6 +12,7 @@ import {
 import { ConnectModuleState } from '../connect/connect.module-state';
 import { PayoutReadinessService } from '../connect/fees/payout-readiness.service';
 import { AdminAnalyticsService } from '../checkout/admin-analytics.service';
+import { readRequirements, type ParsedRequirements } from '../coach-money/coach-money.service';
 
 // Phase 8 — Coach-facing Connect surface for the mobile app.
 //
@@ -31,13 +32,38 @@ import { AdminAnalyticsService } from '../checkout/admin-analytics.service';
 // data yet" (real zeros) by the configured flag on ConnectStatus and
 // the empty arrays on Payouts/Packages.
 
+/**
+ * S-COACH: the truthful onboarding state the coach sees.
+ *  - not_started          no Connect account yet
+ *  - details_needed       account exists, the coach has not finished Stripe's form
+ *  - pending_verification form submitted, Stripe is verifying, nothing due from the coach
+ *  - restricted           Stripe needs more from the coach before charges or payouts work
+ *  - active               charges and payouts enabled (requirements may still be due later)
+ *  - deauthorized         the coach disconnected TGP from their Stripe account
+ */
+export type CoachConnectState =
+  | 'not_started'
+  | 'details_needed'
+  | 'pending_verification'
+  | 'restricted'
+  | 'active'
+  | 'deauthorized';
+
 export interface CoachConnectStatus {
   configured: boolean;
   charges_enabled: boolean;
   payouts_enabled: boolean;
   account_id: string | null;
   last_onboarded_at: string | null;
+  /** Legacy union of currently_due, past_due and eventually_due. */
   requirements_due: string[];
+  // S-COACH additive fields (older clients ignore them).
+  state: CoachConnectState;
+  details_submitted: boolean;
+  disabled_reason: string | null;
+  /** True when Stripe needs something from the coach now (currently_due or past_due). */
+  action_required: boolean;
+  requirements: ParsedRequirements;
 }
 
 export interface BusinessMetrics {
@@ -82,6 +108,72 @@ export interface OnboardingLink {
   expires_at: string;
 }
 
+export function deriveConnectState(a: {
+  deauthorized: boolean;
+  chargesEnabled: boolean;
+  payoutsEnabled: boolean;
+  detailsSubmitted: boolean;
+  actionRequired: boolean;
+  disabledReason: string | null;
+}): CoachConnectState {
+  if (a.deauthorized) return 'deauthorized';
+  if (a.chargesEnabled && a.payoutsEnabled) return 'active';
+  if (!a.detailsSubmitted) return 'details_needed';
+  if (a.actionRequired) return 'restricted';
+  if (a.disabledReason && a.disabledReason !== 'requirements.pending_verification') {
+    return 'restricted';
+  }
+  return 'pending_verification';
+}
+
+// C-676-2 (B-CM1-116): a failed payout's reason is app copy picked by Stripe's
+// failure_code, with the coach's next step (an unknown code shows it as a
+// reference). Stripe's description and failure_message are never the reason.
+const BANK_DETAILS_WRONG = 'The bank details on file are wrong. Correct them in Stripe.';
+const BANK_ACCOUNT_UNUSABLE =
+  'This bank account cannot take payouts. Add a different bank account in Stripe.';
+const BANK_REFUSED =
+  'The bank refused this payout. Contact the bank, then check the account in Stripe.';
+// Stripe payout failure codes (docs.stripe.com/api/payouts/failures).
+const PAYOUT_FAILURE_COPY: Record<string, string> = {
+  incorrect_account_holder_address: BANK_DETAILS_WRONG,
+  incorrect_account_holder_name: BANK_DETAILS_WRONG,
+  incorrect_account_holder_tax_id: BANK_DETAILS_WRONG,
+  incorrect_account_type: BANK_DETAILS_WRONG,
+  invalid_account_number: BANK_DETAILS_WRONG,
+  invalid_account_number_length: BANK_DETAILS_WRONG,
+  no_account: BANK_DETAILS_WRONG,
+  account_closed: BANK_ACCOUNT_UNUSABLE,
+  account_frozen: BANK_ACCOUNT_UNUSABLE,
+  bank_account_restricted: BANK_ACCOUNT_UNUSABLE,
+  bank_account_unusable: BANK_ACCOUNT_UNUSABLE,
+  bank_ownership_changed: BANK_ACCOUNT_UNUSABLE,
+  debit_not_authorized: BANK_ACCOUNT_UNUSABLE,
+  invalid_currency: BANK_ACCOUNT_UNUSABLE,
+  unsupported_card: BANK_ACCOUNT_UNUSABLE,
+  declined: BANK_REFUSED,
+  could_not_process: BANK_REFUSED,
+  insufficient_funds:
+    'The Stripe balance was too low for this payout. Check the balance in Stripe.',
+};
+
+/** What the mobile Money page shows under a payout (C-332-14, C-676-2). */
+export function payoutReason(
+  status: string,
+  description: unknown,
+  failureCode: unknown,
+): string | null {
+  if (status !== 'failed') {
+    return typeof description === 'string' && description.length > 0 ? description : null;
+  }
+  const code =
+    typeof failureCode === 'string' && /^[a-z_]{1,64}$/.test(failureCode) ? failureCode : null;
+  if (code && Object.prototype.hasOwnProperty.call(PAYOUT_FAILURE_COPY, code)) {
+    return PAYOUT_FAILURE_COPY[code];
+  }
+  return `The payout failed. Open Stripe for details.${code ? ` Reference: ${code}.` : ''}`;
+}
+
 @Injectable()
 export class CoachConnectService {
   private readonly logger = new Logger(CoachConnectService.name);
@@ -108,16 +200,66 @@ export class CoachConnectService {
         account_id: null,
         last_onboarded_at: null,
         requirements_due: [],
+        state: 'not_started',
+        details_submitted: false,
+        disabled_reason: null,
+        action_required: false,
+        requirements: readRequirements(null),
       };
     }
+    const requirements = readRequirements(row.requirements_due);
+    const chargesEnabled = !!row.charges_enabled && !row.deauthorized_at;
+    const payoutsEnabled = !!row.payouts_enabled && !row.deauthorized_at;
+    const actionRequired =
+      requirements.currently_due.length > 0 || requirements.past_due.length > 0;
     return {
-      configured: !!row.charges_enabled && !!row.payouts_enabled,
-      charges_enabled: !!row.charges_enabled,
-      payouts_enabled: !!row.payouts_enabled,
+      configured: chargesEnabled && payoutsEnabled,
+      charges_enabled: chargesEnabled,
+      payouts_enabled: payoutsEnabled,
       account_id: row.stripe_account_id,
       last_onboarded_at: row.updated_at?.toISOString() ?? null,
       requirements_due: this.extractRequirements(row.requirements_due),
+      state: deriveConnectState({
+        deauthorized: !!row.deauthorized_at,
+        chargesEnabled,
+        payoutsEnabled,
+        detailsSubmitted: !!row.details_submitted,
+        actionRequired,
+        disabledReason: row.disabled_reason ?? null,
+      }),
+      details_submitted: !!row.details_submitted,
+      disabled_reason: row.disabled_reason ?? null,
+      action_required: actionRequired,
+      requirements,
     };
+  }
+
+  // POST /coach/connect/status/refresh — re-read the account from Stripe
+  // (the webhook can lag the coach's return from hosted onboarding by
+  // seconds) and return the fresh status. `refreshed: false` means Stripe
+  // could not be reached and the status is the last mirrored copy.
+  async refreshStatus(coachUserId: string): Promise<CoachConnectStatus & { refreshed: boolean }> {
+    const row = await this.prisma.connectAccount.findUnique({
+      where: { coach_user_id: coachUserId },
+      select: { stripe_account_id: true, updated_at: true },
+    });
+    let refreshed = false;
+    if (row && this.stripeConnect.isConfigured()) {
+      try {
+        // syncFromStripe returns the untouched mirror when Stripe rejects the
+        // read, so a moved updated_at is the proof that Stripe answered.
+        const synced = await this.connect.syncFromStripe(row.stripe_account_id);
+        refreshed = !!synced && synced.updated_at.getTime() !== row.updated_at.getTime();
+      } catch (err) {
+        // B-676-2: closed code and error class only (provider text is free text).
+        const cls = err instanceof StripeConnectApiError ? 'stripe' : 'other';
+        this.logger.warn(
+          `refreshStatus: sync failed for coach=${coachUserId} code=CONNECT_REFRESH_FAILED class=${cls}`,
+        );
+      }
+    }
+    const status = await this.getStatus(coachUserId);
+    return { ...status, refreshed };
   }
 
   // POST /coach/connect/onboarding-link — Stripe-hosted onboarding URL.
@@ -177,7 +319,12 @@ export class CoachConnectService {
           created_at:
             snap.last_payout_arrival_at?.toISOString() ??
             new Date(0).toISOString(),
-          description: snap.last_payout_failure_message ?? null,
+          // C-676-2: the mirror keeps no failure_code, so no free text either.
+          description: payoutReason(
+            this.normalizePayoutStatus(snap.last_payout_status),
+            null,
+            null,
+          ),
         },
       ];
     }
@@ -201,10 +348,13 @@ export class CoachConnectService {
                 ((p as Record<string, unknown>)['created'] as number) * 1000,
               ).toISOString()
             : new Date(0).toISOString(),
-        description:
-          (p as Record<string, unknown>)['description']?.toString() ??
-          p.failure_message ??
-          null,
+        // C-332-14 / C-676-2: the app shows a failed payout's description as
+        // its reason, so it carries app copy for Stripe's failure_code.
+        description: payoutReason(
+          this.normalizePayoutStatus(p.status),
+          (p as Record<string, unknown>)['description'],
+          p.failure_code,
+        ),
       }));
     } catch (err) {
       if (err instanceof StripeConnectApiError) {

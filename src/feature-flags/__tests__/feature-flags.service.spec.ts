@@ -54,6 +54,7 @@ describe('FeatureFlagsService', () => {
       coach_community_wearable_prompts: false,
       community_classroom: false,
       community_events: false,
+      messaging_core_v2: false,
     });
   });
 

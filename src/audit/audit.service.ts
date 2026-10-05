@@ -91,6 +91,8 @@ export const AuditAction = {
   SESSION_CANCELED: 'session.canceled',
   SESSION_COMPLETED: 'session.completed',
   SESSION_NO_SHOW: 'session.no_show',
+  // S-SCHED-5: a request reached its clear time without an answer (system actor).
+  SESSION_EXPIRED: 'session.expired',
   SESSION_VIDEO_LINK_ATTACHED: 'session.video_link_attached',
   SESSION_PROVIDER_CALENDAR_CREATED: 'session.provider.calendar_created',
   SESSION_PROVIDER_VIDEO_CREATED: 'session.provider.video_created',
@@ -205,8 +207,7 @@ export class AuditService {
       tenant_coach_id: input.tenantCoachId ?? null,
       ip: input.ip ?? null,
       user_agent: input.userAgent ?? null,
-      metadata:
-        input.metadata != null ? (input.metadata as Prisma.InputJsonValue) : Prisma.DbNull,
+      metadata: input.metadata != null ? (input.metadata as Prisma.InputJsonValue) : Prisma.DbNull,
     };
   }
 
@@ -232,9 +233,7 @@ export class AuditService {
       await this.prisma.auditLog.create({ data: AuditService.buildRow(input) });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      this.logger.error(
-        `Audit write failed for action=${input.action}: ${msg}`,
-      );
+      this.logger.error(`Audit write failed for action=${input.action}: ${msg}`);
     }
   }
 

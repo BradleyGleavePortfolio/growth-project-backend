@@ -21,6 +21,8 @@ import {
   CoachPaymentOpsController,
 } from './payment-ops.controller';
 import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
+import { AdminRefundReversalController } from './refund-reversal-admin.controller';
+import { RefundTransferReversalScheduler } from './refund-transfer-reversal.scheduler';
 import { CronLeaseService } from './cron-lease.service';
 import { SettlementSweepCron } from './settlement-sweep.cron';
 import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
@@ -81,6 +83,7 @@ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
     CoachPurchasesController,
     SubscriptionCheckoutController,
     AdminPaymentOpsController,
+    AdminRefundReversalController,
     CoachPaymentOpsController,
   ],
   providers: [
@@ -92,6 +95,7 @@ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
     PurchaseSplitHandlerService,
     DunningService,
     RefundDisputeHandlerService,
+    RefundTransferReversalScheduler,
     AdminAnalyticsService,
     // S-FEE — scheduled payout / settlement sweep (single runner via CronLease).
     CronLeaseService,
