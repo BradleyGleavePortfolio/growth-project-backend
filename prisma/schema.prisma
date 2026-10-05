@@ -220,6 +220,7 @@ model User {
   // participates in, as coach and as client.
   conversation_reviews_as_coach  ConversationReview[]     @relation("ConversationReviewCoach")
   conversation_reviews_as_client ConversationReview[]     @relation("ConversationReviewClient")
+  coach_thread_states            CoachThreadState[]       @relation("CoachThreadStateUser")
   // Apple 1.2 — safety: reports filed by this user, blocks they have set,
   // and inbound blocks against them. The reviewer relation is owner-staff only.
   reports_filed                  MessageReport[]          @relation("MessageReportReporter")
@@ -1278,10 +1279,52 @@ model CoachMessage {
   // NULL for every other message.
   welcome_job_id String? @unique
 
+  // A3-MSG-CORE (20270303000000) — Telegram-grade message actions.
+  // Offline-queue idempotency key minted by the sender's device (UUID). A
+  // replayed send with the same (sender_id, client_message_id) returns the
+  // original row instead of inserting a duplicate. NULL for legacy senders.
+  client_message_id String?
+  // Swipe-reply: the quoted message in the SAME thread (server-validated).
+  // SET NULL so erasing the quoted row never cascades into the reply.
+  reply_to_id       String?
+  reply_to          CoachMessage?  @relation("CoachMessageReply", fields: [reply_to_id], references: [id], onDelete: SetNull)
+  replies           CoachMessage[] @relation("CoachMessageReply")
+  // Author edit (body only, inside the edit window). Shown as "edited".
+  edited_at         DateTime?
+  // Tombstone: content columns are erased and deleted_at is set; the row
+  // stays so thread order, read state and reply links remain stable.
+  deleted_at        DateTime?
+  deleted_by_id     String?
+  // Thread-shared pin (either participant may pin; capped per thread).
+  pinned_at         DateTime?
+  pinned_by_id      String?
+
+  @@unique([sender_id, client_message_id], name: "CoachMessage_sender_client_message_key")
   @@index([coach_id])
   @@index([client_id])
   @@index([created_at])
   @@index([coach_id, client_id, created_at])
+  @@index([coach_id, client_id, pinned_at])
+}
+
+// A3-MSG-CORE (20270303000000) — one participant's private preferences for one
+// CoachMessage thread (thread = coach_id + client_id; coach_id is the HEAD
+// coach for sub-coach threads). Mute silences push for this thread until
+// muted_until; pinned_at pins the thread to the top of that user's inbox.
+// Never visible to the other participant (RLS: self only).
+model CoachThreadState {
+  id          String    @id @default(uuid())
+  user_id     String
+  user        User      @relation("CoachThreadStateUser", fields: [user_id], references: [id], onDelete: Cascade)
+  coach_id    String
+  client_id   String
+  muted_until DateTime?
+  pinned_at   DateTime?
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+
+  @@unique([user_id, coach_id, client_id], name: "CoachThreadState_user_thread_key")
+  @@index([coach_id, client_id])
 }
 
 // ED.6 (Roman coach-is-watching micro-signal) — per-conversation coach-review
