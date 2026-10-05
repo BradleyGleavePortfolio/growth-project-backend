@@ -380,6 +380,8 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
         customer: 'cus_dv2_client',
         metadata: { tgp_client_user_id: 'client-1', tgp_purpose: 'client_card_update' },
         idempotencyKey: `tgp-card-setup-client-1-${UUID(7)}`,
+        // Main's signature (B-DUNB-120): the plan's coach account; this fixture plan has none.
+        onBehalfOf: '',
       });
       expect(w.stripe.setupIntents.get(a.setup_intent_id)?.usage).toBe('off_session');
     });

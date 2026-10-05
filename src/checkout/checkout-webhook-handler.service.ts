@@ -2740,7 +2740,16 @@ export class CheckoutWebhookHandlerService {
     // Legacy test stubs of DunningV2Service lack the read; production has it.
     const v2 = this.dunningV2;
     if (!v2 || typeof v2.isDisputePaused !== 'function') return false;
-    return v2.isDisputePaused(purchaseId, client);
+    try {
+      return await v2.isDisputePaused(purchaseId, client);
+    } catch (err) {
+      // B-690-2: an unknown answer fails the delivery with a closed code, so
+      // Stripe redelivers it and the cause never reaches the logs.
+      this.logger.warn(
+        `dunningV2.isDisputePaused failed purchase=${purchaseId}: ${dunningErrorCode(err)}`,
+      );
+      throw new DunningWebhookRetryError('DUNNING_DISPUTE_CHECK_FAILED');
+    }
   }
 
   /**

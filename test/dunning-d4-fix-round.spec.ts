@@ -182,7 +182,8 @@ describe('B-D34-116 dunning D4 fix round (#690)', () => {
     await b.reached;
     expect((await w.billing.cancelPlan('client', 'purchase')).outcome).toBe('ended');
     b.release();
-    await expect(pending).resolves.toMatchObject({ reason: 'stale_after_cancel' });
+    // Main's B-680-1 lock check sees the ended plan first (same outcome).
+    await expect(pending).resolves.toMatchObject({ reason: 'subscription_already_ended' });
     expect(w.purchase()).toMatchObject({ status: 'canceled', entitlement_active: false });
   });
 
@@ -226,7 +227,7 @@ describe('B-D34-116 dunning D4 fix round (#690)', () => {
     expect(logged()).not.toContain('SYNTHETIC');
   });
 
-  it('B-690-3: a failed dispute closure is redelivered (no processed row) and the retry unlocks', async () => {
+  it('B-690-3: a failed dispute closure is redelivered (no processed row) and the retry applies it', async () => {
     const w = world('charge_disputed');
     Object.assign(w.purchase()!, { status: 'active' });
     w.fake.seed('connectTransfer', {
@@ -252,7 +253,10 @@ describe('B-D34-116 dunning D4 fix round (#690)', () => {
     expect(w.fake.rows('stripeProcessedEvent')).toHaveLength(0);
     await expect(w.outer.handleEvent(stub(won))).resolves.toMatchObject({ processed: true });
     expect(closure).toHaveBeenCalledTimes(2);
-    expect(w.state()).toMatchObject({ status: 'resolved', locked_out_at: null });
+    // D2c (R-DISPUTE-PAUSE): a closed dispute keeps the plan paused until the
+    // coach restarts it; the retry pauses billing at Stripe.
+    expect(w.state()).toMatchObject({ status: 'active', locked_out_at: expect.any(Date) });
+    expect(w.stripe.calls.map((c) => c.op)).toContain('pauseSubscriptionCollection');
     expect(logged()).not.toContain('SYNTHETIC');
   });
 
