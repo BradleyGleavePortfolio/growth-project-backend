@@ -10,6 +10,7 @@
 import { PurchaseFanoutService } from '../src/packages/purchase-fanout.service';
 import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
 import { RefundDisputeHandlerService } from '../src/checkout/refund-dispute-handler.service';
+import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
 
 // Helpers -----------------------------------------------------------------
 
@@ -31,8 +32,11 @@ function makeDropStore() {
   const api = {
     _rows: rows,
     scheduledDrop: {
-      updateMany: jest.fn(async ({ where, data }: any) => {
-        const matchStatus = (row: DropRow) => {
+      updateMany: jest.fn(async ({ where: query, data }: any) => {
+        // B-661-9 round 6: cancelPendingForPurchase matches an OR of branches.
+        const matchOne = (row: DropRow, where: any) => {
+          if (where.failure_reason !== undefined && row.failure_reason !== where.failure_reason)
+            return false;
           if (where.status === undefined) return true;
           if (typeof where.status === 'object' && where.status !== null) {
             if ('in' in where.status)
@@ -43,6 +47,8 @@ function makeDropStore() {
           }
           return row.status === where.status;
         };
+        const where = query;
+        const matchStatus = (row: DropRow) => (query.OR ?? [query]).some((b: any) => matchOne(row, b));
         const matched = rows.filter(
           (r) =>
             (where.client_purchase_id === undefined ||
@@ -218,6 +224,12 @@ function makeWebhookPrisma() {
   const purchases: any[] = [];
   return {
     _purchases: purchases,
+    // B-661-3 round 5: the purchase row version a decline of a settled
+    // purchase is checked against (PostgreSQL xmin; unchanged here).
+    $queryRaw: jest.fn(async (_sql: TemplateStringsArray, ...vals: unknown[]) => {
+      const row = purchases.find((p) => p.id === vals[0]);
+      return row ? [{ status: row.status, row_version: '0' }] : [];
+    }),
     clientPurchase: {
       findUnique: jest.fn(async ({ where }: any) =>
         purchases.find((p) =>
@@ -235,9 +247,69 @@ function makeWebhookPrisma() {
         Object.assign(row, data);
         return { ...row };
       }),
+      // B-661-3: the decline handler's compare-and-set write (equality and
+      // `{ in: [...] }` predicates, re-checked at write time).
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        const rows = purchases.filter((p) =>
+          Object.entries(where).every(([k, v]) =>
+            v && typeof v === 'object' && 'in' in v
+              ? (v as { in: unknown[] }).in.includes(p[k])
+              : p[k] === v,
+          ),
+        );
+        for (const row of rows) Object.assign(row, data);
+        return { count: rows.length };
+      }),
     },
     coachPackage: { findUnique: jest.fn(async () => null) },
   };
+}
+
+// B-661-3: Stripe's current status of the PaymentIntent a late decline names.
+class PaymentIntentStatusStub extends StripeConnectApiService {
+  constructor(private readonly piStatus: string) {
+    super();
+  }
+  retrievePaymentIntent = jest.fn(async (id: string) => ({ id, status: this.piStatus }));
+}
+
+// A decline of an entitled purchase, delivered the way BillingService does:
+// prefetch out of the tx, then handle inside it.
+async function deliverDeclineOfEntitledPurchase(piStatus: string) {
+  const dropStore = makeDropStore();
+  seedDrops(dropStore, 'pur-1', [{ id: 'd1', status: 'pending' }]);
+
+  const prisma = makeWebhookPrisma();
+  prisma._purchases.push({
+    id: 'pur-1',
+    stripe_payment_intent_id: 'pi_1',
+    entitlement_active: true, // was entitled
+    status: 'paid',
+    package_id: 'pkg-1',
+    coach_user_id: 'c',
+    client_user_id: 'u',
+    amount_cents: 1000,
+    currency: 'usd',
+  });
+
+  const fanout = new PurchaseFanoutService();
+  const handler = new CheckoutWebhookHandlerService(
+    prisma as any,
+    new PaymentIntentStatusStub(piStatus),
+    undefined,
+    undefined,
+    undefined,
+    fanout,
+  );
+  const tx = { ...prisma, ...dropStore } as any;
+  const event = {
+    id: 'evt',
+    type: 'payment_intent.payment_failed',
+    data: { object: { id: 'pi_1' } },
+  };
+  const prefetched = await handler.prefetchForOuterTx(event);
+  await handler.handle(event, tx, prefetched);
+  return { dropStore, purchase: prisma._purchases[0] };
 }
 
 describe('CheckoutWebhookHandlerService.applySubscriptionDeleted × cancelPendingForPurchase', () => {
@@ -383,36 +455,19 @@ describe('CheckoutWebhookHandlerService.applyPaymentIntentFailed × cancelPendin
   });
 
   it('DOES cancel drops when a previously-entitled purchase later fails (defensive)', async () => {
-    const dropStore = makeDropStore();
-    seedDrops(dropStore, 'pur-1', [{ id: 'd1', status: 'pending' }]);
-
-    const prisma = makeWebhookPrisma();
-    prisma._purchases.push({
-      id: 'pur-1',
-      stripe_payment_intent_id: 'pi_1',
-      entitlement_active: true, // was entitled
-      status: 'paid',
-      package_id: 'pkg-1',
-      coach_user_id: 'c',
-      client_user_id: 'u',
-      amount_cents: 1000,
-      currency: 'usd',
-    });
-
-    const fanout = new PurchaseFanoutService();
-    const handler = new CheckoutWebhookHandlerService(
-      prisma as any, {} as any, undefined, undefined, undefined, fanout,
-    );
-    const tx = { ...prisma, ...dropStore } as any;
-    await handler.handle(
-      {
-        id: 'evt',
-        type: 'payment_intent.payment_failed',
-        data: { object: { id: 'pi_1' } },
-      },
-      tx,
-    );
+    // B-661-3: a settled purchase ends access only when Stripe says its
+    // PaymentIntent did not complete (e.g. an asynchronous payment failed).
+    const { dropStore, purchase } =
+      await deliverDeclineOfEntitledPurchase('requires_payment_method');
+    expect(purchase.status).toBe('payment_failed');
     expect(dropStore._rows[0].status).toBe('canceled');
+  });
+
+  it('B-661-3: does NOT cancel drops when the late decline names a PaymentIntent that succeeded', async () => {
+    const { dropStore, purchase } = await deliverDeclineOfEntitledPurchase('succeeded');
+    expect(purchase.status).toBe('paid');
+    expect(purchase.entitlement_active).toBe(true);
+    expect(dropStore._rows[0].status).toBe('pending');
   });
 });
 
@@ -550,7 +605,7 @@ describe('cancelPendingForPurchase atomicity (rollback with outer tx)', () => {
             const matched = scratch.filter(
               (r) =>
                 r.client_purchase_id === where.client_purchase_id &&
-                (where.status?.in as string[] | undefined)?.includes(r.status),
+                (where.OR ?? [where]).some((b: any) => b.status?.in?.includes(r.status)),
             );
             for (const r of matched) Object.assign(r, data);
             return { count: matched.length };
@@ -605,7 +660,7 @@ describe('cancelPendingForPurchase atomicity (rollback with outer tx)', () => {
             const matched = scratch.filter(
               (r) =>
                 r.client_purchase_id === where.client_purchase_id &&
-                (where.status?.in as string[] | undefined)?.includes(r.status),
+                (where.OR ?? [where]).some((b: any) => b.status?.in?.includes(r.status)),
             );
             for (const r of matched) Object.assign(r, data);
             return { count: matched.length };
