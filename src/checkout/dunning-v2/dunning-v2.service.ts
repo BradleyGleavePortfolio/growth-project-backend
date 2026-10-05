@@ -1123,10 +1123,11 @@ export class DunningV2Service {
   /**
    * True while the plan is paused by a dispute (the dispute marker on an
    * active cycle), so no renewal payment, card update or Stripe status
-   * update hands access back. Only the coach restart ends it.
+   * update hands access back. Only the coach restart ends it. Read whatever
+   * FEATURE_DUNNING_V2 says (B-705-4 Opus / B-705-1 Sol): a rollback of the
+   * flag never restores access to a paused plan; only the writes are gated.
    */
   async isDisputeCycleOpen(purchaseId: string, db?: DunningV2Db): Promise<boolean> {
-    if (!this.enabled()) return false;
     const client: DunningV2Db = db ?? this.prisma;
     const state = await client.dunningState.findUnique({
       where: { purchase_id: purchaseId },
