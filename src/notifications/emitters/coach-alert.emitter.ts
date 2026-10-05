@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { NotificationsService } from '../notifications.service';
 import { NotificationKind } from '../notification-kind';
-import { DEFAULT_NOTIFICATION_CATEGORY } from '../notification-category.enum';
 import { dunningErrorCode } from '../../checkout/dunning-v2/dunning-v2.safe-error';
 
 export interface CoachAlertNotificationPayload {
@@ -24,13 +23,13 @@ export type CoachAlertTransport = 'sent' | 'skipped' | 'failed';
 export interface CoachAlertDelivery {
   /** The durable in-app feed row ('skipped' when muted or not asked for). */
   inapp: CoachAlertTransport;
-  /** The push and its read-state row ('skipped' when not asked for). */
+  /** The device push, queued in the push outbox (skipped when not asked for). */
   push: CoachAlertTransport;
-  /** Why a verified push was not delivered (B-687-3), e.g. 'ticket-error'. */
+  /** Why a push was not delivered (B-687-3); sendPush's outbox owns retries. */
   pushCode?: string;
 }
 
-/** A push whose Expo ticket is checked (B-687-3), with display copy (C-687-7). */
+/** Caller display copy (C-687-7); the lock screen keeps sendPush's quiet copy. */
 export type VerifiedCoachPush = { title: string; body: string };
 
 /**
@@ -40,8 +39,7 @@ export type VerifiedCoachPush = { title: string; body: string };
  * creates a Notification row so the coach inbox (GET /notifications) shows
  * the alert alongside message and milestone notifications in a unified feed.
  *
- * Also calls NotificationsService.pushToCoach for the push delivery path
- * that was established in Phase 6B.
+ * The device push goes through NotificationsService.sendPush (C-643-2).
  *
  * Called fire-and-forget from CoachAlertsService.createAlert: `emit` never
  * throws. B-688-3 (Sol): it reports each transport's real result, so a
@@ -57,23 +55,22 @@ export class CoachAlertEmitter {
   async emit(
     payload: CoachAlertNotificationPayload,
     only: { inapp?: boolean; push?: boolean } = {},
-    verifiedPush?: VerifiedCoachPush,
+    _verifiedPush?: VerifiedCoachPush,
   ): Promise<CoachAlertDelivery> {
     const { coachId, alertId, alertType, message, severity, clientUserId } = payload;
     const deepLink = clientUserId ? `tgp://coach/clients/${clientUserId}` : 'tgp://coach/alerts';
-    const row = (channel: 'inapp' | 'push') => ({
-      user_id: coachId,
-      kind: NotificationKind.COACH_ALERT,
-      body: message.slice(0, 160),
-      payload: { alertId, alertType, severity, clientUserId },
-      deep_link: deepLink,
-      channel,
-    });
     const out: CoachAlertDelivery = { inapp: 'skipped', push: 'skipped' };
     if (only.inapp !== false) {
       try {
         // null: the coach muted this kind (a preference, not a failure).
-        const created = await this.notifications.createNotification(row('inapp'));
+        const created = await this.notifications.createNotification({
+          user_id: coachId,
+          kind: NotificationKind.COACH_ALERT,
+          body: message.slice(0, 160),
+          payload: { alertId, alertType, severity, clientUserId },
+          deep_link: deepLink,
+          channel: 'inapp',
+        });
         out.inapp = created ? 'sent' : 'skipped';
       } catch (err) {
         out.inapp = 'failed';
@@ -81,39 +78,23 @@ export class CoachAlertEmitter {
       }
     }
     if (only.push !== false) {
+      // C-643-2: one device push with quiet lock-screen copy (the alert
+      // text can carry client detail, so it stays in the inbox row), gated
+      // by the coach_alert_push preference, through the push stack's one
+      // sender. It writes no second `push` inbox row. The outbox it queues
+      // into retries delivery itself; null = suppressed by a preference or
+      // not wired. The caller's display copy is not put on the lock screen.
       try {
-        if (verifiedPush) {
-          // B-687-3: pushToUser reads Expo's ticket: rejected = failed, no
-          // usable token = skipped. Display copy, not the alert type (C-687-7).
-          const { title, body } = verifiedPush;
-          const data = { alertId, alertType, category: DEFAULT_NOTIFICATION_CATEGORY };
-          const res = await this.notifications.pushToUser(coachId, title, body, data);
-          if (res?.delivered === false) out.pushCode = res.code;
-          const noDevice = out.pushCode === 'no-token' || out.pushCode === 'invalid-token';
-          out.push = !out.pushCode ? 'sent' : noDevice ? 'skipped' : 'failed';
-        } else {
-          // Push via Phase 6B path; false is a transport failure.
-          const pushed = await this.notifications.pushToCoach(coachId, {
-            alertId,
-            alertType,
-            severity,
-            message: message.slice(0, 160),
-          });
-          out.push = pushed ? 'sent' : 'failed';
-        }
+        const queued = await this.notifications.sendPush({
+          user_id: coachId,
+          kind: NotificationKind.COACH_ALERT,
+          body: message.slice(0, 160),
+          deep_link: deepLink,
+        });
+        out.push = queued ? 'sent' : 'skipped';
       } catch (err) {
         out.push = 'failed';
         this.warn('push', coachId, err);
-      }
-      if (out.push === 'sent') {
-        // Also create a push Notification row so the read state is tracked.
-        // The push itself went out: a failed bookkeeping row must not make
-        // a retry send it twice.
-        try {
-          await this.notifications.createNotification(row('push'));
-        } catch (err) {
-          this.warn('push_row', coachId, err);
-        }
       }
     }
     return out;
