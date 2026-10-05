@@ -76,9 +76,22 @@ export class MessageActionsService {
     return row;
   }
 
+  /**
+   * Same boundary as send (B-710-1): the head coach / client pair, and, when
+   * an assigned sub-coach acts in the head coach's thread, the sub-coach /
+   * client pair. A client who blocked a sub-coach stops that sub-coach's
+   * edits and pins, not only their sends. Author delete stays allowed: it
+   * removes content, it never adds any.
+   */
   private async assertNotBlocked(thread: ResolvedThread): Promise<void> {
-    if (await this.messaging.isEitherSideBlocked(thread.coachId, thread.clientId)) {
-      throw messagingError(HttpStatus.FORBIDDEN, MESSAGING_ERRORS.BLOCKED);
+    const pairs: Array<[string, string]> = [[thread.coachId, thread.clientId]];
+    if (thread.actorId !== thread.coachId && thread.actorId !== thread.clientId) {
+      pairs.push([thread.actorId, thread.clientId]);
+    }
+    for (const [a, b] of pairs) {
+      if (await this.messaging.isEitherSideBlocked(a, b)) {
+        throw messagingError(HttpStatus.FORBIDDEN, MESSAGING_ERRORS.BLOCKED);
+      }
     }
   }
 
