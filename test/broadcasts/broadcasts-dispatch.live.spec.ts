@@ -76,7 +76,7 @@ itLive('A4 broadcasts on a live database', () => {
   const emits: string[] = [];
 
   function build(p: PrismaService) {
-    const scopes = new BroadcastScopeService(new SubCoachScopeService(p));
+    const scopes = new BroadcastScopeService(new SubCoachScopeService(p), p);
     const segments = new SegmentResolverService(p);
     const audit = stub<AuditService>({ write: async () => undefined });
     const service = new BroadcastsService(p, scopes, segments, new CardsService(p), audit);
