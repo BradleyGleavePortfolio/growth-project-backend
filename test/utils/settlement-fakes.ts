@@ -349,7 +349,12 @@ export function settlementTables(db: SettlementDb) {
         reversed_at: null,
       }),
     }),
-    chargeRefund: new Table(db.refunds, { prefix: 'rf', unique: ['stripe_refund_id'] }),
+    // Schema defaults (a claim matches ledger_reversed=false, as Postgres stores it).
+    chargeRefund: new Table(db.refunds, {
+      prefix: 'rf',
+      unique: ['stripe_refund_id'],
+      defaults: () => ({ ledger_reversed: false, transfer_reversed: false }),
+    }),
     cronLease: new Table(db.leases ?? (db.leases = []), {
       prefix: 'lease',
       unique: ['name'],
