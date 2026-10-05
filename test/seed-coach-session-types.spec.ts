@@ -71,4 +71,95 @@ describe('C04 appointment type seed', () => {
     tx.user.findUnique.mockResolvedValueOnce({ role: 'student' });
     await expect(seedCoachTypes(client, coachId, true)).rejects.toThrow('Complete coach signup');
   });
+
+  it('creates Quick initialization as the welcome type unless the coach already has an active one', async () => {
+    const created: Array<Record<string, unknown>> = [];
+    const rows: Array<Record<string, unknown>> = [];
+    const tx = {
+      user: { findUnique: jest.fn().mockResolvedValue({ role: 'coach' }) },
+      sessionType: {
+        findMany: jest.fn(async () => rows),
+        create: jest.fn(async (args: { data: Record<string, unknown> }) => {
+          created.push(args.data);
+          return args.data;
+        }),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn(async (fn: (db: typeof tx) => Promise<unknown>) => fn(tx)),
+    };
+    // @ts-expect-error R0 partial Prisma test double supplies the transaction and all delegates the seed uses; no database is opened.
+    const client: PrismaClient = prisma;
+    await seedCoachTypes(client, coachId, true);
+    expect(created.map((d) => [d.name, d.is_welcome])).toEqual([
+      ['Quick initialization', true],
+      ['Quick Q/A Call', false],
+      ['Tele-Health Dietary/Fitness Check-in', false],
+    ]);
+
+    created.length = 0;
+    rows.push({
+      id: 'own-welcome',
+      name: 'Hello call',
+      description: null,
+      duration_minutes: 10,
+      auto_approve: true,
+      archived_at: null,
+      is_welcome: true,
+    });
+    await seedCoachTypes(client, coachId, true);
+    expect(created.every((d) => d.is_welcome === false)).toBe(true);
+
+    // An archived welcome type does not hold the marker.
+    created.length = 0;
+    rows[0] = { ...rows[0], archived_at: new Date('2026-09-01T00:00:00Z') };
+    await seedCoachTypes(client, coachId, true);
+    expect(created.find((d) => d.name === 'Quick initialization')?.is_welcome).toBe(true);
+  });
+
+  it('C-634-5: a kept Quick initialization without the welcome marker is reported in the dry run and marked on apply only when no other active welcome type exists', async () => {
+    const rows: Array<Record<string, unknown>> = [
+      { ...existing[0], is_welcome: false },
+      { ...existing[1] },
+      { ...existing[2] },
+    ];
+    const updates: Array<Record<string, unknown>> = [];
+    const tx = {
+      user: { findUnique: jest.fn().mockResolvedValue({ role: 'coach' }) },
+      sessionType: {
+        findMany: jest.fn(async () => rows),
+        create: jest.fn(async () => ({})),
+        update: jest.fn(async (args: Record<string, unknown>) => {
+          updates.push(args);
+          return {};
+        }),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn(async (fn: (db: typeof tx) => Promise<unknown>) => fn(tx)),
+    };
+    // @ts-expect-error R0 partial Prisma test double supplies the transaction and all delegates the seed uses; no database is opened.
+    const client: PrismaClient = prisma;
+    const dry = await seedCoachTypes(client, coachId, false);
+    expect(dry[0]).toMatchObject({ kind: 'keep', id: 'type-0', welcomeMissing: true });
+    expect(tx.sessionType.update).not.toHaveBeenCalled();
+    await seedCoachTypes(client, coachId, true);
+    expect(updates).toEqual([{ where: { id: 'type-0' }, data: { is_welcome: true } }]);
+    expect(tx.sessionType.create).not.toHaveBeenCalled();
+
+    // The coach chose another active welcome type: kept, never moved.
+    updates.length = 0;
+    rows.push({
+      id: 'own-welcome',
+      name: 'Hello call',
+      description: null,
+      duration_minutes: 10,
+      auto_approve: true,
+      archived_at: null,
+      is_welcome: true,
+    });
+    const plan = await seedCoachTypes(client, coachId, true);
+    expect(plan[0]).toMatchObject({ kind: 'keep', welcomeMissing: false });
+    expect(updates).toEqual([]);
+  });
 });

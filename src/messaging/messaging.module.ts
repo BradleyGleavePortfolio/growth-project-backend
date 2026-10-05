@@ -12,6 +12,9 @@ import { MessagesSafetyModule } from '../messages-safety/messages-safety.module'
 import { ClientMessagingController } from './client-messaging.controller';
 import { CoachMessagingController } from './coach-messaging.controller';
 import { MessagingService } from './messaging.service';
+import { MessageActionsService } from './message-actions.service';
+import { MessagingInboxService } from './messaging-inbox.service';
+import { MessagingCoreV2Guard } from './messaging-core.feature';
 // v3-3: the signed-upload helper extracted out of MessagingService. Provided
 // here so production DI injects the shared, typed provider into MessagingService
 // (the @Optional ctor param). SupabaseService is global, so no extra import.
@@ -33,6 +36,9 @@ import { VoiceUploadProvider } from '../community/voice/voice-upload.provider';
   controllers: [CoachMessagingController, ClientMessagingController],
   providers: [
     MessagingService,
+    MessageActionsService,
+    MessagingInboxService,
+    MessagingCoreV2Guard,
     VoiceUploadProvider,
     JwtAuthGuard,
     CoachGuard,
