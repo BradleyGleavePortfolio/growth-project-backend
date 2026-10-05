@@ -2065,6 +2065,15 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Community events.',
   },
   {
+    name: 'FEATURE_COACHLESS_HOME',
+    values: ['true', 'false'],
+    unsetIs: 'off',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason:
+      'A1-COACHLESS kill switch for the coachless Home surfaces: GET /coachless/home, the coach-code check/redeem routes and the scripted Roman card routes (404 coachless_disabled while off), and the coachless_home key of GET /me/feature-flags. The owner-only /admin/featured-coach config is not gated so the offer can be set up before the flip.',
+  },
+  {
     name: 'FEATURE_COMMUNITY_SEARCH',
     values: ['true', 'false'],
     unsetIs: 'off',
