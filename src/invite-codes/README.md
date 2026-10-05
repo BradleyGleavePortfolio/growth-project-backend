@@ -144,7 +144,8 @@ flag is off. `:id` is an `InviteCode` id or the literal `coach-link`.
 Team Mode (`resolveTeamAttribution`, as the legacy create): an active team
 sub-coach's codes are stored under the head coach with `invited_by_user_id` =
 the sub-coach. A sub-coach lists, rotates, revokes and counts only their own
-codes and has no coach link (`403 coach_link_head_coach_only`); the head coach
+codes, has no coach link (`403 coach_link_head_coach_only`) and cannot put a
+package on a code (`403 code_package_head_coach_only`, nothing written); the head coach
 sees and manages every team code (`issued_by_user_id` in each view).
 
 Every create / rotate / revoke writes an audit row (`invite_code.created`,

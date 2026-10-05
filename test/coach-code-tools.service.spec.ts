@@ -605,11 +605,12 @@ describe('fix round 1 (agent 120): team attribution, atomic binding, coach link 
 
   it('B-658-1: a sub-coach code lives in the head tenant, scoped to its issuer', async () => {
     const t = team();
-    const { code } = await t.tools.create(sub1, { package_id: 'pkg-1', grant_mode: 'free' }, null);
+    const { code } = await t.tools.create(sub1, { label: 'Front desk' }, null);
     expect(t.codes[0]).toMatchObject({
       coach_id: 'coach-a',
       invited_by_user_id: 'sub-1',
-      package_id: 'pkg-1', // the head coach's package
+      package_id: null, // B-658-9: packages stay with the head coach
+      grant_mode: 'none',
     });
     expect(code.issued_by_user_id).toBe('sub-1');
     expect(t.teamAudit).toEqual([
@@ -636,6 +637,25 @@ describe('fix round 1 (agent 120): team attribution, atomic binding, coach link 
       status: 403,
       code: 'coach_link_head_coach_only',
     });
+  });
+
+  it('B-658-9 (Opus P1): a sub-coach cannot bind the head coach package to a code', async () => {
+    const t = team();
+    for (const input of [
+      { package_id: 'pkg-1', grant_mode: 'free' as const },
+      { package_id: 'pkg-1', grant_mode: 'prepaid' as const },
+      { package_id: 'pkg-1' },
+      { grant_mode: 'free' as const },
+    ])
+      expect(await errCode(t.tools.create(sub1, input, 'sub-bind-key-01'))).toEqual({
+        status: 403,
+        code: 'code_package_head_coach_only',
+      });
+    expect(t.codes).toHaveLength(0);
+    expect(t.teamAudit).toEqual([]);
+    // The head coach still binds the same package.
+    const ok = await t.tools.create(coachA, { package_id: 'pkg-1', grant_mode: 'free' }, null);
+    expect(ok.code).toMatchObject({ package: { id: 'pkg-1' }, grant_mode: 'free' });
   });
 
   const gated = () => {

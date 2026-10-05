@@ -252,6 +252,15 @@ export class CoachCodeToolsService {
       });
     }
     const scope = await this.scopeOf(actor.id);
+    // B-658-9: packages belong to the head coach (as legacy setBinding and
+    // NoActiveSubCoachGuard), so a sub-coach never binds one to a code.
+    if (scope.issuerId && (input.package_id || input.grant_mode)) {
+      throw new ForbiddenException({
+        code: 'code_package_head_coach_only',
+        message:
+          'Packages on codes are set by your head coach. Create this code without a package, or ask your head coach to add one.',
+      });
+    }
     // Keys are per issuer, so a team member's key never replays another member's code.
     const key = clean ? `${actor.id}:${clean}` : null;
     const replay = async () =>
