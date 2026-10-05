@@ -1,11 +1,14 @@
 import { Transform, Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsIn,
   IsInt,
   IsISO8601,
   IsOptional,
   IsString,
   IsUrl,
+  IsUUID,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -71,7 +74,76 @@ export class CreateMessageDto {
   @ValidateNested()
   @Type(() => CreateMessageVoiceDto)
   voice?: CreateMessageVoiceDto;
+
+  // A3-MSG-CORE: device-minted idempotency key for the offline send queue
+  // (UUID v4 from the device). Same key from the same sender → the original
+  // message is returned, never a duplicate. The Idempotency-Key header is an
+  // accepted alias; when both are sent they must match.
+  @IsOptional()
+  @IsUUID()
+  client_message_id?: string;
+
+  // A3-MSG-CORE: swipe-reply target (same thread, not deleted). v2 flag.
+  @IsOptional()
+  @IsUUID()
+  reply_to_id?: string;
 }
+
+// A3-MSG-CORE — author edit of a message body (inside the edit window).
+export class EditMessageDto {
+  @IsString()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @MaxLength(4000)
+  body!: string;
+}
+
+// A3-MSG-CORE — optional read-up-to marker. Absent → mark the whole thread
+// read (legacy behaviour, unchanged).
+export class MarkReadDto {
+  @IsOptional()
+  @IsUUID()
+  up_to_message_id?: string;
+}
+
+// A3-MSG-CORE — per-thread mute (private to the caller). 'off' unmutes.
+export class MuteThreadDto {
+  @IsIn(['1h', '8h', '1d', '7d', 'forever', 'off'])
+  duration!: '1h' | '8h' | '1d' | '7d' | 'forever' | 'off';
+}
+
+// A3-MSG-CORE — pin this conversation to the top of the caller's inbox.
+export class InboxPinDto {
+  @IsBoolean()
+  pinned!: boolean;
+}
+
+// A3-MSG-CORE — unified inbox query (keyset cursor, optional unread filter).
+export class InboxQueryDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  @Matches(/^[A-Za-z0-9_-]+$/)
+  cursor?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => (value === undefined || value === null || value === '' ? undefined : parseInt(String(value), 10)))
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+
+  @IsOptional()
+  @IsIn(['all', 'unread'])
+  filter?: 'all' | 'unread';
+}
+
+/**
+ * A3-MSG-CORE — fold the optional Idempotency-Key header into the body key.
+ * The header must be a UUID (the same shape the body accepts); when both are
+ * present they must be identical. Returns the effective key or undefined.
+ */
+export const IDEMPOTENCY_KEY_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export class ListThreadQueryDto {
   // ISO-8601 cursor. Thread is ordered newest-first; `before` returns rows

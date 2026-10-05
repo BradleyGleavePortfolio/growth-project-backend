@@ -13,7 +13,6 @@ import { DunningV2Renderer } from '../src/checkout/dunning-v2/dunning-v2.rendere
 import { dunningErrorCode } from '../src/checkout/dunning-v2/dunning-v2.safe-error';
 import { StripeConnectApiError } from '../src/connect/stripe-connect-api.service';
 import { CoachAlertEmitter } from '../src/notifications/emitters/coach-alert.emitter';
-import { NotificationsService } from '../src/notifications/notifications.service';
 import { FakePrisma } from './support/dunning-v2-fake-prisma';
 
 // B-D12-116 fix round on #687 (D1). Synthetic ids and sentinels only.
@@ -192,7 +191,10 @@ describe('B-688-3 (Sol): coach delivery reports each transport honestly', () => 
       createNotification: jest.fn(async () => {
         throw new Error('synthetic DB failure');
       }),
-      pushToUser: jest.fn(async () => ({ delivered: false, code: 'transport-error' })),
+      // C-643-2: the coach push goes through the one sender (sendPush).
+      sendPush: jest.fn(async () => {
+        throw new Error('synthetic outbox failure');
+      }),
     };
     const { d, t } = dispatcher(notifications);
     const { results } = await d.dispatchStepDetailed(
@@ -208,10 +210,9 @@ describe('B-688-3 (Sol): coach delivery reports each transport honestly', () => 
   it('a retry of the failed push does not write a second coach feed row', async () => {
     const notifications = {
       createNotification: jest.fn(async (): Promise<unknown> => ({ id: 'n1' })),
-      pushToUser: jest.fn(async (): Promise<unknown> => ({
-        delivered: false,
-        code: 'ticket-error',
-      })),
+      sendPush: jest.fn(async (): Promise<unknown> => {
+        throw new Error('synthetic outbox failure');
+      }),
     };
     const { d } = dispatcher(notifications);
     const first = await d.dispatchStepDetailed(
@@ -226,7 +227,7 @@ describe('B-688-3 (Sol): coach delivery reports each transport honestly', () => 
         (c: unknown[]) => (c[0] as { channel?: string }).channel === 'inapp',
       ).length;
     expect(inappWrites()).toBe(1);
-    notifications.pushToUser.mockImplementation(async () => ({ delivered: true }));
+    notifications.sendPush.mockImplementation(async () => ({ code: 'queued' }));
     const retry = await d.dispatchStepDetailed(
       ctx(),
       undefined,
@@ -235,13 +236,13 @@ describe('B-688-3 (Sol): coach delivery reports each transport honestly', () => 
     expect(stub(retry.results).coach_push?.status).toBe('sent');
     expect(retry.results.coach_alert).toBeUndefined();
     expect(inappWrites()).toBe(1);
-    expect(notifications.pushToUser).toHaveBeenCalledTimes(2);
+    expect(notifications.sendPush).toHaveBeenCalledTimes(2);
   });
 
   it('control: a successful coach delivery is sent on both transports', async () => {
     const notifications = {
       createNotification: jest.fn(async () => ({ id: 'n1' })),
-      pushToUser: jest.fn(async () => ({ delivered: true })),
+      sendPush: jest.fn(async () => ({ code: 'queued' })),
     };
     const { d, t } = dispatcher(notifications);
     const { results } = await d.dispatchStepDetailed(
@@ -289,7 +290,7 @@ describe('B-688-4 (Sol): transport failures cross the log / outbox boundary as c
       createNotification: jest.fn(async () => {
         throw secretNamed();
       }),
-      pushToUser: jest.fn(async () => {
+      sendPush: jest.fn(async () => {
         throw secretNamed();
       }),
     };
@@ -330,33 +331,32 @@ describe('dunningErrorCode: a closed vocabulary, whatever the error carries', ()
   });
 });
 
-// B-DUNA-118 fix round (D1). Synthetic ids only; Expo is the only stub.
-describe('B-687-3 (Sol) / C-687-7: the coach push receipt follows the Expo ticket', () => {
-  afterEach(() => jest.restoreAllMocks());
-  const run = async (token: string | null, ticket: object) => {
-    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
-    const fake = new FakePrisma();
-    fake.seed('user', { id: 'coach-a', expo_push_token: token });
-    const notifications = new NotificationsService(stub(fake.client()));
-    const expo = Reflect.get(notifications, 'expo');
-    jest.spyOn(expo, 'chunkPushNotifications').mockImplementation((m) => [m]);
-    const send = jest.spyOn(expo, 'sendPushNotificationsAsync').mockResolvedValue([ticket]);
-    jest.spyOn(expo, 'chunkPushNotificationReceiptIds').mockReturnValue([]);
+// B-DUNA-118 fix round (D1), on main's one push sender (C-643-2, B-DUNR3-122):
+// the coach push is queued through sendPush, whose outbox reads the Expo
+// ticket and retries; the lock screen gets sendPush's quiet copy.
+describe('B-687-3 (Sol) / C-687-7: the coach push goes through the one push sender', () => {
+  const run = async (queued: unknown) => {
+    const notifications = {
+      createNotification: jest.fn(async () => ({ id: 'n1' })),
+      sendPush: jest.fn(async () => queued),
+      pushToUser: jest.fn(async () => ({ delivered: true })),
+      pushToCoach: jest.fn(async () => true),
+    };
     const out = await dispatcher(notifications).d.dispatchStepDetailed(ctx(), undefined, {
       channels: ['coach_push'],
     });
-    return { result: out.results.coach_push, msg: stub(send.mock.calls[0]?.[0])?.[0] };
+    return { result: out.results.coach_push, notifications };
   };
-  it('a rejected ticket is failed (retried); no token is a coded skip', async () => {
-    const error = await run('ExponentPushToken[a]', { status: 'error', message: 'x' });
-    expect(error.result).toEqual({ status: 'failed', error: 'push_ticket-error' });
-    expect((await run(null, {})).result).toEqual({ status: 'skipped', error: 'push_no_token' });
-  });
-  it('control: an accepted ticket is sent, with display copy, not the alert type', async () => {
-    const { result, msg } = await run('ExponentPushToken[a]', { status: 'ok', id: 't' });
+  it('a queued push is sent; a push suppressed by a preference is skipped', async () => {
+    const { result, notifications } = await run({ code: 'queued', notBefore: NOW });
     expect(result?.status).toBe('sent');
-    expect(msg.body).toContain('Avery Client');
-    expect(JSON.stringify(msg)).not.toMatch(/"(title|body)":"[^"]*dunning_step/);
+    expect(notifications.sendPush).toHaveBeenCalledTimes(1);
+    expect(notifications.sendPush).toHaveBeenCalledWith(
+      expect.objectContaining({ user_id: expect.any(String), kind: 'coach_alert' }),
+    );
+    expect(notifications.pushToUser).not.toHaveBeenCalled();
+    expect(notifications.pushToCoach).not.toHaveBeenCalled();
+    expect((await run(null)).result?.status).toBe('skipped');
   });
 });
 
@@ -367,6 +367,7 @@ async function renderStep(over: Partial<DispatchContext>): Promise<string> {
   const record = async (text: string, ret: unknown) => (seen.push(text), ret);
   const notifications = {
     pushToUser: (_u: string, _t: string, body: string) => record(body, { delivered: true }),
+    sendPush: async () => ({ code: 'queued' }),
     createNotification: (n: { body?: string; payload?: object }) =>
       record(`${n.body} ${JSON.stringify(n.payload ?? {})}`, { id: 'n1' }),
   };

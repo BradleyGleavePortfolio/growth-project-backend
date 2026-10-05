@@ -104,6 +104,8 @@ export class FirstPaymentEmitter {
         },
         deep_link: deepLink,
         channel: 'push',
+        // B-648-7: the inapp row above is the inbox item; this twin is hidden.
+        push_twin: true,
       },
       tx,
     );

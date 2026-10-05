@@ -58,6 +58,10 @@ export const REDACT_KEYS: ReadonlySet<string> = new Set([
   // Stripe / billing
   'stripe_secret_key',
   'stripe_webhook_secret',
+  // B-SECRETS-3 (#646 C-646-2): the client's cached PaymentSheet credentials.
+  'stripe_client_secret',
+  'stripe_ephemeral_key',
+  'ephemeral_key',
   'card_number',
   'cvv',
   'cvc',
@@ -79,6 +83,22 @@ const ALLOWED_KEYS: ReadonlySet<string> = new Set([
   'msg',
 ]);
 
+/** B-SECRETS-3: any `*_secret` / `*_ephemeral_key` key (e.g. `webhook_secret`). */
+function isSecretSuffixKey(keyLower: string): boolean {
+  return keyLower.endsWith('_secret') || keyLower.endsWith('ephemeral_key');
+}
+
+// B-SECRETS-3: Stripe credential VALUES, wherever they appear in a string
+// (PaymentIntent / SetupIntent client secrets, ephemeral keys, secret and
+// restricted API keys, webhook signing secrets).
+const STRIPE_SECRET_VALUE =
+  /\b(?:(?:pi|seti)_[A-Za-z0-9]+_secret_[A-Za-z0-9]+|ek_(?:live|test)_[A-Za-z0-9]+|(?:sk|rk)_(?:live|test)_[A-Za-z0-9]+|whsec_[A-Za-z0-9]+)/g;
+
+/** Replace every Stripe credential value in a string with [REDACTED]. */
+export function redactStripeSecretValues(text: string): string {
+  return text.replace(STRIPE_SECRET_VALUE, '[REDACTED]');
+}
+
 /**
  * Recursively redact sensitive keys from a plain-object tree.
  *
@@ -88,6 +108,7 @@ const ALLOWED_KEYS: ReadonlySet<string> = new Set([
  * @param seen   WeakSet used to detect circular references.
  */
 export function redactObject(value: unknown, seen: WeakSet<object> = new WeakSet()): unknown {
+  if (typeof value === 'string') return redactStripeSecretValues(value);
   if (value === null || typeof value !== 'object') return value;
   if (seen.has(value as object)) return '[Circular]';
   seen.add(value as object);
@@ -99,7 +120,8 @@ export function redactObject(value: unknown, seen: WeakSet<object> = new WeakSet
   const result: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
     const keyLower = k.toLowerCase();
-    if (!ALLOWED_KEYS.has(keyLower) && REDACT_KEYS.has(keyLower)) {
+    const sensitive = REDACT_KEYS.has(keyLower) || isSecretSuffixKey(keyLower);
+    if (!ALLOWED_KEYS.has(keyLower) && sensitive) {
       result[k] = '[REDACTED]';
     } else {
       result[k] = redactObject(v, seen);
@@ -117,10 +139,10 @@ export function redactLogLine(line: string): string {
   // Replace `"password":"<anything>"` (and similar) in serialised JSON.
   // The replace is best-effort; the primary guard is `redactObject`.
   return line.replace(
-    /"(?:password|passwd|token|authorization|secret|api_key|access_token|refresh_token|id_token|client_secret|private_key|blood[^"]*|body_fat[^"]*|fat_percentage[^"]*|card_number|cvv|cvc)"\s*:\s*"[^"]*"/gi,
+    /"(?:password|passwd|token|authorization|secret|api_key|access_token|refresh_token|id_token|client_secret|[a-z0-9_]*_secret|[a-z0-9_]*ephemeral_key|private_key|blood[^"]*|body_fat[^"]*|fat_percentage[^"]*|card_number|cvv|cvc)"\s*:\s*"[^"]*"/gi,
     (match) => {
       const colonIdx = match.indexOf(':');
       return match.slice(0, colonIdx + 1) + '"[REDACTED]"';
     },
-  );
+  ).replace(STRIPE_SECRET_VALUE, '[REDACTED]');
 }

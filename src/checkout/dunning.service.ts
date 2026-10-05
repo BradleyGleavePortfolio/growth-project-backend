@@ -4,6 +4,7 @@ import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
 import { EmailService } from '../email/email.service';
 import { EmailTemplateKey } from '../email/email.types';
 import { PrismaService } from '../prisma.service';
+import { ADMIN_PURCHASE_OMIT, type AdminPurchaseView } from './admin-purchase.select';
 import { isDunningV2Enabled } from './dunning-v2/dunning-v2.feature';
 import { DUNNING_UPDATE_CARD_URL } from './dunning-v2/dunning-v2.cadence';
 import { DUNNING_V2_REVERSAL_REASON } from './dunning-v2/dunning-v2.service';
@@ -159,7 +160,8 @@ export interface RecordFailureInput {
 export interface DunningAdminView {
   state: DunningState | null;
   attempts: DunningAttempt[];
-  purchase: ClientPurchase | null;
+  // B-SECRETS-3: the client's cached payment credentials are omitted.
+  purchase: AdminPurchaseView | null;
 }
 
 @Injectable()
@@ -691,6 +693,7 @@ export class DunningService {
     });
     const purchase = await this.prisma.clientPurchase.findUnique({
       where: { id: purchaseId },
+      omit: ADMIN_PURCHASE_OMIT,
     });
     const attempts = state
       ? await this.prisma.dunningAttempt.findMany({
