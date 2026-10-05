@@ -604,8 +604,6 @@ const LEGACY_EXCEPTION_TEXT: Readonly<Record<string, number>> = {
   'src/ptm/ptm.service.ts': 1,
   'src/roman/roman.service.ts': 1,
   'src/scheduling/google-calendar/google-calendar.service.ts': 2,
-  'src/scheduling/jobs/reminder.job.ts': 1,
-  'src/scheduling/scheduling-session-lifecycle.service.ts': 1,
   'src/storefront/checkout-cookie.service.ts': 1,
   'src/storefront/checkout-idempotency.service.ts': 3,
   'src/storefront/checkout-rate-limiter.service.ts': 2,

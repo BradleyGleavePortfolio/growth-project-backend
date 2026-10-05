@@ -248,6 +248,13 @@ export class SchedulingOpenSlotsService {
         where: {
           coach_id: coachId,
           status: { in: [...OCCUPYING_SESSION_STATUSES] },
+          // S-SCHED-5: a request past its clear time no longer holds the
+          // slot (the booking transaction closes it before writing).
+          OR: [
+            { status: { not: 'requested' } },
+            { request_expires_at: null },
+            { request_expires_at: { gt: new Date() } },
+          ],
           start_at: { lt: to },
           end_at: { gt: from },
           ...(opts.excludeSessionId ? { id: { not: opts.excludeSessionId } } : {}),
