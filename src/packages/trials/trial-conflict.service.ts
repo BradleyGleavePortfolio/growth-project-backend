@@ -60,11 +60,20 @@ import { PrismaService } from '../../prisma.service';
 // lease is renewed by compare-and-set before each void and before the DELETE,
 // so a lost lease stops the sequence (stale) and any number of invoices up to
 // TRIAL_CONFLICT_MAX_VOIDS fits.
+// B-TR7-120 (agent 120) — B-707-1: a renewal draft is in neither list and can
+// finalize and be paid inside that window. Stripe never deletes a
+// subscription's draft (it must be finalized, then voided), so a complete
+// draft page is read first and each draft is finalized without collection
+// (auto_advance=false, confirmed open) and voided (confirmed void) before the
+// other voids, each call on a renewed lease. Before the DELETE the whole domain
+// is read again: a draft, open or uncollectible invoice not fenced here, or any
+// unknown page, retries; a charge on the paid page supersedes (paid plan kept,
+// billed alert). Drafts count toward TRIAL_CONFLICT_MAX_VOIDS.
 
 export const TRIAL_CONFLICT_LEASE_MS = 60 * 1000;
 export const TRIAL_CONFLICT_CANCEL_TIMEOUT_MS = 20 * 1000;
 export const TRIAL_CONFLICT_ALERT_AFTER = 3;
-/** B-TR6-119 — more payable invoices than this is not a never-billed trial: retry, alert. */
+/** B-TR6-119 — more payable invoices than this (drafts count) is not a never-billed trial. */
 export const TRIAL_CONFLICT_MAX_VOIDS = 10;
 const BACKOFF_BASE_MS = 5 * 60 * 1000;
 const BACKOFF_MAX_MS = 60 * 60 * 1000;
@@ -275,9 +284,9 @@ export class TrialConflictService {
           TRIAL_CONFLICT_CANCEL_TIMEOUT_MS,
         );
         const historic = HISTORY_STATUSES.has(String(sub?.status));
-        // B-TR5-119 / B-TR6-119 — the payable invoices (open and uncollectible)
-        // are read before the paid list: a payment between the reads shows as
-        // paid, one after them fails its void.
+        // B-TR5-119 / B-TR6-119 / B-TR7-120 — the payable invoices (draft, open
+        // and uncollectible) are read before the paid list: a payment between
+        // the reads shows as paid, one after them fails its fence or the recheck.
         const subId = row.stripe_subscription_id;
         const payable = historic ? await readPayable(this.stripe, subId) : null;
         const history = historic
@@ -294,10 +303,13 @@ export class TrialConflictService {
         const action = trialConflictAction(sub, clock(), until, history);
         const voided =
           action === 'cancel' && historic
-            ? await this.voidPayable(this.stripe, row.id, token, payable, clock)
+            ? await this.voidPayable(this.stripe, row.id, token, subId, payable, clock)
             : null;
         if (voided === 'stale') return 'stale';
-        if (voided && voided !== 'ok') {
+        if (voided === 'billed') {
+          outcome = 'superseded';
+          code = 'billing_started';
+        } else if (voided && voided !== 'ok') {
           outcome = 'retry';
           code = voided;
         } else if (action === 'cancel') {
@@ -394,17 +406,20 @@ export class TrialConflictService {
    * void and before the DELETE the lease is renewed by compare-and-set on this
    * token while the row is owed: a supersession, cancellation or takeover in
    * between stops here (stale), and each step gets a full lease for its
-   * bounded call.
+   * bounded call. B-TR7-120 — drafts are finalized (confirmed open) and voided
+   * first; then every list is read again (see the header) before the DELETE.
    */
   private async voidPayable(
     stripe: StripeConnectApiService,
     id: string,
     token: string,
-    ids: string[] | null,
+    subId: string,
+    domain: PayableDomain | null,
     clock: () => Date,
   ): Promise<VoidResult> {
-    if (!ids || !ids.length) return 'invoices_unknown';
-    if (ids.length > TRIAL_CONFLICT_MAX_VOIDS) return 'invoices_too_many';
+    if (!domain || !domain.payable.length) return 'invoices_unknown';
+    const fenced = [...domain.drafts, ...domain.payable];
+    if (fenced.length > TRIAL_CONFLICT_MAX_VOIDS) return 'invoices_too_many';
     // The next bounded call must still end inside the renewed lease.
     const renew = async (): Promise<VoidResult> => {
       const until = new Date(clock().getTime() + TRIAL_CONFLICT_LEASE_MS);
@@ -416,12 +431,41 @@ export class TrialConflictService {
       const fits = clock().getTime() + TRIAL_CONFLICT_CANCEL_TIMEOUT_MS < until.getTime();
       return fits ? 'ok' : 'lease_exhausted';
     };
-    for (const invoiceId of ids) {
+    // One bounded Stripe call on a freshly renewed lease; a failure reads null.
+    const call = async <T>(fn: () => Promise<T>) => {
       const lease = await renew();
-      if (lease !== 'ok') return lease;
-      const res = await readOrNull(stripe.voidInvoice(invoiceId));
-      if (res?.status !== 'void') return 'invoice_not_voided';
+      return { lease, res: lease === 'ok' ? await readOrNull(fn()) : null };
+    };
+    for (const inv of fenced) {
+      if (domain.drafts.includes(inv)) {
+        const fin = await call(() => stripe.finalizeInvoice(inv));
+        if (fin.lease !== 'ok') return fin.lease;
+        if (fin.res?.id !== inv || fin.res.status !== 'open') return 'draft_not_fenced';
+      }
+      const res = await call(() => stripe.voidInvoice(inv));
+      if (res.lease !== 'ok') return res.lease;
+      if (res.res?.status !== 'void') return 'invoice_not_voided';
     }
+    // B-707-1 — every invoice starts as a draft: one not fenced above, or a
+    // payment that landed after the first reads, sends no DELETE. An id fenced
+    // above is void (final), never new.
+    const lists = [
+      () => stripe.listDraftInvoices(subId),
+      () => stripe.listOpenInvoices(subId),
+      () => stripe.listUncollectibleInvoices(subId),
+    ];
+    for (const list of lists) {
+      const page = await call(list);
+      if (page.lease !== 'ok') return page.lease;
+      const now = payableInvoiceIds([page.res]);
+      if (!now) return 'invoices_unknown';
+      if (now.some((inv) => !fenced.includes(inv))) return 'invoices_changed';
+    }
+    const paid = await call(() => stripe.listPaidInvoices(subId));
+    if (paid.lease !== 'ok') return paid.lease;
+    const history = trialPaidHistory(paid.res);
+    if (history === 'charged') return 'billed';
+    if (history !== 'none') return 'history_unknown';
     return renew();
   }
 
@@ -495,10 +539,17 @@ async function readOrNull<T>(promise: Promise<T>): Promise<T | null> {
 type VoidResult =
   | 'ok'
   | 'stale'
+  | 'billed'
   | 'lease_exhausted'
   | 'invoices_unknown'
   | 'invoices_too_many'
+  | 'invoices_changed'
+  | 'history_unknown'
+  | 'draft_not_fenced'
   | 'invoice_not_voided';
+
+/** B-TR7-120 — draft ids (not also open or uncollectible) and open/uncollectible ids. */
+type PayableDomain = { drafts: string[]; payable: string[] };
 
 type InvoicePage = { data?: Array<{ id?: unknown } | null>; has_more?: unknown } | null;
 
@@ -518,10 +569,20 @@ export function payableInvoiceIds(pages: InvoicePage[]): string[] | null {
   return ids;
 }
 
-async function readPayable(stripe: StripeConnectApiService, subId: string) {
+async function readPayable(
+  stripe: StripeConnectApiService,
+  subId: string,
+): Promise<PayableDomain | null> {
+  // B-TR7-120 — drafts first: a draft finalized after this read is on the open page.
+  const drafts = payableInvoiceIds([await readOrNull(stripe.listDraftInvoices(subId))]);
+  if (!drafts) return null;
   const open = await readOrNull(stripe.listOpenInvoices(subId));
   if (!open) return null;
-  return payableInvoiceIds([open, await readOrNull(stripe.listUncollectibleInvoices(subId))]);
+  const payable = payableInvoiceIds([
+    open,
+    await readOrNull(stripe.listUncollectibleInvoices(subId)),
+  ]);
+  return payable && { drafts: drafts.filter((inv) => !payable.includes(inv)), payable };
 }
 
 /** A clock that starts at `start` and advances with real elapsed time (C-673-2). */
