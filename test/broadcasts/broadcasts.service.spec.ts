@@ -15,7 +15,7 @@ const NOW = new Date('2027-02-01T15:00:00Z');
 
 function harness(
   scope: CoachScope,
-  opts: { recipients?: string[]; row?: Record<string, unknown> | null } = {},
+  opts: { recipients?: string[]; row?: Record<string, unknown> | null; lastRun?: Date | null } = {},
 ) {
   const findFirst = jest.fn(async () => opts.row ?? null);
   const findMany = jest.fn(async () => []);
@@ -33,10 +33,14 @@ function harness(
       findMany,
       create,
       count: jest.fn(async () => 0),
-      updateMany: jest.fn(async () => ({ count: 1 })),
+      updateMany: jest.fn(async (_a: { data: Record<string, unknown> }) => ({ count: 1 })),
     },
     coachBroadcastDelivery: { groupBy: jest.fn(async () => []) },
-    coachBroadcastRun: { findMany: jest.fn(async () => []), count: jest.fn(async () => 0) },
+    coachBroadcastRun: {
+      findMany: jest.fn(async () => []),
+      count: jest.fn(async () => (opts.lastRun ? 1 : 0)),
+      findFirst: jest.fn(async () => (opts.lastRun ? { scheduled_for: opts.lastRun } : null)),
+    },
   };
   const svc = new BroadcastsService(
     stub<PrismaService>(prisma),
@@ -257,13 +261,7 @@ describe('BroadcastsService idempotency (A-659-6)', () => {
 
 describe('BroadcastsService edit / resume after a claim (B-659-1)', () => {
   function withRun(row: Record<string, unknown>, lastRun: Date | null) {
-    const h = harness(head, { row });
-    h.prisma.coachBroadcastRun = {
-      findMany: jest.fn(async () => []),
-      count: jest.fn(async () => (lastRun ? 1 : 0)),
-      findFirst: jest.fn(async () => (lastRun ? { scheduled_for: lastRun } : null)),
-    } as unknown as typeof h.prisma.coachBroadcastRun;
-    return h;
+    return harness(head, { row, lastRun });
   }
   const base = {
     id: 'b1',
@@ -312,11 +310,7 @@ describe('BroadcastsService edit / resume after a claim (B-659-1)', () => {
       { ...input, recurrence: { freq: 'daily', local_time: '10:00' } },
       NOW,
     );
-    const data = (
-      h.prisma.coachBroadcast.updateMany.mock.calls[0] as unknown as [
-        { data: { next_run_at: Date } },
-      ]
-    )[0].data;
+    const data = h.prisma.coachBroadcast.updateMany.mock.calls[0][0].data;
     expect(data.next_run_at).toEqual(new Date('2027-02-02T16:00:00Z'));
   });
 
@@ -328,11 +322,7 @@ describe('BroadcastsService edit / resume after a claim (B-659-1)', () => {
   it('resume never re-arms a one-off that already has a run', async () => {
     const h = withRun({ ...base, status: 'paused', recurrence: null, next_run_at: NOW }, today0700);
     await h.svc.transition('coach-a', 'b1', 'resume', NOW);
-    const data = (
-      h.prisma.coachBroadcast.updateMany.mock.calls[0] as unknown as [
-        { data: Record<string, unknown> },
-      ]
-    )[0].data;
+    const data = h.prisma.coachBroadcast.updateMany.mock.calls[0][0].data;
     expect(data.next_run_at).toBeNull();
     expect(data.status).toBe('sending');
   });
@@ -356,11 +346,7 @@ describe('BroadcastsService edit / resume after a claim (B-659-1)', () => {
       today0700,
     );
     await h.svc.transition('coach-a', 'b1', 'resume', NOW);
-    const data = (
-      h.prisma.coachBroadcast.updateMany.mock.calls[0] as unknown as [
-        { data: Record<string, unknown> },
-      ]
-    )[0].data;
+    const data = h.prisma.coachBroadcast.updateMany.mock.calls[0][0].data;
     expect(data.next_run_at).toEqual(new Date('2027-02-02T16:00:00Z'));
     expect(data.status).toBe('scheduled');
   });
