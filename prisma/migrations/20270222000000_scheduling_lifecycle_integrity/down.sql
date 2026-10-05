@@ -20,7 +20,6 @@ ALTER TABLE "NotificationDeliveryLog" DROP COLUMN IF EXISTS "last_error";
 ALTER TABLE "NotificationDeliveryLog" DROP COLUMN IF EXISTS "notification_id";
 ALTER TABLE "NotificationDeliveryLog" DROP COLUMN IF EXISTS "push_done_at";
 ALTER TABLE "NotificationDeliveryLog" DROP COLUMN IF EXISTS "inapp_done_at";
-ALTER TABLE "NotificationDeliveryLog" DROP COLUMN IF EXISTS "session_start_at";
 ALTER TABLE "NotificationDeliveryLog" DROP COLUMN IF EXISTS "claim_token";
 ALTER TABLE "NotificationDeliveryLog" DROP COLUMN IF EXISTS "lease_until";
 ALTER TABLE "NotificationDeliveryLog" DROP COLUMN IF EXISTS "attempts";

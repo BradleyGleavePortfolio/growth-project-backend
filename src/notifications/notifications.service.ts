@@ -1,4 +1,10 @@
-import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 // expo-server-sdk v6 is ESM-only and exports `Expo` as a NAMED export
@@ -9,12 +15,18 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { Expo, ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk';
 import { PrismaService } from '../prisma.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
-import { UpdateNotificationPreferencesDto, GetNotificationsQueryDto } from './notifications.dto';
+import {
+  UpdateNotificationPreferencesDto,
+  GetNotificationsQueryDto,
+  TimeZoneSource,
+} from './notifications.dto';
+import { usableTimeZone } from './local-time';
 import { NotificationKindValue } from './notification-kind';
 import { NotificationCategory, DEFAULT_NOTIFICATION_CATEGORY } from './notification-category.enum';
 import { PushAbortedError, PushDeliveryResult } from './push-delivery.types';
 import { VoicePolicyService } from '../roman/voice/voice-policy.service';
 import { RomanCopyPayload } from '../roman/voice/voice-policy.constants';
+import { describeFailure } from '../observability/log-pii';
 
 // Phase 6B: PushPayload is the minimal envelope CoachAlertsService.tryPush
 // passes through. It intentionally contains no PII — only the alert
@@ -42,7 +54,17 @@ export interface CreateNotificationInput {
   payload?: Record<string, unknown>;
   deep_link?: string;
   channel?: 'push' | 'email' | 'inapp';
+  /**
+   * S-FEE round 6 (#627 B-627-6 / C-627-7): narrows the per-process 60 s push
+   * limiter to one logical alert (for example a payout notice id), so two
+   * different alerts of the same kind to the same user are never collapsed.
+   * Unset keeps the default (one push per user per kind per minute).
+   */
+  throttle_key?: string;
 }
+
+/** Whether a user receives a kind on a channel (createNotification's gate). */
+export type NotificationChannelGate = 'enabled' | 'muted' | 'off';
 
 // Rate-limit guard: at most 1 push per user per kind per minute.
 // Tracked in-process (per replica). At scale: move to Redis with a
@@ -91,6 +113,10 @@ export class NotificationsService {
         quiet_hours_start: '22:00',
         quiet_hours_end: '06:00',
         timezone: 'America/Los_Angeles',
+        // B-NOTIF-4: no zone has been supplied yet (provenance unset), so
+        // notification copy does not trust the `timezone` default above.
+        timezone_source: null,
+        timezone_updated_at: null,
         // Phase 9 defaults
         muted: false,
         milestone_email: true,
@@ -177,7 +203,9 @@ export class NotificationsService {
       new_client_alerts: data.new_client_alerts,
       quiet_hours_start: data.quiet_hours_start,
       quiet_hours_end: data.quiet_hours_end,
-      timezone: data.timezone,
+      timezone: undefined as string | undefined,
+      timezone_source: undefined as TimeZoneSource | undefined,
+      timezone_updated_at: undefined as Date | undefined,
       // Phase 9 fields
       muted: data.muted,
       milestone_email: data.milestone_email,
@@ -231,6 +259,17 @@ export class NotificationsService {
       workout_reminder_inapp: data.workout_reminder_inapp,
     };
 
+    // B-NOTIF-4: an explicit zone in a preferences PATCH is validated and
+    // stamped with provenance ('settings'), the same as PUT /timezone.
+    if (data.timezone !== undefined) {
+      const zone = this.validateTimeZone(data.timezone);
+      if (zone) {
+        fields.timezone = zone;
+        fields.timezone_source = 'settings';
+        fields.timezone_updated_at = new Date();
+      }
+    }
+
     // Strip undefined entries so Prisma does not try to set them to NULL.
     const definedFields = Object.fromEntries(
       Object.entries(fields).filter(([, v]) => v !== undefined),
@@ -276,6 +315,80 @@ export class NotificationsService {
   // ── Notification center ───────────────────────────────────────────────────
 
   /**
+   * B-NOTIF-4: validate an IANA zone name. Returns the trimmed name, or null
+   * for a UTC alias (the mobile app reports 'UTC' when the device zone is
+   * unknown, so it is never stored over a real zone). Throws a 400 with the
+   * stable code TIMEZONE_INVALID for anything the runtime does not know.
+   */
+  private validateTimeZone(raw: string): string | null {
+    const trimmed = typeof raw === 'string' ? raw.trim() : '';
+    let known = false;
+    if (trimmed.length > 0 && trimmed.length <= 64) {
+      try {
+        new Intl.DateTimeFormat('en-US', { timeZone: trimmed });
+        known = true;
+      } catch {
+        known = false;
+      }
+    }
+    if (!known) {
+      throw new BadRequestException({
+        code: 'TIMEZONE_INVALID',
+        message:
+          'That time zone is not recognised. Check the date and time settings on your phone, then open the app again.',
+      });
+    }
+    return usableTimeZone(trimmed);
+  }
+
+  /**
+   * B-NOTIF-4 (Opus B-647-1, Sol B-647-2): store the recipient's own zone
+   * with provenance. Idempotent: the same zone again only refreshes
+   * timezone_updated_at. A UTC alias is acknowledged but not stored
+   * (`stored: false`), so a device that cannot report its zone never
+   * overwrites a real one. Creates the preferences row when needed (the
+   * other columns take their schema defaults).
+   */
+  async setTimeZone(
+    userId: string,
+    timezone: string,
+    source: TimeZoneSource = 'device',
+  ): Promise<{
+    timezone: string | null;
+    timezone_source: string | null;
+    timezone_updated_at: Date | null;
+    stored: boolean;
+  }> {
+    const zone = this.validateTimeZone(timezone);
+    if (!zone) {
+      const current = await this.prisma.notificationPreferences.findUnique({
+        where: { user_id: userId },
+        select: { timezone: true, timezone_source: true, timezone_updated_at: true },
+      });
+      const trusted = current?.timezone_updated_at ? current : null;
+      return {
+        timezone: trusted?.timezone ?? null,
+        timezone_source: trusted?.timezone_source ?? null,
+        timezone_updated_at: trusted?.timezone_updated_at ?? null,
+        stored: false,
+      };
+    }
+    const now = new Date();
+    const row = await this.prisma.notificationPreferences.upsert({
+      where: { user_id: userId },
+      create: {
+        user_id: userId,
+        timezone: zone,
+        timezone_source: source,
+        timezone_updated_at: now,
+      },
+      update: { timezone: zone, timezone_source: source, timezone_updated_at: now },
+      select: { timezone: true, timezone_source: true, timezone_updated_at: true },
+    });
+    return { ...row, stored: true };
+  }
+
+  /**
    * Write one notification row. Called by every emitter.
    *
    * Before writing, the method checks the user's NotificationPreferences to
@@ -296,20 +409,39 @@ export class NotificationsService {
    * behaviour is unchanged (autocommit on `this.prisma`), so every existing
    * callsite keeps working.
    */
+  /**
+   * The preference gate createNotification applies, without writing: lets a
+   * caller tell "the user turned this off" (done, nothing to retry) from a
+   * suppressed push (rate limit), which createNotification reports the same
+   * way (null).
+   */
+  async channelGate(
+    userId: string,
+    kind: NotificationKindValue,
+    channel: 'push' | 'email' | 'inapp',
+  ): Promise<NotificationChannelGate> {
+    return this.gateFrom(await this.getPreferences(userId), kind, channel);
+  }
+
+  private gateFrom(
+    prefs: Awaited<ReturnType<NotificationsService['getPreferences']>>,
+    kind: NotificationKindValue,
+    channel: 'push' | 'email' | 'inapp',
+  ): NotificationChannelGate {
+    // Global mute short-circuit.
+    if ((prefs as Record<string, unknown>).muted) return 'muted';
+    // Per-kind channel gate.
+    const enabledKey = `${this._kindToPrefsPrefix(kind)}_${channel}` as keyof typeof prefs;
+    return prefs[enabledKey] === false ? 'off' : 'enabled';
+  }
+
   async createNotification(input: CreateNotificationInput, tx?: Prisma.TransactionClient) {
     const db = tx ?? this.prisma;
     const prefs = await this.getPreferences(input.user_id, tx);
     const channel = input.channel ?? 'inapp';
 
-    // Global mute short-circuit.
-    if ((prefs as Record<string, unknown>).muted) {
-      return null;
-    }
-
-    // Per-kind channel gate.
-    const enabledKey = `${this._kindToPrefsPrefix(input.kind)}_${channel}` as keyof typeof prefs;
-    const enabled = prefs[enabledKey];
-    if (enabled === false) {
+    // Global mute and per-kind channel gate (shared with channelGate).
+    if (this.gateFrom(prefs, input.kind, channel) !== 'enabled') {
       return null;
     }
 
@@ -328,7 +460,9 @@ export class NotificationsService {
     // so generic per-process push throttling is both unnecessary and unsafe —
     // its state cannot roll back with the transaction.
     if (channel === 'push' && !tx) {
-      const key = `${input.user_id}:${input.kind}`;
+      const key = input.throttle_key
+        ? `${input.user_id}:${input.kind}:${input.throttle_key}`
+        : `${input.user_id}:${input.kind}`;
       const last = recentPushes.get(key) ?? 0;
       const now = Date.now();
       if (now - last < 60_000) {
@@ -507,7 +641,7 @@ export class NotificationsService {
       await this.pollReceipts(tickets, coachId);
       return true;
     } catch (err) {
-      this.logger.error(`pushToCoach failed for coach=${coachId}: ${(err as Error).message}`, err);
+      this.logger.error(`pushToCoach failed for coach=${coachId}: ${describeFailure(err)}`);
       return false;
     }
   }
@@ -584,14 +718,18 @@ export class NotificationsService {
       // the message and we must NOT report delivered=true.
       for (const ticket of tickets) {
         if (ticket.status === 'error') {
-          this.logger.error(`pushToUser ticket error for user ${userId}: ${ticket.message}`);
+          // C-611-17: Expo's ticket message quotes the push token
+          // ("ExponentPushToken[...] is not a registered ..."); log and
+          // return its error code only.
+          const errorCode = ticket.details?.error ?? 'unknown';
+          this.logger.error(`pushToUser ticket error for user ${userId}: ${errorCode}`);
           // Poll receipts on a best-effort basis so stale tokens get
           // cleared even though we report failure to the caller.
           await this.pollReceipts(tickets, userId);
           return {
             delivered: false,
             code: 'ticket-error',
-            detail: ticket.message,
+            detail: errorCode,
           };
         }
       }
@@ -601,10 +739,11 @@ export class NotificationsService {
       await this.pollReceipts(tickets, userId);
       return { delivered: true, code: 'delivered' };
     } catch (err) {
-      // R17: log the raw err for ops, return a scrubbed typed result to
-      // the caller. The `detail` field carries only the Error.name so we
-      // never leak stack traces or query text.
-      this.logger.error(`Push notification failed for user ${userId}`, err);
+      // R17: return a scrubbed typed result to the caller. The `detail`
+      // field carries only the Error.name so we never leak stack traces or
+      // query text. B-700-1: the log line holds the class and code only
+      // (an Expo error message quotes the push token).
+      this.logger.error(`Push notification failed for user ${userId}: ${describeFailure(err)}`);
       if (err instanceof PushAbortedError) {
         return { delivered: false, code: 'aborted', detail: err.name };
       }
@@ -639,12 +778,14 @@ export class NotificationsService {
                 data: { expo_push_token: null },
               });
             }
-            this.logger.error('Push receipt error:', receipt.message);
+            this.logger.error(
+              `Push receipt error for user ${userId}: ${receipt.details?.error ?? 'unknown'}`,
+            );
           }
         }
       }
     } catch (err) {
-      this.logger.warn('Failed to poll push receipts', err);
+      this.logger.warn(`Failed to poll push receipts: ${describeFailure(err)}`);
     }
   }
 
@@ -671,7 +812,7 @@ export class NotificationsService {
         // Unique constraint violation = window already claimed by another process.
         return false;
       }
-      this.logger.error('claimDigestWindow unexpected error', err);
+      this.logger.error(`claimDigestWindow unexpected error: ${describeFailure(err)}`);
       throw err;
     }
   }

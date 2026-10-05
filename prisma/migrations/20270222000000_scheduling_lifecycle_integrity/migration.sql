@@ -12,9 +12,11 @@
 --    application path and of the transaction isolation level.
 --
 -- 3. NotificationDeliveryLog gets recoverable delivery state (S-SCHED-3
---    B-634-2): status / attempts / lease / claim token / session revision /
---    per-channel done markers. Additive and defaulted: rows written before
---    this migration read status = 'sent', attempts = 1 (they were attempted
+--    B-634-2): status / attempts / lease / claim token / per-channel done
+--    markers. The session start a claim is for is the existing "start_at"
+--    column of migration 20270301000000 (B-NOTIF-4), part of the claim key.
+--    Additive and defaulted: rows written before this migration read
+--    status = 'sent', attempts = 1 (they were attempted
 --    once and are never re-sent), so no reminder is repeated by the deploy.
 --
 -- RLS: no new table. SessionType and CoachingSession keep their existing
@@ -111,7 +113,6 @@ ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "status" TEXT NOT
 ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "attempts" INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "lease_until" TIMESTAMP(3);
 ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "claim_token" TEXT;
-ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "session_start_at" TIMESTAMP(3);
 ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "inapp_done_at" TIMESTAMP(3);
 ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "push_done_at" TIMESTAMP(3);
 ALTER TABLE "NotificationDeliveryLog" ADD COLUMN IF NOT EXISTS "notification_id" TEXT;

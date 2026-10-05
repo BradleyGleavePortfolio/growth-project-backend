@@ -63,10 +63,11 @@ function build() {
   });
   for (let d = 0; d <= 6; d++) db.addWindow('coach-1', d, 0, 24 * 60);
   const fake = new FakeNotifications();
+  const prisma = asPrisma(db);
   const emitter = new BookingEmitter(
     Object.assign(Object.create(NotificationsService.prototype) as NotificationsService, fake),
+    prisma,
   );
-  const prisma = asPrisma(db);
   const job = new SessionReminderJob(prisma, emitter);
   const audit = Object.assign(Object.create(AuditService.prototype) as AuditService, {
     write: jest.fn(async () => undefined),
@@ -150,7 +151,7 @@ describe('24h reminder', () => {
     const byUser = Object.fromEntries(fake.pushes.map((p) => [p.userId, p]));
     expect(byUser['client-1']).toMatchObject({
       title: 'Session tomorrow',
-      body: 'Your Quick Q/A Call with Coach Kim is tomorrow at 8:00 AM PDT.',
+      body: 'Your Quick Q/A Call with Coach Kim is on Tue, Oct 6, 8:00 AM PDT.',
       data: {
         kind: NotificationKind.BOOKING_REMINDER_24H,
         actionScreen: 'CalendarSession',
@@ -158,7 +159,7 @@ describe('24h reminder', () => {
       },
     });
     expect(byUser['coach-1']).toMatchObject({
-      body: 'Your Quick Q/A Call with Jamie is tomorrow at 8:00 AM PDT.',
+      body: 'Your Quick Q/A Call with Jamie is on Tue, Oct 6, 8:00 AM PDT.',
       data: { actionScreen: 'CoachBookingInbox', actionParams: { sessionId: 's1' } },
     });
     expect(fake.rows.map((r) => r.channel)).toEqual(['inapp', 'inapp']);

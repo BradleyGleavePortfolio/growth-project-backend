@@ -20,7 +20,6 @@ import {
 import { randomUUID } from 'crypto';
 import { AuditAction, AuditService } from '../audit/audit.service';
 import { BookingEmitter } from '../notifications/emitters/booking.emitter';
-import { NotificationKind } from '../notifications/notification-kind';
 import { safeLogDiagnostic } from '../observability/orm-diagnostics';
 import { PrismaService } from '../prisma.service';
 import type {
@@ -458,16 +457,11 @@ export class SchedulingSessionLifecycleService {
         },
       });
       if (moved.count !== 1) throw stateChanged();
-      // Reminder claims are per (session, user, kind); a moved session must
-      // be reminded again for its new time.
-      await tx.notificationDeliveryLog.deleteMany({
-        where: {
-          session_id: current.id,
-          kind: {
-            in: [NotificationKind.BOOKING_REMINDER_24H, NotificationKind.BOOKING_REMINDER_1H],
-          },
-        },
-      });
+      // B-643-1 / Sol B-647-1: reminders re-arm for the new time without
+      // touching the claim ledger. Claims are keyed (session, user, kind,
+      // start_at), so the new start time has no claim yet, and the
+      // reminder job only sends while the session still has the start
+      // time it claimed for (reminder.job.ts claimDelivery / remindOne).
       const row = await tx.coachingSession.findUniqueOrThrow({ where: { id: current.id } });
       return { row, typeName: type?.name ?? null, previousStatus: current.status };
     });
@@ -1069,8 +1063,9 @@ export class SchedulingSessionLifecycleService {
         },
       });
     } catch (err) {
-      const msg = safeLogDiagnostic(err);
-      this.logger.error(`superseded artifact cleanup failed for session=${session.id}: ${msg}`);
+      this.logger.error(
+        `superseded artifact cleanup failed for session=${session.id}: ${safeLogDiagnostic(err)}`,
+      );
     }
   }
 
@@ -1102,8 +1097,9 @@ export class SchedulingSessionLifecycleService {
       });
     } catch (err) {
       // Provider cancellation failure must not roll back the local cancel.
-      const msg = safeLogDiagnostic(err);
-      this.logger.error(`Provider cancellation failed for session=${session.id}: ${msg}`);
+      this.logger.error(
+        `Provider cancellation failed for session=${session.id}: ${safeLogDiagnostic(err)}`,
+      );
     }
   }
 }
