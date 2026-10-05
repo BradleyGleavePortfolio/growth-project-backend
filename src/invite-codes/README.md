@@ -136,10 +136,16 @@ flag is off. `:id` is an `InviteCode` id or the literal `coach-link`.
 | Method | Path | Behavior |
 |---|---|---|
 | `GET` | `/coach/codes` | Coach link first, then shareable codes (no single-recipient invites) with status (`active`, `retiring`, `revoked`, `expired`, `used_up`), `join_url` = `qr_payload` (`https://app.trygrowthproject.com/join/<code>`), package, lineage and exact ledger usage (`signups_total`, `signups_7d`) |
-| `POST` | `/coach/codes` | Create a `GP-XXXXXX` code (unlimited, no expiry unless set; optional label, `max_uses`, `expires_at`, package + grant mode via `InviteGrantService.setBinding`). `Idempotency-Key` header: a retry returns the first code (`replayed: true`) |
-| `POST` | `/coach/codes/:id/rotate` | New code with the same settings, linked by `rotated_from_id`; the old one is revoked now (`grace_hours` 0, default) or keeps working until `now + grace_hours` (max 168). A retried rotate returns the existing successor. `coach-link` archives the old link code as an InviteCode row so it keeps resolving |
+| `POST` | `/coach/codes` | Create a `GP-XXXXXX` code (unlimited, no expiry unless set; optional label, `max_uses`, `expires_at`, package + grant mode checked by `InviteGrantService.assertBindablePackage` and written in the same INSERT as the code). `Idempotency-Key` header (8-128 visible characters, else `400 idempotency_key_invalid`): a retry returns the first code (`replayed: true`) |
+| `POST` | `/coach/codes/:id/rotate` | New code with the same settings, linked by `rotated_from_id`; the old one is revoked now (`grace_hours` 0, default) or keeps working until `now + grace_hours` (max 168). A retried rotate returns the existing successor. `coach-link` requires `expected_code` (the link on screen), archives the old link code as an InviteCode row (with `successor_code`) so it keeps resolving, and a retry returns the first successor without writing |
 | `POST` | `/coach/codes/:id/revoke` | Turn a code off (idempotent). The coach link can only be rotated (`409 coach_link_not_revocable`) |
 | `GET` | `/coach/codes/signups?days=30` | Exact daily signups (1-90 days) in the coach's time zone (`CoachProfile.timezone`, else `America/Los_Angeles`), zero-filled, overall / `by_code` / `by_package`, with `unusual_today` (today >= 3 and >= 3x the trailing 7-day average) to catch a leaked code |
+
+Team Mode (`resolveTeamAttribution`, as the legacy create): an active team
+sub-coach's codes are stored under the head coach with `invited_by_user_id` =
+the sub-coach. A sub-coach lists, rotates, revokes and counts only their own
+codes and has no coach link (`403 coach_link_head_coach_only`); the head coach
+sees and manages every team code (`issued_by_user_id` in each view).
 
 Every create / rotate / revoke writes an audit row (`invite_code.created`,
 `invite_code.rotated`, `invite_code.revoked`). Rotating or revoking never
