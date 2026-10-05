@@ -22,14 +22,23 @@ import { MessagesSafetyService } from '../../src/messages-safety/messages-safety
 import { SubCoachScopeService } from '../../src/sub-coach/sub-coach-scope.service';
 import { MessagingService } from '../../src/messaging/messaging.service';
 import {
+  MAX_PINS_PER_THREAD,
+  MessageActionsService,
+  MESSAGE_EDIT_WINDOW_MS,
+  MUTE_FOREVER_UNTIL,
+} from '../../src/messaging/message-actions.service';
+import { MessagingInboxService } from '../../src/messaging/messaging-inbox.service';
+import {
   isMessagingCoreV2Enabled,
   MessagingCoreV2Guard,
 } from '../../src/messaging/messaging-core.feature';
+import { resolveIdempotencyKey } from '../../src/messaging/messaging-idempotency';
 import { broadcastThreadUpdated } from '../../src/messaging/messaging-realtime';
 
 const COACH = '11111111-1111-4111-8111-111111111111';
 const CLIENT = '22222222-2222-4222-8222-222222222222';
 const OTHER_CLIENT = '33333333-3333-4333-8333-333333333333';
+const SUB = '44444444-4444-4444-8444-444444444444';
 const KEY = '55555555-5555-4555-8555-555555555555';
 const MSG = '66666666-6666-4666-8666-666666666666';
 
@@ -175,6 +184,8 @@ function build(opts: { blocked?: string[]; eitherBlocked?: boolean } = {}) {
     dep(MessagesSafetyService, safety),
     scopeDep,
   );
+  const actions = new MessageActionsService(prismaDep, messaging, auditDep);
+  const inbox = new MessagingInboxService(prismaDep, messaging, scopeDep);
   return {
     prisma,
     tx,
@@ -185,6 +196,8 @@ function build(opts: { blocked?: string[]; eitherBlocked?: boolean } = {}) {
     safety,
     subCoachScope,
     messaging,
+    actions,
+    inbox,
     analytics,
     ptm,
   };
@@ -277,6 +290,26 @@ describe('idempotent send (offline queue)', () => {
     expect(data).not.toHaveProperty('client_message_id');
     expect(data).not.toHaveProperty('reply_to_id');
   });
+
+  it('Idempotency-Key header folds into the body key; bad or mismatched keys are coded 400s', () => {
+    expect(resolveIdempotencyKey(undefined, undefined)).toBeUndefined();
+    expect(resolveIdempotencyKey(KEY.toUpperCase(), undefined)).toBe(KEY);
+    expect(resolveIdempotencyKey(KEY, KEY)).toBe(KEY);
+    let e1: unknown;
+    try {
+      resolveIdempotencyKey('not-a-uuid', undefined);
+    } catch (e) {
+      e1 = e;
+    }
+    expectCode(e1, 400, 'messaging.idempotency_key_invalid');
+    let e2: unknown;
+    try {
+      resolveIdempotencyKey(KEY, MSG);
+    } catch (e) {
+      e2 = e;
+    }
+    expectCode(e2, 400, 'messaging.idempotency_key_mismatch');
+  });
 });
 
 describe('swipe-reply', () => {
@@ -364,6 +397,203 @@ describe('swipe-reply', () => {
   });
 });
 
+describe('edit', () => {
+  const thread = {
+    coachId: COACH,
+    clientId: CLIENT,
+    actorId: COACH,
+    actorSide: 'coach' as const,
+    otherPartyId: CLIENT,
+  };
+
+  it('only the author, only live messages, only inside 48 hours', async () => {
+    const t = build();
+    t.prisma.coachMessage.findFirst.mockResolvedValueOnce(row({ sender_id: CLIENT }));
+    expectCode(await caught(t.actions.edit(thread, MSG, 'new')), 403, 'messaging.not_author');
+    t.prisma.coachMessage.findFirst.mockResolvedValueOnce(row({ deleted_at: new Date() }));
+    expectCode(await caught(t.actions.edit(thread, MSG, 'new')), 409, 'messaging.message_deleted');
+    t.prisma.coachMessage.findFirst.mockResolvedValueOnce(
+      row({ created_at: new Date(Date.now() - MESSAGE_EDIT_WINDOW_MS - 1000) }),
+    );
+    expectCode(
+      await caught(t.actions.edit(thread, MSG, 'new')),
+      409,
+      'messaging.edit_window_closed',
+    );
+    t.prisma.coachMessage.findFirst.mockResolvedValueOnce(
+      row({ body: null, voice_url: 'https://x/voice-notes/a/b.m4a' }),
+    );
+    expectCode(await caught(t.actions.edit(thread, MSG, '  ')), 400, 'messaging.not_editable');
+    expect(t.prisma.coachMessage.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('a message id from another thread is 404 (lookup bound to the thread)', async () => {
+    const t = build();
+    expectCode(
+      await caught(t.actions.edit(thread, MSG, 'new')),
+      404,
+      'messaging.message_not_found',
+    );
+    expect(t.prisma.coachMessage.findFirst.mock.calls[0][0].where).toEqual({
+      id: MSG,
+      coach_id: COACH,
+      client_id: CLIENT,
+    });
+  });
+
+  it('blocked either way → 403 messaging.blocked', async () => {
+    const t = build({ eitherBlocked: true });
+    t.prisma.coachMessage.findFirst.mockResolvedValueOnce(row());
+    expectCode(await caught(t.actions.edit(thread, MSG, 'new')), 403, 'messaging.blocked');
+  });
+
+  it('success: conditional write, edited_at, text-free audit, ping, AI cache bust', async () => {
+    on();
+    const t = build();
+    t.prisma.coachMessage.findFirst.mockResolvedValueOnce(row());
+    const out = await t.actions.edit(thread, MSG, '  Fixed words ');
+    expect(t.prisma.coachMessage.updateMany).toHaveBeenCalledWith({
+      where: { id: MSG, deleted_at: null },
+      data: { body: 'Fixed words', edited_at: expect.any(Date) },
+    });
+    expect(out.body).toBe('Fixed words');
+    const auditCall = t.audit.write.mock.calls[0][0];
+    expect(auditCall.action).toBe('messaging.edited');
+    expect(JSON.stringify(auditCall)).not.toMatch(/Fixed words|Original words/);
+    expect(t.aiContext.invalidateForUser).toHaveBeenCalledWith(CLIENT);
+  });
+
+  it('a concurrent delete wins over an edit (0 rows → 409 deleted)', async () => {
+    const t = build();
+    t.prisma.coachMessage.findFirst.mockResolvedValueOnce(row());
+    t.prisma.coachMessage.updateMany.mockResolvedValueOnce({ count: 0 });
+    expectCode(await caught(t.actions.edit(thread, MSG, 'new')), 409, 'messaging.message_deleted');
+    expect(t.audit.write).not.toHaveBeenCalled();
+  });
+});
+
+describe('delete (tombstone)', () => {
+  const thread = {
+    coachId: COACH,
+    clientId: CLIENT,
+    actorId: CLIENT,
+    actorSide: 'client' as const,
+    otherPartyId: COACH,
+  };
+
+  it('erases content + pin in one transaction and records durable voice erasure for the object', async () => {
+    const t = build();
+    const url = `https://proj.supabase.co/storage/v1/object/public/voice-notes/${CLIENT}/note-1.m4a`;
+    t.prisma.coachMessage.findFirst.mockResolvedValueOnce(
+      row({ sender_id: CLIENT, voice_url: url, voice_duration_sec: 12, pinned_at: new Date() }),
+    );
+    const out = await t.actions.delete(thread, MSG);
+    expect(t.tx.coachMessage.updateMany).toHaveBeenCalledWith({
+      where: { id: MSG, deleted_at: null },
+      data: expect.objectContaining({
+        body: null,
+        voice_url: null,
+        voice_duration_sec: null,
+        deleted_at: expect.any(Date),
+        deleted_by_id: CLIENT,
+        pinned_at: null,
+      }),
+    });
+    expect(t.tx.communityVoiceErasure.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { kind_target: { kind: 'object', target: `${CLIENT}/note-1.m4a` } },
+        create: expect.objectContaining({ reason: 'author_delete' }),
+      }),
+    );
+    expect(out.deleted).toBe(true);
+    expect(out.body).toBeNull();
+    expect(JSON.stringify(t.audit.write.mock.calls[0][0])).not.toMatch(/Original words/);
+  });
+
+  it('never sends a non-signable or foreign-folder key to storage', async () => {
+    const t = build();
+    t.prisma.coachMessage.findFirst.mockResolvedValueOnce(
+      row({ sender_id: CLIENT, voice_url: `https://x/voice-notes/${COACH}/note.m4a` }),
+    );
+    await t.actions.delete(thread, MSG);
+    expect(t.tx.communityVoiceErasure.upsert).not.toHaveBeenCalled();
+  });
+
+  it('is idempotent and author-only, and closes after 48 hours', async () => {
+    const t = build();
+    const tomb = row({ sender_id: CLIENT, body: null, deleted_at: new Date() });
+    t.prisma.coachMessage.findFirst.mockResolvedValueOnce(tomb);
+    expect((await t.actions.delete(thread, MSG)).deleted).toBe(true);
+    expect(t.prisma.$transaction).not.toHaveBeenCalled();
+    t.prisma.coachMessage.findFirst.mockResolvedValueOnce(row({ sender_id: COACH }));
+    expectCode(await caught(t.actions.delete(thread, MSG)), 403, 'messaging.not_author');
+    t.prisma.coachMessage.findFirst.mockResolvedValueOnce(
+      row({ sender_id: CLIENT, created_at: new Date(Date.now() - 49 * 3600 * 1000) }),
+    );
+    expectCode(await caught(t.actions.delete(thread, MSG)), 409, 'messaging.delete_window_closed');
+  });
+
+  it('delete is allowed even when the thread is blocked (removing your own words)', async () => {
+    const t = build({ eitherBlocked: true });
+    t.prisma.coachMessage.findFirst.mockResolvedValueOnce(row({ sender_id: CLIENT }));
+    await expect(t.actions.delete(thread, MSG)).resolves.toMatchObject({ deleted: true });
+  });
+});
+
+describe('message pins', () => {
+  const thread = {
+    coachId: COACH,
+    clientId: CLIENT,
+    actorId: CLIENT,
+    actorSide: 'client' as const,
+    otherPartyId: COACH,
+  };
+
+  it('either participant may pin; the per-thread cap is enforced under a thread lock', async () => {
+    const t = build();
+    t.prisma.coachMessage.findFirst.mockResolvedValueOnce(row());
+    t.tx.coachMessage.count.mockResolvedValueOnce(MAX_PINS_PER_THREAD);
+    expectCode(await caught(t.actions.pin(thread, MSG)), 409, 'messaging.pin_limit_reached');
+    expect(t.tx.$executeRaw).toHaveBeenCalled();
+
+    t.prisma.coachMessage.findFirst.mockResolvedValueOnce(row());
+    const out = await t.actions.pin(thread, MSG);
+    expect(out.pinned_at).toBeInstanceOf(Date);
+    expect(out.pinned_by_id).toBe(CLIENT);
+    expect(t.audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'messaging.pinned' }),
+    );
+  });
+
+  it('deleted messages cannot be pinned; blocked threads cannot pin; unpin is idempotent', async () => {
+    const t = build();
+    t.prisma.coachMessage.findFirst.mockResolvedValueOnce(row({ deleted_at: new Date() }));
+    expectCode(await caught(t.actions.pin(thread, MSG)), 409, 'messaging.message_deleted');
+    const b = build({ eitherBlocked: true });
+    b.prisma.coachMessage.findFirst.mockResolvedValueOnce(row());
+    expectCode(await caught(b.actions.pin(thread, MSG)), 403, 'messaging.blocked');
+    t.prisma.coachMessage.findFirst.mockResolvedValueOnce(row({ pinned_at: null }));
+    await t.actions.unpin(thread, MSG);
+    expect(t.prisma.coachMessage.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('the pins bar hides pins authored by someone the caller blocked', async () => {
+    const t = build({ blocked: [COACH] });
+    t.prisma.coachMessage.findMany.mockResolvedValueOnce([
+      row({ id: 'a', sender_id: COACH, pinned_at: new Date() }),
+      row({ id: 'b', sender_id: CLIENT, pinned_at: new Date() }),
+    ]);
+    const out = await t.actions.listPins(thread);
+    expect(out.items.map((i) => i.id)).toEqual(['b']);
+  });
+
+  it('a message authored by a blocked party is not addressable (404)', async () => {
+    const t = build({ blocked: [COACH] });
+    t.prisma.coachMessage.findFirst.mockResolvedValueOnce(row({ sender_id: COACH }));
+    expectCode(await caught(t.actions.pin(thread, MSG)), 404, 'messaging.message_not_found');
+  });
+});
+
 describe('mute and inbox pin (private per user)', () => {
   const thread = {
     coachId: COACH,
@@ -372,6 +602,21 @@ describe('mute and inbox pin (private per user)', () => {
     actorSide: 'client' as const,
     otherPartyId: COACH,
   };
+
+  it('mute durations map to muted_until; forever is the sentinel; off clears', async () => {
+    const t = build();
+    const r1 = await t.actions.setMute(thread, '8h');
+    expect(r1.muted).toBe(true);
+    const until = new Date(r1.muted_until as string).getTime();
+    expect(Math.abs(until - (Date.now() + 8 * 3600 * 1000))).toBeLessThan(5000);
+    const r2 = await t.actions.setMute(thread, 'forever');
+    expect(r2.muted_until).toBe(MUTE_FOREVER_UNTIL.toISOString());
+    const r3 = await t.actions.setMute(thread, 'off');
+    expect(r3).toEqual({ muted: false, muted_until: null, pinned: false });
+    expect(t.prisma.coachThreadState.upsert.mock.calls[0][0].where).toEqual({
+      CoachThreadState_user_thread_key: { user_id: CLIENT, coach_id: COACH, client_id: CLIENT },
+    });
+  });
 
   it('a muted thread gets no push (flag ON) but still gets the realtime ping', async () => {
     on();
@@ -387,6 +632,42 @@ describe('mute and inbox pin (private per user)', () => {
     expect(t.prisma.coachThreadState.findUnique.mock.calls[0][0].where).toEqual({
       CoachThreadState_user_thread_key: { user_id: COACH, coach_id: COACH, client_id: CLIENT },
     });
+  });
+
+  it('an expired mute, a lookup failure, or flag OFF all deliver the push', async () => {
+    on();
+    const t = build();
+    t.prisma.coachThreadState.findUnique.mockResolvedValueOnce({
+      muted_until: new Date(Date.now() - 1),
+    });
+    await t.messaging.sendAsClient(CLIENT, 'hi');
+    await flush();
+    await flush();
+    expect(t.messageReceived.emit).toHaveBeenCalledTimes(1);
+    t.prisma.coachThreadState.findUnique.mockRejectedValueOnce(new Error('db down'));
+    await t.messaging.sendAsClient(CLIENT, 'hi');
+    await flush();
+    await flush();
+    expect(t.messageReceived.emit).toHaveBeenCalledTimes(2);
+    delete process.env.FEATURE_MESSAGING_CORE_V2;
+    const off = build();
+    off.prisma.coachThreadState.findUnique.mockResolvedValue({ muted_until: MUTE_FOREVER_UNTIL });
+    await off.messaging.sendAsClient(CLIENT, 'hi');
+    await flush();
+    expect(off.prisma.coachThreadState.findUnique).not.toHaveBeenCalled();
+    expect(off.messageReceived.emit).toHaveBeenCalledTimes(1);
+  });
+
+  it('inbox pins cap at 5 per user', async () => {
+    const t = build();
+    t.tx.coachThreadState.count.mockResolvedValueOnce(5);
+    expectCode(
+      await caught(t.actions.setInboxPin(thread, true)),
+      409,
+      'messaging.inbox_pin_limit_reached',
+    );
+    const ok = await t.actions.setInboxPin(thread, true);
+    expect(ok.pinned).toBe(true);
   });
 });
 
@@ -443,6 +724,120 @@ describe('unread counts ignore tombstones (flag ON only)', () => {
     const off = build();
     await off.messaging.unreadCountForCoach(COACH);
     expect(off.prisma.coachMessage.groupBy.mock.calls[0][0].where).not.toHaveProperty('deleted_at');
+  });
+});
+
+describe('unified inbox', () => {
+  const at = (iso: string) => new Date(iso);
+
+  function lastRows() {
+    return [
+      {
+        id: 'm1',
+        client_id: CLIENT,
+        sender_id: CLIENT,
+        body: 'Hello coach',
+        voice_url: null,
+        deleted_at: null,
+        edited_at: null,
+        created_at: at('2026-10-01T09:00:00Z'),
+      },
+      {
+        id: 'm2',
+        client_id: OTHER_CLIENT,
+        sender_id: COACH,
+        body: null,
+        voice_url: null,
+        deleted_at: at('2026-10-02T09:00:00Z'),
+        edited_at: null,
+        created_at: at('2026-10-02T08:00:00Z'),
+      },
+    ];
+  }
+
+  it('coach: newest activity first, unread from the badge computation, tombstone preview', async () => {
+    const t = build();
+    t.prisma.$queryRaw.mockResolvedValueOnce(lastRows());
+    t.prisma.coachMessage.groupBy.mockResolvedValueOnce([
+      { client_id: CLIENT, _count: { _all: 2 } },
+    ]);
+    t.prisma.user.findMany.mockResolvedValueOnce([
+      { id: CLIENT, name: 'Sam' },
+      { id: OTHER_CLIENT, name: 'Alex' },
+    ]);
+    const out = await t.inbox.inboxForCoach(COACH, {});
+    expect(out.items.map((i) => i.client_id)).toEqual([OTHER_CLIENT, CLIENT]);
+    expect(out.items[0].last_message).toMatchObject({
+      kind: 'deleted',
+      preview: '',
+      is_mine: true,
+    });
+    expect(out.items[1]).toMatchObject({ unread_count: 2, counterpart: { display_name: 'Sam' } });
+    expect(out.total_unread).toBe(2);
+  });
+
+  it('coach: pinned threads first; blocked threads hide the preview and unread', async () => {
+    const t = build({ blocked: [OTHER_CLIENT] });
+    t.prisma.$queryRaw.mockResolvedValueOnce(lastRows());
+    t.prisma.coachThreadState.findMany.mockResolvedValueOnce([
+      { client_id: CLIENT, muted_until: MUTE_FOREVER_UNTIL, pinned_at: at('2026-09-01T00:00:00Z') },
+    ]);
+    const out = await t.inbox.inboxForCoach(COACH, {});
+    expect(out.items[0]).toMatchObject({ client_id: CLIENT, pinned: true, muted: true });
+    expect(out.items[1]).toMatchObject({
+      client_id: OTHER_CLIENT,
+      blocked_by_me: true,
+      last_message: null,
+      unread_count: 0,
+    });
+  });
+
+  it('tenancy: the query is bound to the scope (head coach namespace, authorized clients only)', async () => {
+    const t = build();
+    t.subCoachScope.getHeadCoachIdForSubCoach.mockResolvedValueOnce(COACH);
+    t.subCoachScope.getAuthorizedClientIds.mockResolvedValue([CLIENT]);
+    t.prisma.$queryRaw.mockResolvedValueOnce([]);
+    await t.inbox.inboxForCoach(SUB, {});
+    const sql = t.prisma.$queryRaw.mock.calls[0][0] as Prisma.Sql;
+    expect(sql.values).toEqual([COACH, [CLIENT]]);
+    t.subCoachScope.getAuthorizedClientIds.mockResolvedValue([]);
+    const none = await t.inbox.inboxForCoach(SUB, {});
+    expect(none).toEqual({ items: [], next_cursor: null, total_unread: 0 });
+    expect(t.prisma.$queryRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it('keyset cursor pages without gaps or repeats; unread filter', async () => {
+    const t = build();
+    t.prisma.$queryRaw.mockResolvedValue(lastRows());
+    t.prisma.coachMessage.groupBy.mockResolvedValue([{ client_id: CLIENT, _count: { _all: 1 } }]);
+    const p1 = await t.inbox.inboxForCoach(COACH, { limit: 1 });
+    expect(p1.items.map((i) => i.client_id)).toEqual([OTHER_CLIENT]);
+    expect(p1.next_cursor).toBeTruthy();
+    const p2 = await t.inbox.inboxForCoach(COACH, { limit: 1, cursor: p1.next_cursor as string });
+    expect(p2.items.map((i) => i.client_id)).toEqual([CLIENT]);
+    expect(p2.next_cursor).toBeNull();
+    const unread = await t.inbox.inboxForCoach(COACH, { filter: 'unread' });
+    expect(unread.items.map((i) => i.client_id)).toEqual([CLIENT]);
+  });
+
+  it('client: coachless is a valid empty inbox; coached shows the one coach thread', async () => {
+    const t = build();
+    t.prisma.user.findUnique.mockResolvedValueOnce({ coach_id: null });
+    expect(await t.inbox.inboxForClient(CLIENT)).toEqual({
+      items: [],
+      next_cursor: null,
+      total_unread: 0,
+    });
+    t.prisma.user.findUnique.mockResolvedValue({ coach_id: COACH, name: 'Coach Name' });
+    t.prisma.coachMessage.count = jest.fn().mockResolvedValue(4);
+    const out = await t.inbox.inboxForClient(CLIENT);
+    expect(out.items).toHaveLength(1);
+    expect(out.items[0]).toMatchObject({
+      coach_id: COACH,
+      unread_count: 4,
+      last_message: null,
+      counterpart: { user_id: COACH },
+    });
   });
 });
 
