@@ -530,7 +530,7 @@ const LEGACY_EXCEPTION_TEXT: Readonly<Record<string, number>> = {
   'src/auth/recent-auth.guard.ts': 1,
   'src/billing/billing.service.ts': 10,
   'src/bloodwork/bloodwork-stale.scheduler.ts': 1,
-  'src/checkout/checkout-webhook-handler.service.ts': 14,
+  'src/checkout/checkout-webhook-handler.service.ts': 12,
   'src/checkout/checkout.service.ts': 2,
   'src/checkout/dunning-v2/dunning-lockout.guard.ts': 1,
   'src/checkout/dunning-v2/dunning-lockout.scheduler.ts': 1,
