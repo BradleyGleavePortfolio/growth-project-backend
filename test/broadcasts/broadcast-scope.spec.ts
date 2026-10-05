@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import { BroadcastScopeService } from '../../src/broadcasts/broadcast-scope.service';
+import type { PrismaService } from '../../src/prisma.service';
 import type { SubCoachScopeService } from '../../src/sub-coach/sub-coach-scope.service';
 import { stub } from './_stub';
 
@@ -8,7 +9,13 @@ import { stub } from './_stub';
  * Postgres in broadcasts-dispatch.live.spec.ts; this pins the decision table
  * and that every read is a FOR SHARE lock.
  */
-type U = { id: string; role: string; coach_id: string | null; deleted_at: Date | null };
+type U = {
+  id: string;
+  role: string;
+  coach_id: string | null;
+  deleted_at: Date | null;
+  archived_at?: Date | null;
+};
 
 function harness(opts: {
   users: Record<string, U | undefined>;
@@ -32,6 +39,7 @@ function harness(opts: {
   const lockMembershipHeadCoachIdInTx = jest.fn(async () => opts.membershipHead ?? null);
   const svc = new BroadcastScopeService(
     stub<SubCoachScopeService>({ lockMembershipHeadCoachIdInTx }),
+    stub<PrismaService>({}),
   );
   const check = (authorId: string, clientId = 'client-1') =>
     svc.lockSendAuthority(stub<Prisma.TransactionClient>(tx), 'head-1', authorId, clientId);
@@ -59,6 +67,14 @@ describe('BroadcastScopeService.lockSendAuthority (A-659-7)', () => {
     expect(
       await harness({
         users: { 'head-1': head, 'client-1': { ...client, deleted_at: new Date() } },
+      }).check('head-1'),
+    ).toBe('not_on_roster');
+  });
+
+  it('C-727-1: a client the coach archived is off the roster at send time', async () => {
+    expect(
+      await harness({
+        users: { 'head-1': head, 'client-1': { ...client, archived_at: new Date() } },
       }).check('head-1'),
     ).toBe('not_on_roster');
   });
@@ -114,5 +130,30 @@ describe('BroadcastScopeService.lockSendAuthority (A-659-7)', () => {
     expect(await harness({ users: { 'client-1': client } }).check('sub-1')).toBe(
       'author_not_in_tenant',
     );
+  });
+});
+
+describe('BroadcastScopeService.resolve (C-727-1)', () => {
+  it('an archived client is in no broadcast audience; live clients keep roster order', async () => {
+    const archived = new Set(['c2']);
+    const findMany = jest.fn(async (a: { where: { id: { in: string[] } } }) =>
+      a.where.id.in.filter((id) => !archived.has(id)).map((id) => ({ id })),
+    );
+    const svc = new BroadcastScopeService(
+      stub<SubCoachScopeService>({
+        getAuthorizedClientIds: async () => ['c3', 'c2', 'c1'],
+        getHeadCoachIdForSubCoach: async () => null,
+      }),
+      stub<PrismaService>({ user: { findMany } }),
+    );
+    expect(await svc.resolve('head-1')).toEqual({
+      actorId: 'head-1',
+      tenantId: 'head-1',
+      clientIds: ['c3', 'c1'],
+    });
+    expect(findMany).toHaveBeenCalledWith({
+      where: { id: { in: ['c3', 'c2', 'c1'] }, archived_at: null },
+      select: { id: true },
+    });
   });
 });
