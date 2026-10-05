@@ -177,6 +177,39 @@ itLive('CoachThreadState + CoachMessage v2 columns RLS as authenticated (live DB
     expect(rows).toEqual([{ relrowsecurity: true, relforcerowsecurity: true }]);
   });
 
+  it('RLS is ENABLE + FORCE on CoachMessage with exactly the production participant policy', async () => {
+    const rls = await prisma.$queryRaw<
+      Array<{ relrowsecurity: boolean; relforcerowsecurity: boolean }>
+    >`
+      SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname = 'CoachMessage'`;
+    expect(rls).toEqual([{ relrowsecurity: true, relforcerowsecurity: true }]);
+    const policies = await prisma.$queryRaw<
+      Array<{
+        policyname: string;
+        permissive: string;
+        roles: string[];
+        cmd: string;
+        qual: string;
+        with_check: string;
+      }>
+    >`
+      SELECT policyname, permissive, roles::text[] AS roles, cmd, qual, with_check
+        FROM pg_policies WHERE tablename = 'CoachMessage'`;
+    const expr =
+      '((app.current_user_id() IS NOT NULL) AND ((coach_id = app.current_user_id()) OR ' +
+      '(client_id = app.current_user_id()) OR (sender_id = app.current_user_id())))';
+    expect(policies).toEqual([
+      {
+        policyname: 'coach_message_participant_access',
+        permissive: 'PERMISSIVE',
+        roles: ['public'],
+        cmd: 'ALL',
+        qual: expr,
+        with_check: expr,
+      },
+    ]);
+  });
+
   it('each participant sees only their own preference row for the shared thread', async () => {
     expect(await visibleStates(id.client, 'student')).toEqual([state.client]);
     expect(await visibleStates(id.coach, 'coach')).toEqual([state.coach]);
