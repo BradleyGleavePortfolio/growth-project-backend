@@ -8,6 +8,7 @@
 //   B-674-16 a re-drive of an existing operation is stamped, so restarted
 //            bounded sweeps reach every owed refund.
 import 'reflect-metadata';
+import type { ClientPurchase } from '@prisma/client';
 import { HOUR, harness, refundRow, seedPurchase } from './support/refund-reversal-harness';
 
 type H = ReturnType<typeof harness>;
@@ -45,7 +46,7 @@ const sends = (h: H) => h.reverseTransfer.mock.calls.map(([a]) => a.amount);
 
 function refund(h: H, id: string) {
   return h.svc.upsertAndApplyRefund({
-    purchase: (h.db.state.clientPurchase as Row[]).find((p) => p.id === id) as any,
+    purchase: (h.db.state.clientPurchase as Row[]).find((p) => p.id === id) as ClientPurchase,
     stripe_refund_id: `re_${id}`,
     stripe_charge_id: `ch_${id}`,
     amount_cents: 2450,
