@@ -452,6 +452,8 @@ export class PayoutNoticeService {
           deep_link: PAYOUT_NOTICE_DEEP_LINK,
           channel: 'push',
           throttle_key: n.id,
+          // Opus C-693-2: one inbox item per notice; hidden only behind its inapp row.
+          push_twin: true,
         });
         if (!pushRow) {
           this.logger.warn(
