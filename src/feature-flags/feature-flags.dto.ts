@@ -38,6 +38,7 @@ export const FEATURE_FLAG_KEYS = [
   'coach_community_wearable_prompts',
   'community_classroom',
   'community_events',
+  'coachless_home',
   'messaging_core_v2',
 ] as const;
 
