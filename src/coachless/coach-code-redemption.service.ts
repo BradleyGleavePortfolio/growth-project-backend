@@ -3,6 +3,7 @@ import { createHash } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { describeFailure } from '../observability/log-pii';
 import {
   INVITE_ATTACH_ERROR,
   InviteCodesService,
@@ -166,7 +167,7 @@ export class CoachCodeRedemptionService {
         })
         .catch((e: unknown) =>
           this.logger.error(
-            `redemption ledger failure-mark failed: ${e instanceof Error ? e.message : String(e)}`,
+            `redemption ledger failure-mark failed: ${describeFailure(e)}`,
           ),
         );
       await this.audit.write({
@@ -181,7 +182,7 @@ export class CoachCodeRedemptionService {
       if (mapped.coachlessCode === COACHLESS_ERROR.REDEMPTION_FAILED) {
         this.logger.error(
           `coach code redemption failed unexpectedly user=${userId} request=${requestId ?? 'none'}: ${
-            err instanceof Error ? err.message : String(err)
+            describeFailure(err)
           }`,
         );
       }
