@@ -356,6 +356,17 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
+      - name: Run coachless featured-coach live RLS suite (A1-COACHLESS)
+        # Applies prisma/migrations/20270301000000_coachless_featured_coach
+        # verbatim on top of the shim + RLS-01 bootstrap + hardened helpers,
+        # then proves self-only reads of CoachCodeRedemption and
+        # CoachlessPromptState (no coach/owner branch), owner-only reads of
+        # FeaturedCoachConfig, no non-service writes, anon deny, CHECK/unique/
+        # FK cascade behaviour and down/up. Refuses to skip under CI=true.
+        run: npx jest --config jest.rls.config.js test/rls/coachless-rls.spec.ts --runInBand --testTimeout=60000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
       - name: Run clinic engagement live RLS suite (#609)
         # Proves the 20270213000000 policies on the real migration output:
         # RLS enabled + forced, the exact policy set, who reads which rows
