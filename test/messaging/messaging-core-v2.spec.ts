@@ -32,6 +32,7 @@ import {
   isMessagingCoreV2Enabled,
   MessagingCoreV2Guard,
 } from '../../src/messaging/messaging-core.feature';
+import { resolveIdempotencyKey } from '../../src/messaging/messaging-idempotency';
 
 const COACH = '11111111-1111-4111-8111-111111111111';
 const CLIENT = '22222222-2222-4222-8222-222222222222';
@@ -287,6 +288,26 @@ describe('idempotent send (offline queue)', () => {
     const data = t.prisma.coachMessage.create.mock.calls[0][0].data;
     expect(data).not.toHaveProperty('client_message_id');
     expect(data).not.toHaveProperty('reply_to_id');
+  });
+
+  it('Idempotency-Key header folds into the body key; bad or mismatched keys are coded 400s', () => {
+    expect(resolveIdempotencyKey(undefined, undefined)).toBeUndefined();
+    expect(resolveIdempotencyKey(KEY.toUpperCase(), undefined)).toBe(KEY);
+    expect(resolveIdempotencyKey(KEY, KEY)).toBe(KEY);
+    let e1: unknown;
+    try {
+      resolveIdempotencyKey('not-a-uuid', undefined);
+    } catch (e) {
+      e1 = e;
+    }
+    expectCode(e1, 400, 'messaging.idempotency_key_invalid');
+    let e2: unknown;
+    try {
+      resolveIdempotencyKey(KEY, MSG);
+    } catch (e) {
+      e2 = e;
+    }
+    expectCode(e2, 400, 'messaging.idempotency_key_mismatch');
   });
 });
 
