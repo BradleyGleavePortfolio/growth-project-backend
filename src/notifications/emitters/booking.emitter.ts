@@ -9,7 +9,7 @@ import { resolveRecipientTimeZone } from '../recipient-timezone';
 
 // Booking lifecycle notifications: one in-app row (the notification center
 // entry) plus a real push through the shared Expo transport
-// (NotificationsService.pushToUser).
+// (NotificationsService.pushToUser) with fixed lock-screen copy.
 //
 // S-SCHED-2:
 //  - Before this, the emitter wrote an in-app row and a channel='push' row but
@@ -33,6 +33,10 @@ import { resolveRecipientTimeZone } from '../recipient-timezone';
 //    is still true when read the next day.
 //  - Copy is plain and calm (no exclamation marks, no emojis). Each message
 //    says what happened and, where there is one, the next step.
+//  - B-714-1 / B-653-1: the push (lock screen) never carries the inbox text.
+//    Its title and body are the fixed per-kind lines in BOOKING_LOCK_SCREEN:
+//    no display name, no coach-written text (type names, notes, reasons).
+//    Only a reminder keeps its time. The full detail stays in the inbox row.
 //  - Emitters never throw: booking state must not fail because delivery did.
 
 export type BookingRecipientRole = 'client' | 'coach';
@@ -123,6 +127,18 @@ export interface BookingLinkReadyPayload extends BaseBookingPayload {
   clientUserId: string;
   coachDisplayName: string;
   scheduledAt: Date;
+}
+
+export interface BookingRequestExpiredPayload extends BaseBookingPayload {
+  recipientUserId: string;
+  recipientRole: BookingRecipientRole;
+  /** The client's name for the coach's notice, the coach's for the client's. */
+  otherPartyDisplayName: string;
+  scheduledAt: Date;
+  /** S-SCHED-5 retry of a partly delivered notice (same rule as reminders). */
+  skipInApp?: boolean;
+  skipPush?: boolean;
+  notificationId?: string | null;
 }
 
 export interface BookingDeliveryOutcome {
@@ -330,6 +346,8 @@ export class BookingEmitter {
       userId: p.coachUserId,
       role: 'coach',
       kind: NotificationKind.BOOKING_RESCHEDULED,
+      // B-653-4: nothing has moved yet; the lock screen says a move is requested.
+      lockScreen: 'move_requested',
       title: 'Session move requested',
       body: `${p.clientDisplayName} asked to move ${typeLabel(p.sessionTypeName, 'a session')} to ${to}. Approve or decline in your booking inbox.`,
       sessionId: p.sessionId,
@@ -400,6 +418,39 @@ export class BookingEmitter {
     });
   }
 
+  // (k) booking_request_expired -> BOTH sides, once each (S-SCHED-5). Calm,
+  // no blame: what happened, that the time is open again, and the next step.
+  async emitRequestExpired(p: BookingRequestExpiredPayload): Promise<BookingDeliveryOutcome> {
+    const tz = await this.zoneFor(p.recipientUserId, p.sessionId);
+    const what = typeLabel(p.sessionTypeName, 'session');
+    const forWhen = tz ? ` for ${formatWhen(p.scheduledAt, tz)}` : '';
+    const body =
+      p.recipientRole === 'client'
+        ? `Your ${what} request${forWhen} was not confirmed in time, so it has closed. Pick another time in Calendar.`
+        : `${p.otherPartyDisplayName}'s ${what} request${forWhen} closed without an answer, and the time is open again.`;
+    return this.deliver({
+      userId: p.recipientUserId,
+      role: p.recipientRole,
+      kind: NotificationKind.BOOKING_REQUEST_EXPIRED,
+      title: 'Session request closed',
+      body,
+      sessionId: p.sessionId,
+      deepLink:
+        p.recipientRole === 'client'
+          ? `tgp://client/sessions/${p.sessionId}`
+          : `tgp://coach/sessions/${p.sessionId}`,
+      payload: {
+        otherPartyDisplayName: p.otherPartyDisplayName,
+        scheduledAt: p.scheduledAt.toISOString(),
+        timeZone: tz,
+        sessionTypeName: p.sessionTypeName ?? null,
+      },
+      skipInApp: p.skipInApp === true,
+      skipPush: p.skipPush === true,
+      notificationId: p.notificationId ?? null,
+    });
+  }
+
   // ── Internal ──────────────────────────────────────────────────────────────
 
   private async reminder(
@@ -463,6 +514,8 @@ export class BookingEmitter {
     skipInApp?: boolean;
     skipPush?: boolean;
     notificationId?: string | null;
+    /** Same kind, different request state: picks the lock-screen line. */
+    lockScreen?: BookingLockScreenState;
   }): Promise<BookingDeliveryOutcome> {
     const body = args.body.slice(0, 160);
     const actionScreen = BOOKING_PUSH_SCREEN[args.role];
@@ -513,7 +566,9 @@ export class BookingEmitter {
         outcome.push = 'disabled';
         return outcome;
       }
-      const result = await this.notifications.pushToUser(args.userId, args.title, body, {
+      // B-714-1 / B-653-1: fixed per-kind lock-screen copy, never the inbox text.
+      const lock = bookingLockScreenCopy(args.kind, args.payload, args.lockScreen);
+      const result = await this.notifications.pushToUser(args.userId, lock.title, lock.body, {
         kind: args.kind,
         category: NotificationCategory.COACH_DIRECT,
         actionScreen,
@@ -559,6 +614,102 @@ export class BookingEmitter {
  */
 export function emitterDiagnostic(err: unknown): string {
   return safeLogDiagnostic(err);
+}
+
+// B-714-1 / B-653-1 (lock-screen privacy): a lock screen is readable by anyone
+// holding the phone, so a booking push shows ONLY these fixed lines, one per
+// kind. Wording matches the push stack's lock-screen-copy.ts (B-692-1), so
+// routing through its sender keeps the same copy. Unknown kinds get a
+// generic line. No first person, no exclamation marks.
+const LOCK_OPEN = 'Open the app to see it.';
+const LOCK_DETAILS = 'Open the app to see the details.';
+export const BOOKING_LOCK_SCREEN: Readonly<Record<string, { title: string; body: string }>> = {
+  [NotificationKind.BOOKING_REQUESTED]: {
+    title: 'Session request',
+    body: `There is a new session request. ${LOCK_OPEN}`,
+  },
+  [NotificationKind.BOOKING_CONFIRMED]: {
+    title: 'Session confirmed',
+    body: `Your session is confirmed. ${LOCK_DETAILS}`,
+  },
+  [NotificationKind.BOOKING_DECLINED]: {
+    title: 'Session request',
+    body: `Your session request was declined. ${LOCK_DETAILS}`,
+  },
+  [NotificationKind.BOOKING_CANCELLED]: {
+    title: 'Session cancelled',
+    body: `A session was cancelled. ${LOCK_DETAILS}`,
+  },
+  [NotificationKind.BOOKING_RESCHEDULED]: {
+    title: 'Session moved',
+    body: `A session has a new time. ${LOCK_OPEN}`,
+  },
+  [NotificationKind.BOOKING_REMINDER_24H]: {
+    title: 'Session reminder',
+    body: `You have a session in about 24 hours. ${LOCK_DETAILS}`,
+  },
+  [NotificationKind.BOOKING_REMINDER_1H]: {
+    title: 'Session starting soon',
+    body: `Your session starts in about an hour. ${LOCK_DETAILS}`,
+  },
+  [NotificationKind.BOOKING_LINK_NEEDED]: {
+    title: 'Add a call link',
+    body: 'A session has no call link yet. Open the app to add one.',
+  },
+  [NotificationKind.BOOKING_LINK_READY]: {
+    title: 'Call link ready',
+    body: `The call link for your session is ready. ${LOCK_OPEN}`,
+  },
+  [NotificationKind.BOOKING_REQUEST_EXPIRED]: {
+    title: 'Session request closed',
+    body: `A session request has closed. ${LOCK_DETAILS}`,
+  },
+};
+/**
+ * B-653-4: a client's move request on a coach-approval session keeps the
+ * booking_rescheduled kind, but nothing has moved until the coach approves,
+ * so its lock-screen line says a move is requested.
+ */
+export type BookingLockScreenState = 'move_requested';
+export const BOOKING_MOVE_REQUESTED_LOCK_SCREEN: Readonly<{ title: string; body: string }> = {
+  title: 'Time change requested',
+  body: 'A client asked to move a session. Open the app to review.',
+};
+const LOCK_DEFAULT = {
+  title: 'The Growth Project',
+  body: `You have a new notification. ${LOCK_OPEN}`,
+};
+
+/**
+ * The lock-screen title and body for a booking push. Reads only the kind and,
+ * for reminders, the stored instant and zone (the payload's scheduledAt and
+ * timeZone); every other payload field is ignored, so no name or free text
+ * can reach the lock screen. A reminder with no usable zone or instant gets
+ * its fixed line with no clock time.
+ */
+export function bookingLockScreenCopy(
+  kind: string,
+  context?: { scheduledAt?: unknown; timeZone?: unknown } | null,
+  state?: BookingLockScreenState,
+): { title: string; body: string } {
+  if (state === 'move_requested' && kind === NotificationKind.BOOKING_RESCHEDULED) {
+    return { ...BOOKING_MOVE_REQUESTED_LOCK_SCREEN };
+  }
+  const fixed = BOOKING_LOCK_SCREEN[kind] ?? LOCK_DEFAULT;
+  const tz = typeof context?.timeZone === 'string' ? context.timeZone : null;
+  const at = typeof context?.scheduledAt === 'string' ? new Date(context.scheduledAt) : null;
+  if (!tz || !at || Number.isNaN(at.getTime())) return { ...fixed };
+  try {
+    if (kind === NotificationKind.BOOKING_REMINDER_24H) {
+      return { title: fixed.title, body: `Your session is on ${formatWhen(at, tz)}.` };
+    }
+    if (kind === NotificationKind.BOOKING_REMINDER_1H) {
+      return { title: fixed.title, body: `Your session starts at ${formatTime(at, tz)}.` };
+    }
+  } catch {
+    // An unusable zone keeps the fixed line (no clock time, never UTC).
+  }
+  return { ...fixed };
 }
 
 function typeLabel(name: string | null | undefined, fallback: string): string {

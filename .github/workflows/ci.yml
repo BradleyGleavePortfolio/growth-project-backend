@@ -552,8 +552,12 @@ jobs:
         # the per-file DROP SCHEMA public CASCADE + full-schema rebuild never race
         # on the shared DB. NODE_OPTIONS raises the heap (same rationale as the
         # other lanes: the default ~2GB heap OOM-aborts under --runInBand).
+        # S-SCHED-2 adds test/scheduling-booking-concurrency.live.spec.ts: the
+        # no-double-booking proof (exclusion constraint applied from its
+        # migration file + per-coach advisory lock) on the same gate/bootstrap.
         run: |
           npx jest \
+            test/scheduling-booking-concurrency.live.spec.ts \
             test/mwb-3-lock-token.spec.ts \
             test/mwb-3-autosave.controller.spec.ts \
             test/mwb-3-autosave.service.spec.ts \
