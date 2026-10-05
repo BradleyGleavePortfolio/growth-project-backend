@@ -189,6 +189,29 @@ describe('B-TR8-120 — one shared trial rule across the native checkout and the
     expect(offers.get(PKG_A)).toEqual({ trial_days: 7, available: true, reason: 'offered' });
   });
 
+  // B-673-3 (Sol): an abandoned A sheet (no card) never uses up the trial B's offer shows.
+  it('ordinary abandoned A checkout: the B offer agrees with the trial actually sold', async () => {
+    const w = world();
+    // Open A's card sheet, then dismiss it without saving a card.
+    await w.buy(PKG_A, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+    // Refresh the coach's offers and choose B, sequentially, on the same device.
+    const offers = await w.usage.offersForClient(CLIENT, w.prisma._packages);
+    const next = await w.buy(PKG_B, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+    expect(offers.get(PKG_B)?.available).toBe(next.plan.trial_days > 0);
+    expect(next.plan.trial_days).toBe(14);
+    expect(w.stripe.cancelSubscription).toHaveBeenCalledWith(w.row(PKG_A).stripe_subscription_id);
+    expect(w.row(PKG_A).status).toBe('expired');
+  });
+
+  it('same-plan resume is unchanged: reopening A reuses its attempt and its trial', async () => {
+    const w = world();
+    const first = await w.buy(PKG_A, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+    const again = await w.buy(PKG_A, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc');
+    expect(again.subscription_id).toBe(first.subscription_id);
+    expect(again.plan.trial_days).toBe(7);
+    expect(w.stripe.cancelSubscription).not.toHaveBeenCalled();
+  });
+
   it('native trial started: the ledger holds it, the offer says already_used and the next checkout has no trial', async () => {
     const w = world();
     const first = await w.buy(PKG_A, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');

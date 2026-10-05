@@ -125,13 +125,26 @@ describe('R1-1 a trial attempt after its $0 trial invoice (status trialing, no c
     expect(stripe.createSubscription).toHaveBeenCalledTimes(1);
   });
 
-  it('still holds the one trial with this coach for another package', async () => {
+  it('B-673-3: dismissed without a card, it is retired and another package gets its trial', async () => {
     const { svc, stripe, prisma } = setup({ trial_days: 7 });
     prisma._packages.push(recurringPkg({ id: PKG2, trial_days: 14, stripe_price_id: 'price_b' }));
     await svc.createSubscriptionIntent(CLIENT, { package_id: PKG, idempotency_key: KEY1 });
     prisma._purchases[0].status = 'trialing';
     await svc.createSubscriptionIntent(CLIENT, { package_id: PKG2, idempotency_key: KEY2 });
-    expect(stripe.createSubscription).toHaveBeenCalledTimes(2);
+    expect(stripe.cancelSubscription).toHaveBeenCalledWith(prisma._purchases[0].stripe_subscription_id);
+    expect(prisma._purchases[0].status).toBe('expired');
+    expect(stripe.createSubscription.mock.calls[1][0].trialPeriodDays).toBe(14);
+  });
+
+  it('with its card saved, it still holds the one trial with this coach for another package', async () => {
+    const { svc, stripe, prisma } = setup({ trial_days: 7 });
+    prisma._packages.push(recurringPkg({ id: PKG2, trial_days: 14, stripe_price_id: 'price_b' }));
+    await svc.createSubscriptionIntent(CLIENT, { package_id: PKG, idempotency_key: KEY1 });
+    prisma._purchases[0].status = 'trialing';
+    const sub = stripe._subs.get(prisma._purchases[0].stripe_subscription_id);
+    Object.assign(sub, { default_payment_method: 'pm_card', cancel_at_period_end: false });
+    await svc.createSubscriptionIntent(CLIENT, { package_id: PKG2, idempotency_key: KEY2 });
+    expect(stripe.cancelSubscription).not.toHaveBeenCalled();
     expect(stripe.createSubscription.mock.calls[1][0].trialPeriodDays).toBeUndefined();
   });
 
