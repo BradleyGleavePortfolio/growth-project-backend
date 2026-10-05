@@ -66,8 +66,26 @@ export interface PostCheckContext {
   };
   macro_method: { floor_kcal: number | null };
   coach: { has_coach: boolean; coach_first_name: string | null };
-  /** Optional extra kcal facts (food entries, wearable active energy, meal plan). */
-  extra_kcal_facts?: number[];
+  /**
+   * B-668-3: extra kcal facts, each kept in its own field family and day, so
+   * one kind of number can never validate a claim about another (a burned
+   * total is not intake, yesterday is not today, a meal-plan slot is not a
+   * log).
+   */
+  kcal_facts?: PostCheckKcalFacts;
+}
+
+export interface PostCheckKcalFacts {
+  /** Today's individual logged food entries (intake, today). */
+  intake_entries_today?: number[];
+  /** Logged daily intake totals of earlier days (intake, past). */
+  intake_past_days?: number[];
+  /** Active energy burned today (wearable). */
+  burned_today?: number[];
+  /** Active energy burned on earlier days, and the 7-day average (wearable). */
+  burned_past?: number[];
+  /** kcal numbers of the client's meal plan slots (a plan, not a log). */
+  meal_plan?: number[];
 }
 
 export interface PostCheckInput {
@@ -129,11 +147,28 @@ const FAMILY_WORDS: Array<{ family: KcalFamily; rx: RegExp }> = [
 /** Clause boundaries inside one sentence. */
 const CLAUSE_SPLIT = /,|;|\s[-\u2013\u2014]\s|\s(?:and|but|while|with|which|so)\s/i;
 const KCAL_NUMBER = /\b(\d{1,2},\d{3}|\d{1,5})\s?(kcal|calories|cals?)\b/gi;
+/**
+ * B-666-3 (Opus): the unit-before-number form ("keep your calories at 900 a
+ * day", "calories: 900"). Group 1 is the number.
+ */
+const KCAL_NUMBER_UNIT_FIRST =
+  /\b(?:kcal|calories|cals?)\s*(?:intake\s*)?(?:at|to|of|around|about|near|under|below|:|=|is|are|be|should be|stays? at)?\s*(?:about\s+|around\s+|roughly\s+|only\s+|just\s+|~\s?)?(\d{1,2},\d{3}|\d{2,5})\b(?!\s?(?:kcal|calories|cals?|g\b|grams?|%|percent|minutes?|min\b|steps?|reps?|sets?|hours?))/gi;
+/**
+ * B-666-3 (Opus): a whole-day amount marker. Unlike DAILY it excludes
+ * "today" ("today's lunch was 450 kcal" is one meal, not a daily intake).
+ */
+const WHOLE_DAY =
+  /\b(a|per|each|every) day\b|\bdaily\b|\bin total\b|\bfor the (whole )?day\b|\ba day'?s\b/i;
+/** A clause about one meal, snack or serving is never a daily amount. */
+const MEAL_CLAUSE =
+  /\b(breakfast|lunch|dinner|supper|snacks?|meals?|servings?|portions?|plates?|bowls?|bars?|shakes?)\b/i;
 /** A kcal number that is a change (deficit, surplus, "300 fewer"), not an intake. */
 const KCAL_DELTA_AFTER =
   /^\s*(deficit|surplus|less|fewer|more|extra|over|under|below|above|short|a day (deficit|surplus)|per day (deficit|surplus))\b/i;
+// B-668-3: only the imperative "burn 300 kcal" is a change amount; "you
+// burned 200 kcal today" states a fact and is checked against burned energy.
 const KCAL_DELTA_BEFORE =
-  /\b(deficit|surplus) of\s*$|\b(cut|trim|drop|remove|subtract|add|burn(ed)?|burnt)\s+(about\s+|around\s+|roughly\s+)?$/i;
+  /\b(deficit|surplus) of\s*$|\b(cut|trim|drop|remove|subtract|add|burn)\s+(an extra\s+|another\s+|about\s+|around\s+|roughly\s+)?$/i;
 const MACRO_NUMBER =
   /\b(\d{1,4})\s?g(?:rams?)?\s+(?:of\s+)?(protein|carbs?|carbohydrates|fat|fats)\b/gi;
 const MACRO_NUMBER_REVERSED =
@@ -144,7 +179,10 @@ const MEDICATION_DIRECTIVE: RegExp[] = [
   /\b\d+(\.\d+)?\s?(mg|mcg|µg|milligrams?|micrograms?|iu|units of insulin)\b/i,
   /\b(take|taking|try|use|using|pop|start|grab|have)\s+(some\s+|an?\s+|a couple of\s+|two\s+)?(ibuprofen|advil|motrin|aleve|naproxen|acetaminophen|paracetamol|tylenol|aspirin|antibiotics?|painkillers?|pain ?relievers?|muscle relaxants?|anti-?inflammator(y|ies)|nsaids?|prednisone|cortisone|antihistamines?|benadryl|melatonin|sleeping pills?)\b/i,
   /\b(ibuprofen|advil|motrin|aleve|naproxen|acetaminophen|paracetamol|tylenol|aspirin|nsaids?|prednisone)\b[^.]{0,60}\b(twice|three times|every \d+ hours|daily|a day|per day|with food|before (bed|training))\b/i,
-  /\b(increase|decrease|lower|raise|stop|skip|double|halve|pause|change|adjust|time)\s+(taking\s+)?(your\s+)?(medication|meds|dose|insulin|prescription|metformin|ozempic|wegovy|mounjaro|semaglutide|tirzepatide)\b/i,
+  /\b(increase|decrease|lower|raise|stop|skip|double|halve|pause|change|adjust|time)\s+(taking\s+)?(your\s+)?(medication|meds|dose|prescription|metformin|ozempic|wegovy|mounjaro|semaglutide|tirzepatide)\b/i,
+  // B-666-1 (Opus): "carbs raise insulin" is physiology; changing the
+  // client's own insulin is a medication directive.
+  /\b(increase|decrease|lower|raise|stop|skip|double|halve|pause|change|adjust|time)\s+(taking\s+(your\s+)?|your\s+)insulin\b/i,
   /\b(ice|heat) (it|the area|your [a-z]+) (for )?\d+\s?(minutes|min)\b[^.]{0,30}\b(times|every)\b/i,
 ];
 const FALSE_REASSURANCE: RegExp[] = [
@@ -156,7 +194,34 @@ const FALSE_REASSURANCE: RegExp[] = [
   /\b(it'?s|it is|that'?s|that is|this is) (probably |likely |almost certainly |definitely )?(fine|nothing serious|nothing|not serious|harmless|safe to (train|keep going))\b/i,
   /\b(safe|fine|okay|ok) (for you )?to (keep )?(train|lift|run|exercise) (on|with) (it|that)\b/i,
 ];
-const STOP_DIRECTIVE = /\b(stop|pause|skip|leave out|avoid|ease off)\b/i;
+const STOP_DIRECTIVE =
+  /\b(stop|pause|skip|leave out|avoid|ease off|drop|hold off on|sit out|back off)\b/gi;
+/**
+ * B-666-3 (Sol): a stop word only counts when it is an AFFIRMATIVE instruction
+ * about the painful movement: not negated in its clause ("do not stop",
+ * "never skip", "no need to pause", "avoid skipping"), and with the pain or
+ * the movement as its object in the same clause.
+ */
+const STOP_NEGATED_BEFORE =
+  /(?:\b(?:not|never|no|without|instead of|rather than|avoid|nothing|dont|cant|wont|shouldnt|doesnt|didnt)\b|n't\b)(\s+\w+){0,3}\s*$/i;
+const STOP_OBJECT =
+  /\b(hurts?|hurting|pain(ful|s)?|sore(ness)?|aches?|aching|discomfort|twinges?|injur(y|ed|ies)|movements?|motions?|exercises?|lifts?|lifting|sets?|reps?|sessions?|training|workouts?|activit(y|ies)|range|load|weight|squats?|squatting|lunges?|deadlifts?|press(es|ing)?|bench(ing)?|rows?|rowing|curls?|pull-?ups?|push-?ups?|runs?|running|jog(s|ging)?|jumps?|jumping|sprints?|sprinting|cardio|planks?|stretch(es|ing)?|that|it|whatever|anything)\b/i;
+
+/** B-666-3 (Sol): the reply tells the client, affirmatively, to stop the movement that hurts. */
+function affirmativeStop(text: string): boolean {
+  for (const sentence of text.split(/(?<=[.!?])\s+/)) {
+    for (const m of sentence.matchAll(STOP_DIRECTIVE)) {
+      const at = m.index ?? 0;
+      const { text: clause, start } = clauseSpanAt(sentence, at);
+      const before = clause.slice(0, at - start);
+      const after = clause.slice(at - start + m[0].length);
+      if (STOP_NEGATED_BEFORE.test(before)) continue;
+      if (/^\s*(by|in|over|at|eating|logging|worrying|thinking)\b/i.test(after)) continue;
+      if (STOP_OBJECT.test(after) || STOP_OBJECT.test(before)) return true;
+    }
+  }
+  return false;
+}
 const COACH_ROUTE = /\bcoach\b/i;
 
 /** The reply routes the client to their coach (by role, or by the coach's first name). */
@@ -175,22 +240,49 @@ const DIAGNOSIS: RegExp[] = [
   // treat", "a dose of cardio"). Only treatment of a medical object, or a
   // medication dose, is diagnosis/treatment language.
   /\btreat(s|ed|ing)?\s+(it|this|that|the|your|an?|my)\s+(?:[a-z-]+\s+){0,2}(injury|injuries|pain|condition|symptoms?|infection|inflammation|wound|sprain|strain|tear|fracture|tendon|joint|knee|back|shoulder|[a-z]+itis)\b/i,
-  /\b(you|i|we|they) (can|could|should|would|will) treat\b(?! yourself)/i,
+  // B-666-1 (Opus): "you can treat today as a lighter day" is coaching;
+  // treating a medical object, or treating it with something, is not.
+  /\btreat(s|ed|ing)?\s+(it|this|that|them)\s+with\b/i,
   /\btreatments?\s+(plan|for|of|options?|protocol)\b/i,
-  /\bcure(s|d)?\b/i,
-  /\bprescri(be|bed|ption|ptions)\b/i,
+  // B-666-1 (Opus): "cured meats" is food; curing a condition is not.
+  /\bcure(s|d)?\s+(your|this|that|the|it|my|his|her|their)\b|\b(a|the|no|any) cure (for|of)\b/i,
+  // B-666-1 (Opus): "your coach prescribed four sets" is a program; a
+  // prescription for a medicine is not.
+  /\bprescri(be|bes|bed|bing|ption|ptions)\b[^.]{0,30}\b(medication|medicine|meds|drugs?|pills?|tablets?|antibiotics?|painkillers?|steroids?|insulin|rehab|physio(therapy)?|cream|ointment|inhaler)\b/i,
+  /\b(medication|medicine|meds|drugs?|pills?|antibiotics?|painkillers?)\b[^.]{0,30}\bprescri(be|bed|ption)\b|\b(a|your|the) prescription\b/i,
   /\b(dose|dosage|dosing)\b[^.]{0,30}\b(medication|meds|medicine|insulin|drug|pills?|tablets?|capsules?|mg|mcg|milligrams?)\b/i,
   /\b(medication|meds|medicine|insulin|drug|pill|prescription)\s+(dose|dosage|dosing)\b/i,
 ];
 
+/**
+ * B-666-1 (Opus): substances that are also everyday physiology or food words
+ * ("a mild diuretic", "releases growth hormone", "carbs raise insulin").
+ * They are banned only as advice: an intake directive, an endorsement, or a
+ * weight, fat-loss or weigh-in purpose.
+ */
+const DUAL_USE_SUBSTANCE = '(diuretics?|laxatives?|water pills?|insulin|hgh|growth hormone)';
+const DUAL_USE_ADVICE: RegExp[] = [
+  new RegExp(
+    `\\b(take|taking|use|using|try|trying|start|starting|get|getting|buy|inject|injecting|pop|grab|add)\\s+(some\\s+|a\\s+|an\\s+|the\\s+|your\\s+)?([a-z-]+\\s+)?${DUAL_USE_SUBSTANCE}\\b`,
+    'i',
+  ),
+  new RegExp(
+    `\\b${DUAL_USE_SUBSTANCE}\\b[^.]{0,40}\\b(can|will|would|could|may|might|should|help|helps|work|works)\\s+(help|work|drop|reduce|flush|speed|get|make|cut|lean|shred|you)\\b`,
+    'i',
+  ),
+  new RegExp(
+    `\\b${DUAL_USE_SUBSTANCE}\\b[^.]{0,60}\\b(lose|losing|drop|dropping|cut|cutting|shred(ded|ding)?|lean(er)?|weight|weigh-?ins?|fat loss|burn fat|make weight)\\b`,
+    'i',
+  ),
+];
+
 const BANNED: RegExp[] = [
-  /\b(anabolic\s+steroids?|steroids?|sarms?|clenbuterol|ephedrine|dnp|trenbolone|hgh|growth hormone)\b/i,
+  /\b(anabolic\s+steroids?|steroids?|sarms?|clenbuterol|ephedrine|dnp|trenbolone)\b/i,
   // B-651-3: starvation is banned as advice, not as a negated mention ("you
   // are not starving yourself by eating at your target").
   /(?<!\b(?:not|never|no|don'?t|do not|avoid|without|stop|instead of)\s+(?:\w+\s+){0,2})\bstarv(e|ation|ing)\b/i,
   /\b(water\s+fast(?:ing)?(?:\s+for\s+\d+\s+days?)?|hcg\s+diet|cleanse|detox tea|juice cleanse)\b/i,
-  /\b(diuretics?|laxatives?|water pills?)\b/i,
-  /\binsulin\b[^.]{0,60}\b(weight|fat|lean(er)?|cut(ting)?|shred(ded)?)\b/i,
+  ...DUAL_USE_ADVICE,
   /\b(purge|purging)\b[^.]{0,40}\b(calories|meal|food)\b/i,
 ];
 
@@ -220,13 +312,36 @@ function macroKeyOf(word: string): MacroKey {
 const finite = (xs: Array<number | null | undefined>): number[] =>
   xs.filter((n): n is number => typeof n === 'number' && Number.isFinite(n));
 
-/** kcal facts of the given field families (B-651-7: never pooled across families). */
-function kcalFacts(ctx: PostCheckContext, families: ReadonlySet<KcalFamily>): number[] {
+/** A claim about an earlier day ("yesterday you logged ..."), not today. */
+const PAST_DAY =
+  /\b(yesterday|last (night|week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|on (monday|tuesday|wednesday|thursday|friday|saturday|sunday)|\d+ days? ago|the day before|earlier this week|over the (last|past) \d+ days|this past week)\b/i;
+/** A claim about the meal plan ("your plan has 450 kcal at lunch"), not a log. */
+const PLAN_WORD = /\b(meal plan|your plan|the plan|planned)\b/i;
+
+/**
+ * kcal facts of the given field families (B-651-7: never pooled across
+ * families). B-668-3: also never pooled across days or sources: a claim about
+ * today is checked against today's facts, a claim about an earlier day against
+ * earlier days, and a meal-plan claim against the plan.
+ */
+function kcalFacts(
+  ctx: PostCheckContext,
+  families: ReadonlySet<KcalFamily>,
+  sentence = '',
+): number[] {
   const out: Array<number | null | undefined> = [];
-  if (families.has('intake')) out.push(ctx.today.kcal, ...(ctx.extra_kcal_facts ?? []));
+  const f = ctx.kcal_facts ?? {};
+  const past = PAST_DAY.test(sentence);
+  if (families.has('intake')) {
+    if (past) out.push(...(f.intake_past_days ?? []));
+    else out.push(ctx.today.kcal, ...(f.intake_entries_today ?? []));
+    if (PLAN_WORD.test(sentence)) out.push(...(f.meal_plan ?? []));
+  }
   if (families.has('remaining')) out.push(ctx.today.remaining_kcal);
   if (families.has('average')) out.push(ctx.last_7_days.avg_kcal_on_logged_days);
-  if (families.has('burned')) out.push(...(ctx.extra_kcal_facts ?? []));
+  if (families.has('burned')) {
+    out.push(...(past || families.has('average') ? (f.burned_past ?? []) : (f.burned_today ?? [])));
+  }
   if (families.has('target')) out.push(ctx.targets.calories);
   if (families.has('floor')) out.push(ctx.macro_method.floor_kcal);
   return finite(out);
@@ -352,14 +467,31 @@ function judgeSentence(
   floor: number,
   grounded: boolean,
 ): NumberVerdict {
-  for (const m of s.matchAll(KCAL_NUMBER)) {
-    const n = toNumber(m[1]);
-    const at = m.index ?? 0;
+  const kcalHits: Array<{ n: number; at: number; end: number }> = [
+    ...[...s.matchAll(KCAL_NUMBER)].map((m) => ({
+      n: toNumber(m[1]),
+      at: m.index ?? 0,
+      end: (m.index ?? 0) + m[0].length,
+    })),
+    ...[...s.matchAll(KCAL_NUMBER_UNIT_FIRST)].map((m) => {
+      const at = (m.index ?? 0) + m[0].lastIndexOf(m[1]);
+      return { n: toNumber(m[1]), at, end: at + m[1].length };
+    }),
+  ];
+  for (const { n, at, end } of kcalHits) {
     const clause = clauseAt(s, at);
     const { directive, daily } = directiveAt(s, clause);
     // "a 300 kcal deficit", "300 kcal less", "cut 300 kcal": a change, not an intake.
-    const delta =
-      KCAL_DELTA_AFTER.test(s.slice(at + m[0].length)) || KCAL_DELTA_BEFORE.test(s.slice(0, at));
+    const delta = KCAL_DELTA_AFTER.test(s.slice(end)) || KCAL_DELTA_BEFORE.test(s.slice(0, at));
+    // B-666-3 (Opus): default-deny below the floor. A whole-day amount below
+    // the floor is refused whatever verb carries it ("Try 900 calories a
+    // day", "900 calories a day is plenty"), unless the clause states a
+    // fact of the client's own data (logged / remaining / average / burned),
+    // a change amount, or one meal.
+    if (!delta && n > 0 && n < floor && WHOLE_DAY.test(clause) && !MEAL_CLAUSE.test(clause)) {
+      const role = roleOf(s, at, end);
+      if (!FACT_FAMILIES.some((f) => role.has(f))) return 'calorie_floor';
+    }
     if (daily && !delta) {
       // B-651-6: every positive daily value below the floor is refused, and a
       // daily directive is never waived because the digits match client_data.
@@ -368,7 +500,7 @@ function judgeSentence(
       continue;
     }
     if (directive || delta) continue; // a meal-level suggestion or a change amount
-    const role = roleOf(s, at, at + m[0].length);
+    const role = roleOf(s, at, end);
     if (role.size === 0) continue;
     // Not a grounded turn (coach surface, or no client data was expected):
     // there are no client facts to compare with, only the floor applies.
@@ -376,7 +508,7 @@ function judgeSentence(
     const factFamilies = new Set(FACT_FAMILIES.filter((f) => role.has(f)));
     if (factFamilies.size > 0) {
       // A quoted fact must match a fact of its OWN family ("670 kcal left").
-      if (ctx && matchesFact(n, kcalFacts(ctx, factFamilies))) continue;
+      if (ctx && matchesFact(n, kcalFacts(ctx, factFamilies, s))) continue;
       return 'ungrounded_number';
     }
     if (role.has('floor') && ctx && matchesFact(n, kcalFacts(ctx, new Set(['floor'])))) continue;
@@ -468,7 +600,34 @@ export const ROMAN_POST_CHECK_TEMPLATES = {
  * characters are dropped, exactly as the SafetyRouter normalises user text.
  */
 function predicateForm(text: string): string {
-  return normalizeForSafety(text);
+  return normalizeForSafety(presentationFree(text));
+}
+
+/** A Markdown list marker, quote marker or heading at the start of a line. */
+const LINE_MARKER =
+  /^[ \t]*(?:#{1,6}|>+|[-*+\u2022\u2023\u2043\u2219\u25E6\u25AA\u25CF]|\(?\d{1,3}[.)])[ \t]+/;
+/** Inline emphasis and code marks (`**`, `*`, `__`, `_` at a word edge, backticks, `~~`). */
+const INLINE_MARKS = /\*+|`+|~~|(?<![\p{L}\p{N}])_+|_+(?![\p{L}\p{N}])/gu;
+
+/**
+ * B-666-2 (Sol): presentation syntax never changes what a sentence says, so
+ * the predicates read the reply without it. Emphasis and code marks are
+ * dropped ("Eat **900 kcal** per day" reads as "Eat 900 kcal per day"), and
+ * each list item or heading becomes its own sentence ("- Eat 900 kcal per
+ * day" reads as "Eat 900 kcal per day"). The client still receives the
+ * original text when nothing fires.
+ */
+function presentationFree(text: string): string {
+  const out: string[] = [];
+  for (const raw of (text ?? '').split(/\r?\n/)) {
+    const item = LINE_MARKER.test(raw);
+    const line = raw.replace(LINE_MARKER, '').replace(INLINE_MARKS, '').trim();
+    if (!line) continue;
+    const prev = out.length - 1;
+    if (item && prev >= 0 && !/[.!?:;]$/.test(out[prev])) out[prev] += '.';
+    out.push(line);
+  }
+  return out.join(' ');
 }
 
 /**
@@ -483,7 +642,7 @@ function medicalReplyGap(
 ): 'false_reassurance' | 'safe_step_missing' | null {
   const t = predicateForm(text);
   if (FALSE_REASSURANCE.some((rx) => rx.test(t))) return 'false_reassurance';
-  if (routerClass === 'injury_pain' && !STOP_DIRECTIVE.test(t)) return 'safe_step_missing';
+  if (routerClass === 'injury_pain' && !affirmativeStop(t)) return 'safe_step_missing';
   if (!routesToCoach(t, ctx)) return 'safe_step_missing';
   return null;
 }
