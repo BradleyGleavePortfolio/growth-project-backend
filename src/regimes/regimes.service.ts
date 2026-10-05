@@ -18,6 +18,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { assertNotInActiveClinicSet } from '../workout-builder/program-guards';
 import { RegimeRevisionRetentionService } from './regime-revision-retention.service';
 
 export interface RegimeListItem {
@@ -309,7 +310,14 @@ export class RegimesService {
     id: string,
   ): Promise<{ id: string; archived_at: Date }> {
     await this.assertCoach(coachId);
-    await this.requireOwnedRegime(coachId, id);
+    const regime = await this.requireOwnedRegime(coachId, id);
+    // S-MWB-3 B-640-11: a regime that an active clinic consultation set uses
+    // stays live (onboarding completion refuses an archived set master).
+    await assertNotInActiveClinicSet(this.prisma, {
+      id: regime.id,
+      coach_id: coachId,
+      owner_user_id: regime.owner_user_id,
+    });
 
     const now = new Date();
     // WHERE-guard on archived_at=null keeps this idempotent: a second archive

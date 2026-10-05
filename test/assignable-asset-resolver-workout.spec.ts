@@ -2,6 +2,18 @@ import { WorkoutAssetResolver } from '../src/packages/asset-resolvers/workout.re
 import { ResolverSubCoachScope } from '../src/packages/asset-resolvers/sub-coach-scope.helper';
 import { SubCoachOutOfScopeError } from '../src/packages/asset-resolvers/assignable-asset-resolver.errors';
 
+/** S-MWB (C-640-7): the program-delivery dependency is required; these legacy
+ * plan-id cases see no master program, so the single-plan path runs. */
+function noPrograms<T = ConstructorParameters<typeof WorkoutAssetResolver>[2]>(): T {
+  const stub: unknown = {
+    findDeliverableMaster: jest.fn(async () => null),
+    isProgramMaster: jest.fn(async () => false),
+    deliver: jest.fn(),
+    deliverInTx: jest.fn(),
+  };
+  return stub as T;
+}
+
 // PR-7 — WorkoutAssetResolver delegates to WorkoutBuilderService.assignPlan
 // (the same service the coach-facing assign-workout endpoint uses) so the
 // resolver does not duplicate assignment SQL. The tests therefore focus on
@@ -33,6 +45,7 @@ describe('WorkoutAssetResolver', () => {
     const resolver = new WorkoutAssetResolver(
       makeWorkoutBuilder(),
       new ResolverSubCoachScope(makeSubCoachScope({ allowed: true, isSub: false })),
+      noPrograms(),
     );
     expect(resolver.canHandle('workout_plan')).toBe(true);
     expect(resolver.canHandle('workout_program')).toBe(true);
@@ -45,7 +58,7 @@ describe('WorkoutAssetResolver', () => {
     const scope = new ResolverSubCoachScope(
       makeSubCoachScope({ allowed: true, isSub: false }),
     );
-    const resolver = new WorkoutAssetResolver(wb, scope);
+    const resolver = new WorkoutAssetResolver(wb, scope, noPrograms());
 
     const before = Date.now();
     const res = await resolver.materialise({
@@ -80,6 +93,7 @@ describe('WorkoutAssetResolver', () => {
     const resolver = new WorkoutAssetResolver(
       wb,
       new ResolverSubCoachScope(subScope),
+      noPrograms(),
     );
 
     await resolver.materialise({
@@ -105,6 +119,7 @@ describe('WorkoutAssetResolver', () => {
     const resolver = new WorkoutAssetResolver(
       wb,
       new ResolverSubCoachScope(subScope),
+      noPrograms(),
     );
 
     await expect(
@@ -128,6 +143,7 @@ describe('WorkoutAssetResolver', () => {
       new ResolverSubCoachScope(
         makeSubCoachScope({ allowed: true, isSub: false }),
       ),
+      noPrograms(),
     );
     await resolver.materialise({
       clientId: 'c-abc',
@@ -151,6 +167,7 @@ describe('WorkoutAssetResolver', () => {
       new ResolverSubCoachScope(
         makeSubCoachScope({ allowed: true, isSub: false }),
       ),
+      noPrograms(),
     );
     await resolver.materialise({
       clientId: 'c1',
@@ -169,6 +186,7 @@ describe('WorkoutAssetResolver', () => {
       new ResolverSubCoachScope(
         makeSubCoachScope({ allowed: true, isSub: false }),
       ),
+      noPrograms(),
     );
     await resolver.materialise({
       clientId: 'c1',

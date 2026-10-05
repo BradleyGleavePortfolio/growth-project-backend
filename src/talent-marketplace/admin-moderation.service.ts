@@ -21,15 +21,6 @@ import type {
   ReviewQueueResponse,
 } from './admin-moderation.dto';
 
-// Truncate a note before it lands in a structured log line so a 2k-char note
-// cannot bloat the log/Sentry breadcrumb. The full note is still persisted to
-// the ledger row; only the logged copy is clipped.
-const NOTE_LOG_MAX = 256;
-function truncateNote(note: string | null): string | null {
-  if (note === null) return null;
-  return note.length > NOTE_LOG_MAX ? `${note.slice(0, NOTE_LOG_MAX)}…` : note;
-}
-
 export const LISTING_ROUTE_KEY = 'tm:admin:listings:review';
 
 // Decision → next enum state. Kept explicit (no invented schema): listings
@@ -141,7 +132,10 @@ export class AdminModerationService {
         owner_id: ownerId,
         listing_id: listingId,
         decision: result.decision,
-        note: truncateNote(result.note),
+        // C-611-17: the note is free text written by the owner. The full
+        // note is on the ledger row; the log line carries only its length
+        // (0 when there is none).
+        note_length: result.note?.length ?? 0,
         replayed: result.replayed,
         result_status: result.status,
         // Correlate the decision with the request/error/Sentry trail when the
