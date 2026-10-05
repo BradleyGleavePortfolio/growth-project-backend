@@ -70,6 +70,7 @@ itLive('A4 broadcasts on a live database', () => {
     subA: randomUUID(),
     subB: randomUUID(),
     subClient: randomUUID(),
+    subClientB: randomUUID(),
   };
   const savedFlag = process.env.FEATURE_COACH_BROADCASTS;
   /** Push attempts (recipient ids) across all dispatcher instances. */
@@ -123,17 +124,22 @@ itLive('A4 broadcasts on a live database', () => {
       [id.subA, 'coach', id.coach, 'Sub Alpha'],
       [id.subB, 'coach', id.coach, 'Sub Beta'],
       [id.subClient, 'student', id.coach, 'Sam Assigned'],
+      [id.subClientB, 'student', id.coach, 'Bea Assigned'],
     ];
     for (const [uid, role, coachId, name] of users) {
       await insertLiveUser(db, { id: uid, role, name: `${name} ${tag}`, coachId });
     }
-    // Two sub-coaches on the head coach's team, both assigned to subClient.
-    for (const sub of [id.subA, id.subB]) {
+    // Two sub-coaches on the head coach's team, each with one assigned client
+    // (SubCoachAssignment_one_open_per_client allows one open sub-coach per client).
+    for (const [sub, client] of [
+      [id.subA, id.subClient],
+      [id.subB, id.subClientB],
+    ]) {
       await db.teamSubCoachAssignment.create({
         data: { head_coach_id: id.coach, sub_coach_id: sub },
       });
       await db.subCoachAssignment.create({
-        data: { head_coach_id: id.coach, sub_coach_id: sub, client_id: id.subClient },
+        data: { head_coach_id: id.coach, sub_coach_id: sub, client_id: client },
       });
     }
     await db.notificationPreferences.create({
@@ -175,7 +181,16 @@ itLive('A4 broadcasts on a live database', () => {
       await db.user.deleteMany({
         where: {
           id: {
-            in: [id.ny, id.tokyo, id.la, id.blocker, id.untagged, id.otherClient, id.subClient],
+            in: [
+              id.ny,
+              id.tokyo,
+              id.la,
+              id.blocker,
+              id.untagged,
+              id.otherClient,
+              id.subClient,
+              id.subClientB,
+            ],
           },
         },
       });
