@@ -266,6 +266,19 @@ describe('R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once', ()
       expect(h.dispatcher.dispatchStepDetailed).toHaveBeenCalledTimes(1);
     });
 
+    it('an inquiry pauses like a dispute (owner 09:43 10-05); warning_closed restores nothing', async () => {
+      const h = harness();
+      expect((await h.created('dp_inq')).reason).toBe('paused');
+      await h.closed('warning_closed', 'dp_inq');
+      expect(h.paused()).toBe(true);
+      expect(h.stripe.resumeSubscriptionCollection).not.toHaveBeenCalled();
+      const first = harness();
+      expect((await first.closed('warning_closed', 'dp_inq', at(1))).reason).toBe(
+        'paused_on_closure',
+      );
+      expect(first.paused()).toBe(true);
+    });
+
     it('invoice events after the pause never lift it (paid, card update, failed, sweep)', async () => {
       const h = harness({ status: 'past_due' }, {});
       await h.created();
@@ -333,6 +346,22 @@ describe('R-DISPUTE-PAUSE: a dispute pauses billing and ends access at once', ()
       expect(out.map((o) => o.reason).sort()).toEqual(['already_paused', 'paused']);
       expect(h.fake.rows('dunningState')).toHaveLength(1);
       expect(h.fake.rows('dunningNoticeDelivery')).toHaveLength(PAUSE_CHANNELS.length);
+    });
+
+    it('a pause committed while a clear waits on the locks keeps the plan paused', async () => {
+      const h = harness(
+        { status: 'past_due', entitlement_active: false },
+        { locked_out_at: at(-1) },
+      );
+      const tx = h.fake.client(true);
+      tx.$queryRaw = async (sql: TemplateStringsArray) => {
+        if (sql.join('?').includes('"DunningState"')) await h.created();
+        return [];
+      };
+      expect(await h.svc.applyImmediateClear('p1', 'card_update', tx)).toEqual({
+        liftedLockout: false,
+      });
+      expect(h.paused()).toBe(true);
     });
 
     it('lock order: DunningState, then ClientPurchase (the dunning order)', async () => {

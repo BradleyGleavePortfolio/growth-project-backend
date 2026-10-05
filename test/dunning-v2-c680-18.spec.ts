@@ -12,6 +12,7 @@ import {
   dunningPurchaseEnded,
 } from '../src/checkout/dunning-v2/dunning-v2.service';
 import { DUNNING_V2_DAY_MS } from '../src/checkout/dunning-v2/dunning-v2.cadence';
+import { RefundDisputeHandlerService } from '../src/checkout/refund-dispute-handler.service';
 import { makeFakePrisma } from './support/b-recur-fakes';
 import { FakePrisma } from './support/dunning-v2-fake-prisma';
 
@@ -253,7 +254,7 @@ describe('C-680-18 through the webhook (invoice.paid, then customer.subscription
     );
     const deliver = async (e: ReturnType<typeof ev>) =>
       svc.handle(e, db, await svc.prefetchForOuterTx(e));
-    return { db, deliver, states, row: () => db._purchases[0] };
+    return { db, deliver, states, dunning, dunningV2, row: () => db._purchases[0] };
   }
 
   it.each(ENDED.filter((s) => s !== 'canceled' && s !== 'expired'))(
@@ -284,5 +285,80 @@ describe('C-680-18 through the webhook (invoice.paid, then customer.subscription
     await h.deliver(paid());
     expect(h.row()).toMatchObject({ status: 'active', entitlement_active: true });
     expect(h.states[0].locked_out_at).toBeNull();
+  });
+
+  // R-DISPUTE-PAUSE on main's webhook (B-DUNMR-120 restack of D2c).
+  const pause = (h: ReturnType<typeof harness>) =>
+    Object.assign(h.states[0], { status: 'active', last_failure_reason: 'charge_disputed' });
+  it.each(['active', 'paid'])(
+    'a paused plan (%s, no access): invoice.paid and sub.updated(active) keep access ended',
+    async (status) => {
+      const h = harness(status, false);
+      pause(h);
+      const clear = jest.spyOn(h.dunningV2, 'applyImmediateClear');
+      await h.deliver(paid());
+      expect(h.row().entitlement_active).toBe(false);
+      expect(h.states[0].locked_out_at).toEqual(LOCKED_AT);
+      // The webhook tx is passed on (it holds the purchase lock), and no
+      // DunningState lock is taken before v1 writes that row on its own
+      // connection (a 5 s stall and a failed delivery otherwise).
+      expect(clear.mock.calls[0][2]).toBe(h.db);
+      const v1At = (h.dunning.recordResolution as jest.Mock).mock.invocationCallOrder[0];
+      const raw = (h.db.$queryRaw as jest.Mock).mock;
+      raw.calls.forEach((c: [TemplateStringsArray], i: number) => {
+        if (c[0].join('?').includes('"DunningState"'))
+          expect(raw.invocationCallOrder[i]).toBeGreaterThan(v1At);
+      });
+      h.row().updated_at = new Date(Date.now() - 30_000);
+      await h.deliver(ev('customer.subscription.updated', sub('active')));
+      expect(h.row().entitlement_active).toBe(false);
+    },
+  );
+
+  describe('C-680-19: a won dispute keeps a paused recurring plan revoked', () => {
+    const won = (rd: RefundDisputeHandlerService) =>
+      rd.handle({
+        id: 'evt_won_18',
+        type: 'charge.dispute.closed',
+        data: { object: { id: 'dp_18', status: 'won' } },
+      });
+    function withDispute(status: string, entitled: boolean, billing = 'recurring') {
+      const h = harness(status, entitled);
+      Object.assign(h.row(), { billing_type: billing });
+      const row = { id: 'cd_18', stripe_dispute_id: 'dp_18', purchase_id: 'cp_18', status: 'open' };
+      h.db.chargeDispute = {
+        findUnique: jest.fn(async () => ({ ...row })),
+        update: jest.fn(async ({ data }: { data: object }) => Object.assign(row, data)),
+      };
+      h.db.clientPurchase.update = jest.fn(async ({ data }: { data: object }) =>
+        Object.assign(h.row(), data),
+      );
+      const rd = new RefundDisputeHandlerService(
+        h.db,
+        stub({}),
+        stub({}),
+        stub({}),
+        stub({}),
+        stub({}),
+      );
+      return { h, rd };
+    }
+    it('won: stays disputed without access, and sub.updated(active) (flag off) never reopens it', async () => {
+      const { h, rd } = withDispute('disputed', false);
+      await won(rd);
+      expect(h.row()).toMatchObject({ status: 'disputed', entitlement_active: false });
+      process.env.FEATURE_DUNNING_V2 = 'false';
+      h.row().updated_at = new Date(Date.now() - 30_000);
+      await h.deliver(ev('customer.subscription.updated', sub('active')));
+      expect(h.row()).toMatchObject({ status: 'disputed', entitlement_active: false });
+    });
+    it.each([
+      ['a recurring plan that kept access', 'recurring', true],
+      ['a one-time purchase', 'one_time', true],
+    ])('control: %s rejoins the feed as paid', async (_l, billing, entitled) => {
+      const { h, rd } = withDispute('disputed', entitled as boolean, billing as string);
+      await won(rd);
+      expect(h.row()).toMatchObject({ status: 'paid', entitlement_active: entitled });
+    });
   });
 });
