@@ -381,6 +381,9 @@ export class SchedulingSessionLifecycleService {
         sessionId: sessionId,
         oldScheduledAt: existing.start_at,
         newScheduledAt: start,
+        // B-693-1: this move's persisted identity (one push per move).
+        rescheduleEventId:
+          updated.updated_at instanceof Date ? updated.updated_at.toISOString() : undefined,
       });
     }
     return updated;

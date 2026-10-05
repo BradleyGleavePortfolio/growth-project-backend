@@ -57,6 +57,13 @@ export interface BookingRescheduledPayload {
   sessionId: string;
   oldScheduledAt: Date;
   newScheduledAt: Date;
+  /**
+   * Sol B-693-1: identity of this reschedule, persisted with it (the session
+   * row's updated_at after the move). The same move always has the same id;
+   * a later move, even back to an earlier time, has a new one, so each move
+   * is pushed once. Without it the old and new times identify the move.
+   */
+  rescheduleEventId?: string;
 }
 
 export interface BookingReminderPayload {
@@ -185,6 +192,9 @@ export class BookingEmitter {
         newScheduledAt: payload.newScheduledAt.toISOString(),
         timeZone: tz,
       },
+      pushEventId:
+        payload.rescheduleEventId ??
+        `${payload.oldScheduledAt.toISOString()}>${payload.newScheduledAt.toISOString()}`,
     });
   }
 
@@ -243,6 +253,8 @@ export class BookingEmitter {
     body: string;
     deepLink: string;
     payload: Record<string, unknown>;
+    /** The event's own identity when the session and time do not give one. */
+    pushEventId?: string;
   }): Promise<void> {
     try {
       await this.notifications.createNotification({
@@ -258,7 +270,9 @@ export class BookingEmitter {
       // NotificationDeliveryLog, so each reminder is pushed once.
       // B-NOTIF-5: the push carries the booking context (re-rendered and
       // re-checked if quiet hours defer it) and an exactly-once identity per
-      // session and time, so two sessions never collapse into one push.
+      // session and time (a reschedule: per move, B-693-1), so two sessions
+      // or two moves never collapse into one push. No display name goes into
+      // the push (B-692-1): the lock screen never shows one.
       const p = args.payload;
       const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
       const when =
@@ -274,9 +288,8 @@ export class BookingEmitter {
           newScheduledAt: str(p.newScheduledAt),
           oldScheduledAt: str(p.oldScheduledAt),
           timeZone: str(p.timeZone) ?? null,
-          otherPartyDisplayName: str(p.otherPartyDisplayName),
         },
-        dedupe_key: `${args.kind}:${str(p.sessionId) ?? ''}:${when}`,
+        dedupe_key: `${args.kind}:${str(p.sessionId) ?? ''}:${args.pushEventId ?? when}`,
       });
     } catch (err) {
       // Emitters never propagate errors — booking lifecycle must not

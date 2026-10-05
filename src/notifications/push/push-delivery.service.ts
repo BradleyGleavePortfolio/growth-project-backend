@@ -13,6 +13,7 @@ import {
   deadlineSignal,
 } from './expo-push-client';
 import { PushContext, lockScreenCopy } from './lock-screen-copy';
+import { androidChannelFor } from './push-channels';
 import { quietHoursFor } from './push-quiet-hours';
 import { pushAllowedByPreferences } from './push-preferences';
 import { usableTimeZone } from '../local-time';
@@ -40,7 +41,13 @@ import { resolveRecipientTimeZone } from '../recipient-timezone';
 //     (`muted`, `<kind>_push`), quiet hours in the recipient's CURRENT zone,
 //     and the burst cap. A push whose switch was turned off while it waited
 //     is suppressed; one that would now land inside quiet hours waits for
-//     08:00 local again, without spending a provider retry attempt.
+//     08:00 local again, without spending a provider retry attempt. The
+//     switches and the device token are read once more AFTER the handoff
+//     write, so a mute or sign-out committed at any point before the handoff
+//     stops the send (Sol B-648-9, round 5).
+//   - Lock screen (B-692-1): title and body come only from the per-kind
+//     templates (lock-screen-copy.ts), rendered at the moment of sending; the
+//     Android channel is one the app creates (push-channels.ts, B-693-1).
 //   - Distinct events are never dropped by a rate limit (B-648-1). A booking
 //     event has an exactly-once identity (dedupe_key: kind, session, start
 //     time). Repeats in one conversation collapse: while a push for the same
@@ -58,7 +65,9 @@ import { resolveRecipientTimeZone } from '../recipient-timezone';
 //     accepted it: at most once). HTTP 429/5xx means Expo did not accept the
 //     request, so it is retried with backoff up to MAX_ATTEMPTS.
 //   - Tokens: DeviceNotRegistered (ticket or receipt) clears the user's token
-//     only if it is still that exact token.
+//     only if it is still that exact token. A clear that fails is never
+//     settled (B-693-2): the row keeps result_code token-cleanup-pending and
+//     the receipt sweep retries the clear (never the send) until it succeeds.
 //   - Android without the FCM V1 key: Expo answers InvalidCredentials. The
 //     token is kept, the push is recorded as provider-not-configured (never
 //     as sent), and the operator gets one PUSH_PROVIDER_NOT_CONFIGURED line
@@ -83,6 +92,9 @@ export const RETRY_BACKOFF_MS = [30_000, 2 * 60_000, 10 * 60_000];
 /** Rows one drain works through at most (the next sweep takes the rest). */
 export const MAX_ROWS_PER_DRAIN = 500;
 export const RETENTION_MS = 30 * 24 * 60 * 60_000;
+/** Failed token clears one receipt sweep retries at most (B-693-2). */
+export const TOKEN_CLEANUP_BATCH = 100;
+const CLEANUP_PENDING: SendOutcome = 'token-cleanup-pending';
 
 export type EnqueueCode = 'queued' | 'deferred' | 'duplicate' | 'collapsed';
 
@@ -125,6 +137,7 @@ export type SendOutcome =
   | 'burst-deferred'
   | 'quiet-deferred'
   | 'preference-off'
+  | 'token-cleanup-pending'
   | 'lease-lost';
 
 interface OutboxRow {
@@ -513,6 +526,24 @@ export class PushDeliveryService {
       // B-648-8: prove and renew authority right before the handoff.
       if (!(await this.handOff(row))) return this.lost(row, 'handoff');
 
+      // Sol B-648-9 (round 5): consent at the handoff. These reads start
+      // after the handoff write, so a mute, a switch turned off or a sign-out
+      // committed during the slow reads above is seen here. Nothing has
+      // reached Expo yet: the push is suppressed and no attempt is spent.
+      const [prefsAtSend, userAtSend] = await Promise.all([
+        this.prisma.notificationPreferences.findUnique({ where: { user_id: row.user_id } }),
+        this.prisma.user.findUnique({
+          where: { id: row.user_id },
+          select: { expo_push_token: true },
+        }),
+      ]);
+      if (!pushAllowedByPreferences(prefsAtSend as Record<string, unknown> | null, row.kind)) {
+        return await this.finish(row, 'dropped', 'preference-off');
+      }
+      const to = userAtSend?.expo_push_token ?? null;
+      if (!to) return await this.finish(row, 'dropped', 'no-token');
+      if (!Expo.isExpoPushToken(to)) return await this.finish(row, 'dropped', 'invalid-token');
+
       // B-648-10 (round 4): the clock at the Expo handoff. If the window
       // opened during the reads or the handoff write, nothing has reached
       // Expo yet: back to pending for the morning, attempt refunded.
@@ -523,21 +554,21 @@ export class PushDeliveryService {
       }
       handedOff = true;
 
-      const copy = context
-        ? lockScreenCopy(
-            row.kind,
-            row.body,
-            { ...context, timeZone: timeZone ?? context.timeZone },
-            sendAt,
-          )
-        : { title: row.title, body: row.body };
+      // B-692-1: the lock screen shows only the kind's template, whatever
+      // text the row holds.
+      const copy = lockScreenCopy(
+        row.kind,
+        row.body,
+        context ? { ...context, timeZone: timeZone ?? context.timeZone } : null,
+        sendAt,
+      );
       const message: ExpoPushMessage = {
-        to: token,
-        title: copy.title || row.title,
-        body: copy.body || row.body,
+        to,
+        title: copy.title,
+        body: copy.body,
         data: { ...asData(row.data), kind: row.kind },
         sound: 'default',
-        channelId: 'default',
+        channelId: androidChannelFor(row.kind),
         priority: 'high',
       };
 
@@ -558,7 +589,7 @@ export class PushDeliveryService {
       if (ticket.status === 'ok') {
         return await this.finish(row, 'sent', 'sent', {
           ticket_id: ticket.id,
-          token,
+          token: to,
           sent_at: sendAt,
         });
       }
@@ -566,8 +597,10 @@ export class PushDeliveryService {
       if (error === 'MessageRateExceeded') {
         return await this.retryOrDrop(row, 'provider-unavailable');
       }
-      const code = await this.handleError(error, row.user_id, token, 'ticket');
-      return await this.finish(row, 'dropped', code, { token });
+      // A failed token clear is recorded as token-cleanup-pending, which the
+      // receipt sweep retries (B-693-2); the push itself is never re-sent.
+      const code = await this.handleError(error, row.user_id, to, 'ticket');
+      return await this.finish(row, 'dropped', code, { token: to });
     } catch (err) {
       this.logger.warn(
         `push send failed: row=${row.id} user=${row.user_id} kind=${row.kind} error=${errorName(err)}`,
@@ -641,6 +674,9 @@ export class PushDeliveryService {
     this.receiptSweepRunning = true;
     try {
       const now = this.now();
+      // B-693-2: clears that failed earlier (ticket or receipt) come first.
+      const cleaned = await this.retryTokenCleanup();
+      let checked = 0;
       const due = await this.prisma.pushOutbox.findMany({
         where: {
           status: 'sent',
@@ -655,7 +691,6 @@ export class PushDeliveryService {
         take: EXPO_RECEIPT_CHUNK,
         select: { id: true, user_id: true, ticket_id: true, token: true },
       });
-      let checked = 0;
       if (due.length > 0) {
         const byTicket = new Map(due.map((r) => [r.ticket_id ?? '', r]));
         const deadline = deadlineSignal(this.receiptDeadlineMs);
@@ -685,11 +720,14 @@ export class PushDeliveryService {
               : 'rejected';
           }
           // Another replica may have read the same receipt: count only ours.
+          // B-693-2: when the token clear failed the receipt is read but the
+          // row stays token-cleanup-pending, unsettled and not counted, until
+          // retryTokenCleanup clears the token on a later sweep.
           const res = await this.prisma.pushOutbox.updateMany({
             where: { id: entry.id, receipt_checked_at: null },
             data: { receipt_checked_at: now, result_code: code },
           });
-          if (res.count === 1) checked += 1;
+          if (res.count === 1 && code !== CLEANUP_PENDING) checked += 1;
         }
       }
       await this.prisma.pushOutbox.deleteMany({
@@ -698,7 +736,7 @@ export class PushDeliveryService {
           not_before: { lt: new Date(now.getTime() - RETENTION_MS) },
         },
       });
-      return { checked, remaining: due.length - checked };
+      return { checked: checked + cleaned, remaining: due.length - checked };
     } finally {
       this.receiptSweepRunning = false;
     }
@@ -711,8 +749,7 @@ export class PushDeliveryService {
     stage: 'ticket' | 'receipt',
   ): Promise<SendOutcome> {
     if (error === 'DeviceNotRegistered') {
-      await this.clearToken(userId, token);
-      return 'device-not-registered';
+      return (await this.clearToken(userId, token)) ? 'device-not-registered' : CLEANUP_PENDING;
     }
     if (error === 'InvalidCredentials') {
       this.alertProviderNotConfigured();
@@ -724,17 +761,53 @@ export class PushDeliveryService {
     return 'rejected';
   }
 
-  private async clearToken(userId: string, token: string): Promise<void> {
+  /**
+   * Clear the token Expo rejected, only if it is still the user's token (a
+   * newer registration stays). True once that is proven: cleared now, or the
+   * user no longer holds it. False when the write failed (B-693-2).
+   */
+  private async clearToken(userId: string, token: string): Promise<boolean> {
     try {
-      // Only the token Expo rejected: a newer registration stays.
-      await this.prisma.user.updateMany({
+      const res = await this.prisma.user.updateMany({
         where: { id: userId, expo_push_token: token },
         data: { expo_push_token: null },
       });
-      this.logger.log(`push token cleared: user=${userId} reason=DeviceNotRegistered`);
+      if (res.count > 0) {
+        this.logger.log(`push token cleared: user=${userId} reason=DeviceNotRegistered`);
+      }
+      return true;
     } catch (err) {
-      this.logger.warn(`push token clear failed: user=${userId} error=${errorName(err)}`);
+      this.logger.warn(
+        `push token clear failed: user=${userId} error=${errorName(err)} (retried by the receipt sweep)`,
+      );
+      return false;
     }
+  }
+
+  /**
+   * B-693-2: retry the token clears that failed (rows marked
+   * token-cleanup-pending at the ticket or the receipt). Only the clear is
+   * retried, never the push. A row is settled (device-not-registered,
+   * receipt read) once its clear succeeds; returns how many this sweep
+   * settled (a row another replica settled first is not counted).
+   */
+  private async retryTokenCleanup(): Promise<number> {
+    const pending = await this.prisma.pushOutbox.findMany({
+      where: { result_code: CLEANUP_PENDING, token: { not: null } },
+      orderBy: { updated_at: 'asc' },
+      take: TOKEN_CLEANUP_BATCH,
+      select: { id: true, user_id: true, token: true },
+    });
+    let settled = 0;
+    for (const row of pending) {
+      if (!row.token || !(await this.clearToken(row.user_id, row.token))) continue;
+      const res = await this.prisma.pushOutbox.updateMany({
+        where: { id: row.id, result_code: CLEANUP_PENDING },
+        data: { result_code: 'device-not-registered' },
+      });
+      if (res.count === 1) settled += 1;
+    }
+    return settled;
   }
 
   private alertProviderNotConfigured(): void {

@@ -185,6 +185,7 @@ describe('SchedulingService — request + state machine + audit', () => {
   let prisma: any;
   let auditCtx: ReturnType<typeof buildAudit>;
   let svc: SchedulingService;
+  let reschedules: Array<{ rescheduleEventId?: string }>;
 
   beforeAll(() => {
     jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
@@ -205,6 +206,7 @@ describe('SchedulingService — request + state machine + audit', () => {
     prisma = buildPrismaFake();
     bindTransaction(prisma);
     auditCtx = buildAudit();
+    reschedules = [];
     // BookingEmitter is a thin pass-through to NotificationsService; for
     // the existing scheduling.service.spec the emit calls are a no-op
     // stub. Booking-notification coverage lives in
@@ -214,7 +216,7 @@ describe('SchedulingService — request + state machine + audit', () => {
       emitConfirmed: async () => undefined,
       emitDeclined: async () => undefined,
       emitCancelled: async () => undefined,
-      emitRescheduled: async () => undefined,
+      emitRescheduled: async (p: { rescheduleEventId?: string }) => void reschedules.push(p),
       emitReminder24h: async () => undefined,
       emitReminder1h: async () => undefined,
     } as unknown as ConstructorParameters<typeof SchedulingService>[3];
@@ -341,6 +343,8 @@ describe('SchedulingService — request + state machine + audit', () => {
       reason: 'conflict',
     });
     expect(rescheduled.start_at.toISOString()).toBe('2026-06-02T15:00:00.000Z');
+    // Sol B-693-1: each move carries its persisted identity to the push.
+    expect(reschedules.map((r) => r.rescheduleEventId)).toEqual([rescheduled.updated_at.toISOString()]);
     // Sol B-647-1: the move re-arms the reminders through the claim key
     // (session, user, kind, start_at), so it never deletes claims; a stale
     // sweep's old-time claim cannot suppress the new time.

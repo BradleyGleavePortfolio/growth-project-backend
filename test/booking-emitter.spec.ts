@@ -176,7 +176,6 @@ describe('BookingEmitter', () => {
         context: expect.objectContaining({
           sessionId: 'sess-6',
           scheduledAt: FIXED_SCHEDULED_AT.toISOString(),
-          otherPartyDisplayName: 'Coach K',
         }),
       }),
       expect.objectContaining({
@@ -190,10 +189,13 @@ describe('BookingEmitter', () => {
         context: expect.objectContaining({
           sessionId: 'sess-6',
           scheduledAt: FIXED_SCHEDULED_AT.toISOString(),
-          otherPartyDisplayName: 'Coach K',
         }),
       }),
     ]);
+    // B-692-1: no display name is stored with a push.
+    for (const [push] of sendPushMock.mock.calls) {
+      expect(push.context).not.toHaveProperty('otherPartyDisplayName');
+    }
   });
 
   it('swallows underlying createNotification errors so lifecycle never blocks', async () => {

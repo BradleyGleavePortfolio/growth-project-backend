@@ -129,8 +129,8 @@ describe('B-648-1: distinct events are never dropped', () => {
     expect(await w.svc.drain()).toBe(2);
     expect(w.client.send).toHaveBeenCalledTimes(2);
     expect(w.client.send.mock.calls.map((c) => c[0][0].body)).toEqual([
-      'Your session with Jamie starts at 9:00 AM EDT.',
-      'Your session with Jamie starts at 9:05 AM EDT.',
+      'Your session starts at 9:00 AM EDT.',
+      'Your session starts at 9:05 AM EDT.',
     ]);
   });
 
@@ -156,9 +156,9 @@ describe('B-648-1: distinct events are never dropped', () => {
       }),
     );
     expect(await w.svc.drain()).toBe(1);
-    expect(w.client.send.mock.calls.map((c) => c[0][0].body)).toEqual([
-      'New message from Coach K',
-      'New message from Sam',
+    expect(w.client.send.mock.calls.map((c) => c[0][0].data?.deepLink)).toEqual([
+      'tgp://messages/thread-1',
+      'tgp://messages/thread-2',
     ]);
   });
 
@@ -370,7 +370,7 @@ describe('OR-113-5: quiet hours 21:00-08:00 in the recipient zone', () => {
     w.svc.clock = new Date('2026-06-02T12:00:00Z');
     expect(await w.svc.drain()).toBe(1);
     expect(w.client.send.mock.calls[0][0][0].body).toBe(
-      'Your session with Jamie is today at 10:00 PM EDT.',
+      'Your session is today at 10:00 PM EDT.',
     );
     expect(w.rows.find((r) => r.dedupe_key === 'r24:sess-2')?.result_code).toBe('obsolete');
   });
@@ -441,7 +441,7 @@ describe('tokens, Android without the FCM key, receipts', () => {
     const quiet = lockScreenCopy(NotificationKind.WEIGHT_TREND_ALERT, 'You are down 2.4 kg');
     expect(quiet.body).not.toMatch(/kg|2\.4/);
     expect(lockScreenCopy(NotificationKind.MESSAGE_RECEIVED, 'New message from Coach K').body).toBe(
-      'New message from Coach K',
+      'You have a new message. Open the app to read it.',
     );
     for (const copy of [quiet, lockScreenCopy('unknown_kind', 'x')]) {
       expect(copy.body).not.toMatch(/!/);

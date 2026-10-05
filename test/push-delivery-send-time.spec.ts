@@ -468,10 +468,10 @@ describe('coach messages reach the lock screen (verification)', () => {
     expect(sent).toMatchObject({
       to: TOKEN,
       title: 'New message',
-      body: 'New message from Coach K',
+      body: 'You have a new message. Open the app to read it.',
       sound: 'default',
       priority: 'high',
-      channelId: 'default',
+      channelId: 'coach-messages',
     });
     expect(sent.data).toMatchObject({
       actionScreen: 'Messages',
@@ -488,7 +488,9 @@ describe('coach messages reach the lock screen (verification)', () => {
     expect(await w.delivery.drain()).toBe(0);
     w.clock.at = NY_0800;
     expect(await w.delivery.drain()).toBe(1);
-    expect(w.client.send.mock.calls[0][0][0].body).toBe('New message from Coach K');
+    expect(w.client.send.mock.calls[0][0][0].body).toBe(
+      'You have a new message. Open the app to read it.',
+    );
   });
 });
 

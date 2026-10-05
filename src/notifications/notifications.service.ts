@@ -69,7 +69,9 @@ export interface CreateNotificationInput {
   /**
    * B-648-7: true when this `push` row duplicates an `inapp` row the same
    * writer stored for the same event. The row is kept (history) but hidden
-   * from the inbox and the unread counts.
+   * from the inbox and the unread counts, and only when that `inapp` row is
+   * found (see PUSH_TWIN_WINDOW_MS): a writer whose inapp write failed or was
+   * switched off keeps its push row visible.
    */
   push_twin?: boolean;
 }
@@ -94,6 +96,14 @@ const recentPushes = new Map<string, number>();
  * only the API response changes.
  */
 const INBOX_HIDES_PUSH_TWINS = { inbox_hidden: false };
+
+/**
+ * Sol B-648-7 (round 5): a declared twin is hidden only when its counterpart
+ * is proven: an `inapp` row for the same user, kind, deep link and text,
+ * stored in the last hour. Otherwise the push row is the only stored copy and
+ * stays visible.
+ */
+export const PUSH_TWIN_WINDOW_MS = 60 * 60_000;
 
 @Injectable()
 export class NotificationsService implements OnModuleInit {
@@ -516,9 +526,11 @@ export class NotificationsService implements OnModuleInit {
     const body = input.body.slice(0, 160);
     // B-648-7: a writer that stores a `push` twin next to the `inapp` row of
     // the same event says so, and the twin stays out of the inbox and the
-    // unread counts. Only that writer knows it is a twin; nothing is hidden
-    // by kind.
-    const inboxHidden = channel === 'push' && input.push_twin === true;
+    // unread counts once that `inapp` row is found. Nothing is hidden by kind.
+    const inboxHidden =
+      channel === 'push' &&
+      input.push_twin === true &&
+      (await this.inboxCounterpartExists(db, input, body));
 
     return db.notification.create({
       data: {
@@ -981,6 +993,30 @@ export class NotificationsService implements OnModuleInit {
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
+
+  /** B-648-7: the `inapp` row a declared push twin duplicates. A failed read proves nothing. */
+  private async inboxCounterpartExists(
+    db: Pick<PrismaService, 'notification'> | Prisma.TransactionClient,
+    input: CreateNotificationInput,
+    body: string,
+  ): Promise<boolean> {
+    try {
+      const twin = await db.notification.findFirst({
+        where: {
+          user_id: input.user_id,
+          kind: input.kind,
+          channel: 'inapp',
+          deep_link: input.deep_link ?? null,
+          body,
+          created_at: { gte: new Date(Date.now() - PUSH_TWIN_WINDOW_MS) },
+        },
+        select: { id: true },
+      });
+      return twin !== null;
+    } catch {
+      return false;
+    }
+  }
 
   /**
    * C-648-3: which side of a booking the recipient is on, so the tap opens

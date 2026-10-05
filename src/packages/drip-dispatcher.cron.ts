@@ -507,8 +507,10 @@ export class DripDispatcherCron {
       // call must not cascade and skip the other two — a transient
       // prisma.notification.create blip would otherwise silently drop
       // the push send + the second DB row write.
+      // B-648-7: the push row below is hidden only behind a stored inapp row.
+      let inappStored = false;
       try {
-        await this.notifications.createNotification({
+        const inapp = await this.notifications.createNotification({
           user_id: clientUserId,
           kind: NotificationKind.DRIP_RELEASED,
           body,
@@ -516,6 +518,7 @@ export class DripDispatcherCron {
           deep_link: 'tgp://client/library',
           channel: 'inapp',
         });
+        inappStored = inapp !== null;
       } catch (err) {
         this.logger.warn(
           `drip-dispatcher in-app notification failed drop=${drop.id} client=${clientUserId}: ${(err as Error).message}`,
@@ -540,8 +543,8 @@ export class DripDispatcherCron {
           payload,
           deep_link: 'tgp://client/library',
           channel: 'push',
-          // B-648-7: the inapp row above is the inbox item; this twin is hidden.
-          push_twin: true,
+          // B-648-7: a twin only when the inapp row above was stored.
+          push_twin: inappStored,
         });
       } catch (err) {
         this.logger.warn(
