@@ -1650,6 +1650,8 @@ export class CheckoutWebhookHandlerService {
           canceled_at: canceledAt,
           access_expires_at: accessExpiresAt,
           ...trialStartPatch(fresh, sub, entitled),
+          // B-661-14/15 — a grant means the sheet's intent was paid or its card saved: erase both.
+          ...(entitled ? CLEARED_PAYMENT_SECRETS : {}),
           updated_at: nextVersion(fresh),
         },
       });
@@ -2287,6 +2289,8 @@ export class CheckoutWebhookHandlerService {
             status,
             entitlement_active: entitled,
             ...trial,
+            // B-661-14/15 — same erase as applySubscriptionUpdated; an unsaved trial card keeps them.
+            ...(entitled ? CLEARED_PAYMENT_SECRETS : {}),
             current_period_end: currentPeriodEnd,
             access_expires_at: this.computeAccessExpiry(pkg, fresh, true, currentPeriodEnd),
             last_error: null,
