@@ -89,6 +89,16 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   // service_role policy allows this DELETE. No policy or trigger is changed.
   { model: 'AiProcessingConsentEvent', field: 'user_id', action: del },
   { model: 'CoachMessage', field: 'coach_id', action: detach('coach_id') },
+  // A3-MSG-CORE (#660): who tombstoned or pinned a message in a surviving
+  // thread. The tombstone and the pin stay; the actor id is detached.
+  { model: 'CoachMessage', field: 'deleted_by_id', action: detach('deleted_by_id') },
+  { model: 'CoachMessage', field: 'pinned_by_id', action: detach('pinned_by_id') },
+  // A3-MSG-CORE (#660): per-user thread preferences (mute, inbox pin). The
+  // user's own rows go, and so do other people's rows for a thread with the
+  // deleted user (the thread is removed or detached above).
+  { model: 'CoachThreadState', field: 'user_id', action: del },
+  { model: 'CoachThreadState', field: 'coach_id', action: del },
+  { model: 'CoachThreadState', field: 'client_id', action: del },
   { model: 'Message', field: 'sender_id', action: del },
   { model: 'Message', field: 'recipient_id', action: del },
   { model: 'MessageDraft', field: 'coach_id', action: del },
