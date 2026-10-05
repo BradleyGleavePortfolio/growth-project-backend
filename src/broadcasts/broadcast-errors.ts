@@ -15,6 +15,17 @@ export const BROADCAST_ERRORS = {
     HttpStatus.CONFLICT,
     'This broadcast is already sending or finished, so it can no longer be edited. Duplicate it to send a new one.',
   ],
+  // B-659-1: a one-off whose occurrence was already claimed, and a series
+  // with a claimed occurrence turned into a one-off. Either edit would send
+  // a second copy.
+  'broadcast.already_sending': [
+    HttpStatus.CONFLICT,
+    'This broadcast has already started sending, so it can no longer be edited. Cancel it to stop the messages not yet sent, or resume it to finish sending.',
+  ],
+  'broadcast.series_started': [
+    HttpStatus.CONFLICT,
+    'This repeating broadcast has already started sending, so it cannot become a one-time message. Change its repeat rule, or cancel it and create a new broadcast.',
+  ],
   'broadcast.invalid_transition': [
     HttpStatus.CONFLICT,
     'This broadcast cannot change to that state right now. Refresh to see its current state.',

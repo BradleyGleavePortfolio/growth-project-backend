@@ -7835,7 +7835,9 @@ model CoachBroadcast {
 
   runs CoachBroadcastRun[]
 
-  @@unique([coach_id, idempotency_key])
+  // A-659-6: the Idempotency-Key namespace is per author, so a key replays
+  // only the caller's own broadcast and never resolves another author's row.
+  @@unique([coach_id, author_user_id, idempotency_key])
   @@index([status, next_run_at])
   @@index([coach_id, created_at(sort: Desc)])
   @@map("coach_broadcasts")
@@ -7861,6 +7863,13 @@ model CoachBroadcastRun {
   fanned_out_at   DateTime?
   completed_at    DateTime?
   created_at      DateTime       @default(now())
+  // B-659-1: the occurrence payload, frozen in the transaction that claims
+  // the occurrence. Fan-out reads `segment`; delivery reads `body`, `card`
+  // and `urgent`. An edit to the broadcast never changes a claimed run.
+  body            String
+  card            Json?
+  segment         Json
+  urgent          Boolean        @default(false)
 
   deliveries CoachBroadcastDelivery[]
 

@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { hostname } from 'os';
+import { describeFailure } from '../observability/log-pii';
 import { PrismaService } from '../prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { MessageReceivedEmitter } from '../notifications/emitters/message-received.emitter';
@@ -33,6 +34,8 @@ export const DELIVERY_LEASE_MS = 2 * 60_000;
 /** A recurring occurrence older than this is recorded as missed, not sent late. */
 export const STALE_OCCURRENCE_MS = 12 * 60 * 60_000;
 export const MAX_DELIVERY_ATTEMPTS = 5;
+/** A delivery of a paused broadcast is looked at again after this long. */
+export const PARK_MS = 5 * 60_000;
 const CLAIM_BATCH = 25;
 const DELIVERY_BATCH = 200;
 
@@ -68,6 +71,11 @@ export type DeliveryOutcome =
  *                   skip; mute delivers silently.
  *  4. finalizeRuns  closes runs with nothing left to deliver and marks
  *                   one-off broadcasts sent.
+ *
+ * Send fence (B-659-8, A-659-7, B-659-9): inside the message transaction the
+ * broadcast row and the author's authority are read FOR SHARE and the kill
+ * switch is read last, so an acknowledged pause, cancel, revocation or OFF
+ * flip is never overtaken by a copy that had not committed yet.
  */
 @Injectable()
 export class BroadcastDispatcherService {
@@ -93,18 +101,23 @@ export class BroadcastDispatcherService {
     try {
       await this.tick(new Date());
     } catch (err) {
-      this.logger.error(
-        `broadcast tick failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      this.logger.error(`broadcast tick failed: ${describeFailure(err)}`);
     } finally {
       this.running = false;
     }
   }
 
   async tick(now: Date): Promise<void> {
+    // B-659-9: the kill switch is re-read at every phase boundary, per
+    // occurrence, per run, per delivery and at the message write, never only
+    // once at tick entry.
+    if (!coachBroadcastsEnabled()) return;
     await this.claimDue(now);
+    if (!coachBroadcastsEnabled()) return;
     await this.fanOutRuns(now);
+    if (!coachBroadcastsEnabled()) return;
     await this.deliverDue(now);
+    if (!coachBroadcastsEnabled()) return;
     await this.finalizeRuns(now);
   }
 
@@ -118,6 +131,7 @@ export class BroadcastDispatcherService {
     });
     let created = 0;
     for (const b of due) {
+      if (!coachBroadcastsEnabled()) break;
       if (!b.next_run_at) continue;
       const occurrence = b.next_run_at;
       const rule = b.recurrence ? parseStoredRecurrence(b.recurrence) : null;
@@ -130,8 +144,16 @@ export class BroadcastDispatcherService {
       const stale = !!rule && now.getTime() - occurrence.getTime() > STALE_OCCURRENCE_MS;
       try {
         const won = await this.prisma.$transaction(async (tx) => {
+          // B-659-1: the CAS also pins updated_at, so the payload frozen on
+          // the run below is exactly the definition this claim read; an edit
+          // committed in between makes the claim retry on the next tick.
           const cas = await tx.coachBroadcast.updateMany({
-            where: { id: b.id, next_run_at: occurrence, status: { in: ['scheduled', 'sending'] } },
+            where: {
+              id: b.id,
+              next_run_at: occurrence,
+              updated_at: b.updated_at,
+              status: { in: ['scheduled', 'sending'] },
+            },
             data: {
               next_run_at: next,
               status: next ? 'scheduled' : 'sending',
@@ -148,6 +170,10 @@ export class BroadcastDispatcherService {
               status: stale ? 'failed' : 'pending',
               failure_code: stale ? 'missed_window' : null,
               completed_at: stale ? now : null,
+              body: b.body,
+              card: b.card === null ? Prisma.DbNull : (b.card as Prisma.InputJsonValue),
+              segment: b.segment as Prisma.InputJsonValue,
+              urgent: b.urgent,
             },
           });
           return true;
@@ -176,6 +202,7 @@ export class BroadcastDispatcherService {
   }
 
   async fanOutRun(runId: string, now: Date): Promise<boolean> {
+    if (!coachBroadcastsEnabled()) return false;
     const lease = await this.prisma.coachBroadcastRun.updateMany({
       where: {
         id: runId,
@@ -209,11 +236,14 @@ export class BroadcastDispatcherService {
     }
     let segment;
     try {
-      segment = parseSegment(b.segment);
+      // B-659-1: the audience frozen on the run, not the live definition.
+      segment = parseSegment(run.segment);
     } catch {
       return failRun('segment_invalid');
     }
-    const scope = await this.scopes.resolve(b.author_user_id ?? b.coach_id);
+    // A-659-7: a removed author is never replaced by the head coach.
+    if (!b.author_user_id) return failRun('author_removed');
+    const scope = await this.scopes.resolve(b.author_user_id);
     if (scope.tenantId !== b.coach_id) {
       // The author left the tenant (sub-coach seat closed): send as the head
       // coach's roster is NOT assumed; the run fails closed and the coach sees why.
@@ -287,6 +317,9 @@ export class BroadcastDispatcherService {
   }
 
   async deliverOne(deliveryId: string, now: Date): Promise<DeliveryOutcome> {
+    // B-659-9: an OFF flip parks the rest of a batch before any claim, so it
+    // spends no retry budget.
+    if (!coachBroadcastsEnabled()) return 'parked';
     const claim = await this.prisma.coachBroadcastDelivery.updateMany({
       where: {
         id: deliveryId,
@@ -294,10 +327,12 @@ export class BroadcastDispatcherService {
         deliver_after: { lte: now },
         OR: [{ lease_until: null }, { lease_until: { lt: now } }],
       },
+      // C-659-3 (same lines as B-659-9): a claim is not a send attempt;
+      // `attempts` counts failed sends only (see the catch below), so parking
+      // and quiet-hours deferral never exhaust the retry budget.
       data: {
         lease_holder: this.holder,
         lease_until: new Date(now.getTime() + DELIVERY_LEASE_MS),
-        attempts: { increment: 1 },
       },
     });
     if (claim.count !== 1) return 'lost_lease';
@@ -312,17 +347,24 @@ export class BroadcastDispatcherService {
         where: fence,
         data: { lease_until: null, ...data },
       });
-    const b = d.run.broadcast;
+    const run = d.run;
+    const b = run.broadcast;
+    const park = () => settle({ deliver_after: new Date(now.getTime() + PARK_MS) });
     try {
       if (b.status === 'canceled') {
         await settle({ status: 'skipped_ineligible', failure_code: 'broadcast_canceled' });
         return 'skipped_ineligible';
       }
       if (b.status === 'paused') {
-        await settle({ deliver_after: new Date(now.getTime() + 5 * 60_000) });
+        await park();
         return 'parked';
       }
-      const authorId = b.author_user_id ?? b.coach_id;
+      // A-659-7: a removed author is never replaced by the head coach.
+      if (!b.author_user_id) {
+        await settle({ status: 'skipped_ineligible', failure_code: 'author_removed' });
+        return 'skipped_ineligible';
+      }
+      const authorId = b.author_user_id;
       // Re-check eligibility at send time: still a live client of this tenant.
       const client = await this.prisma.user.findFirst({
         where: { id: d.recipient_id, role: 'student', deleted_at: null, coach_id: b.coach_id },
@@ -349,7 +391,7 @@ export class BroadcastDispatcherService {
         where: { user_id: client.id },
         select: { timezone: true, muted: true, message_push: true },
       });
-      if (!b.urgent) {
+      if (!run.urgent) {
         const quiet = QuietHoursPolicy.evaluate(now, prefs?.timezone ?? 'America/Los_Angeles');
         if (!quiet.allowed && quiet.deferred_until) {
           await settle({
@@ -369,9 +411,11 @@ export class BroadcastDispatcherService {
           : prefs && !prefs.message_push
             ? 'suppressed_pref'
             : 'pending';
-      const card = readStoredCard(b.card);
-      const body = personalize(b.body, client.name);
+      // B-659-1: every copy of a run carries the run's frozen payload.
+      const card = readStoredCard(run.card);
+      const body = personalize(run.body, client.name);
       const delivered = await this.prisma.$transaction(async (tx) => {
+        await this.fenceSend(tx, b.id, b.coach_id, authorId, client.id);
         const msg = await tx.coachMessage.create({
           data: { coach_id: b.coach_id, client_id: client.id, sender_id: authorId, body },
           select: { id: true },
@@ -413,17 +457,58 @@ export class BroadcastDispatcherService {
       return 'delivered';
     } catch (err) {
       if (err instanceof LeaseLostError) return 'lost_lease';
-      const attempts = d.attempts;
+      if (err instanceof SendRefusedError) {
+        // The message transaction rolled back: no message, card, realtime
+        // ping or push. Parking spends no retry budget.
+        if (err.outcome === 'parked') {
+          await (err.reason === 'broadcast_paused' ? park() : settle({}));
+          return 'parked';
+        }
+        await settle({ status: 'skipped_ineligible', failure_code: err.reason });
+        return 'skipped_ineligible';
+      }
+      const attempts = d.attempts + 1;
       this.logger.warn(
-        `broadcast delivery ${d.id} attempt ${attempts} failed: ${err instanceof Error ? err.message : String(err)}`,
+        `broadcast delivery ${d.id} attempt ${attempts} failed: ${describeFailure(err)}`,
       );
       if (attempts >= MAX_DELIVERY_ATTEMPTS) {
-        await settle({ status: 'failed', failure_code: 'delivery_error' });
+        await settle({ status: 'failed', failure_code: 'delivery_error', attempts });
         return 'failed';
       }
-      await settle({ deliver_after: new Date(now.getTime() + 2 ** attempts * 60_000) });
+      await settle({ attempts, deliver_after: new Date(now.getTime() + 2 ** attempts * 60_000) });
       return 'retry';
     }
+  }
+
+  /**
+   * The send fence, run first inside the message transaction (Read
+   * Committed; every read below takes a row lock, so it sees the latest
+   * committed row and holds it until this copy commits):
+   *  - B-659-8: the broadcast row FOR SHARE. Pause and cancel UPDATE that
+   *    row, so a transition either committed first (seen here: canceled
+   *    skips, paused parks) or waits until this copy has committed. A pause
+   *    or cancel acknowledged to the coach is never overtaken.
+   *  - A-659-7: the author's current authority over this client, decided
+   *    under the same locks (BroadcastScopeService.lockSendAuthority).
+   *  - B-659-9: the kill switch, read last, at the irreversible write.
+   */
+  private async fenceSend(
+    tx: Prisma.TransactionClient,
+    broadcastId: string,
+    tenantId: string,
+    authorId: string,
+    clientId: string,
+  ): Promise<void> {
+    const live = await tx.$queryRaw<Array<{ status: string }>>`
+      SELECT "status" FROM "coach_broadcasts" WHERE "id" = ${broadcastId} FOR SHARE`;
+    const status = live[0]?.status;
+    if (!status || status === 'canceled') {
+      throw new SendRefusedError('skipped_ineligible', 'broadcast_canceled');
+    }
+    if (status === 'paused') throw new SendRefusedError('parked', 'broadcast_paused');
+    const refusal = await this.scopes.lockSendAuthority(tx, tenantId, authorId, clientId);
+    if (refusal) throw new SendRefusedError('skipped_ineligible', refusal);
+    if (!coachBroadcastsEnabled()) throw new SendRefusedError('parked', 'broadcasts_disabled');
   }
 
   // ---- 4. close runs ----------------------------------------------------------
@@ -476,6 +561,18 @@ export class BroadcastDispatcherService {
   private async senderName(userId: string): Promise<string> {
     const u = await this.prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
     return u?.name?.trim() || 'Your coach';
+  }
+}
+
+/** The send fence refused this copy; the message transaction rolls back. */
+class SendRefusedError extends Error {
+  readonly code = 'BROADCAST_SEND_REFUSED' as const;
+  constructor(
+    readonly outcome: 'parked' | 'skipped_ineligible',
+    readonly reason: string,
+  ) {
+    super('broadcast send refused');
+    this.name = 'SendRefusedError';
   }
 }
 

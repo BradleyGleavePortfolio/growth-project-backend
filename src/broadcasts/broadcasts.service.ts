@@ -191,10 +191,8 @@ export class BroadcastsService {
     const scope = await this.scopes.resolve(actorId);
     const key = idempotencyKey?.trim() ? idempotencyKey.trim().slice(0, 128) : null;
     if (key) {
-      const existing = await this.prisma.coachBroadcast.findUnique({
-        where: { coach_id_idempotency_key: { coach_id: scope.tenantId, idempotency_key: key } },
-      });
-      if (existing) return this.replay(existing, input);
+      const existing = await this.findOwnKey(scope, key);
+      if (existing) return this.replay(scope, existing, input);
     }
     const v = await this.validate(scope, input, now);
     if (v.status === 'scheduled') {
@@ -241,16 +239,30 @@ export class BroadcastsService {
       return this.present(row);
     } catch (err) {
       if (key && err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        const existing = await this.prisma.coachBroadcast.findUnique({
-          where: { coach_id_idempotency_key: { coach_id: scope.tenantId, idempotency_key: key } },
-        });
-        if (existing) return this.replay(existing, input);
+        const existing = await this.findOwnKey(scope, key);
+        if (existing) return this.replay(scope, existing, input);
       }
       throw err;
     }
   }
 
-  private replay(existing: BroadcastRow, input: BroadcastInput) {
+  /**
+   * A-659-6: an Idempotency-Key replays only the caller's own broadcast. The
+   * persisted namespace is (tenant, author, key), so a sibling sub-coach or
+   * the head coach sending the same key and text creates a broadcast of
+   * their own and learns nothing about another author's.
+   */
+  private findOwnKey(scope: CoachScope, key: string) {
+    return this.prisma.coachBroadcast.findFirst({
+      where: { coach_id: scope.tenantId, author_user_id: scope.actorId, idempotency_key: key },
+    });
+  }
+
+  private replay(scope: CoachScope, existing: BroadcastRow, input: BroadcastInput) {
+    // The same read rule as get/list, on every replay path (A-659-6).
+    if (existing.coach_id !== scope.tenantId || existing.author_user_id !== scope.actorId) {
+      throw broadcastError('broadcast.idempotency_conflict');
+    }
     const sameBody = typeof input.body === 'string' && input.body.trim() === existing.body;
     if (!sameBody) throw broadcastError('broadcast.idempotency_conflict');
     return this.present(existing);
@@ -260,14 +272,25 @@ export class BroadcastsService {
     const scope = await this.scopes.resolve(actorId);
     const row = await this.load(scope, id);
     if (!EDITABLE.has(row.status)) throw broadcastError('broadcast.not_editable');
+    const lastRun = await this.lastClaimed(row.id);
     const v = await this.validate(scope, input, now);
+    // B-659-1: a claimed occurrence is never sent twice. A one-off that has
+    // started sending is immutable (its run carries its own frozen payload);
+    // a series may be edited, and the edit applies from the next occurrence.
+    if (lastRun && !row.recurrence) throw broadcastError('broadcast.already_sending');
+    if (lastRun && !v.recurrence) throw broadcastError('broadcast.series_started');
     if (v.status === 'scheduled') {
       const aud = await this.segments.resolve(scope, v.segment, now);
       if (aud.recipientIds.length === 0) throw broadcastError('broadcast.no_recipients');
     }
     const keepPaused = row.status === 'paused' && v.status === 'scheduled';
-    const first =
+    const first: { at: Date | null; recurrence: RecurrenceRule | null } =
       v.status === 'scheduled' ? this.firstRun(v, now) : { at: null, recurrence: v.recurrence };
+    if (lastRun && first.at && first.recurrence) {
+      first.at = afterClaimed(first.recurrence, v.timezone, first.at, lastRun);
+      if (!first.at)
+        throw broadcastError('broadcast.recurrence_invalid', { reason: 'no_occurrence' });
+    }
     const updated = await this.prisma.coachBroadcast.updateMany({
       where: {
         id: row.id,
@@ -321,11 +344,17 @@ export class BroadcastsService {
       data = { status: 'canceled', canceled_at: now, next_run_at: null };
     else {
       // Resume: a recurring broadcast skips the occurrences missed while
-      // paused and continues from the next one; a one-off sends now.
+      // paused and continues from the next one; a one-off that never started
+      // sends now. B-659-1: a one-off that has started is never re-armed, and
+      // a series never sends twice on a local day it already sent on.
       const rule = row.recurrence ? parseStoredRecurrence(row.recurrence) : null;
+      const lastRun = await this.lastClaimed(row.id);
+      const ruleNext = rule ? nextOccurrence(rule, row.timezone, now) : null;
       const next = rule
-        ? nextOccurrence(rule, row.timezone, now)
-        : row.next_run_at
+        ? ruleNext && lastRun
+          ? afterClaimed(rule, row.timezone, ruleNext, lastRun)
+          : ruleNext
+        : row.next_run_at && !lastRun
           ? row.next_run_at < now
             ? now
             : row.next_run_at
@@ -399,6 +428,16 @@ export class BroadcastsService {
       stats: stats.get(row.id) ?? emptyStats(),
       runs: runs.map((r) => ({ ...r, stats: runStats.get(r.id) ?? emptyStats() })),
     };
+  }
+
+  /** Latest claimed occurrence of a broadcast (B-659-1), or null if none. */
+  private async lastClaimed(broadcastId: string): Promise<Date | null> {
+    const run = await this.prisma.coachBroadcastRun.findFirst({
+      where: { broadcast_id: broadcastId },
+      orderBy: { scheduled_for: 'desc' },
+      select: { scheduled_for: true },
+    });
+    return run?.scheduled_for ?? null;
   }
 
   /** Sub-coaches see only broadcasts they wrote; the head coach sees all. */
@@ -501,6 +540,27 @@ export class BroadcastsService {
     if (r.anchor_date) out.anchor_date = r.anchor_date;
     return out;
   }
+}
+
+/**
+ * B-659-1: the first occurrence at or after `candidate` that is later than
+ * the last claimed occurrence and not on the same local day as it, so an
+ * edit or a resume never re-sends into a day that already had a copy. Null
+ * when the series has no such occurrence left.
+ */
+export function afterClaimed(
+  rule: RecurrenceRule,
+  timeZone: string,
+  candidate: Date,
+  lastClaimed: Date,
+): Date | null {
+  const claimedDay = localDateString(lastClaimed, timeZone);
+  let at: Date | null = candidate;
+  for (let i = 0; at && i < 8; i++) {
+    if (at > lastClaimed && localDateString(at, timeZone) !== claimedDay) return at;
+    at = nextOccurrence(rule, timeZone, at);
+  }
+  return null;
 }
 
 /** Stored rows were validated on write; re-validate on read and keep the anchor. */

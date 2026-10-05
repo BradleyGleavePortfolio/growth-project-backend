@@ -50,6 +50,10 @@ CREATE TABLE "coach_broadcast_runs" (
     "fanned_out_at" TIMESTAMP(3),
     "completed_at" TIMESTAMP(3),
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "body" TEXT NOT NULL,
+    "card" JSONB,
+    "segment" JSONB NOT NULL,
+    "urgent" BOOLEAN NOT NULL DEFAULT false,
 
     CONSTRAINT "coach_broadcast_runs_pkey" PRIMARY KEY ("id")
 );
@@ -120,7 +124,7 @@ CREATE INDEX "coach_broadcasts_status_next_run_at_idx" ON "coach_broadcasts"("st
 CREATE INDEX "coach_broadcasts_coach_id_created_at_idx" ON "coach_broadcasts"("coach_id", "created_at" DESC);
 
 -- CreateIndex
-CREATE UNIQUE INDEX "coach_broadcasts_coach_id_idempotency_key_key" ON "coach_broadcasts"("coach_id", "idempotency_key");
+CREATE UNIQUE INDEX "coach_broadcasts_coach_id_author_user_id_idempotency_key_key" ON "coach_broadcasts"("coach_id", "author_user_id", "idempotency_key");
 
 -- CreateIndex
 CREATE INDEX "coach_broadcast_runs_status_lease_until_idx" ON "coach_broadcast_runs"("status", "lease_until");

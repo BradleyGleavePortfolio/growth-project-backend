@@ -22,7 +22,7 @@
  */
 import 'reflect-metadata';
 import { randomUUID } from 'crypto';
-import { Role } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../../src/prisma.service';
 import { SubCoachScopeService } from '../../src/sub-coach/sub-coach-scope.service';
 import { BroadcastScopeService } from '../../src/broadcasts/broadcast-scope.service';
@@ -67,7 +67,11 @@ itLive('A4 broadcasts on a live database', () => {
     blocker: randomUUID(),
     untagged: randomUUID(),
     otherClient: randomUUID(),
+    subA: randomUUID(),
+    subB: randomUUID(),
+    subClient: randomUUID(),
   };
+  const savedFlag = process.env.FEATURE_COACH_BROADCASTS;
   /** Push attempts (recipient ids) across all dispatcher instances. */
   const emits: string[] = [];
 
@@ -103,6 +107,8 @@ itLive('A4 broadcasts on a live database', () => {
   const at = (mins: number) => new Date(base.getTime() + mins * 60_000);
 
   beforeAll(async () => {
+    // B-659-9: the dispatcher re-reads the kill switch at every boundary.
+    process.env.FEATURE_COACH_BROADCASTS = 'true';
     db = newClient();
     await db.$connect();
     const users: Array<[string, Role, string | null, string]> = [
@@ -114,10 +120,25 @@ itLive('A4 broadcasts on a live database', () => {
       [id.blocker, 'student', id.coach, 'Blake Blocker'],
       [id.untagged, 'student', id.coach, 'Una Tagless'],
       [id.otherClient, 'student', id.otherCoach, 'Oscar Other'],
+      [id.subA, 'coach', id.coach, 'Sub Alpha'],
+      [id.subB, 'coach', id.coach, 'Sub Beta'],
+      [id.subClient, 'student', id.coach, 'Sam Assigned'],
     ];
     for (const [uid, role, coachId, name] of users) {
       await insertLiveUser(db, { id: uid, role, name: `${name} ${tag}`, coachId });
     }
+    // Two sub-coaches on the head coach's team, both assigned to subClient.
+    for (const sub of [id.subA, id.subB]) {
+      await db.teamSubCoachAssignment.create({
+        data: { head_coach_id: id.coach, sub_coach_id: sub },
+      });
+      await db.subCoachAssignment.create({
+        data: { head_coach_id: id.coach, sub_coach_id: sub, client_id: id.subClient },
+      });
+    }
+    await db.notificationPreferences.create({
+      data: { user_id: id.subClient, timezone: 'Asia/Tokyo' },
+    });
     const tz: Array<[string, string]> = [
       [id.ny, 'America/New_York'],
       [id.tokyo, 'Asia/Tokyo'],
@@ -149,13 +170,52 @@ itLive('A4 broadcasts on a live database', () => {
       await db.coachSavedReply.deleteMany({ where: { owner_user_id: { in: all } } });
       await db.userBlock.deleteMany({ where: { blocker_id: { in: all } } });
       await db.notificationPreferences.deleteMany({ where: { user_id: { in: all } } });
+      await db.subCoachAssignment.deleteMany({ where: { head_coach_id: id.coach } });
+      await db.teamSubCoachAssignment.deleteMany({ where: { head_coach_id: id.coach } });
       await db.user.deleteMany({
-        where: { id: { in: [id.ny, id.tokyo, id.la, id.blocker, id.untagged, id.otherClient] } },
+        where: {
+          id: {
+            in: [id.ny, id.tokyo, id.la, id.blocker, id.untagged, id.otherClient, id.subClient],
+          },
+        },
       });
+      await db.user.deleteMany({ where: { id: { in: [id.subA, id.subB] } } });
       await db.user.deleteMany({ where: { id: { in: [id.coach, id.otherCoach] } } });
     }
     for (const c of clients) await c.$disconnect();
+    if (savedFlag === undefined) delete process.env.FEATURE_COACH_BROADCASTS;
+    else process.env.FEATURE_COACH_BROADCASTS = savedFlag;
   });
+
+  /**
+   * Holds a write on another connection until released, so a delivery that
+   * needs the same row's lock is provably waiting on it (B-659-8, A-659-7).
+   */
+  async function holdWrite(write: (tx: Prisma.TransactionClient) => Promise<unknown>) {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let held!: () => void;
+    const isHeld = new Promise<void>((r) => (held = r));
+    const done = newClient().$transaction(
+      async (tx) => {
+        await write(tx);
+        held();
+        await gate;
+      },
+      { timeout: 30_000 },
+    );
+    await isHeld;
+    return { commit: async () => (release(), done) };
+  }
+
+  /** Resolves to the outcome, and records whether it settled before `commit`. */
+  function track<T>(p: Promise<T>) {
+    const t = { settled: false, result: p };
+    void p.finally(() => (t.settled = true));
+    return t;
+  }
+
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
   it('preview count matches recipients; blocks and other tenants are excluded', async () => {
     const { service } = build(db);
@@ -306,6 +366,120 @@ itLive('A4 broadcasts on a live database', () => {
       at(4),
     );
     expect(await db.coachBroadcastDelivery.count({ where: { broadcast_id: created.id } })).toBe(4);
+  });
+
+  it('B-659-1: pause mid-run, edit refused, resume: one copy per recipient, every copy the same text', async () => {
+    const { service } = build(db);
+    const text = `Block two starts Monday ${tag}.`;
+    const created = await service.create(
+      id.coach,
+      {
+        body: text,
+        segment: { match: 'all', rules: [{ field: 'tag', op: 'in', values: ['vip'] }] },
+        timezone: 'America/Los_Angeles',
+      },
+      `live-b1-${tag}`,
+    );
+    const a = build(newClient());
+    await a.dispatcher.tick(base); // Tokyo and LA delivered, New York deferred (quiet hours)
+    await service.transition(id.coach, created.id, 'pause');
+    await expect(
+      service.update(id.coach, created.id, {
+        body: `Fixed typo ${tag}.`,
+        segment: {},
+        timezone: 'America/Los_Angeles',
+      }),
+    ).rejects.toMatchObject({ code: 'broadcast.already_sending' });
+    await service.transition(id.coach, created.id, 'resume');
+    await a.dispatcher.tick(at(10 * 60));
+    await build(newClient()).dispatcher.tick(at(10 * 60 + 1));
+    for (const c of [id.ny, id.tokyo, id.la]) {
+      const copies = await db.coachMessage.findMany({
+        where: { coach_id: id.coach, client_id: c, body: { contains: tag } },
+        select: { body: true },
+      });
+      expect(copies).toHaveLength(1);
+      expect(copies[0].body).toBe(text);
+    }
+    expect(await db.coachBroadcastRun.count({ where: { broadcast_id: created.id } })).toBe(1);
+  });
+
+  it('B-659-8: a cancel that commits while a copy waits on the broadcast row stops that copy', async () => {
+    const { service } = build(db);
+    const text = `Cancel race ${tag}.`;
+    const created = await service.create(
+      id.coach,
+      {
+        body: text,
+        urgent: true,
+        segment: { match: 'all', rules: [{ field: 'tag', op: 'in', values: ['vip'] }] },
+        timezone: 'America/Los_Angeles',
+      },
+      `live-b8-${tag}`,
+    );
+    const a = build(newClient());
+    await a.dispatcher.claimDue(base);
+    await a.dispatcher.fanOutRuns(base);
+    const victim = await db.coachBroadcastDelivery.findFirstOrThrow({
+      where: { broadcast_id: created.id, recipient_id: id.tokyo },
+    });
+    const hold = await holdWrite((tx) =>
+      tx.coachBroadcast.update({
+        where: { id: created.id },
+        data: { status: 'canceled', canceled_at: base, next_run_at: null },
+      }),
+    );
+    const sending = track(a.dispatcher.deliverOne(victim.id, base));
+    await sleep(1_500);
+    expect(sending.settled).toBe(false); // waiting on the FOR SHARE fence
+    await hold.commit();
+    expect(await sending.result).toBe('skipped_ineligible');
+    expect(await db.coachMessage.count({ where: { client_id: id.tokyo, body: text } })).toBe(0);
+  });
+
+  it('A-659-6: two sub-coaches with the same key and text get separate broadcasts', async () => {
+    const one = build(db).service;
+    const input = { body: `Same text ${tag}`, segment: {}, timezone: 'Asia/Tokyo' };
+    const a = await one.create(id.subA, input, `shared-${tag}`);
+    const b = await one.create(id.subB, input, `shared-${tag}`);
+    expect(b.id).not.toBe(a.id);
+    expect(b.author_user_id).toBe(id.subB);
+    expect((await one.create(id.subA, input, `shared-${tag}`)).id).toBe(a.id);
+    await one.transition(id.subA, a.id, 'cancel');
+    await one.transition(id.subB, b.id, 'cancel');
+  });
+
+  it('A-659-7: a reassignment that commits while a sub-coach copy waits stops that copy', async () => {
+    const { service } = build(db);
+    const text = `Sub-coach note ${tag}.`;
+    const created = await service.create(
+      id.subA,
+      { body: text, urgent: true, segment: {}, timezone: 'Asia/Tokyo' },
+      `live-a7-${tag}`,
+    );
+    const a = build(newClient());
+    await a.dispatcher.claimDue(base);
+    await a.dispatcher.fanOutRuns(base);
+    const victim = await db.coachBroadcastDelivery.findFirstOrThrow({
+      where: { broadcast_id: created.id, recipient_id: id.subClient },
+    });
+    const hold = await holdWrite((tx) =>
+      tx.subCoachAssignment.updateMany({
+        where: { sub_coach_id: id.subA, client_id: id.subClient, unassigned_at: null },
+        data: { unassigned_at: base },
+      }),
+    );
+    const sending = track(a.dispatcher.deliverOne(victim.id, base));
+    await sleep(1_500);
+    expect(sending.settled).toBe(false); // waiting on the assignment row lock
+    await hold.commit();
+    expect(await sending.result).toBe('skipped_ineligible');
+    expect(await db.coachMessage.count({ where: { client_id: id.subClient, body: text } })).toBe(0);
+    const row = await db.coachBroadcastDelivery.findUniqueOrThrow({ where: { id: victim.id } });
+    expect(row).toMatchObject({
+      status: 'skipped_ineligible',
+      failure_code: 'author_not_assigned',
+    });
   });
 
   it('RLS: anon and authenticated read nothing and write nothing on every A4 table', async () => {

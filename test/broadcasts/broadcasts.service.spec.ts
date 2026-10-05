@@ -1,4 +1,5 @@
 import { BroadcastsService } from '../../src/broadcasts/broadcasts.service';
+import { Prisma } from '@prisma/client';
 import { BroadcastHttpError } from '../../src/broadcasts/broadcast-errors';
 import type { PrismaService } from '../../src/prisma.service';
 import type { AuditService } from '../../src/audit/audit.service';
@@ -136,5 +137,219 @@ describe('BroadcastsService', () => {
     expect(await code(h.svc.transition('coach-a', 'b1', 'cancel', NOW))).toBe(
       'broadcast.invalid_transition',
     );
+  });
+});
+
+// ---- A-659-6: Idempotency-Key replay is bound to the author ------------------
+
+describe('BroadcastsService idempotency (A-659-6)', () => {
+  type Row = Record<string, unknown> & { id: string };
+  function store(rows: Row[], opts: { p2002Once?: Row } = {}) {
+    const matches = (r: Row, where: Record<string, unknown>) =>
+      Object.entries(where).every(([k, v]) => r[k] === v);
+    let raced = false;
+    const prisma = {
+      coachBroadcast: {
+        // The pre-fix namespace: (tenant, key) only.
+        findUnique: jest.fn(
+          async (a: {
+            where: { coach_id_idempotency_key: { coach_id: string; idempotency_key: string } };
+          }) =>
+            rows.find(
+              (r) =>
+                r.coach_id === a.where.coach_id_idempotency_key.coach_id &&
+                r.idempotency_key === a.where.coach_id_idempotency_key.idempotency_key,
+            ) ?? null,
+        ),
+        findFirst: jest.fn(
+          async (a: { where: Record<string, unknown> }) =>
+            rows.find((r) => matches(r, a.where)) ?? null,
+        ),
+        create: jest.fn(async (a: { data: Record<string, unknown> }) => {
+          if (opts.p2002Once && !raced) {
+            raced = true;
+            rows.push(opts.p2002Once);
+            throw new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+              code: 'P2002',
+              clientVersion: 'test',
+            });
+          }
+          const row = {
+            id: `b-${rows.length + 1}`,
+            created_at: NOW,
+            updated_at: NOW,
+            occurrences_sent: 0,
+            ...a.data,
+          };
+          rows.push(row);
+          return row;
+        }),
+        count: jest.fn(async () => 0),
+      },
+    };
+    return prisma;
+  }
+  function svcFor(prisma: unknown, scope: CoachScope) {
+    return new BroadcastsService(
+      stub<PrismaService>(prisma),
+      stub<BroadcastScopeService>({ resolve: async () => scope }),
+      stub<SegmentResolverService>({
+        resolve: async () => ({ recipientIds: ['c9'], blockedIds: [], rosterSize: 1 }),
+      }),
+      stub<CardsService>({}),
+      stub<AuditService>({ write: async () => undefined }),
+    );
+  }
+  const subA: CoachScope = { actorId: 'sub-a', tenantId: 'coach-a', clientIds: ['c1'] };
+  const subB: CoachScope = { actorId: 'sub-b', tenantId: 'coach-a', clientIds: ['c9'] };
+  const rowA: Row = {
+    id: 'b-a',
+    coach_id: 'coach-a',
+    author_user_id: 'sub-a',
+    idempotency_key: 'k1',
+    status: 'scheduled',
+    body: 'Hello',
+    card: null,
+    segment: { match: 'all', rules: [], exclude_client_ids: ['private-client'] },
+    timezone: 'UTC',
+    created_at: NOW,
+    updated_at: NOW,
+  };
+
+  it('a sibling sub-coach with the same key and text gets a broadcast of their own and learns nothing about the other', async () => {
+    const rows: Row[] = [{ ...rowA }];
+    const prisma = store(rows);
+    const out = await svcFor(prisma, subB).create('sub-b', input, 'k1', NOW);
+    expect(out.id).not.toBe('b-a');
+    expect(out.author_user_id).toBe('sub-b');
+    expect(JSON.stringify(out)).not.toContain('private-client');
+    expect(JSON.stringify(out)).not.toContain('sub-a');
+    expect(prisma.coachBroadcast.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('the head coach colliding with a sub-coach key is independent too', async () => {
+    const rows: Row[] = [{ ...rowA }];
+    const out = await svcFor(store(rows), head).create('coach-a', input, 'k1', NOW);
+    expect(out.id).not.toBe('b-a');
+    expect(out.author_user_id).toBe('coach-a');
+  });
+
+  it('the same author replays the same broadcast (and a different text is a conflict)', async () => {
+    const rows: Row[] = [{ ...rowA }];
+    const prisma = store(rows);
+    const again = await svcFor(prisma, subA).create('sub-a', input, 'k1', NOW);
+    expect(again.id).toBe('b-a');
+    expect(prisma.coachBroadcast.create).not.toHaveBeenCalled();
+    expect(
+      await code(svcFor(prisma, subA).create('sub-a', { ...input, body: 'Other' }, 'k1', NOW)),
+    ).toBe('broadcast.idempotency_conflict');
+  });
+
+  it('a concurrent loser (P2002) of the same author replays the winner', async () => {
+    const rows: Row[] = [];
+    const prisma = store(rows, { p2002Once: { ...rowA } });
+    const out = await svcFor(prisma, subA).create('sub-a', input, 'k1', NOW);
+    expect(out.id).toBe('b-a');
+  });
+});
+
+// ---- B-659-1: a claimed occurrence is never sent twice -----------------------
+
+describe('BroadcastsService edit / resume after a claim (B-659-1)', () => {
+  function withRun(row: Record<string, unknown>, lastRun: Date | null) {
+    const h = harness(head, { row });
+    h.prisma.coachBroadcastRun = {
+      findMany: jest.fn(async () => []),
+      count: jest.fn(async () => (lastRun ? 1 : 0)),
+      findFirst: jest.fn(async () => (lastRun ? { scheduled_for: lastRun } : null)),
+    } as unknown as typeof h.prisma.coachBroadcastRun;
+    return h;
+  }
+  const base = {
+    id: 'b1',
+    coach_id: 'coach-a',
+    author_user_id: 'coach-a',
+    updated_at: NOW,
+    body: 'Old text',
+    segment: {},
+    timezone: 'America/Chicago',
+    card: null,
+  };
+  // 2027-02-01T13:00Z = 07:00 Chicago (CST); NOW = 09:00 Chicago.
+  const today0700 = new Date('2027-02-01T13:00:00Z');
+
+  it('pause mid-run, edit, resume: the edit of a started one-off is refused and nothing is re-armed', async () => {
+    const h = withRun(
+      { ...base, status: 'paused', recurrence: null, next_run_at: null },
+      today0700,
+    );
+    expect(await code(h.svc.update('coach-a', 'b1', { ...input, body: 'Fixed typo' }, NOW))).toBe(
+      'broadcast.already_sending',
+    );
+    expect(h.prisma.coachBroadcast.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('a series with a claimed occurrence cannot become a one-off (that would resend now)', async () => {
+    const rule = { freq: 'daily', interval: 1, local_time: '07:00', anchor_date: '2027-01-30' };
+    const h = withRun(
+      { ...base, status: 'scheduled', recurrence: rule, next_run_at: null },
+      today0700,
+    );
+    expect(await code(h.svc.update('coach-a', 'b1', input, NOW))).toBe('broadcast.series_started');
+    expect(h.prisma.coachBroadcast.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('a series edit applies from the next occurrence and never adds a second copy on a day already sent', async () => {
+    const rule = { freq: 'daily', interval: 1, local_time: '07:00', anchor_date: '2027-01-30' };
+    const h = withRun(
+      { ...base, status: 'scheduled', recurrence: rule, next_run_at: null },
+      today0700,
+    );
+    // Moving the time to 10:00 at 09:00 would otherwise send again today at 10:00.
+    await h.svc.update(
+      'coach-a',
+      'b1',
+      { ...input, recurrence: { freq: 'daily', local_time: '10:00' } },
+      NOW,
+    );
+    const data = (
+      h.prisma.coachBroadcast.updateMany.mock.calls[0] as unknown as [
+        { data: { next_run_at: Date } },
+      ]
+    )[0].data;
+    expect(data.next_run_at).toEqual(new Date('2027-02-02T16:00:00Z'));
+  });
+
+  it('a one-off that never started is still editable', async () => {
+    const h = withRun({ ...base, status: 'paused', recurrence: null, next_run_at: NOW }, null);
+    expect(await code(h.svc.update('coach-a', 'b1', input, NOW))).toBe('resolved');
+  });
+
+  it('resume never re-arms a one-off that already has a run', async () => {
+    const h = withRun({ ...base, status: 'paused', recurrence: null, next_run_at: NOW }, today0700);
+    await h.svc.transition('coach-a', 'b1', 'resume', NOW);
+    const data = (
+      h.prisma.coachBroadcast.updateMany.mock.calls[0] as unknown as [
+        { data: Record<string, unknown> },
+      ]
+    )[0].data;
+    expect(data.next_run_at).toBeNull();
+    expect(data.status).toBe('sending');
+  });
+
+  it('resume of a series skips to a day that has not had a copy yet', async () => {
+    const rule = { freq: 'daily', interval: 1, local_time: '10:00', anchor_date: '2027-01-30' };
+    const h = withRun(
+      { ...base, status: 'paused', recurrence: rule, next_run_at: null },
+      today0700,
+    );
+    await h.svc.transition('coach-a', 'b1', 'resume', NOW);
+    const data = (
+      h.prisma.coachBroadcast.updateMany.mock.calls[0] as unknown as [
+        { data: Record<string, unknown> },
+      ]
+    )[0].data;
+    expect(data.next_run_at).toEqual(new Date('2027-02-02T16:00:00Z'));
+    expect(data.status).toBe('scheduled');
   });
 });
