@@ -163,6 +163,7 @@ describe('SchedulingService — request + state machine + audit', () => {
     expect(approved.calendar_event_id).toMatch(/^stub-cal-sess-sess-\d+-/);
     // StubVideoAdapter returns joinUrl: null so fake URLs never reach rows.
     expect(approved.video_url).toBeNull();
+    expect(approved.meeting_link_status).toBe('pending');
     expect(approved.provider_idempotency_key).toMatch(/^sess-sess-\d+-/);
     expect(h.writes.map((w) => w.action)).toEqual(
       expect.arrayContaining([
@@ -246,6 +247,7 @@ describe('SchedulingService — request + state machine + audit', () => {
     });
     expect(updated.video_provider).toBe('manual');
     expect(updated.video_url).toBe('https://whereby.com/coach-1/personal-room');
+    expect(updated.meeting_link_status).toBe('ready');
     expect(h.writes.find((w) => w.action === 'session.video_link_attached')).toBeTruthy();
   });
 
@@ -272,12 +274,12 @@ describe('SchedulingService — request + state machine + audit', () => {
     expect(h.writes.filter((w) => w.action === 'coach.availability_updated')).toHaveLength(2);
   });
 
-  it('rejects availability windows where end_minute <= start_minute', async () => {
+  it('rejects availability windows where end_minute <= start_minute, with a code', async () => {
     await expect(
       h.svc.setAvailability(COACH_ACTOR, 'coach-1', [
         { day_of_week: 1, start_minute: 600, end_minute: 600 },
       ]),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    ).rejects.toMatchObject({ response: { code: 'INVALID_TIME' } });
   });
 
   it('never calls a real provider adapter while the provider flags are off', async () => {
