@@ -1,0 +1,33 @@
+PASS test/b-sched2-121-lock-screen.probe.spec.ts (91 MB heap size)
+  ● Console
+       {
+       {
+       {
+       {
+       {
+       {
+       {
+       {
+       {
+       {
+       {
+       {
+       {
+       {
+       }
+      at Object.<anonymous> (test/b-sched2-121-lock-screen.probe.spec.ts:113:13)
+PASS test/audit-opus121-booking-lock-screen.probe.spec.ts (108 MB heap size)
+  ● Console
+       {
+       {
+       {
+       {
+       {
+       }
+      at Object.<anonymous> (test/audit-opus121-booking-lock-screen.probe.spec.ts:78:13)
+PASS test/booking-lock-screen-push.spec.ts (91 MB heap size)
+Test Suites: 3 passed, 3 total
+Tests:       5 passed, 5 total
+Snapshots:   0 total
+Time:        2.744 s, estimated 4 s
+Ran all test suites matching test/b-sched2-121-lock-screen.probe.spec.ts|test/audit-opus121-booking-lock-screen.probe.spec.ts|test/booking-lock-screen-push.spec.ts.

@@ -1,0 +1,12 @@
+{
+ "_lane": "Lane ci/B-SPLIT-COACHLESS-121-1 (run 37365581470) was cancelled while queued (redundant with PR CI during the runner incident). Inherited red from #657's own CI (run 37082215722) fixed in the owning piece: PR body items 6 (roles-enforced, split 3, e3368cc3) and 7 (live RLS anon case, split 1, d90b4842); top tree of #723 == M' fcdc1d6c tree 31ad366f.",
+ "721": {"head": "d90b484278f432e6e73e41326dc31cadc8892999",
+   "local": "on M' fcdc1d6c (top of stack, includes this piece): tsc --noEmit 0 errors (4 GB heap); 26 suites / 439 tests pass (all of test/account-deletion incl. erasure-manifest-coverage + manifest-fk-order, test/coachless, env-validation, lockout route table, admin hygiene, entitlement guards, rate-limit, throttler isolation, openapi, route-doc-drift, fly-env-workflows); no-pii-in-logs, fly-env-manifest, feature-flags, roles-enforced pass. The live RLS spec (fix 7) needs Postgres: runs in this PR's rls-live-tests job.",
+   "ci": "queued (GitHub runner incident; CI, Migration Dry-Run, Schema parity, Danger, codeql and the rest not started at 13:51 PDT). No red result exists at this head."},
+ "722": {"head": "c219d2f391c37edd700d5204f31b50286f280d82",
+   "local": "at this exact head (fixture variant): coachless-home, feature-flags service + controller, fly-env-manifest: 4 suites / 105 tests pass. Stack top M' fcdc1d6c: tsc 0 errors; 26 suites / 439 tests pass (list on #721).",
+   "ci": "queued (GitHub runner incident; not started at 13:51 PDT). No red result exists at this head."},
+ "723": {"head": "e3368cc3cbb0961326ddf147728f7fc32d884188",
+   "local": "this head's tree == M' fcdc1d6c: tsc 0 errors; roles-enforced 2/2; coach-code-redemption + coachless-home, account-deletion (all), no-pii-in-logs, env-validation, lockout route table, admin hygiene, entitlement guards, rate-limit, throttler isolation, openapi, route-doc-drift, fly-env-manifest/-workflows, feature-flags: all pass (26 suites / 439 tests in one run + 9 suites in the M run).",
+   "ci": "queued (GitHub runner incident; not started at 13:51 PDT). No red result exists at this head."}
+}

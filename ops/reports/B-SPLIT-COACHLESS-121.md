@@ -45,8 +45,13 @@ Only non-M' file in any piece: split-2 fixture omits the redemption import/const
 - Local heavy.sh on M (f3f0d659): coachless-home + coach-code-redemption, erasure-manifest-coverage, manifest-fk-order, no-pii-in-logs,
   fly-env-manifest, feature-flags service + controller: 8 suites pass (163 tests); roles-enforced FAIL (inherited, fix 6). On M':
   roles-enforced 2/2. tsc at 2.5 GB heap OOM; rerun at 4 GB queued (ops/aud-121/B-SPLIT-COACHLESS-121/tsc-Mprime.log).
-- Piece 2 local (fixture variant): ops/aud-121/B-SPLIT-COACHLESS-121/jest-piece2.log.
-- PR CI #721-#723 at the new heads: queued (GitHub runner incident).
+- tsc on M' at 4 GB heap: 0 errors (tsc-Mprime.log). Gates on M': 26 suites / 439 tests pass (jest-gates-Mprime.log: all
+  test/account-deletion, test/coachless, env-validation, lockout route table, admin hygiene, entitlement guards, rate-limit,
+  throttler isolation, openapi, route-doc-drift, billing throttle metadata, fly-env-workflows).
+- Piece 2 at c219d2f3 (fixture variant): coachless-home, feature-flags x2, fly-env-manifest: 4 suites / 105 tests pass (jest-piece2.log).
+- PR CI #721-#723 at the new heads: queued at 13:51 (GitHub runner incident); duplicate CI runs 37370259417 / 37370259194 cancelled.
+- Comments 13:52: FIX ROUND 1 (OPENING) + READY FOR AUDIT #721 issuecomment-6002703565, #722 -6002703810, #723 -6002704000;
+  #657 superseded issuecomment-6002704227 (not closed).
 
 ## Decisions for the operator
 - D1: migration name 20270301000000_coachless_featured_coach (A3 annex reservation) shares its timestamp with two applied migrations
@@ -76,9 +81,16 @@ No mobile file calls any /coachless/* or /admin/featured-coach route; no mobile 
 - C-CL-2 src/data-export/data-export.service.ts: CoachCodeRedemption and CoachlessPromptState rows are not in the user's data export.
   Fix rule: export the user's own rows (status, outcome, created_at; prompt counters).
 
-## HANDOFF
-- State: pieces open as drafts #721/#722/#723 at the heads above; waiting for PR CI (and local tsc); then FIX ROUND 1
-  (OPENING) + READY FOR AUDIT on each piece (drafts: ops/split/B-SPLIT-COACHLESS-121/mkcomments.py) and the superseded comment on
-  #657 (do not close).
-- If a gate fails: fix in the piece that owns the file as a new commit, then merge each branch into the next (no force-push); rebuild
-  the reference with the same fix so top-tree equality still holds.
+## HANDOFF (13:53 PDT 10-05)
+- Done: #657 merged with main once, split into #721 <- #722 <- #723 (drafts), heads d90b484278f432e6e73e41326dc31cadc8892999 /
+  c219d2f391c37edd700d5204f31b50286f280d82 / e3368cc3cbb0961326ddf147728f7fc32d884188; top tree == M' fcdc1d6c (31ad366f), branch
+  agent121/coachless-split-0-merged-reference (keep until the stack lands). FIX ROUND 1 (OPENING) + READY FOR AUDIT posted on each;
+  superseded comment on #657.
+- Left: PR CI (queued at 13:51, runner incident) must go green, especially rls-live-tests on #721 (fix 7 is only CI-verifiable) and
+  build-and-test; then both lenses on each piece (T4). If CI goes red: fix in the owning piece as a new commit, merge each branch into
+  the next (no force-push), cherry-pick onto the reference, new FIX ROUND comment.
+- Open Bs: none (no lens review yet). Edge-case Cs: none raised. Cs: C-CL-1, C-CL-2 above. Operator decisions: D1, D2 (defaults above).
+- Overlap: whichever of this stack and #658 lands second maps code_revoked / code_expired / code_exhausted in ATTACH_TO_COACHLESS
+  (src/coachless/coach-code-redemption.service.ts:46-53 on #723).
+- Cleanup done: lock ops/lanes121/locks/coachless released; worktrees wt/B-SPLIT-COACHLESS-121-1 and -2 removed; lane branch
+  ci/B-SPLIT-COACHLESS-121-1 deleted. Tooling kept: ops/split/B-SPLIT-COACHLESS-121/, evidence logs ops/aud-121/B-SPLIT-COACHLESS-121/.

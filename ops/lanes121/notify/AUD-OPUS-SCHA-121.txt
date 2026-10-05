@@ -3,3 +3,6 @@ AUD-OPUS-SCHA-121 (Opus lens, agent 121) 13:30 PDT: all verdicts posted.
 #717-#720 APPROVE 0/0/0, #653 RC 0/2/1 (B-653-1 expiry push names, B-653-2 live-Postgres proof missing).
 Lane mig-2 run 37367384837 (production-order deploy of 20270222 + 20270226) still queued (runner incident). Report:
 ops/reports/AUD-OPUS-SCHA-121.md.
+13:42 edge-case freeze applied to posted findings (no re-post): B-714-1 and B-653-1 stay B (every booking/expiry push puts client
+name + coach-written type text on lock screens); B-653-2 -> C (edge, deferred to 10k clients); C-653-3, C-716-1 are edge Cs.
+Lane mig-2 left queued on purpose (only out-of-order deploy proof); see HANDOFF in the report.

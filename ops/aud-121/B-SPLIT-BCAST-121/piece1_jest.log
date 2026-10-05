@@ -227,3 +227,264 @@ Tests:       30 passed, 30 total
 Snapshots:   0 total
 Time:        10.919 s, estimated 16 s
 Ran all test suites matching test/prod-readiness/env-registration.spec.ts.
+[heavy] waiting for a slot: npx jest test/prod-readiness/env-discovery.spec.ts --runInBand
+PASS test/prod-readiness/env-discovery.spec.ts (17.144 s, 123 MB heap size)
+  extractEnvVarRefs — access shapes
+    ✓ finds property access process.env.FOO (8 ms)
+    ✓ finds string element access process.env["BAR"] (11 ms)
+    ✓ finds single-quoted element access process.env['BAZ'] (1 ms)
+    ✓ resolves an in-file string const used as the element key (1 ms)
+    ✓ does not resolve an identifier key with no string const (skipped) (2 ms)
+    ✓ finds destructured names const { A_VAR, B_VAR } = process.env (1 ms)
+    ✓ uses the property name (not alias) for aliased destructuring (1 ms)
+    ✓ dedupes the same var referenced multiple ways in one file (1 ms)
+    ✓ ignores lowercase / non-UPPER_SNAKE names (1 ms)
+    ✓ ignores references commented out of the source (AST drops comments) (2 ms)
+    ✓ ignores a process-shaped access that is not process.env (1 ms)
+    ✓ returns an empty set for a file with no env references (2 ms)
+    ✓ collects many distinct vars across mixed shapes (1 ms)
+  extractEnvRuleNames — ENV_RULES array parsing
+    ✓ reads name properties off ENV_RULES object literals (37 ms)
+    ✓ is property-order independent (name need not be first) (7 ms)
+    ✓ parses the TypeScript const-assertion (as const) ENV_RULES shape (4 ms)
+    ✓ ignores non-ENV_RULES arrays of objects with a name property (2 ms)
+    ✓ extracts the real src/common/env-validation.ts ENV_RULES names (72 ms)
+  discoverEnvVars — three-source union over a fixture repo
+    ✓ attributes a var to all three sources when wired end-to-end (247 ms)
+    ✓ records code references and counts a var used in many files once (8 ms)
+    ✓ handles a missing .env.example gracefully (no throw, code-only var) (1 ms)
+    ✓ handles an entirely empty repo (no sources) without throwing (1 ms)
+    ✓ parses .env.example lines and ignores comments / blanks (1 ms)
+    ✓ skips binary files under src/ (NUL-byte probe) without throwing (1 ms)
+    ✓ does not descend into node_modules or dot-directories (1 ms)
+    ✓ does not follow a cyclic directory symlink into an infinite loop (2 ms)
+    ✓ round-trips the REAL src/ tree into a non-empty discovery (3061 ms)
+  crossReference — UNDECLARED / DEAD / TRACKED classification
+    ✓ synthetic: 3 code vars, registry has 2 -> 1 UNDECLARED, 0 DEAD, 2 TRACKED (1 ms)
+    ✓ registry has a var absent from code -> reports it DEAD
+    ✓ treats a var present only in .env.example (not code) as referenced (1 ms)
+    ✓ does not classify a var present only in ENV_RULES but never read
+    ✓ classifies a fully wired var as TRACKED and preserves origin flags
+    ✓ copies codeRefs defensively (mutating the finding does not touch source) (1 ms)
+    ✓ excludes _TEST_ prefixed vars from the prod scan (code side)
+    ✓ does NOT exclude an INFIXED TEST_ var — it is a real prod var (registry side) (1 ms)
+    ✓ produces an empty report when discovery and registry are both empty
+    ✓ still produces a report (only DEAD) when code discovery is empty
+    ✓ sorts findings by name for stable, diffable reports
+    ✓ records registrySize from the registry, independent of classification
+  report helpers — findUndeclared / findDead / summary
+    ✓ findUndeclared returns only UNDECLARED findings (1 ms)
+    ✓ findDead returns only DEAD findings
+    ✓ summary rolls up per-status counts that sum to the total
+    ✓ summary of an empty report is all zeros (1 ms)
+    ✓ isTestOnly / TEST_ONLY_ENV agree on test-scaffold names (prefix-anchored)
+  discoverWithRegistry — end-to-end scan
+    ✓ crosses a fixture src tree against a fixture registry file on disk (23 ms)
+    ✓ re-throws a missing-registry error wrapped with discovery context (335 ms)
+    ✓ re-throws an invalid-registry (too-few-rows) error with context (3 ms)
+    ✓ round-trips the REAL src/ against the REAL prod-switches.yml (3564 ms)
+    ✓ defaults the registry path to <repoRoot>/prod-switches.yml (13 ms)
+  extractEnvVarRefs — nested and unusual positions
+    ✓ finds a reference nested inside a function body (1 ms)
+    ✓ finds a reference inside an arrow inside an object property
+    ✓ finds a reference inside a ternary expression
+    ✓ finds references across multiple statements in one file
+    ✓ ignores a numeric element-access key (not a valid env name) (4 ms)
+    ✓ ignores a template-literal element-access key (not statically a name)
+    ✓ resolves a const declared after its use in the same file (1 ms)
+    ✓ does not treat a non-string const key as a name
+    ✓ accepts UPPER_SNAKE names containing digits and underscores
+    ✓ rejects a leading-digit candidate via element access
+  extractEnvRuleNames — empty and malformed ENV_RULES
+    ✓ returns no names when ENV_RULES is an empty array (1 ms)
+    ✓ returns no names when the file has no ENV_RULES at all (3 ms)
+    ✓ skips object entries whose name value is not UPPER_SNAKE (1 ms)
+    ✓ dedupes a name that appears twice in ENV_RULES (3 ms)
+  discoverEnvVars — partial source attribution
+    ✓ attributes a var to ENV_RULES + .env.example but not code (2 ms)
+    ✓ attributes a var to code only when neither rules nor example list it (1 ms)
+    ✓ uses repo-root-relative paths for code references (1 ms)
+    ✓ collects multiple distinct vars from a single source file (1 ms)
+    ✓ tolerates an .env.example with CRLF line endings (1 ms)
+    ✓ ignores a src directory that is actually absent (1 ms)
+  crossReference — additional corners
+    ✓ classifies a var read in code AND present in registry as TRACKED even if also in rules+example
+    ✓ marks a registry var that exists in discovery only via ENV_RULES as DEAD
+    ✓ handles a large mix of undeclared, dead, and tracked vars
+    ✓ excludes test-only names from BOTH undeclared and dead buckets at once
+    ✓ findUndeclared / findDead return empty arrays for an all-tracked report
+    ✓ DEAD findings carry empty codeRefs and inCode false
+  discoverWithRegistry — additional end-to-end paths
+    ✓ reports a clean (all-TRACKED) repo with zero undeclared and zero dead (11 ms)
+    ✓ re-throws when the registry YAML uses a banned anchor (parse error wrapped) (2 ms)
+    ✓ includes the offending registry path in the wrapped error message (3 ms)
+    ✓ counts FILLER rows toward registrySize in the end-to-end report (8 ms)
+  extractEnvVarRefs — destructuring and rest corners
+    ✓ captures every name in a multi-name destructuring (1 ms)
+    ✓ captures the property name even when a default is supplied
+    ✓ does not capture a rest element as an env name (1 ms)
+    ✓ captures references appearing in both a destructuring and a property access (1 ms)
+    ✓ handles a file that only assigns to process.env (still no false names)
+    ✓ treats two different files independently (no cross-file const leakage) (1 ms)
+  extractEnvVarRefs — computed destructuring keys (F001)
+    ✓ resolves a string-literal computed key { ["FOO"]: x }
+    ✓ resolves a single-quoted string-literal computed key (1 ms)
+    ✓ resolves a no-substitution template-literal computed key
+    ✓ resolves a const-backed computed key { [K]: x } (1 ms)
+    ✓ resolves a const-backed computed key through an `as const` wrapper
+    ✓ does NOT record a let-aliased computed key (mutable alias) (3 ms)
+    ✓ skips a computed key whose identifier has no in-file string const
+    ✓ skips a substitution template-literal computed key (not static) (1 ms)
+    ✓ rejects a non-UPPER_SNAKE string-literal computed key
+    ✓ mixes a plain and a computed destructuring key in one pattern (1 ms)
+  extractEnvVarRefs — ambiguous const-key shadowing (F002)
+    ✓ drops a name re-declared at file scope twice (fail closed)
+    ✓ drops a name shadowed by an inner block const (fail closed) (1 ms)
+    ✓ drops a name shadowed inside a function scope (fail closed)
+    ✓ drops a const shadowed by a let of the same name (mutable alias) (1 ms)
+    ✓ still resolves a name bound exactly once even with other distinct consts
+    ✓ drops an ambiguous name but keeps a distinct single-bound name (1 ms)
+    ✓ drops an ambiguous name used as a computed destructuring key (F001+F002)
+  extractEnvVarRefs — parameter / catch-clause shadows (R4 F001)
+    ✓ drops a const shadowed by a function parameter (no fabricated env) (1 ms)
+    ✓ drops a const shadowed by an arrow-function parameter (no fabricated env)
+    ✓ drops a const shadowed by a catch-clause variable (no fabricated env)
+    ✓ discovers nothing for a catch-clause key with NO same-named file-scope const (1 ms)
+    ✓ discovers nothing for a function-param key with NO same-named file-scope const (sanity)
+  extractEnvVarRefs — destructured-binding shadows (R5 F001)
+    ✓ drops a const shadowed by an obj-destructured function param (1 ms)
+    ✓ drops a const shadowed by an arr-destructured function param
+    ✓ drops a const shadowed by an obj-destructured arrow param
+    ✓ drops a const shadowed by a renamed destructured param ({x: K})
+    ✓ drops a const shadowed by a nested destructured param ({a:{K}})
+    ✓ drops a const shadowed by an obj-destructured catch binding (1 ms)
+    ✓ drops a const shadowed by an obj-destructured for-of binding
+    ✓ drops a const shadowed by an obj-destructured variable decl
+    ✓ drops a const shadowed by an arr-destructured variable decl
+    ✓ drops a const shadowed by a let-destructured variable decl (1 ms)
+    ✓ does not count propertyName: a file-scope const named by propertyName still resolves cleanly
+  extractEnvVarRefs — declaration-name shadows (R5b F001)
+    ✓ drops a const shadowed by a nested function declaration (1 ms)
+    ✓ drops a const shadowed by a nested class declaration
+    ✓ drops a const shadowed by a nested enum declaration (6 ms)
+    ✓ drops a const shadowed by a nested namespace declaration (1 ms)
+    ✓ R5c: import K = require() inside namespace shadowing file-scope const drops resolution (1 ms)
+    ✓ R5c: import K = ns.X inside namespace shadowing file-scope const drops resolution
+    ✓ handles an anonymous default function export (no throw, no pollution) (1 ms)
+    ✓ handles an anonymous default class export (no throw, no pollution)
+    ✓ R5c: declare module "FOO" {} does not pollute bindings — isIdentifier guard pin (1 ms)
+    ✓ R5d: named FunctionExpression shadowing file-scope const drops resolution
+    ✓ R5d: named ClassExpression shadowing file-scope const drops resolution (1 ms)
+    ✓ R5d: named IIFE FunctionExpression shadowing file-scope const drops resolution
+    ✓ R5d: anonymous FunctionExpression does not pollute bindings — node.name guard pin (1 ms)
+  discoverEnvVars — mixed-source repo end-to-end shape
+    ✓ produces a union whose every entry has the full origin shape (6 ms)
+    ✓ records the same var from two files in both codeRefs entries (1 ms)
+    ✓ does not double-count a var referenced twice within one file (1 ms)
+  summary / helpers — invariants on real-data report
+    ✓ summary buckets of the REAL report each match the per-status filters (2937 ms)
+    ✓ every REAL finding has a consistent inRegistry flag for its status (2995 ms)
+    ✓ no REAL finding is a test-only name (the prod scan excludes them) (3078 ms)
+  isTestOnly — prefix-anchored TEST_ exclusion (Finding 1)
+    ✓ EXCLUDES TEST_ONLY (bare prefix)
+    ✓ EXCLUDES _TEST_FLAG (underscore + prefix)
+    ✓ INCLUDES MY_TEST_VAR (infixed TEST_ — real prod var) (1 ms)
+    ✓ INCLUDES AB_TEST_BUCKET (infixed TEST_ — real prod var)
+    ✓ INCLUDES FEATURE_TEST_MODE (infixed TEST_ — real prod var)
+    ✓ INCLUDES TESTING_ENABLED (TEST not followed by underscore)
+    ✓ the regex itself agrees with isTestOnly on the same set (1 ms)
+    ✓ an infixed-TEST_ var read in code now surfaces as UNDECLARED (not hidden)
+  extractEnvVarRefs — process["env"] bracket access (Finding 2)
+    ✓ discovers process["env"].HIDDEN (double-quoted env, property key) (1 ms)
+    ✓ discovers process['env'].HIDDEN (single-quoted env, property key)
+    ✓ discovers process["env"]["HIDDEN2"] (double-quoted env, string key)
+    ✓ discovers process['env']['HIDDEN2'] (single-quoted env, string key) (1 ms)
+    ✓ resolves an in-file const key under bracket-env access
+    ✓ discovers a destructuring off bracket-env: const { D_VAR } = process["env"]
+    ✓ does NOT treat process["notenv"].X as an env reference (1 ms)
+    ✓ does NOT treat other["env"].X (non-process base) as an env reference
+    ✓ collects mixed dot-env and bracket-env references in one file (1 ms)
+    ✓ surfaces a bracket-env var end-to-end via discoverEnvVars (1 ms)
+  extractEnvVarRefs — import.meta.env is out of scope (Finding 3)
+    ✓ returns [] for import.meta.env.VITE_FLAG (no Vite in this repo) (1 ms)
+    ✓ returns [] for bracket import.meta.env["VITE_OTHER"]
+    ✓ ignores import.meta.env but still finds a sibling process.env ref (1 ms)
+  collectStringConsts via extractEnvVarRefs — const-only alias keys (R2 F001)
+    ✓ resolves a const string key: const K = "FOO"; process.env[K] -> FOO
+    ✓ does NOT resolve a let alias key: let K = "FOO"; process.env[K] -> [] (1 ms)
+    ✓ does NOT resolve a var alias key: var K = "FOO"; process.env[K] -> []
+    ✓ does NOT resolve a let alias even when never reassigned (mutable by type)
+    ✓ resolves only the const key when a const and a let share the env-key role (1 ms)
+  extractEnvVarRefs — expression-wrapper unwrapping (R2 F002)
+    ✓ discovers (process)["env"].FOO (parenthesized process, string env, property key)
+    ✓ discovers (process).env.FOO (parenthesized process, dot env)
+    ✓ discovers (process.env).FOO (parenthesized process.env)
+    ✓ discovers const { FOO } = (process.env) (parenthesized destructuring init)
+    ✓ discovers process.env!.FOO (non-null assertion on the namespace) (1 ms)
+    ✓ discovers (process.env as Record<string,string>).FOO (as-cast on the namespace)
+    ✓ discovers (process.env satisfies Record<string,string>).FOO (satisfies on the namespace) (1 ms)
+    ✓ unwraps wrappers for string-element keys too: (process.env as Record<...>)["BAR"]
+    ✓ still rejects a wrapped NON-process namespace: (other.env).FOO -> []
+    ✓ still rejects (process.notenv).FOO -> [] (wrapper does not invent env) (1 ms)
+    ✓ collects several wrapper shapes in one file without duplicates
+  extractEnvVarRefs — literal-preserving const initializers (R2 F003)
+    ✓ discovers const K = "FOO" as const; process.env[K] -> FOO (1 ms)
+    ✓ discovers a plain as-cast key: const K = "FOO" as string; process.env[K] -> FOO
+    ✓ discovers a satisfies key: const K = "FOO" satisfies string; process.env[K] -> FOO
+    ✓ discovers a parenthesized key: const K = ("FOO"); process.env[K] -> FOO (1 ms)
+    ✓ discovers a no-substitution-template key: const K = `FOO`; process.env[K] -> FOO
+    ✓ discovers a nested-wrapper key: const K = ("FOO" as const); process.env[K] -> FOO (1 ms)
+    ✓ keeps the F001 rejection under as const: let K = "FOO" as const; process.env[K] -> []
+
+Test Suites: 1 passed, 1 total
+Tests:       181 passed, 181 total
+Snapshots:   0 total
+Time:        17.413 s, estimated 23 s
+Ran all test suites matching test/prod-readiness/env-discovery.spec.ts.
+[heavy] waiting for a slot: npx jest test/invariants/locked_defaults.spec.ts --runInBand
+PASS test/invariants/locked_defaults.spec.ts (51 MB heap size)
+  R51 — locked-default invariants (schema / migration / code)
+    CoachBriefPreferences.notification_time
+      ✓ Prisma schema declares @default("05:00") on notification_time (7 ms)
+      ✓ SQL migration creates CoachBriefPreferences with DEFAULT '05:00' (1 ms)
+      ✓ CoachBriefPreferencesService constant DEFAULT_NOTIFICATION_TIME = '05:00'
+
+Test Suites: 1 passed, 1 total
+Tests:       3 passed, 3 total
+Snapshots:   0 total
+Time:        0.705 s
+Ran all test suites matching test/invariants/locked_defaults.spec.ts.
+[heavy] waiting for a slot: npx jest test/restore-schema-declared-objects-migration.spec.ts --runInBand
+PASS test/restore-schema-declared-objects-migration.spec.ts (51 MB heap size)
+  20270125000000_restore_schema_declared_objects: placement and transaction
+    ✓ sorts after the last migration production has applied, so the next deploy applies it (3 ms)
+    ✓ runs in one transaction with bounded lock and statement time (1 ms)
+  20270125000000_restore_schema_declared_objects: additive and idempotent
+    ✓ contains no destructive or row-rewriting statement (2 ms)
+    ✓ guards every create: IF NOT EXISTS, or a catalog check for TYPE and FOREIGN KEY (1 ms)
+    ✓ asserts the final shape of every object, so a guard cannot skip a wrong pre-existing object (7 ms)
+  20270125000000_restore_schema_declared_objects: matches what schema.prisma declares
+    ✓ table UserPreferences has exactly the scalar fields of its model (3 ms)
+    ✓ table Recipe has exactly the scalar fields of its model (13 ms)
+    ✓ table SavedRecipe has exactly the scalar fields of its model (1 ms)
+    ✓ table ListItem has exactly the scalar fields of its model (5 ms)
+    ✓ columns added to User are declared on the model with matching nullability/defaults (2 ms)
+    ✓ columns added to UserProfile are declared on the model with matching nullability/defaults (2 ms)
+    ✓ columns added to NotificationPreferences are declared on the model with matching nullability/defaults (3 ms)
+    ✓ creates the ListType enum with the declared labels in order (1 ms)
+    ✓ declares every foreign key with the Prisma default actions for a required relation (1 ms)
+    ✓ creates every declared index and unique constraint under its Prisma name (2 ms)
+  20270125000000_restore_schema_declared_objects: row-level security on the new tables
+    ✓ covers exactly the four new tables (1 ms)
+    ✓ enables and forces RLS, grants service_role, denies anon and authenticated, revokes API grants (1 ms)
+    ✓ verifies the posture after applying it: policies, and grants per role (1 ms)
+    ✓ refuses to run where the Supabase API roles are missing
+  20270125000000_restore_schema_declared_objects: down.sql
+    ✓ removes exactly the objects the migration adds, in one bounded transaction (2 ms)
+    ✓ carries the never-run-in-production warning in its header
+
+Test Suites: 1 passed, 1 total
+Tests:       21 passed, 21 total
+Snapshots:   0 total
+Time:        0.848 s
+Ran all test suites matching test/restore-schema-declared-objects-migration.spec.ts.

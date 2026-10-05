@@ -1,0 +1,11 @@
+PASS test/roman/roman-context-round2.spec.ts (11.739 s)
+PASS test/roman/roman-context-core.spec.ts
+PASS test/roman/roman-context-a2-fixes.spec.ts
+PASS test/roman/roman-client-context.spec.ts
+PASS test/roman/audit-opus-ra121.probe.spec.ts
+PASS test/roman/aud-sol-ra121-667-core.spec.ts
+FAIL test/roman/aud-sol-ra121-665-service.spec.ts
+    ✕ C-665-1 the documented hard memo limit also holds immediately after insertion (36 ms)
+PASS test/dunning-v2-lockout-guard.spec.ts
+PASS test/dunning-v2-lockout-allowlist-route-table.spec.ts
+Tests:       1 failed, 184 passed, 185 total

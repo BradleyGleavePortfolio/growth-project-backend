@@ -16,7 +16,14 @@ wt/AUD-OPUS-RA-121-lane1 (probe lane).
   schema delta since d23fa317 is money-only.
 - PR CI at both heads: all checks green (10-03 runs).
 
-## Findings (draft until posted)
+- 13:19 lane still queued 22 min -> item 11: single probe spec via ops/heavy.sh (13:20); it waited for a slot (3 slots busy).
+- 13:35 HEADS MOVED before posting: #667 bacd83e1 -> c5102cae659f87a4487a5756c52e8ab303664968 (FIX ROUND 1),
+  #665 eb7cb7a8 -> 98cfac5563ca6c78505477a3c59b0d65d8eb0def (FIX ROUND 1 + merge of A1). Per _COMMON_121: stopped both PRs,
+  NO verdict posted. Lane run 37366663415 cancelled (never started), heavy.sh job stopped before it ran (no probe results exist),
+  worktrees removed, audit/AUD-OPUS-RA-121/665-1 deleted, claims marked released. Sol's comments on #667/#665 were not read.
+- 13:33 operator mail (owner 13:29 edge-case freeze) applied to the classification below.
+
+## Findings at the OLD heads (never posted; code-reading counterexamples, probes never ran)
 #667 @ bacd83e1: A0 / B1 / C1
 - B-667-1 roman-consultation.source.ts:85-88: `completed = any screening item answered`. A PATCH-saved intake with P1=no and P2..P7
   unanswered reads completed:true, clearance:false, so the contract's conservative rule for an unanswered screen
@@ -62,10 +69,34 @@ generation pruned; fence still holds), C-651-7 (service header).
   (where: capability only): a platform kill switch, not a per-client cap. Mapping its 503 ROMAN_CAPACITY_REACHED to "You've used
   your maximum AI allotment today." would be false copy for clients who used nothing.
 
+## Where these stand at the NEW heads (quick code check only, not a verdict)
+- B-667-1 (partial screen = completed): addressed in c5102cae (commit: "complete screen needs all seven answers").
+- B-665-1 (providers summed): addressed in 98cfac55 (per-metric preferred provider read, service.ts:376-379).
+- B-665-2 (GET /roman/context/me reachable while dunning-locked): NOT addressed (spec line 178 still lists it; guard unchanged).
+  Under the 13:29 rule: a locked user can call it on purpose and read the coach's paid program = still B (money given away),
+  operator may rule otherwise. Recommended default: keep it a B, fix = exact deny for roman/context in the guard.
+- B-665-3 (sub-coach rows dropped): NOT addressed (service.ts:564/874 still sender_id in [head coach, client]). Delegated
+  clients are normal use for team coaches: Roman says "no plan" / misses the sub-coach's messages = false customer-facing claim
+  = still B. The blocked-coach half is reclassified "C (edge, deferred to 10k clients)".
+- C-667-1, C-665-1..3 stand as C (C-665-2 is edge: deferred).
+
 ## Cross-PR notes for the operator (not findings on #667/#665)
 - #668: with /roman/* allowed while locked, a locked client's Roman turn is grounded with the full coach plan/meal plan via the
   context; the turn path should drop coach-owned blocks for a locked caller (RB pair).
 
+## Follow-ups (C)
+- C-667-1 docs/roman-client-context.md + types.ts:311-317 stale (version, CoachingSession, upcoming_sessions, C05). Check at c5102cae (doc was touched).
+- C-665-1 wearable `take: 600` silently cuts the oldest day(s).
+- C-665-2 invalidation comment vs wiring (15 s TTL bounds it) — C (edge, deferred to 10k clients).
+- C-665-3 simple macro display mode not carried into Roman's context.
+- C (edge, deferred to 10k clients): blocked coach's messages resurface via Roman / disclosure route (part of old B-665-3).
+
 ## HANDOFF
-- Waiting on lane run 37366663415 (queued 12:56). If not started by 13:17 PDT: one spec via ops/heavy.sh allowed (item 11).
-- Then post one verdict per PR (both RC), re-reading heads first; comments go on #667 and #665 only.
+- No verdict posted on #667 or #665 by this lens: both heads moved at ~13:35 PDT while the probe lane was still queued.
+- New heads need a fresh Opus lens re-review: #667 c5102cae659f87a4487a5756c52e8ab303664968, #665
+  98cfac5563ca6c78505477a3c59b0d65d8eb0def. Carry B-665-2 and B-665-3 (sub-coach part) as the open items to check;
+  probe file ready: ops/aud-121/AUD-OPUS-RA-121/probes/audit-opus-ra121.probe.spec.ts (B-665-2 and B-665-3 blocks apply as-is;
+  B-665-1 block's persona rows may need `recorded_at`).
+- Day-1 coach-pool debit missing in #667-#670 (B on #668 turn path); #668's "daily cap" is global, not per client.
+- Verdict drafts (old heads, unposted): ops/aud-121/AUD-OPUS-RA-121/verdict-667.md, verdict-665.md.
+- Cleanup done: worktrees removed, audit branch deleted, lane run cancelled, claims released.

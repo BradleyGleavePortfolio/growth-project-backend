@@ -1,0 +1,71 @@
+[heavy] waiting for a slot: npx jest test/account-deletion/erasure-manifest-coverage.spec.ts --runInBand
+FAIL test/account-deletion/erasure-manifest-coverage.spec.ts (68 MB heap size)
+  erasure manifest: schema coverage
+    ✓ finds the expected scale of user references (parser sanity) (11 ms)
+    ✕ every User relation, user-id-like column and email column has a manifest decision (6 ms)
+    ✓ every manifest entry names a real model, field path, data key and filter (3 ms)
+    ✓ dependent scrubs run before the rows they depend on are removed (3 ms)
+  erasure manifest: seeded execution
+    ✕ removes or detaches the deleted user from every column, except documented retention (2 ms)
+    ✓ every non-retained entry acted on at least one seeded row (12 ms)
+    ✓ leaves every row that belongs to someone else byte-identical (5 ms)
+
+  ● erasure manifest: schema coverage › every User relation, user-id-like column and email column has a manifest decision
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 8
+
+    - Array []
+    + Array [
+    +   "CoachBroadcast.coach_id",
+    +   "CoachBroadcast.author_user_id",
+    +   "CoachBroadcastDelivery.recipient_id",
+    +   "CoachSavedReply.owner_user_id",
+    +   "CoachClientTag.coach_id",
+    +   "CoachClientTag.client_id",
+    + ]
+
+    [0m [90m 119 |[39m       })
+     [90m 120 |[39m       [33m.[39mmap((r) [33m=>[39m [32m`${r.model}.${r.field}`[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 121 |[39m     expect(missing)[33m.[39mtoEqual([])[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 122 |[39m   })[33m;[39m
+     [90m 123 |[39m
+     [90m 124 |[39m   it([32m'every manifest entry names a real model, field path, data key and filter'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/account-deletion/erasure-manifest-coverage.spec.ts:121:21)
+
+  ● erasure manifest: seeded execution › removes or detaches the deleted user from every column, except documented retention
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 8
+
+    - Array []
+    + Array [
+    +   "CoachBroadcast.coach_id",
+    +   "CoachBroadcast.author_user_id",
+    +   "CoachBroadcastDelivery.recipient_id",
+    +   "CoachSavedReply.owner_user_id",
+    +   "CoachClientTag.coach_id",
+    +   "CoachClientTag.client_id",
+    + ]
+
+    [0m [90m 417 |[39m       }
+     [90m 418 |[39m     }
+    [31m[1m>[22m[39m[90m 419 |[39m     expect(leftovers)[33m.[39mtoEqual([])[33m;[39m
+     [90m     |[39m                       [31m[1m^[22m[39m
+     [90m 420 |[39m   })[33m;[39m
+     [90m 421 |[39m
+     [90m 422 |[39m   it([32m'every non-retained entry acted on at least one seeded row'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/account-deletion/erasure-manifest-coverage.spec.ts:419:23)
+
+Test Suites: 1 failed, 1 total
+Tests:       2 failed, 5 passed, 7 total
+Snapshots:   0 total
+Time:        1.744 s
+Ran all test suites matching test/account-deletion/erasure-manifest-coverage.spec.ts.

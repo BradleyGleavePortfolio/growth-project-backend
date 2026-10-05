@@ -1,0 +1,59 @@
+tsc rc=0 0 errors
+== src/entitlements/dunning/__tests__/dunningL1Contract.test.ts 13:39:27
+PASS src/entitlements/dunning/__tests__/dunningL1Contract.test.ts
+Tests:       19 passed, 19 total
+== src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx 13:39:31
+PASS src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx (5.104 s)
+Tests:       40 passed, 40 total
+== src/entitlements/dunning/__tests__/aud121OpusL3_352.probe.test.ts 13:39:38
+PASS src/entitlements/dunning/__tests__/aud121OpusL3_352.probe.test.ts
+Tests:       22 passed, 22 total
+== src/entitlements/dunning/__tests__/aud121OpusL3_353.probe.test.tsx 13:39:41
+PASS src/entitlements/dunning/__tests__/aud121OpusL3_353.probe.test.tsx
+Tests:       18 passed, 18 total
+== src/entitlements/dunning/__tests__/auditSol121InquiryCopy.test.ts 13:39:54
+PASS src/entitlements/dunning/__tests__/auditSol121InquiryCopy.test.ts
+Tests:       4 passed, 4 total
+== src/entitlements/dunning/__tests__/auditSol121InquirySurfaces.test.tsx 13:40:01
+PASS src/entitlements/dunning/__tests__/auditSol121InquirySurfaces.test.tsx
+Tests:       7 passed, 7 total
+== src/entitlements/dunning/__tests__/aud117OpusL12.probe.test.tsx 13:40:34
+PASS src/entitlements/dunning/__tests__/aud117OpusL12.probe.test.tsx
+Tests:       12 passed, 12 total
+== src/entitlements/dunning/__tests__/aud119OpusL12_352.probe.test.ts 13:42:01
+PASS src/entitlements/dunning/__tests__/aud119OpusL12_352.probe.test.ts
+Tests:       5 passed, 5 total
+== src/entitlements/dunning/__tests__/aud119OpusL12_353.probe.test.tsx 13:42:05
+PASS src/entitlements/dunning/__tests__/aud119OpusL12_353.probe.test.tsx
+Tests:       9 passed, 9 total
+== src/entitlements/dunning/__tests__/auditSol117Lifecycle.test.tsx 13:42:11
+FAIL src/entitlements/dunning/__tests__/auditSol117Lifecycle.test.tsx (6.877 s)
+  ✕ B-353-3: saving a card for a dispute-only quote still explains unresolved access (86 ms)
+Tests:       1 failed, 11 passed, 12 total
+== src/entitlements/dunning/__tests__/auditSol120Boundaries.test.ts 13:43:02
+PASS src/entitlements/dunning/__tests__/auditSol120Boundaries.test.ts
+Tests:       5 passed, 5 total
+== src/entitlements/dunning/__tests__/auditSol120PresentationOwner.test.ts 13:43:08
+FAIL src/entitlements/dunning/__tests__/auditSol120PresentationOwner.test.ts
+  ✕ B-352-3: retired A presentation teardown must not erase current B native sheet (7 ms)
+  ✕ B-352-3: a superseded but still mounted presentation cannot confirm its old setup (11 ms)
+Tests:       2 failed, 1 passed, 3 total
+== src/services/__tests__/auditSol117DunningIdentity.test.ts 13:43:57
+PASS src/services/__tests__/auditSol117DunningIdentity.test.ts
+Tests:       4 passed, 4 total
+auditSol117Lifecycle B-353-3 dispute-only: harness queryByText throws on 2 matches; queryAllByText variant passes (2 hits, both dispute or inquiry copy)
+== src/entitlements/dunning/__tests__/nativeCardUpdate.test.tsx 13:45:14
+PASS src/entitlements/dunning/__tests__/nativeCardUpdate.test.tsx (9.002 s)
+Tests:       41 passed, 41 total
+== src/entitlements/dunning/__tests__/dunningLockout.test.tsx 13:45:29
+PASS src/entitlements/dunning/__tests__/dunningLockout.test.tsx (5.448 s)
+Tests:       37 passed, 37 total
+== src/__tests__/rootNavigatorUpdateCardLink.test.tsx 13:45:38
+PASS src/__tests__/rootNavigatorUpdateCardLink.test.tsx (35.793 s)
+Tests:       5 passed, 5 total
+== src/services/__tests__/api.lockedDunning.test.ts 13:46:16
+PASS src/services/__tests__/api.lockedDunning.test.ts
+Tests:       7 passed, 7 total
+== src/services/__tests__/authActions.signOut.test.ts 13:46:20
+PASS src/services/__tests__/authActions.signOut.test.ts
+Tests:       5 passed, 5 total

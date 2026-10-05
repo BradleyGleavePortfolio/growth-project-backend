@@ -1,0 +1,77 @@
+M' head fcdc1d6c08481f088377abfea8c9e9b894fc9d31
+[heavy] waiting for a slot: npx jest --ci --runInBand test/admin-controller-hygiene.spec.ts test/billing-throttle-metadata.spec.ts test/dunning-v2-lockout-allowlist-route-table.spec.ts test/entitlement-guards-mounted.spec.ts test/env-validation.spec.ts test/openapi-spec.spec.ts test/rate-limit.spec.ts test/route-doc-drift.spec.ts test/throttler-isolation.spec.ts test/account-deletion test/ci/fly-env-workflows.spec.ts test/coachless
+PASS test/env-validation.spec.ts (68 MB heap size)
+PASS test/account-deletion/lifecycle-races.spec.ts (88 MB heap size)
+[32m[Nest] 22550  - [39m10/05/2026, 8:46:55 PM [32m    LOG[39m [38;5;3m[AccountDeletionStorageService] [39m[32maccount deletion storage purge: supabase=4 mux=0 local=0[39m
+[32m[Nest] 22550  - [39m10/05/2026, 8:46:55 PM [32m    LOG[39m [38;5;3m[AccountDeletionService] [39m[32maccount deletion finalized user=66666666-6666-4666-8666-666666666666 rows=2 objects=4 subscriptions=0[39m
+[32m[Nest] 22550  - [39m10/05/2026, 8:46:56 PM [32m    LOG[39m [38;5;3m[AccountDeletionStorageService] [39m[32maccount deletion storage purge: supabase=4 mux=0 local=0[39m
+[32m[Nest] 22550  - [39m10/05/2026, 8:46:56 PM [32m    LOG[39m [38;5;3m[AccountDeletionService] [39m[32maccount deletion finalized user=66666666-6666-4666-8666-666666666666 rows=2 objects=4 subscriptions=0[39m
+[33m[Nest] 22550  - [39m10/05/2026, 8:46:56 PM [33m   WARN[39m [38;5;3m[AccountDeletionService] [39m[33mvoice erasure erasure-object-66666666-6666-4666-8666-666666666666/1700000000000-0123456789abcdef.m4a (object) not yet verified after 1 attempt(s): object_still_present; retry scheduled[39m
+[33m[Nest] 22550  - [39m10/05/2026, 8:46:56 PM [33m   WARN[39m [38;5;3m[AccountDeletionService] [39m[33mvoice erasure erasure-object-66666666-6666-4666-8666-666666666666/1700000000001-0123456789abcdef-0123456789abcdef0123456789abcdef.m4a (object) not yet verified after 1 attempt(s): object_still_present; retry scheduled[39m
+[33m[Nest] 22550  - [39m10/05/2026, 8:46:56 PM [33m   WARN[39m [38;5;3m[AccountDeletionService] [39m[33mvoice erasure erasure-owner_folder-66666666-6666-4666-8666-666666666666 (owner_folder) not yet verified after 1 attempt(s): folder_not_empty; retry scheduled[39m
+[33m[Nest] 22550  - [39m10/05/2026, 8:46:56 PM [33m   WARN[39m [38;5;3m[AccountDeletionService] [39m[33maccount deletion: 3 voice erasure(s) for user=66666666-6666-4666-8666-666666666666 not yet verified; retried by VoiceErasureService[39m
+[32m[Nest] 22550  - [39m10/05/2026, 8:46:56 PM [32m    LOG[39m [38;5;3m[AccountDeletionStorageService] [39m[32maccount deletion storage purge: supabase=4 mux=0 local=0[39m
+[32m[Nest] 22550  - [39m10/05/2026, 8:46:56 PM [32m    LOG[39m [38;5;3m[AccountDeletionStorageService] [39m[32maccount deletion storage purge: supabase=4 mux=0 local=0[39m
+[32m[Nest] 22550  - [39m10/05/2026, 8:46:56 PM [32m    LOG[39m [38;5;3m[AccountDeletionService] [39m[32maccount deletion finalized user=66666666-6666-4666-8666-666666666666 rows=2 objects=4 subscriptions=0[39m
+PASS test/account-deletion.voice-erasure.spec.ts (123 MB heap size)
+PASS test/dunning-v2-lockout-allowlist-route-table.spec.ts (119 MB heap size)
+PASS test/admin-controller-hygiene.spec.ts (156 MB heap size)
+PASS test/rate-limit.spec.ts (6.483 s, 350 MB heap size)
+[33m[Nest] 22550  - [39m10/05/2026, 8:47:08 PM [33m   WARN[39m [38;5;3m[ThrottlerExceptionFilter] [39mObject(7) {
+  message: [32m'throttler.rejected'[39m,
+  userId: [1mnull[22m,
+  ip: [32m'203.0.113.1'[39m,
+  path: [32m'[unmatched]'[39m,
+  method: [32m'POST'[39m,
+  limit: [32m'enforced'[39m,
+  ttl: [33m3600[39m
+}
+[33m[Nest] 22550  - [39m10/05/2026, 8:47:08 PM [33m   WARN[39m [38;5;3m[ThrottlerExceptionFilter] [39mObject(7) {
+  message: [32m'throttler.rejected'[39m,
+  userId: [1mnull[22m,
+  ip: [32m'203.0.113.1'[39m,
+  path: [32m'[unmatched]'[39m,
+  method: [32m'GET'[39m,
+  limit: [32m'enforced'[39m,
+  ttl: [33m3600[39m
+}
+[32m[Nest] 22550  - [39m10/05/2026, 8:47:08 PM [32m    LOG[39m [38;5;3m[ThrottlerConfig] [39m[32mREDIS_URL not set -- using in-memory throttler tracker. Limits do NOT cross Fly machines.[39m
+[32m[Nest] 22550  - [39m10/05/2026, 8:47:08 PM [32m    LOG[39m [38;5;3m[ThrottlerConfig] [39m[32mREDIS_URL not set -- using in-memory throttler tracker. Limits do NOT cross Fly machines.[39m
+[32m[Nest] 22550  - [39m10/05/2026, 8:47:08 PM [32m    LOG[39m [38;5;3m[ThrottlerConfig] [39m[32mREDIS_URL not set -- using in-memory throttler tracker. Limits do NOT cross Fly machines.[39m
+PASS test/throttler-isolation.spec.ts (402 MB heap size)
+PASS test/ci/fly-env-workflows.spec.ts (413 MB heap size)
+PASS test/account-deletion/storage-billing.spec.ts (424 MB heap size)
+[31m[Nest] 22550  - [39m10/05/2026, 8:47:15 PM [31m  ERROR[39m [38;5;3m[RecentAuthGuard] [39m[31mRECENT_AUTH_SECRET is not configured or is shorter than 32 characters — sensitive action blocked[39m
+PASS test/account-deletion/admin-force-delete-step-up.spec.ts (471 MB heap size)
+[33m[Nest] 22550  - [39m10/05/2026, 8:47:15 PM [33m   WARN[39m [38;5;3m[DataExportService] [39m[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.[39m
+[33m[Nest] 22550  - [39m10/05/2026, 8:47:16 PM [33m   WARN[39m [38;5;3m[DataExportService] [39m[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.[39m
+PASS test/account-deletion/optional-tables-export-fence.spec.ts (302 MB heap size)
+[33m[Nest] 22550  - [39m10/05/2026, 8:47:16 PM [33m   WARN[39m [38;5;3m[DataExportService] [39m[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.[39m
+[33m[Nest] 22550  - [39m10/05/2026, 8:47:16 PM [33m   WARN[39m [38;5;3m[DataExportService] [39m[33mDATA_EXPORT_TOKEN_SECRET is not set — using the insecure default. Set DATA_EXPORT_TOKEN_SECRET before going to production.[39m
+PASS test/account-deletion/receipt-r2.spec.ts (329 MB heap size)
+PASS test/entitlement-guards-mounted.spec.ts (380 MB heap size)
+PASS test/account-deletion/recipe-erasure.spec.ts (394 MB heap size)
+PASS test/account-deletion/apple-token-revocation.spec.ts (400 MB heap size)
+[33m[Nest] 22550  - [39m10/05/2026, 8:47:19 PM [33m   WARN[39m [38;5;3m[AppleTokenRevocationService] [39m[33mApple token revocation skipped for user=u1: Sign in with Apple key not configured[39m
+[33m[Nest] 22550  - [39m10/05/2026, 8:47:19 PM [33m   WARN[39m [38;5;3m[AppleTokenRevocationService] [39m[33mApple token exchange failed for user=u1: HTTP 400[39m
+[33m[Nest] 22550  - [39m10/05/2026, 8:47:19 PM [33m   WARN[39m [38;5;3m[AppleTokenRevocationService] [39m[33mApple token exchange error for user=u1: network down[39m
+[33m[Nest] 22550  - [39m10/05/2026, 8:47:19 PM [33m   WARN[39m [38;5;3m[AppleTokenRevocationService] [39m[33mApple token revoke failed for user=u1: HTTP 500[39m
+PASS test/account-deletion/engagement-tables-erasure.spec.ts (409 MB heap size)
+PASS test/openapi-spec.spec.ts (595 MB heap size)
+PASS test/route-doc-drift.spec.ts (602 MB heap size)
+PASS test/account-deletion/program-copies-erasure.spec.ts (607 MB heap size)
+PASS test/account-deletion/controller-roles.spec.ts (638 MB heap size)
+PASS test/billing-throttle-metadata.spec.ts (687 MB heap size)
+PASS test/account-deletion/drip-fence.spec.ts (708 MB heap size)
+PASS test/account-deletion/manifest-fk-order.spec.ts (721 MB heap size)
+PASS test/account-deletion/erasure-manifest-coverage.spec.ts (724 MB heap size)
+[31m[Nest] 22550  - [39m10/05/2026, 8:47:28 PM [31m  ERROR[39m [38;5;3m[CoachCodeRedemptionService] [39m[31mcoach code redemption failed unexpectedly user=stu request=req-test-1: error=Error[39m
+PASS test/coachless/coach-code-redemption.spec.ts (446 MB heap size)
+PASS test/coachless/coachless-home.spec.ts (481 MB heap size)
+
+Test Suites: 26 passed, 26 total
+Tests:       439 passed, 439 total
+Snapshots:   0 total
+Time:        41.74 s
+Ran all test suites matching test/admin-controller-hygiene.spec.ts|test/billing-throttle-metadata.spec.ts|test/dunning-v2-lockout-allowlist-route-table.spec.ts|test/entitlement-guards-mounted.spec.ts|test/env-validation.spec.ts|test/openapi-spec.spec.ts|test/rate-limit.spec.ts|test/route-doc-drift.spec.ts|test/throttler-isolation.spec.ts|test/account-deletion|test/ci/fly-env-workflows.spec.ts|test/coachless.
+rc=0

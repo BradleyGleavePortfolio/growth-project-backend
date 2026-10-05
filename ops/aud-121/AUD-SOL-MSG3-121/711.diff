@@ -1,0 +1,559 @@
+diff --git a/src/messaging/README.md b/src/messaging/README.md
+index f38cadb9..48d8fa0e 100644
+--- a/src/messaging/README.md
++++ b/src/messaging/README.md
+@@ -191,5 +191,44 @@ SDK; the rest of the messaging surface stays functional.
+   `prisma/migrations/20260424120000_add_coach_messages`. If a future
+   feature pages on a different field, add a covering index rather than
+   relaxing the order.
+-- This module deliberately does not implement edits or deletions. The
+-  `read_at` column is the only mutation after insert.
++- Edits, deletes and pins are A3-MSG-CORE v2 surfaces behind
++  `FEATURE_MESSAGING_CORE_V2` (see below). With the flag OFF, `read_at` is the
++  only mutation after insert, exactly as before.
++
++## A3-MSG-CORE v2: one inbox, read state and message actions
++
++`FEATURE_MESSAGING_CORE_V2` (default OFF; ENV_RULES, launch manifest, and
++`GET /me/feature-flags` key `messaging_core_v2`). OFF: every route below
++answers 503 `messaging.feature_disabled`, and the thread read/send/read routes
++are byte-identical to the legacy behaviour.
++
++| Coach | Client | Behaviour |
++|---|---|---|
++| `GET /coach/messages/inbox?cursor=&limit=&filter=all\|unread` | `GET /messages/inbox` | The one inbox. Pinned first, then newest activity. Unread = the badge computation. `blocked_by_me` hides preview + unread. Coachless client: empty list. |
++| `PATCH /coach/clients/:client_id/messages/:id` | `PATCH /messages/:id` | Author edit, body only, 48 h window, conditional on not deleted, sets `edited_at`. |
++| `DELETE /coach/clients/:client_id/messages/:id` | `DELETE /messages/:id` | Author delete for everyone, 48 h window, idempotent. Tombstone: content erased, unpinned, voice object queued for durable erasure (community voice erasure ledger). |
++| `POST\|DELETE /coach/clients/:client_id/messages/:id/pin` | `POST\|DELETE /messages/:id/pin` | Thread-shared pins, max 10 per thread (advisory-locked cap). |
++| `GET /coach/clients/:client_id/messages/pins` | `GET /messages/pins` | Pins bar. |
++| `PUT /coach/clients/:client_id/messages/mute` | `PUT /messages/mute` | `{ duration: 1h\|8h\|1d\|7d\|forever\|off }`. Private to the caller; suppresses push for that thread (realtime ping still sent). |
++| `PUT /coach/clients/:client_id/messages/inbox-pin` | `PUT /messages/inbox-pin` | `{ pinned }`, max 5 per user. |
++| `POST .../messages/read { up_to_message_id? }` | `POST /messages/read { up_to_message_id? }` | Read up to a message; live read receipt ping. |
++
++Send additions: `client_message_id` (UUID; or the `Idempotency-Key` header)
++makes sends idempotent for the mobile offline queue (always on: a replay
++returns the original row with no side effects; UNIQUE (sender_id,
++client_message_id)). `reply_to_id` (v2) quotes a live message of the same
++thread; thread reads then carry `reply_to { id, sender_id, kind, preview }`
++and `deleted`.
++
++Realtime: non-message changes ping `messages:<userId>` with the distinct event
++`thread-updated` and an ID-only payload `{ kind, thread_client_id,
++message_id }`, so edits and read receipts never trigger the new-message banner.
++
++Errors: every failure carries `{ code, error, message }` with a stable
++`messaging.*` code (see `messaging-errors.ts`). Blocking parity: edit and pin
++are refused when either side blocked the other; delete is always allowed.
++Audit: edit, delete, pin, unpin write AuditLog rows with lengths and ids only.
++
++RLS: `CoachThreadState` is ENABLE + FORCE, self-only plus owner staff, proven
++live by `test/messaging/rls/coach-thread-state-rls.live.spec.ts`
++(community-live-tests job).
+diff --git a/src/messaging/client-messaging.controller.ts b/src/messaging/client-messaging.controller.ts
+index e3d240fc..c4d35393 100644
+--- a/src/messaging/client-messaging.controller.ts
++++ b/src/messaging/client-messaging.controller.ts
+@@ -1,8 +1,14 @@
+ import {
+   Body,
+   Controller,
++  Delete,
+   Get,
++  Headers,
++  Param,
++  ParseUUIDPipe,
++  Patch,
+   Post,
++  Put,
+   Query,
+   Request,
+   UseGuards,
+@@ -16,10 +22,18 @@ import { RolesGuard } from '../auth/roles.guard';
+ import { Roles } from '../common/decorators/roles.decorator';
+ import {
+   CreateMessageDto,
++  EditMessageDto,
++  InboxPinDto,
+   ListThreadQueryDto,
++  MarkReadDto,
++  MuteThreadDto,
+   VoiceUploadRequestDto,
+ } from './messaging.dto';
+ import { MessagingService } from './messaging.service';
++import { MessageActionsService } from './message-actions.service';
++import { MessagingInboxService } from './messaging-inbox.service';
++import { MessagingCoreV2Guard } from './messaging-core.feature';
++import { resolveIdempotencyKey } from './messaging-idempotency';
+ 
+ // Client-authenticated messaging endpoints. The client's thread is always with
+ // their assigned coach (resolved from user.coach_id), so no path param is
+@@ -42,7 +56,11 @@ import { MessagingService } from './messaging.service';
+ @UseGuards(JwtAuthGuard, RolesGuard)
+ @Roles('student')
+ export class ClientMessagingController {
+-  constructor(private messaging: MessagingService) {}
++  constructor(
++    private messaging: MessagingService,
++    private actions: MessageActionsService,
++    private inbox: MessagingInboxService,
++  ) {}
+ 
+   @Get()
+   async listThread(
+@@ -57,10 +75,14 @@ export class ClientMessagingController {
+   async send(
+     @Request() req: AuthedRequest,
+     @Body() body: CreateMessageDto,
++    @Headers('idempotency-key') idemHeader?: string,
+   ) {
++    const key = resolveIdempotencyKey(idemHeader, body.client_message_id);
+     return this.messaging.sendAsClient(req.user.id, {
+       body: body.body,
+       voice: body.voice,
++      ...(key ? { client_message_id: key } : {}),
++      ...(body.reply_to_id ? { reply_to_id: body.reply_to_id } : {}),
+     });
+   }
+ 
+@@ -77,9 +99,12 @@ export class ClientMessagingController {
+     return this.messaging.createVoiceUpload(req.user.id, body);
+   }
+ 
++  // A3-MSG-CORE: optional { up_to_message_id } (v2); empty body = legacy.
+   @Post('read')
+-  async markRead(@Request() req: AuthedRequest) {
+-    return this.messaging.markReadByClient(req.user.id);
++  async markRead(@Request() req: AuthedRequest, @Body() body: MarkReadDto = {}) {
++    return this.messaging.markReadByClient(req.user.id, {
++      upToMessageId: body?.up_to_message_id,
++    });
+   }
+ 
+   @Get('unread-count')
+@@ -97,4 +122,82 @@ export class ClientMessagingController {
+   async coachReview(@Request() req: AuthedRequest) {
+     return this.messaging.coachReviewForClient(req.user.id);
+   }
++
++  // ---- A3-MSG-CORE (FEATURE_MESSAGING_CORE_V2, default OFF → 503) ----
++  // Free like the rest of the basic DM surface (see controller header).
++  // Static segments ('inbox', 'pins', 'mute', 'inbox-pin') never collide with
++  // the UUID-validated :message_id routes.
++
++  // The one inbox: the client's coach thread (empty when coachless).
++  @Get('inbox')
++  @UseGuards(MessagingCoreV2Guard)
++  async inboxList(@Request() req: AuthedRequest) {
++    return this.inbox.inboxForClient(req.user.id);
++  }
++
++  @Get('pins')
++  @UseGuards(MessagingCoreV2Guard)
++  async listPins(@Request() req: AuthedRequest) {
++    const thread = await this.messaging.resolveThreadForClient(req.user.id);
++    return this.actions.listPins(thread);
++  }
++
++  @Put('mute')
++  @UseGuards(MessagingCoreV2Guard)
++  async mute(@Request() req: AuthedRequest, @Body() body: MuteThreadDto) {
++    const thread = await this.messaging.resolveThreadForClient(req.user.id);
++    return this.actions.setMute(thread, body.duration);
++  }
++
++  @Put('inbox-pin')
++  @UseGuards(MessagingCoreV2Guard)
++  async inboxPin(@Request() req: AuthedRequest, @Body() body: InboxPinDto) {
++    const thread = await this.messaging.resolveThreadForClient(req.user.id);
++    return this.actions.setInboxPin(thread, body.pinned);
++  }
++
++  @Throttle({ default: { ttl: 60000, limit: 30 } })
++  @Patch(':message_id')
++  @UseGuards(MessagingCoreV2Guard)
++  async edit(
++    @Request() req: AuthedRequest,
++    @Param('message_id', new ParseUUIDPipe()) messageId: string,
++    @Body() body: EditMessageDto,
++  ) {
++    const thread = await this.messaging.resolveThreadForClient(req.user.id);
++    return this.actions.edit(thread, messageId, body.body);
++  }
++
++  @Throttle({ default: { ttl: 60000, limit: 30 } })
++  @Delete(':message_id')
++  @UseGuards(MessagingCoreV2Guard)
++  async remove(
++    @Request() req: AuthedRequest,
++    @Param('message_id', new ParseUUIDPipe()) messageId: string,
++  ) {
++    const thread = await this.messaging.resolveThreadForClient(req.user.id);
++    return this.actions.delete(thread, messageId);
++  }
++
++  @Throttle({ default: { ttl: 60000, limit: 30 } })
++  @Post(':message_id/pin')
++  @UseGuards(MessagingCoreV2Guard)
++  async pin(
++    @Request() req: AuthedRequest,
++    @Param('message_id', new ParseUUIDPipe()) messageId: string,
++  ) {
++    const thread = await this.messaging.resolveThreadForClient(req.user.id);
++    return this.actions.pin(thread, messageId);
++  }
++
++  @Throttle({ default: { ttl: 60000, limit: 30 } })
++  @Delete(':message_id/pin')
++  @UseGuards(MessagingCoreV2Guard)
++  async unpin(
++    @Request() req: AuthedRequest,
++    @Param('message_id', new ParseUUIDPipe()) messageId: string,
++  ) {
++    const thread = await this.messaging.resolveThreadForClient(req.user.id);
++    return this.actions.unpin(thread, messageId);
++  }
+ }
+diff --git a/src/messaging/coach-messaging.controller.ts b/src/messaging/coach-messaging.controller.ts
+index 141e0da6..68c1bfcd 100644
+--- a/src/messaging/coach-messaging.controller.ts
++++ b/src/messaging/coach-messaging.controller.ts
+@@ -1,9 +1,14 @@
+ import {
+   Body,
+   Controller,
++  Delete,
+   Get,
++  Headers,
+   Param,
++  ParseUUIDPipe,
++  Patch,
+   Post,
++  Put,
+   Query,
+   Request,
+   UseGuards,
+@@ -16,10 +21,19 @@ import { CoachGuard } from '../auth/coach.guard';
+ import { Roles } from '../common/decorators/roles.decorator';
+ import {
+   CreateMessageDto,
++  EditMessageDto,
++  InboxPinDto,
++  InboxQueryDto,
+   ListThreadQueryDto,
++  MarkReadDto,
++  MuteThreadDto,
+   VoiceUploadRequestDto,
+ } from './messaging.dto';
+ import { MessagingService } from './messaging.service';
++import { MessageActionsService } from './message-actions.service';
++import { MessagingInboxService } from './messaging-inbox.service';
++import { MessagingCoreV2Guard } from './messaging-core.feature';
++import { resolveIdempotencyKey } from './messaging-idempotency';
+ import { THROTTLER_NAMES } from '../throttler/throttler.config';
+ 
+ // Coach-authenticated messaging endpoints. Mounted under /coach so they sit
+@@ -33,7 +47,11 @@ import { THROTTLER_NAMES } from '../throttler/throttler.config';
+ @Roles('coach')
+ @UseGuards(JwtAuthGuard, CoachGuard)
+ export class CoachMessagingController {
+-  constructor(private messaging: MessagingService) {}
++  constructor(
++    private messaging: MessagingService,
++    private actions: MessageActionsService,
++    private inbox: MessagingInboxService,
++  ) {}
+ 
+   @Get('clients/:client_id/messages')
+   async listThread(
+@@ -54,10 +72,14 @@ export class CoachMessagingController {
+     @Request() req: AuthedRequest,
+     @Param('client_id') clientId: string,
+     @Body() body: CreateMessageDto,
++    @Headers('idempotency-key') idemHeader?: string,
+   ) {
++    const key = resolveIdempotencyKey(idemHeader, body.client_message_id);
+     return this.messaging.sendAsCoach(req.user.id, clientId, {
+       body: body.body,
+       voice: body.voice,
++      ...(key ? { client_message_id: key } : {}),
++      ...(body.reply_to_id ? { reply_to_id: body.reply_to_id } : {}),
+     });
+   }
+ 
+@@ -83,16 +105,108 @@ export class CoachMessagingController {
+     return this.messaging.createVoiceUpload(req.user.id, body);
+   }
+ 
++  // A3-MSG-CORE: optional { up_to_message_id } marks read up to that message
++  // (v2); an empty body keeps the legacy mark-everything behaviour.
+   @Post('clients/:client_id/messages/read')
+   async markRead(
+     @Request() req: AuthedRequest,
+     @Param('client_id') clientId: string,
++    @Body() body: MarkReadDto = {},
+   ) {
+-    return this.messaging.markReadByCoach(req.user.id, clientId);
++    return this.messaging.markReadByCoach(req.user.id, clientId, {
++      upToMessageId: body?.up_to_message_id,
++    });
+   }
+ 
+   @Get('messages/unread-count')
+   async unreadCount(@Request() req: AuthedRequest) {
+     return this.messaging.unreadCountForCoach(req.user.id);
+   }
++
++  // ---- A3-MSG-CORE (FEATURE_MESSAGING_CORE_V2, default OFF → 503) ----
++
++  // The one inbox: every client thread, pinned first, then newest activity.
++  @Get('messages/inbox')
++  @UseGuards(MessagingCoreV2Guard)
++  async inboxList(@Request() req: AuthedRequest, @Query() query: InboxQueryDto) {
++    return this.inbox.inboxForCoach(req.user.id, query);
++  }
++
++  @Get('clients/:client_id/messages/pins')
++  @UseGuards(MessagingCoreV2Guard)
++  async listPins(@Request() req: AuthedRequest, @Param('client_id') clientId: string) {
++    const thread = await this.messaging.resolveThreadForCoach(req.user.id, clientId);
++    return this.actions.listPins(thread);
++  }
++
++  @Throttle({ [THROTTLER_NAMES.COACH_MESSAGES]: { ttl: 60_000, limit: 30 } })
++  @Patch('clients/:client_id/messages/:message_id')
++  @UseGuards(MessagingCoreV2Guard)
++  async edit(
++    @Request() req: AuthedRequest,
++    @Param('client_id') clientId: string,
++    @Param('message_id', new ParseUUIDPipe()) messageId: string,
++    @Body() body: EditMessageDto,
++  ) {
++    const thread = await this.messaging.resolveThreadForCoach(req.user.id, clientId);
++    return this.actions.edit(thread, messageId, body.body);
++  }
++
++  @Throttle({ [THROTTLER_NAMES.COACH_MESSAGES]: { ttl: 60_000, limit: 30 } })
++  @Delete('clients/:client_id/messages/:message_id')
++  @UseGuards(MessagingCoreV2Guard)
++  async remove(
++    @Request() req: AuthedRequest,
++    @Param('client_id') clientId: string,
++    @Param('message_id', new ParseUUIDPipe()) messageId: string,
++  ) {
++    const thread = await this.messaging.resolveThreadForCoach(req.user.id, clientId);
++    return this.actions.delete(thread, messageId);
++  }
++
++  @Throttle({ [THROTTLER_NAMES.COACH_MESSAGES]: { ttl: 60_000, limit: 30 } })
++  @Post('clients/:client_id/messages/:message_id/pin')
++  @UseGuards(MessagingCoreV2Guard)
++  async pin(
++    @Request() req: AuthedRequest,
++    @Param('client_id') clientId: string,
++    @Param('message_id', new ParseUUIDPipe()) messageId: string,
++  ) {
++    const thread = await this.messaging.resolveThreadForCoach(req.user.id, clientId);
++    return this.actions.pin(thread, messageId);
++  }
++
++  @Throttle({ [THROTTLER_NAMES.COACH_MESSAGES]: { ttl: 60_000, limit: 30 } })
++  @Delete('clients/:client_id/messages/:message_id/pin')
++  @UseGuards(MessagingCoreV2Guard)
++  async unpin(
++    @Request() req: AuthedRequest,
++    @Param('client_id') clientId: string,
++    @Param('message_id', new ParseUUIDPipe()) messageId: string,
++  ) {
++    const thread = await this.messaging.resolveThreadForCoach(req.user.id, clientId);
++    return this.actions.unpin(thread, messageId);
++  }
++
++  @Put('clients/:client_id/messages/mute')
++  @UseGuards(MessagingCoreV2Guard)
++  async mute(
++    @Request() req: AuthedRequest,
++    @Param('client_id') clientId: string,
++    @Body() body: MuteThreadDto,
++  ) {
++    const thread = await this.messaging.resolveThreadForCoach(req.user.id, clientId);
++    return this.actions.setMute(thread, body.duration);
++  }
++
++  @Put('clients/:client_id/messages/inbox-pin')
++  @UseGuards(MessagingCoreV2Guard)
++  async inboxPin(
++    @Request() req: AuthedRequest,
++    @Param('client_id') clientId: string,
++    @Body() body: InboxPinDto,
++  ) {
++    const thread = await this.messaging.resolveThreadForCoach(req.user.id, clientId);
++    return this.actions.setInboxPin(thread, body.pinned);
++  }
+ }
+diff --git a/src/messaging/messaging-idempotency.ts b/src/messaging/messaging-idempotency.ts
+new file mode 100644
+index 00000000..62f7312a
+--- /dev/null
++++ b/src/messaging/messaging-idempotency.ts
+@@ -0,0 +1,25 @@
++import { HttpStatus } from '@nestjs/common';
++import { IDEMPOTENCY_KEY_RE } from './messaging.dto';
++import { messagingError, MESSAGING_ERRORS } from './messaging-errors';
++
++/**
++ * A3-MSG-CORE — fold the optional `Idempotency-Key` header into the body's
++ * `client_message_id`. The header must be a UUID (the shape the body field
++ * accepts, 400 `messaging.idempotency_key_invalid` otherwise); when both are
++ * present they must match (400 `messaging.idempotency_key_mismatch`). Returns
++ * the effective key, or undefined when neither is sent (legacy clients).
++ */
++export function resolveIdempotencyKey(
++  header: string | undefined,
++  bodyKey: string | undefined,
++): string | undefined {
++  const h = typeof header === 'string' ? header.trim() : '';
++  if (!h) return bodyKey;
++  if (!IDEMPOTENCY_KEY_RE.test(h)) {
++    throw messagingError(HttpStatus.BAD_REQUEST, MESSAGING_ERRORS.IDEMPOTENCY_KEY_INVALID);
++  }
++  if (bodyKey && bodyKey.toLowerCase() !== h.toLowerCase()) {
++    throw messagingError(HttpStatus.BAD_REQUEST, MESSAGING_ERRORS.IDEMPOTENCY_KEY_MISMATCH);
++  }
++  return bodyKey ?? h.toLowerCase();
++}
+diff --git a/src/messaging/messaging.dto.ts b/src/messaging/messaging.dto.ts
+index 2dcf0a05..552df725 100644
+--- a/src/messaging/messaging.dto.ts
++++ b/src/messaging/messaging.dto.ts
+@@ -1,11 +1,14 @@
+ import { Transform, Type } from 'class-transformer';
+ import {
++  IsBoolean,
+   IsIn,
+   IsInt,
+   IsISO8601,
+   IsOptional,
+   IsString,
+   IsUrl,
++  IsUUID,
++  Matches,
+   Max,
+   MaxLength,
+   Min,
+@@ -71,8 +74,77 @@ export class CreateMessageDto {
+   @ValidateNested()
+   @Type(() => CreateMessageVoiceDto)
+   voice?: CreateMessageVoiceDto;
++
++  // A3-MSG-CORE: device-minted idempotency key for the offline send queue
++  // (UUID v4 from the device). Same key from the same sender → the original
++  // message is returned, never a duplicate. The Idempotency-Key header is an
++  // accepted alias; when both are sent they must match.
++  @IsOptional()
++  @IsUUID()
++  client_message_id?: string;
++
++  // A3-MSG-CORE: swipe-reply target (same thread, not deleted). v2 flag.
++  @IsOptional()
++  @IsUUID()
++  reply_to_id?: string;
++}
++
++// A3-MSG-CORE — author edit of a message body (inside the edit window).
++export class EditMessageDto {
++  @IsString()
++  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
++  @MaxLength(4000)
++  body!: string;
++}
++
++// A3-MSG-CORE — optional read-up-to marker. Absent → mark the whole thread
++// read (legacy behaviour, unchanged).
++export class MarkReadDto {
++  @IsOptional()
++  @IsUUID()
++  up_to_message_id?: string;
++}
++
++// A3-MSG-CORE — per-thread mute (private to the caller). 'off' unmutes.
++export class MuteThreadDto {
++  @IsIn(['1h', '8h', '1d', '7d', 'forever', 'off'])
++  duration!: '1h' | '8h' | '1d' | '7d' | 'forever' | 'off';
++}
++
++// A3-MSG-CORE — pin this conversation to the top of the caller's inbox.
++export class InboxPinDto {
++  @IsBoolean()
++  pinned!: boolean;
+ }
+ 
++// A3-MSG-CORE — unified inbox query (keyset cursor, optional unread filter).
++export class InboxQueryDto {
++  @IsOptional()
++  @IsString()
++  @MaxLength(200)
++  @Matches(/^[A-Za-z0-9_-]+$/)
++  cursor?: string;
++
++  @IsOptional()
++  @Transform(({ value }) => (value === undefined || value === null || value === '' ? undefined : parseInt(String(value), 10)))
++  @IsInt()
++  @Min(1)
++  @Max(100)
++  limit?: number;
++
++  @IsOptional()
++  @IsIn(['all', 'unread'])
++  filter?: 'all' | 'unread';
++}
++
++/**
++ * A3-MSG-CORE — fold the optional Idempotency-Key header into the body key.
++ * The header must be a UUID (the same shape the body accepts); when both are
++ * present they must be identical. Returns the effective key or undefined.
++ */
++export const IDEMPOTENCY_KEY_RE =
++  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
++
+ export class ListThreadQueryDto {
+   // ISO-8601 cursor. Thread is ordered newest-first; `before` returns rows
+   // strictly older than the supplied timestamp.
+diff --git a/test/messaging/messaging-core-v2.spec.ts b/test/messaging/messaging-core-v2.spec.ts
+index fc972136..d2f49c69 100644
+--- a/test/messaging/messaging-core-v2.spec.ts
++++ b/test/messaging/messaging-core-v2.spec.ts
+@@ -32,6 +32,7 @@ import {
+   isMessagingCoreV2Enabled,
+   MessagingCoreV2Guard,
+ } from '../../src/messaging/messaging-core.feature';
++import { resolveIdempotencyKey } from '../../src/messaging/messaging-idempotency';
+ 
+ const COACH = '11111111-1111-4111-8111-111111111111';
+ const CLIENT = '22222222-2222-4222-8222-222222222222';
+@@ -288,6 +289,26 @@ describe('idempotent send (offline queue)', () => {
+     expect(data).not.toHaveProperty('client_message_id');
+     expect(data).not.toHaveProperty('reply_to_id');
+   });
++
++  it('Idempotency-Key header folds into the body key; bad or mismatched keys are coded 400s', () => {
++    expect(resolveIdempotencyKey(undefined, undefined)).toBeUndefined();
++    expect(resolveIdempotencyKey(KEY.toUpperCase(), undefined)).toBe(KEY);
++    expect(resolveIdempotencyKey(KEY, KEY)).toBe(KEY);
++    let e1: unknown;
++    try {
++      resolveIdempotencyKey('not-a-uuid', undefined);
++    } catch (e) {
++      e1 = e;
++    }
++    expectCode(e1, 400, 'messaging.idempotency_key_invalid');
++    let e2: unknown;
++    try {
++      resolveIdempotencyKey(KEY, MSG);
++    } catch (e) {
++      e2 = e;
++    }
++    expectCode(e2, 400, 'messaging.idempotency_key_mismatch');
++  });
+ });
+ 
+ describe('swipe-reply', () => {

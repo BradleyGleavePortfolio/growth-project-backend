@@ -1,0 +1,70 @@
+[heavy] waiting for a slot: npx jest test/broadcasts/broadcasts.service.spec.ts --runInBand
+PASS test/broadcasts/broadcasts.service.spec.ts (69 MB heap size)
+  BroadcastsService
+    ✓ refuses to schedule a broadcast nobody would receive (8 ms)
+    ✓ writes under the head coach tenant with the sub-coach as author, and arms next_run_at (6 ms)
+    ✓ a recurring series pins its anchor and first occurrence in the broadcast time zone (2 ms)
+    ✓ rejects a send time in the past and an invalid time zone with specific codes (1 ms)
+    ✓ a sub-coach only ever loads broadcasts they wrote (5 ms)
+    ✓ a sent broadcast cannot be edited or canceled (6 ms)
+  BroadcastsService idempotency (A-659-6)
+    ✓ a sibling sub-coach with the same key and text gets a broadcast of their own and learns nothing about the other (5 ms)
+    ✓ the head coach colliding with a sub-coach key is independent too (5 ms)
+    ✓ the same author replays the same broadcast (and a different text is a conflict) (1 ms)
+    ✓ a concurrent loser (P2002) of the same author replays the winner (1 ms)
+  BroadcastsService edit / resume after a claim (B-659-1)
+    ✓ pause mid-run, edit, resume: the edit of a started one-off is refused and nothing is re-armed (7 ms)
+    ✓ a series with a claimed occurrence cannot become a one-off (that would resend now) (1 ms)
+    ✓ a series edit applies from the next occurrence and never adds a second copy on a day already sent (5 ms)
+    ✓ a one-off that never started is still editable (1 ms)
+    ✓ resume never re-arms a one-off that already has a run (1 ms)
+    ✓ resume of a series skips to a day that has not had a copy yet (2 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       16 passed, 16 total
+Snapshots:   0 total
+Time:        2.281 s
+Ran all test suites matching test/broadcasts/broadcasts.service.spec.ts.
+[heavy] waiting for a slot: npx jest test/messaging.service.spec.ts --runInBand
+[33m[Nest] 13303  - [39m10/05/2026, 8:42:03 PM [33m   WARN[39m [38;5;3m[MessagingService] [39m[33mED.6 conversation-review stamp failed for coach=coach-A client=client-1: boom[39m
+PASS test/messaging.service.spec.ts (96 MB heap size)
+  MessagingService
+    send flows
+      ✓ coach sends → client sees the message in their thread (12 ms)
+      ✓ client sends → coach sees the message in their thread (1 ms)
+      ✓ stamps coach_id from the client record (client cannot spoof coach_id) (1 ms)
+    authorization
+      ✓ coach cannot read another coach's thread (404) (4 ms)
+      ✓ coach cannot send into another coach's thread (404) (1 ms)
+      ✓ client without coach gets 409 on list/send (1 ms)
+    pagination
+      ✓ `before` cursor returns strictly-older rows and respects limit (9 ms)
+      ✓ default limit is 50 and max is 100 (25 ms)
+    read markers
+      ✓ coach marking read only touches client→coach messages (not the coach's own) (1 ms)
+      ✓ client marking read only touches coach→client messages (1 ms)
+      ✓ is idempotent — second call returns updated=0 and keeps original timestamps (7 ms)
+    coach thread-review marker (ED.6)
+      ✓ flag ON: markReadByCoach stamps a ConversationReview marker (2 ms)
+      ✓ flag OFF: markReadByCoach writes NO marker (2 ms)
+      ✓ flag UNSET defaults OFF (no marker)
+      ✓ most-recent semantics: a second read re-stamps the same single marker (7 ms)
+      ✓ coachReviewForClient returns the ISO timestamp when a marker exists (5 ms)
+      ✓ coachReviewForClient returns null when no marker exists (1 ms)
+      ✓ marker upsert failure does not fail the coach read acknowledgement (9 ms)
+    unread counts
+      ✓ coach unread: total + per-client breakdown, excludes coach-sent rows (1 ms)
+      ✓ coach unread ignores messages in another coach's thread
+      ✓ client unread counts only coach→client unread messages (1 ms)
+      ✓ orphan client (no coach) returns {total:0} instead of 409 — mobile polls this (4 ms)
+      sub-coach senders in the head-coach thread (P1-2)
+        ✓ sub-coach send increments the client unread count (1 ms)
+        ✓ client mark-read clears sub-coach messages too
+        ✓ head-coach message still counted + marked read (no regression)
+        ✓ client own message is never counted or marked (2 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       26 passed, 26 total
+Snapshots:   0 total
+Time:        4.71 s
+Ran all test suites matching test/messaging.service.spec.ts.

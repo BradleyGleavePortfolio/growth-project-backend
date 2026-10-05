@@ -1,0 +1,84 @@
+[heavy] waiting for a slot: npx jest --ci --forceExit test/ci/fly-env-manifest.spec.ts
+PASS test/ci/fly-env-manifest.spec.ts (129 MB heap size)
+  ENV_RULES extraction (runner side, no TypeScript)
+    ✓ reads exactly the names and closed value sets of the imported ENV_RULES (43 ms)
+    ✓ fails closed on a values line it cannot read (53 ms)
+    ✓ closed sets are exactly what the code distinguishes (2 ms)
+  emergency kill per flag (B-637-2): defaults-on switches are killed by a set, never an unset
+    ✓ every managed flag declares unsetIs, and exactly the defaults-on switches are "on" (2 ms)
+    ✓ unsetIs agrees with the registry default text of every managed flag (2 ms)
+    ✓ the real code readers: absent = on and the kill value = off for every defaults-on switch (1984 ms)
+    ✓ defaults-on kills are a set of the off value; defaults-off kills are an unset (3 ms)
+    ✓ validation rejects a managed flag without unsetIs, and a defaults-on flag with no off value (2 ms)
+    ✓ the kill-switches CLI, the plan and the runbook give the same per-flag kill (99 ms)
+  the checked-in manifest
+    ✓ parses, validates against ENV_RULES and passes every precondition (4 ms)
+    ✓ manages every Wave A / Wave B flag, GOOGLE_CLIENT_IDS and the MWB lock secret (1 ms)
+    ✓ every FEATURE_COMMUNITY_* name in ENV_RULES is managed or excluded with a reason (5 ms)
+    ✓ one path: no other workflow mentions a managed flag name (63 ms)
+    ✓ the workflow passes exactly the manifest secrets to the plan and stage steps, each from the same-named GitHub secret (18 ms)
+  manifest parsing is strict
+    ✓ rejects a duplicated key with a Fix (2 ms)
+    ✓ rejects two entries on one line with a Fix (1 ms)
+    ✓ rejects invalid JSON with a Fix (1 ms)
+    ✓ rejects a missing top-level section with a Fix (1 ms)
+    ✓ rejects a non-string value with a Fix (1 ms)
+  validation errors are specific and carry a Fix
+    ✓ an unregistered flag (1 ms)
+    ✓ a value outside the closed set
+    ✓ a flag without a closed set
+    ✓ an unknown secret state (3 ms)
+    ✓ a flag listed as a secret (2 ms)
+    ✓ a managed name also excluded
+    ✓ a missing gate (1 ms)
+    ✓ a gate without an entry (1 ms)
+    ✓ a closed-set flag neither managed nor excluded
+    ✓ the wrong app
+    ✓ precondition: autosave without the lock secret (1 ms)
+    ✓ precondition: autosave with the lock secret from GitHub (1 ms)
+    ✓ precondition: autosave with the lock secret already present
+    ✓ precondition: voice notes without the API (1 ms)
+    ✓ precondition: the community core set (1 ms)
+    ✓ precondition: the API with the schema forced off (1 ms)
+    ✓ precondition: voice entitlement without voice notes (1 ms)
+    ✓ precondition: every Wave A / B launch value
+  source checks (GitHub secrets) return words, never values
+    ✓ {"GOOGLE_CLIENT_IDS":"a.apps.googleusercontent.com,b.apps.googleusercontent.com","MWB_AUTOSAVE_LOCK_TOKEN_SECRET":"abababababababababababababababababababababababababababababababab","METRICS_AUTH_TOKEN":"leakcanary-value-7d6c5b4a39213f2e"} (1 ms)
+    ✓ {"GOOGLE_CLIENT_IDS":"a,,b","MWB_AUTOSAVE_LOCK_TOKEN_SECRET":"short","METRICS_AUTH_TOKEN":"   "}
+    ✓ {}
+  in-machine check
+    ✓ the command is base64 only: no value and no plain hash input (1 ms)
+    ✓ the real program answers match / differs / absent / present and prints nothing else (89 ms)
+    ✓ bad input is reported as bad_input (never a guess) (118 ms)
+    ✓ parseCompareOutput rejects no marker line (1 ms)
+    ✓ parseCompareOutput rejects a non-JSON marker line
+    ✓ parseCompareOutput rejects another schema (1 ms)
+    ✓ parseCompareOutput rejects a missing name
+    ✓ parseCompareOutput rejects an unknown word (1 ms)
+  planChanges / verifyState matrix
+    ✓ declared value, Fly absent -> {} (4 ms)
+    ✓ declared value, Fly Deployed + match -> { FEATURE_AI_CONSENT_LEDGER_ENABLED: 'Deployed' }
+    ✓ declared value, Fly Deployed + differs -> { FEATURE_AI_CONSENT_LEDGER_ENABLED: 'Deployed' } (1 ms)
+    ✓ declared value, Fly Deployed + machine absent -> { FEATURE_AI_CONSENT_LEDGER_ENABLED: 'Deployed' }
+    ✓ declared value, Fly Deployed + check unavailable -> { FEATURE_AI_CONSENT_LEDGER_ENABLED: 'Deployed' }
+    ✓ declared value, Fly Staged -> { FEATURE_AI_CONSENT_LEDGER_ENABLED: 'Staged' } (1 ms)
+    ✓ declared value, Fly Unknown -> { FEATURE_AI_CONSENT_LEDGER_ENABLED: 'Unknown' }
+    ✓ declared unset, absent everywhere -> {}
+    ✓ declared unset, listed Deployed -> { FEATURE_DUNNING_V2: 'Deployed' } (1 ms)
+    ✓ declared unset, listed Staged -> { FEATURE_DUNNING_V2: 'Staged' } (1 ms)
+    ✓ declared unset, unset staged, machine still has it -> {} (1 ms)
+    ✓ declared present: absent on Fly is an error; listed but not live is pending (1 ms)
+    ✓ github-secret sources: empty / shape errors carry a Fix and never a value
+    ✓ other staged names are listed for deploy_staged; malformed names are counted, not shown (1 ms)
+    ✓ the plan prints declared states and words, never a value or digest
+    ✓ verifyState is exact: missing, extra, not-deployed and machine mismatches (2 ms)
+    ✓ deployed phase fails closed: every unproven case is a retry, and an error with a Fix on the last attempt (4 ms)
+    ✓ parseMachineList keeps valid ids and counts the rest without showing them
+    ✓ an absent listing with no in-machine check is unproven, never "absent, as declared" (B-637-1) (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       67 passed, 67 total
+Snapshots:   0 total
+Time:        4.114 s, estimated 5 s
+Ran all test suites matching test/ci/fly-env-manifest.spec.ts.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -58,6 +58,16 @@ ops/aud-121/AUD-OPUS-SCHA-121/.
 At 13:28 a grep of JOBS121 showed lines 220/225 (another job's entry) summarising the other lens's b#712-#720 result. Verdicts
 #713-#720 and #653 were already posted; the #712 draft was written 13:19. No Sol comment or note was read. Disclosed in the #712 verdict.
 
+## Edge-case freeze (owner rule 13:29, operator mail 13:33) applied to posted findings
+All verdicts were posted before the rule arrived (last post 13:29:40), so none was re-posted (one verdict per head). Mapping for the
+builders' fix round, for the operator to confirm:
+- B-714-1 stays B: it happens on every booking push in normal use, and it puts the client's name and coach-written type text on a lock
+  screen (private data to whoever sees the phone). It also breaks standing ruling B-692-1. The fix is small (fixed per-kind push text).
+- B-653-1 stays B: the same class, on every expiry notice.
+- B-653-2 -> C (edge, deferred to 10k clients): a missing live-Postgres proof, not an item-1 outcome. With it, #653 stays RC on B-653-1 only.
+- C-653-3 (rolling-deploy NULL deadline), C-716-1 (old-start retry row held while the new start is in band): C (edge, deferred to 10k clients).
+- C-712-1, C-714-2, C-634-11: plain C.
+
 ## Operator notes
 - Cross-stack: push #692/#693 (cc0a167f) and this stack both rewrite src/notifications/emitters/booking.emitter.ts,
   scheduling-session-lifecycle.service.ts, test/booking-emitter.spec.ts, test/scheduling.service.spec.ts. #693 adds sendPush (outbox,
@@ -82,7 +92,9 @@ At 13:28 a grep of JOBS121 showed lines 220/225 (another job's entry) summarisin
 - [x] SCHB #717-#720 posted 13:14, #653 posted 13:16
 
 ## HANDOFF
-All 10 verdicts posted (13:29). Open: lane mig-2 run 37367384837 (queued since 13:03, GitHub runner incident). When it finishes: record
-P2a/P2b/P4/P5/P6 (+ P-714-1 jest, continue-on-error, expected red) here; if any 20270222/20270226 step fails, tell the operator (it
-bears on #712 APPROVE and D2). Then delete branch audit/AUD-OPUS-SCHA-121/mig-2 and remove worktrees wt/AUD-OPUS-SCHA-121-1/-2/-3.
-mig-1 branch deleted 13:17 (run cancelled).
+Done 13:42. All 10 verdicts posted. Worktrees wt/AUD-OPUS-SCHA-121-1/-2/-3 removed. Branch audit/AUD-OPUS-SCHA-121/mig-1 deleted
+(run cancelled). Left on purpose: branch audit/AUD-OPUS-SCHA-121/mig-2 with run 37367384837, still queued at 13:41 (150 runs queued
+repo-wide). It is the only out-of-order deploy proof for 20270222 (#712) and 20270226 (#653). Whoever checks it: steps P2a/P2b
+(deploy applies each one alone on a DB holding 20270301/20270311), P4 (migrate diff --exit-code), P5 (catalog diff) and P6 (down +
+re-apply) must pass. The P-714-1 jest step is expected red (continue-on-error). If a 20270222 step fails, #712's APPROVE needs a new
+round. Then delete the branch (git push origin --delete audit/AUD-OPUS-SCHA-121/mig-2), or cancel the run if no longer needed.

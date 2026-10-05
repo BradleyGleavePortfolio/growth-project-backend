@@ -1,0 +1,9 @@
+PASS test/zz-replay-aud-opus-d6-120-705.probe.spec.ts (99 MB heap size)
+Tests:       8 passed, 8 total
+PASS test/zz-replay-aud-sol-d6-120-boundaries.spec.ts (109 MB heap size)
+Tests:       7 passed, 7 total
+PASS test/zz-opus116-688-probe-pause.spec.ts (113 MB heap size)
+Tests:       5 passed, 5 total
+FAIL test/zz-aud-opus-r34d-119-probe-dunmr.spec.ts (114 MB heap size)
+    ✕ EXPECTED RED: a disputed plan without access, then won (status paid as the handler writes), never regains access from sub.updated (3 ms)
+Tests:       1 failed, 26 passed, 27 total

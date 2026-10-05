@@ -225,3 +225,31 @@ Heads: m#365 cceeb33a (full sha via gh; base main, behind; 2,025), m#366 fa7744c
 "Scheduling day-1 jobs"; backend API in b#712-#720 (Sol APPROVE all nine 13:01). Binding: coaches decide their times and availability
 (owner 10:32); no onboarding gate (owner 10:33); truthful copy when a coach has no bookable types or hours (not an empty picker); no
 first person, no generic errors; times shown in the device time zone. Probes only in mobile CI lanes. One verdict per PR at the exact head.
+
+## Wave 4 (13:43; fleet cap 13, credits 28k/45k at 13:37)
+
+### B-SCHED2-121 — scheduling train FIX ROUND: lock-screen privacy (B-714-1, B-653-1) + push-sender routing, in #653 (T4: PII on lock screens)
+Train: b#712 7fd99dce -> #713 a7c8b33a -> #714 55dfbdce -> #715 8040f149 -> #716 31318708 -> #717 112e0452 -> #718 6feb18bb -> #719 c79c3e67
+-> #720 c2b27193 -> #653 9a23e3b2471794a1356d9939cc4e06682f1ea7ec (full shas via gh). Verdicts: Sol APPROVE #712-#720, RC #653 0/2/1
+(6001979762); Opus APPROVE #712/#713/#715-#720, RC #714 0/1/1 (6001957114) and #653 0/2/1 (6002182391). Reports
+ops/reports/AUD-SOL-SCHA-121.md, AUD-OPUS-SCHA-121.md. Open Bs: B-714-1 and B-653-1 (booking and expiry pushes put the client's name and
+the coach-written session-type name on the lock screen) and Sol's two #653 Bs (stale deadline; duplicate-notice lease: apply the
+owner edge-case freeze, _COMMON_121 item 13: fix only if normal use, else list as C). Operator rulings: B-653-2 (missing live-Postgres
+test) is C (edge); #653's migration keeps 20270226000000; the train lands as one (A5 rule 11), so fix B-714-1 in #653 (top piece), not
+in #714 (no restack of #715-#720 for content); lock-screen copy is generic per notification type, no names, no coach-written text
+(standing push ruling: reminder pushes show no name; details only inside the app). Push notifications b#692/#693 land BEFORE this train
+(merging when GitHub runs CI): once b#692 is on main, merge main into #712's branch (resolve once, list hunks), restack #713 -> #653
+merge-only (one push per PR), and route every booking/expiry push through the push sender from #692/#693 only (no second sender). If b#692
+is not on main when your fixes are ready, push the #653 fixes first and do the main merge + routing as a second push when it lands.
+Failing-before probes in a backend CI lane. FIX ROUND 1 (OPENING, B-SCHED2-121, agent 121) + READY FOR AUDIT on #653; RESTACK comments
+on #712-#720 if restacked; one line on #714 saying B-714-1 is fixed in #653.
+
+### AUD-OPUS-MSG3-121 / AUD-SOL-MSG3-121 — messaging backend b#708-#711, first full review (T4: RLS, messaging) — landing today
+Heads: b#708 07d16d82 (schema + CoachMessage RLS, base main), #709 d9cf7ad9 (core service), #710 3572b209 (actions + inbox), #711 db7fa3bf
+(routes) — full shas via gh; verify unchanged before posting. Builder report: ops/reports/B-MSG-FIN-121.md (D1 RLS check, tree checks,
+local evidence 37/37). Background: TGP_SOURCE_OF_TRUTH A9.2 "B-MSG2-120" (rulings D1-D3). The owner edge-case freeze (_COMMON_121
+item 13) applies in full: a B must happen in normal use and touch money, private data, safety, data loss, reachable security, store/legal,
+a false claim or a core-flow dead end; everything else is "C (edge, deferred to 10k clients)". Judge the stack as one train (lands as
+one, A5 rule 11) and each piece as safe alone. Some required checks may still be queued or re-running because of GitHub's runner
+incident: say which, and do not block for queued checks (the operator merges only once they are green). One verdict per PR at the exact
+head. Budget: finish within 45 minutes; read-only, one CI lane at most, single-spec heavy.sh fallback after 20 minutes queued.

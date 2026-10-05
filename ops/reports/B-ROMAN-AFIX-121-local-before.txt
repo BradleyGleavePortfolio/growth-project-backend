@@ -42,3 +42,30 @@ FAIL test/roman/aud-sol-ra121-667-core.spec.ts
     ✓ control: real intake query is scoped to caller, and failed reads reject (2 ms)
     ✓ control: hostile closing delimiters stay inside the data block
 Tests:       28 failed, 11 passed, 39 total
+FAIL test/roman/roman-context-a2-fixes.spec.ts (16.202 s)
+    ✕ two providers reporting one night give one night (newest recorded provider wins) (16 ms)
+    ✕ the client's preferred provider wins over the newest one, per metric (5 ms)
+    ✕ distinct sessions from the chosen provider still add up; a preference with no rows is unknown (2 ms)
+    ✕ 1,000 one-step samples on one local day give exactly 1,000 steps (285 ms)
+    ✕ cap + 1 samples: no totals, no averages, no sleep, and truncated says why (199 ms)
+    ✕ 19:00 PT tonight (02:00Z tomorrow) is today; 00:00 PT tomorrow is next (6 ms)
+    ✕ a workout done 22:00 PT is dated that local day, and window bounds are local midnights (7 ms)
+    ✕ local midnight across DST and a half-hour zone
+    ✕ forty past assignments plus one future one: the next session is found (10 ms)
+    ✕ history cap + 1: adherence is unknown and disclosed; completions are the newest ten (6 ms)
+    ✕ upcoming cap + 1 on one day: today is still exact, next and days/week unknown and disclosed (5 ms)
+    ✕ GET /roman/context/me is locked; the Roman chat routes stay reachable
+    ✕ open delegation: the sub-coach plan, meal plan and message are the client's (1 ms)
+    ✕ a closed delegation or one under another head coach adds nothing (1 ms)
+FAIL test/roman/audit-opus-ra121.probe.spec.ts
+    ✕ PROBE: 1 of 7 screening questions answered (P1 = no, P2..P7 unanswered) is NOT a completed screen (4 ms)
+    ✓ control: all 7 answered "no" is a completed, clear screen (1 ms)
+    ✓ control: one provider, last night is 6.3 h (11 ms)
+    ✕ PROBE: the same night from OURA and APPLE_HEALTHKIT is still 6.3 h, never 12.6 h (7 ms)
+    ✕ PROBE: today's steps from both providers are 6,100, never 12,200 (7 ms)
+    ✓ control: the Roman chat surface stays reachable (lockout explanation carve-out) (1 ms)
+    ✓ control: paid value surfaces are locked
+    ✕ PROBE: GET /roman/context/me (returns the coach plan, meal plan, guidelines, targets, coach messages) is locked (1 ms)
+    ✕ PROBE: a delegated sub-coach message in the head-coach thread (MessagingService pins coach_id to the head coach, sender_id = sub-coach) is in recent_messages (5 ms)
+    ✕ PROBE: a workout the delegated sub-coach assigned for today is today_session (5 ms)
+Tests:       20 failed, 4 passed, 24 total

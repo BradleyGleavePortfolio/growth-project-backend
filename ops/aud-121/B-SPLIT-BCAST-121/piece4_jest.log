@@ -1,0 +1,65 @@
+[heavy] waiting for a slot: npx jest test/broadcasts/dispatcher-delivery.spec.ts --runInBand
+[33m[Nest] 13574  - [39m10/05/2026, 8:42:09 PM [33m   WARN[39m [38;5;3m[BroadcastDispatcherService] [39m[33mbroadcast delivery d1 attempt 1 failed: error=Error[39m
+[33m[Nest] 13574  - [39m10/05/2026, 8:42:09 PM [33m   WARN[39m [38;5;3m[BroadcastDispatcherService] [39m[33mbroadcast delivery d1 attempt 5 failed: error=Error[39m
+PASS test/broadcasts/dispatcher-delivery.spec.ts (92 MB heap size)
+  BroadcastDispatcherService.deliverOne
+    ✓ defers a non-urgent delivery to 08:00 in the RECIPIENT time zone (New York) (11 ms)
+    ✓ the same instant delivers to a recipient whose local time is daytime (Tokyo) (2 ms)
+    ✓ early morning (06:59 Tokyo) defers to 08:00 the same local day (2 ms)
+    ✓ urgent broadcasts bypass quiet hours (1 ms)
+    ✓ a muted recipient gets the message silently (no push) (2 ms)
+    ✓ a block in either direction skips without writing a message (3 ms)
+    ✓ a client who left the roster is skipped (1 ms)
+    ✓ a lost lease rolls the message back and never pushes (5 ms)
+    ✓ a canceled broadcast skips its remaining deliveries (1 ms)
+    ✓ B-659-1: an edit after the claim never changes the copy; the run payload is sent (2 ms)
+    ✓ B-659-1: urgency is the run snapshot too (an edit to urgent does not skip quiet hours) (1 ms)
+    ✓ B-659-8: a cancel committed during the preference lookup writes no message, card, realtime or push (2 ms)
+    ✓ B-659-8: a pause committed before the transaction parks the copy without spending an attempt (4 ms)
+    ✓ B-659-8: the fence reads the broadcast row FOR SHARE before the message insert (1 ms)
+    ✓ A-659-7: a client reassigned away from the author while deferred gets no copy (2 ms)
+    ✓ A-659-7: an author who left the team sends nothing (5 ms)
+    ✓ A-659-7: a removed author (author_user_id null) is never replaced by the head coach (1 ms)
+    ✓ B-659-9: an OFF flip between await points stops the write and parks without spending an attempt (6 ms)
+    ✓ B-659-9: with the flag off a delivery is not even claimed (3 ms)
+    ✓ B-659-9: turning it back on resumes the parked delivery, once (1 ms)
+    ✓ C-659-3: a claim, a quiet-hours deferral and a pause spend no attempt (3 ms)
+    ✓ C-659-3: a failed send counts one attempt and fails for good at the limit (14 ms)
+  BroadcastDispatcherService.tick (B-659-9)
+    ✓ an OFF flip during an enabled tick stops every later phase (real cron entry) (1 ms)
+    ✓ an OFF flip during fan-out never reaches delivery (1 ms)
+  personalize
+    ✓ uses the first name or a warm fallback
+  claimDue / fanOutRun (B-659-1, A-659-7)
+    ✓ the claim freezes the payload on the run and pins the definition it read (updated_at) (1 ms)
+    ✓ fan-out evaluates the audience frozen on the run, not the edited definition (1 ms)
+    ✓ fan-out of a run whose author was removed fails closed, never as the head coach (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       28 passed, 28 total
+Snapshots:   0 total
+Time:        3.736 s
+Ran all test suites matching test/broadcasts/dispatcher-delivery.spec.ts.
+[heavy] waiting for a slot: npx jest test/privacy/no-pii-in-logs.spec.ts --runInBand
+PASS test/privacy/no-pii-in-logs.spec.ts (102 MB heap size)
+  C-611-17: EmailService logs the send-log row id and template, never the address or subject
+    ✓ log transport: no address, no rendered subject (it holds the first name) (56 ms)
+    ✓ sent through the provider: logs the provider id and row id, not the address (10 ms)
+    ✓ provider error that echoes the address: the log, the result and the stored error hold no address (14 ms)
+  C-611-17: DigestService logs the user id, never the address
+    ✓ log transport: the line names the user id and template only (26 ms)
+    ✓ provider error that echoes the address: neither the log nor the stored failure holds it (32 ms)
+  C-611-17: other log lines that carried a name, an address or a payload
+    ✓ coach alert push fallback: no alert message (it holds the client name) (29 ms)
+    ✓ practice federation fallback: the coach id, not the coach email (4 ms)
+    ✓ scheduling webhook stubs: the payload shape, never its values (7 ms)
+  C-611-17 / B-700-1 / B-700-2 guard: no log call under src/ interpolates personal data
+    ✓ the rules catch each kind of leak and pass ids, codes and static text (36 ms)
+    ✓ every log call under src/ passes the rules (exception text: only the listed legacy counts) (913 ms)
+    ✓ the files B-PRIVFU2-118 fixed print no exception text at all (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       11 passed, 11 total
+Snapshots:   0 total
+Time:        3.596 s
+Ran all test suites matching test/privacy/no-pii-in-logs.spec.ts.

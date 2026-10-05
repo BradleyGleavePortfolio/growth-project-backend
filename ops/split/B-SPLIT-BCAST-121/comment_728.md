@@ -1,0 +1,22 @@
+FIX ROUND 1 (OPENING, B-SPLIT-BCAST-121, agent 121) — growth-project-backend#728 @ 1dd798ab36e90dbb6b3719b7a4ae13883797167f
+
+BCAST split 3/5 of #659 (A4 broadcasts), 1,162 changed lines (under 1,500). Stack: #726 (main) <- #727 <- #728 <- #729 <- #730; land as one stack. Prior verdicts on #659 @ fa9a7cbd: [Opus REQUEST CHANGES](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/659#issuecomment-5964501283), [Sol BLOCK](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/659#issuecomment-5964574829). Each finding is fixed in the piece that owns the code; the PR body lists every line that differs from #659 merged with main and why.
+
+| Finding | Change | Commit | Test (failing before -> after) |
+|---|---|---|---|
+| A-659-6 (Sol) | create and the P2002 loser replay only the caller's own (tenant, author, key) row; replay re-checks tenant and author | 1dd798ab | broadcasts.service.spec: sibling sub-coach and head-coach collisions, before 2 failed, after pass; same-author replay and P2002 loser pass both sides (regression guards) |
+| B-659-1 (Opus, Sol) | update refuses a started one-off and series-to-one-off; series edits and resumes start after the last claimed local day; a started one-off is never re-armed | 1dd798ab | 6 cases: before 5 failed, after 6/6 |
+
+Failing-before evidence: the new unit specs run against #659 merged with main (03c5d731, specs only) in a second worktree, logs in `ops/aud-121/B-SPLIT-BCAST-121/before_*.log` (dispatcher-delivery 18 failed / 28; broadcasts.service 7 failed / 16; broadcast-scope 6 failed / 6; erasure-manifest-coverage 2 failed; no-pii-in-logs 1 failed). Same run on the ci-lane: [run 37370113404](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37370113404) (queued in the Actions incident; cited when it finishes). Sol's five probes (`ops/aud-sol-114b/659-probe.spec.js`) are not in the workspace; each boundary is rebuilt as a named case (A-659-6 sibling key, A-659-7 empty author scope while deferred, B-659-1 paused edit with a run, B-659-8 cancel during the preference await, B-659-9 flag off during occurrence processing via the real cron entry). Opus left no probe files.
+Local (heavy.sh, one at a time, this tree): tsc 0 errors; broadcasts.service 16/16; messaging.service 26/26.
+
+Edge-case freeze (owner 13:29, A2): B-659-8 (cancel committed in the same instant as a send) and B-659-9 (kill switch flipped inside a running tick) are C (edge, deferred to 10k clients) under item 2; both fixes were already written and tested before the rule, so they stay in. B-659-1 and A-659-7 happen in normal use (pause, fix a typo, resume; a client reassigned while a scheduled or quiet-hours copy waits). A-659-6 is kept fixed (a short shared key such as a repeated text reveals another author's segment).
+
+Money list self-check (stack-wide; no money moves): webhook order/redelivery n/a; concurrency and lock order: send fence order is broadcast row, author User, membership row, client User, open assignment, all FOR SHARE; pause/cancel/reassign write one of those rows each, so they serialise without a cycle; the claim CAS pins `updated_at`; terminal states: canceled skips, paused parks without spending an attempt, failed after 5 failed sends, a one-off with a run is never re-armed; pagination/completeness: fan-out resolves the frozen segment against the author's current scope and fails closed on a removed author; currency/minor units n/a; copy truth: the two new 409 messages say what happened and the next action, no first person, no exclamation marks.
+
+Follow-ups (C), not fixed (FREEZE): C-659-4 head coach editing a sub-coach's broadcast is validated against the head roster (`src/broadcasts/broadcasts.service.ts:276`; validate with the author's scope); C-659-5 copies are written with `tx.coachMessage.create` (`src/broadcasts/broadcast-dispatcher.service.ts:419`), skipping the messaging.sent audit, AI-context invalidation and PTM, a crash after commit leaves `push_status` pending (:439-454), replay compares only the body (`broadcasts.service.ts:266`); C-659-10 live RLS covers one forbidden INSERT (`test/broadcasts/broadcasts-dispatch.live.spec.ts:508`; assert UPDATE and DELETE per table and role); migration header names a spec file that does not exist (`migration.sql:12`; name broadcasts-dispatch.live.spec.ts).
+
+Flags: `FEATURE_COACH_BROADCASTS` unchanged (unset, off).
+CI at this head: queued (GitHub Actions runner delays); the full suite and community-live-tests run in this PR's CI.
+
+READY FOR AUDIT

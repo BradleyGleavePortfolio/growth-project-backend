@@ -1,0 +1,53 @@
+[heavy] waiting for a slot: npx jest test/privacy/no-pii-in-logs.spec.ts --runInBand
+FAIL test/privacy/no-pii-in-logs.spec.ts (115 MB heap size)
+  C-611-17: EmailService logs the send-log row id and template, never the address or subject
+    ✓ log transport: no address, no rendered subject (it holds the first name) (45 ms)
+    ✓ sent through the provider: logs the provider id and row id, not the address (9 ms)
+    ✓ provider error that echoes the address: the log, the result and the stored error hold no address (9 ms)
+  C-611-17: DigestService logs the user id, never the address
+    ✓ log transport: the line names the user id and template only (28 ms)
+    ✓ provider error that echoes the address: neither the log nor the stored failure holds it (12 ms)
+  C-611-17: other log lines that carried a name, an address or a payload
+    ✓ coach alert push fallback: no alert message (it holds the client name) (1 ms)
+    ✓ practice federation fallback: the coach id, not the coach email (2 ms)
+    ✓ scheduling webhook stubs: the payload shape, never its values (1 ms)
+  C-611-17 / B-700-1 / B-700-2 guard: no log call under src/ interpolates personal data
+    ✓ the rules catch each kind of leak and pass ids, codes and static text (60 ms)
+    ✕ every log call under src/ passes the rules (exception text: only the listed legacy counts) (1981 ms)
+    ✓ the files B-PRIVFU2-118 fixed print no exception text at all (9 ms)
+
+  ● C-611-17 / B-700-1 / B-700-2 guard: no log call under src/ interpolates personal data › every log call under src/ passes the rules (exception text: only the listed legacy counts)
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 0
+    + Received  + 1
+
+    @@ -23,10 +23,11 @@
+        "src/audit/audit.service.ts": 1,
+        "src/auth/jwks.service.ts": 1,
+        "src/auth/recent-auth.guard.ts": 1,
+        "src/billing/billing.service.ts": 10,
+        "src/bloodwork/bloodwork-stale.scheduler.ts": 1,
+    +   "src/broadcasts/broadcast-dispatcher.service.ts": 2,
+        "src/checkout/checkout-webhook-handler.service.ts": 12,
+        "src/checkout/checkout.service.ts": 2,
+        "src/checkout/dunning-v2/dunning-lockout.guard.ts": 1,
+        "src/checkout/dunning-v2/dunning-lockout.scheduler.ts": 1,
+        "src/checkout/dunning-v2/dunning-v2.dispatcher.ts": 1,
+
+    [0m [90m 730 |[39m     expect(scanned)[33m.[39mtoBeGreaterThan([35m500[39m)[33m;[39m
+     [90m 731 |[39m     expect(found)[33m.[39mtoEqual([])[33m;[39m
+    [31m[1m>[22m[39m[90m 732 |[39m     expect(exceptionText)[33m.[39mtoEqual([33mLEGACY_EXCEPTION_TEXT[39m)[33m;[39m
+     [90m     |[39m                           [31m[1m^[22m[39m
+     [90m 733 |[39m   })[33m;[39m
+     [90m 734 |[39m
+     [90m 735 |[39m   it([32m'the files B-PRIVFU2-118 fixed print no exception text at all'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/privacy/no-pii-in-logs.spec.ts:732:27)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 10 passed, 11 total
+Snapshots:   0 total
+Time:        5.248 s
+Ran all test suites matching test/privacy/no-pii-in-logs.spec.ts.

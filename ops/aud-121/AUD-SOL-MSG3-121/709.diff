@@ -1,0 +1,1400 @@
+diff --git a/.github/fly-env-desired-state.json b/.github/fly-env-desired-state.json
+index 01519fc1..3d22505c 100644
+--- a/.github/fly-env-desired-state.json
++++ b/.github/fly-env-desired-state.json
+@@ -28,6 +28,7 @@
+     "FEATURE_COMMUNITY_CHALLENGES": "unset",
+     "FEATURE_COMMUNITY_EVENTS": "unset",
+     "FEATURE_COMMUNITY_CLASSROOM_POSTS": "unset",
++    "FEATURE_MESSAGING_CORE_V2": "unset",
+     "BOOKING_REMINDERS_ENABLED": "unset",
+     "SIGNUP_ROLE_CHOICE_ENABLED": "unset",
+     "COACH_WELCOME_SCHEDULER_ENABLED": "unset",
+@@ -87,6 +88,7 @@
+     "FEATURE_COMMUNITY_CHALLENGES": "Ledger: stay off until S-REACH decides. Needs FEATURE_COMMUNITY_API=true.",
+     "FEATURE_COMMUNITY_EVENTS": "Ledger: stay off until S-REACH decides. Needs FEATURE_COMMUNITY_API=true.",
+     "FEATURE_COMMUNITY_CLASSROOM_POSTS": "Ledger: stay off until S-REACH decides. Needs FEATURE_COMMUNITY_API=true.",
++    "FEATURE_MESSAGING_CORE_V2": "A3-MSG-CORE (annex): unified inbox, edit/delete, swipe-reply, pins, mute and read-up-to on the 1:1 coach thread. Stays unset (off) until dual audit approves the backend PR and the mobile thread polish passes a device pass. Not a community flag (no FEATURE_COMMUNITY_API dependency). Roll back with 'unset'.",
+     "BOOKING_REMINDERS_ENABLED": "Wave A, operator ruling OR-110-5: flip to the literal 'on' in the same deploy window as #632 (after #632/#634 the code accepts only 'on'; unset = off there). 'true' would silently turn reminders off.",
+     "SIGNUP_ROLE_CHOICE_ENABLED": "Owner D4 (10-01 12:55): ON at launch and stays a working kill switch. Unset = on (only 'false', '0' or 'off' turn it off); set 'true' to make it explicit, 'false' to make every signup a client.",
+     "COACH_WELCOME_SCHEDULER_ENABLED": "Clinic C05 item 6 (#609): ships on and stays a working kill switch. Unset = on (only 'false', '0' or 'off' turn it off). It sends nothing until the owner enables a coach's welcome setting at C04. Emergency kill: set 'false' (scheduling and sending stop, the erasure sweep keeps running); never unset to kill.",
+diff --git a/docs/runbooks/launch-flags.md b/docs/runbooks/launch-flags.md
+index d13144f9..f4928794 100644
+--- a/docs/runbooks/launch-flags.md
++++ b/docs/runbooks/launch-flags.md
+@@ -117,6 +117,7 @@ FEATURE_COMMUNITY_AI_TRIAGE | off | fly secrets unset -a backend-spring-lake-389
+ FEATURE_COMMUNITY_CHALLENGES | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COMMUNITY_CHALLENGES | "FEATURE_COMMUNITY_CHALLENGES": "unset"
+ FEATURE_COMMUNITY_EVENTS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COMMUNITY_EVENTS | "FEATURE_COMMUNITY_EVENTS": "unset"
+ FEATURE_COMMUNITY_CLASSROOM_POSTS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COMMUNITY_CLASSROOM_POSTS | "FEATURE_COMMUNITY_CLASSROOM_POSTS": "unset"
++FEATURE_MESSAGING_CORE_V2 | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_MESSAGING_CORE_V2 | "FEATURE_MESSAGING_CORE_V2": "unset"
+ BOOKING_REMINDERS_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 BOOKING_REMINDERS_ENABLED | "BOOKING_REMINDERS_ENABLED": "unset"
+ SIGNUP_ROLE_CHOICE_ENABLED | on | fly secrets set -a backend-spring-lake-3890 SIGNUP_ROLE_CHOICE_ENABLED=false (never unset: that turns it on) | "SIGNUP_ROLE_CHOICE_ENABLED": "false"
+ COACH_WELCOME_SCHEDULER_ENABLED | on | fly secrets set -a backend-spring-lake-3890 COACH_WELCOME_SCHEDULER_ENABLED=false (never unset: that turns it on) | "COACH_WELCOME_SCHEDULER_ENABLED": "false"
+diff --git a/src/common/env-validation.ts b/src/common/env-validation.ts
+index 4b12a0f6..00b8d0af 100644
+--- a/src/common/env-validation.ts
++++ b/src/common/env-validation.ts
+@@ -2123,6 +2123,15 @@ export const ENV_RULES: EnvRule[] = [
+     default: 'unset → off (only explicit true)',
+     reason: 'Live Roman chat. Off in v1.0 (owner decision D1: scripted Roman only).',
+   },
++  {
++    name: 'FEATURE_MESSAGING_CORE_V2',
++    values: ['true', 'false'],
++    unsetIs: 'off',
++    tier: 'optional',
++    default: 'unset → off (only "true")',
++    reason:
++      'A3-MSG-CORE kill switch: unified inbox, edit/delete, swipe-reply, pins, mute and read-up-to on the 1:1 coach thread (CoachMessage). Off until audit and device pass.',
++  },
+   {
+     name: 'FEATURE_ROMAN_COACH_REVIEWED_AT',
+     tier: 'optional',
+diff --git a/src/feature-flags/__tests__/feature-flags.controller.spec.ts b/src/feature-flags/__tests__/feature-flags.controller.spec.ts
+index 1f3e85ab..a5be6df0 100644
+--- a/src/feature-flags/__tests__/feature-flags.controller.spec.ts
++++ b/src/feature-flags/__tests__/feature-flags.controller.spec.ts
+@@ -33,6 +33,7 @@ describe('FeatureFlagsController', () => {
+     coach_community_wearable_prompts: true,
+     community_classroom: true,
+     community_events: true,
++    messaging_core_v2: true,
+   };
+ 
+   beforeEach(() => {
+diff --git a/src/feature-flags/__tests__/feature-flags.service.spec.ts b/src/feature-flags/__tests__/feature-flags.service.spec.ts
+index 4ee88c12..a03142f8 100644
+--- a/src/feature-flags/__tests__/feature-flags.service.spec.ts
++++ b/src/feature-flags/__tests__/feature-flags.service.spec.ts
+@@ -54,6 +54,7 @@ describe('FeatureFlagsService', () => {
+       coach_community_wearable_prompts: false,
+       community_classroom: false,
+       community_events: false,
++      messaging_core_v2: false,
+     });
+   });
+ 
+diff --git a/src/feature-flags/feature-flags.dto.ts b/src/feature-flags/feature-flags.dto.ts
+index 3d16d31f..f234e844 100644
+--- a/src/feature-flags/feature-flags.dto.ts
++++ b/src/feature-flags/feature-flags.dto.ts
+@@ -24,6 +24,10 @@ import { z } from 'zod';
+  *   coach_community_wearable_prompts ← FEATURE_COMMUNITY_WEARABLE_PROMPTS (coach/owner only)
+  *   community_classroom              ← FEATURE_COMMUNITY_CLASSROOM_POSTS
+  *   community_events                 ← FEATURE_COMMUNITY_EVENTS
++ *   messaging_core_v2                ← FEATURE_MESSAGING_CORE_V2 (A3-MSG-CORE;
++ *                                      the 1:1 coach thread is not a community
++ *                                      surface, so it is NOT behind the
++ *                                      community master gate)
+  *
+  * All flags additionally require the community master gate
+  * (FEATURE_COMMUNITY_API, via resolveCommunityFlag) — a flag cannot read
+@@ -34,6 +38,7 @@ export const FEATURE_FLAG_KEYS = [
+   'coach_community_wearable_prompts',
+   'community_classroom',
+   'community_events',
++  'messaging_core_v2',
+ ] as const;
+ 
+ export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
+diff --git a/src/feature-flags/feature-flags.service.ts b/src/feature-flags/feature-flags.service.ts
+index 6a4028a7..f3b75fcf 100644
+--- a/src/feature-flags/feature-flags.service.ts
++++ b/src/feature-flags/feature-flags.service.ts
+@@ -5,6 +5,7 @@ import {
+   FEATURE_FLAG_KEYS,
+   type FeatureFlagKey,
+ } from './feature-flags.dto';
++import { isMessagingCoreV2Enabled } from '../messaging/messaging-core.feature';
+ 
+ /**
+  * D5 = B+γ — server-side feature-flag evaluation.
+@@ -66,6 +67,10 @@ export class FeatureFlagsService {
+         communityReachable && envOn('FEATURE_COMMUNITY_CLASSROOM_POSTS'),
+       community_events:
+         communityReachable && envOn('FEATURE_COMMUNITY_EVENTS'),
++      // A3-MSG-CORE: the canonical 1:1 thread (CoachMessage) is reachable by
++      // every coach and coached client, so only its own kill switch applies.
++      // Same literal-'true' rule as isMessagingCoreV2Enabled (case-insensitive).
++      messaging_core_v2: isMessagingCoreV2Enabled(),
+     };
+   }
+ 
+diff --git a/src/messaging/messaging-core.feature.ts b/src/messaging/messaging-core.feature.ts
+new file mode 100644
+index 00000000..41620dc3
+--- /dev/null
++++ b/src/messaging/messaging-core.feature.ts
+@@ -0,0 +1,39 @@
++/**
++ * A3-MSG-CORE — `FEATURE_MESSAGING_CORE_V2` kill switch (DEFAULT OFF).
++ *
++ * Gates every new user-facing surface on the canonical 1:1 thread
++ * (CoachMessage): the unified inbox, edit, delete, swipe-reply, message pins,
++ * per-thread mute, inbox pins, read-up-to and the `thread-updated` realtime
++ * ping. While OFF:
++ *   - every new route answers 503 `messaging.feature_disabled` (specific copy
++ *     on mobile; the mobile surface is also hidden through
++ *     GET /me/feature-flags `messaging_core_v2`);
++ *   - the existing thread read/send/read-marker routes behave byte-for-byte as
++ *     before (no reply include, no tombstone mapping, no mute lookup).
++ *
++ * Send idempotency (`client_message_id` / `Idempotency-Key`) is NOT gated: it
++ * is a correctness guarantee for any retrying client, not a surface.
++ *
++ * ON only when the env value is exactly `'true'` (case-insensitive). Read at
++ * the call site on every request (never boot-cached) so a flip needs no
++ * redeploy. Registered in src/common/env-validation.ts ENV_RULES.
++ */
++import { CanActivate, HttpStatus, Injectable } from '@nestjs/common';
++import { messagingError, MESSAGING_ERRORS } from './messaging-errors';
++
++export const FEATURE_MESSAGING_CORE_V2_ENV = 'FEATURE_MESSAGING_CORE_V2';
++
++export function isMessagingCoreV2Enabled(env: NodeJS.ProcessEnv = process.env): boolean {
++  return (env[FEATURE_MESSAGING_CORE_V2_ENV] ?? '').toLowerCase() === 'true';
++}
++
++/** Route guard for the new messaging surfaces: 503 with a stable code when OFF. */
++@Injectable()
++export class MessagingCoreV2Guard implements CanActivate {
++  canActivate(): boolean {
++    if (!isMessagingCoreV2Enabled()) {
++      throw messagingError(HttpStatus.SERVICE_UNAVAILABLE, MESSAGING_ERRORS.FEATURE_DISABLED);
++    }
++    return true;
++  }
++}
+diff --git a/src/messaging/messaging-errors.ts b/src/messaging/messaging-errors.ts
+new file mode 100644
+index 00000000..93d3abfc
+--- /dev/null
++++ b/src/messaging/messaging-errors.ts
+@@ -0,0 +1,99 @@
++import { HttpException, HttpStatus } from '@nestjs/common';
++
++/**
++ * A3-MSG-CORE — stable machine codes for the canonical 1:1 thread actions.
++ *
++ * Every error body carries `code` (stable, namespaced, never reworded),
++ * `error` (the same value, for the legacy mobile reader that keys on `error`
++ * like NO_COACH_ASSIGNED / BLOCKED) and `message` (plain human text that says
++ * what happened and what to do next). Mobile maps `code` to its own copy; the
++ * message is the fallback for API consumers. No user content, ids or PII ever
++ * appear in a message.
++ */
++export const MESSAGING_ERRORS = {
++  FEATURE_DISABLED: {
++    code: 'messaging.feature_disabled',
++    message:
++      'This messaging feature is switched off right now. Your conversation is safe; update the app or check back later.',
++  },
++  MESSAGE_NOT_FOUND: {
++    code: 'messaging.message_not_found',
++    message:
++      'That message is no longer in this conversation. Refresh the conversation to see the latest messages.',
++  },
++  NOT_AUTHOR: {
++    code: 'messaging.not_author',
++    message: 'Only the person who sent a message can change or delete it.',
++  },
++  MESSAGE_DELETED: {
++    code: 'messaging.message_deleted',
++    message: 'That message was deleted, so it can no longer be changed, pinned or replied to.',
++  },
++  EDIT_WINDOW_CLOSED: {
++    code: 'messaging.edit_window_closed',
++    message:
++      'Messages can be edited for 48 hours after sending. Send a new message with the correction instead.',
++  },
++  DELETE_WINDOW_CLOSED: {
++    code: 'messaging.delete_window_closed',
++    message:
++      'Messages can be deleted for 48 hours after sending. Contact support if this message needs to be removed.',
++  },
++  NOT_EDITABLE: {
++    code: 'messaging.not_editable',
++    message: 'A voice note without text cannot be edited. Delete it and record a new one instead.',
++  },
++  EDIT_EMPTY: {
++    code: 'messaging.edit_empty',
++    message:
++      'An edited message needs some text. To remove the message entirely, delete it instead.',
++  },
++  BLOCKED: {
++    code: 'messaging.blocked',
++    message:
++      'This conversation is blocked, so messages cannot be sent, edited or pinned. Unblock in Settings to continue.',
++  },
++  REPLY_TARGET_UNAVAILABLE: {
++    code: 'messaging.reply_target_unavailable',
++    message:
++      'The message you replied to is no longer available. Send your message without the quote.',
++  },
++  PIN_LIMIT_REACHED: {
++    code: 'messaging.pin_limit_reached',
++    message: 'This conversation already has 10 pinned messages. Unpin one to pin another.',
++  },
++  INBOX_PIN_LIMIT_REACHED: {
++    code: 'messaging.inbox_pin_limit_reached',
++    message: 'You can pin up to 5 conversations. Unpin one to pin this conversation.',
++  },
++  IDEMPOTENCY_KEY_REUSED: {
++    code: 'messaging.idempotency_key_reused',
++    message:
++      'This message was already sent to a different conversation. Send it again as a new message.',
++  },
++  IDEMPOTENCY_KEY_INVALID: {
++    code: 'messaging.idempotency_key_invalid',
++    message:
++      'The message could not be matched to a send attempt. Update the app and send it again.',
++  },
++  IDEMPOTENCY_KEY_MISMATCH: {
++    code: 'messaging.idempotency_key_mismatch',
++    message: 'The message carried two different send ids. Update the app and send it again.',
++  },
++} as const;
++
++export type MessagingErrorSpec = (typeof MESSAGING_ERRORS)[keyof typeof MESSAGING_ERRORS];
++
++export type MessagingErrorCode = MessagingErrorSpec['code'];
++
++/** Build an HttpException carrying `{ error, code, message }`. */
++export function messagingError(
++  status: HttpStatus,
++  spec: MessagingErrorSpec,
++  extra: Record<string, string | number | boolean | null> = {},
++): HttpException {
++  return new HttpException(
++    { statusCode: status, error: spec.code, code: spec.code, message: spec.message, ...extra },
++    status,
++  );
++}
+diff --git a/src/messaging/messaging-realtime.ts b/src/messaging/messaging-realtime.ts
+new file mode 100644
+index 00000000..931176db
+--- /dev/null
++++ b/src/messaging/messaging-realtime.ts
+@@ -0,0 +1,63 @@
++import { Logger } from '@nestjs/common';
++import type { SupabaseService } from '../supabase/supabase.service';
++import { describeFailure } from '../observability/log-pii';
++
++/**
++ * A3-MSG-CORE — ID-only realtime pings for thread changes that are not a new
++ * message (read receipts, edits, deletes, pins). Sent on the SAME per-user
++ * channel the mobile app already subscribes to (`messages:<userId>`, see
++ * SupabaseService.broadcastNewMessage) under a DISTINCT event name, so an
++ * edit or read receipt never triggers the new-message banner or sound.
++ *
++ * The payload carries no user text: only the change kind, the affected
++ * message id (when there is one) and the thread key. The recipient refetches
++ * through the authenticated REST routes, which enforce tenancy and blocks.
++ * Best-effort: bounded by a 1500 ms timeout, failures are logged and
++ * swallowed (the REST poll floor still catches up). Never awaited by callers
++ * on the request path.
++ */
++export const THREAD_UPDATED_EVENT = 'thread-updated';
++
++export type ThreadUpdateKind = 'read' | 'edited' | 'deleted' | 'pinned' | 'unpinned';
++
++export interface ThreadUpdatedPayload {
++  kind: ThreadUpdateKind;
++  /** Thread key the mobile app already uses (the client id). */
++  thread_client_id: string;
++  message_id: string | null;
++}
++
++const BROADCAST_TIMEOUT_MS = 1500;
++const logger = new Logger('MessagingRealtime');
++
++export async function broadcastThreadUpdated(
++  supabase: SupabaseService,
++  recipientId: string,
++  payload: ThreadUpdatedPayload,
++): Promise<void> {
++  if (!recipientId) return;
++  try {
++    const client = supabase.getClient();
++    const channel = client.channel(`messages:${recipientId}`);
++    await new Promise<void>((resolve) => {
++      const timeout = setTimeout(() => resolve(), BROADCAST_TIMEOUT_MS);
++      channel.subscribe(async (status) => {
++        if (status !== 'SUBSCRIBED') return;
++        try {
++          await channel.send({
++            type: 'broadcast',
++            event: THREAD_UPDATED_EVENT,
++            payload,
++          });
++        } catch (sendErr) {
++          logger.warn(`thread-updated send failed: ${describeFailure(sendErr)}`);
++        }
++        clearTimeout(timeout);
++        resolve();
++      });
++    });
++    await client.removeChannel(channel);
++  } catch (err) {
++    logger.warn(`thread-updated broadcast failed: ${describeFailure(err)}`);
++  }
++}
+diff --git a/src/messaging/messaging.service.ts b/src/messaging/messaging.service.ts
+index 766363e6..1a5de2c0 100644
+--- a/src/messaging/messaging.service.ts
++++ b/src/messaging/messaging.service.ts
+@@ -4,10 +4,12 @@ import {
+   ForbiddenException,
+   Injectable,
+   Logger,
++  HttpStatus,
+   NotFoundException,
+   Optional,
+ } from '@nestjs/common';
+-import type { Prisma } from '@prisma/client';
++import { Prisma } from '@prisma/client';
++import type { CoachMessage } from '@prisma/client';
+ import {
+   VoiceUploadProvider,
+   type SignedVoiceUploadRequest as ProviderSignedVoiceUploadRequest,
+@@ -28,6 +30,13 @@ import { MessagesSafetyService } from '../messages-safety/messages-safety.servic
+ import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
+ import { isCoachReviewedAtEnabled } from '../roman/coach-reviewed.feature';
+ import { holdWelcomeLease, WelcomeLeaseLostError } from '../engagement/welcome-lease-fence';
++import { describeFailure } from '../observability/log-pii';
++import { isMessagingCoreV2Enabled } from './messaging-core.feature';
++import { messagingError, MESSAGING_ERRORS } from './messaging-errors';
++import {
++  broadcastThreadUpdated,
++  type ThreadUpdateKind,
++} from './messaging-realtime';
+ 
+ const DEFAULT_LIMIT = 50;
+ const MAX_LIMIT = 100;
+@@ -47,6 +56,47 @@ export interface VoicePayload {
+ export interface SendMessagePayload {
+   body?: string;
+   voice?: VoicePayload;
++  // A3-MSG-CORE: device-minted idempotency key (offline send queue). A replay
++  // with the same (sender, key) returns the original row with no side effects.
++  client_message_id?: string;
++  // A3-MSG-CORE: swipe-reply target, validated to be in the same thread and
++  // not deleted. Requires FEATURE_MESSAGING_CORE_V2.
++  reply_to_id?: string;
++}
++
++/**
++ * A3-MSG-CORE — a resolved canonical 1:1 thread from one participant's side.
++ * `coachId` is the THREAD coach (the head coach for sub-coach threads);
++ * `actorId` is the caller; `otherPartyId` is who receives pings and pushes.
++ */
++export interface ResolvedThread {
++  coachId: string;
++  clientId: string;
++  actorId: string;
++  actorSide: 'coach' | 'client';
++  otherPartyId: string;
++}
++
++/** Max quoted-preview length carried on `reply_to` (characters). */
++export const REPLY_PREVIEW_MAX = 160;
++
++/** Wire shape of the quoted message on a reply (null when unavailable). */
++export interface ReplyPreview {
++  id: string;
++  sender_id: string | null;
++  kind: 'text' | 'voice' | 'deleted' | 'unavailable';
++  preview: string;
++}
++
++type ReplyRow = Pick<
++  CoachMessage,
++  'id' | 'sender_id' | 'body' | 'voice_url' | 'deleted_at'
++>;
++
++/** Collapse whitespace and cap a body for a quoted/inbox preview. */
++export function previewText(body: string | null, max: number): string {
++  const text = (body ?? '').replace(/\s+/g, ' ').trim();
++  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+ }
+ 
+ // v3-3: the signed-upload request/response shapes now live with the extracted
+@@ -340,6 +390,240 @@ export class MessagingService {
+     return me.coach_id;
+   }
+ 
++  // ---- A3-MSG-CORE: shared thread resolution ----
++
++  /**
++   * Resolve the thread a coach (head coach, sub-coach with an open assignment,
++   * never a foreign coach) has with `clientId`. 404 for a foreign client,
++   * exactly like every other coach-side thread route.
++   */
++  async resolveThreadForCoach(
++    coachId: string,
++    clientId: string,
++  ): Promise<ResolvedThread> {
++    const client = await this.assertClientOfCoach(coachId, clientId);
++    return {
++      coachId: client.coach_id ?? coachId,
++      clientId,
++      actorId: coachId,
++      actorSide: 'coach',
++      otherPartyId: clientId,
++    };
++  }
++
++  /** Resolve the client's single thread (409 NO_COACH_ASSIGNED when none). */
++  async resolveThreadForClient(clientId: string): Promise<ResolvedThread> {
++    const coachId = await this.requireClientCoachId(clientId);
++    return {
++      coachId,
++      clientId,
++      actorId: clientId,
++      actorSide: 'client',
++      otherPartyId: coachId,
++    };
++  }
++
++  /** Users `callerId` has blocked (empty when the optional dep is absent). */
++  async blockedIdsFor(callerId: string): Promise<string[]> {
++    if (!this.safety) return [];
++    return this.safety.getBlockedIdsFor(callerId);
++  }
++
++  /** True when either side of the pair has blocked the other. */
++  async isEitherSideBlocked(a: string, b: string): Promise<boolean> {
++    if (!this.safety) return false;
++    return this.safety.isEitherSideBlocked(a, b);
++  }
++
++  /**
++   * After a thread mutation that is not a new message (edit, delete, pin,
++   * read): ping the other participant with an ID-only `thread-updated` event
++   * and, when coach-authored content changed, bust the client's AI context
++   * cache so Roman never quotes an edited or deleted coach message.
++   * Fire-and-forget; never fails the request.
++   */
++  notifyThreadUpdated(
++    thread: ResolvedThread,
++    kind: ThreadUpdateKind,
++    messageId: string | null,
++    opts: { coachContentChanged?: boolean } = {},
++  ): void {
++    void broadcastThreadUpdated(this.supabase, thread.otherPartyId, {
++      kind,
++      thread_client_id: thread.clientId,
++      message_id: messageId,
++    });
++    if (opts.coachContentChanged) {
++      this.aiContext.invalidateForUser(thread.clientId);
++    }
++  }
++
++  /**
++   * Map a stored row to its wire shape for the v2 thread surface: the quoted
++   * message preview on replies (hidden when the caller blocked its author or
++   * it was deleted) and an explicit `deleted` flag. Content columns of a
++   * tombstone are already NULL in the database; nothing is re-derived here.
++   */
++  serializeMessage<T extends CoachMessage & { reply_to?: ReplyRow | null }>(
++    row: T,
++    blocked: ReadonlySet<string>,
++  ): Omit<T, 'reply_to'> & { reply_to: ReplyPreview | null; deleted: boolean } {
++    const { reply_to: target, ...rest } = row;
++    let reply: ReplyPreview | null = null;
++    if (row.reply_to_id) {
++      if (!target || (target.sender_id && blocked.has(target.sender_id))) {
++        reply = { id: row.reply_to_id, sender_id: null, kind: 'unavailable', preview: '' };
++      } else if (target.deleted_at) {
++        reply = { id: target.id, sender_id: target.sender_id, kind: 'deleted', preview: '' };
++      } else {
++        reply = {
++          id: target.id,
++          sender_id: target.sender_id,
++          kind: target.body ? 'text' : target.voice_url ? 'voice' : 'text',
++          preview: previewText(target.body, REPLY_PREVIEW_MAX),
++        };
++      }
++    }
++    return { ...rest, reply_to: reply, deleted: row.deleted_at !== null };
++  }
++
++  /** Whether `userId` has this thread muted right now (v2 only). */
++  private async isThreadMutedFor(
++    userId: string,
++    coachId: string,
++    clientId: string,
++  ): Promise<boolean> {
++    try {
++      const state = await this.prisma.coachThreadState.findUnique({
++        where: {
++          CoachThreadState_user_thread_key: {
++            user_id: userId,
++            coach_id: coachId,
++            client_id: clientId,
++          },
++        },
++        select: { muted_until: true },
++      });
++      return !!state?.muted_until && state.muted_until.getTime() > Date.now();
++    } catch (err) {
++      // Fail OPEN to delivery: a lookup failure must never swallow a push.
++      this.logger.warn(`mute lookup failed: ${describeFailure(err)}`);
++      return false;
++    }
++  }
++
++  /**
++   * Push the new-message notification unless the recipient muted the thread
++   * (v2). With the flag OFF this is exactly the legacy emit.
++   */
++  private notifyNewMessage(
++    recipientId: string,
++    senderId: string,
++    coachId: string,
++    clientId: string,
++  ): void {
++    const emit = () =>
++      this.resolveSenderName(senderId).then((senderName) =>
++        this.messageReceived.emit(recipientId, {
++          senderName,
++          threadId: clientId,
++        }),
++      );
++    if (!isMessagingCoreV2Enabled()) {
++      void emit();
++      return;
++    }
++    void this.isThreadMutedFor(recipientId, coachId, clientId).then((muted) =>
++      muted ? undefined : emit(),
++    );
++  }
++
++  /**
++   * Idempotent, reply-validated insert shared by both send paths.
++   *
++   * - `client_message_id` set: an existing row for (sender, key) in the SAME
++   *   thread is returned as a replay (no side effects run); in another thread
++   *   it is 409 `messaging.idempotency_key_reused`. A concurrent duplicate that
++   *   loses the unique-index race (P2002) re-reads and replays the winner.
++   * - `reply_to_id` set: requires the v2 flag; the target must be a live
++   *   message in the same thread, else 409 `messaging.reply_target_unavailable`.
++   */
++  private async insertThreadMessage(
++    thread: { coachId: string; clientId: string },
++    senderId: string,
++    data: Omit<Prisma.CoachMessageUncheckedCreateInput, 'coach_id' | 'client_id' | 'sender_id'>,
++    payload: SendMessagePayload,
++  ): Promise<{ row: CoachMessage; replayed: boolean }> {
++    const key = payload.client_message_id;
++    const findReplay = async (): Promise<CoachMessage | null> => {
++      if (!key) return null;
++      const existing = await this.prisma.coachMessage.findFirst({
++        where: { sender_id: senderId, client_message_id: key },
++      });
++      if (!existing) return null;
++      if (
++        existing.coach_id !== thread.coachId ||
++        existing.client_id !== thread.clientId
++      ) {
++        throw messagingError(
++          HttpStatus.CONFLICT,
++          MESSAGING_ERRORS.IDEMPOTENCY_KEY_REUSED,
++        );
++      }
++      return existing;
++    };
++    const replay = await findReplay();
++    if (replay) return { row: replay, replayed: true };
++
++    if (payload.reply_to_id) {
++      if (!isMessagingCoreV2Enabled()) {
++        throw messagingError(
++          HttpStatus.SERVICE_UNAVAILABLE,
++          MESSAGING_ERRORS.FEATURE_DISABLED,
++        );
++      }
++      const target = await this.prisma.coachMessage.findFirst({
++        where: {
++          id: payload.reply_to_id,
++          coach_id: thread.coachId,
++          client_id: thread.clientId,
++          deleted_at: null,
++        },
++        select: { id: true },
++      });
++      if (!target) {
++        throw messagingError(
++          HttpStatus.CONFLICT,
++          MESSAGING_ERRORS.REPLY_TARGET_UNAVAILABLE,
++        );
++      }
++    }
++
++    try {
++      const row = await this.prisma.coachMessage.create({
++        data: {
++          coach_id: thread.coachId,
++          client_id: thread.clientId,
++          sender_id: senderId,
++          ...data,
++          ...(key ? { client_message_id: key } : {}),
++          ...(payload.reply_to_id ? { reply_to_id: payload.reply_to_id } : {}),
++        },
++      });
++      return { row, replayed: false };
++    } catch (err) {
++      if (
++        key &&
++        err instanceof Prisma.PrismaClientKnownRequestError &&
++        err.code === 'P2002'
++      ) {
++        const winner = await findReplay();
++        if (winner) return { row: winner, replayed: true };
++      }
++      throw err;
++    }
++  }
++
+   // ---- thread read ----
+ 
+   // Paginated thread, newest-first. `before` is a strict `<` on created_at so
+@@ -357,22 +641,51 @@ export class MessagingService {
+       },
+       orderBy: { created_at: 'desc' },
+       take: limit,
++      // A3-MSG-CORE: the quoted message for swipe-replies (v2 only, so the
++      // flag-OFF query is byte-identical to the legacy one).
++      ...(isMessagingCoreV2Enabled()
++        ? {
++            include: {
++              reply_to: {
++                select: {
++                  id: true,
++                  sender_id: true,
++                  body: true,
++                  voice_url: true,
++                  deleted_at: true,
++                },
++              },
++            },
++          }
++        : {}),
+     });
+   }
+ 
++  // A3-MSG-CORE: v2 adds `reply_to` + `deleted` to each row (flag-gated).
++  private async serializeThreadPage(
++    callerId: string,
++    rows: Awaited<ReturnType<MessagingService['listThread']>>,
++  ) {
++    if (!isMessagingCoreV2Enabled()) return rows;
++    const blocked = new Set(await this.blockedIdsFor(callerId));
++    return rows.map((r) => this.serializeMessage(r, blocked));
++  }
++
+   async listThreadForCoach(coachId: string, clientId: string, opts: ListOpts) {
+     const client = await this.assertClientOfCoach(coachId, clientId);
+     // For sub-coaches, the thread's coach_id is the head coach's id —
+     // returned in client.coach_id by assertClientOfCoach.
+     const threadCoachId = client.coach_id ?? coachId;
+     const rows = await this.listThread(threadCoachId, clientId, opts);
+-    return this.filterBlockedAuthors(coachId, clientId, rows);
++    const visible = await this.filterBlockedAuthors(coachId, clientId, rows);
++    return this.serializeThreadPage(coachId, visible);
+   }
+ 
+   async listThreadForClient(clientId: string, opts: ListOpts) {
+     const coachId = await this.requireClientCoachId(clientId);
+     const rows = await this.listThread(coachId, clientId, opts);
+-    return this.filterBlockedAuthors(clientId, coachId, rows);
++    const visible = await this.filterBlockedAuthors(clientId, coachId, rows);
++    return this.serializeThreadPage(clientId, visible);
+   }
+ 
+   /**
+@@ -448,36 +761,47 @@ export class MessagingService {
+     // so existing head-coach queries keep returning them. For sub-coaches
+     // the sender_id captures who actually sent.
+     const threadCoachId = client.coach_id ?? coachId;
+-    const { row: created, duplicate } = await this.persistCoachMessage(
+-      {
+-        coach_id: threadCoachId,
+-        client_id: clientId,
+-        sender_id: coachId,
+-        body,
+-        voice_url: voice?.url ?? null,
+-        voice_duration_sec: voice?.duration_sec ?? null,
+-        voice_size_bytes: voice?.size_bytes ?? null,
+-        voice_content_type: voice?.content_type ?? null,
+-      },
+-      options.welcome,
+-    );
++    const messageData = {
++      body,
++      voice_url: voice?.url ?? null,
++      voice_duration_sec: voice?.duration_sec ?? null,
++      voice_size_bytes: voice?.size_bytes ?? null,
++      voice_content_type: voice?.content_type ?? null,
++    };
++    // Main merge (B-609-3 + A3-MSG-CORE): a welcome-job send (internal only,
++    // never carries client_message_id or reply_to_id) keeps the lease-fenced
++    // insert keyed on welcome_job_id; every other send takes the idempotent,
++    // reply-validated insert.
++    const { row: created, duplicate } = options.welcome
++      ? await this.persistCoachMessage(
++          {
++            coach_id: threadCoachId,
++            client_id: clientId,
++            sender_id: coachId,
++            ...messageData,
++          },
++          options.welcome,
++        )
++      : await this.insertThreadMessage(
++          { coachId: threadCoachId, clientId },
++          coachId,
++          messageData,
++          normalized,
++        ).then(({ row, replayed }) => ({ row, duplicate: replayed }));
+     // B-609-3: another worker already persisted this job's welcome. Hand back
+     // that row and skip every side effect below, so the client gets exactly
+     // one message, one ping and one push.
++    // A3-MSG-CORE: an idempotent replay likewise returns the original row and
++    // runs NO side effects (no second ping, push, audit, analytics or PTM signal).
+     if (duplicate) return created;
+     // Realtime ping to the recipient (the client). No body is sent over the
+     // wire — just a refresh signal. The mobile client refetches via the
+     // authenticated REST endpoint when it receives the ping. Fire-and-
+     // forget so a Realtime hiccup never delays the API response.
+     void this.supabase.broadcastNewMessage(clientId);
+-    // Push notification — block check already ran above, so we can emit
+-    // unconditionally here. Fire-and-forget.
+-    void this.resolveSenderName(coachId).then((senderName) =>
+-      this.messageReceived.emit(clientId, {
+-        senderName,
+-        threadId: clientId,
+-      }),
+-    );
++    // Push notification — block check already ran above. Skipped when the
++    // client muted this thread (v2). Fire-and-forget.
++    this.notifyNewMessage(clientId, coachId, threadCoachId, clientId);
+     void this.audit.write({
+       action: 'messaging.sent',
+       actorId: coachId,
+@@ -577,27 +901,25 @@ export class MessagingService {
+       }
+     }
+ 
+-    const created = await this.prisma.coachMessage.create({
+-      data: {
+-        coach_id: coachId,
+-        client_id: clientId,
+-        sender_id: clientId,
++    const { row: created, replayed } = await this.insertThreadMessage(
++      { coachId, clientId },
++      clientId,
++      {
+         body,
+         voice_url: voice?.url ?? null,
+         voice_duration_sec: voice?.duration_sec ?? null,
+         voice_size_bytes: voice?.size_bytes ?? null,
+         voice_content_type: voice?.content_type ?? null,
+       },
+-    });
++      normalized,
++    );
++    // A3-MSG-CORE: replay → original row, no side effects (see sendAsCoach).
++    if (replayed) return created;
+     // Ping the coach.
+     void this.supabase.broadcastNewMessage(coachId);
+-    // Push notification — block check already ran above.
+-    void this.resolveSenderName(clientId).then((senderName) =>
+-      this.messageReceived.emit(coachId, {
+-        senderName,
+-        threadId: clientId,
+-      }),
+-    );
++    // Push notification — block check already ran above. Skipped when the
++    // coach muted this thread (v2).
++    this.notifyNewMessage(coachId, clientId, coachId, clientId);
+     void this.audit.write({
+       action: 'messaging.sent',
+       actorId: clientId,
+@@ -665,18 +987,38 @@ export class MessagingService {
+   // Mark every message from the *other* party in this thread as read. We only
+   // touch rows where read_at IS NULL so repeated calls are idempotent and the
+   // original read timestamp survives.
+-  async markReadByCoach(coachId: string, clientId: string) {
++  async markReadByCoach(
++    coachId: string,
++    clientId: string,
++    opts: { upToMessageId?: string } = {},
++  ) {
+     const client = await this.assertClientOfCoach(coachId, clientId);
+     const threadCoachId = client.coach_id ?? coachId;
++    const upTo = await this.readCutoff(threadCoachId, clientId, opts.upToMessageId);
+     const result = await this.prisma.coachMessage.updateMany({
+       where: {
+         coach_id: threadCoachId,
+         client_id: clientId,
+         sender_id: clientId,
+         read_at: null,
++        ...(upTo ? { created_at: { lte: upTo } } : {}),
+       },
+       data: { read_at: new Date() },
+     });
++    // A3-MSG-CORE: live read receipt for the client (v2, ID-only ping).
++    if (result.count > 0 && isMessagingCoreV2Enabled()) {
++      this.notifyThreadUpdated(
++        {
++          coachId: threadCoachId,
++          clientId,
++          actorId: coachId,
++          actorSide: 'coach',
++          otherPartyId: clientId,
++        },
++        'read',
++        opts.upToMessageId ?? null,
++      );
++    }
+     // ED.6 — stamp the per-thread coach-review marker so the client
+     // CompetencePill can show "Your coach reviewed this thread {relative}.".
+     // Most-recent semantics: every coach read re-stamps coach_reviewed_at to
+@@ -740,8 +1082,39 @@ export class MessagingService {
+     };
+   }
+ 
+-  async markReadByClient(clientId: string) {
++  /**
++   * A3-MSG-CORE read-up-to: resolve the cutoff timestamp for a partial read
++   * (the message the reader scrolled to). v2 only; the message must be in this
++   * thread, else 404 `messaging.message_not_found`. No id → mark everything.
++   */
++  private async readCutoff(
++    coachId: string,
++    clientId: string,
++    upToMessageId: string | undefined,
++  ): Promise<Date | null> {
++    if (!upToMessageId) return null;
++    if (!isMessagingCoreV2Enabled()) {
++      throw messagingError(
++        HttpStatus.SERVICE_UNAVAILABLE,
++        MESSAGING_ERRORS.FEATURE_DISABLED,
++      );
++    }
++    const target = await this.prisma.coachMessage.findFirst({
++      where: { id: upToMessageId, coach_id: coachId, client_id: clientId },
++      select: { created_at: true },
++    });
++    if (!target) {
++      throw messagingError(HttpStatus.NOT_FOUND, MESSAGING_ERRORS.MESSAGE_NOT_FOUND);
++    }
++    return target.created_at;
++  }
++
++  async markReadByClient(
++    clientId: string,
++    opts: { upToMessageId?: string } = {},
++  ) {
+     const coachId = await this.requireClientCoachId(clientId);
++    const upTo = await this.readCutoff(coachId, clientId, opts.upToMessageId);
+     // Mark every non-client sender's message read in this thread. Filtering on
+     // sender_id = coachId would miss sub-coach messages, since sub-coaches
+     // send with sender_id = subCoachId (the head coach still owns the thread).
+@@ -751,9 +1124,24 @@ export class MessagingService {
+         client_id: clientId,
+         sender_id: { not: clientId },
+         read_at: null,
++        ...(upTo ? { created_at: { lte: upTo } } : {}),
+       },
+       data: { read_at: new Date() },
+     });
++    // A3-MSG-CORE: live read receipt for the coach (v2, ID-only ping).
++    if (result.count > 0 && isMessagingCoreV2Enabled()) {
++      this.notifyThreadUpdated(
++        {
++          coachId,
++          clientId,
++          actorId: clientId,
++          actorSide: 'client',
++          otherPartyId: coachId,
++        },
++        'read',
++        opts.upToMessageId ?? null,
++      );
++    }
+     return { updated: result.count };
+   }
+ 
+@@ -807,6 +1195,8 @@ export class MessagingService {
+         read_at: null,
+         ...(clientFilter ? { client_id: clientFilter } : {}),
+         ...senderFilter,
++        // A3-MSG-CORE: a message deleted for everyone never counts as unread.
++        ...(isMessagingCoreV2Enabled() ? { deleted_at: null } : {}),
+       },
+       _count: { _all: true },
+     });
+@@ -863,6 +1253,8 @@ export class MessagingService {
+         client_id: clientId,
+         sender_id: { not: clientId },
+         read_at: null,
++        // A3-MSG-CORE: a message deleted for everyone never counts as unread.
++        ...(isMessagingCoreV2Enabled() ? { deleted_at: null } : {}),
+       },
+     });
+     return { total };
+diff --git a/test/messaging/messaging-core-v2.spec.ts b/test/messaging/messaging-core-v2.spec.ts
+new file mode 100644
+index 00000000..479f73a6
+--- /dev/null
++++ b/test/messaging/messaging-core-v2.spec.ts
+@@ -0,0 +1,446 @@
++/**
++ * A3-MSG-CORE slice 1 — unit proof for the canonical 1:1 thread actions:
++ * idempotent send, swipe-reply, edit/delete (window, tombstone, audit, voice
++ * erasure), thread pins, mute (push suppression), inbox pins, read-up-to, the
++ * unified inbox (order, unread parity, blocks, tenancy, cursor) and the
++ * FEATURE_MESSAGING_CORE_V2 kill switch.
++ *
++ * Every rule here is new in this change: on main none of these modules or
++ * behaviours exist, so each case fails before and passes after.
++ */
++import { HttpException } from '@nestjs/common';
++import { Prisma } from '@prisma/client';
++import type { CoachMessage } from '@prisma/client';
++import { PrismaService } from '../../src/prisma.service';
++import { SupabaseService } from '../../src/supabase/supabase.service';
++import { AnalyticsService } from '../../src/analytics/analytics.service';
++import { PtmService } from '../../src/ptm/ptm.service';
++import { MessageReceivedEmitter } from '../../src/notifications/emitters/message-received.emitter';
++import { AuditService } from '../../src/audit/audit.service';
++import { ClientAIContextService } from '../../src/ai/client-ai-context.service';
++import { MessagesSafetyService } from '../../src/messages-safety/messages-safety.service';
++import { SubCoachScopeService } from '../../src/sub-coach/sub-coach-scope.service';
++import { MessagingService } from '../../src/messaging/messaging.service';
++import {
++  isMessagingCoreV2Enabled,
++  MessagingCoreV2Guard,
++} from '../../src/messaging/messaging-core.feature';
++
++const COACH = '11111111-1111-4111-8111-111111111111';
++const CLIENT = '22222222-2222-4222-8222-222222222222';
++const OTHER_CLIENT = '33333333-3333-4333-8333-333333333333';
++const KEY = '55555555-5555-4555-8555-555555555555';
++const MSG = '66666666-6666-4666-8666-666666666666';
++
++type ReplyLike = Pick<CoachMessage, 'id' | 'sender_id' | 'body' | 'voice_url' | 'deleted_at'>;
++type Row = CoachMessage & { reply_to?: ReplyLike | null };
++
++/**
++ * Typed test double without a forbidden cast: an object whose prototype is
++ * the real class, with only the members a test exercises assigned on top
++ * (the repo pattern, see feature-flags.controller.spec.ts).
++ */
++function dep<T extends object>(cls: { prototype: T }, impl: object): T {
++  return Object.assign(Object.create(cls.prototype) as T, impl);
++}
++
++function row(over: Partial<Row> = {}): Row {
++  return {
++    id: MSG,
++    coach_id: COACH,
++    client_id: CLIENT,
++    sender_id: COACH,
++    body: 'Original words',
++    voice_url: null,
++    voice_duration_sec: null,
++    voice_size_bytes: null,
++    voice_content_type: null,
++    created_at: new Date(),
++    read_at: null,
++    ai_draft_id: null,
++    welcome_job_id: null,
++    client_message_id: null,
++    reply_to_id: null,
++    edited_at: null,
++    deleted_at: null,
++    deleted_by_id: null,
++    pinned_at: null,
++    pinned_by_id: null,
++    ...over,
++  };
++}
++
++function expectCode(err: unknown, status: number, code: string) {
++  expect(err).toBeInstanceOf(HttpException);
++  const e = err as HttpException;
++  expect(e.getStatus()).toBe(status);
++  const body = e.getResponse() as Record<string, unknown>;
++  expect(body.code).toBe(code);
++  expect(body.error).toBe(code);
++  expect(typeof body.message).toBe('string');
++  expect(String(body.message)).not.toMatch(/!|something went wrong|please try again/i);
++}
++
++async function caught(p: Promise<unknown>): Promise<unknown> {
++  try {
++    await p;
++  } catch (e) {
++    return e;
++  }
++  throw new Error('expected a rejection');
++}
++
++const flush = () => new Promise((r) => setImmediate(r));
++
++function build(opts: { blocked?: string[]; eitherBlocked?: boolean } = {}) {
++  const tx = {
++    coachMessage: {
++      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
++      count: jest.fn().mockResolvedValue(0),
++    },
++    coachThreadState: {
++      findUnique: jest.fn().mockResolvedValue(null),
++      count: jest.fn().mockResolvedValue(0),
++      upsert: jest.fn().mockResolvedValue({ muted_until: null, pinned_at: new Date() }),
++    },
++    communityVoiceErasure: {
++      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
++      upsert: jest.fn().mockResolvedValue({ id: 'e1', kind: 'object', target: 'x', attempts: 0 }),
++    },
++    $executeRaw: jest.fn().mockResolvedValue(1),
++  };
++  const prisma = {
++    user: {
++      findFirst: jest.fn().mockResolvedValue({ id: CLIENT, coach_id: COACH }),
++      findUnique: jest.fn().mockResolvedValue({ coach_id: COACH, name: 'Coach Name' }),
++      findMany: jest.fn().mockResolvedValue([]),
++    },
++    coachMessage: {
++      findFirst: jest.fn().mockResolvedValue(null),
++      findMany: jest.fn().mockResolvedValue([]),
++      create: jest.fn(async ({ data }: { data: Partial<CoachMessage> }) =>
++        row({ ...data, id: MSG, body: data.body ?? null }),
++      ),
++      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
++      count: jest.fn().mockResolvedValue(0),
++      groupBy: jest.fn().mockResolvedValue([]),
++    },
++    coachThreadState: {
++      findUnique: jest.fn().mockResolvedValue(null),
++      findMany: jest.fn().mockResolvedValue([]),
++      upsert: jest.fn(async ({ create }: { where: unknown; create: Record<string, unknown> }) => ({
++        muted_until: (create.muted_until as Date | null) ?? null,
++        pinned_at: (create.pinned_at as Date | null) ?? null,
++      })),
++    },
++    conversationReview: { upsert: jest.fn(), findUnique: jest.fn() },
++    $queryRaw: jest.fn().mockResolvedValue([]),
++    $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
++  };
++  const supabase = {
++    broadcastNewMessage: jest.fn().mockResolvedValue(undefined),
++    getClient: jest.fn(() => ({
++      channel: () => ({
++        subscribe: (cb: (s: string) => void) => cb('SUBSCRIBED'),
++        send: jest.fn().mockResolvedValue('ok'),
++      }),
++      removeChannel: jest.fn().mockResolvedValue('ok'),
++    })),
++  };
++  const analytics = { capture: jest.fn() };
++  const ptm = { emit: jest.fn() };
++  const messageReceived = { emit: jest.fn().mockResolvedValue(undefined) };
++  const audit = { write: jest.fn().mockResolvedValue(undefined) };
++  const aiContext = { invalidateForUser: jest.fn() };
++  const safety = {
++    getBlockedIdsFor: jest.fn().mockResolvedValue(opts.blocked ?? []),
++    isEitherSideBlocked: jest.fn().mockResolvedValue(opts.eitherBlocked ?? false),
++  };
++  const subCoachScope = {
++    getHeadCoachIdForSubCoach: jest.fn().mockResolvedValue(null),
++    getAuthorizedClientIds: jest.fn().mockResolvedValue([CLIENT, OTHER_CLIENT]),
++  };
++  const prismaDep = dep(PrismaService, prisma);
++  const auditDep = dep(AuditService, audit);
++  const scopeDep = dep(SubCoachScopeService, subCoachScope);
++  const messaging = new MessagingService(
++    prismaDep,
++    dep(SupabaseService, supabase),
++    dep(AnalyticsService, analytics),
++    dep(PtmService, ptm),
++    dep(MessageReceivedEmitter, messageReceived),
++    auditDep,
++    dep(ClientAIContextService, aiContext),
++    dep(MessagesSafetyService, safety),
++    scopeDep,
++  );
++  return {
++    prisma,
++    tx,
++    supabase,
++    messageReceived,
++    audit,
++    aiContext,
++    safety,
++    subCoachScope,
++    messaging,
++    analytics,
++    ptm,
++  };
++}
++
++const ORIGINAL_FLAG = process.env.FEATURE_MESSAGING_CORE_V2;
++afterEach(() => {
++  if (ORIGINAL_FLAG === undefined) delete process.env.FEATURE_MESSAGING_CORE_V2;
++  else process.env.FEATURE_MESSAGING_CORE_V2 = ORIGINAL_FLAG;
++});
++const on = () => {
++  process.env.FEATURE_MESSAGING_CORE_V2 = 'true';
++};
++
++describe('FEATURE_MESSAGING_CORE_V2 kill switch', () => {
++  it('is OFF unless exactly "true" (case-insensitive)', () => {
++    expect(isMessagingCoreV2Enabled({})).toBe(false);
++    expect(isMessagingCoreV2Enabled({ FEATURE_MESSAGING_CORE_V2: '1' })).toBe(false);
++    expect(isMessagingCoreV2Enabled({ FEATURE_MESSAGING_CORE_V2: 'TRUE' })).toBe(true);
++  });
++
++  it('the route guard answers 503 messaging.feature_disabled when OFF and passes when ON', () => {
++    delete process.env.FEATURE_MESSAGING_CORE_V2;
++    let err: unknown;
++    try {
++      new MessagingCoreV2Guard().canActivate();
++    } catch (e) {
++      err = e;
++    }
++    expectCode(err, 503, 'messaging.feature_disabled');
++    on();
++    expect(new MessagingCoreV2Guard().canActivate()).toBe(true);
++  });
++
++  it('flag OFF: the thread read is the legacy query (no reply include, raw rows)', async () => {
++    delete process.env.FEATURE_MESSAGING_CORE_V2;
++    const t = build();
++    const r = row();
++    t.prisma.coachMessage.findMany.mockResolvedValue([r]);
++    const out = await t.messaging.listThreadForClient(CLIENT, {});
++    expect(t.prisma.coachMessage.findMany.mock.calls[0][0]).not.toHaveProperty('include');
++    expect(out).toEqual([r]);
++  });
++});
++
++describe('idempotent send (offline queue)', () => {
++  it('a replay with the same key returns the original row and runs no side effects', async () => {
++    const t = build();
++    const first = await t.messaging.sendAsClient(CLIENT, { body: 'hi', client_message_id: KEY });
++    expect(t.prisma.coachMessage.create).toHaveBeenCalledTimes(1);
++    expect(t.prisma.coachMessage.create.mock.calls[0][0].data.client_message_id).toBe(KEY);
++    t.prisma.coachMessage.findFirst.mockResolvedValueOnce(first);
++    const again = await t.messaging.sendAsClient(CLIENT, { body: 'hi', client_message_id: KEY });
++    expect(again).toBe(first);
++    expect(t.prisma.coachMessage.create).toHaveBeenCalledTimes(1);
++    expect(t.supabase.broadcastNewMessage).toHaveBeenCalledTimes(1);
++    expect(t.audit.write).toHaveBeenCalledTimes(1);
++    expect(t.analytics.capture).toHaveBeenCalledTimes(1);
++  });
++
++  it('the same key in a different thread is 409 messaging.idempotency_key_reused', async () => {
++    const t = build();
++    t.prisma.coachMessage.findFirst.mockResolvedValueOnce(
++      row({ sender_id: CLIENT, client_id: OTHER_CLIENT }),
++    );
++    expectCode(
++      await caught(t.messaging.sendAsClient(CLIENT, { body: 'hi', client_message_id: KEY })),
++      409,
++      'messaging.idempotency_key_reused',
++    );
++    expect(t.prisma.coachMessage.create).not.toHaveBeenCalled();
++  });
++
++  it('a concurrent duplicate that loses the unique race (P2002) replays the winner', async () => {
++    const t = build();
++    const winner = row({ sender_id: CLIENT, client_message_id: KEY });
++    t.prisma.coachMessage.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(winner);
++    t.prisma.coachMessage.create.mockRejectedValueOnce(
++      new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: 'test' }),
++    );
++    const out = await t.messaging.sendAsClient(CLIENT, { body: 'hi', client_message_id: KEY });
++    expect(out).toBe(winner);
++    expect(t.supabase.broadcastNewMessage).not.toHaveBeenCalled();
++  });
++
++  it('legacy sends without a key create exactly the legacy row shape', async () => {
++    const t = build();
++    await t.messaging.sendAsCoach(COACH, CLIENT, 'hello');
++    const data = t.prisma.coachMessage.create.mock.calls[0][0].data;
++    expect(data).not.toHaveProperty('client_message_id');
++    expect(data).not.toHaveProperty('reply_to_id');
++  });
++});
++
++describe('swipe-reply', () => {
++  it('flag OFF: a reply is refused with 503 (never silently sent without its quote)', async () => {
++    delete process.env.FEATURE_MESSAGING_CORE_V2;
++    const t = build();
++    expectCode(
++      await caught(t.messaging.sendAsClient(CLIENT, { body: 'yes', reply_to_id: MSG })),
++      503,
++      'messaging.feature_disabled',
++    );
++  });
++
++  it('a target outside this thread or deleted is 409 messaging.reply_target_unavailable', async () => {
++    on();
++    const t = build();
++    t.prisma.coachMessage.findFirst.mockResolvedValue(null);
++    expectCode(
++      await caught(t.messaging.sendAsClient(CLIENT, { body: 'yes', reply_to_id: MSG })),
++      409,
++      'messaging.reply_target_unavailable',
++    );
++    const where = t.prisma.coachMessage.findFirst.mock.calls[0][0].where;
++    expect(where).toEqual({ id: MSG, coach_id: COACH, client_id: CLIENT, deleted_at: null });
++  });
++
++  it('a valid reply persists reply_to_id and the thread read carries the quoted preview', async () => {
++    on();
++    const t = build();
++    t.prisma.coachMessage.findFirst.mockResolvedValueOnce({ id: MSG });
++    await t.messaging.sendAsClient(CLIENT, { body: 'yes', reply_to_id: MSG });
++    expect(t.prisma.coachMessage.create.mock.calls[0][0].data.reply_to_id).toBe(MSG);
++
++    const reply = row({
++      id: KEY,
++      sender_id: CLIENT,
++      reply_to_id: MSG,
++      reply_to: {
++        id: MSG,
++        sender_id: COACH,
++        body: '  Long\n quoted   text ',
++        voice_url: null,
++        deleted_at: null,
++      },
++    });
++    t.prisma.coachMessage.findMany.mockResolvedValue([reply]);
++    const [out] = (await t.messaging.listThreadForClient(CLIENT, {})) as Array<
++      Record<string, unknown>
++    >;
++    expect(t.prisma.coachMessage.findMany.mock.calls[0][0]).toHaveProperty('include.reply_to');
++    expect(out.reply_to).toEqual({
++      id: MSG,
++      sender_id: COACH,
++      kind: 'text',
++      preview: 'Long quoted text',
++    });
++    expect(out.deleted).toBe(false);
++  });
++
++  it('the quote is hidden when the caller blocked its author, and marked deleted when erased', () => {
++    const t = build();
++    const blocked = new Set([COACH]);
++    const a = t.messaging.serializeMessage(
++      row({
++        reply_to_id: MSG,
++        reply_to: { id: MSG, sender_id: COACH, body: 'x', voice_url: null, deleted_at: null },
++      }),
++      blocked,
++    );
++    expect(a.reply_to).toEqual({ id: MSG, sender_id: null, kind: 'unavailable', preview: '' });
++    const b = t.messaging.serializeMessage(
++      row({
++        reply_to_id: MSG,
++        reply_to: {
++          id: MSG,
++          sender_id: CLIENT,
++          body: null,
++          voice_url: null,
++          deleted_at: new Date(),
++        },
++      }),
++      new Set(),
++    );
++    expect(b.reply_to).toEqual({ id: MSG, sender_id: CLIENT, kind: 'deleted', preview: '' });
++  });
++});
++
++describe('mute and inbox pin (private per user)', () => {
++  const thread = {
++    coachId: COACH,
++    clientId: CLIENT,
++    actorId: CLIENT,
++    actorSide: 'client' as const,
++    otherPartyId: COACH,
++  };
++
++  it('a muted thread gets no push (flag ON) but still gets the realtime ping', async () => {
++    on();
++    const t = build();
++    t.prisma.coachThreadState.findUnique.mockResolvedValue({
++      muted_until: new Date(Date.now() + 60_000),
++    });
++    await t.messaging.sendAsClient(CLIENT, 'hi');
++    await flush();
++    await flush();
++    expect(t.supabase.broadcastNewMessage).toHaveBeenCalledWith(COACH);
++    expect(t.messageReceived.emit).not.toHaveBeenCalled();
++    expect(t.prisma.coachThreadState.findUnique.mock.calls[0][0].where).toEqual({
++      CoachThreadState_user_thread_key: { user_id: COACH, coach_id: COACH, client_id: CLIENT },
++    });
++  });
++});
++
++describe('read-up-to and live read receipts', () => {
++  it('marks only messages at or before the target, then pings the sender (flag ON)', async () => {
++    on();
++    const t = build();
++    const cutoff = new Date('2026-10-01T10:00:00Z');
++    t.prisma.coachMessage.findFirst.mockResolvedValueOnce({ created_at: cutoff });
++    t.prisma.coachMessage.updateMany.mockResolvedValueOnce({ count: 3 });
++    const res = await t.messaging.markReadByClient(CLIENT, { upToMessageId: MSG });
++    expect(res).toEqual({ updated: 3 });
++    expect(t.prisma.coachMessage.updateMany.mock.calls[0][0].where).toMatchObject({
++      coach_id: COACH,
++      client_id: CLIENT,
++      read_at: null,
++      created_at: { lte: cutoff },
++    });
++    expect(t.supabase.getClient).toHaveBeenCalled();
++  });
++
++  it('a target outside the thread is 404; flag OFF with a target is 503; no target = legacy', async () => {
++    on();
++    const t = build();
++    expectCode(
++      await caught(t.messaging.markReadByClient(CLIENT, { upToMessageId: MSG })),
++      404,
++      'messaging.message_not_found',
++    );
++    delete process.env.FEATURE_MESSAGING_CORE_V2;
++    expectCode(
++      await caught(t.messaging.markReadByClient(CLIENT, { upToMessageId: MSG })),
++      503,
++      'messaging.feature_disabled',
++    );
++    await t.messaging.markReadByClient(CLIENT);
++    expect(t.prisma.coachMessage.updateMany.mock.calls[0][0].where).not.toHaveProperty(
++      'created_at',
++    );
++    expect(t.supabase.getClient).not.toHaveBeenCalled();
++  });
++});
++
++describe('unread counts ignore tombstones (flag ON only)', () => {
++  it('coach and client badge queries exclude deleted messages when ON, legacy when OFF', async () => {
++    on();
++    const t = build();
++    await t.messaging.unreadCountForCoach(COACH);
++    expect(t.prisma.coachMessage.groupBy.mock.calls[0][0].where).toMatchObject({ deleted_at: null });
++    t.prisma.coachMessage.count.mockResolvedValueOnce(0);
++    await t.messaging.unreadCountForClient(CLIENT);
++    expect(t.prisma.coachMessage.count.mock.calls[0][0].where).toMatchObject({ deleted_at: null });
++    delete process.env.FEATURE_MESSAGING_CORE_V2;
++    const off = build();
++    await off.messaging.unreadCountForCoach(COACH);
++    expect(off.prisma.coachMessage.groupBy.mock.calls[0][0].where).not.toHaveProperty('deleted_at');
++  });
++});

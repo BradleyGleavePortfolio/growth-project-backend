@@ -1,0 +1,26 @@
+[heavy] waiting for a slot: npx jest --ci --forceExit test/ci/fly-env-workflows.spec.ts
+PASS test/ci/fly-env-workflows.spec.ts (54 MB heap size)
+  fly-env-sync.yml (manifest-driven plan / apply; B-FLAGS-2)
+    ✓ is workflow_dispatch only, read-only token, production environment, one Fly lock (6 ms)
+    ✓ defaults to plan; apply needs confirm=SET; deploy_staged is opt-in and apply-only (3 ms)
+    ✓ validates the manifest before setting up flyctl, and runs it without npm install (1 ms)
+    ✓ stages with --stage only (no restart); flyctl secrets deploy appears once, behind deploy_staged (1 ms)
+    ✓ every manifest secret maps to the same-named GitHub secret and is registered; Apple keys are never copied (21 ms)
+    ✓ never echoes a value: no set -x, no echo/printf of a secret variable, args or indirect expansion (68 ms)
+    ✓ B-633-1: every listing is the structured --json projection (names + status only); no table parsing (2 ms)
+    ✓ B-624-3: no flyctl output reaches the log; stderr is only classified with grep -q and removed by an EXIT trap (12 ms)
+    ✓ scratch files live under RUNNER_TEMP and are removed by an always() step (1 ms)
+    ✓ pins every third-party action to a full commit sha; checkout does not persist credentials (1 ms)
+  fly-env-truth.yml (read-only)
+    ✓ is workflow_dispatch only with a read-only token and the production environment (1 ms)
+    ✓ runs the classifier inline inside the machine via flyctl ssh console -C (1 ms)
+    ✓ never writes to Fly (10 ms)
+    ✓ never prints the raw ssh output and uploads only the parsed report + markdown
+    ✓ pins every third-party action to a full commit sha (9 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       15 passed, 15 total
+Snapshots:   0 total
+Time:        1.74 s
+Ran all test suites matching test/ci/fly-env-workflows.spec.ts.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

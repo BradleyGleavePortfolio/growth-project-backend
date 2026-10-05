@@ -1,0 +1,24 @@
+[heavy] waiting for a slot: npx jest --ci --forceExit src/services/__tests__/authActions.interruptedAuthority.sol120h9.test.ts
+PASS src/services/__tests__/authActions.interruptedAuthority.sol120h9.test.ts (5.234 s)
+  ✓ one AsyncStorage mutation outage: completed actual signOut must not revive old consent after recovered storage and restart (55 ms)
+  ✓ getAllKeys rejection: completed actual signOut must not resurrect an old grant after restart (17 ms)
+  ✓ removeMany rejection: completed actual signOut must not resurrect an old grant after restart (43 ms)
+  ✓ restart control: a genuinely authorized persisted grant survives module reload before logout (56 ms)
+  ✓ restart control: successful actual signOut removes grants from a fresh app lifetime (58 ms)
+  ✓ clearUserCache rejection: actual signOut must still wait for the held native health write (151 ms)
+  ✓ clearAllStorage rejection: actual signOut must still wait for the held native health write (78 ms)
+  ✓ none rejection: actual signOut must still wait for the held native health write (62 ms)
+  ✓ in-flight native grant: completed signOut must require a new Connect after same-account login (12 ms)
+  ✓ queued grant behind native progress: completed signOut must require a new Connect after same-account login (20 ms)
+  ✓ control: settled Connect is removed by completed signOut, same-account refresh is unauthorized (2 ms)
+  ✓ control: rejected grant write is observable and does not poison unconditional retirement or later writes (1 ms)
+  ✓ control: rejected progress write is observable and does not poison unconditional retirement or later writes (1 ms)
+  ✓ interrupted actual signOut at session read: a pre-logout Connect must not recreate durable consent after the immediate revocation (33 ms)
+  ✓ interrupted actual signOut at authority creation: a pre-logout Connect must not recreate durable consent after the immediate revocation (51 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       15 passed, 15 total
+Snapshots:   0 total
+Time:        5.638 s
+Ran all test suites matching /src\/services\/__tests__\/authActions.interruptedAuthority.sol120h9.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -35,9 +35,14 @@ Status: 5 split PRs open, FIX ROUND 1 (OPENING) posted; CI queued (GitHub Action
 - FIX ROUND 1 (OPENING) + READY FOR AUDIT: #372 issuecomment-6002345966, #373 -6002346374, #374 -6002346812, #375 -6002347222,
   #376 -6002347560. Superseded note on #331: issuecomment-6002353921 (PR left open).
 
+- CI NOTE on #372 (13:4x): issuecomment-6002603018 (lane result, per-piece tsc, 121 service tests at #372, edge-freeze note).
+
 ## Evidence
 - Failing-before (fc82b025 + new tests, no fix), local heavy.sh: 5 failed / 16 passed; the 5 are exactly the round-3 counterexamples
-  (log local-before.log). Lane ci/B-SPLIT-ROMANCHATS-121-1 run 37367260302 (same tree) pushed 13:02 PDT, queued.
+  (log local-before.log). Lane ci/B-SPLIT-ROMANCHATS-121-1 run 37367260302 (same tree, pushed 13:02 PDT) completed 13:3x: 5 failed / 32 passed,
+  exactly the 5 counterexamples (log lane-37367260302.log). Lane branch deleted.
+- Per piece: tsc --noEmit clean at all five heads (local-tsc-p1..p4.log, F = p5). At #372 alone 14 service suites / 121 tests
+  pass (local-p1-services.log). UI suites on F: 10 suites / 163 tests pass (local-after-screens.log).
 - After (F): 6 suites / 50 tests pass (local-after-auth.log); tsc --noEmit clean (local-tsc-F.log); eslint on all changed files clean.
 - Prior probes replayed verbatim on F (fetched by run head SHA from deleted audit branches; copies in prior-probes/):
   Sol r3 auditSol331SessionPublish 12/12 pass; Sol r2 auditSol331MidSigninPair 10/10; Opus r2 zzAudOpus331R2Probe 3/3.
@@ -54,11 +59,23 @@ Status: 5 split PRs open, FIX ROUND 1 (OPENING) posted; CI queued (GitHub Action
 - C-RC121-2 (naming): two modules named sessionFence (src/services/sessionFence.ts for credentials, src/services/health/sessionFence.ts
   for health work); rename the health one (e.g. healthWorkFence) in a later PR to avoid import mix-ups.
 
+## Owner edge-case freeze (13:29, operator mail 13:33)
+- Under the new rule, Sol A-331-7 r3 (legacy-migration interleaving on the first read after an upgrade) and Opus B-331-9
+  (refresh vs a write still landing) are same-instant races: "C (edge, deferred to 10k clients)". Both were already fixed and
+  posted before the rule arrived (fix is 52 source lines in 1/5); kept, because dropping it needs another push and CI round.
+  Lenses need only check that the changed lines broke nothing (item 3).
+
 ## Operator decisions
 1. Land #372-#376 as one train after dual APPROVE on all five (default: yes, one train, bottom-up).
 2. 3/5 (#374) has no test file of its own; lenses read it with 4/5's tests (default: accept).
 
-## HANDOFF
-- Remaining: wait for PR CI on #372-#376 and lane 37367260302; cite them in a short CI note on each PR (no new push needed if green).
-- If a PR's CI fails: fix in the piece that owns the file (one push per PR per round), restack upward merge-only.
-- Worktrees: wt/B-SPLIT-ROMANCHATS-121-{1,2,3,4}. Lane branch ci/B-SPLIT-ROMANCHATS-121-1. Remove/delete when CI evidence is cited.
+## HANDOFF (13:51 PDT, wrap-up order)
+- Done: #372-#376 open, non-draft, heads above (unchanged since FIX ROUND 1). FIX ROUND 1 (OPENING) + READY FOR AUDIT on all five;
+  CI NOTE on #372; superseded note on #331 (left open). Lane 37367260302 failing-before done (5 failed / 32 passed); lane branch deleted.
+- CI: PR checks on all five heads still queued at 13:50 (runner incident; the only "red" is no run yet). Local evidence: tsc clean on
+  all five heads; 50 auth tests + 163 UI tests on F; 121 service tests at #372; eslint clean.
+- Left: (1) when PR CI runs, confirm green on #372-#376 (no push needed); if one fails, fix in the piece that owns the file, one push,
+  restack upward merge-only. (2) Dual T4 lens audit of #372-#376 (Opus + Sol), at these exact heads.
+- Open Bs: none. Edge-case Cs (owner freeze 13:29): Sol A-331-7 r3 and Opus B-331-9 are "C (edge, deferred to 10k clients)" but
+  already fixed in #372 (kept). Follow-up Cs: C-RC121-1, C-RC121-2 above.
+- Worktrees removed; no stack lock was held; local PR branches agent121/romanchats-split-* remain in the main clone (pushed).

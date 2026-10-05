@@ -1,0 +1,23 @@
+FAIL test/dunning-v2-d2d-restart.spec.ts (142 MB heap size)
+      ✕ a new dispute while the restart resumes: plan paused, Stripe paused by a real request (47 ms)
+      ✕ the restart transaction fails after Stripe resumed: Stripe is paused again (155 ms)
+      ✕ a double tap: the second restart is billing_busy and never touches Stripe (62 ms)
+      ✕ a new pause at the same instant after a restart is a real Stripe pause (18 ms)
+      ✕ a restart while a pause is at Stripe returns billing_busy; a later restart wins cleanly (25 ms)
+      ✕ a pause that reaches the lease after a completed restart never pauses Stripe (16 ms)
+      ✕ a card payment or cancel holding the lease: the pause throws and the sweep re-asserts it (6 ms)
+      ✕ a failed pause reads billing_paused false; the sweep re-asserts it, then true (22 ms)
+      ✕ status disputed: the restart restores status and period from the resumed subscription (32 ms)
+      ✕ status chargeback_lost: the restart restores status and period from the resumed subscription (11 ms)
+      ✕ re-bought after the pause: the restart refuses before any Stripe call (12 ms)
+      ✕ a re-buy that becomes live while Stripe resumes: refused, Stripe paused again (5 ms)
+      ✕ restart, then the same dispute closes lost: money reverses, access and billing agree (38 ms)
+      ✕ a redelivered opening of the restarted dispute does not mark the plan disputed (14 ms)
+      ✕ a dispute-paused client with another live plan: status lock_waived and the guard admits (126 ms)
+Tests:       15 failed, 6 passed, 21 total
+FAIL test/dunning-v2-dispute-pause.spec.ts (153 MB heap size)
+      ✕ a redelivered dispute.created re-asserts the Stripe pause and sends nothing twice (70 ms)
+Tests:       1 failed, 31 passed, 32 total
+FAIL test/dunning-v2-foundation-fixes.spec.ts (113 MB heap size)
+    ✕ the dunning stack addition only adds nullable columns to those tables (4 ms)
+Tests:       1 failed, 44 passed, 45 total

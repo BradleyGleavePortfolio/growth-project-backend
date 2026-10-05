@@ -1,0 +1,40 @@
+
+    - Array []
+    + Array [
+    +   Object {
+    +     "body": "Jamie Canary-Person asked for Canary Type Name on Tue, Oct 6, 10:00 AM PDT. Approve or decline in your booking inbox.",
+    +     "title": "New session request",
+    +   },
+    +   Object {
+    +     "body": "Your Canary Type Name with Jamie Canary-Person is confirmed for Tue, Oct 6, 10:00 AM PDT.",
+    +     "title": "Session confirmed",
+    +   },
+    +   Object {
+    +     "body": "Jamie Canary-Person cancelled the Canary Type Name on Tue, Oct 6, 10:00 AM PDT. You can book a new time in Calendar.",
+    +     "title": "Session cancelled",
+    +   },
+    +   Object {
+    +     "body": "Your Canary Type Name with Jamie Canary-Person is on Tue, Oct 6, 10:00 AM PDT.",
+    +     "title": "Session tomorrow",
+    +   },
+    +   Object {
+    +     "body": "Your Canary Type Name with Jamie Canary-Person starts at 10:00 AM PDT.",
+    +     "title": "Session starting soon",
+    +   },
+    + ]
+
+    [0m [90m 77 |[39m     [90m// eslint-disable-next-line no-console[39m
+     [90m 78 |[39m     console[33m.[39mlog([33mJSON[39m[33m.[39mstringify(pushes[33m,[39m [36mnull[39m[33m,[39m [35m1[39m))[33m;[39m
+    [31m[1m>[22m[39m[90m 79 |[39m     expect(leaked)[33m.[39mtoEqual([])[33m;[39m
+     [90m    |[39m                    [31m[1m^[22m[39m
+     [90m 80 |[39m   })[33m;[39m
+     [90m 81 |[39m })[33m;[39m
+     [90m 82 |[39m[0m
+
+      at Object.<anonymous> (test/audit-opus121-booking-lock-screen.probe.spec.ts:79:20)
+
+Test Suites: 2 failed, 2 total
+Tests:       2 failed, 2 total
+Snapshots:   0 total
+Time:        4.135 s
+Ran all test suites matching test/b-sched2-121-lock-screen.probe.spec.ts|test/audit-opus121-booking-lock-screen.probe.spec.ts.

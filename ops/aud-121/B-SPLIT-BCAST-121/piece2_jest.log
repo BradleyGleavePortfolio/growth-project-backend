@@ -1,0 +1,75 @@
+[heavy] waiting for a slot: npx jest test/broadcasts/segment.spec.ts --runInBand
+PASS test/broadcasts/segment.spec.ts (54 MB heap size)
+  parseSegment
+    ✓ defaults to every client on the roster (4 ms)
+    ✓ accepts each segment field and normalises tags (2 ms)
+    ✓ rejects {"rules":[{"field":"email","op":"in","values":["x"]}]} with broadcast.segment_invalid (field) (2 ms)
+    ✓ rejects {"rules":[{"field":"package","op":"not_in","values":["11111111-1111-4111-8111-111111111111"]}]} with broadcast.segment_invalid (op) (7 ms)
+    ✓ rejects {"rules":[{"field":"package","op":"in","values":["1' OR 1=1"]}]} with broadcast.segment_invalid (value_id) (1 ms)
+    ✓ rejects {"rules":[{"field":"risk","op":"in","values":["purple"]}]} with broadcast.segment_invalid (value_risk) (1 ms)
+    ✓ rejects {"rules":[{"field":"last_active","op":"within_days","value":0}]} with broadcast.segment_invalid (value_days) (2 ms)
+    ✓ rejects {"coach_id":"11111111-1111-4111-8111-111111111111"} with broadcast.segment_invalid (unknown_field:coach_id) (6 ms)
+  combineRuleSets
+    ✓ all = intersection, any = union, both bounded by the roster (4 ms)
+    ✓ honours explicit exclusions (5 ms)
+  normalizeTag
+    ✓ rejects tags outside the allowed alphabet (4 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       11 passed, 11 total
+Snapshots:   0 total
+Time:        1.429 s
+Ran all test suites matching test/broadcasts/segment.spec.ts.
+[heavy] waiting for a slot: npx jest test/broadcasts/recurrence.spec.ts --runInBand
+PASS test/broadcasts/recurrence.spec.ts (55 MB heap size)
+  parseRecurrence
+    ✓ accepts the coaching cadences and normalises weekdays (15 ms)
+    ✓ rejects {"freq":"hourly","local_time":"07:00"} with a coded error (freq) (7 ms)
+    ✓ rejects {"freq":"daily","local_time":"7:00"} with a coded error (local_time) (1 ms)
+    ✓ rejects {"freq":"daily","local_time":"24:00"} with a coded error (local_time)
+    ✓ rejects {"freq":"daily","local_time":"07:00","interval":0} with a coded error (interval) (10 ms)
+    ✓ rejects {"freq":"daily","local_time":"07:00","by_weekday":[1]} with a coded error (by_weekday_needs_weekly) (4 ms)
+    ✓ rejects {"freq":"monthly","local_time":"07:00","by_month_day":32} with a coded error (by_month_day) (1 ms)
+    ✓ rejects {"freq":"daily","local_time":"07:00","count":0} with a coded error (count) (6 ms)
+    ✓ rejects {"freq":"daily","local_time":"07:00","anchor_date":"2026-01-01"} with a coded error (unknown_field:anchor_date) (1 ms)
+  nextOccurrence
+    ✓ daily at local 07:00 across the spring-forward DST change keeps the wall time (17 ms)
+    ✓ weekly Mon/Thu every 2 weeks counts weeks from the anchor week (1 ms)
+    ✓ monthly on the 31st uses the last day of shorter months (17 ms)
+    ✓ stops after until (1 ms)
+    ✓ is evaluated in the broadcast time zone, not UTC (4 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       14 passed, 14 total
+Snapshots:   0 total
+Time:        1.775 s
+Ran all test suites matching test/broadcasts/recurrence.spec.ts.
+[heavy] waiting for a slot: npx jest test/broadcasts/cards.spec.ts --runInBand
+PASS test/broadcasts/cards.spec.ts (66 MB heap size)
+  parseCardSpec
+    ✓ rejects unknown types, a ref on check_in, and client-supplied snapshots (29 ms)
+  CardsService.resolve (tenancy)
+    ✓ a reference outside the tenant answers card.ref_not_found and the query is tenant-bounded (1 ms)
+    ✓ snapshots come from the server row, never the request
+    ✓ a client-specific meal plan cannot go to a group or to another client (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       4 passed, 4 total
+Snapshots:   0 total
+Time:        1.258 s
+Ran all test suites matching test/broadcasts/cards.spec.ts.
+[heavy] waiting for a slot: npx jest test/broadcasts/broadcast-scope.spec.ts --runInBand
+PASS test/broadcasts/broadcast-scope.spec.ts (65 MB heap size)
+  BroadcastScopeService.lockSendAuthority (A-659-7)
+    ✓ the head coach may message a live client on the roster; every read is FOR SHARE (7 ms)
+    ✓ a client transferred to another coach or deleted is off the roster
+    ✓ a sub-coach with a live seat and an open assignment may message the client (3 ms)
+    ✓ a client reassigned away from the sub-coach is refused (1 ms)
+    ✓ a sub-coach who left the team (no membership) is refused, never treated as the head
+    ✓ a deleted author or one who is no longer a coach is refused (12 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       6 passed, 6 total
+Snapshots:   0 total
+Time:        1.558 s
+Ran all test suites matching test/broadcasts/broadcast-scope.spec.ts.

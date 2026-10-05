@@ -1,0 +1,44 @@
+fb worktree 480d56a0f5574a66656c25c5664aa721f8c3cf52 = 68c7f080 + FIX ROUND 3 tests + L3 inquiry probes
+== src/entitlements/dunning/__tests__/dunningL1Contract.test.ts 13:46:36
+FAIL src/entitlements/dunning/__tests__/dunningL1Contract.test.ts
+    ✕ a dispute-only Save card: nothing charged, access ended, billing paused, the coach decides; no future payment (5 ms)
+    ✕ two disputed plans in two currencies: per-currency amounts, each coach decides (3 ms)
+    ✕ when the answer reports no plans, the quote read before the card form supplies the disputes
+    ✕ B-352-9: an inquiry (same envelope, no amount, no money moved) is never called a reversal (1 ms)
+Tests:       4 failed, 15 passed, 19 total
+== src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx 13:47:10
+FAIL src/entitlements/dunning/__tests__/dunningLockoutOwnership.test.tsx (13.102 s)
+    ✕ the dispute lockout states R-DISPUTE-PAUSE, leads with Message coach, offers no card or cancel path (8 ms)
+    ✕ D2c dispute pause (reason dispute_paused, no amount, no lock date): same facts; a payment lock keeps its card path (12 ms)
+    ✕ Update card intro and banner for a dispute or inquiry: the three facts, no date, no charge, no card or support fix (2 ms)
+    ✕ B-353-8: an inquiry (D2c envelope, no amount) is a dispute or inquiry on every surface, never money taken back (4 ms)
+    ✕ a payment plan whose quote also names a disputed payment says so before the card form (72 ms)
+Tests:       5 failed, 35 passed, 40 total
+== src/entitlements/dunning/__tests__/auditSol121InquiryCopy.test.ts 13:47:25
+FAIL src/entitlements/dunning/__tests__/auditSol121InquiryCopy.test.ts
+  ✕ B-352-9: an inquiry-only quote must not assert that the bank reversed money (3 ms)
+  ✕ B-352-9: a card saved while an inquiry pauses access retains policy without inventing a reversal (2 ms)
+  ✕ B-352-9: a retained dispute cancellation outcome must not invent a reversal for an inquiry (1 ms)
+Tests:       3 failed, 1 passed, 4 total
+== src/entitlements/dunning/__tests__/auditSol121InquirySurfaces.test.tsx 13:47:30
+FAIL src/entitlements/dunning/__tests__/auditSol121InquirySurfaces.test.tsx
+  ✕ B-353-8: banner must not claim a bank reversal for the accepted inquiry envelope (7 ms)
+  ✕ B-353-8: lockout must not claim a bank reversal for the accepted inquiry envelope (1 ms)
+  ✕ B-353-8: UpdateCard intro must not claim a bank reversal for the accepted inquiry envelope (2 ms)
+  ✕ B-353-8: mounted inquiry lockout has coach-only recovery without a false money claim (444 ms)
+  ✕ B-353-8: mounted inquiry UpdateCard keeps the coach path but no false bank-withdrawal claim (34 ms)
+  ✕ B-353-8: mounted waived inquiry banner keeps Message coach without a reversal headline (5 ms)
+Tests:       6 failed, 1 passed, 7 total
+== src/entitlements/dunning/__tests__/aud121OpusL3_352.probe.test.ts 13:47:33
+FAIL src/entitlements/dunning/__tests__/aud121OpusL3_352.probe.test.ts
+    ✕ PROBE: the card-update dispute line does not claim the bank reversed or took back money (2 ms)
+    ✕ PROBE: the dispute line with two plans does not claim payments were reversed (1 ms)
+    ✕ PROBE: ending a disputed plan does not claim the bank had reversed a payment (1 ms)
+Tests:       3 failed, 19 passed, 22 total
+== src/entitlements/dunning/__tests__/aud121OpusL3_353.probe.test.tsx 13:47:35
+FAIL src/entitlements/dunning/__tests__/aud121OpusL3_353.probe.test.tsx
+    ✕ PROBE: banner title + body does not claim the bank reversed or took back a payment (2 ms)
+    ✕ PROBE: lockout summary does not claim the bank reversed or took back a payment (1 ms)
+    ✕ PROBE: Update card intro (locked) does not claim the bank reversed or took back a payment
+    ✕ PROBE: Update card intro (waived) does not claim the bank reversed or took back a payment (1 ms)
+Tests:       4 failed, 14 passed, 18 total

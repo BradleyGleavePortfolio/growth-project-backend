@@ -1,0 +1,70 @@
+[heavy] waiting for a slot: npx jest test/roles-enforced.spec.ts --runInBand
+PASS test/roles-enforced.spec.ts (41.573 s, 466 MB heap size)
+  RolesEnforced — every route has @Roles or @Public
+    ✓ every route handler has @Roles or @Public (or is in the legacy-guard allowlist) (6 ms)
+    ✓ RolesGuard is registered as a global APP_GUARD (3 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       2 passed, 2 total
+Snapshots:   0 total
+Time:        42.149 s
+Ran all test suites matching test/roles-enforced.spec.ts.
+[heavy] waiting for a slot: npx jest test/dunning-v2-lockout-allowlist-route-table.spec.ts --runInBand
+PASS test/dunning-v2-lockout-allowlist-route-table.spec.ts (83 MB heap size)
+  DunningLockoutGuard allow-list vs the real mounted route table
+    ✓ parses every controller class and route the sources declare (no silent drops) (4 ms)
+    ✓ scans the controller surface at a plausible scale (guards a silently empty scan) (1 ms)
+    ✓ pairs each @Controller class in src/checkout/checkout.controller.ts with its own prefix (1 ms)
+    ✓ pairs each @Controller class in src/macros/macros.controller.ts with its own prefix (1 ms)
+    ✓ pairs each @Controller class in src/packages/packages.controller.ts with its own prefix (1 ms)
+    ✓ pairs each @Controller class in src/checkout/payment-ops.controller.ts with its own prefix (2 ms)
+    ✓ pairs each @Controller class in src/exercise-catalog/exercise-catalog.controller.ts with its own prefix (1 ms)
+    ✓ pairs each @Controller class in src/meal-plans/client-meal-plans.controller.ts with its own prefix (1 ms)
+    ✓ pairs each @Controller class in src/real-meal-plans/real-meal-plans.controller.ts with its own prefix
+    ✓ pairs each @Controller class in src/workout-builder/workout-builder.controller.ts with its own prefix (5 ms)
+    ✓ admits EXACTLY the reviewed recovery routes and nothing else (5 ms)
+    ✓ BLOCKS the paid integration route scheduling/auth/google/initiate (Lens A P1-1)
+    ✓ BLOCKS the paid integration route scheduling/auth/google/callback (Lens A P1-1) (2 ms)
+    ✓ ALLOWS the v1 coach billing route coach/me/billing (Lens A P2-1) (1 ms)
+    ✓ ALLOWS the v1 coach billing route coach/me/billing/portal-session (Lens A P2-1)
+    ✓ sees coach/purchases under its own controller, and locks it (1 ms)
+    ✓ BLOCKS admin/auth/impersonate — an allow-list token off the head grants nothing
+    ✓ BLOCKS community/billing/tip — an allow-list token off the head grants nothing (7 ms)
+    ✓ BLOCKS scheduling/checkout/confirm — an allow-list token off the head grants nothing (1 ms)
+    ✓ BLOCKS workouts/health/summary — an allow-list token off the head grants nothing
+    ✓ BLOCKS talent-marketplace/recover/listing — an allow-list token off the head grants nothing (1 ms)
+    ✓ admits exactly GET me/ai-consent, POST and DELETE me/ai-consent/roman from the real table (14 ms)
+    ✓ LOCKS GET me/ai-consent/export — no descendant or other method rides the consent carve-out
+    ✓ LOCKS POST me/ai-consent/roman/messages — no descendant or other method rides the consent carve-out (1 ms)
+    ✓ LOCKS POST me/ai-consent — no descendant or other method rides the consent carve-out
+    ✓ LOCKS GET me/ai-consent/roman — no descendant or other method rides the consent carve-out
+    ✓ LOCKS PUT me/ai-consent/roman — no descendant or other method rides the consent carve-out
+    ✓ LOCKS PATCH me/ai-consent/roman — no descendant or other method rides the consent carve-out
+    ✓ LOCKS DELETE me/ai-consent — no descendant or other method rides the consent carve-out
+    ✓ LOCKS HEAD me/ai-consent — no descendant or other method rides the consent carve-out
+    ✓ LOCKS GET me/ai-consent/ — no descendant or other method rides the consent carve-out
+    ✓ LOCKS GET coach/me/ai-consent — no descendant or other method rides the consent carve-out
+    ✓ gives both coach billing surfaces the same lockout verdict
+  appended-controller mutation
+    ✓ attributes the appended class to its OWN prefix, not the first in the file (1 ms)
+    ✓ judges the appended paid surface LOCKED
+    ✓ is invisible to the file-level regex scan this spec replaced (6 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       36 passed, 36 total
+Snapshots:   0 total
+Time:        2.979 s
+Ran all test suites matching test/dunning-v2-lockout-allowlist-route-table.spec.ts.
+[heavy] waiting for a slot: npx jest test/auth-guard-deletion-lockout.spec.ts --runInBand
+PASS test/auth-guard-deletion-lockout.spec.ts (66 MB heap size)
+  JwtAuthGuard — GDPR lifecycle lockout
+    ✓ rejects a scheduled-for-deletion user on a non-recovery route (3 ms)
+    ✓ allows a scheduled-for-deletion user on an @AllowDeletionScheduled() route (1 ms)
+    ✓ rejects a fully-scrubbed (deleted_at) user even on opted-in routes (1 ms)
+    ✓ lets healthy users through unchanged (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       4 passed, 4 total
+Snapshots:   0 total
+Time:        2.625 s
+Ran all test suites matching test/auth-guard-deletion-lockout.spec.ts.

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+cd /home/user/workspace/wt/B-SPLIT-COACHLESS-121-1
+echo "M' head $(git rev-parse HEAD)" > /home/user/workspace/ops/aud-121/B-SPLIT-COACHLESS-121/jest-gates-Mprime.log
+/home/user/workspace/ops/heavy.sh npx jest --ci --runInBand test/admin-controller-hygiene.spec.ts test/billing-throttle-metadata.spec.ts test/dunning-v2-lockout-allowlist-route-table.spec.ts test/entitlement-guards-mounted.spec.ts test/env-validation.spec.ts test/openapi-spec.spec.ts test/rate-limit.spec.ts test/route-doc-drift.spec.ts test/throttler-isolation.spec.ts  test/account-deletion test/ci/fly-env-workflows.spec.ts test/coachless >> /home/user/workspace/ops/aud-121/B-SPLIT-COACHLESS-121/jest-gates-Mprime.log 2>&1; echo "rc=$?" >> /home/user/workspace/ops/aud-121/B-SPLIT-COACHLESS-121/jest-gates-Mprime.log

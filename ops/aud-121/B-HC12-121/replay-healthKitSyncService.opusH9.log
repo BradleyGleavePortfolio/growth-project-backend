@@ -1,0 +1,69 @@
+[heavy] waiting for a slot: npx jest --ci --forceExit src/services/health/healthkit/__tests__/healthKitSyncService.opusH9.test.ts
+FAIL src/services/health/healthkit/__tests__/healthKitSyncService.opusH9.test.ts (5.787 s)
+  H9-HK-1: day pieces cut nights at 03:00; every night is posted whole, under one key
+    ✕ a multi-day read whose piece ends fall inside the nights posts no partial night (31 ms)
+  H9-HK-4: DOCUMENTS C-370-3 (outside this diff, amplified by day pieces): a partial night read at a piece's 36 h sleep look-back start is posted as a second night
+    ✕ a long segment spanning the look-back start, then a segment 3 h after it, posts the night whole AND its tail as its own night (4 ms)
+  H9-HK-2: pieces across the end of daylight saving (America/Los_Angeles, 2026-11-01)
+    ✓ runs the DST probe in a child jest started with TZ=America/Los_Angeles (4227 ms)
+  H9-HK-3: the one-day look-back bound
+    ✓ a heart rate that starts 23 h before the saved progress is posted; one 25 h before is not (DOCUMENTS the bound) (1 ms)
+
+  ● H9-HK-1: day pieces cut nights at 03:00; every night is posted whole, under one key › a multi-day read whose piece ends fall inside the nights posts no partial night
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 0
+
+    @@ -1,7 +1,6 @@
+      Array [
+    -   "2026-06-03T22:00:00.000Z|2026-06-04T06:00:00.000Z",
+        "2026-06-04T22:00:00.000Z|2026-06-05T06:00:00.000Z",
+        "2026-06-05T22:00:00.000Z|2026-06-06T06:00:00.000Z",
+        "2026-06-06T22:00:00.000Z|2026-06-07T06:00:00.000Z",
+        "2026-06-07T22:00:00.000Z|2026-06-08T06:00:00.000Z",
+        "2026-06-08T22:00:00.000Z|2026-06-09T06:00:00.000Z",
+
+    [0m [90m 171 |[39m     }
+     [90m 172 |[39m     [90m// Nights from the first piece's sleep look-back to the last full night.[39m
+    [31m[1m>[22m[39m[90m 173 |[39m     expect([[33m...[39mkeys][33m.[39msort())[33m.[39mtoEqual(
+     [90m     |[39m                              [31m[1m^[22m[39m
+     [90m 174 |[39m       [[32m'2026-06-03'[39m[33m,[39m [32m'2026-06-04'[39m[33m,[39m [32m'2026-06-05'[39m[33m,[39m [32m'2026-06-06'[39m[33m,[39m [32m'2026-06-07'[39m[33m,[39m [32m'2026-06-08'[39m[33m,[39m [32m'2026-06-09'[39m][33m.[39mmap((d) [33m=>[39m {
+     [90m 175 |[39m         [36mconst[39m s [33m=[39m [32m`${d}T22:00:00.000Z`[39m[33m;[39m
+     [90m 176 |[39m         [36mconst[39m e [33m=[39m [36mnew[39m [33mDate[39m([33mDate[39m[33m.[39mparse(s) [33m+[39m [35m8[39m [33m*[39m [33mHOUR[39m)[33m.[39mtoISOString()[33m;[39m[0m
+
+      at Object.toEqual (src/services/health/healthkit/__tests__/healthKitSyncService.opusH9.test.ts:173:30)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+  ● H9-HK-4: DOCUMENTS C-370-3 (outside this diff, amplified by day pieces): a partial night read at a piece's 36 h sleep look-back start is posted as a second night › a long segment spanning the look-back start, then a segment 3 h after it, posts the night whole AND its tail as its own night
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 0
+
+      Object {
+        "2026-06-06T23:00:00.000Z|2026-06-07T06:00:00.000Z": 330,
+    -   "2026-06-07T03:00:00.000Z|2026-06-07T06:00:00.000Z": 180,
+      }
+
+    [0m [90m 197 |[39m     [36mconst[39m keys [33m=[39m [36mnew[39m [33mMap[39m[33m<[39m[33mstring[39m[33m,[39m number[33m>[39m()[33m;[39m
+     [90m 198 |[39m     [36mfor[39m ([36mconst[39m s [36mof[39m posted()[33m.[39mfilter((x) [33m=>[39m x[33m.[39mmetric [33m===[39m [32m'SLEEP_TOTAL_MIN'[39m)) keys[33m.[39m[36mset[39m([32m`${s.startAt}|${s.endAt}`[39m[33m,[39m s[33m.[39mvalue)[33m;[39m
+    [31m[1m>[22m[39m[90m 199 |[39m     expect([33mObject[39m[33m.[39mfromEntries(keys))[33m.[39mtoEqual({
+     [90m     |[39m                                      [31m[1m^[22m[39m
+     [90m 200 |[39m       [32m'2026-06-06T23:00:00.000Z|2026-06-07T06:00:00.000Z'[39m[33m:[39m [35m330[39m[33m,[39m [90m// the whole night (pieces 1 and 2)[39m
+     [90m 201 |[39m       [32m'2026-06-07T03:00:00.000Z|2026-06-07T06:00:00.000Z'[39m[33m:[39m [35m180[39m[33m,[39m [90m// its tail again (piece 3, look-back from 2026-06-07 00:00)[39m
+     [90m 202 |[39m     })[33m;[39m[0m
+
+      at Object.toEqual (src/services/health/healthkit/__tests__/healthKitSyncService.opusH9.test.ts:199:38)
+      at asyncGeneratorStep (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (../../deps/mobile/node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+Test Suites: 1 failed, 1 total
+Tests:       2 failed, 2 passed, 4 total
+Snapshots:   0 total
+Time:        5.91 s
+Ran all test suites matching /src\/services\/health\/healthkit\/__tests__\/healthKitSyncService.opusH9.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -1,0 +1,16 @@
+[heavy] waiting for a slot: npx jest --ci --forceExit src/services/health/__tests__/onDeviceState.opusH9.test.ts
+PASS src/services/health/__tests__/onDeviceState.opusH9.test.ts
+  ✓ H9-1: a first Connect held at its session WRITE when sign-out starts stops and leaves no consent, even at an exit before the chain (33 ms)
+  ✓ H9-2: a Connect held at its authority READ when sign-out starts stops before the grant write (20 ms)
+  ✓ H9-3: a grant write issued before sign-out that commits after it stays void at an exit before the chain (the immediate revocation deletes) (23 ms)
+  ✓ H9-3: a grant write issued before sign-out that commits after it stays void at an exit before the chain (the immediate delete fails (Android) and a new authority replaces it) (77 ms)
+  ✓ H9-4: two Connect writes, the first running and the second queued at sign-out: both stop, no consent (16 ms)
+  ✓ H9-5 liveness: a Connect and a progress save started after sign-out finished work normally, in this run and after a restart (14 ms)
+  ✓ H9-6 (opus119f C-362-12 replay at the new contract): a first grant write in flight at sign-out rejects as stopped and leaves no key and no grant (13 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       7 passed, 7 total
+Snapshots:   0 total
+Time:        2.204 s
+Ran all test suites matching /src\/services\/health\/__tests__\/onDeviceState.opusH9.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -1,0 +1,8 @@
+PASS test/dunning-v2-lockout-coach-thread.spec.ts (53 MB heap size)
+Tests:       15 passed, 15 total
+PASS test/dunning-v2-lockout-allowlist-route-table.spec.ts (70 MB heap size)
+Tests:       36 passed, 36 total
+PASS test/dunning-v2-lockout-guard.spec.ts (59 MB heap size)
+Tests:       72 passed, 72 total
+PASS test/dunning-v2-lockout-privacy-exact.spec.ts (58 MB heap size)
+Tests:       13 passed, 13 total

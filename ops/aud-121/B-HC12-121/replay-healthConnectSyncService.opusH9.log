@@ -1,0 +1,12 @@
+[heavy] waiting for a slot: npx jest --ci --forceExit src/services/health/healthConnect/__tests__/healthConnectSyncService.opusH9.test.ts
+PASS src/services/health/healthConnect/__tests__/healthConnectSyncService.opusH9.test.ts
+  ✓ H9-HC-1: sign-out while page 2 is being posted: page 1 was saved, page 3 is never read or posted, and the sweep leaves no progress (5 ms)
+  ✓ H9-HC-2: sign-out while a page's progress write is on the wire: the run stops and the sweep removes the key after the write (2 ms)
+  ✓ H9-HC-3: the one-day look-back: a record starting 23 h before the saved progress, written later, is read; one 25 h before is not (DOCUMENTS the bound) (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       3 passed, 3 total
+Snapshots:   0 total
+Time:        4.205 s
+Ran all test suites matching /src\/services\/health\/healthConnect\/__tests__\/healthConnectSyncService.opusH9.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

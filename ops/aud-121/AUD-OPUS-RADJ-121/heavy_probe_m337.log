@@ -1,0 +1,198 @@
+Mon Oct  5 13:53:13 PDT 2026
+[heavy] waiting for a slot: npx jest --ci src/components/roman/adjust/__tests__/aud-opus-radj-121.probe.test.tsx
+FAIL src/components/roman/adjust/__tests__/aud-opus-radj-121.probe.test.tsx (5.197 s)
+  B-337-2 copy truth: a lost reply after Approve/Edit/Undo never claims "Your workouts are unchanged"
+    ✕ timeout, no reply on approve: no false "unchanged" claim, and the list is reloaded to show the truth (12 ms)
+    ✕ timeout, no reply on edit: no false "unchanged" claim, and the list is reloaded to show the truth (4 ms)
+    ✕ timeout, no reply on undo: no false "unchanged" claim, and the list is reloaded to show the truth (1 ms)
+    ✕ 500 after commit on approve: no false "unchanged" claim, and the list is reloaded to show the truth
+    ✕ 502 from the edge on edit: no false "unchanged" claim, and the list is reloaded to show the truth
+    ✕ unreadable 2xx reply (change applied) on approve: no false "unchanged" claim, and the list is reloaded to show the truth
+  C-337 probes (not blocking)
+    ✕ C-337-a an Edit that raises sets is not summarised as a negative "less volume"
+    ✕ C-337-b leaving the card during the 5 s countdown does not silently drop the decision the card announced (1025 ms)
+  controls (must PASS at head)
+    ✓ (control) app-chrome copy: no first person, no exclamation marks, no generic error words (1 ms)
+    ✓ (control) a settled refusal from the server shows the server sentence and asks for a refresh (1 ms)
+
+  ● B-337-2 copy truth: a lost reply after Approve/Edit/Undo never claims "Your workouts are unchanged" › timeout, no reply on approve: no false "unchanged" claim, and the list is reloaded to show the truth
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 2
+    + Received  + 2
+
+      Object {
+    -   "refresh": true,
+    -   "unchangedClaim": false,
+    +   "refresh": false,
+    +   "unchangedClaim": true,
+      }
+
+    [0m [90m 68 |[39m   ] [36mas[39m [36mconst[39m)([32m'%s on %s: no false "unchanged" claim, and the list is reloaded to show the truth'[39m[33m,[39m (_l[33m,[39m action[33m,[39m err) [33m=>[39m {
+     [90m 69 |[39m     [36mconst[39m v [33m=[39m adjustErrorView(err[33m,[39m action)[33m;[39m
+    [31m[1m>[22m[39m[90m 70 |[39m     expect({ unchangedClaim[33m:[39m [35m/unchanged/i[39m[33m.[39mtest(v[33m.[39mmessage)[33m,[39m refresh[33m:[39m v[33m.[39mrefresh })[33m.[39mtoEqual({ unchangedClaim[33m:[39m [36mfalse[39m[33m,[39m refresh[33m:[39m [36mtrue[39m })[33m;[39m
+     [90m    |[39m                                                                                  [31m[1m^[22m[39m
+     [90m 71 |[39m   })[33m;[39m
+     [90m 72 |[39m })[33m;[39m
+     [90m 73 |[39m[0m
+
+      at toEqual (src/components/roman/adjust/__tests__/aud-opus-radj-121.probe.test.tsx:70:82)
+
+  ● B-337-2 copy truth: a lost reply after Approve/Edit/Undo never claims "Your workouts are unchanged" › timeout, no reply on edit: no false "unchanged" claim, and the list is reloaded to show the truth
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 2
+    + Received  + 2
+
+      Object {
+    -   "refresh": true,
+    -   "unchangedClaim": false,
+    +   "refresh": false,
+    +   "unchangedClaim": true,
+      }
+
+    [0m [90m 68 |[39m   ] [36mas[39m [36mconst[39m)([32m'%s on %s: no false "unchanged" claim, and the list is reloaded to show the truth'[39m[33m,[39m (_l[33m,[39m action[33m,[39m err) [33m=>[39m {
+     [90m 69 |[39m     [36mconst[39m v [33m=[39m adjustErrorView(err[33m,[39m action)[33m;[39m
+    [31m[1m>[22m[39m[90m 70 |[39m     expect({ unchangedClaim[33m:[39m [35m/unchanged/i[39m[33m.[39mtest(v[33m.[39mmessage)[33m,[39m refresh[33m:[39m v[33m.[39mrefresh })[33m.[39mtoEqual({ unchangedClaim[33m:[39m [36mfalse[39m[33m,[39m refresh[33m:[39m [36mtrue[39m })[33m;[39m
+     [90m    |[39m                                                                                  [31m[1m^[22m[39m
+     [90m 71 |[39m   })[33m;[39m
+     [90m 72 |[39m })[33m;[39m
+     [90m 73 |[39m[0m
+
+      at toEqual (src/components/roman/adjust/__tests__/aud-opus-radj-121.probe.test.tsx:70:82)
+
+  ● B-337-2 copy truth: a lost reply after Approve/Edit/Undo never claims "Your workouts are unchanged" › timeout, no reply on undo: no false "unchanged" claim, and the list is reloaded to show the truth
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 2
+    + Received  + 2
+
+      Object {
+    -   "refresh": true,
+    -   "unchangedClaim": false,
+    +   "refresh": false,
+    +   "unchangedClaim": true,
+      }
+
+    [0m [90m 68 |[39m   ] [36mas[39m [36mconst[39m)([32m'%s on %s: no false "unchanged" claim, and the list is reloaded to show the truth'[39m[33m,[39m (_l[33m,[39m action[33m,[39m err) [33m=>[39m {
+     [90m 69 |[39m     [36mconst[39m v [33m=[39m adjustErrorView(err[33m,[39m action)[33m;[39m
+    [31m[1m>[22m[39m[90m 70 |[39m     expect({ unchangedClaim[33m:[39m [35m/unchanged/i[39m[33m.[39mtest(v[33m.[39mmessage)[33m,[39m refresh[33m:[39m v[33m.[39mrefresh })[33m.[39mtoEqual({ unchangedClaim[33m:[39m [36mfalse[39m[33m,[39m refresh[33m:[39m [36mtrue[39m })[33m;[39m
+     [90m    |[39m                                                                                  [31m[1m^[22m[39m
+     [90m 71 |[39m   })[33m;[39m
+     [90m 72 |[39m })[33m;[39m
+     [90m 73 |[39m[0m
+
+      at toEqual (src/components/roman/adjust/__tests__/aud-opus-radj-121.probe.test.tsx:70:82)
+
+  ● B-337-2 copy truth: a lost reply after Approve/Edit/Undo never claims "Your workouts are unchanged" › 500 after commit on approve: no false "unchanged" claim, and the list is reloaded to show the truth
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 2
+    + Received  + 2
+
+      Object {
+    -   "refresh": true,
+    -   "unchangedClaim": false,
+    +   "refresh": false,
+    +   "unchangedClaim": true,
+      }
+
+    [0m [90m 68 |[39m   ] [36mas[39m [36mconst[39m)([32m'%s on %s: no false "unchanged" claim, and the list is reloaded to show the truth'[39m[33m,[39m (_l[33m,[39m action[33m,[39m err) [33m=>[39m {
+     [90m 69 |[39m     [36mconst[39m v [33m=[39m adjustErrorView(err[33m,[39m action)[33m;[39m
+    [31m[1m>[22m[39m[90m 70 |[39m     expect({ unchangedClaim[33m:[39m [35m/unchanged/i[39m[33m.[39mtest(v[33m.[39mmessage)[33m,[39m refresh[33m:[39m v[33m.[39mrefresh })[33m.[39mtoEqual({ unchangedClaim[33m:[39m [36mfalse[39m[33m,[39m refresh[33m:[39m [36mtrue[39m })[33m;[39m
+     [90m    |[39m                                                                                  [31m[1m^[22m[39m
+     [90m 71 |[39m   })[33m;[39m
+     [90m 72 |[39m })[33m;[39m
+     [90m 73 |[39m[0m
+
+      at toEqual (src/components/roman/adjust/__tests__/aud-opus-radj-121.probe.test.tsx:70:82)
+
+  ● B-337-2 copy truth: a lost reply after Approve/Edit/Undo never claims "Your workouts are unchanged" › 502 from the edge on edit: no false "unchanged" claim, and the list is reloaded to show the truth
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 2
+    + Received  + 2
+
+      Object {
+    -   "refresh": true,
+    -   "unchangedClaim": false,
+    +   "refresh": false,
+    +   "unchangedClaim": true,
+      }
+
+    [0m [90m 68 |[39m   ] [36mas[39m [36mconst[39m)([32m'%s on %s: no false "unchanged" claim, and the list is reloaded to show the truth'[39m[33m,[39m (_l[33m,[39m action[33m,[39m err) [33m=>[39m {
+     [90m 69 |[39m     [36mconst[39m v [33m=[39m adjustErrorView(err[33m,[39m action)[33m;[39m
+    [31m[1m>[22m[39m[90m 70 |[39m     expect({ unchangedClaim[33m:[39m [35m/unchanged/i[39m[33m.[39mtest(v[33m.[39mmessage)[33m,[39m refresh[33m:[39m v[33m.[39mrefresh })[33m.[39mtoEqual({ unchangedClaim[33m:[39m [36mfalse[39m[33m,[39m refresh[33m:[39m [36mtrue[39m })[33m;[39m
+     [90m    |[39m                                                                                  [31m[1m^[22m[39m
+     [90m 71 |[39m   })[33m;[39m
+     [90m 72 |[39m })[33m;[39m
+     [90m 73 |[39m[0m
+
+      at toEqual (src/components/roman/adjust/__tests__/aud-opus-radj-121.probe.test.tsx:70:82)
+
+  ● B-337-2 copy truth: a lost reply after Approve/Edit/Undo never claims "Your workouts are unchanged" › unreadable 2xx reply (change applied) on approve: no false "unchanged" claim, and the list is reloaded to show the truth
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 2
+    + Received  + 2
+
+      Object {
+    -   "refresh": true,
+    -   "unchangedClaim": false,
+    +   "refresh": false,
+    +   "unchangedClaim": true,
+      }
+
+    [0m [90m 68 |[39m   ] [36mas[39m [36mconst[39m)([32m'%s on %s: no false "unchanged" claim, and the list is reloaded to show the truth'[39m[33m,[39m (_l[33m,[39m action[33m,[39m err) [33m=>[39m {
+     [90m 69 |[39m     [36mconst[39m v [33m=[39m adjustErrorView(err[33m,[39m action)[33m;[39m
+    [31m[1m>[22m[39m[90m 70 |[39m     expect({ unchangedClaim[33m:[39m [35m/unchanged/i[39m[33m.[39mtest(v[33m.[39mmessage)[33m,[39m refresh[33m:[39m v[33m.[39mrefresh })[33m.[39mtoEqual({ unchangedClaim[33m:[39m [36mfalse[39m[33m,[39m refresh[33m:[39m [36mtrue[39m })[33m;[39m
+     [90m    |[39m                                                                                  [31m[1m^[22m[39m
+     [90m 71 |[39m   })[33m;[39m
+     [90m 72 |[39m })[33m;[39m
+     [90m 73 |[39m[0m
+
+      at toEqual (src/components/roman/adjust/__tests__/aud-opus-radj-121.probe.test.tsx:70:82)
+
+  ● C-337 probes (not blocking) › C-337-a an Edit that raises sets is not summarised as a negative "less volume"
+
+    expect(received).not.toMatch(expected)
+
+    Expected pattern: not /-\d+% less volume/
+    Received string:      "18 to 21 sets, -17% less volume"
+
+    [0m [90m 74 |[39m describe([32m'C-337 probes (not blocking)'[39m[33m,[39m () [33m=>[39m {
+     [90m 75 |[39m   it([32m'C-337-a an Edit that raises sets is not summarised as a negative "less volume"'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 76 |[39m     expect(changeSummary({ volume_pct[33m:[39m [33m-[39m[35m17[39m[33m,[39m sets_before[33m:[39m [35m18[39m[33m,[39m sets_after[33m:[39m [35m21[39m[33m,[39m exercises[33m:[39m [] }))[33m.[39mnot[33m.[39mtoMatch([35m/-\d+% less volume/[39m)[33m;[39m
+     [90m    |[39m                                                                                                    [31m[1m^[22m[39m
+     [90m 77 |[39m   })[33m;[39m
+     [90m 78 |[39m
+     [90m 79 |[39m   it([32m'C-337-b leaving the card during the 5 s countdown does not silently drop the decision the card announced'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.toMatch (src/components/roman/adjust/__tests__/aud-opus-radj-121.probe.test.tsx:76:100)
+
+  ● C-337 probes (not blocking) › C-337-b leaving the card during the 5 s countdown does not silently drop the decision the card announced
+
+    TypeError: r.getByTestId is not a function
+
+    [0m [90m 83 |[39m       [33m<[39m[33mRomanAdjustmentCard[39m proposal[33m=[39m{proposal()} onSettled[33m=[39m{jest[33m.[39mfn()} onChanged[33m=[39m{jest[33m.[39mfn()} deps[33m=[39m{{ approve[33m,[39m now[33m:[39m () [33m=>[39m [33mNOW[39m }} [33m/[39m[33m>[39m[33m,[39m
+     [90m 84 |[39m     )[33m;[39m
+    [31m[1m>[22m[39m[90m 85 |[39m     fireEvent[33m.[39mpress(r[33m.[39mgetByTestId([32m'roman-adjust-card-approve'[39m))[33m;[39m
+     [90m    |[39m                       [31m[1m^[22m[39m
+     [90m 86 |[39m     expect(r[33m.[39mgetByTestId([32m'roman-adjust-card-countdown'[39m))[33m.[39mtoBeTruthy()[33m;[39m
+     [90m 87 |[39m     r[33m.[39munmount()[33m;[39m
+     [90m 88 |[39m     act(() [33m=>[39m {[0m
+
+      at Object.getByTestId (src/components/roman/adjust/__tests__/aud-opus-radj-121.probe.test.tsx:85:23)
+
+Test Suites: 1 failed, 1 total
+Tests:       8 failed, 2 passed, 10 total
+Snapshots:   0 total
+Time:        5.559 s
+Ran all test suites matching /src\/components\/roman\/adjust\/__tests__\/aud-opus-radj-121.probe.test.tsx/i.
+JEST_EXIT=1

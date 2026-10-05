@@ -1,0 +1,12 @@
+[heavy] waiting for a slot: npx jest --ci --forceExit src/services/health/healthkit/__tests__/healthKitSyncService.sol120h9.test.ts
+PASS src/services/health/healthkit/__tests__/healthKitSyncService.sol120h9.test.ts
+  ✓ a sleep session crossing a daily piece edge is emitted whole with one stable backend key (44 ms)
+  ✓ both real hourly readers keep unsettled hours out and post their late shares once settled (19 ms)
+  ✓ progress storage failure after a posted day retries it rather than falsely completing history (4 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       3 passed, 3 total
+Snapshots:   0 total
+Time:        1.867 s
+Ran all test suites matching /src\/services\/health\/healthkit\/__tests__\/healthKitSyncService.sol120h9.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -1,1 +1,1 @@
-trials top: #707 @ 2bb4b368f39d8a380a48086c6c79d21cb4cc34b9 (B-TR9-121, restack onto main 5da537d6; CI queued) 13:27 PDT 10-05
+trials top: #707 @ 2bb4b368f39d8a380a48086c6c79d21cb4cc34b9 READY FOR AUDIT (B-TR9-121; PR CI cancelled in runner incident, needs re-run) 13:54 PDT 10-05
