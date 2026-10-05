@@ -1,5 +1,9 @@
-import type { CoachingSession, Prisma } from '@prisma/client';
-import { MEETING_LINK_PATTERN, OCCUPYING_SESSION_STATUSES } from './scheduling.types';
+import type { CoachingSession, Prisma, SessionStatus } from '@prisma/client';
+import {
+  MEETING_LINK_PATTERN,
+  OCCUPYING_SESSION_STATUSES,
+  isLapsedRequest,
+} from './scheduling.types';
 import type { ActorContext } from './scheduling.types';
 
 // S-SCHED-2: the one place a CoachingSession row becomes an API response.
@@ -89,17 +93,22 @@ export function toSessionView(
 ): SessionView {
   const { session_type, coach, client, ...base } = row;
   const isClientViewer = actor.role === 'student';
-  const occupying = (OCCUPYING_SESSION_STATUSES as readonly string[]).includes(row.status);
+  // S-SCHED-5: a request past its clear time reads as expired at once, even
+  // before the sweep writes it, so both apps show the exact clear time.
+  const status: SessionStatus = isLapsedRequest(row, now) ? 'expired' : row.status;
+  const occupying = (OCCUPYING_SESSION_STATUSES as readonly string[]).includes(status);
   const notStarted = row.start_at.getTime() > now.getTime();
   return {
     ...base,
+    status,
     coach_notes_md: isClientViewer ? null : row.coach_notes_md,
     provider_idempotency_key: isClientViewer ? null : row.provider_idempotency_key,
     video_meeting_id: isClientViewer ? null : row.video_meeting_id,
     calendar_event_id: isClientViewer ? null : row.calendar_event_id,
     // A link only matters once confirmed; clients never see a link on an
     // unapproved request (the coach may still decline it).
-    video_url: isClientViewer && row.status === 'requested' ? null : row.video_url,
+    video_url:
+      isClientViewer && (status === 'requested' || status === 'expired') ? null : row.video_url,
     session_type: session_type
       ? {
           id: session_type.id,
@@ -112,8 +121,8 @@ export function toSessionView(
       : null,
     coach_name: coach?.name ?? null,
     client_name: client?.name ?? null,
-    meeting_link_status: meetingLinkStatus(row),
+    meeting_link_status: meetingLinkStatus({ status, video_url: row.video_url }),
     cancellable: occupying && (isClientViewer ? notStarted : true),
-    reschedulable: (row.status === 'requested' || row.status === 'scheduled') && notStarted,
+    reschedulable: (status === 'requested' || status === 'scheduled') && notStarted,
   };
 }
