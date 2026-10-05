@@ -1053,8 +1053,8 @@ export class TransferOrchestratorService {
    * holds (found on the transfer's complete reversal list) as a completed
    * operation, with no Stripe call. One transaction takes the transfer's
    * reversal slot, writes the operation already succeeded (it is never
-   * pending, so no driver can send it) and adds it to the recorded total
-   * (base = the recorded total, as for every operation; a legacy
+   * pending, so no driver can send it) and adds it to the recorded total and
+   * the head slice (base = the recorded total, as for every operation; a legacy
    * transfer.reversed only observes, B-674-3). A reversal an operation
    * already recorded (stripe_reversal_id is unique) is returned as recorded.
    */
@@ -1131,7 +1131,7 @@ export class TransferOrchestratorService {
             reversed_at: full ? new Date() : t.reversed_at,
           },
         });
-        return { transfer, op_id: op.id };
+        return { transfer: await this.mirrorHeadSlice(tx, transfer), op_id: op.id };
       });
     } catch (err) {
       if ((err as { code?: string }).code !== 'P2002') throw err;
@@ -1146,15 +1146,7 @@ export class TransferOrchestratorService {
         'another worker started a reversal on this transfer at the same time',
       );
     }
-    const { transfer } = written;
-    if (transfer.ledger_entry_id && !transfer.settlement_id && transfer.stripe_transfer_id) {
-      await this.ledger.setReversedTotal({
-        entry_id: transfer.ledger_entry_id,
-        reversed_total_cents: transfer.reversed_amount_cents,
-        stripe_transfer_id: transfer.stripe_transfer_id,
-      });
-    }
-    return { status: 'succeeded', transfer, op_id: written.op_id };
+    return { status: 'succeeded', ...written };
   }
 
   /**
@@ -1438,7 +1430,7 @@ export class TransferOrchestratorService {
         Math.max(t.reversed_amount_cents, op.base_reversed_cents + op.amount_cents),
       );
       const full = reversed >= t.amount_cents;
-      return tx.connectTransfer.update({
+      const updated = await tx.connectTransfer.update({
         where: { id: t.id },
         data: {
           reversed_amount_cents: reversed,
@@ -1446,15 +1438,20 @@ export class TransferOrchestratorService {
           reversed_at: full ? new Date() : t.reversed_at,
         },
       });
+      return this.mirrorHeadSlice(tx, updated);
     });
-    if (transfer.ledger_entry_id && !transfer.settlement_id && transfer.stripe_transfer_id) {
-      await this.ledger.setReversedTotal({
-        entry_id: transfer.ledger_entry_id,
-        reversed_total_cents: transfer.reversed_amount_cents,
-        stripe_transfer_id: transfer.stripe_transfer_id,
-      });
-    }
     return { status: 'succeeded', transfer, op_id: op.id };
+  }
+
+  // B-674-1: a legacy head-coach slice mirrors its transfer's recorded total in
+  // the transaction that records that total. The transfer row lock orders the
+  // mirrors, and a failed mirror rolls the operation back (pending, re-listed).
+  private async mirrorHeadSlice(tx: Prisma.TransactionClient, t: ConnectTransfer) {
+    const { ledger_entry_id: entry_id, stripe_transfer_id } = t;
+    if (!entry_id || t.settlement_id || !stripe_transfer_id) return t;
+    const total = { entry_id, stripe_transfer_id, reversed_total_cents: t.reversed_amount_cents };
+    await this.ledger.setReversedTotal(total, tx);
+    return t;
   }
 
   private async refuseReversal(
