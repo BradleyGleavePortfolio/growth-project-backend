@@ -43,6 +43,9 @@ itLive('A2 coach code tools on the real migration (live DB)', () => {
     s2: randomUUID(),
     s3: randomUUID(),
     late: randomUUID(),
+    sub: randomUUID(),
+    late2: randomUUID(),
+    late3: randomUUID(),
   };
   const linkCode = `GP-L${tag}`.slice(0, 12);
   const A = { id: id.coachA, role: 'coach', email: null };
@@ -96,6 +99,9 @@ itLive('A2 coach code tools on the real migration (live DB)', () => {
       [id.s2, 'student'],
       [id.s3, 'student'],
       [id.late, 'student'],
+      [id.sub, 'coach'],
+      [id.late2, 'student'],
+      [id.late3, 'student'],
     ];
     for (const [uid, role] of users) {
       await prisma.user.create({
@@ -239,5 +245,39 @@ itLive('A2 coach code tools on the real migration (live DB)', () => {
     );
     expect(removed).toBe(0);
     expect(await prisma.inviteRedemption.count({ where: { coach_id: id.coachA } })).toBe(3);
+  });
+
+  it('B-658-1: a team sub-coach code attaches its client to the head coach and head ledger', async () => {
+    await prisma.teamSubCoachAssignment.create({
+      data: { head_coach_id: id.coachA, sub_coach_id: id.sub },
+    });
+    const { code } = await tools.create({ id: id.sub, role: 'coach', email: null }, {}, null);
+    await invites.attachUserToCoachByCode(id.late2, code.code);
+    const client = await prisma.user.findUnique({ where: { id: id.late2 } });
+    expect(client?.coach_id).toBe(id.coachA);
+    const where = { coach_id: id.coachA, invite_code_id: code.id };
+    expect(await prisma.inviteRedemption.count({ where })).toBe(1);
+    expect((await tools.list(id.coachA)).codes.map((c) => c.id)).toContain(code.id);
+    expect((await tools.signups(id.sub, 7)).total).toBe(1);
+    await expect(tools.revoke(B, code.id)).rejects.toMatchObject({
+      response: { code: 'code_not_found' },
+    });
+  });
+
+  it('B-658-7: overlapping and late retries of one coach link rotation keep one successor', async () => {
+    const [x, y] = await Promise.all([
+      tools.rotate(A, 'coach-link', 24, {}, linkCode),
+      tools.rotate(A, 'coach-link', 24, {}, linkCode),
+    ]);
+    expect([x.replayed, y.replayed].sort()).toEqual([false, true]);
+    expect(y.code.code).toBe(x.code.code);
+    // A late retry with grace 0 changes nothing: same successor, old link still in its window.
+    const late = await tools.rotate(A, 'coach-link', 0, {}, linkCode);
+    expect(late).toMatchObject({ replayed: true, code: { code: x.code.code, status: 'active' } });
+    const profile = await prisma.coachProfile.findUnique({ where: { user_id: id.coachA } });
+    expect(profile?.invite_code).toBe(x.code.code);
+    const archived = await prisma.inviteCode.findUnique({ where: { code: linkCode } });
+    expect(archived).toMatchObject({ revoked: false, successor_code: x.code.code });
+    expect(await attachErr(id.late3, linkCode)).toBeNull();
   });
 });

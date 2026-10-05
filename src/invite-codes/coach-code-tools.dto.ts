@@ -78,6 +78,16 @@ export class RotateCoachCodeDto {
   @Min(0)
   @Max(ROTATE_GRACE_HOURS_MAX)
   grace_hours?: number;
+
+  @ApiPropertyOptional({
+    maxLength: 32,
+    description:
+      'Required for the coach link (`coach-link`): the link code on screen. A retry returns the first successor.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  expected_code?: string;
 }
 
 export class CoachCodeSignupsQueryDto {

@@ -62,14 +62,14 @@ describe('CoachCodeToolsController', () => {
     await controller.list(req);
     await controller.signups(req, { days: 14 });
     await controller.create(req, { label: 'Clinic' }, 'key-12345678');
-    await controller.rotate(req, 'coach-link', { grace_hours: 24 });
+    await controller.rotate(req, 'coach-link', { grace_hours: 24, expected_code: 'GP-LNK234' });
     await controller.revoke(req, 'ic-9');
     const actor = { id: 'coach-a', role: 'coach', email: 'a@example.test' };
     const ctx = { ip: '10.0.0.1', userAgent: 'jest' };
     expect(tools.list).toHaveBeenCalledWith('coach-a');
     expect(tools.signups).toHaveBeenCalledWith('coach-a', 14);
     expect(tools.create).toHaveBeenCalledWith(actor, { label: 'Clinic' }, 'key-12345678', ctx);
-    expect(tools.rotate).toHaveBeenCalledWith(actor, 'coach-link', 24, ctx);
+    expect(tools.rotate).toHaveBeenCalledWith(actor, 'coach-link', 24, ctx, 'GP-LNK234');
     expect(tools.revoke).toHaveBeenCalledWith(actor, 'ic-9', ctx);
   });
 });

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   HttpException,
   Injectable,
   InternalServerErrorException,
@@ -37,6 +38,13 @@ export const CodeAuditAction = {
 
 export type CodeActor = { id: string; role: string; email?: string | null };
 type Ctx = { ip?: string | null; userAgent?: string | null };
+/**
+ * B-658-1 — team tenancy, from the same attribution as the legacy create
+ * (InviteCodesService.resolveTeamAttribution): an active team sub-coach works
+ * in the head coach's tenant and sees or changes only the codes they issued;
+ * the head coach sees and manages every team code.
+ */
+type Scope = { tenantId: string; issuerId: string | null };
 
 export type CodeStatus = 'active' | 'retiring' | 'revoked' | 'expired' | 'used_up';
 
@@ -46,6 +54,8 @@ export type CoachCodeView = {
   code: string;
   label: string | null;
   status: CodeStatus;
+  /** The team sub-coach who issued the code (null: issued by the coach themselves). */
+  issued_by_user_id: string | null;
   join_url: string;
   /** What the QR encodes: the universal link, which opens the app on /join/<code>. */
   qr_payload: string;
@@ -74,6 +84,8 @@ type InviteRow = {
   used_count: number;
   package_id: string | null;
   grant_mode: InviteGrantMode;
+  invited_by_user_id: string | null;
+  successor_code: string | null;
   rotated_from: { id: string; code: string } | null;
   rotated_to: { id: string; code: string } | null;
 };
@@ -93,6 +105,7 @@ const ROW_SELECT = {
   intended_email: true,
   coach_id: true,
   invited_by_user_id: true,
+  successor_code: true,
   rotated_from: { select: { id: true, code: true } },
   rotated_to: { select: { id: true, code: true } },
 } as const;
@@ -140,7 +153,7 @@ export function codeStatus(row: InviteRow, now: number = Date.now()): CodeStatus
   if (lifecycle === 'revoked') return 'revoked';
   if (lifecycle === 'expired') return 'expired';
   if (lifecycle === 'max_uses_reached') return 'used_up';
-  return row.rotated_to ? 'retiring' : 'active';
+  return row.rotated_to || row.successor_code ? 'retiring' : 'active';
 }
 
 /**
@@ -177,22 +190,26 @@ export class CoachCodeToolsService {
   // ---------------------------------------------------------------- list
 
   async list(coachId: string): Promise<{ codes: CoachCodeView[]; tracking_note: string }> {
-    const profile = await this.inviteCodes.getOrCreateDefaultForCoach(coachId);
+    const scope = await this.scopeOf(coachId);
+    // A sub-coach has no team coach link: their own profile link would attach
+    // clients outside the head coach's tenant (B-658-1).
+    const profile = scope.issuerId
+      ? null
+      : await this.inviteCodes.getOrCreateDefaultForCoach(coachId);
     const rows = await this.prisma.inviteCode.findMany({
       // Shareable codes only: single-recipient (emailed) invites are managed
       // in the invite flow and are bound to one email, so they cannot leak.
-      where: { coach_id: coachId, intended_email: null },
+      where: { ...rowWhere(scope), intended_email: null },
       orderBy: { created_at: 'desc' },
       take: LIST_LIMIT,
       select: ROW_SELECT,
     });
-    const usage = await this.usageByCode(coachId);
+    const usage = await this.usageByCode(scope);
     const packages = await this.packageNames([
-      profile.invite_code_package_id,
+      profile?.invite_code_package_id,
       ...rows.map((r) => r.package_id),
     ]);
 
-    const link = this.coachLinkView(profile, usage, packages);
     const now = Date.now();
     const views = rows.map((r) => this.rowView(r, usage, packages, now));
     const rank: Record<CodeStatus, number> = {
@@ -204,7 +221,7 @@ export class CoachCodeToolsService {
     };
     views.sort((a, b) => rank[a.status] - rank[b.status]);
     return {
-      codes: [link, ...views],
+      codes: [...(profile ? [this.coachLinkView(profile, usage, packages)] : []), ...views],
       tracking_note:
         'Signup counts include every signup since code tools were added to your account.',
     };
@@ -224,14 +241,28 @@ export class CoachCodeToolsService {
     idempotencyKey: string | null,
     ctx: Ctx = {},
   ): Promise<{ code: CoachCodeView; replayed: boolean }> {
-    const key = normaliseIdempotencyKey(idempotencyKey);
-    if (key) {
-      const prior = await this.prisma.inviteCode.findUnique({
-        where: { coach_id_idempotency_key: { coach_id: actor.id, idempotency_key: key } },
-        select: ROW_SELECT,
+    const raw = typeof idempotencyKey === 'string' ? idempotencyKey.trim() : '';
+    const clean = normaliseIdempotencyKey(raw);
+    if (raw && !clean) {
+      // C-658-5: a malformed key is refused, never ignored (a retry would mint a second code).
+      throw new BadRequestException({
+        code: 'idempotency_key_invalid',
+        message:
+          'The Idempotency-Key header must be 8 to 128 visible characters without spaces. Retry with a new key.',
       });
-      if (prior) return { code: await this.viewOne(actor.id, prior), replayed: true };
     }
+    const scope = await this.scopeOf(actor.id);
+    // Keys are per issuer, so a team member's key never replays another member's code.
+    const key = clean ? `${actor.id}:${clean}` : null;
+    const replay = async () =>
+      key
+        ? this.prisma.inviteCode.findUnique({
+            where: { coach_id_idempotency_key: { coach_id: scope.tenantId, idempotency_key: key } },
+            select: ROW_SELECT,
+          })
+        : null;
+    const prior = await replay();
+    if (prior) return { code: await this.viewOne(scope, prior), replayed: true };
 
     const label = cleanLabel(input.label);
     const expiresAt = input.expires_at ? new Date(input.expires_at) : null;
@@ -255,28 +286,43 @@ export class CoachCodeToolsService {
       });
     }
 
-    let created: { id: string; code: string } | null = null;
+    // B-658-6: the package is decided BEFORE the code exists and written in
+    // the same INSERT, so no replay, list or attach ever sees an active code
+    // without its binding. A package archived later is re-checked at grant
+    // time (InviteGrantService.grantForAttachedCode), as for any bound code.
+    let packageId: string | null = null;
+    if (input.package_id && input.grant_mode) {
+      try {
+        if (!this.grants) throw new Error('grant service unavailable');
+        packageId = await this.grants.assertBindablePackage(scope.tenantId, input.package_id);
+      } catch (err) {
+        throw mapBindingError(err);
+      }
+    }
+
+    let created: InviteRow | null = null;
     for (let attempt = 0; attempt < 10 && !created; attempt++) {
       const code = await this.inviteCodes.generateCodeUniqueAcrossTables();
       try {
         created = await this.prisma.inviteCode.create({
           data: {
             code,
-            coach_id: actor.id,
+            coach_id: scope.tenantId,
+            invited_by_user_id: scope.issuerId,
             label,
             max_uses: input.max_uses ?? null,
             expires_at: expiresAt,
             idempotency_key: key,
+            package_id: packageId,
+            grant_mode: packageId && input.grant_mode ? input.grant_mode : 'none',
           },
-          select: { id: true, code: true },
+          select: ROW_SELECT,
         });
       } catch (err) {
-        if (isUniqueViolation(err, 'idempotency_key') && key) {
-          const prior = await this.prisma.inviteCode.findUnique({
-            where: { coach_id_idempotency_key: { coach_id: actor.id, idempotency_key: key } },
-            select: ROW_SELECT,
-          });
-          if (prior) return { code: await this.viewOne(actor.id, prior), replayed: true };
+        if (key && isUniqueViolation(err, 'idempotency_key')) {
+          // An overlapping retry won: its row is already complete.
+          const winner = await replay();
+          if (winner) return { code: await this.viewOne(scope, winner), replayed: true };
         }
         if (isUniqueViolation(err)) continue;
         throw err;
@@ -284,38 +330,12 @@ export class CoachCodeToolsService {
     }
     if (!created) throw new InternalServerErrorException('Could not generate a unique invite code');
 
-    if (input.package_id && input.grant_mode) {
-      try {
-        if (!this.grants) throw new Error('grant service unavailable');
-        await this.grants.setBinding(
-          actor,
-          { code: created.code, package_id: input.package_id, grant_mode: input.grant_mode },
-          ctx,
-        );
-      } catch (err) {
-        // The code was never returned to anyone, so removing it is safe and
-        // leaves no half-made code behind.
-        try {
-          await this.prisma.inviteCode.delete({ where: { id: created.id } });
-        } catch (cleanupErr) {
-          // Unreachable in practice (fresh row, no redemptions). Log it so a
-          // stray unbound code is visible; the coach still gets the real reason.
-          this.logger.warn(
-            `could not remove unbound code ${created.id} after a refused binding: ${
-              cleanupErr instanceof Error ? cleanupErr.message : 'unknown'
-            }`,
-          );
-        }
-        throw mapBindingError(err);
-      }
-    }
-
     void this.audit.write({
       action: CodeAuditAction.CREATED,
       actorId: actor.id,
       actorRole: actor.role,
       actorEmail: actor.email ?? null,
-      tenantCoachId: actor.id,
+      tenantCoachId: scope.tenantId,
       targetType: 'invite_code',
       targetId: created.id,
       ip: ctx.ip ?? null,
@@ -323,16 +343,26 @@ export class CoachCodeToolsService {
       metadata: {
         max_uses: input.max_uses ?? null,
         expires_at: expiresAt?.toISOString() ?? null,
-        package_id: input.package_id ?? null,
-        grant_mode: input.grant_mode ?? 'none',
+        package_id: packageId,
+        grant_mode: created.grant_mode,
       },
     });
-    const row = await this.prisma.inviteCode.findUnique({
-      where: { id: created.id },
-      select: ROW_SELECT,
-    });
-    if (!row) throw codeNotFound();
-    return { code: await this.viewOne(actor.id, row), replayed: false };
+    if (scope.issuerId) {
+      // Same team feed event as the legacy create (InviteCodesService.createForCoach).
+      await this.prisma.teamAuditEvent
+        .create({
+          data: {
+            head_coach_id: scope.tenantId,
+            actor_user_id: scope.issuerId,
+            target_client_id: null,
+            event_kind: 'invite_sent_by_sub_coach',
+            summary: 'Invite code issued by sub-coach.',
+            metadata: { invite_code_id: created.id, sub_coach_id: scope.issuerId },
+          },
+        })
+        .catch(() => this.logger.warn(`team audit event write failed for invite ${created?.id}`));
+    }
+    return { code: await this.viewOne(scope, created), replayed: false };
   }
 
   // -------------------------------------------------------------- rotate
@@ -342,34 +372,63 @@ export class CoachCodeToolsService {
     id: string,
     graceHoursRaw: number | undefined,
     ctx: Ctx = {},
+    expectedCode?: string | null,
   ): Promise<{ code: CoachCodeView; previous: CoachCodeView | null; replayed: boolean }> {
     const graceHours = Math.min(
       Math.max(Math.trunc(graceHoursRaw ?? 0), 0),
       ROTATE_GRACE_HOURS_MAX,
     );
     const graceMs = graceHours * 60 * 60 * 1000;
+    const scope = await this.scopeOf(actor.id);
 
     if (id === COACH_LINK_ID) {
-      const { profile, previous } = await this.inviteCodes.rotateDefaultCode(actor.id, graceMs);
-      this.writeRotateAudit(actor, ctx, 'coach_link', previous.id, null, graceHours);
-      const prevRow = await this.prisma.inviteCode.findUnique({
-        where: { id: previous.id },
-        select: ROW_SELECT,
-      });
-      const usage = await this.usageByCode(actor.id);
+      if (scope.issuerId) {
+        throw new ForbiddenException({
+          code: 'coach_link_head_coach_only',
+          message:
+            'The team coach link belongs to your head coach. Create your own code here, or ask your head coach to rotate the link.',
+        });
+      }
+      // B-658-7: rotate the link the coach is looking at; a retry of that
+      // rotation returns its first successor and changes nothing.
+      const expected = typeof expectedCode === 'string' ? expectedCode.trim() : '';
+      if (!expected) {
+        throw new BadRequestException({
+          code: 'expected_code_required',
+          message: 'Pull to refresh your codes, then rotate the coach link shown on screen.',
+        });
+      }
+      const { profile, previous, replayed, successorCode } =
+        await this.inviteCodes.rotateDefaultCode(actor.id, graceMs, expected);
+      if (!replayed)
+        this.writeRotateAudit(actor, ctx, actor.id, 'coach_link', previous.id, null, graceHours);
+      const [prevRow, nextRow] = await Promise.all([
+        this.prisma.inviteCode.findUnique({ where: { id: previous.id }, select: ROW_SELECT }),
+        successorCode === profile.invite_code
+          ? null
+          : this.prisma.inviteCode.findUnique({
+              where: { code: successorCode },
+              select: ROW_SELECT,
+            }),
+      ]);
+      const usage = await this.usageByCode(scope);
       const packages = await this.packageNames([
         profile.invite_code_package_id,
-        prevRow?.package_id ?? null,
+        prevRow?.package_id,
+        nextRow?.package_id,
       ]);
+      const now = Date.now();
       return {
-        code: this.coachLinkView(profile, usage, packages),
-        previous: prevRow ? this.rowView(prevRow, usage, packages, Date.now()) : null,
-        replayed: false,
+        code: nextRow
+          ? this.rowView(nextRow, usage, packages, now)
+          : this.coachLinkView(profile, usage, packages),
+        previous: prevRow ? this.rowView(prevRow, usage, packages, now) : null,
+        replayed,
       };
     }
 
     const old = await this.prisma.inviteCode.findUnique({ where: { id }, select: ROW_SELECT });
-    if (!old || old.coach_id !== actor.id || old.intended_email) throw codeNotFound();
+    if (!old || !owns(scope, old)) throw codeNotFound();
     if (old.rotated_to) {
       // Retried rotate: the successor already exists. Return it, never mint a second.
       const successor = await this.prisma.inviteCode.findUnique({
@@ -378,8 +437,8 @@ export class CoachCodeToolsService {
       });
       if (successor) {
         return {
-          code: await this.viewOne(actor.id, successor),
-          previous: await this.viewOne(actor.id, old),
+          code: await this.viewOne(scope, successor),
+          previous: await this.viewOne(scope, old),
           replayed: true,
         };
       }
@@ -402,7 +461,7 @@ export class CoachCodeToolsService {
           const successor = await tx.inviteCode.create({
             data: {
               code,
-              coach_id: actor.id,
+              coach_id: old.coach_id,
               invited_by_user_id: old.invited_by_user_id,
               label: old.label,
               max_uses: old.max_uses,
@@ -415,7 +474,7 @@ export class CoachCodeToolsService {
           });
           const graceEnd = new Date(now + graceMs);
           const retired = await tx.inviteCode.updateMany({
-            where: { id: old.id, coach_id: actor.id, revoked: false },
+            where: { id: old.id, coach_id: old.coach_id, revoked: false },
             data:
               graceMs > 0
                 ? {
@@ -445,8 +504,8 @@ export class CoachCodeToolsService {
               select: ROW_SELECT,
             });
             return {
-              code: await this.viewOne(actor.id, winner),
-              previous: prev ? await this.viewOne(actor.id, prev) : null,
+              code: await this.viewOne(scope, winner),
+              previous: prev ? await this.viewOne(scope, prev) : null,
               replayed: true,
             };
           }
@@ -458,15 +517,15 @@ export class CoachCodeToolsService {
     if (!successorId)
       throw new InternalServerErrorException('Could not generate a unique invite code');
 
-    this.writeRotateAudit(actor, ctx, 'invite_code', old.id, successorId, graceHours);
+    this.writeRotateAudit(actor, ctx, old.coach_id, 'invite_code', old.id, successorId, graceHours);
     const [next, prev] = await Promise.all([
       this.prisma.inviteCode.findUnique({ where: { id: successorId }, select: ROW_SELECT }),
       this.prisma.inviteCode.findUnique({ where: { id: old.id }, select: ROW_SELECT }),
     ]);
     if (!next) throw codeNotFound();
     return {
-      code: await this.viewOne(actor.id, next),
-      previous: prev ? await this.viewOne(actor.id, prev) : null,
+      code: await this.viewOne(scope, next),
+      previous: prev ? await this.viewOne(scope, prev) : null,
       replayed: false,
     };
   }
@@ -485,13 +544,14 @@ export class CoachCodeToolsService {
           'Your coach link cannot be turned off, only replaced. Rotate it to retire the current one.',
       });
     }
+    const scope = await this.scopeOf(actor.id);
     const row = await this.prisma.inviteCode.findUnique({ where: { id }, select: ROW_SELECT });
-    if (!row || row.coach_id !== actor.id || row.intended_email) throw codeNotFound();
-    if (row.revoked) return { code: await this.viewOne(actor.id, row), replayed: true };
+    if (!row || !owns(scope, row)) throw codeNotFound();
+    if (row.revoked) return { code: await this.viewOne(scope, row), replayed: true };
 
     const now = new Date();
     await this.prisma.inviteCode.updateMany({
-      where: { id, coach_id: actor.id, revoked: false },
+      where: { id, coach_id: row.coach_id, revoked: false },
       data: { revoked: true, revoked_at: now },
     });
     void this.audit.write({
@@ -499,7 +559,7 @@ export class CoachCodeToolsService {
       actorId: actor.id,
       actorRole: actor.role,
       actorEmail: actor.email ?? null,
-      tenantCoachId: actor.id,
+      tenantCoachId: row.coach_id,
       targetType: 'invite_code',
       targetId: id,
       ip: ctx.ip ?? null,
@@ -508,7 +568,7 @@ export class CoachCodeToolsService {
     });
     const fresh = await this.prisma.inviteCode.findUnique({ where: { id }, select: ROW_SELECT });
     return {
-      code: await this.viewOne(actor.id, fresh ?? { ...row, revoked: true, revoked_at: now }),
+      code: await this.viewOne(scope, fresh ?? { ...row, revoked: true, revoked_at: now }),
       replayed: false,
     };
   }
@@ -522,10 +582,12 @@ export class CoachCodeToolsService {
    */
   async signups(coachId: string, daysRaw: number | undefined, now: Date = new Date()) {
     const days = Math.min(Math.max(Math.trunc(daysRaw ?? 30), 1), SIGNUP_DAYS_MAX);
+    const scope = await this.scopeOf(coachId);
     const profile = await this.prisma.coachProfile.findUnique({
       where: { user_id: coachId },
       select: { timezone: true, invite_code: true },
     });
+    const linkCode = scope.issuerId ? null : (profile?.invite_code ?? null);
     const tz = isValidTimeZone(profile?.timezone)
       ? (profile?.timezone as string)
       : DEFAULT_COACH_TIMEZONE;
@@ -537,7 +599,7 @@ export class CoachCodeToolsService {
     // bucketing by local calendar date.
     const rows = await this.prisma.inviteRedemption.findMany({
       where: {
-        coach_id: coachId,
+        ...ledgerWhere(scope),
         redeemed_at: { gte: new Date(now.getTime() - (days + 2) * DAY_MS), lte: now },
       },
       select: { code: true, package_id: true, redeemed_at: true, invite_code_id: true },
@@ -565,23 +627,23 @@ export class CoachCodeToolsService {
 
     // Every current shareable code appears, even with zero signups.
     const live = await this.prisma.inviteCode.findMany({
-      where: { coach_id: coachId, intended_email: null, revoked: false },
+      where: { ...rowWhere(scope), intended_email: null, revoked: false },
       select: { id: true, code: true, label: true },
       take: LIST_LIMIT,
     });
     const labels = new Map<string, { id: string; label: string | null }>(
       live.map((r) => [r.code, { id: r.id, label: r.label }]),
     );
-    const missing = [...byCode.keys()].filter((c) => !labels.has(c) && c !== profile?.invite_code);
+    const missing = [...byCode.keys()].filter((c) => !labels.has(c) && c !== linkCode);
     if (missing.length) {
       const extra = await this.prisma.inviteCode.findMany({
-        where: { coach_id: coachId, code: { in: missing } },
+        where: { ...rowWhere(scope), code: { in: missing } },
         select: { id: true, code: true, label: true },
       });
       for (const r of extra) labels.set(r.code, { id: r.id, label: r.label });
     }
     const codeKeys = new Set<string>([...byCode.keys(), ...live.map((r) => r.code)]);
-    if (profile?.invite_code) codeKeys.add(profile.invite_code);
+    if (linkCode) codeKeys.add(linkCode);
 
     const series = (counts: number[]) => dates.map((date, i) => ({ date, count: counts[i] }));
     const sum = (counts: number[]) => counts.reduce((a, b) => a + b, 0);
@@ -599,7 +661,7 @@ export class CoachCodeToolsService {
       by_code: [...codeKeys]
         .map((code) => {
           const counts = byCode.get(code)?.counts ?? zero();
-          const isLink = code === profile?.invite_code;
+          const isLink = code === linkCode;
           const meta = labels.get(code);
           return {
             code,
@@ -629,6 +691,7 @@ export class CoachCodeToolsService {
   private writeRotateAudit(
     actor: CodeActor,
     ctx: Ctx,
+    tenantId: string,
     kind: 'coach_link' | 'invite_code',
     previousId: string,
     successorId: string | null,
@@ -639,7 +702,7 @@ export class CoachCodeToolsService {
       actorId: actor.id,
       actorRole: actor.role,
       actorEmail: actor.email ?? null,
-      tenantCoachId: actor.id,
+      tenantCoachId: tenantId,
       targetType: kind === 'coach_link' ? 'coach_profile_invite_code' : 'invite_code',
       targetId: successorId ?? actor.id,
       ip: ctx.ip ?? null,
@@ -648,19 +711,22 @@ export class CoachCodeToolsService {
     });
   }
 
-  private async usageByCode(
-    coachId: string,
-  ): Promise<Map<string, { total: number; week: number }>> {
+  private async scopeOf(actorId: string): Promise<Scope> {
+    const a = await this.inviteCodes.resolveTeamAttribution(actorId);
+    return { tenantId: a.effective_coach_id, issuerId: a.invited_by_user_id };
+  }
+
+  private async usageByCode(scope: Scope): Promise<Map<string, { total: number; week: number }>> {
     const since = new Date(Date.now() - 7 * DAY_MS);
     const [all, week] = await Promise.all([
       this.prisma.inviteRedemption.groupBy({
         by: ['code'],
-        where: { coach_id: coachId },
+        where: ledgerWhere(scope),
         _count: { _all: true },
       }),
       this.prisma.inviteRedemption.groupBy({
         by: ['code'],
-        where: { coach_id: coachId, redeemed_at: { gte: since } },
+        where: { ...ledgerWhere(scope), redeemed_at: { gte: since } },
         _count: { _all: true },
       }),
     ]);
@@ -681,8 +747,8 @@ export class CoachCodeToolsService {
     return new Map(rows.map((r) => [r.id, r.name]));
   }
 
-  private async viewOne(coachId: string, row: InviteRow): Promise<CoachCodeView> {
-    const usage = await this.usageByCode(coachId);
+  private async viewOne(scope: Scope, row: InviteRow): Promise<CoachCodeView> {
+    const usage = await this.usageByCode(scope);
     const packages = await this.packageNames([row.package_id]);
     return this.rowView(row, usage, packages, Date.now());
   }
@@ -705,6 +771,7 @@ export class CoachCodeToolsService {
       code: profile.invite_code,
       label: 'Coach link',
       status: 'active',
+      issued_by_user_id: null,
       join_url: url,
       qr_payload: url,
       created_at: profile.created_at ? profile.created_at.toISOString() : null,
@@ -734,6 +801,7 @@ export class CoachCodeToolsService {
       code: row.code,
       label: row.label,
       status: codeStatus(row, now),
+      issued_by_user_id: row.invited_by_user_id,
       join_url: url,
       qr_payload: url,
       created_at: row.created_at.toISOString(),
@@ -754,6 +822,26 @@ export class CoachCodeToolsService {
       rotated_to: row.rotated_to,
     };
   }
+}
+
+function rowWhere(s: Scope): Prisma.InviteCodeWhereInput {
+  return { coach_id: s.tenantId, ...(s.issuerId ? { invited_by_user_id: s.issuerId } : {}) };
+}
+
+function ledgerWhere(s: Scope): Prisma.InviteRedemptionWhereInput {
+  return {
+    coach_id: s.tenantId,
+    ...(s.issuerId ? { invite_code: { is: { invited_by_user_id: s.issuerId } } } : {}),
+  };
+}
+
+/** The caller may see and change this shareable code (B-658-1); anything else is a non-leaking 404. */
+function owns(
+  s: Scope,
+  row: { coach_id: string; invited_by_user_id: string | null; intended_email: string | null },
+): boolean {
+  if (row.coach_id !== s.tenantId || row.intended_email) return false;
+  return !s.issuerId || row.invited_by_user_id === s.issuerId;
 }
 
 function cleanLabel(raw: string | undefined): string | null {

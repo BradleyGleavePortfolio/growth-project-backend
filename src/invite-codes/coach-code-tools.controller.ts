@@ -96,7 +96,13 @@ export class CoachCodeToolsController {
     @Body() body: RotateCoachCodeDto,
   ) {
     assertCoachCodeToolsEnabled();
-    return this.tools.rotate(actorOf(req), id, body?.grace_hours, auditContext(req));
+    return this.tools.rotate(
+      actorOf(req),
+      id,
+      body?.grace_hours,
+      auditContext(req),
+      body?.expected_code,
+    );
   }
 
   @ApiOperation({ summary: 'Revoke (turn off) a code. Clients who already joined stay with you.' })

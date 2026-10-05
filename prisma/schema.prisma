@@ -795,6 +795,8 @@ model InviteCode {
   idempotency_key     String?            @db.Text
   rotated_from_id     String?            @unique
   rotated_from        InviteCode?        @relation("InviteCodeRotation", fields: [rotated_from_id], references: [id], onDelete: SetNull)
+  // Archived coach link rows only: the coach link code that replaced this one (B-658-7 retry replay).
+  successor_code      String?            @db.Text
   rotated_to          InviteCode?        @relation("InviteCodeRotation")
   redemptions         InviteRedemption[]
 

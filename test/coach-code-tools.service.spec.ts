@@ -20,6 +20,7 @@ import {
   normaliseIdempotencyKey,
 } from '../src/invite-codes/coach-code-tools.service';
 import { InviteCodesService } from '../src/invite-codes/invite-codes.service';
+import { InviteGrantService } from '../src/invite-grant/invite-grant.service';
 import {
   assertCoachCodeToolsEnabled,
   coachCodeToolsEnabled,
@@ -39,7 +40,17 @@ function makeDb() {
   const codes: Row[] = [];
   const profiles: Row[] = [];
   const redemptions: Row[] = [];
-  const packages: Row[] = [{ id: 'pkg-1', name: 'Clinic 12 weeks', coach_id: 'coach-a' }];
+  const packages: Row[] = [
+    {
+      id: 'pkg-1',
+      name: 'Clinic 12 weeks',
+      coach_id: 'coach-a',
+      is_active: true,
+      archived_at: null,
+    },
+  ];
+  const seats: Row[] = []; // TeamSubCoachAssignment
+  const teamAudit: Row[] = [];
   let seq = 0;
   const withRelations = (r: Row) => ({
     ...r,
@@ -51,10 +62,11 @@ function makeDb() {
       return s ? { id: s.id, code: s.code } : null;
     })(),
   });
-  const matches = (r: Row, where: Row = {}) =>
+  const matches = (r: Row, where: Row = {}): boolean =>
     Object.entries(where).every(([k, v]) => {
       if (v && typeof v === 'object' && !(v instanceof Date)) {
         if ('in' in v) return (v.in as unknown[]).includes(r[k]);
+        if ('is' in v) return codes.some((c) => c.id === r.invite_code_id && matches(c, v.is));
         if ('gte' in v || 'lte' in v) return (!v.gte || r[k] >= v.gte) && (!v.lte || r[k] <= v.lte);
       }
       return r[k] === v;
@@ -148,8 +160,20 @@ function makeDb() {
   };
   const coachPackage = {
     findMany: jest.fn(async ({ where }: Row) => packages.filter((p) => where.id.in.includes(p.id))),
+    findUnique: jest.fn(async ({ where }: Row) => packages.find((p) => p.id === where.id) ?? null),
   };
-  const db: Row = { inviteCode, coachProfile, inviteRedemption, coachPackage };
+  const teamSubCoachAssignment = {
+    findFirst: jest.fn(async ({ where }: Row) => seats.find((r) => matches(r, where)) ?? null),
+  };
+  const teamAuditEvent = { create: jest.fn(async ({ data }: Row) => teamAudit.push(data)) };
+  const db: Row = {
+    inviteCode,
+    coachProfile,
+    inviteRedemption,
+    coachPackage,
+    teamSubCoachAssignment,
+    teamAuditEvent,
+  };
   db.$transaction = jest.fn(async (fn: (tx: Row) => Promise<unknown>) => {
     const snapshot = codes.map((c) => ({ ...c }));
     const profSnap = profiles.map((p) => ({ ...p }));
@@ -161,7 +185,7 @@ function makeDb() {
       throw err;
     }
   });
-  return { db, codes, profiles, redemptions };
+  return { db, codes, profiles, redemptions, seats, teamAudit };
 }
 
 function build(opts: { grants?: Row } = {}) {
@@ -173,7 +197,7 @@ function build(opts: { grants?: Row } = {}) {
   const analytics: any = { capture: jest.fn() };
   const email: any = { send: jest.fn() };
   const auditDouble: any = audit;
-  const grants: any = opts.grants;
+  const grants: any = opts.grants ?? new InviteGrantService(prisma, auditDouble);
   const inviteCodes = new InviteCodesService(prisma, analytics, email, auditDouble);
   const tools = new CoachCodeToolsService(prisma, inviteCodes, auditDouble, grants);
   return { ...store, audit, tools, inviteCodes };
@@ -304,15 +328,7 @@ describe('create', () => {
   });
 
   it('a refused package binding leaves no half-made code and returns a specific code', async () => {
-    const grants = {
-      setBinding: jest.fn(async () => {
-        throw new NotFoundException({
-          error: 'PACKAGE_NOT_FOUND',
-          message: 'Package not available',
-        });
-      }),
-    };
-    const { tools, codes } = build({ grants });
+    const { tools, codes } = build(); // real InviteGrantService rules; pkg-x does not exist
     expect(
       await errCode(tools.create(coachA, { package_id: 'pkg-x', grant_mode: 'free' }, null)),
     ).toEqual({
@@ -412,7 +428,7 @@ describe('rotate', () => {
       timezone: null,
       created_at: new Date(),
     });
-    const res = await tools.rotate(coachA, COACH_LINK_ID, 0);
+    const res = await tools.rotate(coachA, COACH_LINK_ID, 0, {}, 'GP-OLD234');
     expect(res.code.kind).toBe('coach_link');
     expect(res.code.code).not.toBe('GP-OLD234');
     expect(profiles[0].invite_code).toBe(res.code.code);
@@ -572,5 +588,138 @@ describe('signups (daily, coach time zone)', () => {
     });
     expect(out.days).toHaveLength(7);
     expect(out.by_code).toEqual([expect.objectContaining({ code: 'GP-LNK234', total: 0 })]);
+  });
+});
+
+describe('fix round 1 (agent 120): team attribution, atomic binding, coach link retries', () => {
+  const sub1 = { id: 'sub-1', role: 'coach', email: null };
+  const sub2 = { id: 'sub-2', role: 'coach', email: null };
+  const team = () => {
+    const t = build();
+    for (const id of ['sub-1', 'sub-2'])
+      t.seats.push({ head_coach_id: 'coach-a', sub_coach_id: id, archived_at: null });
+    return t;
+  };
+  const ids = async (t: ReturnType<typeof build>, who: string) =>
+    (await t.tools.list(who)).codes.filter((c) => c.kind === 'invite_code').map((c) => c.id);
+
+  it('B-658-1: a sub-coach code lives in the head tenant, scoped to its issuer', async () => {
+    const t = team();
+    const { code } = await t.tools.create(sub1, { package_id: 'pkg-1', grant_mode: 'free' }, null);
+    expect(t.codes[0]).toMatchObject({
+      coach_id: 'coach-a',
+      invited_by_user_id: 'sub-1',
+      package_id: 'pkg-1', // the head coach's package
+    });
+    expect(code.issued_by_user_id).toBe('sub-1');
+    expect(t.teamAudit).toEqual([
+      expect.objectContaining({ head_coach_id: 'coach-a', actor_user_id: 'sub-1' }),
+    ]);
+    expect(await ids(t, 'coach-a')).toEqual([code.id]);
+    expect((await t.tools.list('sub-1')).codes.map((c) => c.id)).toEqual([code.id]); // no link
+    expect(await ids(t, 'sub-2')).toEqual([]);
+    for (const p of [t.tools.rotate(sub2, code.id, 0), t.tools.revoke(sub2, code.id)])
+      expect(await errCode(p)).toEqual({ status: 404, code: 'code_not_found' });
+    const next = await t.tools.rotate(sub1, code.id, 0);
+    expect(t.codes.find((c) => c.id === next.code.id)).toMatchObject({
+      coach_id: 'coach-a',
+      invited_by_user_id: 'sub-1',
+    });
+    expect((await t.tools.revoke(coachA, next.code.id)).code.status).toBe('revoked');
+    t.redemptions.push(
+      { coach_id: 'coach-a', code: code.code, invite_code_id: code.id, redeemed_at: new Date() },
+      { coach_id: 'coach-a', code: 'GP-LNK234', invite_code_id: null, redeemed_at: new Date() },
+    );
+    expect((await t.tools.signups('sub-1', 7)).total).toBe(1);
+    expect((await t.tools.signups('coach-a', 7)).total).toBe(2);
+    expect(await errCode(t.tools.rotate(sub1, COACH_LINK_ID, 0, {}, 'GP-LNK234'))).toEqual({
+      status: 403,
+      code: 'coach_link_head_coach_only',
+    });
+  });
+
+  const gated = () => {
+    let release: (ok: boolean) => void = () => undefined;
+    const gate = new Promise<boolean>((r) => (release = r));
+    const decide = async () => {
+      if (!(await gate)) throw new NotFoundException({ error: 'PACKAGE_NOT_FOUND' });
+      return 'pkg-1';
+    };
+    // setBinding = the pre-fix path; assertBindablePackage = the fixed path.
+    const t = build({
+      grants: { setBinding: jest.fn(decide), assertBindablePackage: jest.fn(decide) },
+    });
+    const input = { package_id: 'pkg-1', grant_mode: 'prepaid' as const };
+    const first = t.tools.create(coachA, input, 'bind-key-0001');
+    return { t, input, first, release: (ok: boolean) => release(ok) };
+  };
+  const tick = () => new Promise((r) => setImmediate(r));
+
+  it('B-658-6: while the package is undecided no caller sees the code; a refusal leaves nothing', async () => {
+    const { t, input, first, release } = gated();
+    await tick();
+    expect(await ids(t, 'coach-a')).toEqual([]);
+    const retry = t.tools.create(coachA, input, 'bind-key-0001');
+    await tick();
+    release(false);
+    expect(await errCode(first)).toEqual({ status: 404, code: 'package_not_found' });
+    expect(await errCode(retry)).toEqual({ status: 404, code: 'package_not_found' });
+    expect(t.codes).toHaveLength(0);
+  });
+
+  it('B-658-6: an overlapping retry gets the same, fully bound code', async () => {
+    const { t, input, first, release } = gated();
+    await tick();
+    const retry = t.tools.create(coachA, input, 'bind-key-0001');
+    await tick();
+    release(true);
+    const [a, b] = await Promise.all([first, retry]);
+    expect(b.code.id).toBe(a.code.id);
+    for (const r of [a, b])
+      expect(r.code).toMatchObject({ package: { id: 'pkg-1' }, grant_mode: 'prepaid' });
+    expect(t.codes).toHaveLength(1);
+  });
+
+  it('C-658-5: a malformed Idempotency-Key is refused, not ignored', async () => {
+    const { tools, codes } = build();
+    expect(await errCode(tools.create(coachA, {}, 'short'))).toEqual({
+      status: 400,
+      code: 'idempotency_key_invalid',
+    });
+    expect(codes).toHaveLength(0);
+  });
+
+  it('B-658-7: a retried coach link rotation returns the first successor and changes nothing', async () => {
+    const t = build();
+    t.profiles.push({
+      id: 'cp',
+      user_id: 'coach-a',
+      invite_code: 'GP-OLD234',
+      created_at: new Date(),
+    });
+    const first = await t.tools.rotate(coachA, COACH_LINK_ID, 0, {}, 'GP-OLD234');
+    const retry = await t.tools.rotate(coachA, COACH_LINK_ID, 0, {}, 'GP-OLD234');
+    expect(first.replayed).toBe(false);
+    expect(retry).toMatchObject({
+      replayed: true,
+      code: { kind: 'coach_link', code: first.code.code },
+    });
+    expect(t.profiles[0].invite_code).toBe(first.code.code);
+    expect(t.codes.map((c) => c.code)).toEqual(['GP-OLD234']);
+    // An intentional rotation of the link now on screen still works (grace 24h).
+    const second = await t.tools.rotate(coachA, COACH_LINK_ID, 24, {}, first.code.code);
+    expect(second.replayed).toBe(false);
+    expect(second.previous).toMatchObject({ code: first.code.code, status: 'retiring' });
+    // A late retry of the first rotation returns that first successor as it stands now.
+    const late = await t.tools.rotate(coachA, COACH_LINK_ID, 0, {}, 'GP-OLD234');
+    expect(late).toMatchObject({
+      replayed: true,
+      code: { code: first.code.code, status: 'retiring' },
+    });
+    expect(t.profiles[0].invite_code).toBe(second.code.code);
+    expect(await errCode(t.tools.rotate(coachA, COACH_LINK_ID, 0))).toEqual({
+      status: 400,
+      code: 'expected_code_required',
+    });
   });
 });

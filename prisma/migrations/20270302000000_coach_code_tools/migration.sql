@@ -1,7 +1,7 @@
 -- A2 coach code tools (annex lane A2-COACH-TOOLS, T4).
 --
--- Additive only. Adds four nullable columns to "InviteCode" (label,
--- revoked_at, idempotency_key, rotated_from_id) with two unique indexes, and
+-- Additive only. Adds five nullable columns to "InviteCode" (label,
+-- revoked_at, idempotency_key, rotated_from_id, successor_code) with two unique indexes, and
 -- creates the append-only signup ledger "InviteRedemption". No existing
 -- column, index, policy or constraint is altered or dropped; existing rows
 -- keep NULL in every new column. The User / CoachPackage back-relations in
@@ -29,14 +29,15 @@
 --   not client data the client needs), and a different coach never sees
 --   another tenant's rows.
 --
--- Rollback: down.sql drops the ledger and the four columns (loses signup
+-- Rollback: down.sql drops the ledger and the five columns (loses signup
 -- history recorded since deploy; codes keep working). Otherwise fix forward.
 
 -- AlterTable
 ALTER TABLE "InviteCode" ADD COLUMN     "idempotency_key" TEXT,
 ADD COLUMN     "label" TEXT,
 ADD COLUMN     "revoked_at" TIMESTAMP(3),
-ADD COLUMN     "rotated_from_id" TEXT;
+ADD COLUMN     "rotated_from_id" TEXT,
+ADD COLUMN     "successor_code" TEXT;
 
 -- CreateTable
 CREATE TABLE "InviteRedemption" (

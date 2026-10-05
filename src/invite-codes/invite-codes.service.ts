@@ -168,6 +168,16 @@ class AttachRaceSameCoach extends Error {
   }
 }
 
+/** B-658-7 — the coach link the caller saw is no longer current: answer with that rotation's outcome. */
+class LinkAlreadyRotated extends Error {}
+
+function linkRotationConflict(): ConflictException {
+  return new ConflictException({
+    code: 'code_rotation_conflict',
+    message: 'Your coach link was just changed on another device. Refresh your codes to see the current link.',
+  });
+}
+
 /** Only students can be attached to a coach; every other role is refused, never rewritten. */
 function assertRedeemerIsStudent(me: { role: string }): void {
   if (me.role === 'student') return;
@@ -392,7 +402,7 @@ export class InviteCodesService {
   // Returned shape:
   //   - head coach (no active sub-coach assignment): {effective_coach_id: callerId, invited_by_user_id: null}
   //   - sub-coach (>=1 active assignment): {effective_coach_id: head_coach_id, invited_by_user_id: callerId}
-  private async resolveTeamAttribution(
+  async resolveTeamAttribution(
     callerId: string,
   ): Promise<{ effective_coach_id: string; invited_by_user_id: string | null }> {
     const subAssignment = await this.prisma.teamSubCoachAssignment.findFirst({
@@ -617,13 +627,19 @@ export class InviteCodesService {
    * window gets the same package. Clients already attached are untouched:
    * User.coach_id is the durable link, and a replay of the old code by an
    * attached client stays the idempotent `already_attached` success.
+   * B-658-7: with `expectedCode` (the link the caller saw) a retry, or an
+   * overlapping duplicate, of a rotation that already happened writes nothing
+   * and returns that rotation's successor (`successor_code` on the archived row).
    */
   async rotateDefaultCode(
     coachId: string,
     graceMs: number,
+    expectedCode?: string | null,
   ): Promise<{
     profile: Awaited<ReturnType<InviteCodesService['getOrCreateDefaultForCoach']>>;
     previous: { id: string; code: string; expires_at: Date | null; revoked: boolean };
+    replayed: boolean;
+    successorCode: string;
   }> {
     await this.getOrCreateDefaultForCoach(coachId);
     for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt++) {
@@ -632,6 +648,7 @@ export class InviteCodesService {
         return await this.prisma.$transaction(async (tx) => {
           const current = await tx.coachProfile.findUnique({ where: { user_id: coachId } });
           if (!current) throw new NotFoundException({ code: 'coach_profile_missing', message: 'Coach profile not found' });
+          if (expectedCode && current.invite_code !== expectedCode) throw new LinkAlreadyRotated();
           const now = new Date();
           const archived = await tx.inviteCode.create({
             data: {
@@ -644,6 +661,7 @@ export class InviteCodesService {
               revoked_at: graceMs <= 0 ? now : null,
               package_id: current.invite_code_package_id,
               grant_mode: current.invite_code_grant_mode,
+              successor_code: next,
             },
             select: { id: true, code: true, expires_at: true, revoked: true },
           });
@@ -655,16 +673,26 @@ export class InviteCodesService {
             data: { invite_code: next },
           });
           if (moved.count !== 1) {
-            throw new ConflictException({
-              code: 'code_rotation_conflict',
-              message: 'Your coach link was just changed on another device. Refresh your codes to see the current link.',
-            });
+            if (expectedCode) throw new LinkAlreadyRotated();
+            throw linkRotationConflict();
           }
           const profile = await tx.coachProfile.findUnique({ where: { user_id: coachId } });
           if (!profile) throw new NotFoundException({ code: 'coach_profile_missing', message: 'Coach profile not found' });
-          return { profile, previous: archived };
+          return { profile, previous: archived, replayed: false, successorCode: next };
         });
       } catch (err) {
+        if (err instanceof LinkAlreadyRotated && expectedCode) {
+          // Nothing is written: the archived row of the expected code names its successor.
+          const previous = await this.prisma.inviteCode.findUnique({
+            where: { code: expectedCode },
+            select: { id: true, code: true, expires_at: true, revoked: true, coach_id: true, successor_code: true },
+          });
+          if (!previous || previous.coach_id !== coachId || !previous.successor_code) throw linkRotationConflict();
+          const profile = await this.getOrCreateDefaultForCoach(coachId);
+          return { profile, previous, replayed: true, successorCode: previous.successor_code };
+        }
+        // A duplicate archive of the same code means a concurrent rotation won:
+        // the next attempt sees the moved link (and, with expectedCode, replays it).
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') continue;
         throw err;
       }
