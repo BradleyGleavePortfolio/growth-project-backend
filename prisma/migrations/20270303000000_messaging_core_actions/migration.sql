@@ -19,8 +19,11 @@
 -- Postgres 11+ (no table rewrite). Existing rows read as not edited, not
 -- deleted, not pinned, no reply, no key.
 --
--- RLS: CoachMessage keeps its participant policy (20260607000000); the new
--- columns are covered by it. CoachThreadState is ENABLE + FORCE with an
+-- RLS: CoachMessage is ENABLE + FORCE (idempotent; production already has
+-- both) with its single participant policy coach_message_participant_access,
+-- created here only when absent (production and the migration chain already
+-- have it from 20260607000000); the new columns are covered by it.
+-- CoachThreadState is ENABLE + FORCE with an
 -- owner-staff policy and a self-only policy. The runtime connects as
 -- service_role (BYPASSRLS) and scopes in the service layer; these policies are
 -- defence in depth for every non-service connection, proven by
@@ -97,3 +100,45 @@ CREATE POLICY "coach_thread_state_self_access" ON "CoachThreadState"
     AND "user_id" = app.current_user_id()
     AND ("coach_id" = app.current_user_id() OR "client_id" = app.current_user_id())
   );
+
+-- RLS: CoachMessage (D1, B-MSG2-120). No earlier chain migration enables RLS
+-- on this table (only the loose rls_fitness_backend.sql does), so on a
+-- chain-migrated database the participant policy from 20260607000000 was
+-- inert and any authenticated principal read every thread. Production
+-- already has RLS ENABLE + FORCE and exactly this one policy (permissive,
+-- FOR ALL TO public, same USING and WITH CHECK): there this block is a
+-- no-op. The policy is created only when absent and is then marked as owned
+-- by this migration, so down.sql never drops a policy it did not create.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policy
+     WHERE polrelid = '"CoachMessage"'::regclass
+       AND polname = 'coach_message_participant_access'
+  ) THEN
+    CREATE POLICY "coach_message_participant_access" ON "CoachMessage"
+      FOR ALL TO public
+      USING (
+        app.current_user_id() IS NOT NULL
+        AND (
+          "coach_id" = app.current_user_id()
+          OR "client_id" = app.current_user_id()
+          OR "sender_id" = app.current_user_id()
+        )
+      )
+      WITH CHECK (
+        app.current_user_id() IS NOT NULL
+        AND (
+          "coach_id" = app.current_user_id()
+          OR "client_id" = app.current_user_id()
+          OR "sender_id" = app.current_user_id()
+        )
+      );
+    -- Ownership marker: down.sql drops the policy only when this matches.
+    COMMENT ON POLICY "coach_message_participant_access" ON "CoachMessage"
+      IS 'created by 20270303000000_messaging_core_actions';
+  END IF;
+END $$;
+
+ALTER TABLE "CoachMessage" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "CoachMessage" FORCE ROW LEVEL SECURITY;
