@@ -1,6 +1,7 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger, Optional, ServiceUnavailableException } from '@nestjs/common';
 import type { ClientPurchase, CoachPackage, Prisma } from '@prisma/client';
 import {
+  StripeConnectApiError,
   StripeConnectApiService,
   type StripeSubscriptionObject,
 } from '../connect/stripe-connect-api.service';
@@ -14,6 +15,131 @@ import { attachTrialCard } from './trial-card';
 import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
 import { PayoutRoutingService } from '../payouts-v2/payout-routing.service';
 import { CoachFirstPaymentService } from '../notifications/coach-first-payment.service';
+import { CLEARED_PAYMENT_SECRETS } from './admin-purchase.select';
+
+// B-661-1 (Opus): the purchase statuses a payment_intent.succeeded claims. A
+// PaymentIntent that succeeded is terminal, so its success always wins over
+// an earlier decline of the same PaymentIntent.
+const PI_SUCCEEDED_CLAIMABLE = ['pending', 'payment_failed'];
+
+// B-661-5 (Opus, round 4): which purchase a payment_intent.succeeded
+// activates. A pending purchase holding this PaymentIntent, or a
+// payment_failed one only when it is the PaymentSheet purchase created for
+// this PaymentIntent (createPaymentIntentForClient sets its
+// stripe_checkout_session_id to the PaymentIntent id). A hosted Checkout
+// purchase that a decline marked payment_failed is activated once, by its
+// checkout.session.completed (access window, hosted fanout, one split).
+function activatesOnPaymentIntentSuccess(
+  purchase: { status: string; stripe_checkout_session_id: string },
+  paymentIntentId: string,
+): boolean {
+  return (
+    purchase.status === 'pending' ||
+    (purchase.status === 'payment_failed' &&
+      purchase.stripe_checkout_session_id === paymentIntentId)
+  );
+}
+
+// B-661-3 (Sol, round 3): which purchases a payment_intent.payment_failed may
+// write. Stripe does not deliver events in order, so a decline can arrive
+// after a successful retry of the same PaymentIntent.
+//   - `pending` / `payment_failed` may still fail: the write is a
+//     compare-and-set on that status, so a success that commits first wins.
+//   - These statuses belong to their own events (refund, dispute, cancel,
+//     expiry); a decline never rewrites them.
+//   - Any other status (paid, active, past_due, trialing, ...) already
+//     settled: only Stripe's CURRENT status of the PaymentIntent decides.
+//     PI_STATUS_NOT_COMPLETED = the payment really did not complete (e.g. an
+//     asynchronous payment that was processing when a hosted checkout
+//     completed, then failed), so access ends. `succeeded` = the decline is
+//     stale; `processing` / `requires_action` / `requires_confirmation` = a
+//     later attempt is in flight and its own outcome event decides. Either
+//     way the decline changes nothing.
+const PI_FAILED_CLAIMABLE = PI_SUCCEEDED_CLAIMABLE;
+const PI_FAILED_NEVER_REWRITES = new Set([
+  'canceled',
+  'expired',
+  'refunded',
+  'disputed',
+  'chargeback_lost',
+]);
+const PI_STATUS_NOT_COMPLETED = new Set(['requires_payment_method', 'canceled']);
+// C-661-6: Stripe answered 4xx (other than 429) for the PaymentIntent, so a
+// retry cannot read it either. Not a Stripe status.
+const PI_STATUS_UNREADABLE = 'unreadable';
+function failureNeedsProviderStatus(purchaseStatus: string): boolean {
+  return (
+    !PI_FAILED_CLAIMABLE.includes(purchaseStatus) && !PI_FAILED_NEVER_REWRITES.has(purchaseStatus)
+  );
+}
+
+// C-661-7: statuses checkout.session.completed never activates again: the
+// one-time purchase was activated already, or a later event ended it.
+const CHECKOUT_NEVER_REACTIVATES = ['paid', ...PI_FAILED_NEVER_REWRITES];
+
+// B-661-3 (Sol, round 5): the version of a purchase row that a prefetched
+// PaymentIntent status was read against. row_version is PostgreSQL's xmin,
+// the id of the transaction that last wrote the row: every committed write
+// of any writer (Prisma or raw SQL, any service) changes it, two writes in
+// the same millisecond included; a row lock alone does not. A changed value
+// can only cause a retry; an equal value after a write would need about
+// 2^32 transactions between the prefetch and the webhook transaction.
+// updated_at (an application-clock timestamp) is not a version: two writes
+// can share it.
+export interface PurchaseVersion {
+  purchase_id: string;
+  status: string;
+  row_version: string;
+}
+type PurchaseVersionRow = { status: string; row_version: string };
+function samePurchaseVersion(
+  seen: PurchaseVersion | null | undefined,
+  now: PurchaseVersion | null,
+): boolean {
+  return (
+    !!seen &&
+    !!now &&
+    seen.purchase_id === now.purchase_id &&
+    seen.status === now.status &&
+    seen.row_version === now.row_version
+  );
+}
+
+// Prisma's "record to update not found" (P2025): the row no longer matches
+// the state a write was decided for.
+function isRecordNotFound(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === 'P2025';
+}
+
+// Thrown inside the webhook transaction when an event cannot be applied
+// safely now. BillingService rolls the transaction back (dedup row included)
+// and answers 503, so Stripe redelivers the event and the out-of-tx prefetch
+// runs again. Ids and codes only: no Stripe or client text.
+function declineRetryLater(reason: string, paymentIntentId: string): ServiceUnavailableException {
+  return new ServiceUnavailableException({
+    error: 'PAYMENT_FAILURE_RETRY',
+    reason,
+    payment_intent_id: paymentIntentId,
+    message: 'This payment failure event cannot be applied yet. Stripe redelivers it.',
+  });
+}
+function successRetryLater(reason: string, paymentIntentId: string): ServiceUnavailableException {
+  return new ServiceUnavailableException({
+    error: 'PAYMENT_SUCCESS_RETRY',
+    reason,
+    payment_intent_id: paymentIntentId,
+    message: 'This payment success event cannot be applied yet. Stripe redelivers it.',
+  });
+}
+
+// Log tag for a failed call: HTTP status and Stripe code, or the error class.
+// Never the message (it may carry provider or client text).
+function errorTag(err: unknown): string {
+  if (err instanceof StripeConnectApiError) {
+    return `stripe_${err.httpStatus}_${err.stripeCode ?? 'none'}`;
+  }
+  return err instanceof Error ? err.name : 'unknown';
+}
 
 // PR-9: BillingService.handleEvent passes its outer `$transaction`'s tx
 // client through `handle(event, tx)` so the entitlement update +
@@ -264,7 +390,13 @@ export function isUnpaidNativeAttempt(
 //   pending  -- checkout.session.completed   --> paid (one_time) / active (recurring)
 //   active   -- customer.subscription.updated --> active | past_due | canceled
 //   active   -- customer.subscription.deleted --> canceled
-//   *        -- payment_intent.payment_failed --> payment_failed
+//   pending | payment_failed -- payment_intent.payment_failed --> payment_failed
+//   paid | active | ...      -- payment_intent.payment_failed --> payment_failed
+//                               only when Stripe says the PaymentIntent did not
+//                               complete (B-661-3); otherwise unchanged
+//   payment_failed (activated before) -- payment_intent.succeeded --> paid
+//                               recovery: access and the canceled drops come
+//                               back; no second activation (B-661-3 round 5)
 //   pending  -- checkout.session.expired      --> expired
 //
 // Entitlement (`entitlement_active`) is derived and persisted on every
@@ -339,6 +471,14 @@ export interface CheckoutWebhookPrefetch {
   // (rare settling race); the split handler no-ops the transfer and the
   // sweeper picks it up. undefined entry = no pre-resolution attempted.
   chargeIdByPurchaseId?: Record<string, string | null>;
+  // B-661-3 — Stripe's current status of the PaymentIntent a
+  // payment_intent.payment_failed names, keyed by PaymentIntent id. Resolved
+  // out-of-tx only when the matched purchase already settled (a decline of a
+  // pending or failed purchase never needs it). null = the lookup failed.
+  paymentIntentStatusById?: Record<string, string | null>;
+  // B-661-3 round 4/5 — the purchase version read BEFORE that Stripe lookup.
+  // The status applies only while the purchase is still that version.
+  paymentIntentWitnessById?: Record<string, PurchaseVersion>;
   // B-654-1 — setup_intent.succeeded for a native trial attempt: the saved
   // card was made the subscription's default out-of-tx. null = the
   // SetupIntent is not a native trial's; ok=false = the Stripe write failed
@@ -462,7 +602,7 @@ export class CheckoutWebhookHandlerService {
       case 'payment_intent.succeeded':
         return this.applyPaymentIntentSucceeded(event, tx, prefetched);
       case 'payment_intent.payment_failed':
-        return this.applyPaymentIntentFailed(event, tx);
+        return this.applyPaymentIntentFailed(event, tx, prefetched);
       // DUNNING-V1 — invoice.payment_succeeded mirrors invoice.paid in
       // Stripe's docs for the subscription-renewal path; some accounts
       // emit one, some the other. We route both to the same handler so
@@ -643,6 +783,9 @@ export class CheckoutWebhookHandlerService {
       event.type === 'payment_intent.succeeded'
     ) {
       return this.prefetchChargeIdForActivation(event);
+    }
+    if (event.type === 'payment_intent.payment_failed') {
+      return this.prefetchFailedPaymentIntentStatus(event);
     }
     if (event.type === 'setup_intent.succeeded') {
       return { trialCard: await this.attachNativeTrialCard(event) };
@@ -911,11 +1054,13 @@ export class CheckoutWebhookHandlerService {
       } else {
         // payment_intent.succeeded
         if (!obj.id) return {};
+        // B-661-1 / B-661-5 (Opus): the same rows applyPaymentIntentSucceeded
+        // activates.
         const purchase = await this.prisma.clientPurchase.findFirst({
-          where: { stripe_payment_intent_id: obj.id, status: 'pending' },
-          select: { id: true },
+          where: { stripe_payment_intent_id: obj.id, status: { in: PI_SUCCEEDED_CLAIMABLE } },
+          select: { id: true, status: true, stripe_checkout_session_id: true },
         });
-        if (!purchase) return {};
+        if (!purchase || !activatesOnPaymentIntentSuccess(purchase, obj.id)) return {};
         purchaseId = purchase.id;
         paymentIntentId = obj.id;
       }
@@ -938,6 +1083,132 @@ export class CheckoutWebhookHandlerService {
         `prefetchForOuterTx: charge-id pre-resolution failed for ${event.type} ${obj.id ?? 'unknown'}: ${(err as Error).message}`,
       );
       return {};
+    }
+  }
+
+  /**
+   * B-661-3 — resolve, out-of-tx, Stripe's current status of the PaymentIntent
+   * a payment_intent.payment_failed names, but only when the purchase it
+   * matches already settled (failureNeedsProviderStatus). Never throws: a
+   * failed lookup returns null and the handler then throws inside the tx so
+   * Stripe redelivers.
+   */
+  private async prefetchFailedPaymentIntentStatus(
+    event: StripeEvent,
+  ): Promise<CheckoutWebhookPrefetch> {
+    const pi = event.data.object as { id?: string };
+    if (!pi?.id) return {};
+    let seen: PurchaseVersion | null;
+    try {
+      const purchase = await this.prisma.clientPurchase.findFirst({
+        where: { stripe_payment_intent_id: pi.id },
+        select: { id: true, status: true },
+      });
+      if (!purchase || !failureNeedsProviderStatus(purchase.status)) return {};
+      // Read BEFORE asking Stripe: the status Stripe returns is at least as
+      // new as this version of the purchase (round 4; xmin since round 5).
+      seen = await this.readPurchaseVersion(this.prisma, purchase.id, false);
+      // No version, no Stripe call: the decline is retried in its tx.
+      if (!seen) return {};
+    } catch (err) {
+      this.logger.warn(
+        `prefetchForOuterTx: purchase lookup failed for payment_intent.payment_failed ${pi.id} (${errorTag(err)})`,
+      );
+      return {};
+    }
+    return {
+      paymentIntentStatusById: { [pi.id]: await this.lookUpPaymentIntentStatus(pi.id) },
+      paymentIntentWitnessById: { [pi.id]: seen },
+    };
+  }
+
+  // Stripe's current status of a PaymentIntent; null when it cannot be read
+  // now, PI_STATUS_UNREADABLE when Stripe says it never can be (C-661-6).
+  // C-661-8: only 404 (no such PaymentIntent) and 400 (malformed request)
+  // are permanent. 401/403 (a revoked or rotated key), 429, 5xx and network
+  // errors are retried: Stripe redelivers the decline after the key is fixed.
+  private async lookUpPaymentIntentStatus(paymentIntentId: string): Promise<string | null> {
+    try {
+      const current = await this.stripeConnect.retrievePaymentIntent(paymentIntentId);
+      return typeof current.status === 'string' ? current.status : null;
+    } catch (err) {
+      const permanent =
+        err instanceof StripeConnectApiError && (err.httpStatus === 404 || err.httpStatus === 400);
+      if (permanent) {
+        this.logger.error(
+          `PaymentIntent ${paymentIntentId} cannot be read (${errorTag(err)}): its payment_intent.payment_failed is not applied`,
+        );
+        return PI_STATUS_UNREADABLE;
+      }
+      this.logger.warn(
+        `PaymentIntent status lookup failed for ${paymentIntentId} (${errorTag(err)}): Stripe redelivers`,
+      );
+      return null;
+    }
+  }
+
+  // B-661-3 (round 5): the version of one purchase row (see PurchaseVersion).
+  // `lock` (inside a transaction) also holds the row until that transaction
+  // ends (FOR NO KEY UPDATE: returns the newest committed version and blocks
+  // every UPDATE/DELETE, never another connection's FK check, C-661-11).
+  // A client without raw SQL (minimal test doubles) cannot prove a version:
+  // null, and the caller retries instead of guessing.
+  private async readPurchaseVersion(
+    db: WebhookTx | PrismaService,
+    purchaseId: string,
+    lock: boolean,
+  ): Promise<PurchaseVersion | null> {
+    if (typeof (db as { $queryRaw?: unknown }).$queryRaw !== 'function') return null;
+    const rows = lock
+      ? await db.$queryRaw<
+          PurchaseVersionRow[]
+        >`SELECT status, xmin::text AS row_version FROM "ClientPurchase" WHERE id = ${purchaseId} FOR NO KEY UPDATE`
+      : await db.$queryRaw<
+          PurchaseVersionRow[]
+        >`SELECT status, xmin::text AS row_version FROM "ClientPurchase" WHERE id = ${purchaseId}`;
+    const row = rows[0];
+    return row ? { purchase_id: purchaseId, status: row.status, row_version: row.row_version } : null;
+  }
+
+  // B-661-8 (round 5): hold every purchase of a PaymentIntent until the
+  // webhook transaction ends, BEFORE reading them. A refund, dispute,
+  // cancel, deletion or decline that committed first is seen by the read
+  // that follows; one that comes later waits and applies to what this
+  // transaction wrote. Skipped for clients without raw SQL (test doubles);
+  // the compare-and-set writes still fence those.
+  private async lockPurchasesOfPaymentIntent(tx: WebhookTx, paymentIntentId: string): Promise<void> {
+    if (typeof (tx as { $queryRaw?: unknown }).$queryRaw !== 'function') return;
+    await tx.$queryRaw<
+      Array<{ id: string }>
+    >`SELECT id FROM "ClientPurchase" WHERE stripe_payment_intent_id = ${paymentIntentId} FOR NO KEY UPDATE`;
+  }
+
+  // B-661-3 (round 5): a purchase was activated once when its PurchaseFanout
+  // row exists (written in the activation's own transaction, never deleted
+  // while the purchase exists). A client without that model (minimal test
+  // doubles) has no activation record: false.
+  private async wasActivated(db: WebhookTx | PrismaService, purchaseId: string): Promise<boolean> {
+    if (!(db as { purchaseFanout?: unknown }).purchaseFanout) return false;
+    const fanout = await db.purchaseFanout.findUnique({
+      where: { purchase_id: purchaseId },
+      select: { id: true },
+    });
+    return !!fanout;
+  }
+
+  // B-661-8 (round 5): a success write names the state it was decided for.
+  // When the row changed first (a refund, dispute, cancel, deletion, ...),
+  // Prisma finds no row (P2025): the webhook transaction rolls back and
+  // Stripe redelivers; the redelivery reads the new state, which wins.
+  private async writeIfUnchanged<T>(paymentIntentId: string, write: () => Promise<T>): Promise<T> {
+    try {
+      return await write();
+    } catch (err) {
+      if (!isRecordNotFound(err)) throw err;
+      this.logger.warn(
+        `payment_intent.succeeded ${paymentIntentId}: purchase changed before the write; Stripe redelivers`,
+      );
+      throw successRetryLater('purchase_changed', paymentIntentId);
     }
   }
 
@@ -969,6 +1240,28 @@ export class CheckoutWebhookHandlerService {
       // Not one of ours.
       return { claimed: false, reason: 'no_matching_purchase' };
     }
+    // C-661-7: activation happens once. A late completion never re-activates
+    // a purchase that is already paid or that a refund, dispute, cancel,
+    // expiry or account deletion ended. (A recurring purchase may already be
+    // `active` from a subscription event that arrived first; its fanout and
+    // split still run here.)
+    if (CHECKOUT_NEVER_REACTIVATES.includes(purchase.status)) {
+      this.logger.log(
+        `checkout.session.completed: purchase=${purchase.id} not activated again (status=${purchase.status})`,
+      );
+      return { claimed: true, purchase_id: purchase.id, reason: 'already_progressed' };
+    }
+    // B-661-3 (round 5): a purchase that was activated and then ended by a
+    // real failure of its payment comes back only through the success of
+    // that PaymentIntent (recovery), never through a second activation. A
+    // purchase a decline marked failed before its checkout completed (never
+    // activated) is activated here as usual.
+    if (purchase.status === 'payment_failed' && (await this.wasActivated(db, purchase.id))) {
+      this.logger.log(
+        `checkout.session.completed: purchase=${purchase.id} not activated again (activated before, status=payment_failed)`,
+      );
+      return { claimed: true, purchase_id: purchase.id, reason: 'already_progressed' };
+    }
 
     const pkg = await db.coachPackage.findUnique({
       where: { id: purchase.package_id },
@@ -997,7 +1290,10 @@ export class CheckoutWebhookHandlerService {
       purchase.package_id,
       (client) =>
         client.clientPurchase.update({
-          where: { id: purchase.id },
+          // C-661-7: a refund, cancel or deletion that commits after the read
+          // above fails this write; the event rolls back and its redelivery
+          // sees the new status.
+          where: { id: purchase.id, status: { notIn: CHECKOUT_NEVER_REACTIVATES } },
           data: {
             status: newStatus,
             entitlement_active: true,
@@ -1184,7 +1480,11 @@ export class CheckoutWebhookHandlerService {
     }
     await this.prisma.clientPurchase.update({
       where: { id: purchase.id },
-      data: { status: 'expired', entitlement_active: false },
+      data: {
+        status: 'expired',
+        entitlement_active: false,
+        ...CLEARED_PAYMENT_SECRETS,
+      },
     });
     return { claimed: true, purchase_id: purchase.id };
   }
@@ -1354,6 +1654,8 @@ export class CheckoutWebhookHandlerService {
           canceled_at: canceledAt,
           access_expires_at: accessExpiresAt,
           ...trialStartPatch(fresh, sub, entitled),
+          // B-661-14/15 — a grant means the sheet's intent was paid or its card saved: erase both.
+          ...(entitled ? CLEARED_PAYMENT_SECRETS : {}),
           updated_at: nextVersion(fresh),
         },
       });
@@ -1506,7 +1808,10 @@ export class CheckoutWebhookHandlerService {
         ...ending,
         entitlement_active: false,
         ...trial,
-        ...(unpaidAttempt ? { stripe_client_secret: null, stripe_ephemeral_key: null } : {}),
+        // B-SECRETS-3 (#661): an ended subscription can never be paid through its
+        // sheet again, so its cached credentials are erased whether or not it
+        // was ever paid (supersedes the unpaid-attempt-only erase).
+        ...CLEARED_PAYMENT_SECRETS,
       },
     });
     // PR-16 — cancel any not-yet-fired drops for this purchase. Runs in
@@ -1546,29 +1851,71 @@ export class CheckoutWebhookHandlerService {
 
     const db: WebhookTx | PrismaService = tx ?? this.prisma;
 
+    // B-661-8 (round 5): lock this PaymentIntent's purchases before reading
+    // them, so the state the decision below is made on stays the state the
+    // write lands on.
+    if (tx) await this.lockPurchasesOfPaymentIntent(tx, pi.id);
+
     // Only claim if a pending purchase row references this payment intent.
     // PaymentSheet flow creates a pending ClientPurchase with the PI id set
     // by checkout.service.ts createPaymentIntentForClient().
+    // B-661-1 (Opus): a declined first attempt flips the row to
+    // `payment_failed` (applyPaymentIntentFailed) while the PaymentIntent
+    // stays payable; the client's in-sheet retry of the SAME PaymentIntent
+    // then succeeds. That success is claimed too, so the client who paid is
+    // entitled, the split is posted and the credentials are erased.
+    // B-661-3 (Sol, rounds 5-7): a one-time purchase that was activated and then ended by a real
+    // failure of this PaymentIntent (e.g. a hosted checkout that completed while an asynchronous
+    // payment was processing) is recovered by this success: access comes back, nothing runs twice.
+    // Selected by its activation record inside the query, so no number of never-activated
+    // purchases a decline adopted it onto (C-661-10) hides it.
+    const owners = await this.activatedFailedPurchases(db, pi.id);
+    if (owners.length > 0) return this.recoverAfterPaymentSucceeded(db, owners, pi.id, tx);
     const purchase = await db.clientPurchase.findFirst({
-      where: { stripe_payment_intent_id: pi.id, status: 'pending' },
+      where: { stripe_payment_intent_id: pi.id, status: { in: PI_SUCCEEDED_CLAIMABLE } },
     });
-    if (!purchase) return { claimed: false, reason: 'no_matching_purchase' };
     // B-RECUR — the PaymentIntent of a native subscription's first invoice.
     // invoice.paid is the single owner of that purchase's entitlement and
     // settlement; flipping it to a one-time 'paid' here would mislabel a
     // renewing plan and settle it from a second path.
-    if (purchase.billing_type === 'recurring' && purchase.stripe_subscription_id) {
+    if (purchase && purchase.billing_type === 'recurring' && purchase.stripe_subscription_id) {
       return { claimed: true, purchase_id: purchase.id, reason: 'subscription_invoice_owned_by_invoice_paid' };
     }
+    if (!purchase || !activatesOnPaymentIntentSuccess(purchase, pi.id)) {
+      // B-661-3 (Sol, round 4/5): record the settlement on every entitled
+      // purchase this PaymentIntent paid (e.g. a hosted checkout that
+      // completed while the payment was processing). The write gives the
+      // row a new version (xmin; equal timestamps do not matter), so a
+      // decline whose Stripe status was read before this success is stale:
+      // it is redelivered and reads Stripe again.
+      await db.clientPurchase.updateMany({
+        where: { stripe_payment_intent_id: pi.id, entitlement_active: true },
+        data: { updated_at: new Date() },
+      });
+      // B-661-5: a hosted Checkout purchase is its checkout session's to
+      // activate.
+      return {
+        claimed: false,
+        reason: purchase ? 'checkout_session_activates' : 'no_matching_purchase',
+      };
+    }
 
-    const updated = await db.clientPurchase.update({
-      where: { id: purchase.id },
-      data: {
-        status: 'paid',
-        entitlement_active: true,
-        last_error: null,
-      },
-    });
+    // B-661-8 (Sol, round 5): compare-and-set on the state this was decided
+    // for (id, PaymentIntent, status). A terminal state committed after the
+    // read is never overwritten (writeIfUnchanged).
+    const updated = await this.writeIfUnchanged(pi.id, () =>
+      db.clientPurchase.update({
+        where: { id: purchase.id, stripe_payment_intent_id: pi.id, status: purchase.status },
+        data: {
+          status: 'paid',
+          entitlement_active: true,
+          last_error: null,
+          // B-SECRETS-3: the PaymentIntent is paid; its cached client
+          // credentials can never be needed again, so they are erased.
+          ...CLEARED_PAYMENT_SECRETS,
+        },
+      }),
+    );
 
     // Roman P4 (Option C) — first-payment notification on the PaymentSheet
     // (payment_intent.succeeded) path too. Same in-tx, server-trusted,
@@ -1615,9 +1962,61 @@ export class CheckoutWebhookHandlerService {
     return { claimed: true, purchase_id: purchase.id, deferredSplit };
   }
 
+  // B-661-3 (rounds 6-7): one-time purchases of this PaymentIntent that it activated and a real
+  // failure then ended, filtered in the query before its limit (at most one in practice).
+  private async activatedFailedPurchases(
+    db: WebhookTx | PrismaService,
+    paymentIntentId: string,
+  ): Promise<string[]> {
+    if (!(db as { purchaseFanout?: unknown }).purchaseFanout) return [];
+    const owners = await db.clientPurchase.findMany({
+      where: {
+        stripe_payment_intent_id: paymentIntentId,
+        status: 'payment_failed',
+        fanout: { isNot: null },
+        billing_type: { notIn: ['recurring'] },
+        stripe_subscription_id: null,
+      },
+      select: { id: true },
+      take: 10,
+    });
+    return owners.map((row) => row.id);
+  }
+
+  // B-661-3 (Sol, round 5): recovery of an activated purchase whose payment
+  // failed and then succeeded. Restores paid access and the drops that
+  // failure canceled. The activation itself already ran once (first-payment
+  // notice, fanout, head-coach split), so none of it runs again.
+  private async recoverAfterPaymentSucceeded(
+    db: WebhookTx | PrismaService,
+    purchaseIds: string[],
+    paymentIntentId: string,
+    tx: WebhookTx | undefined,
+  ): Promise<CheckoutWebhookResult> {
+    for (const purchaseId of purchaseIds) {
+      await this.writeIfUnchanged(paymentIntentId, () =>
+        db.clientPurchase.update({
+          where: { id: purchaseId, stripe_payment_intent_id: paymentIntentId, status: 'payment_failed' },
+          data: {
+            status: 'paid',
+            entitlement_active: true,
+            last_error: null,
+            ...CLEARED_PAYMENT_SECRETS,
+          },
+        }),
+      );
+      if (this.fanout) await this.fanout.restoreAfterPaymentRecovered(purchaseId, tx);
+      this.logger.log(
+        `payment_intent.succeeded: purchase=${purchaseId} recovered after a failed payment of ${paymentIntentId}`,
+      );
+    }
+    return { claimed: true, purchase_id: purchaseIds[0], reason: 'payment_recovered' };
+  }
+
   private async applyPaymentIntentFailed(
     event: StripeEvent,
     tx?: WebhookTx,
+    prefetched?: CheckoutWebhookPrefetch,
   ): Promise<CheckoutWebhookResult> {
     const pi = event.data.object as {
       id?: string;
@@ -1626,7 +2025,12 @@ export class CheckoutWebhookHandlerService {
     };
     if (!pi?.id) return { claimed: false };
     const db: WebhookTx | PrismaService = tx ?? this.prisma;
-    const purchase = await db.clientPurchase.findFirst({
+    const failure = {
+      status: 'payment_failed',
+      entitlement_active: false,
+      last_error: pi.last_payment_error?.message ?? 'payment_failed',
+    };
+    let purchase = await db.clientPurchase.findFirst({
       where: { stripe_payment_intent_id: pi.id },
     });
     if (!purchase) {
@@ -1635,11 +2039,18 @@ export class CheckoutWebhookHandlerService {
       const pkgId = pi.metadata?.tgp_package_id;
       const clientId = pi.metadata?.tgp_client_user_id;
       if (!pkgId || !clientId) return { claimed: false };
+      // B-661-3: only a pending purchase that has no PaymentIntent yet (a
+      // hosted checkout before completion) can be this PaymentIntent's
+      // purchase. A pending purchase that holds another PaymentIntent (an
+      // open PaymentSheet) belongs to that one: adopting it would overwrite
+      // its PaymentIntent id, and that payment's success could then never
+      // find its purchase.
       const pending = await db.clientPurchase.findFirst({
         where: {
           package_id: pkgId,
           client_user_id: clientId,
           status: 'pending',
+          stripe_payment_intent_id: null,
         },
         orderBy: { created_at: 'desc' },
       });
@@ -1648,15 +2059,13 @@ export class CheckoutWebhookHandlerService {
       // Per PR-16 brief: PI-failed for a never-entitled purchase must NOT
       // cancel drops (none exist anyway; fanout was never run). Skip the
       // cancel call to keep the log line out of the never-entitled path.
-      await db.clientPurchase.update({
-        where: { id: pending.id },
-        data: {
-          status: 'payment_failed',
-          entitlement_active: false,
-          last_error: pi.last_payment_error?.message ?? 'payment_failed',
-          stripe_payment_intent_id: pi.id,
-        },
+      // Compare-and-set: the purchase must still be pending without a
+      // PaymentIntent when the write lands.
+      const adopted = await db.clientPurchase.updateMany({
+        where: { id: pending.id, status: 'pending', stripe_payment_intent_id: null },
+        data: { ...failure, stripe_payment_intent_id: pi.id },
       });
+      if (adopted.count === 0) throw declineRetryLater('purchase_changed', pi.id);
       return { claimed: true, purchase_id: pending.id };
     }
     // B-RECUR-BE R1-7 — the PaymentIntent of a native subscription's first
@@ -1681,30 +2090,119 @@ export class CheckoutWebhookHandlerService {
         reason: 'subscription_invoice_owned_by_invoice_events',
       };
     }
-    // Capture pre-flip entitlement: only entitled purchases have drops
-    // worth canceling. A first-attempt PaymentSheet failure on a still-
-    // pending purchase never minted drops; a later recurring-charge
-    // failure on an already-entitled purchase did. Either way the cancel
-    // call is idempotent — but skipping when wasEntitled=false matches
-    // the brief's "PI-failed-never-entitled does not cancel" semantic
-    // and keeps the log clean.
-    const wasEntitled = !!purchase.entitlement_active;
-    await db.clientPurchase.update({
-      where: { id: purchase.id },
-      data: {
-        status: 'payment_failed',
-        entitlement_active: false,
-        last_error: pi.last_payment_error?.message ?? 'payment_failed',
-      },
-    });
-    if (this.fanout && wasEntitled) {
-      await this.fanout.cancelPendingForPurchase(
-        purchase.id,
-        'payment_failed',
-        (tx ?? (this.prisma as unknown as WebhookTx)),
-      );
+
+    if (PI_FAILED_CLAIMABLE.includes(purchase.status)) {
+      // B-661-3: compare-and-set on a status that may still fail. A success
+      // of this PaymentIntent that commits first makes the count 0 (Postgres
+      // re-checks the predicate after the row lock is released).
+      const wasEntitled = !!purchase.entitlement_active;
+      const claimed = await db.clientPurchase.updateMany({
+        where: { id: purchase.id, status: { in: PI_FAILED_CLAIMABLE } },
+        data: failure,
+      });
+      if (claimed.count === 1) {
+        await this.cancelDropsAfterFailure(purchase.id, wasEntitled, tx);
+        return { claimed: true, purchase_id: purchase.id };
+      }
+      // The purchase moved while this decline was in flight: judge its
+      // current state below.
+      purchase = await db.clientPurchase.findUnique({ where: { id: purchase.id } });
+      if (!purchase) return { claimed: false, reason: 'no_matching_purchase' };
     }
+
+    if (PI_FAILED_NEVER_REWRITES.has(purchase.status)) {
+      return { claimed: true, purchase_id: purchase.id, reason: 'already_final' };
+    }
+    if (PI_FAILED_CLAIMABLE.includes(purchase.status)) {
+      // Moved again between the compare-and-set and the re-read.
+      throw declineRetryLater('purchase_changed', pi.id);
+    }
+
+    // B-661-3: the purchase already settled. The decline is either a late
+    // delivery of an earlier attempt (the PaymentIntent then succeeded) or a
+    // real failure of a payment that was still processing. Only Stripe's
+    // current PaymentIntent status tells them apart. Inside the webhook tx it
+    // comes from the out-of-tx prefetch (never Stripe HTTP in a DB tx); the
+    // no-tx path asks Stripe directly.
+    // Round 4/5: that status is valid only for the purchase version read
+    // before the Stripe call (`seen`). A write since then (a success of this
+    // PaymentIntent among them) makes it stale: Stripe redelivers, the
+    // prefetch reads again. The no-tx path reads the version, then asks.
+    const seen = tx
+      ? prefetched?.paymentIntentWitnessById?.[pi.id]
+      : await this.readPurchaseVersion(this.prisma, purchase.id, false);
+    if (!seen || seen.purchase_id !== purchase.id) {
+      throw declineRetryLater('purchase_changed', pi.id);
+    }
+    const providerStatus = tx
+      ? (prefetched?.paymentIntentStatusById?.[pi.id] ?? null)
+      : await this.lookUpPaymentIntentStatus(pi.id);
+    if (!providerStatus) throw declineRetryLater('payment_intent_status_unknown', pi.id);
+    if (providerStatus === PI_STATUS_UNREADABLE) {
+      // C-661-6: Stripe cannot read this PaymentIntent and never will; the
+      // purchase stays as it is (logged by the lookup with its code).
+      return { claimed: true, purchase_id: purchase.id, reason: 'payment_intent_unreadable' };
+    }
+    if (!PI_STATUS_NOT_COMPLETED.has(providerStatus)) {
+      return { claimed: true, purchase_id: purchase.id, reason: 'stale_failure' };
+    }
+    // A real failure ends access only on the exact version the decision was
+    // made for, checked and written under the row lock (in the webhook tx,
+    // or a short tx of its own on the no-tx path).
+    const settled = purchase;
+    const paymentIntentId = pi.id;
+    const revoke = (client: WebhookTx) =>
+      this.revokeIfUnchanged(client, settled, seen, failure, paymentIntentId);
+    return tx ? revoke(tx) : this.inShortTransaction(revoke);
+  }
+
+  private async revokeIfUnchanged(
+    client: WebhookTx,
+    purchase: ClientPurchase,
+    seen: PurchaseVersion,
+    failure: { status: string; entitlement_active: boolean; last_error: string },
+    paymentIntentId: string,
+  ): Promise<CheckoutWebhookResult> {
+    const now = await this.readPurchaseVersion(client, purchase.id, true);
+    if (!samePurchaseVersion(seen, now)) throw declineRetryLater('purchase_changed', paymentIntentId);
+    const wasEntitled = !!purchase.entitlement_active;
+    const revoked = await client.clientPurchase.updateMany({
+      where: { id: purchase.id, status: seen.status },
+      data: failure,
+    });
+    if (revoked.count === 0) throw declineRetryLater('purchase_changed', paymentIntentId);
+    await this.cancelDropsAfterFailure(purchase.id, wasEntitled, client);
     return { claimed: true, purchase_id: purchase.id };
+  }
+
+  // A short transaction of its own for the no-tx (legacy) path, so a row
+  // lock is held across a check and its write. Test doubles without
+  // $transaction run on the client directly.
+  private async inShortTransaction<T>(run: (client: WebhookTx) => Promise<T>): Promise<T> {
+    if (typeof (this.prisma as { $transaction?: unknown }).$transaction === 'function') {
+      return this.prisma.$transaction((innerTx) => run(innerTx));
+    }
+    return run(this.prisma);
+  }
+
+  // Pre-flip entitlement (captured before the write): only entitled purchases have drops
+  // worth canceling. A first-attempt PaymentSheet failure on a still-
+  // pending purchase never minted drops; a real failure of an already-
+  // entitled purchase (B-661-3: confirmed by Stripe) did. Either way the
+  // cancel call is idempotent — but skipping when wasEntitled=false matches
+  // the brief's "PI-failed-never-entitled does not cancel" semantic
+  // and keeps the log clean.
+  private async cancelDropsAfterFailure(
+    purchaseId: string,
+    wasEntitled: boolean,
+    tx?: WebhookTx,
+  ): Promise<void> {
+    if (!this.fanout || !wasEntitled) return;
+    await this.fanout.cancelPendingForPurchase(
+      purchaseId,
+      'payment_failed',
+      tx ?? (this.prisma as unknown as WebhookTx),
+    );
   }
 
   private async applyInvoicePaid(
@@ -1797,6 +2295,8 @@ export class CheckoutWebhookHandlerService {
             status,
             entitlement_active: entitled,
             ...trial,
+            // B-661-14/15 — same erase as applySubscriptionUpdated; an unsaved trial card keeps them.
+            ...(entitled ? CLEARED_PAYMENT_SECRETS : {}),
             current_period_end: currentPeriodEnd,
             access_expires_at: this.computeAccessExpiry(pkg, fresh, true, currentPeriodEnd),
             last_error: null,

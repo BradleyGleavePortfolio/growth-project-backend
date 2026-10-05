@@ -12,6 +12,8 @@ import { CheckinSubmittedEmitter } from './emitters/checkin-submitted.emitter';
 import { BuildWeekDayUnlockedEmitter } from './emitters/build-week-day-unlocked.emitter';
 import { CoachAlertEmitter } from './emitters/coach-alert.emitter';
 import { BookingEmitter } from './emitters/booking.emitter';
+// C-643-2: device delivery (Expo push) for inbox notifications.
+import { PushDeliveryService } from './push/push-delivery.service';
 // Roman P4 (Option C) — first-payment exactly-once primitive + emitter.
 import { FirstPaymentEmitter } from './emitters/first-payment.emitter';
 import { CoachFirstPaymentService } from './coach-first-payment.service';
@@ -51,6 +53,7 @@ import { VoiceModule } from '../roman/voice/voice.module';
   controllers: [NotificationsController],
   providers: [
     NotificationsService,
+    PushDeliveryService,
     DigestService,
     DigestScheduler,
     MilestoneReachedEmitter,
