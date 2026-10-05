@@ -403,7 +403,8 @@ export class DunningV2Dispatcher {
 
   /** Per-step client subject (F17: v2 has its own `roman_body` templates). */
   private clientEmailSubject(ctx: DispatchContext): string {
-    if (ctx.isLateReversalCycle) return 'Your recent payment was reversed';
+    // B-687-8: true for a dispute and for an inquiry (no reversal claim).
+    if (ctx.isLateReversalCycle) return 'Your plan is paused after a payment dispute or inquiry';
     switch (ctx.stepIndex) {
       case 0:
         return 'Your payment did not go through';
