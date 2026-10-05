@@ -4391,6 +4391,12 @@ model DunningState {
   // looked at cycles first, so rows that keep skipping cannot starve a due
   // cycle behind them.
   sweep_checked_at         DateTime?
+  // D2d (Sol B-705-4): when Stripe confirmed the dispute pause of this cycle
+  // (pause_collection set and open invoices stopped). Null while the pause
+  // is only recorded here: the client is never told billing is paused until
+  // it is, and the v2 sweep re-asserts an unconfirmed pause. Cleared by the
+  // coach restart before Stripe resumes.
+  billing_paused_at        DateTime?
 
   attempts         DunningAttempt[]
   // S-DUNNING-R3 (B-628-6): durable per-channel notice outbox.
@@ -4494,6 +4500,10 @@ model DunningDisputeObligation {
   /// open | won | warning_closed | lost | <other Stripe dispute status>
   status            String
   closed_at         DateTime?
+  /// D2d (Opus B-705-3): the coach restarted the plan with this dispute on
+  /// record. A later closure (lost included) or a redelivered opening of
+  /// this dispute never changes that plan's access again; money still moves.
+  restarted_at      DateTime?
   created_at        DateTime       @default(now())
   updated_at        DateTime       @updatedAt
 

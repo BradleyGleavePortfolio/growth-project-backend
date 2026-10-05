@@ -980,6 +980,10 @@ export class RefundDisputeHandlerService {
           await this.applyLedgerReversal(purchase.id, updated.amount_cents, dispute.charge);
           await this.applyHeadCoachReversal(purchase.id, updated.amount_cents, dispute.charge);
         }
+        // D2d (Opus B-705-3, operator ruling): the plan's coach restarted it
+        // with this dispute on record, so the loss moves money (above) and
+        // leaves the plan's access and status as the coach set them.
+        const restarted = await this.restartedByCoach(dispute.id);
         // PR-16 — entitlement flip + drop-cancel commit atomically.
         // The Stripe-HTTP-ridden ledger / transfer reversals above
         // intentionally run outside this tx (P1-3 anti-pattern). The
@@ -991,6 +995,7 @@ export class RefundDisputeHandlerService {
             where: { id: updated.id },
             data: { ledger_reversed: true },
           });
+          if (restarted) return;
           await tx.clientPurchase.update({
             where: { id: purchase.id },
             data: { status: 'chargeback_lost', entitlement_active: false },
@@ -1073,6 +1078,10 @@ export class RefundDisputeHandlerService {
     // the early-return narrowing across the $transaction lambda).
     const disputeId: string = dispute.id;
     const chargeId: string = dispute.charge;
+    // D2d: a dispute the plan's coach already restarted the plan over never
+    // marks it disputed again (a redelivered or late opening would end the
+    // restored access while billing runs).
+    const mirror = initial && !(await this.restartedByCoach(disputeId));
     let isFirstObservation: boolean;
     let row: ChargeDispute;
     try {
@@ -1089,7 +1098,7 @@ export class RefundDisputeHandlerService {
             evidence_due_by: dueBy,
           },
         });
-        if (initial) {
+        if (mirror) {
           // Mirror the purchase status to 'disputed' in the same tx so
           // a reader who sees the dispute row also sees the purchase
           // marked disputed. WHERE-guarded so re-deliveries are
@@ -1143,7 +1152,7 @@ export class RefundDisputeHandlerService {
             amount_cents: typeof dispute.amount === 'number' ? dispute.amount : undefined,
           },
         });
-        if (initial) {
+        if (mirror) {
           await tx.clientPurchase.updateMany({
             where: {
               id: purchase.id,
@@ -1333,6 +1342,22 @@ export class RefundDisputeHandlerService {
   // Resolve a ClientPurchase from a Stripe charge id by walking the
   // SplitLedgerEntry table (which we populate at charge time with
   // stripe_charge_id).
+  /**
+   * D2d (Opus B-705-3): the coach restarted the plan after this dispute paused
+   * it (DunningDisputeObligation.restarted_at). Read whatever the dunning
+   * flag says. Hand-built legacy test wiring without the model reads false.
+   */
+  private async restartedByCoach(disputeId: string): Promise<boolean> {
+    const obligations: Partial<PrismaService>['dunningDisputeObligation'] =
+      this.prisma.dunningDisputeObligation;
+    if (!obligations) return false;
+    const row = await obligations.findUnique({
+      where: { stripe_dispute_id: disputeId },
+      select: { restarted_at: true },
+    });
+    return row?.restarted_at != null;
+  }
+
   private async resolvePurchaseByCharge(chargeId: string): Promise<ClientPurchase | null> {
     // S-FEE: every settled charge (incl. renewals) has a settlement row.
     const settledPurchaseId = await this.settlements?.purchaseIdForCharge(chargeId);
