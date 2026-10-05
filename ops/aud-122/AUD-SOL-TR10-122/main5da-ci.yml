@@ -1,0 +1,591 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    # Live Redis for the throttler-storage proofs (test/support/live-redis.ts):
+    # the production limiter is the @nest-lab Redis adapter's Lua script behind
+    # withFailOpenStorage, which a mock cannot reproduce. Only the suites that
+    # read THROTTLER_LIVE_REDIS_URL connect to it; REDIS_URL stays unchanged.
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Guard against committed dist/
+        run: |
+          if [ -n "$(git ls-files dist/ 2>/dev/null)" ]; then
+            echo "ERROR: dist/ is committed. Run: git rm -r --cached dist/"
+            exit 1
+          fi
+
+      # R45 — the banned hostname t-g-p dot a-p-p must never appear in source.
+      # Approved storefront domain is joingrowthproject.com; mobile deep-link
+      # is app.trygrowthproject.com. Historical audit artifacts live outside
+      # the repo so the grep below scans only tracked sources.
+      - name: R45 grep gate (no banned hostname in source)
+        run: |
+          if git grep -nI 'tgp\.app' -- ':(exclude)package-lock.json' ':(exclude)node_modules'; then
+            echo "ERROR: R45 violation — the banned hostname appears in source."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Vendor-name guard
+        run: npm run guard:vendors
+
+      - name: Vendor-name guard self-test
+        run: npm run test:guard:vendors
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Lint
+        run: npm run lint --if-present
+
+      - name: Lint control sources
+        shell: bash
+        run: >-
+          npx --no-install eslint --max-warnings 0 scripts/check-r75.js
+          test/ci/r75-gate.spec.ts test/ci/r75-boundaries.spec.ts
+          test/ci/r75-wiring.spec.ts test/ci/r75-enforcement.spec.ts
+          test/ci/r100-pathspec.spec.ts test/ci/dependency-audit.spec.ts
+
+      - name: Type-check
+        run: npx tsc --noEmit
+        env:
+          # ai-triage module type-check needs >2GB heap (cache + cohort batch types).
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        # Jest's default worker pool plus this repo's suite count overruns
+        # Node's ~2GB default heap and OOM-aborts (exit 134) even after the
+        # RLS specs are excluded. Raise the heap; the ubuntu-latest runner has
+        # ~16GB, so 4GB is comfortably safe.
+        run: npm test --if-present
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+          THROTTLER_LIVE_REDIS_URL: redis://localhost:6379/0
+
+      # Confirm the env-validation rules accept a fully-populated prod env.
+      # Catches accidental rule additions that would brick the next deploy
+      # without the operator updating Fly secrets first.
+      - name: Env validation (simulated prod env)
+        env:
+          NODE_ENV: production
+          DATABASE_URL: postgres://ci/ci
+          # DIRECT_URL was promoted to hard tier (PR #238) — required by
+          # `prisma migrate deploy` in the Fly release_command. The simulated
+          # prod env must supply it so this gate doesn't break boot validation.
+          DIRECT_URL: postgres://ci-direct/ci
+          SUPABASE_URL: https://ci.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ci-srk
+          PUBLIC_INVITE_BASE_URL: https://app.example.com/join
+          PUBLIC_WEB_SIGNUP_URL: https://app.example.com/signup
+          APP_STORE_URL: https://apps.apple.com/app/id0
+          PLAY_STORE_URL: https://play.google.com/store/apps/details?id=ci
+          CORS_ORIGINS: https://console.example.com
+          STRIPE_SECRET_KEY: sk_test_ci
+          STRIPE_WEBHOOK_SECRET: whsec_ci
+          STRIPE_PRICE_ID_FITNESS: price_ci
+          SENTRY_DSN: https://ci@sentry.io/1
+          # Pre-Connect cleanup made REDIS_URL production-required: a
+          # multi-machine Fly deploy with no shared throttler can't defend
+          # against credential stuffing. assertEnv refuses prod boot
+          # without it, so the simulated-prod gate must supply a value.
+          REDIS_URL: redis://ci.example.com:6379
+          # Food logger P0 (PR #203) promoted USDA_API_KEY to required:
+          # the search path silently returned [] without it, hiding the
+          # USDA half of the catalogue from coaches in production. The
+          # simulated-prod gate must therefore supply a value.
+          USDA_API_KEY: ci-usda-key
+          # Release-audit P0 (PR #221) added a prod-hardened gate for
+          # the Stripe Checkout redirect URLs: the code defaults to a
+          # growthproject:// mobile deep-link, which would break web
+          # checkouts in production. assertEnv refuses to boot prod
+          # without explicit values, so the simulated-prod gate must
+          # supply them too.
+          STRIPE_CHECKOUT_SUCCESS_URL: https://app.example.com/checkout/success?session_id={CHECKOUT_SESSION_ID}
+          STRIPE_CHECKOUT_CANCEL_URL: https://app.example.com/checkout/cancel
+          # ANTHROPIC_API_KEY is prod-hardened: without it client AI guide
+          # responses silently fall back to deterministic local content
+          # indistinguishable from real AI. assertEnv refuses prod boot
+          # without it, so the simulated-prod gate must supply a value.
+          ANTHROPIC_API_KEY: sk-ant-ci-test
+          # RECENT_AUTH_SECRET / RECENT_AUTH_TTL_MS were promoted to prod
+          # tier by the Phase 10 RecentAuthGuard work (pre-PR commit
+          # f2581a8d) but the simulated-prod CI env block was never
+          # extended, leaving build-and-test red across every open PR.
+          # 32-char minimum on the secret; 60000-3600000ms range on the TTL.
+          RECENT_AUTH_SECRET: ci-recent-auth-secret-32chars-padding
+          RECENT_AUTH_TTL_MS: 900000
+          # GUEST_CHECKOUT_PII_SALT was promoted to prod tier by PR #267
+          # (storefront guest-checkout PII scrub). Pre-stage the variable
+          # in the env-validation gate so #267's merge does not re-break
+          # build-and-test the moment it lands.
+          GUEST_CHECKOUT_PII_SALT: ci-pii-salt-32chars-minimum-padding
+          # STRIPE_PUBLISHABLE_KEY was promoted to prod tier by PR #267
+          # (storefront payment confirmation). Pre-staged for the same
+          # reason as GUEST_CHECKOUT_PII_SALT.
+          STRIPE_PUBLISHABLE_KEY: pk_test_ci
+          # R43 storefront — STOREFRONT_BASE_URL, RESEND_FROM_EMAIL,
+          # APPLE_TEAM_ID, and ANDROID_CERT_SHA256_FINGERPRINTS are
+          # prod-hardened by this PR (#267). Each one's absence in prod
+          # would silently misroute traffic (Universal Links, App
+          # Links, CORS) or drop welcome mail from an unverified
+          # domain. Supply CI stubs so the env-validation gate stays
+          # green once this PR lands on main.
+          STOREFRONT_BASE_URL: https://storefront.example.com
+          RESEND_FROM_EMAIL: 'Growth Project <welcome@trygrowthproject.com>'
+          APPLE_TEAM_ID: TEAMID1234
+          ANDROID_CERT_SHA256_FINGERPRINTS: 'AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99'
+          # KMS_MASTER_KEY was promoted to prod tier by PR #272 (Audit #6
+          # P0-4): KmsService.encrypt() falls back to a PLAINTEXT: marker
+          # prefix when unset, persisting CRM api_token / api_key /
+          # webhook secret values in cleartext. Must be 32 raw bytes
+          # base64-encoded. Supply a CI stub so the env-validation gate
+          # stays green once this PR lands on main.
+          KMS_MASTER_KEY: dGVzdC1rZXktMzItYnl0ZXMtZm9yLXVuaXQtdGVzdGluZw==
+          # LANDING_VIEW_HASH_SECRET was promoted to prod tier by PR #272
+          # (Audit #6 P1-2): LandingPagesPublicService.dailySalt() falls
+          # back to a hard-coded 'landing-views-daily-salt' constant when
+          # unset, making the per-visitor hash predictable and trivially
+          # re-identifiable.
+          LANDING_VIEW_HASH_SECRET: ci-landing-view-hash-secret-32chars-padding
+          # CHECKOUT_RECOVERY_SECRET was promoted to prod tier with a 43-char
+          # floor (RFC 7518 §3.2) by fix-3-env (audit A276-F3-P2-1). Signs the
+          # 15-minute checkout recovery JWT AND the 7-day guest session cookie.
+          # The simulated-prod env-validation gate must supply a ≥43-char value.
+          CHECKOUT_RECOVERY_SECRET: ci-checkout-recovery-secret-43chars-base64url-pad
+          # Stream 1 (PR #298) promoted COACH_AI_MAX_ACTUAL_CENTS and
+          # COACH_AI_VALUE_MULTIPLIER to prod tier: assertEnv refuses prod
+          # boot without explicit values so a deploy-time typo cannot
+          # silently revert the hard $40 cap or the locked 3.125× display
+          # multiplier to a stale default. Supply CI stubs so this gate
+          # stays green once Stream 1 is on main. Refs:
+          # STREAM_1_AI_CREDITS_SPEC.md §0.
+          COACH_AI_MAX_ACTUAL_CENTS: '4000'
+          COACH_AI_VALUE_MULTIPLIER: '3.125'
+        run: node -e "require('./dist/common/env-validation').assertEnv()"
+
+  rls-floor-guard:
+    # PR-RLS-01 (audit P1-002): the relrowsecurity floor guard must be
+    # called by an actual workflow step or it protects nothing. The script
+    # itself is soft until RLS_ENFORCEMENT_FULL is flipped to 'on' after
+    # PR-RLS-08 lands, but it MUST be invoked unconditionally so the gate
+    # exists and the table-count trends are surfaced in CI logs.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install postgresql-client
+        # Required by scripts/ci/check-relrowsecurity.sh. Once
+        # RLS_ENFORCEMENT_FULL=on, the script hard-fails if psql is missing
+        # (audit P2-007); installing it here keeps the guard meaningful.
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: RLS floor guard (soft until PR-RLS-08)
+        env:
+          # DATABASE_URL_AUDIT is a read-only Postgres URL to the project
+          # whose floor we want to measure. The script soft-skips when this
+          # secret is unset, so CI stays green for forks without secrets.
+          DATABASE_URL: ${{ secrets.DATABASE_URL_AUDIT }}
+          # Flip to 'on' in the workflow after PR-RLS-08 merges and the
+          # advisor returns zero rls_disabled_in_public lints.
+          RLS_ENFORCEMENT_FULL: 'off'
+        run: bash scripts/ci/check-relrowsecurity.sh
+
+  rls-live-tests:
+    # PR-RLS-01 (audit R1-P1-002): the live RLS helper regression suite was
+    # skipped in the default PR gate because build-and-test runs `npm test`
+    # with no TEST_DATABASE_URL, so every behavioral RLS assertion
+    # (positive/negative helper paths, ACL lockdown, trigger cap, hostile
+    # search_path + pg_temp relation-shadow) was silently skipped.
+    #
+    # This job provisions a real Postgres 15 service container, applies the
+    # Supabase CI shim + a scoped RLS-01 bootstrap + the PR-RLS-01 migration,
+    # exports TEST_DATABASE_URL, and runs only test/rls. The suite HARD-FAILS
+    # (not skips) if the DB is configured-but-unreachable, so a broken DB can
+    # never read as green.
+    #
+    # NOTE on schema setup: this job predates the S1 synthetic replay
+    # (2026-09-20, PG 17.6: the full chain replayed 165/165 from empty on a
+    # Supabase-like bootstrap, see execution/s1-database in the evidence
+    # archive). That replay measures the chain, NOT production history, so
+    # this job still does not `prisma migrate deploy` over the whole chain; we
+    # materialize only the objects PR-RLS-01 touches (scripts/ci/*.sql) and
+    # then apply THIS PR's migration verbatim, so the live suite asserts
+    # against the real migration output. See scripts/ci/rls01-live-bootstrap.sql.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        # Wait for the container to accept connections before steps run.
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Both URLs point at the service container. DIRECT_URL is what
+      # `prisma migrate deploy` uses; TEST_DATABASE_URL is what the live
+      # suite connects with.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      # connection_limit=1 pins the live suite's Prisma pool to a single
+      # backend connection. The suite sets session GUCs (app.current_user_id /
+      # app.current_user_role) via set_config(..., is_local=false) and reads
+      # them back in a later auto-committed statement; with the default
+      # multi-connection pool those reads can land on a different backend that
+      # never had the GUC set, so app.is_owner() intermittently sees NULL role
+      # and returns false. One connection makes the session state stable.
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres?connection_limit=1
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Install postgresql-client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Apply Supabase CI shim (roles + auth.uid)
+        # Vanilla Postgres has no anon/authenticated/service_role roles and no
+        # auth schema; the shim creates them so the migration's GRANTs to those
+        # roles apply cleanly. CI-only — never run against a real Supabase DB.
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/ci/supabase-shim.sql
+
+      - name: Bootstrap RLS-01 schema (User + TeamSubCoachAssignment + dep helper)
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/ci/rls01-live-bootstrap.sql
+
+      - name: Apply the PR-RLS-01 migration (the five hardened helpers)
+        # Apply THIS PR's migration verbatim so the live suite asserts against
+        # the real migration output, not a copy.
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20260704000000_rls01_helper_searchpath_hibp/migration.sql
+
+      - name: Bind the head-cap trigger
+        # CREATE OR REPLACE FUNCTION in the migration preserves an existing
+        # trigger binding by OID in production, but a fresh CI DB has no prior
+        # trigger, so create it here against the hardened function.
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c \
+            'CREATE TRIGGER trg_enforce_subcoach_head_cap BEFORE INSERT OR UPDATE ON "TeamSubCoachAssignment" FOR EACH ROW EXECUTE FUNCTION enforce_subcoach_head_cap();'
+
+      - name: Bootstrap + apply the clinic onboarding intake migration (B607-3)
+        # Minimal extra relations the intake audience helper reads, then the
+        # onboarding migration VERBATIM (tables, helper, policies), then the
+        # Supabase-default table grants so RLS (not a missing GRANT) decides.
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/ci/onboarding-intake-live-bootstrap.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20270212000000_clinic_onboarding_intake/migration.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/ci/onboarding-intake-live-grants.sql
+
+      - name: Bootstrap + apply the clinic engagement migration (#609)
+        # Minimal NotificationPreferences and CoachMessage (the migration adds
+        # columns to both) and "User".deletion_scheduled_at, then the
+        # engagement migration VERBATIM (three tables and their RLS policies),
+        # then the Supabase-default table grants so RLS (not a missing GRANT)
+        # decides. Runs after the onboarding step, which adds "User".deleted_at.
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/ci/clinic-engagement-live-bootstrap.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20270213000000_clinic_engagement/migration.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/ci/clinic-engagement-live-grants.sql
+
+      - name: Run live RLS regression suite
+        # Use the dedicated rls-live jest config (jest.rls.config.js), which
+        # selects the DB-requiring RLS specs the default build-and-test job now
+        # excludes. We still pass an explicit path filter so this job runs ONLY
+        # the PR-RLS-01 helper suite: the other test/rls-*.spec.ts policy suites
+        # need the full schema this scoped bootstrap does not build (see the
+        # bootstrap steps above), so they stay out until that bootstrap grows.
+        # --runInBand so the GUC/search_path session state is not interleaved
+        # across workers on one connection. NODE_OPTIONS raises the heap: even
+        # this single spec under --runInBand overruns Node's ~2GB default and
+        # OOM-aborts (exit 134); the runner has ~16GB so 4GB is safe.
+        run: npx jest --config jest.rls.config.js test/rls/helper-functions.spec.ts test/rls/onboarding-intake-rls.spec.ts --runInBand --testTimeout=60000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Run AI consent ledger live RLS suite (R2a)
+        # Applies prisma/migrations/20270203000000_ai_processing_consent_ledger
+        # verbatim on top of the shim + RLS-01 bootstrap + hardened helpers
+        # above, then proves self-only reads (client vs stranger vs the client's
+        # coach vs the application owner role vs anon), no non-service writes,
+        # the append-only trigger, CHECK/unique/FK behaviour and down/up. The
+        # spec refuses to skip under CI=true (Sol B-R2-1 on #601: the consent
+        # RLS suite must actually execute in a required job).
+        run: npx jest --config jest.rls.config.js test/rls/ai-processing-consent-ledger-rls.spec.ts --runInBand --testTimeout=60000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Run clinic engagement live RLS suite (#609)
+        # Proves the 20270213000000 policies on the real migration output:
+        # RLS enabled + forced, the exact policy set, who reads which rows
+        # (coach-self welcome setting, owner-only welcome jobs, client-self
+        # reminder ledger), anon denied, no INSERT / UPDATE / DELETE for any
+        # non-service principal, service_role read/write, column defaults and
+        # the idempotency unique keys (incl. CoachMessage.welcome_job_id), and
+        # that the reminder claim's FOR SHARE eligibility lock blocks a
+        # concurrent deletion UPDATE. Refuses to skip under CI=true.
+        run: npx jest --config jest.rls.config.js test/rls/clinic-engagement-rls.spec.ts --runInBand --testTimeout=60000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Run data-exports bucket fence + verifier live suite (A-636-1)
+        # Builds a Supabase-like storage schema (RLS on, broad API-role grants),
+        # applies prisma/migrations/20270221000000_data_export_storage_bucket
+        # {migration,verify,down}.sql verbatim and proves anon/authenticated/
+        # custom roles see zero data-exports objects even under `OR true`
+        # policies, and that the release verifier fails on every exposing
+        # state (fence dropped/altered, RLS off, public bucket, RLS-escaping
+        # roles or views, service_role without BYPASSRLS). Refuses to skip
+        # under CI=true.
+        run: npx jest --config jest.rls.config.js test/rls/data-export-storage-bucket-rls.spec.ts --runInBand --testTimeout=60000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+  community-live-tests:
+    # C-610-4 (#610 fix round 2, T4 CI gate change): the DB-backed community
+    # moderation/safety suites were env-gated on COMMUNITY_TEST_DATABASE_URL
+    # and never ran in CI (green-by-skip). Voice notes launch ON, so the
+    # report -> review -> action loop, the wins RLS proof (A-610-2) and the
+    # community e2e suites must execute against a real database.
+    #
+    # Same Postgres 15 service as rls-live-tests. Unlike that job's scoped
+    # bootstrap, this one applies the Supabase-equivalent bootstrap and then
+    # the WHOLE migration chain with `prisma migrate deploy` (the same command
+    # the Fly release runs, as migration-dry-run does), so the suites assert
+    # against the real migration output, including 20270211000000.
+    # The pg-driver scratch-schema suites (test/community/rls/community-rls,
+    # schema, test/rls/community-*) need the optional `pg` driver and their own
+    # migration replay, so they are not part of this job.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      # The var every community live suite connects with AND gates on.
+      COMMUNITY_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      # SupabaseService builds a client at construction; nothing here reaches
+      # it (storage calls fail closed and are best-effort in these paths).
+      SUPABASE_URL: http://127.0.0.1:54321
+      SUPABASE_SERVICE_ROLE_KEY: ci-community-live-tests-not-a-secret
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Install postgresql-client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Bootstrap Supabase-equivalent environment (CI only)
+        # auth schema + anon/authenticated/service_role roles, idempotent;
+        # the same script migration-dry-run uses. Never run against Supabase.
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/_supabase_bootstrap.sql
+
+      - name: Apply all migrations (prisma migrate deploy)
+        run: npx prisma migrate deploy
+
+      - name: Run community live suites
+        # --runInBand: the suites share one database. 4GB heap as in
+        # rls-live-tests (Nest + ts-jest under --runInBand overruns 2GB).
+        run: >-
+          npx jest
+          test/community/rls/community-wins-rls.live.spec.ts
+          test/community/rls/community-message-shape.live.spec.ts
+          test/community/community-moderation.e2e.spec.ts
+          test/community/community-reactions.e2e.spec.ts
+          test/community/community-dms.e2e.spec.ts
+          test/community/community-foundation.e2e.spec.ts
+          test/community/community-plan-context.e2e.spec.ts
+          test/community/community-posts.e2e.spec.ts
+          test/community/community-messages.e2e.spec.ts
+          test/community/events/community-events.e2e.spec.ts
+          --runInBand --testTimeout=60000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+  mwb-3-live-tests:
+    # MWB-3 R2 (audit P1): the MWB-3 autosave/undo live suite was skip-gated on
+    # MWB3_TEST_DATABASE_URL and never ran in CI, so the sub-coach authorization
+    # gate, the optimistic lock-token enforcement, the real undo/redo path, the
+    # revision-prune retention invariants, and the RLS + concurrency proof were
+    # all green-by-skip. This dedicated job provisions its own Postgres 15
+    # service, exports MWB3_TEST_DATABASE_URL, and runs the full MWB-3 live suite
+    # so those trust-surface assertions execute as a required CI check.
+    #
+    # Unlike rls-live-tests, NO psql bootstrap is needed: every MWB-3 live spec
+    # self-materialises a Prisma-faithful schema in its own beforeAll via
+    # test/utils/bootstrap-test-schema.ts (DROP SCHEMA public CASCADE + a
+    # `prisma migrate diff --from-empty` apply) and the RLS spec defensively
+    # creates the Supabase-convention roles it needs. The throwaway DB is
+    # selected EXCLUSIVELY via MWB3_TEST_DATABASE_URL (never the app DATABASE_URL),
+    # which is exactly the env var those specs gate on. Each spec wipes and
+    # rebuilds the schema, so the suite runs --runInBand to serialise the
+    # DROP/CREATE against the single shared database.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # DATABASE_URL/DIRECT_URL satisfy Prisma CLI invocations (generate / the
+      # migrate-diff inside bootstrap-test-schema). MWB3_TEST_DATABASE_URL is the
+      # var the MWB-3 live specs connect with AND gate on: setting it flips every
+      # `describe.skip` lane to a real run. It points at the same throwaway
+      # service container, which the specs reset (DROP SCHEMA public CASCADE)
+      # before each bootstrap.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      MWB3_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Install postgresql-client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Provision the RLS-bound app_authenticated role
+        # test/rls-mwb3-autosave-undo.spec.ts (Part A, matrix #13) GRANTs table +
+        # schema-app privileges TO app_authenticated and reads WorkoutPlanRevision
+        # under SET LOCAL ROLE app_authenticated. That login-less, RLS-bound role
+        # pre-exists on a real Supabase database; the spec's own PREREQ_SQL
+        # defensively creates the Supabase-convention roles (anon/authenticated/
+        # service_role) but NOT app_authenticated, so we create it here. NOLOGIN
+        # NOINHERIT NOBYPASSRLS so RLS is genuinely enforced against it (matching
+        # the Supabase shim's posture for the authenticated role).
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c \
+            "DO \$do\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_authenticated') THEN CREATE ROLE app_authenticated NOLOGIN NOINHERIT NOBYPASSRLS; END IF; END \$do\$;"
+
+      - name: Run MWB-3 autosave/undo live suite (default-lane specs)
+        # Also runs test/profile-put-concurrency.live.spec.ts (#606 B606-3): the
+        # PUT /profile per-user row-lock proof on real Postgres. It uses the same
+        # MWB3_TEST_DATABASE_URL gate and the same reset + full-schema bootstrap.
+        # And test/onboarding-tenancy-fence.live.spec.ts (#607 A607-3): the
+        # completion tenancy fence (User FOR SHARE) blocks a concurrent coach
+        # transfer on real Postgres; same gate and bootstrap.
+        # And test/checkout-settlement.live.spec.ts (#661 C-661-12): payment
+        # settlement row versions, row locks and recovery on real Postgres.
+        # The five test/mwb-3-*.spec.ts files run under the DEFAULT jest config
+        # (jest.config.js matches them via testRegex). With MWB3_TEST_DATABASE_URL
+        # set they execute their live blocks instead of skipping. --runInBand so
+        # the per-file DROP SCHEMA public CASCADE + full-schema rebuild never race
+        # on the shared DB. NODE_OPTIONS raises the heap (same rationale as the
+        # other lanes: the default ~2GB heap OOM-aborts under --runInBand).
+        run: |
+          npx jest \
+            test/mwb-3-lock-token.spec.ts \
+            test/mwb-3-autosave.controller.spec.ts \
+            test/mwb-3-autosave.service.spec.ts \
+            test/mwb-3-undo.spec.ts \
+            test/mwb-3-revision-prune.cron.spec.ts \
+            test/profile-put-concurrency.live.spec.ts \
+            test/onboarding-tenancy-fence.live.spec.ts \
+            test/checkout-settlement.live.spec.ts \
+            --runInBand --testTimeout=120000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Run MWB-3 RLS + concurrency live spec (rls-lane spec)
+        # test/rls-mwb3-autosave-undo.spec.ts lives in the RLS lane
+        # (jest.rls.config.js testMatch test/rls-*.spec.ts; the default config
+        # ignores it). It applies the MWB-1 RLS migration itself and creates the
+        # Supabase-convention roles defensively, so it needs only a reachable DB
+        # via MWB3_TEST_DATABASE_URL. Run it via the RLS config so it is matched.
+        run: npx jest --config jest.rls.config.js test/rls-mwb3-autosave-undo.spec.ts --runInBand --testTimeout=120000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Run Roman delete-erases live spec (#635 B-635-1 / C-635-1)
+        # test/roman/roman-session-erase.live.spec.ts: on real Postgres, a
+        # deleted Roman chat frees the (user, surface, day) unique key so a
+        # fresh session opens the same day, concurrent opens converge, a late
+        # append to the deleted session is refused, the daily cap survives
+        # delete + reopen, and pre-upgrade soft-deleted rows are erased. Same
+        # MWB3_TEST_DATABASE_URL gate and reset + full-schema bootstrap; its own
+        # step so it never edits the shared default-lane spec list.
+        run: npx jest test/roman/roman-session-erase.live.spec.ts --runInBand --testTimeout=120000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096

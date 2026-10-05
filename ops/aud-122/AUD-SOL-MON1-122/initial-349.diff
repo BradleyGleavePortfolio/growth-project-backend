@@ -1,0 +1,2907 @@
+diff --git a/src/components/coach/money/MoneyHomeCard.tsx b/src/components/coach/money/MoneyHomeCard.tsx
+new file mode 100644
+index 0000000..a23f7d9
+--- /dev/null
++++ b/src/components/coach/money/MoneyHomeCard.tsx
+@@ -0,0 +1,285 @@
++/**
++ * S-COACH-MOB-2 — the Money card on the coach Home: net to you over the last
++ * 30 days, the change on the 30 days before, and a red count of what needs
++ * attention. Tapping it opens the full Money page. Before Stripe is set up
++ * the card offers the setup action instead of empty numbers.
++ * Data: GET /v1/coach/money/summary (30d + compare), GET /coach/connect/status.
++ */
++import React, {
++  useCallback,
++  useEffect,
++  useMemo,
++  useRef,
++  useState,
++} from "react";
++import {
++  ActivityIndicator,
++  StyleSheet,
++  Text,
++  TouchableOpacity,
++  View,
++} from "react-native";
++import { useFocusEffect } from "@react-navigation/native";
++import { useTheme, ThemeColors } from "../../../theme/ThemeProvider";
++import { coachMoneyApi, type MoneySummary } from "../../../api/coachMoneyApi";
++import { coachSetupApi, type ConnectView } from "../../../api/coachSetupApi";
++import {
++  describeError,
++  isSubCoachBillingBlocked,
++  type FriendlyError,
++} from "../../../lib/coachSetup/errors";
++import { changeLine, money } from "../../../lib/money/moneyCopy";
++import { noteHeadCoachHandlesMoney } from "../../../lib/money/headCoachRole";
++import { useNetworkStatus } from "../../../hooks/useNetworkStatus";
++import SetupNotice from "../setup/SetupNotice";
++
++interface Props {
++  onOpenMoney: () => void;
++  onSetUpStripe: () => void;
++}
++
++export default function MoneyHomeCard({ onOpenMoney, onSetUpStripe }: Props) {
++  const { colors } = useTheme();
++  const styles = useMemo(() => makeStyles(colors), [colors]);
++  const { isOnline } = useNetworkStatus();
++  const [summary, setSummary] = useState<MoneySummary | null>(null);
++  const [connect, setConnect] = useState<ConnectView | null>(null);
++  const [error, setError] = useState<FriendlyError | null>(null);
++  const [loading, setLoading] = useState(true);
++  const [loadedAt, setLoadedAt] = useState<number | null>(null);
++  // C-332-1 (Opus): an active sub-coach's money is the head coach's.
++  const [headCoachHandles, setHeadCoachHandles] = useState(false);
++
++  // C-332-13 (Opus): every focus reloads, so only the newest load may write,
++  // and nothing writes after the card unmounts (sign-out swaps the stack).
++  const seq = useRef(0);
++  const alive = useRef(true);
++  useEffect(() => {
++    alive.current = true;
++    return () => {
++      alive.current = false;
++    };
++  }, []);
++
++  const load = useCallback(async () => {
++    const mine = ++seq.current;
++    setLoading(true);
++    setError(null);
++    const [s, c] = await Promise.allSettled([
++      coachMoneyApi.summary("30d"),
++      coachSetupApi.connectStatus(),
++    ]);
++    if (!alive.current || mine !== seq.current) return;
++    if (s.status === "fulfilled") {
++      setSummary(s.value);
++      setLoadedAt(Date.now());
++      setHeadCoachHandles(false);
++      noteHeadCoachHandlesMoney(false);
++    } else if (isSubCoachBillingBlocked(s.reason)) {
++      setHeadCoachHandles(true);
++      noteHeadCoachHandlesMoney(true);
++    } else {
++      setError(describeError(s.reason, "load your Money numbers"));
++    }
++    if (c.status === "fulfilled") setConnect(c.value);
++    setLoading(false);
++  }, []);
++
++  useFocusEffect(
++    useCallback(() => {
++      void load();
++    }, [load]),
++  );
++
++  const notStarted =
++    connect !== null &&
++    connect.state === "not_started" &&
++    (summary?.totals.chargeCount ?? 0) === 0;
++  const attention = summary?.attentionCount ?? 0;
++  const lastLoaded = loadedAt
++    ? new Date(loadedAt).toLocaleTimeString(undefined, {
++        hour: "numeric",
++        minute: "2-digit",
++      })
++    : null;
++  const otherCurrencies = (summary?.currencies ?? []).filter(
++    (c) => c !== summary?.currency,
++  );
++
++  if (headCoachHandles) {
++    return (
++      <View
++        ph-no-capture
++        style={styles.card}
++        testID="money-home-card-head-coach"
++        accessible
++        accessibilityLabel="Money is handled by your head coach. Their practice takes payments and receives payouts for the clients you coach."
++      >
++        <Text style={styles.title}>Money</Text>
++        <Text style={styles.sub}>
++          Your head coach&apos;s practice takes payments and receives payouts
++          for the clients you coach.
++        </Text>
++      </View>
++    );
++  }
++
++  return (
++    <View ph-no-capture style={styles.card} testID="money-home-card">
++      <TouchableOpacity
++        onPress={onOpenMoney}
++        accessibilityRole="button"
++        accessibilityLabel={
++          summary
++            ? `Money. Net to you, last 30 days: ${money(
++                summary.totals.netCents,
++                summary.currency,
++              )}.${
++                attention > 0
++                  ? ` ${attention} ${attention === 1 ? "thing needs" : "things need"} your attention.`
++                  : ""
++              } Open Money`
++            : "Open Money"
++        }
++        testID="money-home-card-open"
++      >
++        <View style={styles.head}>
++          <Text style={styles.title}>Money</Text>
++          {attention > 0 ? (
++            <View style={styles.badge} testID="money-home-card-attention">
++              <Text style={styles.badgeText}>
++                {attention} need{attention === 1 ? "s" : ""} attention
++              </Text>
++            </View>
++          ) : null}
++        </View>
++        {summary ? (
++          <>
++            <Text style={styles.eyebrow}>Net to you, last 30 days</Text>
++            <Text style={styles.amount} testID="money-home-card-net">
++              {money(summary.totals.netCents, summary.currency)}
++            </Text>
++            {changeLine(
++              "30d",
++              summary.changeCents,
++              summary.changePct,
++              summary.currency,
++            ) ? (
++              <Text style={styles.sub}>
++                {changeLine(
++                  "30d",
++                  summary.changeCents,
++                  summary.changePct,
++                  summary.currency,
++                )}
++              </Text>
++            ) : null}
++            {otherCurrencies.length > 0 ? (
++              <Text style={styles.sub} testID="money-home-card-currencies">
++                {`In ${summary.currency.toUpperCase()}. You also have sales in ${otherCurrencies
++                  .map((c) => c.toUpperCase())
++                  .join(", ")}; open Money to see each.`}
++              </Text>
++            ) : null}
++            {!isOnline ? (
++              <Text style={styles.sub} testID="money-home-card-offline">
++                {lastLoaded
++                  ? `You are offline. These are the numbers from ${lastLoaded}.`
++                  : "You are offline. These are the last numbers loaded."}
++              </Text>
++            ) : error ? (
++              <Text style={styles.sub} testID="money-home-card-stale">
++                {lastLoaded
++                  ? `These are the numbers from ${lastLoaded}. They could not be refreshed.`
++                  : "These numbers could not be refreshed."}
++              </Text>
++            ) : null}
++          </>
++        ) : loading ? (
++          <ActivityIndicator
++            color={colors.primary}
++            accessibilityLabel="Loading Money"
++          />
++        ) : null}
++      </TouchableOpacity>
++      {error && (!summary || isOnline) ? (
++        <SetupNotice
++          error={error}
++          onRetry={() => void load()}
++          testID="money-home-card-error"
++        />
++      ) : null}
++      {notStarted ? (
++        <TouchableOpacity
++          onPress={onSetUpStripe}
++          style={styles.setup}
++          accessibilityRole="button"
++          accessibilityLabel="Connect Stripe so clients can pay you"
++          testID="money-home-card-setup"
++        >
++          <Text style={styles.setupText}>
++            Connect Stripe so clients can pay you
++          </Text>
++        </TouchableOpacity>
++      ) : null}
++    </View>
++  );
++}
++
++const makeStyles = (colors: ThemeColors) =>
++  StyleSheet.create({
++    card: {
++      borderWidth: 1,
++      borderColor: colors.border,
++      backgroundColor: colors.surface,
++      padding: 16,
++      marginBottom: 16,
++    },
++    head: {
++      flexDirection: "row",
++      alignItems: "center",
++      justifyContent: "space-between",
++      marginBottom: 8,
++    },
++    title: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 17,
++      color: colors.textPrimary,
++    },
++    badge: {
++      backgroundColor: colors.error,
++      paddingHorizontal: 10,
++      paddingVertical: 4,
++      borderRadius: 12,
++    },
++    badgeText: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 13,
++      color: colors.textOnPrimary,
++    },
++    eyebrow: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 12,
++      letterSpacing: 0.6,
++      textTransform: "uppercase",
++      color: colors.textSecondary,
++    },
++    amount: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 30,
++      color: colors.textPrimary,
++      marginVertical: 2,
++    },
++    sub: {
++      fontFamily: "Inter_400Regular",
++      fontSize: 13,
++      lineHeight: 18,
++      color: colors.textSecondary,
++    },
++    setup: { minHeight: 44, justifyContent: "center", marginTop: 8 },
++    setupText: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 14,
++      color: colors.primary,
++    },
++  });
+diff --git a/src/components/coach/setup/__tests__/coachSetupRound2.test.tsx b/src/components/coach/setup/__tests__/coachSetupRound2.test.tsx
+index 680ce38..a7d047a 100644
+--- a/src/components/coach/setup/__tests__/coachSetupRound2.test.tsx
++++ b/src/components/coach/setup/__tests__/coachSetupRound2.test.tsx
+@@ -386,6 +386,37 @@ describe("C-329-2 / C-329-4 checklist from server data", () => {
+   });
+ });
+ 
++describe("C-332-1 (Opus) an active sub-coach gets no setup checklist", () => {
++  it("the guard's 403 hides the checklist instead of a permanent error card", async () => {
++    mockList.mockResolvedValue({ data: [] });
++    const blocked = () => {
++      throw httpError(403, {
++        kind: "sub_coach_billing_blocked",
++        message: "Sub-coaches cannot access billing or financial surfaces.",
++      });
++    };
++    routeGets({
++      "/coach/connect/status": blocked,
++      "/coach/clients": () => [],
++      "/v1/coach/money/charges": blocked,
++    });
++    const s = await loadSetupStatus("coach_1");
++    expect(s.headCoachHandlesMoney).toBe(true);
++    expect(s.errors.map((e) => e.title)).not.toContain(
++      "Only the coach who owns this practice can do that",
++    );
++    const { queryByTestId } = await render(
++      <CoachSetupChecklist onOpen={jest.fn()} />,
++    );
++    await waitFor(() => expect(mockGet).toHaveBeenCalled());
++    await waitFor(() =>
++      expect(queryByTestId("coach-setup-checklist-loading")).toBeNull(),
++    );
++    expect(queryByTestId("coach-setup-checklist")).toBeNull();
++    expect(queryByTestId("coach-setup-checklist-error")).toBeNull();
++  });
++});
++
+ describe("A-329-1 checklist never opens the retired Earnings screen", () => {
+   it("the first-payment item opens a live screen before and after the payment", async () => {
+     mockList.mockResolvedValue({ data: [] });
+diff --git a/src/components/command-center/AlertRow.tsx b/src/components/command-center/AlertRow.tsx
+index 13b66da..7ccf6ad 100644
+--- a/src/components/command-center/AlertRow.tsx
++++ b/src/components/command-center/AlertRow.tsx
+@@ -38,6 +38,10 @@ interface AlertRowProps {
+   bucket?: RiskBucket;
+   onPress: () => void;
+   onDismiss?: () => void;
++  /** Lines of `message` before it truncates (default 3). */
++  messageLines?: number;
++  /** Visible label for what tapping the row does, e.g. "Message Sam". */
++  actionLabel?: string;
+   testID?: string;
+   style?: ViewStyle;
+ }
+@@ -48,6 +52,8 @@ export default function AlertRow({
+   bucket,
+   onPress,
+   onDismiss,
++  messageLines = 3,
++  actionLabel,
+   testID,
+   style,
+ }: AlertRowProps) {
+@@ -59,7 +65,9 @@ export default function AlertRow({
+       onPress={onPress}
+       testID={testID ?? 'command-center-at-risk-row'}
+       accessibilityRole="button"
+-      accessibilityLabel={`${clientName}. ${bucketLabel ? `${bucketLabel}. ` : ''}${message}`}
++      accessibilityLabel={`${clientName}. ${bucketLabel ? `${bucketLabel}. ` : ''}${message}${
++        actionLabel ? ` ${actionLabel}.` : ''
++      }`}
+       style={[styles.row, { borderLeftColor: accent }, style]}
+       activeOpacity={0.75}
+     >
+@@ -77,9 +85,12 @@ export default function AlertRow({
+             </Text>
+           ) : null}
+         </View>
+-        <Text style={styles.message} numberOfLines={3}>
++        <Text style={styles.message} numberOfLines={messageLines}>
+           {message}
+         </Text>
++        {actionLabel ? (
++          <Text style={styles.actionLabel}>{actionLabel}</Text>
++        ) : null}
+       </View>
+       {onDismiss ? (
+         <TouchableOpacity
+@@ -132,6 +143,12 @@ const styles = StyleSheet.create({
+     color: colors.charcoal,
+     lineHeight: 20,
+   },
++  actionLabel: {
++    ...typography.bodySmall,
++    color: colors.forest,
++    fontWeight: '600',
++    marginTop: spacing.xs,
++  },
+   dismissButton: {
+     marginLeft: spacing.sm,
+     paddingHorizontal: spacing.sm,
+diff --git a/src/components/command-center/KpiTile.tsx b/src/components/command-center/KpiTile.tsx
+index f2f87f0..881ca20 100644
+--- a/src/components/command-center/KpiTile.tsx
++++ b/src/components/command-center/KpiTile.tsx
+@@ -67,7 +67,8 @@ const styles = StyleSheet.create({
+   },
+   label: {
+     ...typography.eyebrow,
+-    color: colors.stone,
++    // charcoal on cream is ~7.4:1 (WCAG AA); stone was ~2.1:1.
++    color: colors.charcoal,
+     marginBottom: spacing.xs,
+   },
+   value: {
+@@ -76,7 +77,7 @@ const styles = StyleSheet.create({
+   },
+   subtext: {
+     ...typography.bodySmall,
+-    color: colors.stone,
++    color: colors.charcoal,
+     marginTop: 2,
+   },
+ });
+diff --git a/src/navigation/CoachNavigator.tsx b/src/navigation/CoachNavigator.tsx
+index dfee7ee..95ca22e 100644
+--- a/src/navigation/CoachNavigator.tsx
++++ b/src/navigation/CoachNavigator.tsx
+@@ -29,10 +29,8 @@ import CoachPackagesListScreen from '../screens/coach/payments/CoachPackagesList
+ import CoachPackageEditScreen from '../screens/coach/payments/CoachPackageEditScreen';
+ import CoachPackageSubscribersScreen from '../screens/coach/payments/CoachPackageSubscribersScreen';
+ import CoachPackageContentsScreen from '../screens/coach/payments/CoachPackageContentsScreen';
+-// NOTE: payments/CoachEarningsScreen exists on disk (from feat branch) but
+-// is intentionally not imported — the main `CoachEarningsScreen` (imported
+-// below from `../screens/coach/CoachEarningsScreen`) is the production
+-// surface for the `CoachEarnings` route.
++// The `CoachEarnings` route redirects to TGP Money (screens/coach/money),
++// the production money surface (the old earnings screens are deleted).
+ import BloodworkReviewQueueScreen from '../screens/coach/BloodworkReviewQueueScreen';
+ import TrustCenterScreen from '../screens/TrustCenterScreen';
+ // Wave 11 — runtime scaffolding. The screen registrations below only mount
+@@ -95,11 +93,14 @@ import CoachSetupScreen from '../screens/coach/setup/CoachSetupScreen';
+ // draft.assign_workout, draft.assign_meal_plan, draft.send_notification).
+ import PendingAiDraftsScreen from '../screens/coach/PendingAiDraftsScreen';
+ // TestFlight coach SaaS — new business & team surfaces + invite redeemer drilldown.
+-import CoachBusinessMetricsScreen from '../screens/coach/CoachBusinessMetricsScreen';
+ // Payments — earnings/payouts (backend PR #216). Package CRUD is the
+ // `CoachPackagesList`/`CoachPackageEdit`/`CoachPackageSubscribers` family
+ // from `screens/coach/payments/*`, imported above.
+-import CoachEarningsScreen from '../screens/coach/CoachEarningsScreen';
++import MoneyScreen from '../screens/coach/money/MoneyScreen';
++import MoneyChargesScreen from '../screens/coach/money/MoneyChargesScreen';
++import MoneyChargeScreen from '../screens/coach/money/MoneyChargeScreen';
++import MoneyRedirect from '../screens/coach/money/MoneyRedirect';
++import type { ChargeFilter } from '../api/coachMoneyApi';
+ import CoachTeamProfileScreen from '../screens/coach/CoachTeamProfileScreen';
+ import InviteCodeRedeemersScreen from '../screens/coach/InviteCodeRedeemersScreen';
+ // Phase 9 — Notification center
+@@ -219,6 +220,7 @@ export type SettingsStackParamList = {
+   /** Importer v0.3 — coach-facing extension import entry (flag-gated, default OFF). */
+   ImportData: undefined;
+   /** TestFlight coach SaaS — business metrics / Stripe Connect surface. */
++  /** Retired: redirects to CoachMoney (Business metrics live in Money). */
+   CoachBusinessMetrics: undefined;
+   /** TestFlight coach SaaS — team/gym profile and team code. */
+   CoachTeamProfile: undefined;
+@@ -232,7 +234,12 @@ export type SettingsStackParamList = {
+   /** PR-17 M2 — coach package content-authoring screen. */
+   CoachPackageContents: { packageId: string; title?: string };
+   /** Payments — earnings, payout readiness, reconciliation, refunds (backend PR #216). */
++  /** Retired: redirects to CoachMoney (S-COACH-MOB-2). */
+   CoachEarnings: undefined;
++  /** TGP Money (Home card -> Money page). `from: "home"`: Back returns to Home. */
++  CoachMoney: { from?: "home" } | undefined;
++  CoachMoneyCharges: { filter?: ChargeFilter } | undefined;
++  CoachMoneyCharge: { chargeId: string };
+   /** iMessage-grade DM — manage blocked users from coach Settings. */
+   BlockedUsers: undefined;
+   /** Stream 1 — AI credit-pack checkout. `preselect` lets callers route
+@@ -440,10 +447,11 @@ function SettingsStackNavigator() {
+       {featureFlags.extensionImport && (
+         <SettingsStack.Screen name="ImportData" component={ImportDataScreen} />
+       )}
+-      {/* TestFlight coach SaaS — Stripe-Connect-backed business metrics. */}
++      {/* S-COACH-MOB-2 — Business metrics folded into Money; the old route
++          redirects so every existing entry point lands on Money. */}
+       <SettingsStack.Screen
+         name="CoachBusinessMetrics"
+-        component={CoachBusinessMetricsScreen}
++        component={MoneyRedirect}
+       />
+       {/* TestFlight coach SaaS — team / gym / organization profile. */}
+       <SettingsStack.Screen
+@@ -466,10 +474,21 @@ function SettingsStackNavigator() {
+         name="CoachPackageContents"
+         component={CoachPackageContentsScreen}
+       />
+-      {/* Payments — earnings, payout readiness, reconciliation, refunds (backend PR #216). */}
++      {/* S-COACH-MOB-2 — TGP Money replaces the retired Earnings screen
++          (which called six routes that never shipped). The old route
++          redirects to Money. */}
++      <SettingsStack.Screen name="CoachMoney" component={MoneyScreen} />
++      <SettingsStack.Screen
++        name="CoachMoneyCharges"
++        component={MoneyChargesScreen}
++      />
++      <SettingsStack.Screen
++        name="CoachMoneyCharge"
++        component={MoneyChargeScreen}
++      />
+       <SettingsStack.Screen
+         name="CoachEarnings"
+-        component={CoachEarningsScreen}
++        component={MoneyRedirect}
+       />
+       {/* iMessage-grade DM — Apple 1.2 compliance blocked-users management. */}
+       <SettingsStack.Screen name="BlockedUsers" component={BlockedUsersScreen} />
+diff --git a/src/navigation/CoachWizardNavigator.tsx b/src/navigation/CoachWizardNavigator.tsx
+index e4ba1dd..947cb5e 100644
+--- a/src/navigation/CoachWizardNavigator.tsx
++++ b/src/navigation/CoachWizardNavigator.tsx
+@@ -637,7 +637,7 @@ function CoachWizardStep5({ navigation }: Step5Props) {
+       stepNumber={5}
+       totalSteps={UI_STEPS}
+       heading="You are ready to coach"
+-      body="Anything still open stays on your Home checklist, and we mark your first client payment with you when it lands."
++      body="Anything still open stays on your Home checklist. Your first client payment shows up in Money on your Home screen."
+       ctaLabel="Go to my dashboard"
+       ctaDisabled={submitting}
+       onCta={finish}
+diff --git a/src/navigation/__tests__/coachSettingsMoneyRow.test.tsx b/src/navigation/__tests__/coachSettingsMoneyRow.test.tsx
+new file mode 100644
+index 0000000..0513eca
+--- /dev/null
++++ b/src/navigation/__tests__/coachSettingsMoneyRow.test.tsx
+@@ -0,0 +1,169 @@
++/**
++ * FIX ROUND 3 B-332-9 + C-332-12 (Opus, B-COACH-5 agent 115): coach
++ * Settings has one Money row, hidden once the server has said the signed-in
++ * coach's money is handled by a head coach. Mocks mirror
++ * imessageDmRoutes.test.tsx (the existing coach Settings render harness).
++ */
++import React from "react";
++import { render, fireEvent } from "@testing-library/react-native";
++import { act } from "@testing-library/react-native";
++// Required lazily so the Settings harness loads on a head without it.
++const noteHeadCoachHandlesMoney = (v: boolean): void => {
++  // eslint-disable-next-line @typescript-eslint/no-var-requires
++  const m = require("../../lib/money/headCoachRole") as {
++    noteHeadCoachHandlesMoney: (value: boolean) => void;
++  };
++  m.noteHeadCoachHandlesMoney(v);
++};
++
++jest.mock("@react-native-async-storage/async-storage", () =>
++  require("@react-native-async-storage/async-storage/jest"),
++);
++
++jest.mock("../../services/api", () => ({
++  __esModule: true,
++  default: { post: jest.fn(), get: jest.fn(), delete: jest.fn() },
++  profileApi: { get: jest.fn(async () => ({ data: {} })) },
++  coachApi: { getClients: jest.fn(async () => ({ data: [] })) },
++  notificationsApi: {
++    getPreferences: jest.fn(async () => ({ data: {} })),
++    updatePreferences: jest.fn(async () => ({ data: {} })),
++  },
++  usersApi: {
++    getAccountStatus: jest.fn(async () => ({ data: { status: "active" } })),
++  },
++  AccountStatus: {},
++}));
++
++jest.mock("../../services/authActions", () => ({
++  signOut: jest.fn(async () => undefined),
++  refreshProfile: jest.fn(async () => undefined),
++}));
++
++jest.mock("../../utils/haptics", () => ({
++  mediumTap: jest.fn(),
++  warningTap: jest.fn(),
++  successTap: jest.fn(),
++}));
++
++jest.mock("../../utils/supabaseAuth", () => ({
++  updateSupabasePassword: jest.fn(async () => ({ ok: true })),
++}));
++
++jest.mock("../../theme/ThemeProvider", () => ({
++  useTheme: () => ({
++    colors: {
++      background: "#000",
++      surface: "#111",
++      border: "#222",
++      primary: "#0af",
++      primaryDark: "#08c",
++      textPrimary: "#fff",
++      textSecondary: "#ccc",
++      textMuted: "#888",
++      textOnPrimary: "#000",
++      error: "#f33",
++      success: "#3f3",
++    },
++    appearanceOverride: "system",
++    setAppearanceOverride: jest.fn(),
++    tokens: {},
++  }),
++  ThemeColors: {},
++  AppearanceOverride: {},
++}));
++
++jest.mock("../../hooks/useCurrentUser", () => ({
++  useCurrentUser: () => ({ id: "me", email: "me@example.com" }),
++}));
++
++jest.mock("../../hooks/useSettings", () => ({
++  useSettings: () => ({
++    settings: { notifications_enabled: true },
++    updateSetting: jest.fn(),
++  }),
++}));
++
++jest.mock("../../utils/authEvents", () => ({
++  authEvents: { on: jest.fn(), off: jest.fn(), emit: jest.fn() },
++}));
++
++jest.mock("../../components/BiometricUnlockSetting", () => {
++  const React = require("react");
++  const { View } = require("react-native");
++  return { __esModule: true, default: () => React.createElement(View) };
++});
++
++jest.mock("../../config/env", () => ({ helpUrl: "https://example.com/help" }));
++
++// Coach settings sub-components — replace with minimal stubs so the screen
++// renders without their internal data dependencies firing.
++jest.mock("../../screens/coach/settings/ProfileSection", () => {
++  const React = require("react");
++  const { View } = require("react-native");
++  return { ProfileSection: () => React.createElement(View) };
++});
++jest.mock("../../screens/coach/settings/SettingsToggles", () => {
++  const React = require("react");
++  const { View } = require("react-native");
++  return { SettingsToggles: () => React.createElement(View) };
++});
++jest.mock("../../screens/coach/settings/BillingSection", () => {
++  const React = require("react");
++  const { View } = require("react-native");
++  return { BillingSection: () => React.createElement(View) };
++});
++jest.mock("../../screens/coach/settings/DangerZone", () => {
++  const React = require("react");
++  const { View } = require("react-native");
++  return { DangerZone: () => React.createElement(View) };
++});
++
++const mockNavigate = jest.fn();
++jest.mock("@react-navigation/native", () => {
++  const actual = jest.requireActual("@react-navigation/native");
++  return {
++    ...actual,
++    useNavigation: () => ({ navigate: mockNavigate, goBack: jest.fn() }),
++  };
++});
++
++beforeEach(() => {
++  mockNavigate.mockReset();
++});
++
++describe("coach Settings Money row", () => {
++  it("exactly one row opens Money", async () => {
++    noteHeadCoachHandlesMoney(false);
++    // eslint-disable-next-line @typescript-eslint/no-var-requires
++    const CoachSettings = require("../../screens/coach/SettingsScreen").default;
++    const r = await render(<CoachSettings />);
++    expect(r.getAllByTestId("settings-money")).toHaveLength(1);
++    await fireEvent.press(r.getByTestId("settings-money"));
++    expect(mockNavigate).toHaveBeenCalledWith("CoachMoney");
++  });
++
++  it("the Business section no longer has a second Money row (C-332-12)", () => {
++    // eslint-disable-next-line @typescript-eslint/no-var-requires
++    const fs = require("fs") as typeof import("fs");
++    // eslint-disable-next-line @typescript-eslint/no-var-requires
++    const path = require("path") as typeof import("path");
++    const billing = fs.readFileSync(
++      path.join(__dirname, "../../screens/coach/settings/BillingSection.tsx"),
++      "utf8",
++    );
++    expect(billing).not.toMatch(/onOpenMoney|Money and business numbers/);
++  });
++
++  it("an active sub-coach does not see a Money row", async () => {
++    // eslint-disable-next-line @typescript-eslint/no-var-requires
++    const CoachSettings = require("../../screens/coach/SettingsScreen").default;
++    const r = await render(<CoachSettings />);
++    expect(r.queryByTestId("settings-money")).not.toBeNull();
++    await act(async () => {
++      noteHeadCoachHandlesMoney(true);
++    });
++    expect(r.queryByTestId("settings-money")).toBeNull();
++    noteHeadCoachHandlesMoney(false);
++  });
++});
+diff --git a/src/screens/coach/CoachTeamProfileScreen.tsx b/src/screens/coach/CoachTeamProfileScreen.tsx
+index 6503492..482de77 100644
+--- a/src/screens/coach/CoachTeamProfileScreen.tsx
++++ b/src/screens/coach/CoachTeamProfileScreen.tsx
+@@ -222,9 +222,9 @@ export default function CoachTeamProfileScreen() {
+ 
+       {!profile.payouts_enabled ? (
+         <TouchableOpacity
+-          onPress={() => navigation.navigate('CoachBusinessMetrics')}
++          onPress={() => navigation.navigate('CoachSetup', { section: 'get_paid' })}
+           accessibilityRole="button"
+-          accessibilityLabel="Open business metrics"
++          accessibilityLabel="Payouts are not enabled. Connect Stripe"
+           style={styles.warnBanner}
+         >
+           <Ionicons name="warning-outline" size={16} color="#fff" />
+@@ -247,12 +247,12 @@ export default function CoachTeamProfileScreen() {
+ 
+       <TouchableOpacity
+         style={styles.linkRow}
+-        onPress={() => navigation.navigate('CoachBusinessMetrics')}
++        onPress={() => navigation.navigate('CoachMoney')}
+         accessibilityRole="button"
+-        accessibilityLabel="Open business metrics"
++        accessibilityLabel="Open Money"
+       >
+         <Ionicons name="trending-up-outline" size={20} color={colors.primary} />
+-        <Text style={styles.linkText}>Business metrics</Text>
++        <Text style={styles.linkText}>Money and business numbers</Text>
+         <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+       </TouchableOpacity>
+ 
+diff --git a/src/screens/coach/SettingsScreen.tsx b/src/screens/coach/SettingsScreen.tsx
+index 681d832..eed2d52 100644
+--- a/src/screens/coach/SettingsScreen.tsx
++++ b/src/screens/coach/SettingsScreen.tsx
+@@ -12,6 +12,7 @@ import {
+ import AsyncStorage from '@react-native-async-storage/async-storage';
+ import { Ionicons } from '@expo/vector-icons';
+ import { useCurrentUser } from '../../hooks/useCurrentUser';
++import { useHeadCoachHandlesMoney } from '../../lib/money/headCoachRole';
+ // Security: sign-out now flows through authActions which clears tokens
+ // (in SecureStore), AsyncStorage, and notifies the auth event emitter —
+ // replacing the old useAuthStore.signOut() which only cleared tokens as a
+@@ -51,6 +52,7 @@ export default function SettingsScreen() {
+   const styles = useMemo(() => makeStyles(colors), [colors]);
+   const navigation = useNavigation<NavigationProp<ParamListBase>>();
+   const currentUser = useCurrentUser();
++  const headCoachHandlesMoney = useHeadCoachHandlesMoney();
+   // signOut imported directly — no store wiring needed.
+   const [settings, setSettings] = useState<CoachSettings>(DEFAULT_SETTINGS);
+   const [clientCount, setClientCount] = useState(0);
+@@ -266,9 +268,10 @@ export default function SettingsScreen() {
+     mediumTap();
+     navigation.navigate('CoachConnect');
+   };
+-  const handleOpenEarnings = () => {
++  // S-COACH-MOB-2 — TGP Money replaces Earnings and Business metrics.
++  const handleOpenMoney = () => {
+     mediumTap();
+-    navigation.navigate('CoachEarnings');
++    navigation.navigate('CoachMoney');
+   };
+ 
+   const handleOpenTrustCenter = () => {
+@@ -456,17 +459,25 @@ export default function SettingsScreen() {
+           <Text style={styles.rowLabel}>Payouts (Stripe Connect)</Text>
+           <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+         </TouchableOpacity>
+-        <View style={styles.divider} />
+-        <TouchableOpacity
+-          style={styles.row}
+-          onPress={handleOpenEarnings}
+-          accessibilityRole="button"
+-          accessibilityLabel="View earnings"
+-        >
+-          <Ionicons name="cash-outline" size={20} color={colors.textSecondary} />
+-          <Text style={styles.rowLabel}>Earnings</Text>
+-          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+-        </TouchableOpacity>
++        {/* B-332-9 (Opus): an active sub-coach's money is the head coach's,
++            so the Money row is hidden once the server has said so. C-332-12:
++            this is the only Settings row that opens Money. */}
++        {headCoachHandlesMoney ? null : (
++          <>
++            <View style={styles.divider} />
++            <TouchableOpacity
++              style={styles.row}
++              onPress={handleOpenMoney}
++              accessibilityRole="button"
++              accessibilityLabel="Open Money: earnings, payouts and business numbers"
++              testID="settings-money"
++            >
++              <Ionicons name="cash-outline" size={20} color={colors.textSecondary} />
++              <Text style={styles.rowLabel}>Money</Text>
++              <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
++            </TouchableOpacity>
++          </>
++        )}
+       </View>
+ 
+       {/* Coach Tools — surfaces the per-coach building tools that previously
+@@ -559,14 +570,6 @@ export default function SettingsScreen() {
+           mediumTap();
+           navigation.navigate('CoachTeamProfile');
+         }}
+-        onOpenBusinessMetrics={() => {
+-          mediumTap();
+-          navigation.navigate('CoachBusinessMetrics');
+-        }}
+-        onOpenEarnings={() => {
+-          mediumTap();
+-          navigation.navigate('CoachEarnings');
+-        }}
+         onOpenBilling={handleOpenBilling}
+         colors={colors}
+         styles={styles}
+diff --git a/src/screens/coach/command-center/CoachHomeCards.tsx b/src/screens/coach/command-center/CoachHomeCards.tsx
+index c31678f..6d7a89e 100644
+--- a/src/screens/coach/command-center/CoachHomeCards.tsx
++++ b/src/screens/coach/command-center/CoachHomeCards.tsx
+@@ -1,12 +1,14 @@
+ /**
+  * S-COACH — cards at the top of the coach Home (Command Center Overview):
+- * the setup checklist. Each item opens the matching wizard step, which stays
+- * reachable after setup.
++ * the setup checklist (each item opens the matching wizard step, which stays
++ * reachable after setup) and the Money card, which expands into the Money
++ * page.
+  */
+ import React, { useCallback } from "react";
+ import { View } from "react-native";
+ import { useNavigation } from "@react-navigation/native";
+ import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
++import MoneyHomeCard from "../../../components/coach/money/MoneyHomeCard";
+ import CoachSetupChecklist, {
+   type ChecklistTarget,
+ } from "../../../components/coach/setup/CoachSetupChecklist";
+@@ -15,46 +17,56 @@ import type { CoachTabParamList } from "../../../navigation/CoachNavigator";
+ export default function CoachHomeCards() {
+   const navigation =
+     useNavigation<BottomTabNavigationProp<CoachTabParamList>>();
++  // B-332-7 (Opus): `initial: false` keeps the Settings root under these
++  // screens. Without it a Settings stack that was never opened is built with
++  // only the target screen, and the Settings tab can no longer reach sign
++  // out or account deletion. Money opened from Home goes back to Home.
++  const openMoney = useCallback(
++    () =>
++      navigation.navigate("SettingsStack", {
++        screen: "CoachMoney",
++        params: { from: "home" },
++        initial: false,
++      }),
++    [navigation],
++  );
+   const open = useCallback(
+-    (target: ChecklistTarget, done: boolean | null) => {
++    (target: ChecklistTarget) => {
+       switch (target) {
+         case "get_paid":
+           navigation.navigate("SettingsStack", {
+             screen: "CoachSetup",
+             params: { section: "get_paid" },
++            initial: false,
+           });
+           return;
+         case "invite":
+           navigation.navigate("SettingsStack", {
+             screen: "CoachSetup",
+             params: { section: "invite" },
++            initial: false,
+           });
+           return;
+         case "package":
+-          navigation.navigate("SettingsStack", { screen: "CoachPackagesList" });
++          navigation.navigate("SettingsStack", {
++            screen: "CoachPackagesList",
++            initial: false,
++          });
+           return;
+         case "money":
+-          // A first payment needs a client on a package: before it lands,
+-          // open the invite step; after, the packages list shows who pays.
+-          // (Never the retired Earnings screen.)
+-          if (done === true) {
+-            navigation.navigate("SettingsStack", {
+-              screen: "CoachPackagesList",
+-            });
+-          } else {
+-            navigation.navigate("SettingsStack", {
+-              screen: "CoachSetup",
+-              params: { section: "invite" },
+-            });
+-          }
++          openMoney();
+           return;
+       }
+     },
+-    [navigation],
++    [navigation, openMoney],
+   );
+   return (
+     <View testID="coach-home-cards">
+       <CoachSetupChecklist onOpen={open} />
++      <MoneyHomeCard
++        onOpenMoney={openMoney}
++        onSetUpStripe={() => open("get_paid")}
++      />
+     </View>
+   );
+ }
+diff --git a/src/screens/coach/money/MoneyBack.tsx b/src/screens/coach/money/MoneyBack.tsx
+new file mode 100644
+index 0000000..2d2417d
+--- /dev/null
++++ b/src/screens/coach/money/MoneyBack.tsx
+@@ -0,0 +1,57 @@
++/**
++ * S-COACH-MOB-2 — Back row for the Money screens (the Settings stack hides
++ * the native header, matching CoachSetupScreen).
++ *
++ * B-332-7 (Opus): Money opened from the Home card sits in the Settings tab
++ * above the Settings root. `toHome` pops it and returns to the Home tab, so
++ * Back leads where the coach came from and the Settings root stays below.
++ */
++import React from "react";
++import { Text, TouchableOpacity } from "react-native";
++import { useNavigation } from "@react-navigation/native";
++import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
++import type { CoachTabParamList } from "../../../navigation/CoachNavigator";
++import { useTheme } from "../../../theme/ThemeProvider";
++
++export default function MoneyBack({
++  testID,
++  toHome = false,
++}: {
++  testID?: string;
++  toHome?: boolean;
++}) {
++  const { colors } = useTheme();
++  const navigation = useNavigation();
++  if (!navigation.canGoBack()) return null;
++  const onPress = () => {
++    navigation.goBack();
++    if (toHome) {
++      navigation
++        .getParent<BottomTabNavigationProp<CoachTabParamList>>()
++        ?.navigate("CommandCenter");
++    }
++  };
++  return (
++    <TouchableOpacity
++      onPress={onPress}
++      style={{
++        minHeight: 44,
++        justifyContent: "center",
++        alignSelf: "flex-start",
++      }}
++      accessibilityRole="button"
++      accessibilityLabel={toHome ? "Back to Home" : "Go back"}
++      testID={testID ?? "money-back"}
++    >
++      <Text
++        style={{
++          fontFamily: "Inter_600SemiBold",
++          fontSize: 15,
++          color: colors.primary,
++        }}
++      >
++        Back
++      </Text>
++    </TouchableOpacity>
++  );
++}
+diff --git a/src/screens/coach/money/MoneyChargeScreen.tsx b/src/screens/coach/money/MoneyChargeScreen.tsx
+new file mode 100644
+index 0000000..e02226a
+--- /dev/null
++++ b/src/screens/coach/money/MoneyChargeScreen.tsx
+@@ -0,0 +1,199 @@
++/**
++ * S-COACH-MOB-2 — one charge, with how the price became the coach's net:
++ * price - card processing - TGP 2% (- head coach share - refunds) = net
++ * (GET /v1/coach/money/charges/:id; another coach's id is a 404 with
++ * MONEY_CHARGE_NOT_FOUND and gets specific copy).
++ */
++import React, { useMemo } from "react";
++import {
++  ActivityIndicator,
++  ScrollView,
++  Text,
++  TouchableOpacity,
++  View,
++} from "react-native";
++import type { NativeStackScreenProps } from "@react-navigation/native-stack";
++import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
++import { useTheme } from "../../../theme/ThemeProvider";
++import { coachMoneyApi, type ChargeState } from "../../../api/coachMoneyApi";
++import {
++  breakdownRows,
++  cadenceLabel,
++  chargeIsProblem,
++  chargeStateLabel,
++  money,
++  shortDate,
++} from "../../../lib/money/moneyCopy";
++import SetupNotice from "../../../components/coach/setup/SetupNotice";
++import type {
++  CoachTabParamList,
++  SettingsStackParamList,
++} from "../../../navigation/CoachNavigator";
++import { makeStyles } from "./MoneyScreen";
++import { useSection } from "./useSection";
++import { SafeAreaView } from "react-native-safe-area-context";
++import MoneyBack from "./MoneyBack";
++
++type Props = NativeStackScreenProps<SettingsStackParamList, "CoachMoneyCharge">;
++
++/**
++ * B-332-8 (Opus): what happened for a charge that moved no money, or null
++ * when money moved (paid, refunded, disputed) or is still moving (pending).
++ */
++export function noMoneyMovedCopy(state: ChargeState | null): string | null {
++  switch (state) {
++    case "failed":
++      return "The card payment did not go through, so the client was not charged and nothing from this charge reaches your payouts. Needs attention on Money shows whether TGP tries the card again.";
++    case "canceled":
++      return "The client started checkout but did not finish it, so nothing was charged.";
++    default:
++      return null;
++  }
++}
++
++export default function MoneyChargeScreen({ navigation, route }: Props) {
++  const { colors } = useTheme();
++  const styles = useMemo(() => makeStyles(colors), [colors]);
++  const id = route.params.chargeId;
++  const detail = useSection(
++    () => coachMoneyApi.charge(id),
++    "load this charge",
++    [id],
++  );
++  const d = detail.data;
++
++  if (!d) {
++    return (
++      <View ph-no-capture style={styles.centred} testID="money-charge-screen">
++        {detail.error ? (
++          <View style={styles.inner}>
++            <SetupNotice
++              error={detail.error}
++              onRetry={() => void detail.reload()}
++              testID="money-charge-error"
++            />
++            <TouchableOpacity
++              onPress={() => navigation.goBack()}
++              style={styles.linkBtn}
++              accessibilityRole="button"
++              testID="money-charge-back"
++            >
++              <Text style={styles.link}>Back to Money</Text>
++            </TouchableOpacity>
++          </View>
++        ) : (
++          <ActivityIndicator
++            color={colors.primary}
++            accessibilityLabel="Loading this charge"
++          />
++        )}
++      </View>
++    );
++  }
++
++  const c = d.charge;
++  const rows = breakdownRows({
++    priceCents: d.priceCents,
++    processingCents: d.processingCents,
++    platformFeeCents: d.platformFeeCents,
++    headCoachSplitCents: d.headCoachSplitCents,
++    refundedCents: d.refundedCents,
++    netCents: d.netCents,
++    processingPaidBy: d.processingPaidBy,
++  });
++  const tabNav =
++    navigation.getParent<NativeStackNavigationProp<CoachTabParamList>>();
++  // B-332-8 (Opus): a failed payment or an unfinished checkout moved no
++  // money, so it never shows "Clients paid" or "check back once it clears".
++  const noMoney = noMoneyMovedCopy(c.state);
++  const pending = c.state === "pending";
++
++  return (
++    <SafeAreaView ph-no-capture style={styles.page} edges={["top"]}>
++      <ScrollView
++        style={styles.page}
++        contentContainerStyle={styles.inner}
++        testID="money-charge-screen"
++      >
++        <MoneyBack />
++        <Text style={styles.h1} accessibilityRole="header">
++          {money(c.amountCents, c.currency)}
++        </Text>
++        <Text style={[styles.rowSub, chargeIsProblem(c) && styles.problem]}>
++          {chargeStateLabel(c)}
++        </Text>
++        <View style={styles.card}>
++          <Text style={styles.rowTitle}>{c.client.name}</Text>
++          <Text style={styles.rowSub} testID="money-charge-meta">
++            {[c.packageName, cadenceLabel(c), shortDate(c.createdAt)]
++              .filter(Boolean)
++              .join(", ")}
++          </Text>
++        </View>
++        {noMoney ? (
++          <View style={styles.card} testID="money-charge-no-money">
++            <Text style={styles.rowTitle}>No money moved</Text>
++            <Text style={styles.body}>{noMoney}</Text>
++          </View>
++        ) : null}
++        {noMoney ? null : (
++          <Text style={styles.h2} accessibilityRole="header">
++            How this adds up to your net
++          </Text>
++        )}
++        {noMoney ? null : (
++          <View style={styles.card} testID="money-charge-breakdown">
++            {!d.settled && pending ? (
++              <Text style={styles.body} testID="money-charge-unsettled">
++                This charge has not settled yet, so the fees are not final.
++                Check back once the payment clears.
++              </Text>
++            ) : null}
++            {!d.settled && !pending ? (
++              <Text style={styles.body} testID="money-charge-fees-pending">
++                Stripe has not posted the fees for this charge yet, so the
++                amounts below are not final.
++              </Text>
++            ) : null}
++            {rows.map((r) => (
++              <View
++                key={r.key}
++                style={styles.bRow}
++                accessible
++                accessibilityLabel={`${r.label}: ${r.sign < 0 ? "minus " : ""}${money(
++                  r.cents,
++                  c.currency,
++                )}`}
++              >
++                <Text style={r.sign === 0 ? styles.bTotal : styles.bLabel}>
++                  {r.label}
++                </Text>
++                <Text style={r.sign === 0 ? styles.bTotal : styles.bLabel}>
++                  {r.sign < 0 ? "-" : ""}
++                  {money(r.cents, c.currency)}
++                </Text>
++                {r.note ? <Text style={styles.bNote}>{r.note}</Text> : null}
++              </View>
++            ))}
++          </View>
++        )}
++        {c.client.id ? (
++          <TouchableOpacity
++            onPress={() =>
++              tabNav?.navigate("ClientsStack", {
++                screen: "ClientMessages",
++                params: { clientId: c.client.id, clientName: c.client.name },
++              })
++            }
++            style={styles.primary}
++            accessibilityRole="button"
++            accessibilityLabel={`Message ${c.client.name}`}
++            testID="money-charge-message"
++          >
++            <Text style={styles.primaryText}>Message {c.client.name}</Text>
++          </TouchableOpacity>
++        ) : null}
++      </ScrollView>
++    </SafeAreaView>
++  );
++}
+diff --git a/src/screens/coach/money/MoneyChargesScreen.tsx b/src/screens/coach/money/MoneyChargesScreen.tsx
+new file mode 100644
+index 0000000..313d051
+--- /dev/null
++++ b/src/screens/coach/money/MoneyChargesScreen.tsx
+@@ -0,0 +1,217 @@
++/**
++ * S-COACH-MOB-2 — "See all" charges from the Money page, filtered by
++ * All / Paid / Failed / Refunded / Disputed, newest first, paged by the server cursor
++ * (GET /v1/coach/money/charges). Tap a charge for its fee breakdown.
++ */
++import React, {
++  useCallback,
++  useEffect,
++  useMemo,
++  useRef,
++  useState,
++} from "react";
++import {
++  ActivityIndicator,
++  FlatList,
++  Text,
++  TouchableOpacity,
++  View,
++} from "react-native";
++import type { NativeStackScreenProps } from "@react-navigation/native-stack";
++import { useTheme } from "../../../theme/ThemeProvider";
++import {
++  CHARGE_FILTERS,
++  coachMoneyApi,
++  type ChargeFilter,
++  type MoneyCharge,
++} from "../../../api/coachMoneyApi";
++import {
++  describeError,
++  type FriendlyError,
++} from "../../../lib/coachSetup/errors";
++import {
++  chargeIsProblem,
++  chargeStateLabel,
++  FILTER_LABEL,
++  money,
++  shortDate,
++} from "../../../lib/money/moneyCopy";
++import { useNetworkStatus } from "../../../hooks/useNetworkStatus";
++import SetupNotice from "../../../components/coach/setup/SetupNotice";
++import type { SettingsStackParamList } from "../../../navigation/CoachNavigator";
++import { makeStyles } from "./MoneyScreen";
++import { SafeAreaView } from "react-native-safe-area-context";
++import MoneyBack from "./MoneyBack";
++
++type Props = NativeStackScreenProps<
++  SettingsStackParamList,
++  "CoachMoneyCharges"
++>;
++
++const EMPTY: Record<ChargeFilter, string> = {
++  all: "No charges yet.",
++  paid: "No paid charges yet.",
++  failed: "No failed payments. Good news.",
++  refunded: "No refunds or chargebacks.",
++  disputed: "No disputed charges.",
++};
++
++export default function MoneyChargesScreen({ navigation, route }: Props) {
++  const { colors } = useTheme();
++  const styles = useMemo(() => makeStyles(colors), [colors]);
++  const { isOnline } = useNetworkStatus();
++  const [filter, setFilter] = useState<ChargeFilter>(
++    route.params?.filter ?? "all",
++  );
++  const [items, setItems] = useState<MoneyCharge[]>([]);
++  const [cursor, setCursor] = useState<string | null>(null);
++  const [done, setDone] = useState(false);
++  const [loading, setLoading] = useState(true);
++  const [error, setError] = useState<FriendlyError | null>(null);
++  const seq = useRef(0);
++
++  const load = useCallback(
++    async (reset: boolean) => {
++      const mine = ++seq.current;
++      setLoading(true);
++      setError(null);
++      try {
++        const page = await coachMoneyApi.charges(filter, {
++          cursor: reset ? null : cursor,
++          limit: 20,
++        });
++        if (mine !== seq.current) return;
++        setItems((prev) => (reset ? page.charges : [...prev, ...page.charges]));
++        setCursor(page.nextCursor);
++        setDone(page.nextCursor === null);
++      } catch (err) {
++        if (mine !== seq.current) return;
++        setError(describeError(err, "load your charges"));
++      } finally {
++        if (mine === seq.current) setLoading(false);
++      }
++    },
++    [filter, cursor],
++  );
++
++  useEffect(() => {
++    setItems([]);
++    setCursor(null);
++    setDone(false);
++    void load(true);
++    // Reload only when the filter changes.
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [filter]);
++
++  return (
++    <SafeAreaView ph-no-capture
++      style={styles.page}
++      edges={["top"]}
++      testID="money-charges-screen"
++    >
++      <View style={[styles.inner, { paddingBottom: 0 }]}>
++        <MoneyBack />
++        <Text style={styles.h1} accessibilityRole="header">
++          Charges
++        </Text>
++        {!isOnline ? (
++          <View style={styles.offline} accessibilityRole="alert">
++            <Text style={styles.offlineTitle}>You are offline</Text>
++            <Text style={styles.offlineBody}>
++              Connect to the internet to load more charges.
++            </Text>
++          </View>
++        ) : null}
++        <View
++          style={styles.chips}
++          accessibilityRole="tablist"
++          accessibilityLabel="Filter charges"
++        >
++          {CHARGE_FILTERS.map((f) => (
++            <TouchableOpacity
++              key={f}
++              onPress={() => setFilter(f)}
++              style={[styles.chip, f === filter && styles.chipOn]}
++              accessibilityRole="tab"
++              accessibilityState={{ selected: f === filter }}
++              accessibilityLabel={FILTER_LABEL[f]}
++              testID={`money-filter-${f}`}
++            >
++              <Text
++                style={[styles.chipText, f === filter && styles.chipTextOn]}
++              >
++                {FILTER_LABEL[f]}
++              </Text>
++            </TouchableOpacity>
++          ))}
++        </View>
++      </View>
++      <FlatList
++        data={items}
++        keyExtractor={(c) => c.id}
++        contentContainerStyle={styles.inner}
++        onEndReachedThreshold={0.4}
++        onEndReached={() => {
++          if (!loading && !done && !error && items.length > 0) void load(false);
++        }}
++        renderItem={({ item: ch }) => (
++          <TouchableOpacity
++            style={styles.row}
++            onPress={() =>
++              navigation.navigate("CoachMoneyCharge", { chargeId: ch.id })
++            }
++            accessibilityRole="button"
++            accessibilityLabel={`${ch.client.name}, ${ch.packageName}, ${money(
++              ch.amountCents,
++              ch.currency,
++            )}, ${chargeStateLabel(ch)}. Open the breakdown`}
++            testID={`money-charges-row-${ch.id}`}
++          >
++            <View style={styles.rowText}>
++              <Text style={styles.rowTitle}>{ch.client.name}</Text>
++              <Text style={styles.rowSub}>
++                {[ch.packageName, shortDate(ch.createdAt)]
++                  .filter(Boolean)
++                  .join(", ")}
++              </Text>
++            </View>
++            <View style={styles.rowEnd}>
++              <Text style={styles.rowAmount}>
++                {money(ch.amountCents, ch.currency)}
++              </Text>
++              <Text
++                style={[styles.rowSub, chargeIsProblem(ch) && styles.problem]}
++              >
++                {chargeStateLabel(ch)}
++              </Text>
++            </View>
++          </TouchableOpacity>
++        )}
++        ListEmptyComponent={
++          !loading && !error ? (
++            <Text style={styles.body} testID="money-charges-empty">
++              {EMPTY[filter]}
++            </Text>
++          ) : null
++        }
++        ListFooterComponent={
++          <View>
++            {loading ? (
++              <ActivityIndicator
++                color={colors.primary}
++                accessibilityLabel="Loading charges"
++              />
++            ) : null}
++            {error ? (
++              <SetupNotice
++                error={error}
++                onRetry={() => void load(items.length === 0)}
++                testID="money-charges-screen-error"
++              />
++            ) : null}
++          </View>
++        }
++      />
++    </SafeAreaView>
++  );
++}
+diff --git a/src/screens/coach/money/MoneyRedirect.tsx b/src/screens/coach/money/MoneyRedirect.tsx
+new file mode 100644
+index 0000000..8f5f6c6
+--- /dev/null
++++ b/src/screens/coach/money/MoneyRedirect.tsx
+@@ -0,0 +1,37 @@
++/**
++ * S-COACH-MOB-2 — the retired Earnings and Business metrics routes land
++ * here and are replaced by TGP Money, so every old entry point (Settings,
++ * Team profile, deep links, notifications) opens the live Money page and
++ * nothing reachable calls the six routes that never shipped.
++ */
++import React, { useEffect } from "react";
++import { ActivityIndicator, View } from "react-native";
++import { useNavigation } from "@react-navigation/native";
++import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
++import { useTheme } from "../../../theme/ThemeProvider";
++import type { SettingsStackParamList } from "../../../navigation/CoachNavigator";
++
++export default function MoneyRedirect() {
++  const { colors } = useTheme();
++  const navigation =
++    useNavigation<NativeStackNavigationProp<SettingsStackParamList>>();
++  useEffect(() => {
++    navigation.replace("CoachMoney");
++  }, [navigation]);
++  return (
++    <View
++      style={{
++        flex: 1,
++        alignItems: "center",
++        justifyContent: "center",
++        backgroundColor: colors.background,
++      }}
++      testID="money-redirect"
++    >
++      <ActivityIndicator
++        color={colors.primary}
++        accessibilityLabel="Opening Money"
++      />
++    </View>
++  );
++}
+diff --git a/src/screens/coach/money/MoneyScreen.tsx b/src/screens/coach/money/MoneyScreen.tsx
+new file mode 100644
+index 0000000..11144f2
+--- /dev/null
++++ b/src/screens/coach/money/MoneyScreen.tsx
+@@ -0,0 +1,1159 @@
++/**
++ * S-COACH-MOB-2 — TGP Money, the coach's money page (owner 10-01 11:36:
++ * "Money = a coach Home card that expands into full pages, Business metrics
++ * merge into it"). Replaces the retired Earnings and Business metrics
++ * screens; both old routes redirect here.
++ *
++ * Sections, each loaded from a live route and failing on its own:
++ *   Net to you      /v1/coach/money/summary (Today / 30d / 90d / YTD with
++ *                   change vs the previous period; tap for the breakdown)
++ *   Needs attention /v1/coach/money/attention (failed payments with the
++ *                   card-update state, disputes, Stripe requirements)
++ *   Payouts         /coach/connect/payouts (next payout + recent)
++ *   Business        summary.recurring (MRR, paying, churn, new) +
++ *                   /coach/connect/metrics (roster counts)
++ *   Recent charges  /v1/coach/money/charges (last 5, See all)
++ *   Footer          Payout settings (Stripe Express dashboard), Export CSV
++ *                   for taxes (/v1/coach/money/export.csv), Packages
++ * A coach who sells in more than one currency switches currency; amounts in
++ * different currencies are never added together (#641 B-641-3). Every
++ * number is shown only under the period and currency it was loaded for
++ * (B-332-1).
++ * Every state is handled: loading, empty (no Stripe yet -> set up), error
++ * with specific copy and a reference, offline (last numbers kept).
++ */
++import React, { useCallback, useEffect, useMemo, useState } from "react";
++import {
++  ActivityIndicator,
++  RefreshControl,
++  ScrollView,
++  Share,
++  StyleSheet,
++  Text,
++  TouchableOpacity,
++  View,
++} from "react-native";
++import { useNavigation } from "@react-navigation/native";
++import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
++import * as WebBrowser from "expo-web-browser";
++import { useTheme, ThemeColors } from "../../../theme/ThemeProvider";
++import {
++  coachMoneyApi,
++  MONEY_RANGES,
++  nextPayout,
++  windowsFor,
++  type AttentionItem,
++  type MoneyPayout,
++  type MoneyRange,
++  type MoneySummary,
++} from "../../../api/coachMoneyApi";
++import { coachSetupApi } from "../../../api/coachSetupApi";
++import { connectCopy } from "../../../lib/coachSetup/connectCopy";
++import {
++  describeError,
++  SUB_COACH_BILLING_BLOCKED,
++  type FriendlyError,
++} from "../../../lib/coachSetup/errors";
++import { noteHeadCoachHandlesMoney } from "../../../lib/money/headCoachRole";
++import {
++  attentionCopy,
++  breakdownRows,
++  changeLine,
++  chargeIsProblem,
++  chargeStateLabel,
++  money,
++  PAYOUT_LABEL,
++  RANGE_LABEL,
++  shortDate,
++} from "../../../lib/money/moneyCopy";
++import { captureError } from "../../../services/sentry";
++import { featureFlags } from "../../../config/featureFlags";
++// §2.12 Roman payout notice, moved here from the deleted Earnings screen
++// (C-332-2). Gated behind romanChat.
++import RomanPayoutNotice from "../../../components/roman/RomanPayoutNotice";
++import { assertStripeUrl } from "../../../utils/stripeUrlValidator";
++import { useNetworkStatus } from "../../../hooks/useNetworkStatus";
++import SetupNotice from "../../../components/coach/setup/SetupNotice";
++import KpiTile from "../../../components/command-center/KpiTile";
++import AlertRow from "../../../components/command-center/AlertRow";
++import type {
++  CoachTabParamList,
++  SettingsStackParamList,
++} from "../../../navigation/CoachNavigator";
++import { useSection } from "./useSection";
++import { SafeAreaView } from "react-native-safe-area-context";
++import MoneyBack from "./MoneyBack";
++
++type Nav = NativeStackNavigationProp<SettingsStackParamList, "CoachMoney">;
++
++export default function MoneyScreen({
++  route,
++}: {
++  route?: { params?: SettingsStackParamList["CoachMoney"] };
++} = {}) {
++  const { colors } = useTheme();
++  const styles = useMemo(() => makeStyles(colors), [colors]);
++  const navigation = useNavigation<Nav>();
++  // B-332-7: the navigator passes the route; Back returns to Home when the
++  // Home card opened this page.
++  const fromHome = route?.params?.from === "home";
++  const { isOnline } = useNetworkStatus();
++  const [range, setRange] = useState<MoneyRange>("30d");
++  // null = the server's default currency (USD when the coach has any).
++  const [currency, setCurrency] = useState<string | null>(null);
++  const [exporting, setExporting] = useState(false);
++  const [exportError, setExportError] = useState<FriendlyError | null>(null);
++  const [showBreakdown, setShowBreakdown] = useState(false);
++  const [refreshing, setRefreshing] = useState(false);
++  const [opening, setOpening] = useState(false);
++  const [dashError, setDashError] = useState<FriendlyError | null>(null);
++
++  // B-332-1: every summary is tagged with the period and currency it was
++  // loaded for. Numbers are shown only under their own period's name; a
++  // slow or failed switch never relabels the previous period's money.
++  const summary = useSection(
++    async () => ({
++      range,
++      currency,
++      summary: await coachMoneyApi.summary(range, { currency }),
++    }),
++    "load your Money numbers",
++    [range, currency],
++  );
++  // B-332-4 (Sol): the currencies this coach has, remembered from the last
++  // summary that loaded, so a failed or slow currency switch never removes
++  // the way back to a currency that works.
++  const [knownCurrencies, setKnownCurrencies] = useState<{
++    list: string[];
++    serverDefault: string | null;
++  }>({ list: [], serverDefault: null });
++  const loadedSummary = summary.data;
++  useEffect(() => {
++    if (!loadedSummary) return;
++    const sm = loadedSummary.summary;
++    setKnownCurrencies((prev) => ({
++      list: sm.currencies.length > 0 ? sm.currencies : prev.list,
++      serverDefault:
++        loadedSummary.currency === null ? sm.currency : prev.serverDefault,
++    }));
++  }, [loadedSummary]);
++  const attention = useSection(
++    () => coachMoneyApi.attention(),
++    "load what needs your attention",
++    [],
++  );
++  const charges = useSection(
++    () => coachMoneyApi.charges("all", { limit: 5 }),
++    "load your recent charges",
++    [],
++  );
++  const payouts = useSection(
++    () => coachMoneyApi.payouts(10),
++    "load your payouts",
++    [],
++  );
++  const roster = useSection(
++    () => coachMoneyApi.roster(),
++    "load your client numbers",
++    [],
++  );
++  const connect = useSection(
++    () => coachSetupApi.connectStatus(),
++    "check your Stripe status",
++    [],
++  );
++
++  const onRefresh = useCallback(async () => {
++    setRefreshing(true);
++    await Promise.all([
++      summary.reload(),
++      attention.reload(),
++      charges.reload(),
++      payouts.reload(),
++      roster.reload(),
++      connect.reload(),
++    ]);
++    setRefreshing(false);
++  }, [summary, attention, charges, payouts, roster, connect]);
++
++  const tabNav =
++    navigation.getParent<NativeStackNavigationProp<CoachTabParamList>>();
++  const messageClient = (a: AttentionItem) => {
++    if (!a.client) return;
++    tabNav?.navigate("ClientsStack", {
++      screen: "ClientMessages",
++      params: { clientId: a.client.id, clientName: a.client.name },
++    });
++  };
++  const openStripeSetup = () =>
++    navigation.navigate("CoachSetup", { section: "get_paid" });
++
++  const openPayoutSettings = async () => {
++    setOpening(true);
++    setDashError(null);
++    try {
++      const url = await coachMoneyApi.dashboardLink();
++      assertStripeUrl(url, "MoneyScreen.payoutSettings");
++      await WebBrowser.openBrowserAsync(url);
++    } catch (err) {
++      setDashError(describeError(err, "open your payout settings"));
++    } finally {
++      setOpening(false);
++    }
++  };
++
++  // The newest payout Stripe has put in the bank, for the Roman notice.
++  const lastPaid =
++    payouts.data
++      ?.filter((p) => p.status === "paid" && p.arrivalDate)
++      .sort(
++        (a, b) =>
++          Date.parse(b.arrivalDate as string) -
++          Date.parse(a.arrivalDate as string),
++      )[0] ?? null;
++  const c = connect.data;
++  const stripeActive = c?.state === "active";
++  const tagged = summary.data;
++  // The summary for exactly the period and currency on screen, or null.
++  const s =
++    tagged && tagged.range === range && tagged.currency === currency
++      ? tagged.summary
++      : null;
++  // Business figures (MRR, paying, new, canceled) do not depend on the
++  // period, so the last summary in the same currency can show them.
++  const business =
++    s ?? (tagged && tagged.currency === currency ? tagged.summary : null);
++  const currencies =
++    business && business.currencies.length > 0
++      ? business.currencies
++      : knownCurrencies.list;
++  const shownCurrency = business?.currency ?? null;
++  // The chip that is selected: the requested currency, else the one the
++  // server chose by default.
++  const selectedCurrency =
++    currency ?? shownCurrency ?? knownCurrencies.serverDefault;
++  // C-332-11 (Opus): "No sales yet" only when the charges list actually
++  // loaded and is empty, never while it loads or after it failed.
++  const noSalesYet =
++    s !== null &&
++    s.totals.chargeCount === 0 &&
++    charges.data !== null &&
++    charges.error === null &&
++    charges.data.charges.length === 0;
++  // B-332-9 (Opus): an active sub-coach's money is the head coach's. Once
++  // any section says so, the page shows that once, with no sections, no
++  // payout settings and no export.
++  const headCoachHandles = [
++    summary,
++    attention,
++    charges,
++    payouts,
++    roster,
++    connect,
++  ].some((x) => x.error?.code === SUB_COACH_BILLING_BLOCKED);
++  const summaryLoaded = summary.data !== null;
++  useEffect(() => {
++    if (headCoachHandles) noteHeadCoachHandlesMoney(true);
++    else if (summaryLoaded) noteHeadCoachHandlesMoney(false);
++  }, [headCoachHandles, summaryLoaded]);
++  const anyLoaded = [summary, attention, charges, payouts, connect].some(
++    (x) => x.loadedAt !== null,
++  );
++  const firstLoad =
++    !anyLoaded && [summary, connect].some((x) => x.loading) && isOnline;
++
++  if (headCoachHandles) {
++    return (
++      <SafeAreaView ph-no-capture style={styles.page} edges={["top"]}>
++        <ScrollView
++          style={styles.page}
++          contentContainerStyle={styles.inner}
++          testID="money-screen"
++        >
++          <MoneyBack toHome={fromHome} />
++          <Text style={styles.h1} accessibilityRole="header">
++            Money
++          </Text>
++          <View
++            style={styles.card}
++            testID="money-head-coach"
++            accessible
++            accessibilityLabel="Money is handled by your head coach. Their practice takes payments and receives payouts for the clients you coach. Ask your head coach about payments."
++          >
++            <Text style={styles.rowTitle}>
++              Money is handled by your head coach
++            </Text>
++            <Text style={styles.body}>
++              Your head coach&apos;s practice takes payments and receives
++              payouts for the clients you coach. Ask your head coach about
++              payments.
++            </Text>
++          </View>
++        </ScrollView>
++      </SafeAreaView>
++    );
++  }
++
++  if (firstLoad) {
++    return (
++      <View ph-no-capture style={styles.centred} testID="money-loading">
++        <ActivityIndicator
++          color={colors.primary}
++          accessibilityLabel="Loading Money"
++        />
++      </View>
++    );
++  }
++
++  const lastLoaded = summary.loadedAt
++    ? new Date(summary.loadedAt).toLocaleTimeString(undefined, {
++        hour: "numeric",
++        minute: "2-digit",
++      })
++    : null;
++
++  // C-332-4 / C-641-4: the selected period, in the selected currency, as
++  // the server's tax CSV, handed to the share sheet as text (C-332-4 Sol:
++  // a text share, never described as a file attachment).
++  const exportCsv = async () => {
++    setExporting(true);
++    setExportError(null);
++    try {
++      const w = windowsFor(range, new Date());
++      const out = await coachMoneyApi.exportCsv(
++        { from: w.from, to: w.to },
++        currency ?? shownCurrency,
++      );
++      await Share.share({ title: out.filename, message: out.csv });
++    } catch (err) {
++      setExportError(describeError(err, "export your money as CSV text"));
++      if (!(err as { response?: unknown } | null)?.response)
++        captureError(err, { area: "coach_money", action: "export_csv" });
++    } finally {
++      setExporting(false);
++    }
++  };
++
++  return (
++    <SafeAreaView ph-no-capture style={styles.page} edges={["top"]}>
++      <ScrollView
++        style={styles.page}
++        contentContainerStyle={styles.inner}
++        refreshControl={
++          <RefreshControl
++            refreshing={refreshing}
++            onRefresh={() => void onRefresh()}
++            tintColor={colors.primary}
++          />
++        }
++        testID="money-screen"
++      >
++        <MoneyBack toHome={fromHome} />
++        <Text style={styles.h1} accessibilityRole="header">
++          Money
++        </Text>
++
++        {!isOnline ? (
++          <View
++            style={styles.offline}
++            accessibilityRole="alert"
++            testID="money-offline"
++          >
++            <Text style={styles.offlineTitle}>You are offline</Text>
++            <Text style={styles.offlineBody}>
++              {lastLoaded
++                ? `These are the numbers from ${lastLoaded}. Pull down to refresh once you are back online.`
++                : "Connect to the internet, then pull down to load your numbers."}
++            </Text>
++          </View>
++        ) : null}
++
++        {/* Stripe setup state: the setup action when payouts are not ready. */}
++        {c && !stripeActive ? (
++          <View style={styles.card} testID="money-setup">
++            <Text style={styles.cardTitle}>{connectCopy(c).title}</Text>
++            <Text style={styles.body}>{connectCopy(c).body}</Text>
++            <TouchableOpacity
++              style={styles.primary}
++              onPress={openStripeSetup}
++              accessibilityRole="button"
++              accessibilityLabel={connectCopy(c).action ?? "Set up payouts"}
++              testID="money-setup-open"
++            >
++              <Text style={styles.primaryText}>
++                {connectCopy(c).action ?? "Set up payouts"}
++              </Text>
++            </TouchableOpacity>
++          </View>
++        ) : null}
++        {connect.error && !c ? (
++          <SetupNotice
++            error={connect.error}
++            onRetry={() => void connect.reload()}
++            testID="money-connect-error"
++          />
++        ) : null}
++
++        {/* Net to you */}
++        <View style={styles.card} testID="money-net">
++          <View
++            style={styles.chips}
++            accessibilityRole="tablist"
++            accessibilityLabel="Time period"
++          >
++            {MONEY_RANGES.map((r) => (
++              <TouchableOpacity
++                key={r}
++                onPress={() => setRange(r)}
++                style={[styles.chip, r === range && styles.chipOn]}
++                accessibilityRole="tab"
++                accessibilityState={{ selected: r === range }}
++                accessibilityLabel={RANGE_LABEL[r]}
++                testID={`money-range-${r}`}
++              >
++                <Text
++                  style={[styles.chipText, r === range && styles.chipTextOn]}
++                >
++                  {RANGE_LABEL[r]}
++                </Text>
++              </TouchableOpacity>
++            ))}
++          </View>
++          {currencies.length > 1 ? (
++            <View
++              style={styles.chips}
++              accessibilityRole="tablist"
++              accessibilityLabel="Currency"
++              testID="money-currencies"
++            >
++              {currencies.map((cur) => {
++                const on = cur === selectedCurrency;
++                return (
++                  <TouchableOpacity
++                    key={cur}
++                    onPress={() => setCurrency(cur)}
++                    style={[styles.chip, on && styles.chipOn]}
++                    accessibilityRole="tab"
++                    accessibilityState={{ selected: on }}
++                    accessibilityLabel={`Show amounts in ${cur.toUpperCase()}`}
++                    testID={`money-currency-${cur}`}
++                  >
++                    <Text style={[styles.chipText, on && styles.chipTextOn]}>
++                      {cur.toUpperCase()}
++                    </Text>
++                  </TouchableOpacity>
++                );
++              })}
++            </View>
++          ) : null}
++          {s ? (
++            <>
++              <NetBlock
++                s={s}
++                range={range}
++                loading={summary.loading}
++                open={showBreakdown}
++                onToggle={() => setShowBreakdown((v) => !v)}
++                styles={styles}
++              />
++              {summary.error ? (
++                <View testID="money-summary-stale">
++                  <Text style={styles.bNote}>
++                    {lastLoaded
++                      ? `These are the numbers from ${lastLoaded}. They could not be refreshed.`
++                      : "These numbers could not be refreshed."}
++                  </Text>
++                  <SetupNotice
++                    error={summary.error}
++                    onRetry={() => void summary.reload()}
++                    testID="money-summary-error"
++                  />
++                </View>
++              ) : null}
++            </>
++          ) : summary.error ? (
++            <View testID="money-summary-failed">
++              <Text style={styles.eyebrow}>
++                Net to you, {RANGE_LABEL[range]}
++              </Text>
++              <SetupNotice
++                error={summary.error}
++                onRetry={() => void summary.reload()}
++                testID="money-summary-error"
++              />
++            </View>
++          ) : (
++            <ActivityIndicator
++              color={colors.primary}
++              accessibilityLabel={`Loading net to you, ${RANGE_LABEL[range]}`}
++              testID="money-summary-loading"
++            />
++          )}
++          {noSalesYet ? (
++            <View testID="money-empty">
++              <Text style={styles.body}>
++                {stripeActive
++                  ? "No sales yet. Share your invite link so a client can buy your package."
++                  : "No sales yet. Connect Stripe so clients can pay you, or start with a free package."}
++              </Text>
++              <TouchableOpacity
++                onPress={() =>
++                  stripeActive
++                    ? navigation.navigate("CoachSetup", { section: "invite" })
++                    : openStripeSetup()
++                }
++                style={styles.linkBtn}
++                accessibilityRole="button"
++                testID="money-empty-action"
++              >
++                <Text style={styles.link}>
++                  {stripeActive ? "Share your invite link" : "Connect Stripe"}
++                </Text>
++              </TouchableOpacity>
++            </View>
++          ) : null}
++        </View>
++
++        {/* Needs attention */}
++        <Text style={styles.h2} accessibilityRole="header">
++          Needs attention
++          {attention.data && attention.data.count > 0
++            ? ` (${attention.data.count})`
++            : ""}
++        </Text>
++        {attention.error && !attention.data ? (
++          <SetupNotice
++            error={attention.error}
++            onRetry={() => void attention.reload()}
++            testID="money-attention-error"
++          />
++        ) : attention.data ? (
++          attention.data.items.length === 0 ? (
++            <Text style={styles.body} testID="money-attention-empty">
++              Nothing needs you right now.
++            </Text>
++          ) : (
++            attention.data.items.map((a) => {
++              const copy = attentionCopy(a);
++              const act =
++                copy.action === "update_stripe"
++                  ? openStripeSetup
++                  : () => messageClient(a);
++              return (
++                <AlertRow
++                  key={`${a.kind}-${a.id}`}
++                  clientName={copy.title}
++                  message={copy.lines.join(" ")}
++                  messageLines={6}
++                  actionLabel={
++                    copy.action === "message_client" && !a.client
++                      ? undefined
++                      : copy.actionLabel
++                  }
++                  onPress={act}
++                  testID={`money-attention-${a.kind}-${a.id}`}
++                />
++              );
++            })
++          )
++        ) : (
++          <ActivityIndicator
++            color={colors.primary}
++            accessibilityLabel="Loading what needs your attention"
++          />
++        )}
++
++        {/* Payouts */}
++        <Text style={styles.h2} accessibilityRole="header">
++          Payouts
++        </Text>
++        <View style={styles.card} testID="money-payouts">
++          {payouts.error && !payouts.data ? (
++            <SetupNotice
++              error={payouts.error}
++              onRetry={() => void payouts.reload()}
++              testID="money-payouts-error"
++            />
++          ) : payouts.data ? (
++            <>
++              {featureFlags.romanChat &&
++              lastPaid != null &&
++              shortDate(lastPaid.arrivalDate) ? (
++                <RomanPayoutNotice
++                  amount={money(lastPaid.amountCents, lastPaid.currency)}
++                  sentOn={shortDate(lastPaid.arrivalDate) as string}
++                  mode="default"
++                  testID="roman-payout-card"
++                />
++              ) : null}
++              <PayoutsBlock
++                list={payouts.data}
++                stripeActive={stripeActive}
++                styles={styles}
++              />
++            </>
++          ) : (
++            <ActivityIndicator
++              color={colors.primary}
++              accessibilityLabel="Loading payouts"
++            />
++          )}
++        </View>
++
++        {/* Business (the old Business metrics, folded in) */}
++        <Text style={styles.h2} accessibilityRole="header">
++          Business
++        </Text>
++        {business ? (
++          <View testID="money-business">
++            {summary.error && lastLoaded ? (
++              // C-332-6: kept from an earlier load; say when.
++              <Text style={styles.bNote} testID="money-business-stale">
++                {`These are the numbers from ${lastLoaded}. They could not be refreshed.`}
++              </Text>
++            ) : null}
++            <View style={styles.tiles}>
++              <KpiTile
++                label="Monthly recurring"
++                value={money(business.recurring.mrrCents, business.currency)}
++                testID="money-kpi-mrr"
++              />
++              <KpiTile
++                label="Paying clients"
++                value={business.recurring.payingClients}
++                testID="money-kpi-paying"
++              />
++            </View>
++            <View style={styles.tiles}>
++              <KpiTile
++                label="New paying, 30 days"
++                value={business.recurring.newClients30d}
++                testID="money-kpi-new"
++              />
++              <KpiTile
++                label="Canceled, 30 days"
++                value={business.recurring.churned30d}
++                testID="money-kpi-churn"
++              />
++            </View>
++            {roster.data ? (
++              <View style={styles.tiles}>
++                <KpiTile
++                  label="Clients on your roster"
++                  value={roster.data.rosterClients}
++                  testID="money-kpi-roster"
++                />
++                <KpiTile
++                  label="Joined, 30 days"
++                  value={roster.data.joined30d}
++                  testID="money-kpi-joined"
++                />
++              </View>
++            ) : roster.error ? (
++              <SetupNotice
++                error={roster.error}
++                onRetry={() => void roster.reload()}
++                testID="money-roster-error"
++              />
++            ) : null}
++            {roster.data &&
++            (roster.data.team.acquired30d > 0 ||
++              roster.data.team.churned30d > 0) ? (
++              <View style={styles.tiles}>
++                <KpiTile
++                  label="Your team gained, 30 days"
++                  value={roster.data.team.acquired30d}
++                  testID="money-kpi-team-acquired"
++                />
++                <KpiTile
++                  label="Your team lost, 30 days"
++                  value={roster.data.team.churned30d}
++                  testID="money-kpi-team-churned"
++                />
++              </View>
++            ) : null}
++          </View>
++        ) : null}
++
++        {/* Recent charges */}
++        <Text style={styles.h2} accessibilityRole="header">
++          Recent charges
++        </Text>
++        <View style={styles.card} testID="money-charges">
++          {charges.error && !charges.data ? (
++            <SetupNotice
++              error={charges.error}
++              onRetry={() => void charges.reload()}
++              testID="money-charges-error"
++            />
++          ) : charges.data ? (
++            charges.data.charges.length === 0 ? (
++              <Text style={styles.body}>No charges yet.</Text>
++            ) : (
++              charges.data.charges.map((ch) => (
++                <TouchableOpacity
++                  key={ch.id}
++                  style={styles.row}
++                  onPress={() =>
++                    navigation.navigate("CoachMoneyCharge", { chargeId: ch.id })
++                  }
++                  accessibilityRole="button"
++                  accessibilityLabel={`${ch.client.name}, ${ch.packageName}, ${money(
++                    ch.amountCents,
++                    ch.currency,
++                  )}, ${chargeStateLabel(ch)}. Open the breakdown`}
++                  testID={`money-charge-${ch.id}`}
++                >
++                  <View style={styles.rowText}>
++                    <Text style={styles.rowTitle}>{ch.client.name}</Text>
++                    <Text style={styles.rowSub}>
++                      {[ch.packageName, shortDate(ch.createdAt)]
++                        .filter(Boolean)
++                        .join(", ")}
++                    </Text>
++                  </View>
++                  <View style={styles.rowEnd}>
++                    <Text style={styles.rowAmount}>
++                      {money(ch.amountCents, ch.currency)}
++                    </Text>
++                    <Text
++                      style={[
++                        styles.rowSub,
++                        chargeIsProblem(ch) && styles.problem,
++                      ]}
++                    >
++                      {chargeStateLabel(ch)}
++                    </Text>
++                  </View>
++                </TouchableOpacity>
++              ))
++            )
++          ) : (
++            <ActivityIndicator
++              color={colors.primary}
++              accessibilityLabel="Loading recent charges"
++            />
++          )}
++          <TouchableOpacity
++            onPress={() => navigation.navigate("CoachMoneyCharges", {})}
++            style={styles.linkBtn}
++            accessibilityRole="button"
++            accessibilityLabel="See all charges"
++            testID="money-charges-all"
++          >
++            <Text style={styles.link}>See all charges</Text>
++          </TouchableOpacity>
++        </View>
++
++        {/* Footer */}
++        <View style={styles.footer} testID="money-footer">
++          <TouchableOpacity
++            onPress={() =>
++              stripeActive ? void openPayoutSettings() : openStripeSetup()
++            }
++            disabled={opening}
++            style={styles.footerRow}
++            accessibilityRole="button"
++            accessibilityLabel="Payout settings"
++            accessibilityHint={
++              stripeActive
++                ? "Opens your Stripe payout dashboard"
++                : "Opens Stripe setup. Payout settings open once Stripe has approved your account"
++            }
++            accessibilityState={{ busy: opening, disabled: opening }}
++            testID="money-payout-settings"
++          >
++            <Text style={styles.footerText}>
++              {opening ? "Opening payout settings" : "Payout settings"}
++            </Text>
++            {!stripeActive ? (
++              <Text style={styles.rowSub}>Finish Stripe setup first</Text>
++            ) : null}
++          </TouchableOpacity>
++          {dashError ? (
++            <SetupNotice
++              error={dashError}
++              onRetry={() => void openPayoutSettings()}
++              testID="money-payout-settings-error"
++            />
++          ) : null}
++          <TouchableOpacity
++            onPress={() => void exportCsv()}
++            disabled={exporting}
++            style={styles.footerRow}
++            accessibilityRole="button"
++            accessibilityLabel={`Export CSV for taxes, ${RANGE_LABEL[range]}`}
++            accessibilityHint="Sales, refunds and chargebacks for the selected period, ready for your accountant"
++            accessibilityState={{ busy: exporting, disabled: exporting }}
++            testID="money-export-csv"
++          >
++            <Text style={styles.footerText}>
++              {exporting ? "Preparing your CSV" : "Export CSV for taxes"}
++            </Text>
++            <Text style={styles.rowSub}>
++              {RANGE_LABEL[range]}
++              {shownCurrency ? `, ${shownCurrency.toUpperCase()}` : ""}
++            </Text>
++          </TouchableOpacity>
++          {exportError ? (
++            <SetupNotice
++              error={exportError}
++              onRetry={() => void exportCsv()}
++              testID="money-export-csv-error"
++            />
++          ) : null}
++          <TouchableOpacity
++            onPress={() => navigation.navigate("CoachPackagesList")}
++            style={styles.footerRow}
++            accessibilityRole="button"
++            accessibilityLabel="Packages"
++            testID="money-packages"
++          >
++            <Text style={styles.footerText}>Packages</Text>
++          </TouchableOpacity>
++        </View>
++      </ScrollView>
++    </SafeAreaView>
++  );
++}
++
++function NetBlock({
++  s,
++  range,
++  loading,
++  open,
++  onToggle,
++  styles,
++}: {
++  s: MoneySummary;
++  range: MoneyRange;
++  loading: boolean;
++  open: boolean;
++  onToggle: () => void;
++  styles: ReturnType<typeof makeStyles>;
++}) {
++  const change = changeLine(range, s.changeCents, s.changePct, s.currency);
++  const rows = breakdownRows({
++    priceCents: s.totals.grossCents,
++    processingCents: s.totals.processingCents,
++    platformFeeCents: s.totals.platformFeeCents,
++    headCoachSplitCents: s.totals.headCoachSplitCents,
++    refundedCents: s.totals.refundedCents,
++    headCoachIncomeCents: s.totals.headCoachIncomeCents,
++    netCents: s.totals.netCents,
++    processingPaidBy: s.totals.processingPaidBy,
++  });
++  return (
++    <View>
++      <TouchableOpacity
++        onPress={onToggle}
++        accessibilityRole="button"
++        accessibilityState={{ expanded: open, busy: loading }}
++        accessibilityLabel={`Net to you, ${RANGE_LABEL[range]}: ${money(
++          s.totals.netCents,
++          s.currency,
++        )}. ${change ?? ""}. ${open ? "Hide" : "Show"} how this adds up`}
++        testID="money-net-toggle"
++      >
++        <Text style={styles.eyebrow}>Net to you, {RANGE_LABEL[range]}</Text>
++        <Text style={styles.hero} testID="money-net-amount">
++          {money(s.totals.netCents, s.currency)}
++        </Text>
++        {change ? (
++          <Text style={styles.rowSub} testID="money-net-change">
++            {change}
++          </Text>
++        ) : null}
++        <Text style={styles.link}>
++          {open ? "Hide how this adds up" : "How this adds up"}
++        </Text>
++      </TouchableOpacity>
++      {open ? (
++        <View testID="money-net-breakdown">
++          {rows.map((r) => (
++            <View key={r.key} style={styles.bRow} accessible>
++              <Text style={r.sign === 0 ? styles.bTotal : styles.bLabel}>
++                {r.label}
++              </Text>
++              <Text style={r.sign === 0 ? styles.bTotal : styles.bLabel}>
++                {r.sign < 0 ? "-" : ""}
++                {money(r.cents, s.currency)}
++              </Text>
++              {r.note ? <Text style={styles.bNote}>{r.note}</Text> : null}
++            </View>
++          ))}
++          <Text style={styles.bNote}>
++            Counts sales made in this period, minus refunds and chargebacks
++            made in this period, including those on earlier sales.
++          </Text>
++        </View>
++      ) : null}
++      {s.heldFromNextSaleCents !== null && s.heldFromNextSaleCents > 0 ? (
++        <View style={styles.held} testID="money-held">
++          <Text style={styles.bLabel}>
++            Held from your next sale:{" "}
++            {money(s.heldFromNextSaleCents, s.currency)}
++          </Text>
++          <Text style={styles.bNote}>
++            After a refund or chargeback, TGP keeps its 2% and the Stripe fees
++            on that charge from your next sale, on top of that sale's usual
++            fees.
++          </Text>
++        </View>
++      ) : null}
++    </View>
++  );
++}
++
++function PayoutsBlock({
++  list,
++  stripeActive,
++  styles,
++}: {
++  list: MoneyPayout[];
++  stripeActive: boolean;
++  styles: ReturnType<typeof makeStyles>;
++}) {
++  const next = nextPayout(list);
++  if (list.length === 0) {
++    return (
++      <Text style={styles.body} testID="money-payouts-empty">
++        {stripeActive
++          ? "No payouts yet. Stripe sends your first payout a few days after your first sale."
++          : "Payouts start once Stripe has approved your account."}
++      </Text>
++    );
++  }
++  return (
++    <View>
++      {next ? (
++        <View testID="money-next-payout">
++          <Text style={styles.eyebrow}>Next payout</Text>
++          <Text style={styles.rowAmount}>
++            {money(next.amountCents, next.currency)}
++          </Text>
++          <Text style={styles.rowSub}>
++            {next.arrivalDate
++              ? `Expected in your bank on ${shortDate(next.arrivalDate)}`
++              : PAYOUT_LABEL[next.status]}
++          </Text>
++        </View>
++      ) : null}
++      {list.slice(0, 5).map((p) => (
++        <View
++          key={p.id}
++          style={styles.row}
++          accessible
++          accessibilityLabel={`${money(p.amountCents, p.currency)}, ${PAYOUT_LABEL[p.status]}${
++            p.arrivalDate ? `, ${shortDate(p.arrivalDate)}` : ""
++          }`}
++        >
++          <View style={styles.rowText}>
++            <Text style={styles.rowTitle}>
++              {money(p.amountCents, p.currency)}
++            </Text>
++            {p.failureMessage ? (
++              <Text style={[styles.rowSub, styles.problem]}>
++                {p.failureMessage}
++              </Text>
++            ) : null}
++          </View>
++          <View style={styles.rowEnd}>
++            <Text
++              style={[
++                styles.rowSub,
++                (p.status === "failed" || p.status === "canceled") &&
++                  styles.problem,
++              ]}
++            >
++              {PAYOUT_LABEL[p.status]}
++            </Text>
++            <Text style={styles.rowSub}>{shortDate(p.arrivalDate) ?? ""}</Text>
++          </View>
++        </View>
++      ))}
++    </View>
++  );
++}
++
++export const makeStyles = (colors: ThemeColors) =>
++  StyleSheet.create({
++    page: { flex: 1, backgroundColor: colors.background },
++    inner: { padding: 16, paddingBottom: 48 },
++    centred: {
++      flex: 1,
++      alignItems: "center",
++      justifyContent: "center",
++      backgroundColor: colors.background,
++    },
++    h1: {
++      fontFamily: "CormorantGaramond_400Regular",
++      fontSize: 32,
++      color: colors.textPrimary,
++      marginBottom: 12,
++    },
++    h2: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 17,
++      color: colors.textPrimary,
++      marginTop: 20,
++      marginBottom: 8,
++    },
++    card: {
++      borderWidth: 1,
++      borderColor: colors.border,
++      backgroundColor: colors.surface,
++      padding: 16,
++      marginBottom: 12,
++    },
++    cardTitle: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 16,
++      color: colors.textPrimary,
++      marginBottom: 4,
++    },
++    body: {
++      fontFamily: "Inter_400Regular",
++      fontSize: 14,
++      lineHeight: 20,
++      color: colors.textSecondary,
++      marginVertical: 6,
++    },
++    eyebrow: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 12,
++      letterSpacing: 0.6,
++      textTransform: "uppercase",
++      color: colors.textSecondary,
++    },
++    hero: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 34,
++      color: colors.textPrimary,
++      marginVertical: 4,
++    },
++    chips: { flexDirection: "row", flexWrap: "wrap", marginBottom: 12 },
++    chip: {
++      minHeight: 44,
++      paddingHorizontal: 12,
++      justifyContent: "center",
++      borderWidth: 1,
++      borderColor: colors.border,
++      marginRight: 8,
++      marginBottom: 8,
++    },
++    chipOn: { backgroundColor: colors.primary, borderColor: colors.primary },
++    chipText: {
++      fontFamily: "Inter_500Medium",
++      fontSize: 14,
++      color: colors.textPrimary,
++    },
++    chipTextOn: { color: colors.textOnPrimary },
++    primary: {
++      backgroundColor: colors.primary,
++      minHeight: 48,
++      alignItems: "center",
++      justifyContent: "center",
++      marginTop: 10,
++    },
++    primaryText: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 15,
++      color: colors.textOnPrimary,
++    },
++    linkBtn: { minHeight: 44, justifyContent: "center" },
++    link: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 14,
++      color: colors.primary,
++      marginTop: 6,
++    },
++    row: {
++      flexDirection: "row",
++      alignItems: "center",
++      minHeight: 56,
++      paddingVertical: 8,
++      borderBottomWidth: StyleSheet.hairlineWidth,
++      borderBottomColor: colors.border,
++    },
++    rowText: { flex: 1, marginRight: 8 },
++    rowEnd: { alignItems: "flex-end" },
++    rowTitle: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 15,
++      color: colors.textPrimary,
++    },
++    rowAmount: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 16,
++      color: colors.textPrimary,
++    },
++    rowSub: {
++      fontFamily: "Inter_400Regular",
++      fontSize: 13,
++      lineHeight: 18,
++      color: colors.textSecondary,
++    },
++    problem: { color: colors.error },
++    tiles: { flexDirection: "row", gap: 8, marginBottom: 8 },
++    bRow: {
++      flexDirection: "row",
++      flexWrap: "wrap",
++      justifyContent: "space-between",
++      paddingVertical: 6,
++    },
++    bLabel: {
++      fontFamily: "Inter_400Regular",
++      fontSize: 14,
++      color: colors.textPrimary,
++    },
++    bTotal: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 15,
++      color: colors.textPrimary,
++    },
++    bNote: {
++      width: "100%",
++      fontFamily: "Inter_400Regular",
++      fontSize: 12,
++      lineHeight: 17,
++      color: colors.textSecondary,
++      marginTop: 2,
++    },
++    held: {
++      marginTop: 12,
++      paddingTop: 12,
++      borderTopWidth: StyleSheet.hairlineWidth,
++      borderTopColor: colors.border,
++    },
++    offline: {
++      borderWidth: 1,
++      borderColor: colors.warning,
++      padding: 12,
++      marginBottom: 12,
++      backgroundColor: colors.surface,
++    },
++    offlineTitle: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 15,
++      color: colors.textPrimary,
++    },
++    offlineBody: {
++      fontFamily: "Inter_400Regular",
++      fontSize: 14,
++      lineHeight: 20,
++      color: colors.textSecondary,
++    },
++    footer: { marginTop: 20 },
++    footerRow: {
++      minHeight: 52,
++      justifyContent: "center",
++      borderTopWidth: StyleSheet.hairlineWidth,
++      borderTopColor: colors.border,
++    },
++    footerText: {
++      fontFamily: "Inter_600SemiBold",
++      fontSize: 15,
++      color: colors.primary,
++    },
++  });
+diff --git a/src/screens/coach/money/__tests__/moneyNavigation.test.tsx b/src/screens/coach/money/__tests__/moneyNavigation.test.tsx
+new file mode 100644
+index 0000000..de7f2bc
+--- /dev/null
++++ b/src/screens/coach/money/__tests__/moneyNavigation.test.tsx
+@@ -0,0 +1,170 @@
++/**
++ * FIX ROUND 3 B-332-7 (Opus, B-COACH-5 agent 115): opening Money from the
++ * Home card must never strand the Settings tab on Money.
++ *
++ * Real installed navigators (bottom tabs + native stack), the real
++ * CoachHomeCards (its two cards reduced to buttons) and the real MoneyBack.
++ * At 6c193c80 the Settings stack was built as ["CoachMoney"] only, so the
++ * Settings tab could never show the Settings root (sign out, account
++ * deletion) for the rest of the session.
++ */
++import React from "react";
++import { Text, View } from "react-native";
++import { render, fireEvent, act, waitFor } from "@testing-library/react-native";
++import {
++  NavigationContainer,
++  createNavigationContainerRef,
++  type NavigationState,
++  type PartialState,
++} from "@react-navigation/native";
++import { createNativeStackNavigator } from "@react-navigation/native-stack";
++import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
++import type {
++  CoachTabParamList,
++  SettingsStackParamList,
++} from "../../../../navigation/CoachNavigator";
++
++jest.mock("@expo/vector-icons", () => ({ Ionicons: () => null }));
++jest.mock("../../../../components/coach/money/MoneyHomeCard", () => {
++  const { Text: T, TouchableOpacity: Btn } = jest.requireActual("react-native");
++  const R = jest.requireActual("react");
++  return {
++    __esModule: true,
++    default: ({ onOpenMoney }: { onOpenMoney: () => void }) =>
++      R.createElement(
++        Btn,
++        { testID: "home-money-card", onPress: onOpenMoney },
++        R.createElement(T, null, "Money card"),
++      ),
++  };
++});
++jest.mock("../../../../components/coach/setup/CoachSetupChecklist", () => {
++  const {
++    Text: T,
++    TouchableOpacity: Btn,
++    View: V,
++  } = jest.requireActual("react-native");
++  const R = jest.requireActual("react");
++  return {
++    __esModule: true,
++    default: ({ onOpen }: { onOpen: (t: string) => void }) =>
++      R.createElement(
++        V,
++        null,
++        R.createElement(
++          Btn,
++          { testID: "checklist-package", onPress: () => onOpen("package") },
++          R.createElement(T, null, "Package"),
++        ),
++        R.createElement(
++          Btn,
++          { testID: "checklist-get-paid", onPress: () => onOpen("get_paid") },
++          R.createElement(T, null, "Get paid"),
++        ),
++      ),
++  };
++});
++
++import CoachHomeCards from "../../command-center/CoachHomeCards";
++import MoneyBack from "../MoneyBack";
++
++const Tab = createBottomTabNavigator<CoachTabParamList>();
++const Stack = createNativeStackNavigator<SettingsStackParamList>();
++const ref = createNavigationContainerRef<CoachTabParamList>();
++
++const Home = () => (
++  <View>
++    <Text>Home tab</Text>
++    <CoachHomeCards />
++  </View>
++);
++const SettingsRoot = () => <Text>Settings root</Text>;
++function Money({
++  route,
++}: {
++  route: { params?: SettingsStackParamList["CoachMoney"] };
++}) {
++  return (
++    <View>
++      <MoneyBack toHome={route.params?.from === "home"} />
++      <Text>Money page</Text>
++    </View>
++  );
++}
++const Plain = () => <Text>Other settings screen</Text>;
++
++function SettingsStack() {
++  return (
++    <Stack.Navigator screenOptions={{ headerShown: false }}>
++      <Stack.Screen name="SettingsHome" component={SettingsRoot} />
++      <Stack.Screen name="CoachMoney" component={Money} />
++      <Stack.Screen name="CoachPackagesList" component={Plain} />
++      <Stack.Screen name="CoachSetup" component={Plain} />
++    </Stack.Navigator>
++  );
++}
++
++async function mount() {
++  const r = await render(
++    <NavigationContainer ref={ref}>
++      <Tab.Navigator screenOptions={{ headerShown: false }}>
++        <Tab.Screen name="CommandCenter" component={Home} />
++        <Tab.Screen name="SettingsStack" component={SettingsStack} />
++      </Tab.Navigator>
++    </NavigationContainer>,
++  );
++  return r;
++}
++
++type AnyState = NavigationState | PartialState<NavigationState> | undefined;
++function settingsRoutes(): string[] {
++  const root = ref.getRootState() as AnyState;
++  const tab = root?.routes.find((x) => x.name === "SettingsStack");
++  const st = tab?.state as AnyState;
++  return (st?.routes ?? []).map((x) => x.name);
++}
++
++describe("B-332-7 the Settings root stays reachable after Home opens Money", () => {
++  it("Home -> Money keeps the Settings root below Money, and the Settings tab reaches it", async () => {
++    const r = await mount();
++    await act(async () => {
++      fireEvent.press(r.getByTestId("home-money-card"));
++    });
++    expect(settingsRoutes()).toEqual(["SettingsHome", "CoachMoney"]);
++    expect(ref.getCurrentRoute()?.name).toBe("CoachMoney");
++
++    // Tapping the focused Settings tab pops to its root. The native stack
++    // does that on the next animation frame, so wait for it.
++    await act(async () => {
++      fireEvent.press(r.getByText("SettingsStack"));
++    });
++    await waitFor(() =>
++      expect(ref.getCurrentRoute()?.name).toBe("SettingsHome"),
++    );
++    expect(settingsRoutes()).toEqual(["SettingsHome"]);
++    expect(r.getByText("Settings root")).toBeTruthy();
++  });
++
++  it("Back on Money opened from Home returns to Home and leaves the Settings root in place", async () => {
++    const r = await mount();
++    await act(async () => {
++      fireEvent.press(r.getByTestId("home-money-card"));
++    });
++    await act(async () => {
++      fireEvent.press(r.getByLabelText("Back to Home"));
++    });
++    expect(ref.getCurrentRoute()?.name).toBe("CommandCenter");
++    await act(async () => {
++      fireEvent.press(r.getByText("SettingsStack"));
++    });
++    expect(ref.getCurrentRoute()?.name).toBe("SettingsHome");
++  });
++
++  it("checklist targets keep the Settings root too", async () => {
++    const r = await mount();
++    await act(async () => {
++      fireEvent.press(r.getByTestId("checklist-package"));
++    });
++    expect(settingsRoutes()).toEqual(["SettingsHome", "CoachPackagesList"]);
++  });
++});
+diff --git a/src/screens/coach/money/useSection.ts b/src/screens/coach/money/useSection.ts
+new file mode 100644
+index 0000000..e913921
+--- /dev/null
++++ b/src/screens/coach/money/useSection.ts
+@@ -0,0 +1,63 @@
++/**
++ * S-COACH-MOB-2 — one loadable section of the Money page. Each section loads,
++ * fails and retries on its own, so one slow route never blanks the page.
++ * The last good data is kept while a reload runs or fails (offline), with
++ * the time it was loaded.
++ */
++import { useCallback, useEffect, useRef, useState } from "react";
++import {
++  describeError,
++  type FriendlyError,
++} from "../../../lib/coachSetup/errors";
++
++export interface Section<T> {
++  data: T | null;
++  error: FriendlyError | null;
++  loading: boolean;
++  loadedAt: number | null;
++  reload: () => Promise<void>;
++}
++
++export function useSection<T>(
++  fetcher: () => Promise<T>,
++  action: string,
++  deps: readonly unknown[],
++): Section<T> {
++  const [data, setData] = useState<T | null>(null);
++  const [error, setError] = useState<FriendlyError | null>(null);
++  const [loading, setLoading] = useState(true);
++  const [loadedAt, setLoadedAt] = useState<number | null>(null);
++  const seq = useRef(0);
++  const alive = useRef(true);
++  useEffect(
++    () => () => {
++      alive.current = false;
++    },
++    [],
++  );
++
++  const reload = useCallback(async () => {
++    const mine = ++seq.current;
++    setLoading(true);
++    setError(null);
++    try {
++      const d = await fetcher();
++      if (!alive.current || mine !== seq.current) return;
++      setData(d);
++      setLoadedAt(Date.now());
++    } catch (err) {
++      if (!alive.current || mine !== seq.current) return;
++      setError(describeError(err, action));
++    } finally {
++      if (alive.current && mine === seq.current) setLoading(false);
++    }
++    // `deps` are the fetcher's inputs.
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, deps);
++
++  useEffect(() => {
++    void reload();
++  }, [reload]);
++
++  return { data, error, loading, loadedAt, reload };
++}
+diff --git a/src/screens/coach/settings/BillingSection.tsx b/src/screens/coach/settings/BillingSection.tsx
+index 4799579..f39bd90 100644
+--- a/src/screens/coach/settings/BillingSection.tsx
++++ b/src/screens/coach/settings/BillingSection.tsx
+@@ -6,15 +6,11 @@ import type { SettingsStyles } from './styles';
+ 
+ export function BillingSection({
+   onOpenTeamProfile,
+-  onOpenBusinessMetrics,
+-  onOpenEarnings,
+   onOpenBilling,
+   colors,
+   styles,
+ }: {
+   onOpenTeamProfile: () => void;
+-  onOpenBusinessMetrics: () => void;
+-  onOpenEarnings: () => void;
+   onOpenBilling: () => void;
+   colors: ThemeColors;
+   styles: SettingsStyles;
+@@ -36,31 +32,7 @@ export function BillingSection({
+           <Text style={styles.rowLabel}>Team / Gym profile</Text>
+           <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+         </TouchableOpacity>
+-        <View style={styles.divider} />
+-        <TouchableOpacity
+-          style={styles.row}
+-          onPress={onOpenBusinessMetrics}
+-          accessibilityRole="button"
+-          accessibilityLabel="Open business metrics"
+-        >
+-          <Ionicons name="trending-up-outline" size={20} color={colors.textSecondary} />
+-          <Text style={styles.rowLabel}>Revenue & metrics</Text>
+-          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+-        </TouchableOpacity>
+-        <View style={styles.divider} />
+-        {/* Earnings + payout readiness — backend PR #216.
+-            Packages CRUD lives in the top Payments section
+-            (CoachPackagesList) — single entry per surface. */}
+-        <TouchableOpacity
+-          style={styles.row}
+-          onPress={onOpenEarnings}
+-          accessibilityRole="button"
+-          accessibilityLabel="Open earnings and payouts"
+-        >
+-          <Ionicons name="cash-outline" size={20} color={colors.textSecondary} />
+-          <Text style={styles.rowLabel}>Earnings & payouts</Text>
+-          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+-        </TouchableOpacity>
++        {/* C-332-12 (Opus): Money opens from the Payments section only. */}
+       </View>
+ 
+       {/* Subscription & access */}

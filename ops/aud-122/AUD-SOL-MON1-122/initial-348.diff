@@ -1,0 +1,1437 @@
+diff --git a/src/api/coachMoneyApi.ts b/src/api/coachMoneyApi.ts
+new file mode 100644
+index 0000000..9d4c103
+--- /dev/null
++++ b/src/api/coachMoneyApi.ts
+@@ -0,0 +1,886 @@
++/**
++ * S-COACH-MOB-2 — typed client for TGP Money (coach Home card + Money page).
++ *
++ * Every number comes from a live backend route (backend #641 and existing
++ * Connect routes); nothing is estimated on the device:
++ *   GET  /v1/coach/money/summary?from&to&compare_from&compare_to[&currency]
++ *   GET  /v1/coach/money/export.csv?from&to[&currency]  tax CSV (C-641-4)
++ *   GET  /v1/coach/money/charges?status&cursor&limit
++ *   GET  /v1/coach/money/charges/:id         price - processing - TGP 2% = net
++ *   GET  /v1/coach/money/attention           failed payments, disputes, Stripe
++ *   GET  /coach/connect/payouts?limit        Stripe payouts (pending + paid)
++ *   GET  /coach/connect/metrics              roster counts (no amounts)
++ *   POST /v1/connect/accounts/dashboard-link Stripe Express dashboard link
++ *
++ * Every amount in a summary is in that summary's ONE currency (#641
++ * B-641-3); a coach who sells in more than one currency switches between
++ * them, and amounts in different currencies are never added together.
++ * `held_from_next_sale_cents` is null until the server records held amounts
++ * (backend #627 / OR-111-1) and the UI then hides the row.
++ * Errors are thrown as-is; screens turn them into specific copy with
++ * describeError (src/lib/coachSetup/errors.ts).
++ */
++import api from "../services/api";
++
++export type MoneyRange = "today" | "30d" | "90d" | "ytd";
++export const MONEY_RANGES: readonly MoneyRange[] = [
++  "today",
++  "30d",
++  "90d",
++  "ytd",
++];
++
++export type ProcessingPaidBy = "coach" | "platform" | "mixed" | "none";
++
++export interface MoneyTotals {
++  grossCents: number;
++  processingCents: number;
++  platformFeeCents: number;
++  headCoachSplitCents: number;
++  refundedCents: number;
++  headCoachIncomeCents: number;
++  netCents: number;
++  chargeCount: number;
++  processingPaidBy: ProcessingPaidBy;
++}
++
++export interface MoneySummary {
++  /** The one currency every amount in this summary is in. */
++  currency: string;
++  /** Every currency the coach has money in; switch with `?currency=`. */
++  currencies: string[];
++  window: { from: string; to: string };
++  compare: { from: string; to: string } | null;
++  totals: MoneyTotals;
++  compareTotals: MoneyTotals | null;
++  changeCents: number | null;
++  changePct: number | null;
++  recurring: {
++    mrrCents: number;
++    payingClients: number;
++    churned30d: number;
++    newClients30d: number;
++  };
++  attentionCount: number;
++  /**
++   * What TGP holds from the coach's next sale after a refund or chargeback
++   * (TGP 2% + Stripe fees, OR-111-1). null = the server does not send it yet.
++   */
++  heldFromNextSaleCents: number | null;
++  generatedAt: string;
++}
++
++/** Coach-facing charge states, including ones newer backends add. */
++export type ChargeState =
++  | "paid"
++  | "failed"
++  | "refunded"
++  | "partially_refunded"
++  | "disputed"
++  | "charged_back"
++  | "pending"
++  | "canceled";
++
++export const CHARGE_STATES: readonly ChargeState[] = [
++  "paid",
++  "failed",
++  "refunded",
++  "partially_refunded",
++  "disputed",
++  "charged_back",
++  "pending",
++  "canceled",
++];
++
++export type BillingUnit = "week" | "month" | "year";
++
++export interface MoneyCharge {
++  id: string;
++  client: { id: string; name: string };
++  packageName: string;
++  amountCents: number;
++  currency: string;
++  billingType: "one_time" | "recurring";
++  /** The cadence this charge bills at; null when one-time or not known. */
++  billingInterval: BillingUnit | null;
++  billingIntervalCount: number | null;
++  /** null when the server sent a state this build does not know. */
++  state: ChargeState | null;
++  rawState: string;
++  refundedCents: number;
++  /** What the bank took back on a lost dispute (0 when none). */
++  chargedBackCents: number;
++  createdAt: string;
++}
++
++export interface MoneyChargeBreakdown {
++  charge: MoneyCharge;
++  priceCents: number;
++  processingCents: number;
++  platformFeeCents: number;
++  headCoachSplitCents: number;
++  refundedCents: number;
++  netCents: number;
++  processingPaidBy: ProcessingPaidBy;
++  settled: boolean;
++}
++
++export type ChargeFilter = "all" | "paid" | "failed" | "refunded" | "disputed";
++export const CHARGE_FILTERS: readonly ChargeFilter[] = [
++  "all",
++  "paid",
++  "failed",
++  "refunded",
++  "disputed",
++];
++
++export interface MoneyChargesPage {
++  charges: MoneyCharge[];
++  nextCursor: string | null;
++}
++
++export type AttentionKind =
++  "failed_payment" | "dispute" | "stripe_requirements";
++
++export interface AttentionItem {
++  kind: AttentionKind;
++  id: string;
++  client: { id: string; name: string } | null;
++  amountCents: number | null;
++  currency: string | null;
++  createdAt: string | null;
++  failedPayment: {
++    packageName: string;
++    attempt: number;
++    maxAttempts: number;
++    nextRetryAt: string | null;
++    lockedOutAt: string | null;
++    cardUpdateLinkSentAt: string | null;
++    lastFailureReason: string | null;
++  } | null;
++  dispute: {
++    status: string;
++    reason: string | null;
++    evidenceDueBy: string | null;
++  } | null;
++  stripeRequirements: {
++    currentlyDue: string[];
++    pastDue: string[];
++    currentDeadline: string | null;
++    disabledReason: string | null;
++  } | null;
++}
++
++export interface MoneyAttention {
++  count: number;
++  items: AttentionItem[];
++}
++
++export type KnownPayoutStatus =
++  "pending" | "in_transit" | "paid" | "failed" | "canceled";
++/** `unknown` = a Stripe status this build does not know (never "next"). */
++export type PayoutStatus = KnownPayoutStatus | "unknown";
++
++export interface MoneyPayout {
++  id: string;
++  amountCents: number;
++  currency: string;
++  status: PayoutStatus;
++  /** Stripe's status as sent, for the unknown case. */
++  rawStatus: string;
++  arrivalDate: string | null;
++  failureMessage: string | null;
++}
++
++/**
++ * Roster figures from /coach/connect/metrics (the old Business metrics
++ * screen). Money amounts are NOT read from it: every amount on the Money
++ * page comes from the Money read model so two numbers never disagree.
++ */
++export interface RosterMetrics {
++  rosterClients: number;
++  joined30d: number;
++  team: { acquired30d: number; churned30d: number };
++}
++
++// ─── parsing (the server is the contract; never invent a number) ───────────
++//
++// B-332-3: every money amount, count and currency is REQUIRED and checked.
++// A missing or non-integer amount, an unknown currency or an incoherent
++// window fails the whole read with MONEY_PAYLOAD_INVALID (specific copy, the
++// request reference, Sentry) instead of turning into a believable $0.00.
++
++type Obj = Record<string, unknown>;
++const isObj = (v: unknown): v is Obj =>
++  !!v && typeof v === "object" && !Array.isArray(v);
++const obj = (v: unknown): Obj => (isObj(v) ? v : {});
++const strOrNull = (v: unknown): string | null =>
++  typeof v === "string" && v.length > 0 ? v : null;
++
++/** Thrown when a Money response does not match the contract. */
++export class MoneyPayloadError extends Error {
++  readonly response: {
++    status: number;
++    data: { code: "MONEY_PAYLOAD_INVALID"; field: string };
++    headers: unknown;
++  };
++  constructor(
++    readonly what: string,
++    readonly field: string,
++    headers?: unknown,
++  ) {
++    super(`${what} payload invalid at ${field}`);
++    this.name = "MoneyPayloadError";
++    this.response = {
++      status: 502,
++      data: { code: "MONEY_PAYLOAD_INVALID", field },
++      headers: headers ?? {},
++    };
++  }
++}
++
++class Reader {
++  constructor(
++    private readonly what: string,
++    private readonly headers?: unknown,
++  ) {}
++  fail(field: string): never {
++    throw new MoneyPayloadError(this.what, field, this.headers);
++  }
++  obj(v: unknown, field: string): Obj {
++    return isObj(v) ? v : this.fail(field);
++  }
++  /** A whole number of cents (may be negative: refunds can exceed sales). */
++  cents(v: unknown, field: string): number {
++    return typeof v === "number" && Number.isSafeInteger(v)
++      ? v
++      : this.fail(field);
++  }
++  centsOrNull(v: unknown, field: string): number | null {
++    return v === null || v === undefined ? null : this.cents(v, field);
++  }
++  count(v: unknown, field: string): number {
++    return typeof v === "number" && Number.isSafeInteger(v) && v >= 0
++      ? v
++      : this.fail(field);
++  }
++  pctOrNull(v: unknown, field: string): number | null {
++    if (v === null || v === undefined) return null;
++    return typeof v === "number" && Number.isFinite(v) ? v : this.fail(field);
++  }
++  str(v: unknown, field: string): string {
++    return typeof v === "string" && v.length > 0 ? v : this.fail(field);
++  }
++  date(v: unknown, field: string): string {
++    const s = this.str(v, field);
++    return Number.isFinite(Date.parse(s)) ? s : this.fail(field);
++  }
++  dateOrNull(v: unknown, field: string): string | null {
++    return v === null || v === undefined ? null : this.date(v, field);
++  }
++  currency(v: unknown, field: string): string {
++    return typeof v === "string" && CURRENCY_RE.test(v)
++      ? v.toLowerCase()
++      : this.fail(field);
++  }
++}
++
++/** ISO 4217 shape; the backend sells in usd / gbp / eur / aud / cad. */
++const CURRENCY_RE = /^[A-Za-z]{3}$/;
++
++const PAID_BY: readonly ProcessingPaidBy[] = [
++  "coach",
++  "platform",
++  "mixed",
++  "none",
++];
++
++function toTotals(r: Reader, raw: unknown, at: string): MoneyTotals {
++  const t = r.obj(raw, at);
++  const by = t.processing_paid_by;
++  return {
++    grossCents: r.cents(t.gross_cents, `${at}.gross_cents`),
++    processingCents: r.cents(t.processing_cents, `${at}.processing_cents`),
++    platformFeeCents: r.cents(t.platform_fee_cents, `${at}.platform_fee_cents`),
++    headCoachSplitCents: r.cents(
++      t.head_coach_split_cents,
++      `${at}.head_coach_split_cents`,
++    ),
++    refundedCents: r.cents(t.refunded_cents, `${at}.refunded_cents`),
++    headCoachIncomeCents: r.cents(
++      t.head_coach_income_cents,
++      `${at}.head_coach_income_cents`,
++    ),
++    netCents: r.cents(t.net_cents, `${at}.net_cents`),
++    chargeCount: r.count(t.charge_count, `${at}.charge_count`),
++    processingPaidBy: (PAID_BY as readonly unknown[]).includes(by)
++      ? (by as ProcessingPaidBy)
++      : r.fail(`${at}.processing_paid_by`),
++  };
++}
++
++function toWindow(r: Reader, raw: unknown, at: string) {
++  const w = r.obj(raw, at);
++  const from = r.date(w.from, `${at}.from`);
++  const to = r.date(w.to, `${at}.to`);
++  if (Date.parse(from) >= Date.parse(to)) r.fail(at);
++  return { from, to };
++}
++
++/**
++ * Exported for tests. `expect` (optional) is what the app asked for: the
++ * response must be for exactly that window and currency, so an answer for
++ * another period can never be shown under this period's name (B-332-1).
++ */
++export function toSummary(
++  raw: unknown,
++  expect?: { window?: { from: Date; to: Date }; currency?: string | null },
++  headers?: unknown,
++): MoneySummary {
++  const r: Reader = new Reader("summary", headers);
++  const s = r.obj(raw, "summary");
++  const currency = r.currency(s.currency, "currency");
++  const currencies = Array.isArray(s.currencies)
++    ? s.currencies.map((c, i) => r.currency(c, `currencies[${i}]`))
++    : s.currencies === undefined
++      ? [currency]
++      : r.fail("currencies");
++  const window = toWindow(r, s.window, "window");
++  const compare =
++    s.compare === null || s.compare === undefined
++      ? null
++      : toWindow(r, s.compare, "compare");
++  const totals = toTotals(r, s.totals, "totals");
++  const compareTotals =
++    s.compare_totals === null || s.compare_totals === undefined
++      ? null
++      : toTotals(r, s.compare_totals, "compare_totals");
++  const changeCents = r.centsOrNull(s.change_cents, "change_cents");
++  const changePct = r.pctOrNull(s.change_pct, "change_pct");
++  // Coherence: a change needs a comparison, and it must be the difference.
++  if (compareTotals === null && changeCents !== null) r.fail("change_cents");
++  if (
++    compareTotals !== null &&
++    changeCents !== null &&
++    changeCents !== totals.netCents - compareTotals.netCents
++  )
++    r.fail("change_cents");
++  if (expect?.window) {
++    if (
++      Date.parse(window.from) !== expect.window.from.getTime() ||
++      Date.parse(window.to) !== expect.window.to.getTime()
++    )
++      r.fail("window");
++  }
++  if (expect?.currency && expect.currency !== currency) r.fail("currency");
++  const rec = r.obj(s.recurring, "recurring");
++  return {
++    currency,
++    currencies: currencies.includes(currency)
++      ? currencies
++      : [...currencies, currency].sort(),
++    window,
++    compare,
++    totals,
++    compareTotals,
++    changeCents,
++    changePct,
++    recurring: {
++      mrrCents: r.cents(rec.mrr_cents, "recurring.mrr_cents"),
++      payingClients: r.count(rec.paying_clients, "recurring.paying_clients"),
++      churned30d: r.count(rec.churned_30d, "recurring.churned_30d"),
++      newClients30d: r.count(rec.new_clients_30d, "recurring.new_clients_30d"),
++    },
++    attentionCount: r.count(s.attention_count, "attention_count"),
++    // #641 C-641-3 names exactly one field; null = not recorded on this server.
++    heldFromNextSaleCents: r.centsOrNull(
++      s.held_from_next_sale_cents,
++      "held_from_next_sale_cents",
++    ),
++    generatedAt: r.date(s.generated_at, "generated_at"),
++  };
++}
++
++/**
++ * An error response whose body is still JSON text (a text-mode request)
++ * gets its parsed object back in place, so code-based copy can read it.
++ * A non-JSON body is left as it is.
++ */
++export function parseJsonErrorBody(err: unknown): void {
++  const response = (err as { response?: { data?: unknown } } | null)?.response;
++  if (!response || typeof response.data !== "string") return;
++  const text = response.data.replace(/^\uFEFF/, "").trim();
++  if (!text.startsWith("{")) return;
++  try {
++    const parsed: unknown = JSON.parse(text);
++    if (parsed && typeof parsed === "object") response.data = parsed;
++  } catch {
++    // Not JSON after all: the generic reader keeps the reference path.
++  }
++}
++
++const INTERVALS: readonly BillingUnit[] = ["week", "month", "year"];
++
++function readCharge(r: Reader, raw: unknown, at: string): MoneyCharge {
++  const c = r.obj(raw, at);
++  const client = r.obj(c.client, `${at}.client`);
++  const pkg = r.obj(c.package, `${at}.package`);
++  const rawState = r.str(c.state, `${at}.state`);
++  const billingType =
++    c.billing_type === "recurring" || c.billing_type === "one_time"
++      ? c.billing_type
++      : r.fail(`${at}.billing_type`);
++  const unit = c.billing_interval;
++  const billingInterval =
++    unit === null || unit === undefined
++      ? null
++      : (INTERVALS as readonly unknown[]).includes(unit)
++        ? (unit as BillingUnit)
++        : null; // a cadence this build does not know reads as "Recurring"
++  // B-332-2 (R2): a missing, null, malformed or non-positive count is an
++  // unknown cadence ("Recurring"); a count is never guessed.
++  const count = c.billing_interval_count;
++  const countKnown =
++    typeof count === "number" && Number.isSafeInteger(count) && count >= 1;
++  const billingIntervalCount =
++    billingInterval === null || !countKnown ? null : (count as number);
++  return {
++    id: r.str(c.id, `${at}.id`),
++    client: {
++      id: typeof client.id === "string" ? client.id : "",
++      name: strOrNull(client.name) ?? "Client",
++    },
++    packageName: typeof pkg.name === "string" ? pkg.name : "",
++    amountCents: r.cents(c.amount_cents, `${at}.amount_cents`),
++    currency: r.currency(c.currency, `${at}.currency`),
++    billingType,
++    billingInterval:
++      billingType === "recurring" && billingIntervalCount !== null
++        ? billingInterval
++        : null,
++    billingIntervalCount:
++      billingType === "recurring" ? billingIntervalCount : null,
++    state: (CHARGE_STATES as readonly string[]).includes(rawState)
++      ? (rawState as ChargeState)
++      : null,
++    rawState,
++    refundedCents: r.cents(c.refunded_cents, `${at}.refunded_cents`),
++    chargedBackCents:
++      c.charged_back_cents === undefined
++        ? 0
++        : r.cents(c.charged_back_cents, `${at}.charged_back_cents`),
++    createdAt: r.date(c.created_at, `${at}.created_at`),
++  };
++}
++
++/** Exported for tests. */
++export function toCharge(raw: unknown, headers?: unknown): MoneyCharge {
++  return readCharge(new Reader("charge", headers), raw, "charge");
++}
++
++const KINDS: readonly AttentionKind[] = [
++  "failed_payment",
++  "dispute",
++  "stripe_requirements",
++];
++
++function strings(r: Reader, v: unknown, at: string): string[] {
++  if (v === undefined || v === null) return [];
++  if (!Array.isArray(v)) r.fail(at);
++  return v.map((x, i) => (typeof x === "string" ? x : r.fail(`${at}[${i}]`)));
++}
++
++/** Exported for tests. Unknown kinds return null (skipped, never guessed). */
++export function toAttentionItem(
++  raw: unknown,
++  index = 0,
++  headers?: unknown,
++): AttentionItem | null {
++  const r: Reader = new Reader("attention", headers);
++  const at = `items[${index}]`;
++  const a = r.obj(raw, at);
++  if (!(KINDS as readonly unknown[]).includes(a.kind)) return null;
++  const kind = a.kind as AttentionKind;
++  const client =
++    a.client === null || a.client === undefined
++      ? null
++      : r.obj(a.client, `${at}.client`);
++  const amountCents = r.centsOrNull(a.amount_cents, `${at}.amount_cents`);
++  const currency =
++    a.currency === null || a.currency === undefined
++      ? null
++      : r.currency(a.currency, `${at}.currency`);
++  // An amount without its currency would be shown in the wrong money.
++  if (amountCents !== null && currency === null) r.fail(`${at}.currency`);
++  const fp =
++    kind === "failed_payment"
++      ? r.obj(a.failed_payment, `${at}.failed_payment`)
++      : null;
++  const d = kind === "dispute" ? r.obj(a.dispute, `${at}.dispute`) : null;
++  const sr =
++    kind === "stripe_requirements"
++      ? r.obj(a.stripe_requirements, `${at}.stripe_requirements`)
++      : null;
++  return {
++    kind,
++    id: r.str(a.id, `${at}.id`),
++    client:
++      client && typeof client.id === "string" && client.id
++        ? { id: client.id, name: strOrNull(client.name) ?? "Client" }
++        : null,
++    amountCents,
++    currency,
++    createdAt: r.dateOrNull(a.created_at, `${at}.created_at`),
++    failedPayment: fp
++      ? {
++          packageName:
++            typeof fp.package_name === "string" ? fp.package_name : "",
++          attempt: r.count(fp.attempt, `${at}.failed_payment.attempt`),
++          maxAttempts: r.count(
++            fp.max_attempts,
++            `${at}.failed_payment.max_attempts`,
++          ),
++          nextRetryAt: r.dateOrNull(
++            fp.next_retry_at,
++            `${at}.failed_payment.next_retry_at`,
++          ),
++          lockedOutAt: r.dateOrNull(
++            fp.locked_out_at,
++            `${at}.failed_payment.locked_out_at`,
++          ),
++          cardUpdateLinkSentAt: r.dateOrNull(
++            fp.card_update_link_sent_at,
++            `${at}.failed_payment.card_update_link_sent_at`,
++          ),
++          lastFailureReason: strOrNull(fp.last_failure_reason),
++        }
++      : null,
++    dispute: d
++      ? {
++          status: r.str(d.status, `${at}.dispute.status`),
++          reason: strOrNull(d.reason),
++          evidenceDueBy: r.dateOrNull(
++            d.evidence_due_by,
++            `${at}.dispute.evidence_due_by`,
++          ),
++        }
++      : null,
++    stripeRequirements: sr
++      ? {
++          currentlyDue: strings(r, sr.currently_due, `${at}.currently_due`),
++          pastDue: strings(r, sr.past_due, `${at}.past_due`),
++          currentDeadline: r.dateOrNull(
++            sr.current_deadline,
++            `${at}.current_deadline`,
++          ),
++          disabledReason: strOrNull(sr.disabled_reason),
++        }
++      : null,
++  };
++}
++
++const PAYOUT_STATUSES: readonly KnownPayoutStatus[] = [
++  "pending",
++  "in_transit",
++  "paid",
++  "failed",
++  "canceled",
++];
++
++/**
++ * /coach/connect/payouts returns major units; convert to cents. A status
++ * this build does not know is `unknown` (C-332-3): it is listed under its
++ * own label and never offered as the next payout.
++ */
++export function toPayout(
++  raw: unknown,
++  index = 0,
++  headers?: unknown,
++): MoneyPayout {
++  const r: Reader = new Reader("payouts", headers);
++  const at = `[${index}]`;
++  const p = r.obj(raw, at);
++  const amount = p.amount;
++  if (typeof amount !== "number" || !Number.isFinite(amount))
++    r.fail(`${at}.amount`);
++  const rawStatus = typeof p.status === "string" ? p.status : "";
++  const status: PayoutStatus = (PAYOUT_STATUSES as readonly string[]).includes(
++    rawStatus,
++  )
++    ? (rawStatus as KnownPayoutStatus)
++    : "unknown";
++  // B-332-3 (R2): the converted amount must be a safe integer number of
++  // cents that the major-unit value states exactly (at most two decimals).
++  const major = amount as number;
++  const amountCents = Math.round(major * 100);
++  // C-332-7 (Sol): exact, not a relative tolerance. A value with at most two
++  // decimals parses to the same double as its cents / 100 (both are the
++  // nearest double to the same decimal), so 94.8 passes and 10000.005 fails.
++  if (!Number.isSafeInteger(amountCents) || amountCents / 100 !== major)
++    r.fail(`${at}.amount`);
++  const arrival = strOrNull(p.arrival_date);
++  return {
++    id: r.str(p.id, `${at}.id`),
++    amountCents,
++    currency: r.currency(p.currency, `${at}.currency`),
++    status,
++    rawStatus,
++    // The snapshot fallback sends the epoch when it has no date.
++    arrivalDate: arrival && Date.parse(arrival) > 0 ? arrival : null,
++    failureMessage: status === "failed" ? strOrNull(p.description) : null,
++  };
++}
++
++/**
++ * The next payout: the soonest pending or in-transit payout. Stripe lists
++ * pending payouts too, so this is Stripe's own figure. Exported for tests.
++ */
++export function nextPayout(payouts: MoneyPayout[]): MoneyPayout | null {
++  const open = payouts.filter(
++    (p) => p.status === "pending" || p.status === "in_transit",
++  );
++  open.sort(
++    (a, b) =>
++      (a.arrivalDate ? Date.parse(a.arrivalDate) : Infinity) -
++      (b.arrivalDate ? Date.parse(b.arrivalDate) : Infinity),
++  );
++  return open[0] ?? null;
++}
++
++// ─── windows (device computes calendar windows in the coach's time zone) ───
++
++export interface MoneyWindows {
++  from: Date;
++  to: Date;
++  compareFrom: Date;
++  compareTo: Date;
++}
++
++/**
++ * Today = local midnight to now, compared with yesterday over the same
++ * hours. 30d / 90d = the last N days, compared with the N days before.
++ * YTD = 1 January to now, compared with the same span last year.
++ * Exported for tests.
++ */
++export function windowsFor(range: MoneyRange, now: Date): MoneyWindows {
++  const to = new Date(now.getTime());
++  if (range === "today") {
++    const from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
++    const span = to.getTime() - from.getTime();
++    const compareFrom = new Date(from.getTime() - 86_400_000);
++    return {
++      from,
++      to,
++      compareFrom,
++      compareTo: new Date(compareFrom.getTime() + Math.max(span, 1)),
++    };
++  }
++  if (range === "ytd") {
++    const from = new Date(now.getFullYear(), 0, 1);
++    const compareFrom = new Date(now.getFullYear() - 1, 0, 1);
++    const compareTo = new Date(
++      now.getFullYear() - 1,
++      now.getMonth(),
++      now.getDate(),
++      now.getHours(),
++      now.getMinutes(),
++      now.getSeconds(),
++    );
++    return { from, to, compareFrom, compareTo };
++  }
++  const days = range === "30d" ? 30 : 90;
++  const from = new Date(to.getTime() - days * 86_400_000);
++  return {
++    from,
++    to,
++    compareFrom: new Date(from.getTime() - days * 86_400_000),
++    compareTo: from,
++  };
++}
++
++// ─── API ───────────────────────────────────────────────────────────────────
++
++export interface MoneySummaryRequest {
++  /** null = the server's default currency (USD when the coach has any). */
++  currency?: string | null;
++  now?: Date;
++}
++
++const headersOf = (res: unknown): unknown =>
++  (res as { headers?: unknown } | null)?.headers;
++
++export const coachMoneyApi = {
++  async summary(
++    range: MoneyRange,
++    opts: MoneySummaryRequest = {},
++  ): Promise<MoneySummary> {
++    const w = windowsFor(range, opts.now ?? new Date());
++    const res = await api.get("/v1/coach/money/summary", {
++      params: {
++        from: w.from.toISOString(),
++        to: w.to.toISOString(),
++        compare_from: w.compareFrom.toISOString(),
++        compare_to: w.compareTo.toISOString(),
++        ...(opts.currency ? { currency: opts.currency } : {}),
++      },
++    });
++    return toSummary(
++      res.data,
++      { window: { from: w.from, to: w.to }, currency: opts.currency ?? null },
++      headersOf(res),
++    );
++  },
++
++  async charges(
++    filter: ChargeFilter,
++    opts: { cursor?: string | null; limit?: number } = {},
++  ): Promise<MoneyChargesPage> {
++    const res = await api.get("/v1/coach/money/charges", {
++      params: {
++        status: filter,
++        limit: opts.limit ?? 20,
++        ...(opts.cursor ? { cursor: opts.cursor } : {}),
++      },
++    });
++    const r: Reader = new Reader("charges", headersOf(res));
++    const d = r.obj(res.data, "charges");
++    if (!Array.isArray(d.charges)) r.fail("charges");
++    const nc = d.next_cursor;
++    if (!(nc === null || nc === undefined || typeof nc === "string"))
++      r.fail("next_cursor");
++    return {
++      charges: d.charges.map((c, i) => readCharge(r, c, `charges[${i}]`)),
++      nextCursor: strOrNull(nc),
++    };
++  },
++
++  async charge(id: string): Promise<MoneyChargeBreakdown> {
++    const res = await api.get(
++      `/v1/coach/money/charges/${encodeURIComponent(id)}`,
++    );
++    const r: Reader = new Reader("charge", headersOf(res));
++    const d = r.obj(res.data, "charge");
++    const charge = readCharge(r, d.charge, "charge");
++    const b = r.obj(d.breakdown, "breakdown");
++    const by = b.processing_paid_by;
++    if (typeof b.settled !== "boolean") r.fail("breakdown.settled");
++    return {
++      charge,
++      priceCents: r.cents(b.price_cents, "breakdown.price_cents"),
++      processingCents: r.cents(
++        b.processing_cents,
++        "breakdown.processing_cents",
++      ),
++      platformFeeCents: r.cents(
++        b.platform_fee_cents,
++        "breakdown.platform_fee_cents",
++      ),
++      headCoachSplitCents: r.cents(
++        b.head_coach_split_cents,
++        "breakdown.head_coach_split_cents",
++      ),
++      refundedCents: r.cents(b.refunded_cents, "breakdown.refunded_cents"),
++      netCents: r.cents(b.net_cents, "breakdown.net_cents"),
++      processingPaidBy: (PAID_BY as readonly unknown[]).includes(by)
++        ? (by as ProcessingPaidBy)
++        : r.fail("breakdown.processing_paid_by"),
++      settled: b.settled,
++    };
++  },
++
++  async attention(): Promise<MoneyAttention> {
++    const res = await api.get("/v1/coach/money/attention");
++    const r: Reader = new Reader("attention", headersOf(res));
++    const d = r.obj(res.data, "attention");
++    if (!Array.isArray(d.items)) r.fail("items");
++    const count = r.count(d.count, "count");
++    const items = d.items
++      .map((x, i) => toAttentionItem(x, i, headersOf(res)))
++      .filter((i): i is AttentionItem => i !== null);
++    return { count: Math.max(count, items.length), items };
++  },
++
++  async payouts(limit = 10): Promise<MoneyPayout[]> {
++    const res = await api.get("/coach/connect/payouts", {
++      params: { limit },
++    });
++    if (!Array.isArray(res.data))
++      new Reader("payouts", headersOf(res)).fail("payouts");
++    return (res.data as unknown[]).map((p, i) =>
++      toPayout(p, i, headersOf(res)),
++    );
++  },
++
++  async roster(): Promise<RosterMetrics> {
++    const res = await api.get("/coach/connect/metrics");
++    const r: Reader = new Reader("metrics", headersOf(res));
++    const m = r.obj(res.data, "metrics");
++    return {
++      rosterClients: r.count(m.active_clients, "active_clients"),
++      joined30d: r.count(m.clients_added_30d, "clients_added_30d"),
++      team: {
++        acquired30d: r.count(
++          m.sub_coach_acquisition_30d ?? 0,
++          "sub_coach_acquisition_30d",
++        ),
++        churned30d: r.count(m.sub_coach_churn_30d ?? 0, "sub_coach_churn_30d"),
++      },
++    };
++  },
++
++  /** Stripe Express dashboard (Payout settings). */
++  async dashboardLink(): Promise<string> {
++    const res = await api.post("/v1/connect/accounts/dashboard-link");
++    const url = obj(res.data).url;
++    if (typeof url !== "string" || !url)
++      new Reader("dashboard link", headersOf(res)).fail("url");
++    return url as string;
++  },
++
++  /**
++   * C-332-4 / C-641-4 — "Export CSV for taxes": sales, refunds and
++   * chargebacks in [from, to) for one currency, as the server's CSV text
++   * (the net_to_you column sums to the summary's net for the same window).
++   */
++  async exportCsv(
++    window: { from: Date; to: Date },
++    currency: string | null,
++  ): Promise<{ csv: string; filename: string }> {
++    // B-332-4 (Opus): the text transform also applies to error bodies, so
++    // a 400 arrives as a JSON string. Parse it back so the server's code
++    // (MONEY_EXPORT_TOO_LARGE, MONEY_WINDOW_INVALID, ...) reaches its copy.
++    const res = await api
++      .get("/v1/coach/money/export.csv", {
++        params: {
++          from: window.from.toISOString(),
++          to: window.to.toISOString(),
++          ...(currency ? { currency } : {}),
++        },
++        responseType: "text",
++        transformResponse: (body: unknown) => body,
++      })
++      .catch((err: unknown) => {
++        parseJsonErrorBody(err);
++        throw err;
++      });
++    const csv =
++      typeof res.data === "string" ? res.data.replace(/^\uFEFF/, "") : null;
++    if (csv === null || !csv.startsWith("date_utc,"))
++      new Reader("export", headersOf(res)).fail("csv");
++    const disposition = String(
++      (headersOf(res) as Record<string, unknown> | undefined)?.[
++        "content-disposition"
++      ] ?? "",
++    );
++    const named = /filename="([^"]+)"/.exec(disposition)?.[1];
++    const day = (d: Date) => d.toISOString().slice(0, 10);
++    return {
++      csv: csv as string,
++      filename:
++        named ??
++        `tgp-money-${day(window.from)}-to-${day(window.to)}${
++          currency ? `-${currency}` : ""
++        }.csv`,
++    };
++  },
++};
+diff --git a/src/components/coach/setup/CoachSetupChecklist.tsx b/src/components/coach/setup/CoachSetupChecklist.tsx
+index eead229..1e5501a 100644
+--- a/src/components/coach/setup/CoachSetupChecklist.tsx
++++ b/src/components/coach/setup/CoachSetupChecklist.tsx
+@@ -117,7 +117,7 @@ export function buildChecklist(s: ChecklistStatus): ChecklistItem[] {
+         s.paid === null
+           ? UNKNOWN
+           : s.paid
+-            ? "You have been paid."
++            ? "You have been paid. See it in Money."
+             : "We will mark the moment with you when it lands.",
+       done: s.paid,
+     },
+@@ -173,6 +173,9 @@ export default function CoachSetupChecklist({ onOpen }: Props) {
+       </View>
+     ) : null;
+   }
++  // C-332-1 (Opus): an active sub-coach does not set up Stripe or
++  // packages; the head coach's practice does.
++  if (snap.headCoachHandlesMoney) return null;
+   const items = buildChecklist(toChecklistStatus(snap));
+   const doneCount = items.filter((i) => i.done === true).length;
+   if (doneCount === items.length) return null;
+diff --git a/src/lib/coachSetup/errors.ts b/src/lib/coachSetup/errors.ts
+index c18c2d6..338ef39 100644
+--- a/src/lib/coachSetup/errors.ts
++++ b/src/lib/coachSetup/errors.ts
+@@ -72,8 +72,29 @@ const HUMAN_MESSAGE_CODES = new Set([
+   "PACKAGE_INVALID",
+   "MONEY_WINDOW_INVALID",
+   "MONEY_COMPARE_WINDOW_INVALID",
++  "MONEY_EXPORT_TOO_LARGE",
+ ]);
+ 
++/**
++ * C-332-1 (Opus): an active sub-coach reads Money and Connect routes behind
++ * NoActiveSubCoachGuard, which answers 403 `{ kind: "sub_coach_billing_blocked" }`.
++ * That is a role, not a failure: the head coach's practice handles money.
++ */
++export const SUB_COACH_BILLING_BLOCKED = "sub_coach_billing_blocked";
++
++export function isSubCoachBillingBlocked(err: unknown): boolean {
++  if (errorStatus(err) !== 403) return false;
++  const data = (err as { response?: { data?: unknown } } | null)?.response
++    ?.data;
++  if (!data || typeof data !== "object") return false;
++  const d = data as Record<string, unknown>;
++  return (
++    d.kind === "sub_coach_billing_blocked" ||
++    d.code === "sub_coach_billing_blocked" ||
++    d.error === "sub_coach_billing_blocked"
++  );
++}
++
+ /**
+  * Turn any thrown value into specific copy. `action` completes the sentence
+  * "TGP could not ..." for the unknown case, e.g. "open Stripe". Copy never
+@@ -147,7 +168,7 @@ export function describeError(err: unknown, action: string): FriendlyError {
+     return {
+       ...base,
+       title: "Setup is already finished",
+-      body: "You can change anything from Settings.",
++      body: "You can change anything from Settings or Money.",
+       retryable: false,
+     };
+   }
+@@ -184,6 +205,35 @@ export function describeError(err: unknown, action: string): FriendlyError {
+       retryable: false,
+     };
+   }
++  if (isSubCoachBillingBlocked(err)) {
++    return {
++      ...base,
++      // B-332-9: one canonical code, so a page can tell a role from a failure.
++      code: SUB_COACH_BILLING_BLOCKED,
++      title: "Money is handled by your head coach",
++      body: "Your head coach's practice takes payments and receives payouts for the clients you coach. Ask your head coach about payments.",
++      retryable: false,
++    };
++  }
++  if (code === "MONEY_PAYLOAD_INVALID") {
++    // B-332-3: the app refused figures it could not check rather than show
++    // a made-up number.
++    captureError(err, { area: "coach_money", action, status, code, requestId });
++    return {
++      ...base,
++      title: "These money figures could not be checked",
++      body: `TGP received figures for this that did not add up, so it is not showing them. Try again in a minute.${referenceSentence(requestId)}`,
++      retryable: true,
++    };
++  }
++  if (code === "MONEY_CURRENCY_INVALID") {
++    return {
++      ...base,
++      title: "That currency is not on your account",
++      body: "Pick one of the currencies shown at the top of Money.",
++      retryable: false,
++    };
++  }
+   if (status === 403) {
+     return {
+       ...base,
+diff --git a/src/lib/coachSetup/setupStatus.ts b/src/lib/coachSetup/setupStatus.ts
+index 398bc38..7765d2e 100644
+--- a/src/lib/coachSetup/setupStatus.ts
++++ b/src/lib/coachSetup/setupStatus.ts
+@@ -21,7 +21,11 @@ import { coachPackagesApi, isLivePackage } from "../../api/packagesApi";
+ import { prefsStorage } from "../../storage/mmkv";
+ import { hasSeenFirstPayment } from "../../screens/coach/ed/firstPaymentGate";
+ import { errorStatus } from "../../types/common";
+-import { describeError, type FriendlyError } from "./errors";
++import {
++  describeError,
++  isSubCoachBillingBlocked,
++  type FriendlyError,
++} from "./errors";
+ 
+ // Same key InviteShareCard writes when the coach shares or copies the link.
+ export const INVITE_SHARED_KEY_BASE = "coach.setup.invite_shared";
+@@ -42,6 +46,11 @@ export interface SetupSnapshot {
+   sharedLink: boolean;
+   /** Specific copy for each read that failed (deduplicated by title). */
+   errors: FriendlyError[];
++  /**
++   * C-332-1 (Opus): the signed-in coach is an active sub-coach, so Stripe
++   * and money belong to the head coach and the setup checklist is not theirs.
++   */
++  headCoachHandlesMoney?: boolean;
+ }
+ 
+ type Settled<T> = { ok: true; value: T } | { ok: false; error: unknown };
+@@ -112,7 +121,10 @@ export async function loadSetupStatus(coachId: string): Promise<SetupSnapshot> {
+     const e = describeError(err, action);
+     if (!errors.some((x) => x.title === e.title)) errors.push(e);
+   };
+-  if (!connect.ok) add(connect.error, "check your Stripe status");
++  const headCoachHandlesMoney =
++    !connect.ok && isSubCoachBillingBlocked(connect.error);
++  if (!connect.ok && !headCoachHandlesMoney)
++    add(connect.error, "check your Stripe status");
+   if (!packages.ok) add(packages.error, "check your packages");
+   if (!clients.ok) add(clients.error, "check your client list");
+   if (!paid.ok) add(paid.error, "check your payments");
+@@ -124,5 +136,6 @@ export async function loadSetupStatus(coachId: string): Promise<SetupSnapshot> {
+     paid: paid.ok ? paid.value : null,
+     sharedLink: shared.ok ? shared.value === "true" : false,
+     errors,
++    headCoachHandlesMoney,
+   };
+ }
+diff --git a/src/lib/money/headCoachRole.ts b/src/lib/money/headCoachRole.ts
+new file mode 100644
+index 0000000..2ba28e8
+--- /dev/null
++++ b/src/lib/money/headCoachRole.ts
+@@ -0,0 +1,58 @@
++/**
++ * B-332-9 (Opus) — whether the signed-in coach's money is handled by a head
++ * coach (an active sub-coach: Money and Connect routes answer 403
++ * `sub_coach_billing_blocked`).
++ *
++ * The Home Money card and the Money page learn it from the server; Settings
++ * reads it here (no extra request) to hide the Money row. It lives only for
++ * the current session: sign-in and sign-out reset it, so one account's role
++ * never carries over to the next.
++ */
++import { useSyncExternalStore } from "react";
++import { authEvents } from "../../utils/authEvents";
++
++let handles = false;
++const listeners = new Set<() => void>();
++
++function emit(): void {
++  for (const l of listeners) l();
++}
++
++/** Record what the server said for the signed-in coach. */
++export function noteHeadCoachHandlesMoney(value: boolean): void {
++  wireAuthReset();
++  if (handles === value) return;
++  handles = value;
++  emit();
++}
++
++export function headCoachHandlesMoney(): boolean {
++  return handles;
++}
++
++// Reset on every sign-in and sign-out. Wired on first use, so importing this
++// module never touches auth state.
++let wired = false;
++function wireAuthReset(): void {
++  if (wired) return;
++  wired = true;
++  const reset = () => noteHeadCoachHandlesMoney(false);
++  authEvents.on("logout", reset);
++  authEvents.on("login", reset);
++}
++
++function subscribe(listener: () => void): () => void {
++  wireAuthReset();
++  listeners.add(listener);
++  return () => {
++    listeners.delete(listener);
++  };
++}
++
++export function useHeadCoachHandlesMoney(): boolean {
++  return useSyncExternalStore(
++    subscribe,
++    headCoachHandlesMoney,
++    headCoachHandlesMoney,
++  );
++}
+diff --git a/src/lib/money/moneyCopy.ts b/src/lib/money/moneyCopy.ts
+new file mode 100644
+index 0000000..8197923
+--- /dev/null
++++ b/src/lib/money/moneyCopy.ts
+@@ -0,0 +1,325 @@
++/**
++ * S-COACH-MOB-2 — plain-words copy for TGP Money. Pure functions so every
++ * label is testable. No emojis, no exclamation marks.
++ */
++import type {
++  AttentionItem,
++  ChargeFilter,
++  MoneyCharge,
++  MoneyRange,
++  MoneyTotals,
++  PayoutStatus,
++} from "../../api/coachMoneyApi";
++import { formatCurrencyCents } from "../../utils/currency";
++import { requirementLabels } from "../coachSetup/connectCopy";
++
++export const money = (cents: number, currency = "usd"): string =>
++  formatCurrencyCents(cents, currency);
++
++export function shortDate(iso: string | null): string | null {
++  if (!iso) return null;
++  const t = Date.parse(iso);
++  if (!Number.isFinite(t)) return null;
++  return new Date(t).toLocaleDateString(undefined, {
++    month: "short",
++    day: "numeric",
++  });
++}
++
++export const RANGE_LABEL: Record<MoneyRange, string> = {
++  today: "Today",
++  "30d": "30 days",
++  "90d": "90 days",
++  ytd: "Year to date",
++};
++
++export const RANGE_COMPARE_LABEL: Record<MoneyRange, string> = {
++  today: "yesterday",
++  "30d": "the 30 days before",
++  "90d": "the 90 days before",
++  ytd: "the same time last year",
++};
++
++export const FILTER_LABEL: Record<ChargeFilter, string> = {
++  all: "All",
++  paid: "Paid",
++  failed: "Failed",
++  refunded: "Refunded",
++  disputed: "Disputed",
++};
++
++/**
++ * B-332-2: the cadence a charge bills at, in plain words, from the
++ * backend's billing_interval / billing_interval_count. Never assumes
++ * "Monthly": a recurring charge with no known cadence says "Recurring".
++ */
++export function cadenceLabel(
++  c: Pick<
++    MoneyCharge,
++    "billingType" | "billingInterval" | "billingIntervalCount"
++  >,
++): string {
++  if (c.billingType !== "recurring") return "One time";
++  // B-332-2 (R2): an unknown count is an unknown cadence, never "Monthly".
++  const n = c.billingIntervalCount;
++  if (typeof n !== "number" || !Number.isSafeInteger(n) || n < 1)
++    return "Recurring";
++  switch (c.billingInterval) {
++    case "week":
++      return n === 1 ? "Weekly" : `Every ${n} weeks`;
++    case "month":
++      if (n === 1) return "Monthly";
++      if (n === 3) return "Every 3 months";
++      if (n === 12) return "Yearly";
++      return `Every ${n} months`;
++    case "year":
++      return n === 1 ? "Yearly" : `Every ${n} years`;
++    default:
++      return "Recurring";
++  }
++}
++
++/** "Up $40.00 on yesterday", "Down 12.5% on the 30 days before". */
++export function changeLine(
++  range: MoneyRange,
++  changeCents: number | null,
++  changePct: number | null,
++  currency: string,
++): string | null {
++  if (changeCents === null) return null;
++  const vs = RANGE_COMPARE_LABEL[range];
++  if (changeCents === 0) return `Same as ${vs}`;
++  const dir = changeCents > 0 ? "Up" : "Down";
++  const amount = money(Math.abs(changeCents), currency);
++  const pct = changePct === null ? "" : ` (${Math.abs(changePct).toFixed(1)}%)`;
++  return `${dir} ${amount}${pct} on ${vs}`;
++}
++
++export function humanize(raw: string): string {
++  const s = raw.replace(/_/g, " ").trim();
++  return s ? s.charAt(0).toUpperCase() + s.slice(1) : "Unknown state";
++}
++
++export function chargeStateLabel(c: MoneyCharge): string {
++  switch (c.state) {
++    case "paid":
++      return "Paid";
++    case "failed":
++      return "Payment failed";
++    case "refunded":
++      return "Refunded";
++    case "partially_refunded":
++      return `Partly refunded (${money(c.refundedCents, c.currency)})`;
++    case "disputed":
++      return "Disputed";
++    case "charged_back":
++      return c.chargedBackCents > 0
++        ? `Charged back (${money(c.chargedBackCents, c.currency)})`
++        : "Charged back";
++    case "pending":
++      return "Processing";
++    case "canceled":
++      return "Checkout not finished";
++    default:
++      return humanize(c.rawState);
++  }
++}
++
++/**
++ * B-332-10 (Opus): Stripe's decline message is written to the cardholder and
++ * already ends in a period. Show it as the bank's words, quoted, without the
++ * trailing punctuation, so it never reads "Your card was declined.." as if
++ * the coach were the cardholder.
++ */
++export function bankSaid(reason: string | null | undefined): string | null {
++  const text = (reason ?? "").trim().replace(/[\s.!?]+$/u, "");
++  return text ? `The bank said: "${text}"` : null;
++}
++
++/** True for states that should read as a problem (colour + label). */
++export function chargeIsProblem(c: MoneyCharge): boolean {
++  return (
++    c.state === "failed" ||
++    c.state === "disputed" ||
++    c.state === "charged_back" ||
++    c.state === null
++  );
++}
++
++export const PAYOUT_LABEL: Record<PayoutStatus, string> = {
++  pending: "On the way soon",
++  in_transit: "On the way to your bank",
++  paid: "In your bank",
++  failed: "Payout failed",
++  canceled: "Payout canceled",
++  unknown: "Status from Stripe not recognised",
++};
++
++/** One line per fee row, for the "how this adds up" breakdown. */
++export interface BreakdownRow {
++  key: string;
++  label: string;
++  cents: number;
++  /** -1 = taken away, +1 = added, 0 = the result. */
++  sign: -1 | 0 | 1;
++  note?: string;
++}
++
++export function breakdownRows(t: {
++  priceCents: number;
++  processingCents: number;
++  platformFeeCents: number;
++  headCoachSplitCents: number;
++  refundedCents: number;
++  headCoachIncomeCents?: number;
++  netCents: number;
++  processingPaidBy: MoneyTotals["processingPaidBy"];
++}): BreakdownRow[] {
++  const rows: BreakdownRow[] = [
++    { key: "price", label: "Clients paid", cents: t.priceCents, sign: 1 },
++    {
++      key: "processing",
++      label: "Card processing (Stripe)",
++      cents: t.processingCents,
++      sign: -1,
++      note:
++        t.processingPaidBy === "platform"
++          ? "TGP paid Stripe's processing on these sales."
++          : t.processingPaidBy === "mixed"
++            ? "TGP paid Stripe's processing on some of these sales."
++            : undefined,
++    },
++    {
++      key: "platform",
++      label: "TGP fee (2%)",
++      cents: t.platformFeeCents,
++      sign: -1,
++    },
++  ];
++  // B-332-5: every nonzero contribution is listed with its real direction,
++  // so the rows always add up to the net. A refund or chargeback booked in
++  // this period on an earlier sale reverses the head-coach share: for the
++  // seller the share comes back (added), for the head coach their team
++  // income goes down (taken away).
++  const split = t.headCoachSplitCents;
++  if (split !== 0) {
++    rows.push(
++      split > 0
++        ? {
++            key: "head_coach",
++            label: "Head coach share",
++            cents: split,
++            sign: -1,
++          }
++        : {
++            key: "head_coach",
++            label: "Head coach share returned on refunds",
++            cents: -split,
++            sign: 1,
++          },
++    );
++  }
++  if (t.refundedCents !== 0) {
++    rows.push({
++      key: "refunds",
++      label: "Refunds and chargebacks",
++      cents: Math.abs(t.refundedCents),
++      sign: t.refundedCents > 0 ? -1 : 1,
++    });
++  }
++  const team = t.headCoachIncomeCents ?? 0;
++  if (team !== 0) {
++    rows.push(
++      team > 0
++        ? {
++            key: "team_income",
++            label: "Your share of your team's sales",
++            cents: team,
++            sign: 1,
++          }
++        : {
++            key: "team_income",
++            label: "Your share of refunds on your team's sales",
++            cents: -team,
++            sign: -1,
++          },
++    );
++  }
++  rows.push({ key: "net", label: "Net to you", cents: t.netCents, sign: 0 });
++  return rows;
++}
++
++export interface AttentionCopy {
++  title: string;
++  lines: string[];
++  /** The main action for this item. */
++  action: "message_client" | "update_stripe";
++  actionLabel: string;
++}
++
++function disputeStatus(raw: string): string {
++  if (raw === "needs_response" || raw === "warning_needs_response")
++    return "Needs a response";
++  if (raw === "under_review" || raw === "warning_under_review")
++    return "Under review with the bank";
++  return humanize(raw);
++}
++
++export function attentionCopy(a: AttentionItem): AttentionCopy {
++  const who = a.client?.name ?? "A client";
++  const amount =
++    a.amountCents !== null ? money(a.amountCents, a.currency ?? "usd") : null;
++  if (a.kind === "failed_payment" && a.failedPayment) {
++    const f = a.failedPayment;
++    const lines: string[] = [];
++    lines.push(
++      [f.packageName, amount].filter(Boolean).join(", ") || "Payment failed",
++    );
++    if (f.maxAttempts > 0)
++      lines.push(`Try ${Math.max(f.attempt, 1)} of ${f.maxAttempts}.`);
++    const locked = shortDate(f.lockedOutAt);
++    const retry = shortDate(f.nextRetryAt);
++    if (locked) lines.push(`Access paused on ${locked}.`);
++    else if (retry) lines.push(`TGP tries the card again on ${retry}.`);
++    const sent = shortDate(f.cardUpdateLinkSentAt);
++    if (sent) lines.push(`TGP emailed them a card update link on ${sent}.`);
++    const said = bankSaid(f.lastFailureReason);
++    if (said) lines.push(said);
++    return {
++      title: `${who}'s payment did not go through`,
++      lines,
++      action: "message_client",
++      actionLabel: `Message ${who}`,
++    };
++  }
++  if (a.kind === "dispute" && a.dispute) {
++    const d = a.dispute;
++    const lines = [
++      [amount, disputeStatus(d.status)].filter(Boolean).join(". ") + ".",
++    ];
++    if (d.reason) lines.push(`Reason given: ${humanize(d.reason)}.`);
++    const due = shortDate(d.evidenceDueBy);
++    if (due) lines.push(`Evidence is due by ${due}.`);
++    return {
++      title: `${who} disputed a charge`,
++      lines,
++      action: "message_client",
++      actionLabel: `Message ${who}`,
++    };
++  }
++  const r = a.stripeRequirements;
++  const due = requirementLabels([
++    ...(r?.pastDue ?? []),
++    ...(r?.currentlyDue ?? []),
++  ]);
++  const lines: string[] = [];
++  if (due.length) lines.push(`Stripe asks for: ${due.join(", ")}.`);
++  const deadline = shortDate(r?.currentDeadline ?? null);
++  if (deadline) lines.push(`Finish by ${deadline} to keep payouts running.`);
++  return {
++    title: "Stripe needs a few details",
++    lines,
++    action: "update_stripe",
++    actionLabel: "Update details with Stripe",
++  };
++}

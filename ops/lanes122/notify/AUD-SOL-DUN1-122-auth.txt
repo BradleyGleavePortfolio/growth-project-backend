@@ -1,0 +1,17 @@
+AUD-SOL-DUN1-122, agent 122 — 2026-10-05 15:16:17 PDT
+
+GitHub credentials are unusable for authenticated operations: default proxy gh/git return Bad credentials/Invalid username or token. Explicit `gh api --hostname github.com` permits public read-only REST reads and archives, but POST #725 verdict failed HTTP 401 Requires authentication.
+
+#725 review completed APPROVE, A/B/C 0/0/0 @ 1dbc59b690119f03f010e406f9f1e0e43d1e6556. Complete outbound verdict preserved at ops/aud-122/AUD-SOL-DUN1-122/verdict-725.md, receipt at receipt-725.json. No comment was posted.
+
+Operator decision: restore GitHub authorization (recommended default) or post the exact independently prepared Sol payload on behalf of the lens after rechecking the head.
+
+Continuing under operator mail at 15:25:05 PDT, not ending because of 401; auth probe still 401, next probe no earlier than 15:30:05 PDT. #725 mandatory CI is fully green; verdict payload updated accordingly. Builder remains in progress with no READY/new heads, so no train verdicts were posted. Initial read-only train review confirms no new normal-use Bs; see ops/reports/AUD-SOL-DUN1-122.md for exact starting heads, own prior B dispositions and the separate full-refund-pause launch dependency.
+
+Latest probes 15:31:01 and 15:37:47 PDT: still 401; public REST now also anonymous-rate-limited (403), so reviewing preserved source/local refs. Every verdict-<n>.md exists; eight train files are explicitly baseline drafts, DO NOT POST until builder READY/new-head delta review. #725 alone is final prepared approval.
+
+Initial no-new-B conclusion superseded by two normal-use candidates, independently notified in AUD-SOL-DUN1-122-inquiry-copy.txt (B-689-S1) and AUD-SOL-DUN1-122-restart-route.txt (B-690-S1). These will be checked against actual composed READY source; no Opus notes read.
+
+IMPORTANT — operator's 15:41 "auth is back" mail received, but this worker's fresh `bash api_credentials=["github"]` probe at 15:44:46 PDT still returned proxy 401 Bad credentials. Alternate explicit github.com user probe at 15:45:03 PDT is still anonymous/rate-limited 403. Connector discovery still says CONNECTED, CLI-only. No #725 POST was retried because authenticated user probe never succeeded.
+
+Default now: operator posts the exact preserved #725 payload through the operator's working authorization after head verification, or refreshes this worker's credential context. This lens remains active for the written job and the original 16:27:40 PDT deadline; drafts are available, but no fresh train READY/new heads exist yet.

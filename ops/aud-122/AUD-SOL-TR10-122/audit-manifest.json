@@ -1,0 +1,19 @@
+{
+  "job": "AUD-SOL-TR10-122",
+  "agent": 122,
+  "lens": "GPT-6.1 Sol",
+  "posting_status": "BLOCKED_GITHUB_CREDENTIAL_401",
+  "last_head_reread": "2026-10-05 15:22:27 PDT",
+  "comments": [
+    {"pr": 671, "head": "565893b5c969fdc937d03f3a5b947bcb8d100b11", "verdict": "APPROVE", "A": 0, "B": 0, "C": 0, "draft": "verdict-671.md", "comment_url": null},
+    {"pr": 672, "head": "193c6f9ac3f57a10b8ff87fa3874ee0f190dd9b7", "verdict": "APPROVE", "A": 0, "B": 0, "C": 1, "draft": "verdict-672.md", "comment_url": null},
+    {"pr": 673, "head": "91d0adcbb3b1c5eef10266006a6a6a8c6b33f6a5", "verdict": "REQUEST CHANGES", "A": 0, "B": 1, "C": 1, "draft": "verdict-673.md", "comment_url": null},
+    {"pr": 706, "head": "87aaf126036bc7604dceb3ab55f0ddf255519950", "verdict": "APPROVE", "A": 0, "B": 0, "C": 1, "draft": "verdict-706.md", "comment_url": null},
+    {"pr": 707, "head": "2bb4b368f39d8a380a48086c6c79d21cb4cc34b9", "verdict": "APPROVE", "A": 0, "B": 0, "C": 1, "draft": "verdict-707.md", "comment_url": null}
+  ],
+  "open_Bs": ["B-673-3"],
+  "runtime_edits": false,
+  "independent_ci_run": null,
+  "proposed_probe": "B-673-3-normal-offer-mismatch.diff",
+  "operator_default": "Hold the land-as-one train for B-673-3; post the five independent verdict drafts via a working authenticated channel; fix ordinary offer/checkout mismatch in a bounded top integration piece, not edge hardening."
+}

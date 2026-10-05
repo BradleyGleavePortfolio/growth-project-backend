@@ -1,0 +1,10 @@
+AUD-SOL-DUN1-122 / agent 122 — normal-use access dead end in the upcoming composed train; recheck actual READY head.
+
+B-690-S1 candidate (D4 owns HTTP wiring): no authenticated coach route reaches D2c/D2d restartAfterDisputePause.
+Normal-user story: A client's bank dispute pauses the plan, the coach wants to restart it, but the backend offers no coach restart operation, so the client stays locked out and billing stays paused.
+
+Evidence: src/checkout/dunning-v2/dunning-v2.service.ts:1505 defines the only transition; a whole-src symbol search at #724 finds only its definition. D4 #690's dunning-status.controller.ts:19–31 exposes only client GET status, and dunning-v2.module.ts:45 registers only that controller; client-billing.controller.ts exposes client card/quote/cancel, not coach restart. Existing POST subscriptions/:id/resume is own-client voluntary-cancel resume and refuses entitlement_active=false (subscription-checkout.service.ts:446), so it cannot provide the ruled coach restart.
+
+This is ordinary sequential dispute -> coach decision, no edge condition. Minimal default: wire a JWT/coach-authenticated own-purchase restart endpoint to the existing service; service already enforces coach_user_id. Verify own coach can restart and another coach cannot; do not add race/edge work.
+
+If a separately owned piece is already supplying this endpoint, operator should identify that exact dependency before the dunning activation; otherwise it is a train access blocker. No current-round train verdict posted yet; no Opus notes read.

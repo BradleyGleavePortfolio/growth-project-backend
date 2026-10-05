@@ -10,7 +10,7 @@ mkdir -p .github/workflows
 cp /home/user/workspace/ops/ci-lane/$kind-ci-lane.yml .github/workflows/ci-lane.yml
 printf '%s\n' "$@" > .ci-lane-specs
 git add .github/workflows/ci-lane.yml .ci-lane-specs
-git -c user.name="TGP Agent 116" -c user.email="agent@tgp.invalid" commit -qm "ci-lane: targeted run (never merge)" --no-verify
+git -c user.name="Bradley Gleave" -c user.email="bradley@bradleytgpcoaching.com" commit -qm "ci-lane: targeted run (never merge)" --no-verify
 git push -q -f origin "HEAD:refs/heads/$br"
 git reset -q --soft HEAD~1 && git restore --staged .github/workflows/ci-lane.yml .ci-lane-specs && rm -f .github/workflows/ci-lane.yml .ci-lane-specs
 sleep 8

@@ -1,0 +1,119 @@
+import { Module } from '@nestjs/common';
+import { ConnectModule } from '../connect/connect.module';
+import { ContractsModule } from '../contracts/contracts.module';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { PackagesModule } from '../packages/packages.module';
+import { RegimesModule } from '../regimes/regimes.module';
+import { AdminAnalyticsService } from './admin-analytics.service';
+import {
+  CheckoutController,
+  CoachPurchasesController,
+} from './checkout.controller';
+import { CheckoutService } from './checkout.service';
+import { SubscriptionCheckoutController } from './subscription-checkout.controller';
+import { SubscriptionCheckoutService } from './subscription-checkout.service';
+import { CheckoutWebhookHandlerService } from './checkout-webhook-handler.service';
+import { ClientBillingController } from './client-billing.controller';
+import { ClientBillingReconciler } from './client-billing.reconciler';
+import { ClientBillingService } from './client-billing.service';
+import { DunningService } from './dunning.service';
+import { DunningV2Module } from './dunning-v2/dunning-v2.module';
+import {
+  AdminPaymentOpsController,
+  CoachPaymentOpsController,
+} from './payment-ops.controller';
+import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
+import { CronLeaseService } from './cron-lease.service';
+import { SettlementSweepCron } from './settlement-sweep.cron';
+import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
+import { PayoutNoticeService } from './payout-notice.service';
+import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
+
+// CheckoutModule — Stripe Checkout session minting and ClientPurchase
+// lifecycle. Pulls in ConnectModule for StripeConnectApiService +
+// ConnectModuleState (boot-time platform-enabled gate), and PackagesModule
+// to read / mutate CoachPackage rows.
+//
+// CheckoutWebhookHandlerService is exported so BillingService can forward
+// checkout.session.* / subscription.* / payment_intent.* events to it.
+//
+// Phase 4-5: DunningService + PurchaseSplitHandlerService own the split
+// ledger / head-coach transfer / payment-failure-and-retry lifecycle.
+//
+// Guards used by this module's controllers (JwtAuthGuard, RolesGuard,
+// ServiceTokenGuard, CoachOrOwnerGuard) are provided by the @Global
+// SecurityGuardsModule. The previous local-provider workaround that the
+// hotfix #243 introduced has been removed — global guard provisioning is
+// the structural fix for the cycle (CheckoutModule no longer needs to
+// import AuthModule, and AuthModule no longer needs to provide guards).
+@Module({
+  // A276 P0-2 (refix) — NotificationsModule is imported so
+  // RefundDisputeHandlerService can emit COACH_ALERTs on the
+  // post-conversion refund + dispute paths (the dominant production
+  // case: refunds arrive after convertGuestToUser has stamped a
+  // ClientPurchase row). The dependency is HARD: missing wiring fails
+  // module boot rather than silently no-opping.
+  imports: [
+    ConnectModule,
+    PackagesModule,
+    // F2 — provides PartialRefundDecisionService for RefundDisputeHandler's
+    // @Optional() partial-refund-decision seam. No-op while
+    // FEATURE_NAMED_REGIMES is OFF (the service self-checks the flag).
+    // No cycle: RegimesModule imports only PackagesModule (which imports just
+    // NotificationsModule) and obtains its guards from the @Global
+    // SecurityGuardsModule, so it has no import path back to CheckoutModule.
+    RegimesModule,
+    NotificationsModule,
+    // B3 v2 (spec PR #6) — provides DunningV2Service for the webhook
+    // handler's @Optional() recovery / late-reversal shim. No-op while
+    // FEATURE_DUNNING_V2 is OFF (the service self-checks the flag).
+    DunningV2Module,
+    // Bank-Account Payouts v2 (spec §2.5) — provides PayoutRoutingService for
+    // the webhook handler's @Optional() payout.* routing branch. No-op while
+    // FEATURE_BANK_PAYOUTS_V2 is OFF (the service self-checks the flag). No
+    // cycle: PayoutsV2Module does not import CheckoutModule.
+    PayoutsV2Module,
+    // B5 — provides CheckoutContractGate so CheckoutService can enforce the
+    // two-layer contract gate before any Stripe call. No-op while
+    // FEATURE_CONTRACTS_ENABLED is OFF (the gate self-checks the flag).
+    ContractsModule,
+  ],
+  controllers: [
+    CheckoutController,
+    CoachPurchasesController,
+    SubscriptionCheckoutController,
+    AdminPaymentOpsController,
+    CoachPaymentOpsController,
+    // S-DUNNING-R2 — native card update (1A) and client cancel (2A / option A).
+    ClientBillingController,
+  ],
+  providers: [
+    CheckoutService,
+    SubscriptionCheckoutService,
+    CheckoutWebhookHandlerService,
+    PurchaseSplitHandlerService,
+    DunningService,
+    RefundDisputeHandlerService,
+    AdminAnalyticsService,
+<<<<<<< refs/pull/724
+    // S-FEE — scheduled payout / settlement sweep (single runner via CronLease).
+    CronLeaseService,
+    SettlementSweepCron,
+    // S-FEE round 5 (OR-111-1) — payout notice delivery + Money read side.
+    PayoutNoticeService,
+=======
+    ClientBillingService,
+    ClientBillingReconciler,
+>>>>>>> refs/pull/691
+  ],
+  exports: [
+    CheckoutService,
+    CheckoutWebhookHandlerService,
+    PurchaseSplitHandlerService,
+    DunningService,
+    RefundDisputeHandlerService,
+    AdminAnalyticsService,
+    ClientBillingService,
+  ],
+})
+export class CheckoutModule {}

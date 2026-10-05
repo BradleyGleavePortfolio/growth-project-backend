@@ -1,0 +1,2004 @@
+diff --git a/src/__tests__/coachSaasBlockers.test.ts b/src/__tests__/coachSaasBlockers.test.ts
+index 29be84f..7874dac 100644
+--- a/src/__tests__/coachSaasBlockers.test.ts
++++ b/src/__tests__/coachSaasBlockers.test.ts
+@@ -189,7 +189,8 @@ describe('Coach Tools section wires the previously-disconnected routes', () => {
+   });
+ 
+   it('SettingsScreen exposes the new Business surfaces', () => {
+-    expect(settingsSrc).toContain("'CoachBusinessMetrics'");
++    // S-COACH-MOB-2: Business metrics are folded into TGP Money.
++    expect(settingsSrc).toContain("'CoachMoney'");
+     expect(settingsSrc).toContain("'CoachTeamProfile'");
+   });
+ 
+@@ -262,17 +263,16 @@ describe('CoachTeamProfileScreen honesty', () => {
+   });
+ });
+ 
+-// ── 9) CoachBusinessMetricsScreen renders honest empty state ──────────────
+-describe('CoachBusinessMetricsScreen honesty', () => {
+-  const src = readSrc('screens/coach/CoachBusinessMetricsScreen.tsx');
++// ── 9) TGP Money (Business metrics folded in) renders honest states ───────
++describe('MoneyScreen honesty', () => {
++  const src = readSrc('screens/coach/money/MoneyScreen.tsx');
+ 
+-  it('renders a Connect Stripe CTA when status.configured === false', () => {
+-    expect(src).toMatch(/Connect Stripe to enable revenue/);
+-    expect(src).toContain('isNotConfigured');
++  it('offers the Stripe setup action when payouts are not ready', () => {
++    expect(src).toContain('money-setup-open');
++    expect(src).toContain('openStripeSetup');
+   });
+ 
+   it('does not hardcode any revenue numbers in the rendered output', () => {
+-    // No literal money strings like "$" or fake totals in the source.
+     const fakeMoney = src.match(/\$[\s]*[0-9]/g);
+     expect(fakeMoney).toBeNull();
+   });
+diff --git a/src/__tests__/paymentsConnectPackages.test.ts b/src/__tests__/paymentsConnectPackages.test.ts
+index c37dff4..2078e02 100644
+--- a/src/__tests__/paymentsConnectPackages.test.ts
++++ b/src/__tests__/paymentsConnectPackages.test.ts
+@@ -31,7 +31,6 @@
+ import * as fs from 'fs';
+ import * as path from 'path';
+ import { clientPaymentsApi } from '../api/clientPaymentsApi';
+-import { coachEarningsApi } from '../api/coachEarningsApi';
+ import { coachPackagesApi } from '../api/packagesApi';
+ import api from '../services/api';
+ 
+@@ -503,92 +502,36 @@ describe('coachPackagesApi (package CRUD)', () => {
+   });
+ });
+ 
+-// ── 2b) coachEarningsApi — earnings/payout/Stripe-dashboard rehomed ────────
+-// PR-5 supersede: these methods previously lived on `coachPaymentsApi`
+-// alongside package CRUD; they are now on their own client. Losing any of
+-// them would be a P0 (the CoachEarningsScreen depends on every one).
+-describe('coachEarningsApi', () => {
+-  it('getPayoutReadiness GETs /v1/coach/payouts/readiness', async () => {
+-    mockedApi.get.mockResolvedValueOnce({
+-      data: {
+-        onboarded: true,
+-        charges_enabled: true,
+-        payouts_enabled: false,
+-        requirements_due: ['external_account'],
+-        next_payout_eta: null,
+-        dashboard_available: true,
+-      },
+-    });
+-    const res = await coachEarningsApi.getPayoutReadiness();
+-    expect(mockedApi.get).toHaveBeenCalledWith('/v1/coach/payouts/readiness');
+-    expect(res.ok).toBe(true);
+-    if (res.ok) {
+-      expect(res.data.requirements_due).toContain('external_account');
+-    }
+-  });
+-
+-  it('getRecentPayouts GETs /v1/coach/payouts with a limit', async () => {
+-    mockedApi.get.mockResolvedValueOnce({ data: [] });
+-    await coachEarningsApi.getRecentPayouts(10);
+-    expect(mockedApi.get).toHaveBeenCalledWith('/v1/coach/payouts?limit=10');
+-  });
+-
+-  it('getRefunds GETs /v1/coach/refunds', async () => {
+-    mockedApi.get.mockResolvedValueOnce({ data: [] });
+-    await coachEarningsApi.getRefunds();
+-    expect(mockedApi.get).toHaveBeenCalledWith('/v1/coach/refunds');
+-  });
+-
+-  it('earnings response carries 2% platform + 5% head-coach fee fields', async () => {
+-    mockedApi.get.mockResolvedValueOnce({
+-      data: {
+-        currency: 'USD',
+-        gross_mtd: 5000,
+-        net_mtd: 4650,
+-        stripe_fees_mtd: 200,
+-        platform_fees_mtd: 100, // 2% of 5000
+-        head_coach_fees_mtd: 50, // 5% override
+-        gross_lifetime: 50000,
+-        net_lifetime: 46500,
+-        sub_coach_breakdown: [],
+-        generated_at: '2026-05-15T00:00:00Z',
+-      },
+-    });
+-    const res = await coachEarningsApi.getEarnings();
+-    expect(res.ok).toBe(true);
+-    if (res.ok) {
+-      // 2% of gross.
+-      expect(res.data.platform_fees_mtd).toBeCloseTo(res.data.gross_mtd * 0.02);
+-      // Head coach override is non-negative.
+-      expect(res.data.head_coach_fees_mtd).toBeGreaterThanOrEqual(0);
+-    }
+-  });
+-
+-  it('reconciliation surfaces drift state + summary verbatim', async () => {
+-    mockedApi.get.mockResolvedValueOnce({
+-      data: {
+-        state: 'drift',
+-        drift_amount: 12.34,
+-        currency: 'USD',
+-        window_start: '2026-05-01T00:00:00Z',
+-        window_end: '2026-05-15T00:00:00Z',
+-        summary: 'Ledger drift detected — contact support.',
+-      },
+-    });
+-    const res = await coachEarningsApi.getReconciliation();
+-    expect(res.ok).toBe(true);
+-    if (res.ok) {
+-      expect(res.data.state).toBe('drift');
+-      expect(res.data.summary).toMatch(/contact support/);
+-    }
+-  });
+-
+-  it('createDashboardLink POSTs /v1/coach/dashboard-link', async () => {
+-    mockedApi.post.mockResolvedValueOnce({
+-      data: { url: 'https://connect.stripe.com/express/abc', expires_at: '...' },
++// ── 2b) retired coachEarningsApi ───────────────────────────────────────────
++// S-COACH-MOB-2: coachEarningsApi called six routes that never shipped
++// (/v1/coach/earnings, /payouts/readiness, /payouts, /reconciliation,
++// /refunds, /dashboard-link). It is deleted; TGP Money (coachMoneyApi) reads
++// the live Money and Connect routes instead.
++describe('retired earnings client', () => {
++  it('no source file calls the six routes that never shipped', () => {
++    const fs = require('fs') as typeof import('fs');
++    const path = require('path') as typeof import('path');
++    const root = path.join(__dirname, '..');
++    const dead = [
++      "'/v1/coach/earnings'",
++      "'/v1/coach/payouts/readiness'",
++      '/v1/coach/payouts?limit',
++      "'/v1/coach/reconciliation'",
++      "'/v1/coach/refunds'",
++      "'/v1/coach/dashboard-link'",
++    ];
++    const walk = (dir: string): string[] =>
++      fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
++        const p = path.join(dir, e.name);
++        if (e.isDirectory()) return e.name === '__tests__' ? [] : walk(p);
++        return /\.(ts|tsx)$/.test(e.name) ? [p] : [];
++      });
++    const hits = walk(root).filter((f) => {
++      const src = fs.readFileSync(f, 'utf8');
++      return dead.some((d) => src.includes(d));
+     });
+-    await coachEarningsApi.createDashboardLink();
+-    expect(mockedApi.post).toHaveBeenCalledWith('/v1/coach/dashboard-link', {});
++    expect(hits).toEqual([]);
++    expect(fs.existsSync(path.join(root, 'api', 'coachEarningsApi.ts'))).toBe(false);
+   });
+ });
+ 
+@@ -603,14 +546,16 @@ describe('navigation wiring', () => {
+     expect(clientNav).toMatch(/name="CheckoutReturn"\s+component=\{CheckoutReturnScreen\}/);
+   });
+ 
+-  it('CoachNavigator registers CoachPackagesList + CoachEarnings', () => {
++  it('CoachNavigator registers CoachPackagesList + Money, and the old Earnings route redirects to Money', () => {
+     // PR-5 supersede: the live coach package surface is the sectioned editor
+     // (CoachPackagesListScreen → CoachPackageEditScreen → CoachPackageSubscribersScreen).
+     // The legacy single-screen `CoachPackages` route was removed.
+     expect(coachNav).toMatch(/name="CoachPackagesList"/);
+-    expect(coachNav).toMatch(/name="CoachEarnings"/);
+     expect(coachNav).toMatch(/component=\{CoachPackagesListScreen\}/);
+-    expect(coachNav).toMatch(/component=\{CoachEarningsScreen\}/);
++    expect(coachNav).toMatch(/name="CoachMoney" component=\{MoneyScreen\}/);
++    expect(coachNav).toMatch(/name="CoachEarnings"\s+component=\{MoneyRedirect\}/);
++    expect(coachNav).toMatch(/name="CoachBusinessMetrics"\s+component=\{MoneyRedirect\}/);
++    expect(coachNav).not.toMatch(/CoachEarningsScreen\b(?!\s*exists)/);
+   });
+ 
+   it('CoachNavigator no longer registers the deleted CoachPackages route', () => {
+@@ -630,11 +575,12 @@ describe('navigation wiring', () => {
+     expect(membership).toMatch(/VIEW COACHING PLANS/i);
+   });
+ 
+-  it('Coach Settings exposes Packages (Surface B) + Earnings entry points', () => {
++  it('Coach Settings exposes Packages (Surface B) + Money entry points', () => {
+     const settings = readSrc('screens/coach/SettingsScreen.tsx');
+     // PR-5: the single coach packages entry now lands on Surface B's list screen.
+     expect(settings).toMatch(/navigation\.navigate\('CoachPackagesList'\)/);
+-    expect(settings).toMatch(/navigation\.navigate\('CoachEarnings'\)/);
++    expect(settings).toMatch(/navigation\.navigate\('CoachMoney'\)/);
++    expect(settings).not.toMatch(/navigation\.navigate\('CoachEarnings'\)/);
+   });
+ 
+   it('Coach Settings has exactly one entry to a coach packages surface', () => {
+@@ -651,23 +597,21 @@ describe('navigation wiring', () => {
+ });
+ 
+ // ── 4) Fee transparency copy ───────────────────────────────────────────────
+-// PR-5 supersede: the legacy CoachPackagesScreen carried an inline 2% fee
+-// hint. The surviving Surface B editor delegates fee transparency to the
+-// dedicated Earnings + Business Metrics screens (single source of truth),
+-// so the per-screen fee-copy assertions live there now.
++// S-COACH-MOB-2: fee transparency lives in TGP Money's breakdown
++// (price - card processing - TGP 2% (- head coach share) = net).
+ describe('fee split copy', () => {
+-  const earnings = readSrc('screens/coach/CoachEarningsScreen.tsx');
+-  const metrics = readSrc('screens/coach/CoachBusinessMetricsScreen.tsx');
++  const copy = readSrc('lib/money/moneyCopy.ts');
+ 
+-  it('Earnings screen shows the documented 2% platform fee row', () => {
+-    expect(earnings).toMatch(/Growth Project[^\n]*2%/);
++  it('Money breakdown shows the documented 2% TGP fee row', () => {
++    expect(copy).toMatch(/TGP fee \(2%\)/);
+   });
+ 
+-  it('Earnings screen shows the 5% head coach / gym override row', () => {
+-    expect(earnings).toMatch(/Head coach[^\n]*5%|5%[^\n]*head coach/i);
++  it('Money breakdown shows the head coach share row', () => {
++    expect(copy).toMatch(/Head coach share/);
+   });
+ 
+-  it('Business metrics screen clarifies fees are deducted on the Earnings screen', () => {
+-    expect(metrics).toMatch(/2%[^\n]*TGP|5%[^\n]*head coach|Earnings screen/i);
++  it('Money breakdown names card processing and the net result', () => {
++    expect(copy).toMatch(/Card processing \(Stripe\)/);
++    expect(copy).toMatch(/Net to you/);
+   });
+ });
+diff --git a/src/api/coachEarningsApi.ts b/src/api/coachEarningsApi.ts
+deleted file mode 100644
+index d38eebc..0000000
+--- a/src/api/coachEarningsApi.ts
++++ /dev/null
+@@ -1,162 +0,0 @@
+-/**
+- * coachEarningsApi — typed mobile client for coach-facing earnings, payout
+- * readiness, recent payouts, reconciliation, refunds/disputes, and the
+- * Stripe Express dashboard one-time link.
+- *
+- * Endpoints consumed (backend PR #216):
+- *   GET    /v1/coach/payouts/readiness — Connect KYC + payout readiness
+- *   GET    /v1/coach/payouts           — recent payouts (with reconciliation)
+- *   GET    /v1/coach/earnings          — coach earnings: gross/net/fees,
+- *                                        current period, lifetime, sub-coach attribution
+- *   GET    /v1/coach/reconciliation    — Stripe ↔ platform ledger health
+- *   GET    /v1/coach/refunds           — pending + recent refunds/disputes
+- *   POST   /v1/coach/dashboard-link    — Stripe Express dashboard URL
+- *
+- * Same envelope as `coachConnectApi`: 404 / 501 means the route is not
+- * deployed yet; the screen renders an honest setup CTA, never a fake number.
+- *
+- * Fee split rules (mobile copy mirrors backend):
+- *   - The Growth Project platform fee: 2% of gross paid revenue (TGP)
+- *   - Head coach / gym override: 5% of sub-coach gross (when applicable)
+- *   - Stripe processing fees: passed through, not collected by TGP
+- *
+- * Note: package CRUD lives in `packagesApi.ts` (`coachPackagesApi`). This
+- * file holds the earnings/payout/Connect-dashboard methods that previously
+- * shared `coachPaymentsApi.ts` with package CRUD.
+- */
+-
+-import api from '../services/api';
+-import type { AxiosResponse } from 'axios';
+-import type { ConnectResult } from './coachConnectApi';
+-
+-export interface PayoutReadiness {
+-  /** Has the coach finished Stripe Connect onboarding? */
+-  onboarded: boolean;
+-  /** Stripe charges_enabled flag — can the coach accept money? */
+-  charges_enabled: boolean;
+-  /** Stripe payouts_enabled flag — will Stripe pay out to the bank? */
+-  payouts_enabled: boolean;
+-  /** Outstanding KYC / verification requirements. Empty when good. */
+-  requirements_due: string[];
+-  /** ISO timestamp when next payout is expected, when known. */
+-  next_payout_eta: string | null;
+-  /** Stripe Express dashboard slug, when known. */
+-  dashboard_available: boolean;
+-}
+-
+-export interface RecentPayout {
+-  id: string;
+-  amount: number;
+-  currency: string;
+-  status: 'pending' | 'in_transit' | 'paid' | 'failed' | 'canceled';
+-  arrival_date: string;
+-  created_at: string;
+-  /** Number of charges grouped into this payout, when known. */
+-  charge_count: number | null;
+-  /** Backend reconciliation flag — true when our ledger total matches Stripe's. */
+-  reconciled: boolean;
+-  description: string | null;
+-}
+-
+-export interface CoachEarnings {
+-  currency: string;
+-  /** Gross paid revenue current month-to-date. */
+-  gross_mtd: number;
+-  /** Net to coach after platform fees + Stripe fees, MTD. */
+-  net_mtd: number;
+-  /** Stripe processing fees deducted MTD. */
+-  stripe_fees_mtd: number;
+-  /** TGP platform fee deducted MTD (2% of gross). */
+-  platform_fees_mtd: number;
+-  /** Head coach / gym override deducted MTD when coach is a sub-coach. */
+-  head_coach_fees_mtd: number;
+-  /**
+-   * Lifetime gross paid revenue. Useful for "$X earned through TGP"
+-   * marketing claims but the screen renders it as a coach-only metric.
+-   */
+-  gross_lifetime: number;
+-  net_lifetime: number;
+-  /**
+-   * Sub-coach attribution for head coaches. Empty array when the coach
+-   * has no sub-coaches; the screen hides the section in that case.
+-   */
+-  sub_coach_breakdown: Array<{
+-    sub_coach_id: string;
+-    sub_coach_name: string;
+-    gross_mtd: number;
+-    override_mtd: number;
+-  }>;
+-  generated_at: string;
+-}
+-
+-export interface ReconciliationHealth {
+-  /** "healthy" when Stripe and platform agree within tolerance for the window. */
+-  state: 'healthy' | 'drift' | 'unknown';
+-  /** Absolute drift in major units (e.g. 12.34). 0 when healthy. */
+-  drift_amount: number;
+-  currency: string;
+-  /** ISO window the reconciliation snapshot covers. */
+-  window_start: string;
+-  window_end: string;
+-  /** Backend-supplied human summary, rendered verbatim. */
+-  summary: string;
+-}
+-
+-export interface RefundRow {
+-  id: string;
+-  amount: number;
+-  currency: string;
+-  /** 'requested' (coach must approve), 'processing', 'refunded', 'failed'. */
+-  status: 'requested' | 'processing' | 'refunded' | 'failed' | 'disputed';
+-  /** Original charge id. */
+-  charge_id: string;
+-  client_name: string | null;
+-  created_at: string;
+-  /** Coach-supplied reason or dispute label. */
+-  reason: string | null;
+-}
+-
+-export interface DashboardLink {
+-  url: string;
+-  expires_at: string;
+-}
+-
+-function isNotConfigured(err: unknown): boolean {
+-  const e = err as { response?: { status?: number } } | undefined;
+-  const status = e?.response?.status;
+-  return status === 404 || status === 501;
+-}
+-
+-function wrap<T>(p: Promise<AxiosResponse<T>>): Promise<ConnectResult<T>> {
+-  return p
+-    .then((r) => ({ ok: true as const, data: r.data }))
+-    .catch((err) => {
+-      if (isNotConfigured(err)) return { ok: false as const, reason: 'not_configured' as const };
+-      const message =
+-        (err as { message?: string })?.message ?? 'Failed to load — try again.';
+-      return { ok: false as const, reason: 'error' as const, message };
+-    });
+-}
+-
+-export const coachEarningsApi = {
+-  // ── Payout readiness + recent payouts ─────────────────────────────────
+-  getPayoutReadiness: (): Promise<ConnectResult<PayoutReadiness>> =>
+-    wrap(api.get<PayoutReadiness>('/v1/coach/payouts/readiness')),
+-
+-  getRecentPayouts: (limit = 10): Promise<ConnectResult<RecentPayout[]>> =>
+-    wrap(api.get<RecentPayout[]>(`/v1/coach/payouts?limit=${limit}`)),
+-
+-  // ── Earnings, reconciliation, refunds ─────────────────────────────────
+-  getEarnings: (): Promise<ConnectResult<CoachEarnings>> =>
+-    wrap(api.get<CoachEarnings>('/v1/coach/earnings')),
+-
+-  getReconciliation: (): Promise<ConnectResult<ReconciliationHealth>> =>
+-    wrap(api.get<ReconciliationHealth>('/v1/coach/reconciliation')),
+-
+-  getRefunds: (): Promise<ConnectResult<RefundRow[]>> =>
+-    wrap(api.get<RefundRow[]>('/v1/coach/refunds')),
+-
+-  // ── Stripe Express dashboard one-time link ────────────────────────────
+-  createDashboardLink: (): Promise<ConnectResult<DashboardLink>> =>
+-    wrap(api.post<DashboardLink>('/v1/coach/dashboard-link', {})),
+-};
+diff --git a/src/api/packagesApi.ts b/src/api/packagesApi.ts
+index 5009b16..e959301 100644
+--- a/src/api/packagesApi.ts
++++ b/src/api/packagesApi.ts
+@@ -108,88 +108,6 @@ export interface PackageSubscribersResponse {
+   monthlyRecurringRevenueCents: number;
+ }
+ 
+-// Backend `GET /v1/coach/payments/earnings` returns the raw split-ledger view:
+-//   {
+-//     summary: { posted_cents, pending_cents, reversed_cents },
+-//     entries: SplitLedgerEntry[]
+-//   }
+-// The mobile screen consumes a normalised `CoachEarningsSummary` derived from
+-// that shape — see `adaptEarnings()`. Fields the backend does not yet expose
+-// (per-package breakdown, next-payout ETA, last-payout date/amount) are left
+-// null so the UI degrades honestly instead of inventing numbers.
+-export interface BackendEarningsResponse {
+-  summary: {
+-    posted_cents: number;
+-    pending_cents: number;
+-    reversed_cents: number;
+-  };
+-  entries: Array<{
+-    id: string;
+-    purchase_id: string;
+-    kind: string;
+-    payee_user_id: string | null;
+-    amount_cents: number;
+-    currency: string;
+-    status: string;
+-    reversed_cents: number;
+-    created_at?: string | null;
+-    posted_at?: string | null;
+-  }>;
+-}
+-
+-export interface CoachEarningsSummary {
+-  currency: string;
+-  pendingPayoutCents: number;
+-  lifetimeNetCents: number;
+-  monthToDateNetCents: number;
+-  lastPayoutAt: string | null;
+-  lastPayoutAmountCents: number | null;
+-  nextPayoutEta: string | null;
+-  perPackage: Array<{
+-    packageId: string;
+-    title: string;
+-    monthToDateGrossCents: number;
+-    activeSubscribers: number;
+-  }>;
+-}
+-
+-export function adaptEarnings(raw: BackendEarningsResponse): CoachEarningsSummary {
+-  const currency =
+-    (raw.entries.find((e) => e.currency)?.currency || 'usd').toLowerCase();
+-
+-  // Month-to-date net = posted (minus reversed) for entries whose posted_at
+-  // (or created_at) falls in the current calendar month. Net for an entry
+-  // is amount_cents - reversed_cents when status === 'posted'.
+-  const now = new Date();
+-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+-  let monthToDateNet = 0;
+-  for (const e of raw.entries) {
+-    if (e.status !== 'posted') continue;
+-    const ts = e.posted_at ?? e.created_at;
+-    if (!ts) continue;
+-    const t = new Date(ts).getTime();
+-    if (isNaN(t) || t < monthStart) continue;
+-    monthToDateNet += e.amount_cents - (e.reversed_cents ?? 0);
+-  }
+-
+-  return {
+-    currency,
+-    pendingPayoutCents: raw.summary.pending_cents ?? 0,
+-    // Lifetime net = posted - reversed. The summary already excludes
+-    // reversed via posted_cents, but we subtract `reversed_cents` to keep
+-    // the screen's "net" framing honest if backend semantics drift.
+-    lifetimeNetCents:
+-      (raw.summary.posted_cents ?? 0) - (raw.summary.reversed_cents ?? 0),
+-    monthToDateNetCents: monthToDateNet,
+-    // Backend does not (yet) return payout-cadence metadata. Null tells the
+-    // UI to hide those rows rather than render fake values.
+-    lastPayoutAt: null,
+-    lastPayoutAmountCents: null,
+-    nextPayoutEta: null,
+-    perPackage: [],
+-  };
+-}
+-
+ export interface PublicPackageView {
+   id: string;
+   title: string;
+@@ -524,16 +442,8 @@ export const coachPackagesApi = {
+       `/v1/coach/packages/${encodeURIComponent(id)}/subscribers`,
+     ),
+ 
+-  // Backend route: `GET /v1/coach/payments/earnings`.
+-  // Returns `{ summary: { posted_cents, pending_cents, reversed_cents },
+-  // entries: SplitLedgerEntry[] }`. We adapt to the mobile `CoachEarningsSummary`
+-  // shape here so the screen does not have to know about the raw ledger.
+-  earnings: async () => {
+-    const res = await api.get<BackendEarningsResponse>(
+-      '/v1/coach/payments/earnings',
+-    );
+-    return { ...res, data: adaptEarnings(res.data) };
+-  },
++  // C-332-2: the old split-ledger earnings client is gone; every coach
++  // money figure comes from TGP Money (src/api/coachMoneyApi.ts).
+ };
+ 
+ // ─── public / client-facing API ─────────────────────────────────────────────
+diff --git a/src/components/roman/__tests__/romanP3FlagOff.test.tsx b/src/components/roman/__tests__/romanP3FlagOff.test.tsx
+index b00bc66..eb8ef8a 100644
+--- a/src/components/roman/__tests__/romanP3FlagOff.test.tsx
++++ b/src/components/roman/__tests__/romanP3FlagOff.test.tsx
+@@ -58,7 +58,8 @@ function readSrc(...rel: string[]): string {
+ const PROGRESS = readSrc('screens', 'client', 'ProgressScreen.tsx');
+ const WORKOUT = readSrc('screens', 'client', 'WorkoutScreen.tsx');
+ const ACTIVE = readSrc('screens', 'client', 'ActiveWorkoutScreen.tsx');
+-const EARNINGS = readSrc('screens', 'coach', 'payments', 'CoachEarningsScreen.tsx');
++// C-332-2: the payout notice lives on TGP Money now.
++const EARNINGS = readSrc('screens', 'coach', 'money', 'MoneyScreen.tsx');
+ const BRIEF = readSrc('screens', 'coach', 'CoachBriefScreen.tsx');
+ 
+ function vp(over: Partial<VerifiedProgressItem>): VerifiedProgressItem {
+@@ -164,7 +165,7 @@ describe('P3 surfaces are gated behind featureFlags.romanChat in their hosts', (
+ 
+   it('§2.12 payout notice is gated on romanChat', () => {
+     expect(EARNINGS).toMatch(
+-      /featureFlags\.romanChat &&\s*data\.lastPayoutAmountCents != null/,
++      /featureFlags\.romanChat &&\s*lastPaid != null/,
+     );
+   });
+ 
+diff --git a/src/components/roman/__tests__/romanP3HostWiring.test.tsx b/src/components/roman/__tests__/romanP3HostWiring.test.tsx
+index 0d65b66..f5428d7 100644
+--- a/src/components/roman/__tests__/romanP3HostWiring.test.tsx
++++ b/src/components/roman/__tests__/romanP3HostWiring.test.tsx
+@@ -73,7 +73,9 @@ function readSrc(...rel: string[]): string {
+ const PROGRESS = readSrc('screens', 'client', 'ProgressScreen.tsx');
+ const WORKOUT = readSrc('screens', 'client', 'WorkoutScreen.tsx');
+ const ACTIVE = readSrc('screens', 'client', 'ActiveWorkoutScreen.tsx');
+-const EARNINGS = readSrc('screens', 'coach', 'payments', 'CoachEarningsScreen.tsx');
++// C-332-2 (S-COACH-MOB-4): the payout notice moved from the deleted
++// payments/CoachEarningsScreen to TGP Money.
++const EARNINGS = readSrc('screens', 'coach', 'money', 'MoneyScreen.tsx');
+ const BRIEF = readSrc('screens', 'coach', 'CoachBriefScreen.tsx');
+ 
+ // ─────────────────────────────────────────────────────────────────────────────
+@@ -113,9 +115,9 @@ describe('orphan guard — every P3 surface stays imported into its host, flag-g
+     expect(ACTIVE).toContain('reps={lastCompletedSet.reps}');
+   });
+ 
+-  it('§2.12 RomanPayoutNotice → CoachEarningsScreen', () => {
+-    expect(EARNINGS).toContain("import RomanPayoutNotice from '../../../components/roman/RomanPayoutNotice'");
+-    expect(EARNINGS).toMatch(/featureFlags\.romanChat &&\s*data\.lastPayoutAmountCents != null &&\s*formatDate\(data\.lastPayoutAt\)/);
++  it('§2.12 RomanPayoutNotice → MoneyScreen (Money page)', () => {
++    expect(EARNINGS).toMatch(/import RomanPayoutNotice from ["']\.\.\/\.\.\/\.\.\/components\/roman\/RomanPayoutNotice["']/);
++    expect(EARNINGS).toMatch(/featureFlags\.romanChat &&\s*lastPaid != null &&\s*shortDate\(lastPaid\.arrivalDate\)/);
+     expect(EARNINGS).toContain('testID="roman-payout-card"');
+   });
+ 
+diff --git a/src/screens/coach/CoachBusinessMetricsScreen.tsx b/src/screens/coach/CoachBusinessMetricsScreen.tsx
+deleted file mode 100644
+index a32b12b..0000000
+--- a/src/screens/coach/CoachBusinessMetricsScreen.tsx
++++ /dev/null
+@@ -1,461 +0,0 @@
+-/**
+- * CoachBusinessMetricsScreen
+- *
+- * The coach's business surface — revenue, churn, MRR, sub-coach attribution,
+- * packages, payouts. Backend contract lives in `src/api/coachConnectApi.ts`.
+- *
+- * When the backend is unreachable (404 / 501), the screen renders an honest
+- * "Connect Stripe to enable revenue reporting" CTA. When the coach has not
+- * onboarded yet (`configured === false` from /coach/connect/status), the
+- * same CTA is shown. We never fabricate numbers.
+- */
+-
+-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+-import {
+-  ActivityIndicator,
+-  Linking,
+-  RefreshControl,
+-  ScrollView,
+-  StyleSheet,
+-  Text,
+-  TouchableOpacity,
+-  View,
+-} from 'react-native';
+-import { Ionicons } from '@expo/vector-icons';
+-import {
+-  coachConnectApi,
+-  type BusinessMetrics,
+-  type ConnectResult,
+-  type ConnectStatus,
+-  type CoachPackage,
+-  type Payout,
+-} from '../../api/coachConnectApi';
+-import { useTheme, ThemeColors } from '../../theme/ThemeProvider';
+-
+-function formatMoney(amount: number, currency: string): string {
+-  try {
+-    return new Intl.NumberFormat('en-US', {
+-      style: 'currency',
+-      currency,
+-      maximumFractionDigits: 0,
+-    }).format(amount);
+-  } catch {
+-    return `${currency} ${amount.toFixed(0)}`;
+-  }
+-}
+-
+-function formatPct(num: number, denom: number): string {
+-  if (denom <= 0) return '—';
+-  return `${((num / denom) * 100).toFixed(1)}%`;
+-}
+-
+-function MetricCard({
+-  label,
+-  value,
+-  hint,
+-  styles,
+-}: {
+-  label: string;
+-  value: string;
+-  hint?: string;
+-  styles: ReturnType<typeof makeStyles>;
+-}) {
+-  return (
+-    <View style={styles.metricCard}>
+-      <Text style={styles.metricLabel}>{label}</Text>
+-      <Text style={styles.metricValue}>{value}</Text>
+-      {hint ? <Text style={styles.metricHint}>{hint}</Text> : null}
+-    </View>
+-  );
+-}
+-
+-function NotConfigured({
+-  onConnect,
+-  connecting,
+-  colors,
+-  styles,
+-}: {
+-  onConnect: () => void;
+-  connecting: boolean;
+-  colors: ThemeColors;
+-  styles: ReturnType<typeof makeStyles>;
+-}) {
+-  return (
+-    <View style={styles.gate}>
+-      <Ionicons name="card-outline" size={36} color={colors.textMuted} />
+-      <Text style={styles.gateTitle}>Connect Stripe to enable revenue</Text>
+-      <Text style={styles.gateBody}>
+-        Once you connect a Stripe account, this screen reports total revenue,
+-        churn, clients added, sub-coach attribution, and payout history. Until
+-        then no fake numbers are shown.
+-      </Text>
+-      <TouchableOpacity
+-        style={[styles.cta, connecting && styles.ctaDisabled]}
+-        onPress={onConnect}
+-        disabled={connecting}
+-        accessibilityRole="button"
+-        accessibilityLabel="Connect Stripe account"
+-      >
+-        {connecting ? (
+-          <ActivityIndicator color={colors.textOnPrimary} />
+-        ) : (
+-          <Text style={styles.ctaText}>Connect Stripe</Text>
+-        )}
+-      </TouchableOpacity>
+-    </View>
+-  );
+-}
+-
+-function ErrorBanner({
+-  message,
+-  onRetry,
+-  styles,
+-}: {
+-  message: string;
+-  onRetry: () => void;
+-  styles: ReturnType<typeof makeStyles>;
+-}) {
+-  return (
+-    <TouchableOpacity
+-      onPress={onRetry}
+-      accessibilityRole="button"
+-      accessibilityLabel="Retry loading metrics"
+-      style={styles.errorBanner}
+-    >
+-      <Ionicons name="alert-circle-outline" size={18} color="#fff" />
+-      <Text style={styles.errorBannerText}>{message} Tap to retry.</Text>
+-    </TouchableOpacity>
+-  );
+-}
+-
+-export default function CoachBusinessMetricsScreen() {
+-  const { colors } = useTheme();
+-  const styles = useMemo(() => makeStyles(colors), [colors]);
+-
+-  const [status, setStatus] = useState<ConnectResult<ConnectStatus> | null>(null);
+-  const [metrics, setMetrics] = useState<ConnectResult<BusinessMetrics> | null>(null);
+-  const [payouts, setPayouts] = useState<ConnectResult<Payout[]> | null>(null);
+-  const [packages, setPackages] = useState<ConnectResult<CoachPackage[]> | null>(null);
+-  const [refreshing, setRefreshing] = useState(false);
+-  const [connecting, setConnecting] = useState(false);
+-  const [connectError, setConnectError] = useState<string | null>(null);
+-
+-  const load = useCallback(async () => {
+-    const [s, m, p, k] = await Promise.all([
+-      coachConnectApi.getStatus(),
+-      coachConnectApi.getMetrics(),
+-      coachConnectApi.getPayouts(5),
+-      coachConnectApi.getPackages(),
+-    ]);
+-    setStatus(s);
+-    setMetrics(m);
+-    setPayouts(p);
+-    setPackages(k);
+-  }, []);
+-
+-  useEffect(() => {
+-    void load();
+-  }, [load]);
+-
+-  const onRefresh = useCallback(async () => {
+-    setRefreshing(true);
+-    await load();
+-    setRefreshing(false);
+-  }, [load]);
+-
+-  const handleConnectStripe = useCallback(async () => {
+-    setConnectError(null);
+-    setConnecting(true);
+-    try {
+-      const res = await coachConnectApi.createOnboardingLink();
+-      if (res.ok) {
+-        await Linking.openURL(res.data.url);
+-      } else if (res.reason === 'not_configured') {
+-        setConnectError(
+-          'Stripe onboarding is not yet available. Please reach out to support.',
+-        );
+-      } else {
+-        setConnectError(res.message);
+-      }
+-    } finally {
+-      setConnecting(false);
+-    }
+-  }, []);
+-
+-  // Loading: any of the four queries is still null.
+-  if (!status || !metrics || !payouts || !packages) {
+-    return (
+-      <View style={styles.center}>
+-        <ActivityIndicator size="large" color={colors.primary} />
+-      </View>
+-    );
+-  }
+-
+-  const isNotConfigured =
+-    (status.ok && !status.data.configured) ||
+-    (!status.ok && status.reason === 'not_configured');
+-
+-  return (
+-    <ScrollView
+-      style={styles.container}
+-      contentContainerStyle={styles.content}
+-      refreshControl={
+-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+-      }
+-    >
+-      <Text style={styles.header}>Business</Text>
+-      <Text style={styles.subheader}>
+-        Revenue, churn, sub-coach attribution. Reported directly from your
+-        connected Stripe account.
+-      </Text>
+-
+-      {isNotConfigured ? (
+-        <>
+-          {connectError ? <ErrorBanner message={connectError} onRetry={handleConnectStripe} styles={styles} /> : null}
+-          <NotConfigured onConnect={handleConnectStripe} connecting={connecting} colors={colors} styles={styles} />
+-        </>
+-      ) : (
+-        <>
+-          {/* Account status banner if KYC requirements due */}
+-          {status.ok && status.data.requirements_due.length > 0 ? (
+-            <TouchableOpacity
+-              style={styles.warnBanner}
+-              onPress={handleConnectStripe}
+-              accessibilityRole="button"
+-              accessibilityLabel="Complete Stripe verification"
+-            >
+-              <Ionicons name="warning-outline" size={18} color="#fff" />
+-              <Text style={styles.warnBannerText}>
+-                Stripe needs more info to enable payouts. Tap to finish.
+-              </Text>
+-            </TouchableOpacity>
+-          ) : null}
+-
+-          {/* Revenue + MRR */}
+-          {metrics.ok ? (
+-            <>
+-              <View style={styles.cardRow}>
+-                <MetricCard
+-                  label="Revenue · 30d"
+-                  value={formatMoney(metrics.data.revenue_30d, metrics.data.currency)}
+-                  hint={`Net ${formatMoney(metrics.data.net_30d, metrics.data.currency)}`}
+-                  styles={styles}
+-                />
+-                <MetricCard
+-                  label="MRR"
+-                  value={formatMoney(metrics.data.mrr, metrics.data.currency)}
+-                  hint={`Total ${formatMoney(metrics.data.total_revenue, metrics.data.currency)}`}
+-                  styles={styles}
+-                />
+-              </View>
+-
+-              {/* Clients */}
+-              <View style={styles.cardRow}>
+-                <MetricCard
+-                  label="Active clients"
+-                  value={String(metrics.data.active_clients)}
+-                  hint={`+${metrics.data.clients_added_30d} this month`}
+-                  styles={styles}
+-                />
+-                <MetricCard
+-                  label="Churn · 30d"
+-                  value={String(metrics.data.clients_churned_30d)}
+-                  hint={formatPct(
+-                    metrics.data.clients_churned_30d,
+-                    metrics.data.active_clients + metrics.data.clients_churned_30d,
+-                  )}
+-                  styles={styles}
+-                />
+-              </View>
+-
+-              {/* Sub-coach attribution. Numbers are gross — the 5% head-coach
+-                  override and the 2% TGP platform fee are deducted on the
+-                  earnings screen, not here. */}
+-              <Text style={styles.sectionTitle}>Sub-coach attribution · 30d</Text>
+-              <Text style={styles.sectionHint}>
+-                Gross sub-coach revenue. 5% head coach / gym override and 2%
+-                TGP platform fee are deducted in your Earnings screen.
+-              </Text>
+-              <View style={styles.cardRow}>
+-                <MetricCard
+-                  label="Revenue"
+-                  value={formatMoney(metrics.data.sub_coach_revenue_30d, metrics.data.currency)}
+-                  styles={styles}
+-                />
+-                <MetricCard
+-                  label="Acquired"
+-                  value={`+${metrics.data.sub_coach_acquisition_30d}`}
+-                  styles={styles}
+-                />
+-                <MetricCard
+-                  label="Churned"
+-                  value={String(metrics.data.sub_coach_churn_30d)}
+-                  styles={styles}
+-                />
+-              </View>
+-            </>
+-          ) : metrics.reason === 'error' ? (
+-            <ErrorBanner message={metrics.message} onRetry={load} styles={styles} />
+-          ) : null}
+-
+-          {/* Packages */}
+-          <Text style={styles.sectionTitle}>Packages</Text>
+-          {packages.ok ? (
+-            packages.data.length === 0 ? (
+-              <Text style={styles.emptyText}>
+-                No packages yet. Create one in your Stripe dashboard.
+-              </Text>
+-            ) : (
+-              packages.data.map((p) => (
+-                <View key={p.id} style={styles.row}>
+-                  <View style={{ flex: 1 }}>
+-                    <Text style={styles.rowTitle}>{p.name}</Text>
+-                    <Text style={styles.rowSub}>
+-                      {formatMoney(p.price, p.currency)}
+-                      {p.type === 'recurring' && p.interval ? ` / ${p.interval}` : ''}
+-                      {p.type === 'recurring' ? ` · ${p.active_subscribers} active` : ''}
+-                    </Text>
+-                  </View>
+-                  <View
+-                    style={[
+-                      styles.statusPill,
+-                      { backgroundColor: p.active ? colors.success + '22' : colors.textMuted + '22' },
+-                    ]}
+-                  >
+-                    <Text
+-                      style={[
+-                        styles.statusPillText,
+-                        { color: p.active ? colors.success : colors.textMuted },
+-                      ]}
+-                    >
+-                      {p.active ? 'Active' : 'Inactive'}
+-                    </Text>
+-                  </View>
+-                </View>
+-              ))
+-            )
+-          ) : packages.reason === 'error' ? (
+-            <ErrorBanner message={packages.message} onRetry={load} styles={styles} />
+-          ) : (
+-            <Text style={styles.emptyText}>Packages will appear once Stripe is connected.</Text>
+-          )}
+-
+-          {/* Payouts */}
+-          <Text style={styles.sectionTitle}>Recent payouts</Text>
+-          {payouts.ok ? (
+-            payouts.data.length === 0 ? (
+-              <Text style={styles.emptyText}>No payouts yet.</Text>
+-            ) : (
+-              payouts.data.map((p) => (
+-                <View key={p.id} style={styles.row}>
+-                  <View style={{ flex: 1 }}>
+-                    <Text style={styles.rowTitle}>{formatMoney(p.amount, p.currency)}</Text>
+-                    <Text style={styles.rowSub}>
+-                      {new Date(p.arrival_date).toLocaleDateString()}
+-                      {p.description ? ` · ${p.description}` : ''}
+-                    </Text>
+-                  </View>
+-                  <Text style={styles.payoutStatus}>{p.status}</Text>
+-                </View>
+-              ))
+-            )
+-          ) : payouts.reason === 'error' ? (
+-            <ErrorBanner message={payouts.message} onRetry={load} styles={styles} />
+-          ) : (
+-            <Text style={styles.emptyText}>Payouts will appear once Stripe is connected.</Text>
+-          )}
+-        </>
+-      )}
+-    </ScrollView>
+-  );
+-}
+-
+-const makeStyles = (colors: ThemeColors) =>
+-  StyleSheet.create({
+-    container: { flex: 1, backgroundColor: colors.background },
+-    content: { paddingHorizontal: 20, paddingTop: 56, paddingBottom: 40 },
+-    center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
+-    header: { fontSize: 28, fontWeight: '600', color: colors.textPrimary, marginBottom: 4 },
+-    subheader: { fontSize: 13, color: colors.textSecondary, lineHeight: 18, marginBottom: 20 },
+-    sectionTitle: {
+-      fontSize: 14,
+-      fontWeight: '600',
+-      color: colors.textPrimary,
+-      marginTop: 24,
+-      marginBottom: 10,
+-      textTransform: 'uppercase',
+-      letterSpacing: 0.4,
+-    },
+-    sectionHint: {
+-      fontSize: 12,
+-      color: colors.textMuted,
+-      lineHeight: 16,
+-      marginBottom: 10,
+-    },
+-    cardRow: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
+-    metricCard: {
+-      flex: 1,
+-      minWidth: 140,
+-      backgroundColor: colors.surface,
+-      borderRadius: 12,
+-      padding: 14,
+-      borderWidth: 1,
+-      borderColor: colors.border,
+-    },
+-    metricLabel: { fontSize: 11, color: colors.textMuted, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.3 },
+-    metricValue: { fontSize: 22, fontWeight: '600', color: colors.textPrimary },
+-    metricHint: { fontSize: 11, color: colors.textSecondary, marginTop: 4 },
+-    row: {
+-      flexDirection: 'row',
+-      alignItems: 'center',
+-      paddingVertical: 12,
+-      borderBottomWidth: 1,
+-      borderBottomColor: colors.border,
+-    },
+-    rowTitle: { fontSize: 15, fontWeight: '500', color: colors.textPrimary },
+-    rowSub: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+-    payoutStatus: { fontSize: 12, color: colors.textMuted, textTransform: 'uppercase' },
+-    statusPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+-    statusPillText: { fontSize: 11, fontWeight: '600' },
+-    emptyText: { fontSize: 13, color: colors.textMuted, paddingVertical: 8 },
+-    gate: { alignItems: 'center', paddingVertical: 36, paddingHorizontal: 16 },
+-    gateTitle: { fontSize: 18, fontWeight: '600', color: colors.textPrimary, marginTop: 12 },
+-    gateBody: {
+-      fontSize: 14,
+-      color: colors.textSecondary,
+-      textAlign: 'center',
+-      marginTop: 8,
+-      lineHeight: 20,
+-    },
+-    cta: {
+-      marginTop: 20,
+-      backgroundColor: colors.primary,
+-      borderRadius: 10,
+-      paddingHorizontal: 20,
+-      paddingVertical: 12,
+-    },
+-    ctaDisabled: { opacity: 0.5 },
+-    ctaText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 14 },
+-    errorBanner: {
+-      flexDirection: 'row',
+-      alignItems: 'center',
+-      gap: 8,
+-      backgroundColor: colors.error,
+-      paddingVertical: 10,
+-      paddingHorizontal: 12,
+-      borderRadius: 8,
+-      marginBottom: 12,
+-    },
+-    errorBannerText: { color: '#fff', fontSize: 13, flex: 1 },
+-    warnBanner: {
+-      flexDirection: 'row',
+-      alignItems: 'center',
+-      gap: 8,
+-      backgroundColor: colors.warning,
+-      paddingVertical: 10,
+-      paddingHorizontal: 12,
+-      borderRadius: 8,
+-      marginBottom: 12,
+-    },
+-    warnBannerText: { color: '#fff', fontSize: 13, flex: 1 },
+-  });
+diff --git a/src/screens/coach/CoachEarningsScreen.tsx b/src/screens/coach/CoachEarningsScreen.tsx
+deleted file mode 100644
+index 4507bf3..0000000
+--- a/src/screens/coach/CoachEarningsScreen.tsx
++++ /dev/null
+@@ -1,601 +0,0 @@
+-/**
+- * CoachEarningsScreen — earnings, payout readiness, recent payouts,
+- * reconciliation, refunds/disputes. Wires backend PR #216 endpoints.
+- *
+- *   GET /v1/coach/earnings
+- *   GET /v1/coach/payouts/readiness
+- *   GET /v1/coach/payouts/recent
+- *   GET /v1/coach/reconciliation
+- *   GET /v1/coach/refunds
+- *   POST /v1/coach/dashboard-link  (Stripe Express dashboard one-time URL)
+- *
+- * Behaviour:
+- *  - 404 / 501 from any endpoint => the section renders an honest empty
+- *    state. The screen never fabricates a number.
+- *  - payouts_enabled === false => "Finish Stripe onboarding" CTA that
+- *    routes to coachConnectApi.createOnboardingLink.
+- *  - Reconciliation drift > tolerance => banner asking the coach to
+- *    contact support, with the backend-supplied summary verbatim.
+- *  - Fee transparency: 2% TGP platform fee + 5% head coach override
+- *    (when applicable) + Stripe fees passed through.
+- */
+-
+-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+-import {
+-  Linking,
+-  RefreshControl,
+-  ScrollView,
+-  StyleSheet,
+-  Text,
+-  TouchableOpacity,
+-  View,
+-  ActivityIndicator,
+-} from 'react-native';
+-import { SkeletonScreen } from '../../ui/skeletons/Skeleton';
+-import { Ionicons } from '@expo/vector-icons';
+-import { useNavigation, NavigationProp, ParamListBase } from '@react-navigation/native';
+-
+-import {
+-  coachEarningsApi,
+-  type CoachEarnings,
+-  type PayoutReadiness,
+-  type RecentPayout,
+-  type ReconciliationHealth,
+-  type RefundRow,
+-} from '../../api/coachEarningsApi';
+-import { coachConnectApi, type ConnectResult } from '../../api/coachConnectApi';
+-import { useTheme, ThemeColors } from '../../theme/ThemeProvider';
+-
+-function formatMoney(amount: number, currency: string): string {
+-  try {
+-    return new Intl.NumberFormat('en-US', {
+-      style: 'currency',
+-      currency,
+-      maximumFractionDigits: amount % 1 === 0 ? 0 : 2,
+-    }).format(amount);
+-  } catch {
+-    return `${currency} ${amount.toFixed(2)}`;
+-  }
+-}
+-
+-function formatDate(iso: string | null | undefined): string {
+-  if (!iso) return '—';
+-  const d = new Date(iso);
+-  if (isNaN(d.getTime())) return '—';
+-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+-}
+-
+-const PAYOUT_LABEL: Record<RecentPayout['status'], string> = {
+-  pending: 'Pending',
+-  in_transit: 'In transit',
+-  paid: 'Paid',
+-  failed: 'Failed',
+-  canceled: 'Canceled',
+-};
+-
+-const REFUND_LABEL: Record<RefundRow['status'], string> = {
+-  requested: 'Requested',
+-  processing: 'Processing',
+-  refunded: 'Refunded',
+-  failed: 'Failed',
+-  disputed: 'Disputed',
+-};
+-
+-function Card({
+-  label,
+-  value,
+-  hint,
+-  styles,
+-}: {
+-  label: string;
+-  value: string;
+-  hint?: string;
+-  styles: ReturnType<typeof makeStyles>;
+-}) {
+-  return (
+-    <View style={styles.metricCard}>
+-      <Text style={styles.metricLabel}>{label}</Text>
+-      <Text style={styles.metricValue}>{value}</Text>
+-      {hint ? <Text style={styles.metricHint}>{hint}</Text> : null}
+-    </View>
+-  );
+-}
+-
+-export default function CoachEarningsScreen() {
+-  const { colors } = useTheme();
+-  const styles = useMemo(() => makeStyles(colors), [colors]);
+-  const navigation = useNavigation<NavigationProp<ParamListBase>>();
+-
+-  const [earnings, setEarnings] = useState<ConnectResult<CoachEarnings> | null>(null);
+-  const [readiness, setReadiness] = useState<ConnectResult<PayoutReadiness> | null>(null);
+-  const [payouts, setPayouts] = useState<ConnectResult<RecentPayout[]> | null>(null);
+-  const [recon, setRecon] = useState<ConnectResult<ReconciliationHealth> | null>(null);
+-  const [refunds, setRefunds] = useState<ConnectResult<RefundRow[]> | null>(null);
+-  const [refreshing, setRefreshing] = useState(false);
+-  const [dashboardBusy, setDashboardBusy] = useState(false);
+-  const [onboardBusy, setOnboardBusy] = useState(false);
+-
+-  const load = useCallback(async () => {
+-    const [e, r, p, rc, rf] = await Promise.all([
+-      coachEarningsApi.getEarnings(),
+-      coachEarningsApi.getPayoutReadiness(),
+-      coachEarningsApi.getRecentPayouts(10),
+-      coachEarningsApi.getReconciliation(),
+-      coachEarningsApi.getRefunds(),
+-    ]);
+-    setEarnings(e);
+-    setReadiness(r);
+-    setPayouts(p);
+-    setRecon(rc);
+-    setRefunds(rf);
+-  }, []);
+-
+-  useEffect(() => {
+-    void load();
+-  }, [load]);
+-
+-  const onRefresh = useCallback(async () => {
+-    setRefreshing(true);
+-    await load();
+-    setRefreshing(false);
+-  }, [load]);
+-
+-  const openOnboarding = useCallback(async () => {
+-    setOnboardBusy(true);
+-    try {
+-      const res = await coachConnectApi.createOnboardingLink('earnings');
+-      if (res.ok) await Linking.openURL(res.data.url);
+-      await load();
+-    } finally {
+-      setOnboardBusy(false);
+-    }
+-  }, [load]);
+-
+-  const openDashboard = useCallback(async () => {
+-    setDashboardBusy(true);
+-    try {
+-      const res = await coachEarningsApi.createDashboardLink();
+-      if (res.ok) {
+-        await Linking.openURL(res.data.url);
+-      }
+-    } finally {
+-      setDashboardBusy(false);
+-    }
+-  }, []);
+-
+-  if (!earnings || !readiness || !payouts || !recon || !refunds) {
+-    return <SkeletonScreen count={7} />;
+-  }
+-
+-  // Top-level not-configured: every endpoint is 404 / 501.
+-  const allNotConfigured =
+-    !earnings.ok && earnings.reason === 'not_configured' &&
+-    !readiness.ok && readiness.reason === 'not_configured' &&
+-    !payouts.ok && payouts.reason === 'not_configured';
+-
+-  return (
+-    <ScrollView
+-      style={styles.container}
+-      contentContainerStyle={styles.content}
+-      refreshControl={
+-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+-      }
+-    >
+-      <View style={styles.topBar}>
+-        <TouchableOpacity
+-          onPress={() => navigation.goBack()}
+-          style={styles.iconBtn}
+-          accessibilityRole="button"
+-          accessibilityLabel="Back"
+-        >
+-          <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
+-        </TouchableOpacity>
+-        <Text style={styles.topTitle}>Earnings</Text>
+-        <View style={{ width: 40 }} />
+-      </View>
+-
+-      {allNotConfigured ? (
+-        <View style={styles.gate}>
+-          <Ionicons name="cash-outline" size={36} color={colors.textMuted} />
+-          <Text style={styles.gateTitle}>Earnings will appear once paid</Text>
+-          <Text style={styles.gateBody}>
+-            Connect Stripe and publish a package — your gross revenue, net
+-            after fees, payout history, and reconciliation health will live
+-            here. We never fabricate numbers.
+-          </Text>
+-          <TouchableOpacity
+-            style={[styles.cta, onboardBusy && styles.ctaDisabled]}
+-            onPress={openOnboarding}
+-            disabled={onboardBusy}
+-            accessibilityRole="button"
+-            accessibilityLabel="Connect Stripe"
+-          >
+-            {onboardBusy ? (
+-              <ActivityIndicator color={colors.textOnPrimary} />
+-            ) : (
+-              <Text style={styles.ctaText}>Connect Stripe</Text>
+-            )}
+-          </TouchableOpacity>
+-        </View>
+-      ) : (
+-        <>
+-          {/* Payout readiness banner */}
+-          {readiness.ok && !readiness.data.payouts_enabled ? (
+-            <TouchableOpacity
+-              style={styles.warnBanner}
+-              onPress={openOnboarding}
+-              accessibilityRole="button"
+-              accessibilityLabel="Finish Stripe verification"
+-              disabled={onboardBusy}
+-            >
+-              <Ionicons name="warning-outline" size={18} color="#fff" />
+-              <Text style={styles.warnBannerText}>
+-                {readiness.data.requirements_due.length > 0
+-                  ? `Stripe needs more info to enable payouts (${readiness.data.requirements_due.length} item${readiness.data.requirements_due.length === 1 ? '' : 's'}). Tap to finish.`
+-                  : 'Finish Stripe onboarding to enable payouts.'}
+-              </Text>
+-            </TouchableOpacity>
+-          ) : null}
+-
+-          {/* Reconciliation banner */}
+-          {recon.ok && recon.data.state === 'drift' ? (
+-            <View style={styles.warnBanner}>
+-              <Ionicons name="alert-circle-outline" size={18} color="#fff" />
+-              <Text style={styles.warnBannerText}>{recon.data.summary}</Text>
+-            </View>
+-          ) : null}
+-
+-          {/* Earnings */}
+-          {earnings.ok ? (
+-            <>
+-              <Text style={styles.sectionTitle}>This month</Text>
+-              <View style={styles.cardRow}>
+-                <Card
+-                  label="Gross"
+-                  value={formatMoney(earnings.data.gross_mtd, earnings.data.currency)}
+-                  hint={`Lifetime ${formatMoney(earnings.data.gross_lifetime, earnings.data.currency)}`}
+-                  styles={styles}
+-                />
+-                <Card
+-                  label="Net to you"
+-                  value={formatMoney(earnings.data.net_mtd, earnings.data.currency)}
+-                  hint={`Lifetime ${formatMoney(earnings.data.net_lifetime, earnings.data.currency)}`}
+-                  styles={styles}
+-                />
+-              </View>
+-
+-              <Text style={styles.sectionTitle}>Fees · this month</Text>
+-              <View style={styles.feeBlock}>
+-                <View style={styles.feeRow}>
+-                  <Text style={styles.feeLabel}>Stripe processing</Text>
+-                  <Text style={styles.feeValue}>
+-                    {formatMoney(earnings.data.stripe_fees_mtd, earnings.data.currency)}
+-                  </Text>
+-                </View>
+-                <View style={styles.feeRow}>
+-                  <Text style={styles.feeLabel}>The Growth Project · 2%</Text>
+-                  <Text style={styles.feeValue}>
+-                    {formatMoney(earnings.data.platform_fees_mtd, earnings.data.currency)}
+-                  </Text>
+-                </View>
+-                {earnings.data.head_coach_fees_mtd > 0 ? (
+-                  <View style={styles.feeRow}>
+-                    <Text style={styles.feeLabel}>Head coach / gym · 5%</Text>
+-                    <Text style={styles.feeValue}>
+-                      {formatMoney(earnings.data.head_coach_fees_mtd, earnings.data.currency)}
+-                    </Text>
+-                  </View>
+-                ) : null}
+-                <Text style={styles.feeHint}>
+-                  Platform fee is a flat 2% of gross paid revenue. Head coach
+-                  / gym overrides apply when you operate under a head coach
+-                  on TGP (5% of your gross). Stripe processing fees are
+-                  passed through, not collected by TGP.
+-                </Text>
+-              </View>
+-
+-              {/* Sub-coach attribution for head coaches */}
+-              {earnings.data.sub_coach_breakdown.length > 0 ? (
+-                <>
+-                  <Text style={styles.sectionTitle}>Sub-coach overrides · this month</Text>
+-                  <Text style={styles.sectionHint}>
+-                    5% of sub-coach gross flows to you as the head coach.
+-                  </Text>
+-                  {earnings.data.sub_coach_breakdown.map((s) => (
+-                    <View key={s.sub_coach_id} style={styles.row}>
+-                      <View style={{ flex: 1 }}>
+-                        <Text style={styles.rowTitle}>{s.sub_coach_name}</Text>
+-                        <Text style={styles.rowSub}>
+-                          Gross {formatMoney(s.gross_mtd, earnings.data.currency)}
+-                        </Text>
+-                      </View>
+-                      <Text style={styles.rowValue}>
+-                        +{formatMoney(s.override_mtd, earnings.data.currency)}
+-                      </Text>
+-                    </View>
+-                  ))}
+-                </>
+-              ) : null}
+-            </>
+-          ) : earnings.reason === 'error' ? (
+-            <TouchableOpacity onPress={load} style={styles.errorBanner}>
+-              <Ionicons name="alert-circle-outline" size={18} color="#fff" />
+-              <Text style={styles.errorBannerText}>{earnings.message} Tap to retry.</Text>
+-            </TouchableOpacity>
+-          ) : (
+-            <Text style={styles.emptyText}>Earnings appear once you have paid charges.</Text>
+-          )}
+-
+-          {/* Payouts */}
+-          <Text style={styles.sectionTitle}>Recent payouts</Text>
+-          {readiness.ok && readiness.data.next_payout_eta ? (
+-            <Text style={styles.sectionHint}>
+-              Next payout expected {formatDate(readiness.data.next_payout_eta)}.
+-            </Text>
+-          ) : null}
+-          {payouts.ok ? (
+-            payouts.data.length === 0 ? (
+-              <Text style={styles.emptyText}>No payouts yet.</Text>
+-            ) : (
+-              payouts.data.map((p) => (
+-                <View key={p.id} style={styles.row}>
+-                  <View style={{ flex: 1 }}>
+-                    <Text style={styles.rowTitle}>
+-                      {formatMoney(p.amount, p.currency)}
+-                    </Text>
+-                    <Text style={styles.rowSub}>
+-                      {formatDate(p.arrival_date)}
+-                      {p.charge_count != null ? ` · ${p.charge_count} charges` : ''}
+-                      {p.reconciled ? ' · reconciled' : ' · pending reconciliation'}
+-                    </Text>
+-                  </View>
+-                  <Text
+-                    style={[
+-                      styles.statusPill,
+-                      p.status === 'paid' && styles.statusPillOk,
+-                      (p.status === 'failed' || p.status === 'canceled') && styles.statusPillBad,
+-                    ]}
+-                  >
+-                    {PAYOUT_LABEL[p.status]}
+-                  </Text>
+-                </View>
+-              ))
+-            )
+-          ) : payouts.reason === 'error' ? (
+-            <TouchableOpacity onPress={load} style={styles.errorBanner}>
+-              <Ionicons name="alert-circle-outline" size={18} color="#fff" />
+-              <Text style={styles.errorBannerText}>{payouts.message} Tap to retry.</Text>
+-            </TouchableOpacity>
+-          ) : (
+-            <Text style={styles.emptyText}>Payouts appear once Stripe sends one.</Text>
+-          )}
+-
+-          {/* Refunds / disputes */}
+-          {refunds.ok && refunds.data.length > 0 ? (
+-            <>
+-              <Text style={styles.sectionTitle}>Refunds & disputes</Text>
+-              {refunds.data.map((r) => (
+-                <View key={r.id} style={styles.row}>
+-                  <View style={{ flex: 1 }}>
+-                    <Text style={styles.rowTitle}>
+-                      {formatMoney(r.amount, r.currency)}
+-                      {r.client_name ? ` · ${r.client_name}` : ''}
+-                    </Text>
+-                    <Text style={styles.rowSub}>
+-                      {formatDate(r.created_at)}
+-                      {r.reason ? ` · ${r.reason}` : ''}
+-                    </Text>
+-                  </View>
+-                  <Text
+-                    style={[
+-                      styles.statusPill,
+-                      r.status === 'refunded' && styles.statusPillOk,
+-                      (r.status === 'failed' || r.status === 'disputed') && styles.statusPillBad,
+-                    ]}
+-                  >
+-                    {REFUND_LABEL[r.status]}
+-                  </Text>
+-                </View>
+-              ))}
+-            </>
+-          ) : null}
+-
+-          {/* Stripe dashboard link */}
+-          {readiness.ok && readiness.data.dashboard_available ? (
+-            <TouchableOpacity
+-              style={[styles.dashCta, dashboardBusy && styles.ctaDisabled]}
+-              onPress={openDashboard}
+-              disabled={dashboardBusy}
+-              accessibilityRole="button"
+-              accessibilityLabel="Open Stripe dashboard"
+-            >
+-              {dashboardBusy ? (
+-                <ActivityIndicator color={colors.primary} />
+-              ) : (
+-                <>
+-                  <Ionicons name="open-outline" size={18} color={colors.primary} />
+-                  <Text style={styles.dashCtaText}>Open Stripe dashboard</Text>
+-                </>
+-              )}
+-            </TouchableOpacity>
+-          ) : null}
+-        </>
+-      )}
+-    </ScrollView>
+-  );
+-}
+-
+-const makeStyles = (colors: ThemeColors) =>
+-  StyleSheet.create({
+-    container: { flex: 1, backgroundColor: colors.background },
+-    content: { padding: 0, paddingBottom: 40 },
+-    center: {
+-      flex: 1,
+-      alignItems: 'center',
+-      justifyContent: 'center',
+-      backgroundColor: colors.background,
+-    },
+-    topBar: {
+-      flexDirection: 'row',
+-      alignItems: 'center',
+-      justifyContent: 'space-between',
+-      paddingHorizontal: 16,
+-      paddingTop: 56,
+-      paddingBottom: 12,
+-      borderBottomWidth: StyleSheet.hairlineWidth,
+-      borderBottomColor: colors.border,
+-    },
+-    topTitle: { fontSize: 18, fontWeight: '500', color: colors.textPrimary },
+-    iconBtn: {
+-      width: 40,
+-      height: 40,
+-      alignItems: 'center',
+-      justifyContent: 'center',
+-    },
+-    gate: { alignItems: 'center', paddingVertical: 36, paddingHorizontal: 20 },
+-    gateTitle: { fontSize: 18, fontWeight: '600', color: colors.textPrimary, marginTop: 12 },
+-    gateBody: {
+-      fontSize: 14,
+-      color: colors.textSecondary,
+-      textAlign: 'center',
+-      marginTop: 8,
+-      lineHeight: 20,
+-    },
+-    cta: {
+-      marginTop: 20,
+-      backgroundColor: colors.primary,
+-      borderRadius: 10,
+-      paddingHorizontal: 20,
+-      paddingVertical: 12,
+-    },
+-    ctaDisabled: { opacity: 0.5 },
+-    ctaText: { color: colors.textOnPrimary, fontWeight: '600', fontSize: 14 },
+-    sectionTitle: {
+-      fontSize: 13,
+-      fontWeight: '600',
+-      color: colors.textPrimary,
+-      marginTop: 24,
+-      marginBottom: 8,
+-      textTransform: 'uppercase',
+-      letterSpacing: 0.4,
+-      paddingHorizontal: 20,
+-    },
+-    sectionHint: {
+-      fontSize: 12,
+-      color: colors.textMuted,
+-      lineHeight: 16,
+-      marginBottom: 10,
+-      paddingHorizontal: 20,
+-    },
+-    cardRow: {
+-      flexDirection: 'row',
+-      gap: 12,
+-      flexWrap: 'wrap',
+-      paddingHorizontal: 20,
+-    },
+-    metricCard: {
+-      flex: 1,
+-      minWidth: 140,
+-      backgroundColor: colors.surface,
+-      borderRadius: 12,
+-      padding: 14,
+-      borderWidth: 1,
+-      borderColor: colors.border,
+-    },
+-    metricLabel: {
+-      fontSize: 11,
+-      color: colors.textMuted,
+-      marginBottom: 4,
+-      textTransform: 'uppercase',
+-      letterSpacing: 0.3,
+-    },
+-    metricValue: { fontSize: 22, fontWeight: '600', color: colors.textPrimary },
+-    metricHint: { fontSize: 11, color: colors.textSecondary, marginTop: 4 },
+-    feeBlock: {
+-      marginHorizontal: 20,
+-      backgroundColor: colors.surface,
+-      borderRadius: 12,
+-      borderWidth: 1,
+-      borderColor: colors.border,
+-      padding: 14,
+-    },
+-    feeRow: {
+-      flexDirection: 'row',
+-      justifyContent: 'space-between',
+-      paddingVertical: 6,
+-    },
+-    feeLabel: { fontSize: 13, color: colors.textSecondary },
+-    feeValue: { fontSize: 13, color: colors.textPrimary, fontWeight: '500' },
+-    feeHint: {
+-      marginTop: 10,
+-      fontSize: 11,
+-      color: colors.textMuted,
+-      lineHeight: 16,
+-    },
+-    row: {
+-      flexDirection: 'row',
+-      alignItems: 'center',
+-      paddingVertical: 12,
+-      paddingHorizontal: 20,
+-      borderBottomWidth: StyleSheet.hairlineWidth,
+-      borderBottomColor: colors.border,
+-    },
+-    rowTitle: { fontSize: 14, color: colors.textPrimary, fontWeight: '500' },
+-    rowSub: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+-    rowValue: { fontSize: 14, color: colors.success, fontWeight: '600' },
+-    statusPill: {
+-      fontSize: 11,
+-      color: colors.textMuted,
+-      paddingVertical: 3,
+-      paddingHorizontal: 8,
+-      borderRadius: 999,
+-      backgroundColor: colors.surfaceElevated,
+-      textTransform: 'uppercase',
+-      letterSpacing: 0.3,
+-      overflow: 'hidden',
+-    },
+-    statusPillOk: { color: colors.success, backgroundColor: colors.primaryPale },
+-    statusPillBad: { color: '#fff', backgroundColor: colors.error },
+-    emptyText: {
+-      fontSize: 13,
+-      color: colors.textMuted,
+-      paddingHorizontal: 20,
+-      paddingVertical: 8,
+-    },
+-    warnBanner: {
+-      flexDirection: 'row',
+-      alignItems: 'center',
+-      gap: 8,
+-      backgroundColor: colors.warning,
+-      paddingVertical: 10,
+-      paddingHorizontal: 12,
+-      marginHorizontal: 20,
+-      marginTop: 16,
+-      borderRadius: 8,
+-    },
+-    warnBannerText: { color: '#fff', fontSize: 13, flex: 1 },
+-    errorBanner: {
+-      flexDirection: 'row',
+-      alignItems: 'center',
+-      gap: 8,
+-      backgroundColor: colors.error,
+-      paddingVertical: 10,
+-      paddingHorizontal: 12,
+-      marginHorizontal: 20,
+-      borderRadius: 8,
+-    },
+-    errorBannerText: { color: '#fff', fontSize: 13, flex: 1 },
+-    dashCta: {
+-      flexDirection: 'row',
+-      alignItems: 'center',
+-      justifyContent: 'center',
+-      gap: 8,
+-      paddingVertical: 14,
+-      marginHorizontal: 20,
+-      marginTop: 24,
+-      borderRadius: 10,
+-      borderWidth: 1,
+-      borderColor: colors.primary,
+-    },
+-    dashCtaText: { color: colors.primary, fontWeight: '600', fontSize: 14 },
+-  });
+diff --git a/src/screens/coach/payments/CoachEarningsScreen.tsx b/src/screens/coach/payments/CoachEarningsScreen.tsx
+deleted file mode 100644
+index 1a3dd60..0000000
+--- a/src/screens/coach/payments/CoachEarningsScreen.tsx
++++ /dev/null
+@@ -1,352 +0,0 @@
+-/**
+- * CoachEarningsScreen — net earnings summary + per-package breakdown.
+- *
+- * Wires GET /v1/coach/earnings. Reads `lastPayoutAt`, `nextPayoutEta`, and
+- * a per-package breakdown — no fictional projections. If the endpoint isn't
+- * deployed (404), the screen renders an honest "coming soon" state.
+- */
+-
+-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+-import {
+-  ActivityIndicator,
+-  RefreshControl,
+-  ScrollView,
+-  StyleSheet,
+-  Text,
+-  TouchableOpacity,
+-  View,
+-} from 'react-native';
+-import { Ionicons } from '@expo/vector-icons';
+-import type { NavigationProp, ParamListBase } from '@react-navigation/native';
+-
+-import { coachPackagesApi, CoachEarningsSummary } from '../../../api/packagesApi';
+-import { errorMessage, errorStatus } from '../../../types/common';
+-import { useTheme, ThemeColors } from '../../../theme/ThemeProvider';
+-import { formatCurrencyCents } from '../../../utils/currency';
+-import { track } from '../../../lib/analytics';
+-import { featureFlags } from '../../../config/featureFlags';
+-// §2.12 Coach payout — Roman confirms the last payout in his voice, beside his
+-// face (RomanPayoutNotice co-locates <RomanAvatar />). Gated behind
+-// featureFlags.romanChat (default OFF), the dedicated Roman flag.
+-import RomanPayoutNotice from '../../../components/roman/RomanPayoutNotice';
+-
+-// The normalised CoachEarningsSummary deliberately does NOT carry the
+-// destination bank's last-four (payouts are Stripe-managed and the digits are
+-// not exposed to the mobile contract — see api/packagesApi.ts
+-// CoachEarningsSummary). Rather than invent or mask digits, the §2.12 notice
+-// omits the bankLast4 prop entirely; romanPayout then drops the "account
+-// ending …" clause and states only the real amount and the past-tense send
+-// date. The mobile contract exposes no settlement-window or in-transit signal,
+-// so the copy never speaks of one — Roman states only what the normalised
+-// CoachEarningsSummary actually carries, never invented or masked detail.
+-
+-interface Props {
+-  navigation: NavigationProp<ParamListBase>;
+-}
+-
+-function formatDate(iso: string | null | undefined): string | null {
+-  if (!iso) return null;
+-  const d = new Date(iso);
+-  if (isNaN(d.getTime())) return null;
+-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+-}
+-
+-export default function CoachEarningsScreen({ navigation }: Props) {
+-  const { colors } = useTheme();
+-  const styles = useMemo(() => makeStyles(colors), [colors]);
+-  const [data, setData] = useState<CoachEarningsSummary | null>(null);
+-  const [loading, setLoading] = useState(true);
+-  const [refreshing, setRefreshing] = useState(false);
+-  const [unavailable, setUnavailable] = useState<string | null>(null);
+-  const [error, setError] = useState('');
+-
+-  const load = useCallback(async () => {
+-    setError('');
+-    setUnavailable(null);
+-    try {
+-      const res = await coachPackagesApi.earnings();
+-      setData(res.data);
+-    } catch (err) {
+-      if (errorStatus(err) === 404) {
+-        setUnavailable(
+-          errorMessage(
+-            err,
+-            'Earnings reporting is not enabled in this environment yet. It will appear once the marketplace launches.',
+-          ),
+-        );
+-      } else {
+-        setError(errorMessage(err, 'Could not load earnings.'));
+-      }
+-    } finally {
+-      setLoading(false);
+-    }
+-  }, []);
+-
+-  useEffect(() => {
+-    track('coach_earnings_opened');
+-    load();
+-  }, [load]);
+-
+-  const onRefresh = useCallback(async () => {
+-    setRefreshing(true);
+-    await load();
+-    setRefreshing(false);
+-  }, [load]);
+-
+-  return (
+-    <View style={styles.container}>
+-      <View style={styles.topBar}>
+-        <TouchableOpacity
+-          onPress={() => navigation.goBack()}
+-          style={styles.backBtn}
+-          accessibilityRole="button"
+-          accessibilityLabel="Go back"
+-        >
+-          <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
+-        </TouchableOpacity>
+-        <Text style={styles.topTitle}>Earnings</Text>
+-        <View style={styles.backBtn} />
+-      </View>
+-
+-      <ScrollView
+-        contentContainerStyle={styles.content}
+-        refreshControl={
+-          <RefreshControl
+-            refreshing={refreshing}
+-            onRefresh={onRefresh}
+-            tintColor={colors.primary}
+-          />
+-        }
+-      >
+-        {loading ? (
+-          <View style={styles.loadingWrap}>
+-            <ActivityIndicator color={colors.primary} />
+-          </View>
+-        ) : unavailable ? (
+-          <View style={styles.emptyCard}>
+-            <Ionicons name="construct-outline" size={28} color={colors.textMuted} />
+-            <Text style={styles.emptyTitle}>Earnings coming soon</Text>
+-            <Text style={styles.emptyBody}>{unavailable}</Text>
+-          </View>
+-        ) : error ? (
+-          <View style={styles.emptyCard}>
+-            <Ionicons name="alert-circle-outline" size={28} color={colors.error} />
+-            <Text style={styles.emptyTitle}>Could not load earnings</Text>
+-            <Text style={styles.emptyBody}>{error}</Text>
+-            <TouchableOpacity style={styles.retryBtn} onPress={load}>
+-              <Text style={styles.retryText}>Try again</Text>
+-            </TouchableOpacity>
+-          </View>
+-        ) : data ? (
+-          <>
+-            <View style={styles.heroCard}>
+-              <Text style={styles.heroLabel}>Pending payout</Text>
+-              <Text style={styles.heroValue}>
+-                {formatCurrencyCents(data.pendingPayoutCents, data.currency)}
+-              </Text>
+-              {data.nextPayoutEta ? (
+-                <Text style={styles.heroMeta}>
+-                  Next payout {formatDate(data.nextPayoutEta)}
+-                </Text>
+-              ) : null}
+-            </View>
+-
+-            <View style={styles.gridRow}>
+-              <View style={styles.gridCard}>
+-                <Text style={styles.gridLabel}>This month</Text>
+-                <Text style={styles.gridValue}>
+-                  {formatCurrencyCents(data.monthToDateNetCents, data.currency)}
+-                </Text>
+-              </View>
+-              <View style={styles.gridCard}>
+-                <Text style={styles.gridLabel}>Lifetime</Text>
+-                <Text style={styles.gridValue}>
+-                  {formatCurrencyCents(data.lifetimeNetCents, data.currency)}
+-                </Text>
+-              </View>
+-            </View>
+-
+-            {data.lastPayoutAt ? (
+-              <View style={styles.lastPayoutCard}>
+-                <Ionicons name="checkmark-circle-outline" size={18} color={colors.primary} />
+-                <Text style={styles.lastPayoutText}>
+-                  Last payout:{' '}
+-                  {formatCurrencyCents(data.lastPayoutAmountCents ?? 0, data.currency)} on{' '}
+-                  {formatDate(data.lastPayoutAt)}
+-                </Text>
+-              </View>
+-            ) : null}
+-
+-            {/* §2.12 Roman payout notice — voiced beside his face. Only when the
+-                Roman flag is on AND a real last payout exists (amount + a
+-                formattable send date). All tokens are real: amount from
+-                data.lastPayoutAmountCents, sentOn from the actual
+-                data.lastPayoutAt timestamp. The copy is past tense because the
+-                CoachEarningsSummary contract carries only the historical send
+-                time, not an in-transit/settlement signal (api/packagesApi.ts).
+-                The bank last-four is NOT in the summary contract, so it is
+-                omitted — romanPayout drops the destination-account clause
+-                rather than ship a placeholder token. */}
+-            {featureFlags.romanChat &&
+-            data.lastPayoutAmountCents != null &&
+-            formatDate(data.lastPayoutAt) ? (
+-              <RomanPayoutNotice
+-                amount={formatCurrencyCents(data.lastPayoutAmountCents, data.currency)}
+-                sentOn={formatDate(data.lastPayoutAt) as string}
+-                mode="default"
+-                testID="roman-payout-card"
+-              />
+-            ) : null}
+-
+-            <Text style={styles.sectionTitle}>By package</Text>
+-            {data.perPackage.length === 0 ? (
+-              <View style={styles.emptyInline}>
+-                <Text style={styles.emptyInlineText}>
+-                  No active package revenue this month yet.
+-                </Text>
+-              </View>
+-            ) : (
+-              data.perPackage.map((p) => (
+-                <View key={p.packageId} style={styles.pkgRow}>
+-                  <View style={{ flex: 1 }}>
+-                    <Text style={styles.pkgTitle} numberOfLines={1}>
+-                      {p.title}
+-                    </Text>
+-                    <Text style={styles.pkgMeta}>
+-                      {p.activeSubscribers}{' '}
+-                      {p.activeSubscribers === 1 ? 'subscriber' : 'subscribers'}
+-                    </Text>
+-                  </View>
+-                  <Text style={styles.pkgAmount}>
+-                    {formatCurrencyCents(p.monthToDateGrossCents, data.currency)}
+-                  </Text>
+-                </View>
+-              ))
+-            )}
+-
+-            <Text style={styles.fineprint}>
+-              Amounts shown are net of platform fees and Stripe processing fees.
+-              Stripe sends payouts to your linked bank automatically on its
+-              standard schedule (typically every 2 business days after a sale).
+-            </Text>
+-          </>
+-        ) : null}
+-      </ScrollView>
+-    </View>
+-  );
+-}
+-
+-const makeStyles = (colors: ThemeColors) =>
+-  StyleSheet.create({
+-    container: { flex: 1, backgroundColor: colors.background },
+-    topBar: {
+-      flexDirection: 'row',
+-      alignItems: 'center',
+-      justifyContent: 'space-between',
+-      paddingHorizontal: 16,
+-      paddingTop: 56,
+-      paddingBottom: 12,
+-    },
+-    backBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
+-    topTitle: { fontSize: 18, fontWeight: '500', color: colors.textPrimary },
+-    content: { paddingHorizontal: 24, paddingBottom: 40 },
+-    loadingWrap: { paddingVertical: 60, alignItems: 'center' },
+-    heroCard: {
+-      backgroundColor: colors.surface,
+-      borderRadius: 4,
+-      padding: 22,
+-      marginBottom: 12,
+-    },
+-    heroLabel: {
+-      fontSize: 12,
+-      fontWeight: '500',
+-      color: colors.textSecondary,
+-      textTransform: 'uppercase',
+-      letterSpacing: 0.5,
+-      marginBottom: 6,
+-    },
+-    heroValue: { fontSize: 32, fontWeight: '400', color: colors.textPrimary },
+-    heroMeta: { marginTop: 6, fontSize: 12, color: colors.textSecondary },
+-    gridRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
+-    gridCard: {
+-      flex: 1,
+-      backgroundColor: colors.surface,
+-      borderRadius: 4,
+-      padding: 16,
+-    },
+-    gridLabel: { fontSize: 11, color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 },
+-    gridValue: { fontSize: 20, fontWeight: '500', color: colors.textPrimary, marginTop: 4 },
+-    lastPayoutCard: {
+-      flexDirection: 'row',
+-      alignItems: 'center',
+-      gap: 8,
+-      backgroundColor: colors.primaryPale,
+-      padding: 12,
+-      borderRadius: 4,
+-      marginBottom: 18,
+-    },
+-    lastPayoutText: { flex: 1, fontSize: 13, color: colors.textPrimary },
+-    sectionTitle: {
+-      fontSize: 12,
+-      fontWeight: '500',
+-      color: colors.textSecondary,
+-      textTransform: 'uppercase',
+-      letterSpacing: 0.5,
+-      marginBottom: 8,
+-      marginTop: 4,
+-    },
+-    pkgRow: {
+-      flexDirection: 'row',
+-      alignItems: 'center',
+-      backgroundColor: colors.surface,
+-      borderRadius: 4,
+-      padding: 14,
+-      marginBottom: 6,
+-    },
+-    pkgTitle: { fontSize: 14, color: colors.textPrimary, fontWeight: '500' },
+-    pkgMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+-    pkgAmount: { fontSize: 14, color: colors.textPrimary, fontWeight: '500' },
+-    emptyInline: {
+-      backgroundColor: colors.surface,
+-      borderRadius: 4,
+-      padding: 16,
+-    },
+-    emptyInlineText: { color: colors.textSecondary, fontSize: 13 },
+-    emptyCard: {
+-      backgroundColor: colors.surface,
+-      borderRadius: 4,
+-      padding: 24,
+-      alignItems: 'center',
+-      gap: 8,
+-      marginTop: 12,
+-    },
+-    emptyTitle: {
+-      fontSize: 16,
+-      fontWeight: '500',
+-      color: colors.textPrimary,
+-      marginTop: 4,
+-    },
+-    emptyBody: {
+-      fontSize: 13,
+-      color: colors.textSecondary,
+-      textAlign: 'center',
+-      lineHeight: 18,
+-      paddingHorizontal: 8,
+-    },
+-    retryBtn: {
+-      marginTop: 12,
+-      paddingHorizontal: 18,
+-      paddingVertical: 10,
+-      borderRadius: 4,
+-      borderWidth: 1,
+-      borderColor: colors.primary,
+-    },
+-    retryText: { color: colors.primary, fontSize: 14, fontWeight: '600' },
+-    fineprint: {
+-      fontSize: 12,
+-      color: colors.textMuted,
+-      textAlign: 'center',
+-      lineHeight: 18,
+-      marginTop: 20,
+-    },
+-  });

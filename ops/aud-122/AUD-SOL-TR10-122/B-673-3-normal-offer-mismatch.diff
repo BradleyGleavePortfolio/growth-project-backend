@@ -1,0 +1,22 @@
+diff --git a/test/b-trials-8-shared-rule.spec.ts b/test/b-trials-8-shared-rule.spec.ts
+--- a/test/b-trials-8-shared-rule.spec.ts
++++ b/test/b-trials-8-shared-rule.spec.ts
+@@ -189,6 +189,18 @@ describe('B-TR8-120 — one shared trial rule across the native checkout and the trial ledger', () => {
+     expect(offers.get(PKG_A)).toEqual({ trial_days: 7, available: true, reason: 'offered' });
+   });
+ 
++  it('ordinary abandoned A checkout: the B offer agrees with the trial actually sold', async () => {
++    const w = world();
++    // Open A's card sheet, then dismiss it without saving a card.
++    await w.buy(PKG_A, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
++    // Refresh the coach's offers and choose B, sequentially, on the same device.
++    const offers = await w.usage.offersForClient(CLIENT, w.prisma._packages);
++    const next = await w.buy(PKG_B, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
++    // Current candidate: B advertised available=true, but next.plan.trial_days=0.
++    // Keep this assertion policy-neutral: offer truth must match checkout truth.
++    expect(offers.get(PKG_B)?.available).toBe(next.plan.trial_days > 0);
++  });
++
+   it('native trial started: the ledger holds it, the offer says already_used and the next checkout has no trial', async () => {
+     const w = world();
+     const first = await w.buy(PKG_A, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');

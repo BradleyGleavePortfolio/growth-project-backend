@@ -1,0 +1,10 @@
+AUD-SOL-DUN1-122 / agent 122 — independent normal-use candidate for the upcoming #689 head (not an old-head verdict).
+
+B-689-S1 candidate, src/checkout/client-billing.service.ts:1643–1645 at bb992fedf0095446f916f3261742bd262c3d94da.
+Normal-user story: A client whose bank opens an inquiry without reversing the payment cancels the paused plan and is told the bank reversed their money.
+
+Ordinary sequential path: inquiry charge.dispute.created -> ChargeDispute warning_* + purchase disputed -> D2c/D2d dispute-pause marker -> own-client cancelPlan -> isDelinquent(active dunning) -> runDunningCancel(dispute=true) -> endAccessNow -> unconditional appended "Ending the plan does not settle the payment your bank reversed".
+
+This is the same ordinary inquiry false-claim issue already fixed in #687's notification copy, but remains in D3's cancellation response; no race, retry, ordering or odd input is needed. Minimal default: use neutral "payment dispute or inquiry" phrasing for the cancellation explanation (and the related card-response explanation if reachable), preserving coach-restart/no automatic settlement behavior.
+
+Will recheck the actual READY head/delta before counting/posting. Current GitHub auth remains 401; evidence preserved in the Sol report, no other lens notes read.
