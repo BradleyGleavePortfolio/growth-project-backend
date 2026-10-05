@@ -82,6 +82,7 @@ async function conflictWorld(replies: { sub: Reply; invoices?: Reply }) {
     if (path.includes('status=open')) return reply(page([{ id: 'in_renewal' }]));
     // B-TR6-119 — the uncollectible list (Sol B-673-1): none here.
     if (path.includes('status=uncollectible')) return reply(page([]));
+    if (path.includes('status=draft')) return reply(page([])); // B-TR7-120 (B-707-1): none
     if (path.startsWith('/invoices')) {
       return reply(replies.invoices ?? { status: 500, body: { error: { type: 'api_error' } } });
     }

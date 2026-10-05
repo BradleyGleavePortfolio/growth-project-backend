@@ -40,6 +40,8 @@ const OPEN_LIST = 'GET /invoices?subscription=sub_1&status=open&limit=100';
 const PAID_LIST = 'GET /invoices?subscription=sub_1&status=paid&limit=100';
 // B-TR6-119 — the uncollectible list (Sol B-673-1); routed to a complete empty page by default.
 const UNC_LIST = 'GET /invoices?subscription=sub_1&status=uncollectible&limit=100';
+// B-TR7-120 — the draft list (B-707-1); routed to a complete empty page.
+const DRAFT_LIST = 'GET /invoices?subscription=sub_1&status=draft&limit=100';
 
 type C = ConstructorParameters<typeof TrialConflictService>;
 type Res = { status?: number; body: unknown };
@@ -109,7 +111,9 @@ async function world(r: {
             ? r.paid
             : status === 'uncollectible'
               ? (r.uncollectible ?? page([]))
-              : undefined;
+              : status === 'draft'
+                ? page([])
+                : undefined;
       return reply(x ?? { status: 500, body: { error: { type: 'api_error' } } });
     }
     return reply(r.sub);
@@ -298,10 +302,16 @@ describe('B-673-1 (round 11) — a never-billed past_due/unpaid cancel voids eve
       expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
       expect(w.calls).toEqual([
         'GET /subscriptions/sub_1',
+        DRAFT_LIST,
         OPEN_LIST,
         UNC_LIST,
         PAID_LIST,
         'POST /invoices/in_renewal/void',
+        // B-TR7-120 — the recheck before the DELETE (in_renewal is void: not new).
+        DRAFT_LIST,
+        OPEN_LIST,
+        UNC_LIST,
+        PAID_LIST,
         'DELETE /subscriptions/sub_1',
       ]);
       expect(w.row()).toMatchObject({ status: 'cancelled', last_error: null, lease_token: null });
@@ -406,9 +416,13 @@ describe('B-673-1 (round 11) — a never-billed past_due/unpaid cancel voids eve
       paid: page([TRIAL_INVOICE]),
     });
     expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
-    expect(w.calls.slice(-3)).toEqual([
+    expect(w.calls.slice(-7)).toEqual([
       'POST /invoices/in_a/void',
       'POST /invoices/in_b/void',
+      DRAFT_LIST,
+      OPEN_LIST,
+      UNC_LIST,
+      PAID_LIST,
       'DELETE /subscriptions/sub_1',
     ]);
   });

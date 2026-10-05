@@ -33,6 +33,8 @@ const OLD_PAID = { id: 'in_old', amount_paid: 4900, total: 4900 };
 const OPEN_LIST = 'GET /invoices?subscription=sub_1&status=open&limit=100';
 const UNC_LIST = 'GET /invoices?subscription=sub_1&status=uncollectible&limit=100';
 const PAID_LIST = 'GET /invoices?subscription=sub_1&status=paid&limit=100';
+// B-TR7-120 — the draft list (B-707-1); a complete empty page here.
+const DRAFT_LIST = 'GET /invoices?subscription=sub_1&status=draft&limit=100';
 
 type C = ConstructorParameters<typeof TrialConflictService>;
 type Res = { status?: number; body: unknown };
@@ -107,7 +109,9 @@ async function world(r: {
             ? r.uncollectible
             : status === 'paid'
               ? r.paid
-              : undefined;
+              : status === 'draft'
+                ? page([])
+                : undefined;
       return reply(x ?? apiError);
     }
     return reply(r.sub);
@@ -234,6 +238,8 @@ describe('Sol AUD-SOL-T3E-119 probe (exact inputs) — a different payable invoi
                   : [],
               has_more: false,
             };
+          } else if (queryStatus === 'draft') {
+            body = { data: [], has_more: false }; // B-TR7-120: no draft here
           } else if (queryStatus === 'paid') {
             // Prepared before the first positive payment, which succeeds on
             // the still-payable invoice before delivery.
@@ -303,7 +309,7 @@ describe('Sol AUD-SOL-T3E-119 probe (exact inputs) — a different payable invoi
 
 describe('B-673-1 (T5) — the payable domain is open AND uncollectible, read before the paid list', () => {
   it.each(['past_due', 'unpaid'])(
-    '%s never billed: open, uncollectible, paid lists, both invoices confirmed void, one DELETE, in that order',
+    '%s never billed: draft, open, uncollectible, paid lists, both confirmed void, recheck, one DELETE',
     async (status) => {
       const w = await world({
         sub: sub(status),
@@ -314,11 +320,16 @@ describe('B-673-1 (T5) — the payable domain is open AND uncollectible, read be
       expect(await w.service.settle('pur-1', NOW)).toBe('cancelled');
       expect(w.calls).toEqual([
         'GET /subscriptions/sub_1',
+        DRAFT_LIST,
         OPEN_LIST,
         UNC_LIST,
         PAID_LIST,
         'POST /invoices/in_open/void',
         'POST /invoices/in_unc/void',
+        DRAFT_LIST,
+        OPEN_LIST,
+        UNC_LIST,
+        PAID_LIST,
         'DELETE /subscriptions/sub_1',
       ]);
       expect(w.row()).toMatchObject({ status: 'cancelled', last_error: null, lease_token: null });
