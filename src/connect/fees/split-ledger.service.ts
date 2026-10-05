@@ -227,13 +227,13 @@ export class SplitLedgerService {
     entry_id: string;
     reversed_total_cents: number;
     stripe_transfer_id?: string | null;
-  }): Promise<SplitLedgerEntry> {
-    const current = await this.prisma.splitLedgerEntry.findUniqueOrThrow({
+  }, db: Prisma.TransactionClient = this.prisma): Promise<SplitLedgerEntry> {
+    const current = await db.splitLedgerEntry.findUniqueOrThrow({
       where: { id: args.entry_id },
     });
     const reversed = Math.min(current.amount_cents, Math.max(0, args.reversed_total_cents));
     const fully = current.amount_cents > 0 && reversed >= current.amount_cents;
-    return this.prisma.splitLedgerEntry.update({
+    return db.splitLedgerEntry.update({
       where: { id: args.entry_id },
       data: {
         reversed_cents: reversed,
