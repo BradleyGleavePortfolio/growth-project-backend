@@ -84,6 +84,25 @@ export interface BuyerDropView {
 // <50 in practice. 500 is well above any realistic package.
 const DROP_LIST_HARD_CAP = 500;
 
+/**
+ * B-RECUR — true when buying this package starts a renewing charge: a
+ * recurring package, or a one-time package with a recurring second price
+ * (TWO_PACKAGE_DESIGN / PR-6 decision #1). Both are sold only as a Stripe
+ * Subscription (POST /v1/checkout/subscription-intent).
+ */
+export function isRecurringPackage(
+  pkg: Pick<CoachPackage, 'billing_type' | 'recurring_amount_cents' | 'recurring_interval'>,
+): boolean {
+  // A combo's recurring part of $0 renews nothing: it is a one-time sale
+  // (B-RECUR-BE R1-3), sold through payment-intent like any one-time package.
+  return (
+    pkg.billing_type === 'recurring' ||
+    (pkg.recurring_amount_cents != null &&
+      pkg.recurring_amount_cents > 0 &&
+      pkg.recurring_interval != null)
+  );
+}
+
 @Injectable()
 export class CheckoutService {
   private readonly logger = new Logger(CheckoutService.name);
@@ -107,7 +126,8 @@ export class CheckoutService {
    * unsigned required contract (spec §4.1). Returns the SIGNED coach envelope
    * id (if any) so the caller can bind it to the realized purchase post-pay.
    */
-  private async runContractGate(args: {
+  // B-RECUR — public so the native subscription checkout runs the SAME gate.
+  async runContractGate(args: {
     clientId: string;
     client: { email: string; name: string };
     pkg: CoachPackage;
@@ -449,6 +469,20 @@ export class CheckoutService {
       throw new NotFoundException({
         error: 'PACKAGE_NOT_FOUND',
         message: 'Package not available',
+      });
+    }
+
+    // B-RECUR (OR-113-1) — a renewing plan is never sold as one charge. A
+    // recurring package, or a one-time package with a recurring second price
+    // (one charge today + a subscription), must go through
+    // POST /v1/checkout/subscription-intent. Checked before any Stripe call
+    // and before the idempotent replay, so no PaymentIntent is ever minted.
+    if (isRecurringPackage(pkg)) {
+      throw new ConflictException({
+        code: 'RECURRING_REQUIRES_SUBSCRIPTION',
+        error: 'RECURRING_REQUIRES_SUBSCRIPTION',
+        message:
+          'This plan renews, so it is set up as a subscription. Update the app to start it, or message your coach.',
       });
     }
 
@@ -988,7 +1022,9 @@ export class CheckoutService {
 
   // --- Internal helpers ---
 
-  private async ensureCustomer(
+  // B-RECUR — public so the native subscription checkout reuses the same
+  // Customer (one ConnectCustomer per client, idempotent Stripe create).
+  async ensureCustomer(
     clientUserId: string,
     email: string | null | undefined,
     name: string | null | undefined,

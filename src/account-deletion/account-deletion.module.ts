@@ -8,6 +8,7 @@ import { AppleTokenRevocationService } from './apple-token-revocation.service';
 import { AccountDeletionStorageService } from './account-deletion.storage';
 import { AccountDeletionBillingService } from './account-deletion.billing';
 import { StripeApiService } from '../billing/stripe-api.service';
+import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
 
 // PrismaService is provided globally via PrismaModule — no need to import here.
 // AuditService is provided globally via AuditModule (see app.module.ts).
@@ -24,6 +25,8 @@ import { StripeApiService } from '../billing/stripe-api.service';
     AccountDeletionStorageService,
     AccountDeletionBillingService,
     StripeApiService,
+    // Sol B-679-7 — stateless REST client; finds unbound checkout subscriptions.
+    StripeConnectApiService,
   ],
   exports: [AccountDeletionService],
 })
