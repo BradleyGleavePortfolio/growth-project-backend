@@ -67,3 +67,10 @@ no exclamation marks, no generic errors. One job = one agent = one or two PRs, t
     store/legal, a false customer-facing claim, or a core-flow dead end. Weird edge cases (same-instant races, timing/lease windows,
     out-of-order provider retries, crash-at-this-line recovery, inputs nobody types, limits far above launch volume) are
     "C (edge, deferred to 10k clients)". Re-reviews: prior Bs + changed lines only. One fix round is the target. Move faster.
+
+14. OWNER RUTHLESS SCOPE (14:29 PDT 10-05; SoT A2 override items 7-11): hunt ONLY real, huge issues (the item-13 list: money, private
+    data to the wrong person, safety/crisis, data loss, reachable security, store/legal, false claims, core flow broken for a normal user).
+    Spend zero time on time zones, DST, midnight/date boundaries, clock skew, races, double/out-of-order retries, lease/timer windows,
+    crash recovery, cache sizes, extreme volume, odd inputs, old app builds, extra defence, missing tests for working code: no search, no
+    probes, no analysis; if noticed, one line "C (edge, deferred to 10k clients)". Every B = one plain sentence of how an ordinary user hits
+    it on a normal day. Time boxes: delta 20 min, one PR 30 min, train 45 min. Builders: fix item-list problems only, no edge hardening.

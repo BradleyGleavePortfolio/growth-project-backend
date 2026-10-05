@@ -1,0 +1,22 @@
+[heavy] waiting for a slot: npx jest --ci test/scheduling.service.spec.ts
+PASS test/scheduling.service.spec.ts (93 MB heap size)
+  SchedulingService — request + state machine + audit
+    ✓ client requests a session — written as `requested`, audit recorded (15 ms)
+    ✓ client cannot request a session against a coach that is not theirs (1 ms)
+    ✓ rejects end_at <= start_at on request (1 ms)
+    ✓ coach approves -> `scheduled`, stub provider mints ids, audits cover both sides, real adapters untouched (6 ms)
+    ✓ client cannot approve a session (3 ms)
+    ✓ cannot transition from completed back to scheduled (4 ms)
+    ✓ cannot cancel a completed session (4 ms)
+    ✓ reschedule is allowed in requested or scheduled, captures previous + new times (5 ms)
+    ✓ attaching a manual video link sets provider=manual and audits (7 ms)
+    ✓ listUpcomingForActor scopes results by role (2 ms)
+    ✓ availability-set is atomic: deletes old, creates new, audits once per call (1 ms)
+    ✓ rejects availability windows where end_minute <= start_minute, with a code
+    ✓ never calls a real provider adapter while the provider flags are off (3 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       13 passed, 13 total
+Snapshots:   0 total
+Time:        2.236 s
+Ran all test suites matching test/scheduling.service.spec.ts.

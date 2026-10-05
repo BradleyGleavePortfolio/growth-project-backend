@@ -1,0 +1,507 @@
+diff --git a/src/notifications/emitters/booking.emitter.ts b/src/notifications/emitters/booking.emitter.ts
+index d7da65bb..ed729f56 100644
+--- a/src/notifications/emitters/booking.emitter.ts
++++ b/src/notifications/emitters/booking.emitter.ts
+@@ -9,7 +9,7 @@ import { resolveRecipientTimeZone } from '../recipient-timezone';
+ 
+ // Booking lifecycle notifications: one in-app row (the notification center
+ // entry) plus a real push through the shared Expo transport
+-// (NotificationsService.pushToUser).
++// (NotificationsService.pushToUser) with fixed lock-screen copy.
+ //
+ // S-SCHED-2:
+ //  - Before this, the emitter wrote an in-app row and a channel='push' row but
+@@ -33,6 +33,10 @@ import { resolveRecipientTimeZone } from '../recipient-timezone';
+ //    is still true when read the next day.
+ //  - Copy is plain and calm (no exclamation marks, no emojis). Each message
+ //    says what happened and, where there is one, the next step.
++//  - B-714-1 / B-653-1: the push (lock screen) never carries the inbox text.
++//    Its title and body are the fixed per-kind lines in BOOKING_LOCK_SCREEN:
++//    no display name, no coach-written text (type names, notes, reasons).
++//    Only a reminder keeps its time. The full detail stays in the inbox row.
+ //  - Emitters never throw: booking state must not fail because delivery did.
+ 
+ export type BookingRecipientRole = 'client' | 'coach';
+@@ -558,7 +562,9 @@ export class BookingEmitter {
+         outcome.push = 'disabled';
+         return outcome;
+       }
+-      const result = await this.notifications.pushToUser(args.userId, args.title, body, {
++      // B-714-1 / B-653-1: fixed per-kind lock-screen copy, never the inbox text.
++      const lock = bookingLockScreenCopy(args.kind, args.payload);
++      const result = await this.notifications.pushToUser(args.userId, lock.title, lock.body, {
+         kind: args.kind,
+         category: NotificationCategory.COACH_DIRECT,
+         actionScreen,
+@@ -606,6 +612,88 @@ export function emitterDiagnostic(err: unknown): string {
+   return safeLogDiagnostic(err);
+ }
+ 
++// B-714-1 / B-653-1 (lock-screen privacy): a lock screen is readable by anyone
++// holding the phone, so a booking push shows ONLY these fixed lines, one per
++// kind. Wording matches the push stack's lock-screen-copy.ts (B-692-1), so
++// routing through its sender keeps the same copy. Unknown kinds get a
++// generic line. No first person, no exclamation marks.
++const LOCK_OPEN = 'Open the app to see it.';
++const LOCK_DETAILS = 'Open the app to see the details.';
++export const BOOKING_LOCK_SCREEN: Readonly<Record<string, { title: string; body: string }>> = {
++  [NotificationKind.BOOKING_REQUESTED]: {
++    title: 'Session request',
++    body: `There is a new session request. ${LOCK_OPEN}`,
++  },
++  [NotificationKind.BOOKING_CONFIRMED]: {
++    title: 'Session confirmed',
++    body: `Your session is confirmed. ${LOCK_DETAILS}`,
++  },
++  [NotificationKind.BOOKING_DECLINED]: {
++    title: 'Session request',
++    body: `Your session request was declined. ${LOCK_DETAILS}`,
++  },
++  [NotificationKind.BOOKING_CANCELLED]: {
++    title: 'Session cancelled',
++    body: `A session was cancelled. ${LOCK_DETAILS}`,
++  },
++  [NotificationKind.BOOKING_RESCHEDULED]: {
++    title: 'Session moved',
++    body: `A session has a new time. ${LOCK_OPEN}`,
++  },
++  [NotificationKind.BOOKING_REMINDER_24H]: {
++    title: 'Session reminder',
++    body: `You have a session in about 24 hours. ${LOCK_DETAILS}`,
++  },
++  [NotificationKind.BOOKING_REMINDER_1H]: {
++    title: 'Session starting soon',
++    body: `Your session starts in about an hour. ${LOCK_DETAILS}`,
++  },
++  [NotificationKind.BOOKING_LINK_NEEDED]: {
++    title: 'Add a call link',
++    body: 'A session has no call link yet. Open the app to add one.',
++  },
++  [NotificationKind.BOOKING_LINK_READY]: {
++    title: 'Call link ready',
++    body: `The call link for your session is ready. ${LOCK_OPEN}`,
++  },
++  [NotificationKind.BOOKING_REQUEST_EXPIRED]: {
++    title: 'Session request closed',
++    body: `A session request has closed. ${LOCK_DETAILS}`,
++  },
++};
++const LOCK_DEFAULT = {
++  title: 'The Growth Project',
++  body: `You have a new notification. ${LOCK_OPEN}`,
++};
++
++/**
++ * The lock-screen title and body for a booking push. Reads only the kind and,
++ * for reminders, the stored instant and zone (the payload's scheduledAt and
++ * timeZone); every other payload field is ignored, so no name or free text
++ * can reach the lock screen. A reminder with no usable zone or instant gets
++ * its fixed line with no clock time.
++ */
++export function bookingLockScreenCopy(
++  kind: string,
++  context?: { scheduledAt?: unknown; timeZone?: unknown } | null,
++): { title: string; body: string } {
++  const fixed = BOOKING_LOCK_SCREEN[kind] ?? LOCK_DEFAULT;
++  const tz = typeof context?.timeZone === 'string' ? context.timeZone : null;
++  const at = typeof context?.scheduledAt === 'string' ? new Date(context.scheduledAt) : null;
++  if (!tz || !at || Number.isNaN(at.getTime())) return { ...fixed };
++  try {
++    if (kind === NotificationKind.BOOKING_REMINDER_24H) {
++      return { title: fixed.title, body: `Your session is on ${formatWhen(at, tz)}.` };
++    }
++    if (kind === NotificationKind.BOOKING_REMINDER_1H) {
++      return { title: fixed.title, body: `Your session starts at ${formatTime(at, tz)}.` };
++    }
++  } catch {
++    // An unusable zone keeps the fixed line (no clock time, never UTC).
++  }
++  return { ...fixed };
++}
++
+ function typeLabel(name: string | null | undefined, fallback: string): string {
+   const n = typeof name === 'string' ? name.trim() : '';
+   return n ? n.slice(0, 60) : fallback;
+diff --git a/test/booking-emitter.spec.ts b/test/booking-emitter.spec.ts
+index 7fa4eca0..69a6f2da 100644
+--- a/test/booking-emitter.spec.ts
++++ b/test/booking-emitter.spec.ts
+@@ -124,10 +124,11 @@ describe('BookingEmitter delivery', () => {
+       sessionTypeName: 'Quick Q/A Call',
+     });
+     expect(fake.pushToUser).toHaveBeenCalledTimes(1);
++    // B-714-1: the push carries the fixed lock-screen line, never row.body.
+     expect(fake.pushes[0]).toEqual({
+       userId: 'coach-1',
+-      title: 'New session request',
+-      body: row.body,
++      title: 'Session request',
++      body: 'There is a new session request. Open the app to see it.',
+       data: {
+         kind: 'booking_requested',
+         category: 'COACH_DIRECT',
+@@ -282,8 +283,8 @@ describe('BookingEmitter delivery', () => {
+       'Your Quick Q/A Call with Coach Kim is on Tue, Oct 6, 10:00 AM PDT. Your coach will add the call link before it starts.',
+     ]);
+     expect(fake.pushes.map((p) => [p.title, p.data.actionScreen])).toEqual([
+-      ['Session tomorrow', 'CoachBookingInbox'],
+-      ['Session tomorrow', 'CalendarSession'],
++      ['Session reminder', 'CoachBookingInbox'],
++      ['Session reminder', 'CalendarSession'],
+     ]);
+   });
+ 
+@@ -602,7 +603,14 @@ describe('BookingEmitter zone provenance (main merge)', () => {
+       'Your session with Coach Kim starts in about an hour.',
+     ]);
+     for (const b of bodies) expect(b).not.toMatch(/UTC|AM|PM|\d:\d{2}/);
+-    expect(fake.pushes.map((p) => p.body)).toEqual(bodies);
++    // B-714-1: lock-screen lines, no name and no clock time without a zone.
++    expect(fake.pushes.map((p) => p.body)).toEqual([
++      'Your session is confirmed. Open the app to see the details.',
++      'A session was cancelled. Open the app to see the details.',
++      'A session has a new time. Open the app to see it.',
++      'You have a session in about 24 hours. Open the app to see the details.',
++      'Your session starts in about an hour. Open the app to see the details.',
++    ]);
+     for (const r of fake.rows) expect(r.payload).toMatchObject({ timeZone: null });
+   });
+ 
+diff --git a/test/booking-lock-screen-push.spec.ts b/test/booking-lock-screen-push.spec.ts
+new file mode 100644
+index 00000000..7943f255
+--- /dev/null
++++ b/test/booking-lock-screen-push.spec.ts
+@@ -0,0 +1,250 @@
++/**
++ * B-714-1 / B-653-1 (B-SCHED2-121): a booking push never puts a display name
++ * or coach-written text on the lock screen. Every BookingEmitter method is
++ * driven with canary names, a canary session type name and canary notes and
++ * reasons; the push title and body must be the fixed per-kind line (a
++ * reminder keeps only its time), while the in-app row keeps the full detail.
++ */
++import {
++  BOOKING_LOCK_SCREEN,
++  BookingEmitter,
++  bookingLockScreenCopy,
++} from '../src/notifications/emitters/booking.emitter';
++import { NotificationKind } from '../src/notifications/notification-kind';
++import {
++  NotificationsService,
++  type CreateNotificationInput,
++} from '../src/notifications/notifications.service';
++import { PrismaService } from '../src/prisma.service';
++
++const NAME = 'Jamie Canary-Person';
++const TYPE = 'Canary Type Name';
++const NOTE = 'canary private note';
++const AT = new Date('2026-10-06T17:00:00Z'); // Tue Oct 6, 10:00 AM PDT
++const LATER = new Date('2026-10-07T18:30:00Z');
++const CANARIES = [NAME, TYPE, NOTE, 'Jamie', 'Canary'];
++
++function build(timeZone: string | null = 'America/Los_Angeles') {
++  const rows: CreateNotificationInput[] = [];
++  const pushes: Array<{ kind: unknown; title: string; body: string }> = [];
++  const fake = {
++    createNotification: jest.fn(async (input: CreateNotificationInput) => {
++      rows.push(input);
++      return { id: `n-${rows.length}` };
++    }),
++    getPreferences: jest.fn(async (user_id: string) => ({
++      user_id,
++      booking_push: true,
++      muted: false,
++    })),
++    pushToUser: jest.fn(
++      async (_u: string, title: string, body: string, data?: Record<string, unknown>) => {
++        pushes.push({ kind: data?.kind, title, body });
++        return { delivered: true, code: 'delivered' as const };
++      },
++    ),
++  };
++  const prisma = Object.assign(Object.create(PrismaService.prototype) as PrismaService, {
++    notificationPreferences: {
++      findUnique: async () =>
++        timeZone
++          ? {
++              timezone: timeZone,
++              timezone_source: 'device',
++              timezone_updated_at: new Date('2026-09-01T00:00:00Z'),
++            }
++          : null,
++    },
++    coachProfile: { findUnique: async () => null },
++    coachingSession: { findUnique: async () => null },
++    user: { findUnique: async () => null },
++  });
++  const emitter = new BookingEmitter(
++    Object.assign(Object.create(NotificationsService.prototype) as NotificationsService, fake),
++    prisma,
++  );
++  return { emitter, rows, pushes };
++}
++
++async function emitAll(emitter: BookingEmitter): Promise<void> {
++  const base = { sessionId: 's-1', sessionTypeName: TYPE };
++  await emitter.emitRequested({
++    ...base,
++    coachUserId: 'coach',
++    clientDisplayName: NAME,
++    requestedAt: AT,
++    scheduledAt: AT,
++    notes: NOTE,
++  });
++  await emitter.emitBooked({
++    ...base,
++    coachUserId: 'coach',
++    clientDisplayName: NAME,
++    scheduledAt: AT,
++  });
++  await emitter.emitConfirmed({
++    ...base,
++    clientUserId: 'client',
++    coachDisplayName: NAME,
++    scheduledAt: AT,
++  });
++  await emitter.emitConfirmed({
++    ...base,
++    clientUserId: 'client',
++    coachDisplayName: NAME,
++    scheduledAt: AT,
++    instant: true,
++  });
++  await emitter.emitDeclined({
++    ...base,
++    clientUserId: 'client',
++    coachDisplayName: NAME,
++    requestedAt: AT,
++    scheduledAt: AT,
++    declineReason: NOTE,
++  });
++  await emitter.emitCancelled({
++    ...base,
++    recipientUserId: 'client',
++    recipientRole: 'client',
++    cancellingPartyDisplayName: NAME,
++    scheduledAt: AT,
++    cancelReason: NOTE,
++  });
++  await emitter.emitRescheduled({
++    ...base,
++    recipientUserId: 'coach',
++    recipientRole: 'coach',
++    reschedulerDisplayName: NAME,
++    oldScheduledAt: AT,
++    newScheduledAt: LATER,
++  });
++  await emitter.emitMoveRequested({
++    ...base,
++    coachUserId: 'coach',
++    clientDisplayName: NAME,
++    oldScheduledAt: AT,
++    newScheduledAt: LATER,
++  });
++  await emitter.emitReminder24h({
++    ...base,
++    recipientUserId: 'client',
++    recipientRole: 'client',
++    otherPartyDisplayName: NAME,
++    scheduledAt: AT,
++  });
++  await emitter.emitReminder1h({
++    ...base,
++    recipientUserId: 'coach',
++    recipientRole: 'coach',
++    otherPartyDisplayName: NAME,
++    scheduledAt: AT,
++    hasMeetingLink: false,
++  });
++  await emitter.emitLinkNeeded({
++    ...base,
++    coachUserId: 'coach',
++    clientDisplayName: NAME,
++    scheduledAt: AT,
++  });
++  await emitter.emitLinkReady({
++    ...base,
++    clientUserId: 'client',
++    coachDisplayName: NAME,
++    scheduledAt: AT,
++  });
++  await emitter.emitRequestExpired({
++    ...base,
++    recipientUserId: 'client',
++    recipientRole: 'client',
++    otherPartyDisplayName: NAME,
++    scheduledAt: AT,
++  });
++  await emitter.emitRequestExpired({
++    ...base,
++    recipientUserId: 'coach',
++    recipientRole: 'coach',
++    otherPartyDisplayName: NAME,
++    scheduledAt: AT,
++  });
++}
++
++const K = NotificationKind;
++const fixed = (kind: string) => BOOKING_LOCK_SCREEN[kind];
++
++describe('B-714-1 / B-653-1 booking pushes keep names and coach text off the lock screen', () => {
++  it('every emitter pushes only its fixed per-kind line; reminders keep only the time', async () => {
++    const { emitter, rows, pushes } = build();
++    await emitAll(emitter);
++    expect(pushes).toHaveLength(14);
++    for (const p of pushes) {
++      for (const c of CANARIES) expect(`${p.title} ${p.body}`).not.toContain(c);
++      expect(`${p.title} ${p.body}`).not.toMatch(/!|\b(I|me|my|we|our)\b/);
++    }
++    expect(pushes).toEqual([
++      { kind: K.BOOKING_REQUESTED, ...fixed(K.BOOKING_REQUESTED) },
++      { kind: K.BOOKING_CONFIRMED, ...fixed(K.BOOKING_CONFIRMED) },
++      { kind: K.BOOKING_CONFIRMED, ...fixed(K.BOOKING_CONFIRMED) },
++      { kind: K.BOOKING_CONFIRMED, ...fixed(K.BOOKING_CONFIRMED) },
++      { kind: K.BOOKING_DECLINED, ...fixed(K.BOOKING_DECLINED) },
++      { kind: K.BOOKING_CANCELLED, ...fixed(K.BOOKING_CANCELLED) },
++      { kind: K.BOOKING_RESCHEDULED, ...fixed(K.BOOKING_RESCHEDULED) },
++      { kind: K.BOOKING_RESCHEDULED, ...fixed(K.BOOKING_RESCHEDULED) },
++      {
++        kind: K.BOOKING_REMINDER_24H,
++        title: 'Session reminder',
++        body: 'Your session is on Tue, Oct 6, 10:00 AM PDT.',
++      },
++      {
++        kind: K.BOOKING_REMINDER_1H,
++        title: 'Session starting soon',
++        body: 'Your session starts at 10:00 AM PDT.',
++      },
++      { kind: K.BOOKING_LINK_NEEDED, ...fixed(K.BOOKING_LINK_NEEDED) },
++      { kind: K.BOOKING_LINK_READY, ...fixed(K.BOOKING_LINK_READY) },
++      { kind: K.BOOKING_REQUEST_EXPIRED, ...fixed(K.BOOKING_REQUEST_EXPIRED) },
++      { kind: K.BOOKING_REQUEST_EXPIRED, ...fixed(K.BOOKING_REQUEST_EXPIRED) },
++    ]);
++    // The inbox row (inside the app) keeps the full detail, unchanged.
++    expect(rows).toHaveLength(14);
++    expect(rows[0].body).toBe(
++      `${NAME} asked for ${TYPE} on Tue, Oct 6, 10:00 AM PDT. Approve or decline in your booking inbox.`,
++    );
++    expect(rows[13].body).toContain(NAME);
++  });
++
++  it('with no usable zone a reminder push has no clock time and still no name', async () => {
++    const { emitter, pushes } = build(null);
++    await emitAll(emitter);
++    const reminders = pushes.filter(
++      (p) => p.kind === K.BOOKING_REMINDER_24H || p.kind === K.BOOKING_REMINDER_1H,
++    );
++    expect(reminders).toEqual([
++      { kind: K.BOOKING_REMINDER_24H, ...fixed(K.BOOKING_REMINDER_24H) },
++      { kind: K.BOOKING_REMINDER_1H, ...fixed(K.BOOKING_REMINDER_1H) },
++    ]);
++    for (const p of pushes) expect(`${p.title} ${p.body}`).not.toMatch(/AM|PM|UTC|\d:\d{2}/);
++  });
++
++  it('only the kind and a reminder instant are read: names, notes and bad zones never reach the copy', () => {
++    const ctx = {
++      scheduledAt: AT.toISOString(),
++      timeZone: 'Not/AZone',
++      otherPartyDisplayName: NAME,
++      sessionTypeName: TYPE,
++      notes: NOTE,
++    };
++    expect(bookingLockScreenCopy(K.BOOKING_REMINDER_24H, ctx)).toEqual(
++      fixed(K.BOOKING_REMINDER_24H),
++    );
++    expect(bookingLockScreenCopy(K.BOOKING_CANCELLED, ctx)).toEqual(fixed(K.BOOKING_CANCELLED));
++    expect(bookingLockScreenCopy('unknown_kind', ctx)).toEqual({
++      title: 'The Growth Project',
++      body: 'You have a new notification. Open the app to see it.',
++    });
++    for (const kind of Object.keys(BOOKING_LOCK_SCREEN)) {
++      const c = bookingLockScreenCopy(kind, { ...ctx, timeZone: 'America/New_York' });
++      for (const x of CANARIES) expect(`${c.title} ${c.body}`).not.toContain(x);
++    }
++  });
++});
+diff --git a/test/scheduling-lifecycle-integrity.spec.ts b/test/scheduling-lifecycle-integrity.spec.ts
+index 1fbcc356..f7897ef7 100644
+--- a/test/scheduling-lifecycle-integrity.spec.ts
++++ b/test/scheduling-lifecycle-integrity.spec.ts
+@@ -406,9 +406,12 @@ describe('booking validation matrix (request)', () => {
+     expect(notifications.kindsFor('coach-1')).toEqual([NotificationKind.BOOKING_REQUESTED]);
+     const push = notifications.pushes.find((p) => p.userId === 'coach-1');
+     expect(push).toBeDefined();
+-    expect(push?.title).toBe('New session request');
+-    expect(push?.body).toContain('Quick Q/A Call');
+-    expect(push?.body).toContain('Tue, Oct 6, 10:00 AM PDT');
++    // B-714-1: the lock screen gets the fixed line; the inbox row has the detail.
++    expect(push?.title).toBe('Session request');
++    expect(push?.body).toBe('There is a new session request. Open the app to see it.');
++    const coachRow = notifications.rows.find((r) => r.user_id === 'coach-1');
++    expect(coachRow?.body).toContain('Quick Q/A Call');
++    expect(coachRow?.body).toContain('Tue, Oct 6, 10:00 AM PDT');
+     expect(push?.data).toMatchObject({
+       kind: 'booking_requested',
+       actionScreen: 'CoachBookingInbox',
+@@ -1138,8 +1141,9 @@ describe('S-SCHED-3 B-634-1: transitions are fenced on the booking revision, not
+     // confirmation names that committed time.
+     const ok = await svc.approveSession(COACH, s.id, { expectedStartAt: TUE_1100 });
+     expect(ok.status).toBe('scheduled');
+-    const confirm = notifications.pushes.find(
+-      (p) => p.userId === 'client-1' && p.data.kind === NotificationKind.BOOKING_CONFIRMED,
++    // B-714-1: the time is in the inbox row; the lock screen has no detail.
++    const confirm = notifications.rows.find(
++      (r) => r.user_id === 'client-1' && r.kind === NotificationKind.BOOKING_CONFIRMED,
+     );
+     expect(confirm?.body).toContain('11:00 AM');
+     expect(confirm?.body).not.toContain('10:00 AM');
+@@ -1269,8 +1273,9 @@ describe('S-SCHED-3 B-634-3: provisioning never overwrites a newer change', () =
+     expect(new Date(final.start_at).toISOString()).toBe(TUE_1100);
+     const row = db.sessions.find((r) => r.id === created?.id);
+     expect((row?.start_at as Date).toISOString()).toBe(TUE_1100);
+-    const confirm = notifications.pushes.find(
+-      (p) => p.userId === 'client-1' && p.data.kind === NotificationKind.BOOKING_CONFIRMED,
++    // B-714-1: the time is in the inbox row; the lock screen has no detail.
++    const confirm = notifications.rows.find(
++      (r) => r.user_id === 'client-1' && r.kind === NotificationKind.BOOKING_CONFIRMED,
+     );
+     expect(confirm?.body).toContain('11:00 AM');
+   });
+diff --git a/test/scheduling-reminder-delivery.spec.ts b/test/scheduling-reminder-delivery.spec.ts
+index 3c59e8ae..a163b891 100644
+--- a/test/scheduling-reminder-delivery.spec.ts
++++ b/test/scheduling-reminder-delivery.spec.ts
+@@ -149,9 +149,10 @@ describe('24h reminder', () => {
+     addSession(db, 's1', 24 * 60);
+     await sweep24h(job);
+     const byUser = Object.fromEntries(fake.pushes.map((p) => [p.userId, p]));
++    // B-714-1: the lock screen keeps the time and drops the name and type.
+     expect(byUser['client-1']).toMatchObject({
+-      title: 'Session tomorrow',
+-      body: 'Your Quick Q/A Call with Coach Kim is on Tue, Oct 6, 8:00 AM PDT.',
++      title: 'Session reminder',
++      body: 'Your session is on Tue, Oct 6, 8:00 AM PDT.',
+       data: {
+         kind: NotificationKind.BOOKING_REMINDER_24H,
+         actionScreen: 'CalendarSession',
+@@ -159,7 +160,7 @@ describe('24h reminder', () => {
+       },
+     });
+     expect(byUser['coach-1']).toMatchObject({
+-      body: 'Your Quick Q/A Call with Jamie is on Tue, Oct 6, 8:00 AM PDT.',
++      body: 'Your session is on Tue, Oct 6, 8:00 AM PDT.',
+       data: { actionScreen: 'CoachBookingInbox', actionParams: { sessionId: 's1' } },
+     });
+     expect(fake.rows.map((r) => r.channel)).toEqual(['inapp', 'inapp']);
+@@ -169,8 +170,9 @@ describe('24h reminder', () => {
+     const { db, fake, job } = build();
+     addSession(db, 's1', 24 * 60, 'pending_provider', null);
+     await sweep24h(job);
+-    const coach = fake.pushes.find((p) => p.userId === 'coach-1');
+-    const client = fake.pushes.find((p) => p.userId === 'client-1');
++    // The call-link detail lives in the inbox row (B-714-1: not on the lock screen).
++    const coach = fake.rows.find((r) => r.user_id === 'coach-1');
++    const client = fake.rows.find((r) => r.user_id === 'client-1');
+     expect(coach?.body).toContain('It has no call link yet. Add one so they can join.');
+     expect(client?.body).toContain('Your coach will add the call link before it starts.');
+   });

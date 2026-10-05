@@ -1,0 +1,68 @@
+diff --git src/messaging/messaging-realtime.ts src/messaging/messaging-realtime.ts
+--- src/messaging/messaging-realtime.ts
++++ src/messaging/messaging-realtime.ts
+- * A3-MSG-CORE — ID-only realtime pings for thread changes that are not a new
+- * message (read receipts, edits, deletes, pins). Sent on the SAME per-user
+- * channel the mobile app already subscribes to (`messages:<userId>`, see
++ * A3-MSG-CORE — refresh pings for thread changes that are not a new message
++ * (read receipts, edits, deletes, pins). Sent on the SAME per-user channel
++ * the mobile app already subscribes to (`messages:<userId>`, see
+- * The payload carries no user text: only the change kind, the affected
+- * message id (when there is one) and the thread key. The recipient refetches
+- * through the authenticated REST routes, which enforce tenancy and blocks.
++ * B-709-1: that channel is public (anyone with the anon key and a user id can
++ * join it), so the payload is empty, exactly like broadcastNewMessage: no
++ * client id, no message id, no change kind. The recipient refetches through
++ * the authenticated REST routes, which enforce tenancy and blocks.
+-export interface ThreadUpdatedPayload {
+-  kind: ThreadUpdateKind;
+-  /** Thread key the mobile app already uses (the client id). */
+-  thread_client_id: string;
+-  message_id: string | null;
+-}
+-
+-  payload: ThreadUpdatedPayload,
+-            payload,
++            payload: {},
+diff --git src/messaging/messaging.service.ts src/messaging/messaging.service.ts
+--- src/messaging/messaging.service.ts
++++ src/messaging/messaging.service.ts
+-   * read): ping the other participant with an ID-only `thread-updated` event
+-   * and, when coach-authored content changed, bust the client's AI context
+-   * cache so Roman never quotes an edited or deleted coach message.
+-   * Fire-and-forget; never fails the request.
++   * read): ping the other participant with an empty `thread-updated` event
++   * (B-709-1: public channel, so no ids; `_kind` / `_messageId` document the
++   * call site only) and, when coach-authored content changed, bust the
++   * client's AI context cache so Roman never quotes an edited or deleted
++   * coach message. Fire-and-forget; never fails the request.
+-    kind: ThreadUpdateKind,
+-    messageId: string | null,
++    _kind: ThreadUpdateKind,
++    _messageId: string | null,
+-    void broadcastThreadUpdated(this.supabase, thread.otherPartyId, {
+-      kind,
+-      thread_client_id: thread.clientId,
+-      message_id: messageId,
+-    });
++    void broadcastThreadUpdated(this.supabase, thread.otherPartyId);
+diff --git test/messaging/messaging-core-v2.spec.ts test/messaging/messaging-core-v2.spec.ts
+--- test/messaging/messaging-core-v2.spec.ts
++++ test/messaging/messaging-core-v2.spec.ts
++import { broadcastThreadUpdated } from '../../src/messaging/messaging-realtime';
++
++describe('thread-updated ping on the public channel (B-709-1)', () => {
++  it('carries an empty payload: no client id, message id or change kind', async () => {
++    const send = jest.fn().mockResolvedValue('ok');
++    const channel = jest.fn(() => ({
++      subscribe: (cb: (s: string) => void) => cb('SUBSCRIBED'),
++      send,
++    }));
++    const supabase = dep(SupabaseService, {
++      getClient: () => ({ channel, removeChannel: jest.fn().mockResolvedValue('ok') }),
++    });
++    await broadcastThreadUpdated(supabase, COACH);
++    expect(channel).toHaveBeenCalledWith(`messages:${COACH}`);
++    expect(send).toHaveBeenCalledWith({ type: 'broadcast', event: 'thread-updated', payload: {} });
++  });
++});

@@ -1,0 +1,17 @@
+AUDIT Claude Opus 5.5 (AUD-OPUS-D7-121, agent 121) — growth-project-backend#712 @ f2af32dd717c679a10e3ed5e67686cbf6421af67 — VERDICT: APPROVE
+
+Scope (owner RUTHLESS SCOPE, item 14): main-merge resolution only. Merge f2af32dd = 9d93b867 (tree 247f9e96, audited #653 @ 40050cde, dual APPROVE) + main 4bddf24a (push b#692, coach b#674, messaging b#708). Read-only, no probes.
+
+Method: `git merge-tree --write-tree 9d93b867 4bddf24a` -> c9dfcb3a (conflicts only in booking.emitter.ts, test/booking-emitter.spec.ts, test/scheduling.service.spec.ts). `git diff c9dfcb3a f2af32dd` = 12 files; every other file equals the clean auto-merge (ci.yml, schema.prisma, test/privacy/no-pii-in-logs.spec.ts included). Main-only files the merge touches: lock-screen-copy.ts (+25/-0) and push-delivery.service.ts (+1/-0), both additive; no payout, coach-money, checkout or messaging file differs from main.
+
+Checked (item-list areas):
+1. One push sender. `src/notifications/emitters/booking.emitter.ts:603` booking pushes go only through `NotificationsService.sendPush` (#692 outbox: quiet hours, re-check at send, lock-screen copy). No `pushToUser` left in src/scheduling or the emitter. Preference gate `:636` uses the same `pushAllowedByPreferences` as sendPush and the worker (booking_* -> booking_push; muted blocks all). Dedupe key `:616` kind:session:(move id | time), same as main's.
+2. Lock-screen copy. sendPush renders `lockScreenCopy(kind, _inboxBody ignored, context)`; the context carries session id, instants and zone only (`booking.emitter.ts:606-615`), no display name, no type name, no notes. The three train kinds are added at `lock-screen-copy.ts:59-70` with the same fixed lines the removed interim table had. Move request: `emitMoveRequested` sets `moveRequested: true` (`booking.emitter.ts:373`) -> `lock-screen-copy.ts:154-156` returns "Time change requested" / "A client asked to move a session. Open the app to review." `push-delivery.service.ts:177` keeps the flag in the stored context, so a quiet-hours-deferred push re-renders the same line at send time.
+3. Lifecycle fix. The clean auto-merge referenced main's `updated.updated_at`, which does not exist in the train's transactional reschedule (would not compile). `scheduling-session-lifecycle.service.ts:533` uses `result.row.updated_at` (row re-read in the same transaction after the move; CoachingSession.updated_at is `@updatedAt`) and passes it as `rescheduleEventId` to all three emits (`:544`, `:555`, `:567`). Correct, and extends main's B-693-1 identity to client moves.
+4. Nothing from main dropped. Main's booking.emitter change (sendPush leg + rescheduleEventId) is fully present; main's lock-screen templates unchanged; schema/CI equal to the auto-merge.
+5. Tests: conflicted/fake specs moved from the pushToUser fake to sendPush; assertion counts did not shrink (booking-emitter +13/-11 expects, booking-lock-screen-push +23/-15, lifecycle-integrity +14/-7); lock-screen spec checks canaries never reach stored title/body/context.
+
+Findings: A 0, B 0.
+C 1: `src/scheduling/jobs/reminder.job.ts:202` comment still says the push goes through `NotificationsService.pushToUser`; fix rule: say `sendPush` (comment only).
+
+CI at this head (14:51 PDT): build-and-test and CodeQL in progress; danger and danger dry-run fail ("1 fail", size gate on a 44-file PR; not a merge-resolution issue, operator call); migrations, schema parity, RLS live, npm audit, banned casts green. Not blocking on queued CI per entry.

@@ -1,0 +1,36 @@
+[heavy] waiting for a slot: npx jest --ci test/booking-emitter.spec.ts
+[33m[Nest] 14036  - [39m10/05/2026, 9:46:38 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 14036  - [39m10/05/2026, 9:46:38 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_rescheduled in-app write failed for user=coach-1: TypeError[39m
+[33m[Nest] 14036  - [39m10/05/2026, 9:46:38 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_rescheduled push failed for user=coach-1: TypeError[39m
+PASS test/booking-emitter.spec.ts (95 MB heap size)
+  BookingEmitter delivery
+    ✓ requested -> coach: one in-app row plus a real push routed to the booking inbox (8 ms)
+    ✓ confirmed -> client routes to CalendarSession; instant wording differs from approval (2 ms)
+    ✓ writes the time in the recipient zone (1 ms)
+    ✓ an unusable zone writes no clock time (never a silent Pacific default, B-643-1) (1 ms)
+    ✓ respects booking_push=false: in-app row still written, no push sent (1 ms)
+    ✓ muted recipient: nothing written, nothing pushed (1 ms)
+    ✓ reports a push the sender did not queue as failed (retryable), without throwing (3 ms)
+    ✓ never throws when storage or transport fail (1 ms)
+    ✓ reminders name the other party and handle a missing call link per side (3 ms)
+    ✓ every message is plain (no exclamation marks) and fits 160 characters (3 ms)
+    ✓ exports the tap targets the mobile push router knows (1 ms)
+  B-634-8: emitter logs never carry raw ORM diagnostics
+    ✓ in-app creation P2024: canary never logged; push still delivered without a notificationId (4 ms)
+    ✓ push-preference lookup P2024: canary never logged; in-app row kept, push reported failed (2 ms)
+    ✓ zone lookup P2024: canary never logged; copy without a clock time, both channels delivered (2 ms)
+    ✓ an ORM error wrapped as a cause, and a non-ORM error, never log their message (10 ms)
+  B-634-10: emitter logs carry only closed-enum error classes and codes
+    ✓ in-app write: unknown name and code log as OtherError; push still delivered (1 ms)
+    ✓ push: a known class with an unknown code logs the class only (1 ms)
+    ✓ zone lookup: a wrapped canary cause and a non-Error throw never surface (1 ms)
+    ✓ a catalogued transport code on a cause is kept for operators
+  BookingEmitter zone provenance (main merge)
+    ✓ no usable zone: every body drops the clock time and never shows UTC (1 ms)
+    ✓ an unstamped preference row is not the person zone: the booking coach zone is used (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       21 passed, 21 total
+Snapshots:   0 total
+Time:        1.619 s
+Ran all test suites matching test/booking-emitter.spec.ts.

@@ -1,0 +1,79 @@
+[heavy] waiting for a slot: npx jest --ci test/booking-lock-screen-push.spec.ts
+FAIL test/booking-lock-screen-push.spec.ts (92 MB heap size)
+  B-714-1 / B-653-1 booking pushes keep names and coach text off the lock screen
+    ✕ every emitter pushes only its fixed per-kind line; reminders keep only the time (35 ms)
+    ✓ with no usable zone a reminder push has no clock time and still no name (5 ms)
+    ✓ only the kind and a reminder instant are read: names, notes and bad zones never reach the copy (24 ms)
+  B-653-4 a client move request is not shown as a moved session
+    ✕ the coach is told a time change is requested; a real move still says moved (8 ms)
+
+  ● B-714-1 / B-653-1 booking pushes keep names and coach text off the lock screen › every emitter pushes only its fixed per-kind line; reminders keep only the time
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 2
+    + Received  + 2
+
+    @@ -33,13 +33,13 @@
+          "body": "A session has a new time. Open the app to see it.",
+          "kind": "booking_rescheduled",
+          "title": "Session moved",
+        },
+        Object {
+    -     "body": "A client asked to move a session. Open the app to review.",
+    +     "body": "A session has a new time. Open the app to see it.",
+          "kind": "booking_rescheduled",
+    -     "title": "Time change requested",
+    +     "title": "Session moved",
+        },
+        Object {
+          "body": "Your session is on Tue, Oct 6, 10:00 AM PDT.",
+          "kind": "booking_reminder_24h",
+          "title": "Session reminder",
+
+    [0m [90m 182 |[39m       expect([32m`${p.title} ${p.body}`[39m)[33m.[39mnot[33m.[39mtoMatch([35m/!|\b(I|me|my|we|our)\b/[39m)[33m;[39m
+     [90m 183 |[39m     }
+    [31m[1m>[22m[39m[90m 184 |[39m     expect(pushes)[33m.[39mtoEqual([
+     [90m     |[39m                    [31m[1m^[22m[39m
+     [90m 185 |[39m       { kind[33m:[39m [33mK[39m[33m.[39m[33mBOOKING_REQUESTED[39m[33m,[39m [33m...[39mfixed([33mK[39m[33m.[39m[33mBOOKING_REQUESTED[39m) }[33m,[39m
+     [90m 186 |[39m       { kind[33m:[39m [33mK[39m[33m.[39m[33mBOOKING_CONFIRMED[39m[33m,[39m [33m...[39mfixed([33mK[39m[33m.[39m[33mBOOKING_CONFIRMED[39m) }[33m,[39m
+     [90m 187 |[39m       { kind[33m:[39m [33mK[39m[33m.[39m[33mBOOKING_CONFIRMED[39m[33m,[39m [33m...[39mfixed([33mK[39m[33m.[39m[33mBOOKING_CONFIRMED[39m) }[33m,[39m[0m
+
+      at Object.<anonymous> (test/booking-lock-screen-push.spec.ts:184:20)
+
+  ● B-653-4 a client move request is not shown as a moved session › the coach is told a time change is requested; a real move still says moved
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 2
+    + Received  + 2
+
+    @@ -1,10 +1,10 @@
+      Array [
+        Object {
+    -     "body": "A client asked to move a session. Open the app to review.",
+    +     "body": "A session has a new time. Open the app to see it.",
+          "kind": "booking_rescheduled",
+    -     "title": "Time change requested",
+    +     "title": "Session moved",
+        },
+        Object {
+          "body": Any<String>,
+          "kind": "booking_rescheduled",
+          "title": "Session moved",
+
+    [0m [90m 275 |[39m       newScheduledAt[33m:[39m [33mLATER[39m[33m,[39m
+     [90m 276 |[39m     })[33m;[39m
+    [31m[1m>[22m[39m[90m 277 |[39m     expect(pushes)[33m.[39mtoEqual([
+     [90m     |[39m                    [31m[1m^[22m[39m
+     [90m 278 |[39m       {
+     [90m 279 |[39m         kind[33m:[39m [33mK[39m[33m.[39m[33mBOOKING_RESCHEDULED[39m[33m,[39m
+     [90m 280 |[39m         title[33m:[39m [32m'Time change requested'[39m[33m,[39m[0m
+
+      at Object.<anonymous> (test/booking-lock-screen-push.spec.ts:277:20)
+
+Test Suites: 1 failed, 1 total
+Tests:       2 failed, 2 passed, 4 total
+Snapshots:   0 total
+Time:        1.842 s
+Ran all test suites matching test/booking-lock-screen-push.spec.ts.

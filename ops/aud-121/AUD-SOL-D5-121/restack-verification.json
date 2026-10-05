@@ -1,0 +1,22 @@
+[
+  {
+    "number": 710,
+    "old": "3572b209",
+    "lower": "8d3cf36c",
+    "merge": "1b9a2d8a",
+    "computedConflictTree": "2d90b669a564252684c102131e851dd993afb70c",
+    "actualMergeTree": "b1748946ee8b139eee00f654d2362c351e4d9f90",
+    "onlyConflictPath": "test/messaging/messaging-core-v2.spec.ts",
+    "upstreamFixPatchEqualsResolvedMergePatch": true
+  },
+  {
+    "number": 711,
+    "old": "db7fa3bf",
+    "lower": "654b048a",
+    "merge": "071ccda2",
+    "computedConflictTree": "bbd8a363a5a65bf3b2f92281c7a30c1a84853d48",
+    "actualMergeTree": "078954ede41ac0b85f0db7ef7bf69fed3684c4bb",
+    "onlyConflictPath": "test/messaging/messaging-core-v2.spec.ts",
+    "upstreamFixPatchEqualsResolvedMergePatch": true
+  }
+]

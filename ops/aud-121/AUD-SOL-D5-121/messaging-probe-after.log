@@ -1,0 +1,16 @@
+[heavy] waiting for a slot: node node_modules/jest/bin/jest.js --runInBand --runTestsByPath test/messaging/aud-sol-d5-121.spec.ts --forceExit
+PASS test/messaging/aud-sol-d5-121.spec.ts (141 MB heap size)
+  Sol messaging safety/privacy probes
+    ✓ B-709-1: a public broadcast must not carry private client/message identifiers (4 ms)
+    ✓ B-710-1/edit: a client-blocked sub-coach cannot edit through the head-coach namespace (3 ms)
+    ✓ B-710-1/pin: a client-blocked sub-coach cannot pin a head-coach message to the client (2 ms)
+    ✓ B-710-2: client inbox must not show content from a blocked sub-coach sender (2 ms)
+    ✓ control: edit remains author-only for an ordinary client (2 ms)
+    ✓ control: pins already suppress every blocked author, including sub-coaches (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       6 passed, 6 total
+Snapshots:   0 total
+Time:        2.053 s
+Ran all test suites within paths "test/messaging/aud-sol-d5-121.spec.ts".
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

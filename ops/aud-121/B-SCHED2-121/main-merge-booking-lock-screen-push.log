@@ -1,0 +1,14 @@
+[heavy] waiting for a slot: npx jest --ci test/booking-lock-screen-push.spec.ts
+PASS test/booking-lock-screen-push.spec.ts (103 MB heap size)
+  B-714-1 / B-653-1 booking pushes keep names and coach text off the lock screen
+    ✓ through the real sender: 14 outbox rows, fixed per-kind lines, no canary anywhere in the row (24 ms)
+    ✓ through the real sender with no usable zone: no clock time on any lock screen (16 ms)
+    ✓ sendPush input: ids, instants and zone only; one exactly-once key per event (10 ms)
+  B-653-4 a client move request is not shown as a moved session
+    ✓ the coach is told a time change is requested, at enqueue and at send; a real move still says moved (6 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       4 passed, 4 total
+Snapshots:   0 total
+Time:        1.633 s, estimated 3 s
+Ran all test suites matching test/booking-lock-screen-push.spec.ts.

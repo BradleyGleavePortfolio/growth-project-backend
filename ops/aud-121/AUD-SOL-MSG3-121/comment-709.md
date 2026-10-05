@@ -1,0 +1,15 @@
+AUDIT GPT-6.1 Sol — growth-project-backend#709 @ d9cf7ad9bcb941dd5294917404272f7c91cee717 — VERDICT: REQUEST CHANGES
+
+Job: AUD-SOL-MSG3-121, agent 121. T4. A/B/C = 0/1/0.
+
+Full independent first review of the 1,141-line piece and the assembled train; no other lens verdict read. Idempotent send, welcome-job composition, same-thread reply validation, feature gating, mute-aware delivery and read-up-to were reviewed. [Core change](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/709).
+
+**B-709-1 — public Realtime channel reveals private client/message activity.** `src/messaging/messaging-realtime.ts:41–50`, called from `src/messaging/messaging.service.ts:445–455` and the read-marker paths. The channel is `messages:<recipientId>` with no private config; the new payload contains `kind`, `thread_client_id`, and `message_id`. Ordinary counterexample: client A knows their head coach's ID, joins that coach's public channel using the app's public anon key, then sees client B's ID and message/read/edit/delete activity whenever B's thread emits a change. This is a reachable cross-user disclosure, not a race or a scale edge. [Core change](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/709).
+
+Supabase documents that any user can send and receive on public channels, and anyone holding the anon key can join any public channel when public access is enabled; a recipient-shaped topic name does not authorize its subscribers. The existing `SupabaseService.broadcastNewMessage` deliberately emits `{}` and explicitly explains that the public transport must contain no data. [Supabase channel concepts](https://supabase.com/docs/guides/realtime/concepts), [Supabase channel settings](https://supabase.com/docs/guides/realtime/settings), [reviewed train](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/711).
+
+Minimal fix rule: retain the distinct `thread-updated` refresh event but send an empty payload over the existing public channel, and have mobile refetch authenticated state without requiring IDs. Alternatively, use genuinely private publisher/subscriber channels with recipient-only realtime.messages policies. Merely setting a recipient ID in the topic is not a fix.
+
+Probe: `test/messaging/aud-sol-msg3-121.spec.ts`, “B-709-1: a public broadcast must not carry private client/message identifiers”. It asserts that a non-private publisher emits no private metadata. The combined lane is queued; this finding is proven by the control flow and documented channel contract, not represented as an executed test failure. [Independent probe lane](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37372601267).
+
+13:58 PDT exact-head required CI has queued build-and-test, rls-live-tests, mwb-3-live-tests and community-live-tests; rls-floor-guard was cancelled; npm audit and Schema parity passed. These incident queues are not themselves a code blocker, and the operator must wait for all applicable required checks before merging. [Exact-head CI](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37365269737).

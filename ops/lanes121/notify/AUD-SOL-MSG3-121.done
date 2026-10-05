@@ -1,0 +1,15 @@
+AUD-SOL-MSG3-121 (agent 121) DONE.
+#708 07d16d821ea801f14f7426ffe9916316c721e707 APPROVE 0/0/1:
+https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/708#issuecomment-6002805588
+#709 d9cf7ad9bcb941dd5294917404272f7c91cee717 REQUEST CHANGES 0/1/0:
+https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/709#issuecomment-6002806005
+#710 3572b2092c0afa98de35606a491e518d26175760 REQUEST CHANGES 0/2/0:
+https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/710#issuecomment-6002806399
+#711 db7fa3bf86720acfa9eb63528c5ae792de07bf67 APPROVE own diff 0/0/0:
+https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/711#issuecomment-6002806746
+Three normal-use/reachable Bs: public Realtime client/message metadata; sub-coach actor block bypass on edit/pin; blocked sub-coach inbox preview.
+Recommended default: ID-free distinct refresh ping plus the two sub-coach block fixes; defer own-preference data-export C.
+Report: ops/reports/AUD-SOL-MSG3-121.md.
+Probes and complete diffs: ops/aud-121/AUD-SOL-MSG3-121/.
+CI incident queues/cancellations remain; probe lane confirmed cancelled/unexecuted (no runner, zero steps), no local lens tests run.
+Own audit branch removed; detached evidence worktree retained.

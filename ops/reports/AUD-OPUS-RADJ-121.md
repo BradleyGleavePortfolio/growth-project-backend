@@ -1,6 +1,6 @@
 # AUD-OPUS-RADJ-121 — Claude Opus 5.5 lens, Roman approve-to-adjust (agent 121)
 
-Status: backend verdict POSTED; mobile verdict pending its probe run (see HANDOFF).
+Status: DONE. Both verdicts posted (REQUEST CHANGES); worktrees and audit branches removed.
 
 Scope (JOBS121 entry "AUD-OPUS-RADJ-121 / AUD-SOL-RADJ-121"): first full review, T4. Graded under the owner's 13:29 edge-case freeze
 (A2, operator mail 13:33): edge cases are "C (edge, deferred to 10k clients)".
@@ -12,7 +12,9 @@ Claims: ops/lanes121/claims/backend-655-bf9120c1-opus, mobile-337-63be1013-opus.
 - b#655: REQUEST CHANGES, A/B/C = 0/3/13, posted 13:35 PDT:
   https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/655#issuecomment-6002431795
   (text: ops/aud-121/AUD-OPUS-RADJ-121/verdict-b655.md)
-- m#337: pending (draft ops/aud-121/AUD-OPUS-RADJ-121/verdict-m337.md).
+- m#337: REQUEST CHANGES, A/B/C = 0/2/5, posted 13:55 PDT:
+  https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/337#issuecomment-6002745483
+  (text: ops/aud-121/AUD-OPUS-RADJ-121/verdict-m337.md)
 
 ## Evidence log
 - b#655 PR CI run 37081735821: build-and-test red at tsc (roman-adjust.service.spec.ts(95,9) TS7022, (152,27) TS7024); jest never ran.
@@ -24,7 +26,11 @@ Claims: ops/lanes121/claims/backend-655-bf9120c1-opus, mobile-337-63be1013-opus.
   passed. Log: ops/aud-121/AUD-OPUS-RADJ-121/heavy_probe_b655.log.
 - Static replication (no test run): ai-consent-wiring walk finds src/roman-adjust/roman-adjust.module.ts and .service.ts beyond the 3
   expected files; erasure-manifest-coverage ID_LIKE flags Proposal.coach_id/client_id and Event.actor_id, no manifest entries.
-- Mobile lane audit/AUD-OPUS-RADJ-121/337-1 (head + origin/main + probes), run 37370461548, queued 13:33.
+- Mobile lane audit/AUD-OPUS-RADJ-121/337-1 (head + origin/main b79ca594 + probes), run 37370461548: queued 20 min (0 mobile runs
+  executing), ended cancelled 13:53 (not by this lens). Per item 11 the single spec aud-opus-radj-121.probe.test.tsx ran through
+  ops/heavy.sh at 13:53: 10 tests, 8 failed (6 = B-337-2; C-337-a; C-337-b hit TypeError "r.getByTestId is not a function"), 2 controls
+  passed. Log: ops/aud-121/AUD-OPUS-RADJ-121/heavy_probe_m337.log.
+- RNTL: head package.json:95 ^14.0.0-0, lockfile 14.0.0; dist/render.d.ts:16 render returns Promise; the PR test file uses sync render 13x.
 
 ## Findings b#655 (posted)
 - B-655-1 CI red: (a) tsc in the PR spec double; (b) R2b wiring spec (direct ai-consent imports); (c) erasure manifest coverage after
@@ -33,6 +39,12 @@ Claims: ops/lanes121/claims/backend-655-bf9120c1-opus, mobile-337-63be1013-opus.
 - B-655-3 Roman's sentence freezes "today's/tomorrow's" at scan time; wrong day when read the next day.
 Probes: ops/aud-121/AUD-OPUS-RADJ-121/probes/.
 
+## Findings m#337 (posted)
+- B-337-1 CI red: (a) committed node_modules symlink -> guard:vendors EISDIR; (b) the PR's tests use the sync RNTL API while the repo
+  pins RNTL 14 (async render/fireEvent), so they throw once CI gets past the guard.
+- B-337-2 after Approve/Edit/Undo, a timeout (also 5xx, unreadable 2xx) says "Your workouts are unchanged" with no refresh, though the
+  change may be applied.
+
 ## Follow-ups (C)
 b#655: C-655-1 tenancy bound at scan time, never re-checked (edge, deferred to 10k clients; probe proves mechanism); C-655-2
 sub-coaches get no suggestions (operator decision); C-655-3 kill switch case-insensitive vs docs; C-655-4 decision DB error -> bare
@@ -40,7 +52,8 @@ sub-coaches get no suggestions (operator decision); C-655-3 kill switch case-ins
 legacy snapshot; C-655-8 sleep per-session max under-counts split nights, doc says 2 of 3 nights; C-655-9 trigger blocks UPDATE only
 (doc); C-655-10 started_at only at completion (doc); C-655-11 ENV_RULES needs closed values for the later flag PR; C-655-12
 expired/withdrawn answered as "already handled"; C-655-13 inline scan cost (edge).
-m#337: see verdict-m337.md (pending).
+m#337: C-337-1 changeSummary "-17% less volume" for added sets; C-337-2 countdown dropped on unmount (edge); C-337-3 Roman section
+hidden when the action-queue fetch fails; C-337-4 undoOpen not re-evaluated on a timer (edge); C-337-5 show the workout weekday.
 
 ## Operator decisions
 1. Sub-coach suggestions (C-655-2): default defer, head coach only at launch.
@@ -48,7 +61,10 @@ m#337: see verdict-m337.md (pending).
 3. Migration 20270227000000 sorts before applied migrations but commutes: default keep the name (A6.2 precedent).
 
 ## HANDOFF
-- Backend verdict posted at head bf9120c1; one verdict per head, do not repost.
-- Mobile: when run 37370461548 finishes (or via heavy.sh single spec after 13:53 if still queued), fill LANE_* in verdict-m337.md,
-  re-check head 63be1013, post to growth-project-mobile#337.
-- Cleanup: worktrees wt/AUD-OPUS-RADJ-121-{b655,b655m,m337,m337m}; remote branches audit/AUD-OPUS-RADJ-121/655-1 and 337-1.
+- Verdicts posted at heads bf9120c1 (b#655) and 63be1013 (m#337); one verdict per head, do not repost.
+- Builders' fix round: B-655-1 (tsc double, AiEgressService for consent, manifest entries), B-655-2 (true WORKOUT_CHANGED sentence,
+  mirror in mobile fallback), B-655-3 (day word at read time), B-337-1 (drop node_modules link, .gitignore, RNTL 14 async tests),
+  B-337-2 (no outcome claim without a coded refusal; refresh). Re-review: only those plus changed lines (A2 item 3).
+- Cleanup done: worktrees wt/AUD-OPUS-RADJ-121-{b655,b655m,m337,m337m} removed; remote audit/AUD-OPUS-RADJ-121/655-1 and 337-1 deleted;
+  no lens run in flight. growth-project-backend/wt/x (created 13:43, branch x) is not this lens's; left alone.
+- Claims left in ops/lanes121/claims/ (backend-655-bf9120c1-opus, mobile-337-63be1013-opus).

@@ -1,0 +1,406 @@
+diff --git a/src/messaging/message-actions.service.ts b/src/messaging/message-actions.service.ts
+index 1888397e..85671530 100644
+--- a/src/messaging/message-actions.service.ts
++++ b/src/messaging/message-actions.service.ts
+@@ -76,9 +76,22 @@ export class MessageActionsService {
+     return row;
+   }
+ 
++  /**
++   * Same boundary as send (B-710-1): the head coach / client pair, and, when
++   * an assigned sub-coach acts in the head coach's thread, the sub-coach /
++   * client pair. A client who blocked a sub-coach stops that sub-coach's
++   * edits and pins, not only their sends. Author delete stays allowed: it
++   * removes content, it never adds any.
++   */
+   private async assertNotBlocked(thread: ResolvedThread): Promise<void> {
+-    if (await this.messaging.isEitherSideBlocked(thread.coachId, thread.clientId)) {
+-      throw messagingError(HttpStatus.FORBIDDEN, MESSAGING_ERRORS.BLOCKED);
++    const pairs: Array<[string, string]> = [[thread.coachId, thread.clientId]];
++    if (thread.actorId !== thread.coachId && thread.actorId !== thread.clientId) {
++      pairs.push([thread.actorId, thread.clientId]);
++    }
++    for (const [a, b] of pairs) {
++      if (await this.messaging.isEitherSideBlocked(a, b)) {
++        throw messagingError(HttpStatus.FORBIDDEN, MESSAGING_ERRORS.BLOCKED);
++      }
+     }
+   }
+ 
+diff --git a/src/messaging/messaging-inbox.service.ts b/src/messaging/messaging-inbox.service.ts
+index c5cf69a1..b123eb9a 100644
+--- a/src/messaging/messaging-inbox.service.ts
++++ b/src/messaging/messaging-inbox.service.ts
+@@ -192,7 +192,10 @@ export class MessagingInboxService {
+           user_id: row.client_id,
+           display_name: names.get(row.client_id)?.trim() || 'Client',
+         },
+-        last_message: blockedByMe ? null : this.lastMessageView(row, coachId),
++        last_message:
++          blockedByMe || (row.sender_id !== null && blocked.has(row.sender_id))
++            ? null
++            : this.lastMessageView(row, coachId),
+         unread_count: blockedByMe ? 0 : (unread.by_client[row.client_id] ?? 0),
+         muted,
+         muted_until: muted && state?.muted_until ? state.muted_until.toISOString() : null,
+@@ -241,9 +244,17 @@ export class MessagingInboxService {
+     const coachId = me?.coach_id ?? null;
+     if (!coachId) return { items: [], next_cursor: null, total_unread: 0 };
+ 
+-    const [row, unread, coach, state, blockedList] = await Promise.all([
++    // B-710-2: messages from a sender the client blocked (e.g. an assigned
++    // sub-coach) never become the preview or count as unread, so the preview
++    // is the newest message from a sender the client still sees.
++    const blockedList = await this.messaging.blockedIdsFor(clientId);
++    const visibleSender: Prisma.CoachMessageWhereInput =
++      blockedList.length > 0
++        ? { OR: [{ sender_id: null }, { sender_id: { notIn: blockedList } }] }
++        : {};
++    const [newest, unreadTotal, coach, state] = await Promise.all([
+       this.prisma.coachMessage.findFirst({
+-        where: { coach_id: coachId, client_id: clientId },
++        where: { coach_id: coachId, client_id: clientId, ...visibleSender },
+         orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+         select: {
+           id: true,
+@@ -256,7 +267,18 @@ export class MessagingInboxService {
+           created_at: true,
+         },
+       }),
+-      this.messaging.unreadCountForClient(clientId),
++      blockedList.length > 0
++        ? this.prisma.coachMessage.count({
++            where: {
++              coach_id: coachId,
++              client_id: clientId,
++              sender_id: { not: clientId },
++              read_at: null,
++              deleted_at: null,
++              ...visibleSender,
++            },
++          })
++        : this.messaging.unreadCountForClient(clientId).then((u) => u.total),
+       this.prisma.user.findUnique({ where: { id: coachId }, select: { name: true } }),
+       this.prisma.coachThreadState.findUnique({
+         where: {
+@@ -268,8 +290,11 @@ export class MessagingInboxService {
+         },
+         select: { muted_until: true, pinned_at: true },
+       }),
+-      this.messaging.blockedIdsFor(clientId),
+     ]);
++    const row =
++      newest && newest.sender_id !== null && blockedList.includes(newest.sender_id)
++        ? null
++        : newest;
+     const blockedByMe = blockedList.includes(coachId);
+     const muted = !!state?.muted_until && state.muted_until.getTime() > Date.now();
+     // A coach thread exists for every coached client, even before the first
+@@ -281,7 +306,7 @@ export class MessagingInboxService {
+       client_id: clientId,
+       counterpart: { user_id: coachId, display_name: coach?.name?.trim() || 'Your coach' },
+       last_message: row && !blockedByMe ? this.lastMessageView(row, clientId) : null,
+-      unread_count: blockedByMe ? 0 : unread.total,
++      unread_count: blockedByMe ? 0 : unreadTotal,
+       muted,
+       muted_until: muted && state?.muted_until ? state.muted_until.toISOString() : null,
+       pinned: !!state?.pinned_at,
+diff --git a/src/messaging/messaging-realtime.ts b/src/messaging/messaging-realtime.ts
+index 931176db..66e8f0f7 100644
+--- a/src/messaging/messaging-realtime.ts
++++ b/src/messaging/messaging-realtime.ts
+@@ -3,15 +3,16 @@ import type { SupabaseService } from '../supabase/supabase.service';
+ import { describeFailure } from '../observability/log-pii';
+ 
+ /**
+- * A3-MSG-CORE — ID-only realtime pings for thread changes that are not a new
+- * message (read receipts, edits, deletes, pins). Sent on the SAME per-user
+- * channel the mobile app already subscribes to (`messages:<userId>`, see
++ * A3-MSG-CORE — refresh pings for thread changes that are not a new message
++ * (read receipts, edits, deletes, pins). Sent on the SAME per-user channel
++ * the mobile app already subscribes to (`messages:<userId>`, see
+  * SupabaseService.broadcastNewMessage) under a DISTINCT event name, so an
+  * edit or read receipt never triggers the new-message banner or sound.
+  *
+- * The payload carries no user text: only the change kind, the affected
+- * message id (when there is one) and the thread key. The recipient refetches
+- * through the authenticated REST routes, which enforce tenancy and blocks.
++ * B-709-1: that channel is public (anyone with the anon key and a user id can
++ * join it), so the payload is empty, exactly like broadcastNewMessage: no
++ * client id, no message id, no change kind. The recipient refetches through
++ * the authenticated REST routes, which enforce tenancy and blocks.
+  * Best-effort: bounded by a 1500 ms timeout, failures are logged and
+  * swallowed (the REST poll floor still catches up). Never awaited by callers
+  * on the request path.
+@@ -20,20 +21,12 @@ export const THREAD_UPDATED_EVENT = 'thread-updated';
+ 
+ export type ThreadUpdateKind = 'read' | 'edited' | 'deleted' | 'pinned' | 'unpinned';
+ 
+-export interface ThreadUpdatedPayload {
+-  kind: ThreadUpdateKind;
+-  /** Thread key the mobile app already uses (the client id). */
+-  thread_client_id: string;
+-  message_id: string | null;
+-}
+-
+ const BROADCAST_TIMEOUT_MS = 1500;
+ const logger = new Logger('MessagingRealtime');
+ 
+ export async function broadcastThreadUpdated(
+   supabase: SupabaseService,
+   recipientId: string,
+-  payload: ThreadUpdatedPayload,
+ ): Promise<void> {
+   if (!recipientId) return;
+   try {
+@@ -47,7 +40,7 @@ export async function broadcastThreadUpdated(
+           await channel.send({
+             type: 'broadcast',
+             event: THREAD_UPDATED_EVENT,
+-            payload,
++            payload: {},
+           });
+         } catch (sendErr) {
+           logger.warn(`thread-updated send failed: ${describeFailure(sendErr)}`);
+diff --git a/src/messaging/messaging.service.ts b/src/messaging/messaging.service.ts
+index 1a5de2c0..38f88509 100644
+--- a/src/messaging/messaging.service.ts
++++ b/src/messaging/messaging.service.ts
+@@ -437,22 +437,19 @@ export class MessagingService {
+ 
+   /**
+    * After a thread mutation that is not a new message (edit, delete, pin,
+-   * read): ping the other participant with an ID-only `thread-updated` event
+-   * and, when coach-authored content changed, bust the client's AI context
+-   * cache so Roman never quotes an edited or deleted coach message.
+-   * Fire-and-forget; never fails the request.
++   * read): ping the other participant with an empty `thread-updated` event
++   * (B-709-1: public channel, so no ids; `_kind` / `_messageId` document the
++   * call site only) and, when coach-authored content changed, bust the
++   * client's AI context cache so Roman never quotes an edited or deleted
++   * coach message. Fire-and-forget; never fails the request.
+    */
+   notifyThreadUpdated(
+     thread: ResolvedThread,
+-    kind: ThreadUpdateKind,
+-    messageId: string | null,
++    _kind: ThreadUpdateKind,
++    _messageId: string | null,
+     opts: { coachContentChanged?: boolean } = {},
+   ): void {
+-    void broadcastThreadUpdated(this.supabase, thread.otherPartyId, {
+-      kind,
+-      thread_client_id: thread.clientId,
+-      message_id: messageId,
+-    });
++    void broadcastThreadUpdated(this.supabase, thread.otherPartyId);
+     if (opts.coachContentChanged) {
+       this.aiContext.invalidateForUser(thread.clientId);
+     }
+diff --git a/test/messaging/messaging-block-boundaries.spec.ts b/test/messaging/messaging-block-boundaries.spec.ts
+new file mode 100644
+index 00000000..613bf8e5
+--- /dev/null
++++ b/test/messaging/messaging-block-boundaries.spec.ts
+@@ -0,0 +1,169 @@
++/**
++ * Block boundaries for a client-blocked assigned sub-coach (B-710-1, B-710-2).
++ * Adapted from the AUD-SOL-MSG3-121 probes, which failed before this fix.
++ * The empty refresh ping (B-709-1) is covered in messaging-core-v2.spec.ts.
++ */
++import 'reflect-metadata';
++import { HttpException } from '@nestjs/common';
++import type { CoachMessage } from '@prisma/client';
++import { PrismaService } from '../../src/prisma.service';
++import { SupabaseService } from '../../src/supabase/supabase.service';
++import { AnalyticsService } from '../../src/analytics/analytics.service';
++import { PtmService } from '../../src/ptm/ptm.service';
++import { MessageReceivedEmitter } from '../../src/notifications/emitters/message-received.emitter';
++import { AuditService } from '../../src/audit/audit.service';
++import { ClientAIContextService } from '../../src/ai/client-ai-context.service';
++import { MessagesSafetyService } from '../../src/messages-safety/messages-safety.service';
++import { SubCoachScopeService } from '../../src/sub-coach/sub-coach-scope.service';
++import { MessagingService } from '../../src/messaging/messaging.service';
++import { MessageActionsService } from '../../src/messaging/message-actions.service';
++import { MessagingInboxService } from '../../src/messaging/messaging-inbox.service';
++
++const HEAD = '11111111-1111-4111-8111-111111111111';
++const CLIENT = '22222222-2222-4222-8222-222222222222';
++const SUB = '33333333-3333-4333-8333-333333333333';
++const MSG = '44444444-4444-4444-8444-444444444444';
++
++function dep<T extends object>(cls: { prototype: T }, impl: object): T {
++  return Object.assign(Object.create(cls.prototype) as T, impl);
++}
++
++function row(over: Partial<CoachMessage> = {}): CoachMessage {
++  return {
++    id: MSG, coach_id: HEAD, client_id: CLIENT, sender_id: SUB,
++    body: 'A blocked sub-coach message', created_at: new Date(),
++    voice_url: null, voice_duration_sec: null, voice_size_bytes: null,
++    voice_content_type: null, read_at: null, ai_draft_id: null,
++    welcome_job_id: null, client_message_id: null, reply_to_id: null,
++    edited_at: null, deleted_at: null, deleted_by_id: null,
++    pinned_at: null, pinned_by_id: null, ...over,
++  };
++}
++
++function fixture() {
++  const tx = {
++    coachMessage: {
++      count: jest.fn().mockResolvedValue(0),
++      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
++    },
++    $executeRaw: jest.fn().mockResolvedValue(1),
++  };
++  const prisma = {
++    user: {
++      // Direct head-coach lookup fails for SUB; subsequent client lookup
++      // succeeds after the real resolver verifies an open assignment.
++      findFirst: jest.fn(async ({ where }: { where: { coach_id?: string } }) =>
++        where.coach_id === SUB ? null : { id: CLIENT, coach_id: HEAD },
++      ),
++      findUnique: jest.fn().mockResolvedValue({ coach_id: HEAD, name: 'Head coach' }),
++      findMany: jest.fn().mockResolvedValue([{ id: CLIENT, name: 'Client' }]),
++    },
++    subCoachAssignment: { findFirst: jest.fn().mockResolvedValue({ id: 'assignment' }) },
++    coachMessage: {
++      findFirst: jest.fn().mockResolvedValue(row()),
++      findMany: jest.fn().mockResolvedValue([row()]),
++      count: jest.fn().mockResolvedValue(1),
++      groupBy: jest.fn().mockResolvedValue([]),
++      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
++    },
++    coachThreadState: {
++      findUnique: jest.fn().mockResolvedValue(null),
++      findMany: jest.fn().mockResolvedValue([]),
++    },
++    $queryRaw: jest.fn().mockResolvedValue([row()]),
++    $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
++  };
++  const safety = {
++    getBlockedIdsFor: jest.fn(async (who: string) => who === CLIENT ? [SUB] : []),
++    isEitherSideBlocked: jest.fn(async (a: string, b: string) =>
++      (a === SUB && b === CLIENT) || (a === CLIENT && b === SUB),
++    ),
++  };
++  const scope = {
++    getHeadCoachIdForSubCoach: jest.fn(async (who: string) => who === SUB ? HEAD : null),
++    getAuthorizedClientIds: jest.fn().mockResolvedValue([CLIENT]),
++  };
++  const audit = { write: jest.fn().mockResolvedValue(undefined) };
++  const prismaDep = dep(PrismaService, prisma);
++  const auditDep = dep(AuditService, audit);
++  const scopeDep = dep(SubCoachScopeService, scope);
++  const messaging = new MessagingService(
++    prismaDep,
++    dep(SupabaseService, {
++      getClient: () => ({
++        channel: () => ({
++          subscribe: (cb: (s: string) => void) => cb('SUBSCRIBED'),
++          send: jest.fn().mockResolvedValue('ok'),
++        }),
++        removeChannel: jest.fn().mockResolvedValue('ok'),
++      }),
++    }),
++    dep(AnalyticsService, { capture: jest.fn() }),
++    dep(PtmService, { emit: jest.fn() }),
++    dep(MessageReceivedEmitter, { emit: jest.fn().mockResolvedValue(undefined) }),
++    auditDep,
++    dep(ClientAIContextService, { invalidateForUser: jest.fn() }),
++    dep(MessagesSafetyService, safety),
++    scopeDep,
++  );
++  return {
++    prisma, tx, safety, messaging,
++    actions: new MessageActionsService(prismaDep, messaging, auditDep),
++    inbox: new MessagingInboxService(prismaDep, messaging, scopeDep),
++  };
++}
++
++const savedFlag = process.env.FEATURE_MESSAGING_CORE_V2;
++beforeEach(() => { process.env.FEATURE_MESSAGING_CORE_V2 = 'true'; });
++afterEach(() => {
++  if (savedFlag === undefined) delete process.env.FEATURE_MESSAGING_CORE_V2;
++  else process.env.FEATURE_MESSAGING_CORE_V2 = savedFlag;
++});
++
++describe('messaging block boundaries for an assigned sub-coach', () => {
++  it('B-710-1/edit: a client-blocked sub-coach cannot edit through the head-coach namespace', async () => {
++    const f = fixture();
++    const thread = await f.messaging.resolveThreadForCoach(SUB, CLIENT);
++    expect(thread).toMatchObject({ actorId: SUB, coachId: HEAD, otherPartyId: CLIENT });
++    await expect(f.actions.edit(thread, MSG, 'Rewritten after being blocked')).rejects
++      .toBeInstanceOf(HttpException);
++    expect(f.prisma.coachMessage.updateMany).not.toHaveBeenCalled();
++  });
++
++  it('B-710-1/pin: a client-blocked sub-coach cannot pin a head-coach message to the client', async () => {
++    const f = fixture();
++    f.prisma.coachMessage.findFirst.mockResolvedValueOnce(row({ sender_id: HEAD }));
++    const thread = await f.messaging.resolveThreadForCoach(SUB, CLIENT);
++    await expect(f.actions.pin(thread, MSG)).rejects.toBeInstanceOf(HttpException);
++    expect(f.tx.coachMessage.updateMany).not.toHaveBeenCalled();
++  });
++
++  it('B-710-2: client inbox must not show content from a blocked sub-coach sender', async () => {
++    const f = fixture();
++    const result = await f.inbox.inboxForClient(CLIENT);
++    expect(result.items).toHaveLength(1);
++    // Keep the head-coach conversation available; suppress or seek past the
++    // blocked sender rather than exposing their text as an inbox preview.
++    expect(result.items[0].last_message?.sender_id).not.toBe(SUB);
++    expect(JSON.stringify(result)).not.toContain('A blocked sub-coach message');
++    // The preview seek and the unread count both skip the blocked sender.
++    const visible = { OR: [{ sender_id: null }, { sender_id: { notIn: [SUB] } }] };
++    expect(f.prisma.coachMessage.findFirst.mock.calls[0][0].where).toMatchObject(visible);
++    expect(f.prisma.coachMessage.count.mock.calls[0][0].where).toMatchObject(visible);
++  });
++
++  it('control: edit remains author-only for an ordinary client', async () => {
++    const f = fixture();
++    f.prisma.coachMessage.findFirst.mockResolvedValueOnce(row({ sender_id: HEAD }));
++    const thread = await f.messaging.resolveThreadForClient(CLIENT);
++    await expect(f.actions.edit(thread, MSG, 'spoof')).rejects.toBeInstanceOf(HttpException);
++    expect(f.prisma.coachMessage.updateMany).not.toHaveBeenCalled();
++  });
++
++  it('control: pins already suppress every blocked author, including sub-coaches', async () => {
++    const f = fixture();
++    const thread = await f.messaging.resolveThreadForClient(CLIENT);
++    const result = await f.actions.listPins(thread);
++    expect(result.items).toEqual([]);
++  });
++});
+diff --git a/test/messaging/messaging-core-v2.spec.ts b/test/messaging/messaging-core-v2.spec.ts
+index fc972136..400396c9 100644
+--- a/test/messaging/messaging-core-v2.spec.ts
++++ b/test/messaging/messaging-core-v2.spec.ts
+@@ -32,6 +32,7 @@ import {
+   isMessagingCoreV2Enabled,
+   MessagingCoreV2Guard,
+ } from '../../src/messaging/messaging-core.feature';
++import { broadcastThreadUpdated } from '../../src/messaging/messaging-realtime';
+ 
+ const COACH = '11111111-1111-4111-8111-111111111111';
+ const CLIENT = '22222222-2222-4222-8222-222222222222';
+@@ -818,3 +819,19 @@ describe('unified inbox', () => {
+     });
+   });
+ });
++
++describe('thread-updated ping on the public channel (B-709-1)', () => {
++  it('carries an empty payload: no client id, message id or change kind', async () => {
++    const send = jest.fn().mockResolvedValue('ok');
++    const channel = jest.fn(() => ({
++      subscribe: (cb: (s: string) => void) => cb('SUBSCRIBED'),
++      send,
++    }));
++    const supabase = dep(SupabaseService, {
++      getClient: () => ({ channel, removeChannel: jest.fn().mockResolvedValue('ok') }),
++    });
++    await broadcastThreadUpdated(supabase, COACH);
++    expect(channel).toHaveBeenCalledWith(`messages:${COACH}`);
++    expect(send).toHaveBeenCalledWith({ type: 'broadcast', event: 'thread-updated', payload: {} });
++  });
++});

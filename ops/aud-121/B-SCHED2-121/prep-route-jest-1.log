@@ -1,0 +1,1543 @@
+[heavy] waiting for a slot: npx jest --ci test/booking-emitter.spec.ts test/booking-lock-screen-push.spec.ts test/booking-reminder-local-time.spec.ts test/booking-reminder.job.spec.ts test/push-delivery-round5.spec.ts test/push-delivery-send-time.spec.ts test/push-delivery.service.spec.ts test/scheduling-lifecycle-integrity.spec.ts test/scheduling-reminder-delivery.spec.ts test/scheduling-request-expiry.spec.ts test/scheduling.service.spec.ts test/push-lock-screen-copy.spec.ts test/notification-emitters.spec.ts
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_needed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_declined push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_needed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-2[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=coach-2[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_needed push not queued for user=coach-2[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_needed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_needed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_needed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-2[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_needed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_needed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_rescheduled push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_needed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_rescheduled push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_needed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_rescheduled push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_rescheduled push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_needed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-2[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_needed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_rescheduled push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_declined push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_ready push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_ready push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_needed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_rescheduled push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_cancelled push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_declined push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_rescheduled push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_needed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_rescheduled push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_rescheduled push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_rescheduled push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_ready push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[SchedulingProviderRegistry] [39m[33mgoogle_calendar requested but GOOGLE_CALENDAR_ENABLED is not "true" — falling back to stub adapter[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_cancelled push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[SchedulingProviderRegistry] [39m[33mgoogle_calendar requested but GOOGLE_CALENDAR_ENABLED is not "true" — falling back to stub adapter[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_rescheduled push not queued for user=client-1[39m
+[31m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [31m  ERROR[39m [38;5;3m[SessionReminderJob] [39m[31mreminder claim failed: session=rem-1 user=client-1 kind=booking_reminder_1h err=TypeError[39m
+[31m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [31m  ERROR[39m [38;5;3m[SessionReminderJob] [39m[31mreminder claim failed: session=rem-1 user=coach-1 kind=booking_reminder_1h err=TypeError[39m
+[31m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [31m  ERROR[39m [38;5;3m[SessionReminderJob] [39m[31mreminder catch-up read failed: kind=booking_reminder_1h err=ConflictException (409)[39m
+[31m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [31m  ERROR[39m [38;5;3m[SessionReminderJob] [39m[31mreminder gave up after 3 attempts: claim=log-20 channels=push[39m
+[31m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [31m  ERROR[39m [38;5;3m[SessionReminderJob] [39m[31mreminder gave up after 3 attempts: claim=log-21 channels=push[39m
+[31m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [31m  ERROR[39m [38;5;3m[SessionReminderJob] [39m[31mreminder retired: claim=x-exhausted session=gone-exhausted reason=attempts_exhausted attempts=3[39m
+[31m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [31m  ERROR[39m [38;5;3m[SessionReminderJob] [39m[31mreminder claim failed: session=claim-failed-edge user=client-1 kind=booking_reminder_1h err=DatabaseRequestError: Database request failed (P2024)[39m
+[31m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [31m  ERROR[39m [38;5;3m[SessionReminderJob] [39m[31mreminder claim failed: session=claim-failed-edge user=coach-1 kind=booking_reminder_1h err=DatabaseRequestError: Database request failed (P2024)[39m
+[31m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [31m  ERROR[39m [38;5;3m[SessionReminderJob] [39m[31mreminder claim failed: session=claim-failed-24h user=client-1 kind=booking_reminder_24h err=DatabaseRequestError: Database request failed (P2024)[39m
+[31m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [31m  ERROR[39m [38;5;3m[SessionReminderJob] [39m[31mreminder claim failed: session=claim-failed-24h user=coach-1 kind=booking_reminder_24h err=DatabaseRequestError: Database request failed (P2024)[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_needed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h in-app write failed for user=client-1: Error[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h in-app write failed for user=coach-1: Error[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=1 retrying=1 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=0 failed=2 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=1 skipped=0 retrying=1 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=1 retrying=1 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=1 retrying=1 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_cancelled push not queued for user=client-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=2 retrying=0 failed=0 retired=0 parked=0 recovery_failed=1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=0 failed=2 retired=0 parked=0 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=2 retrying=0 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=2 retrying=0 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h in-app write failed for user=client-1: Error[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h in-app write failed for user=coach-1: Error[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:05:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:05:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:05:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=1 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h in-app write failed for user=client-1: Error[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h in-app write failed for user=coach-1: Error[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:15:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:15:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:15:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=1 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:05:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:05:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:05:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=1 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:05:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:05:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=1 caught_up=0 dispatched=0 skipped=0 retrying=1 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=1 caught_up=0 dispatched=0 skipped=0 retrying=1 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder retired: claim=x-cancelled session=gone-cancelled reason=session_cancelled attempts=1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder retired: claim=x-started session=gone-started reason=session_started attempts=1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder retired: claim=x-recipient session=gone-recipient reason=recipient_changed attempts=1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder retired: claim=x-superseded session=gone-superseded reason=superseded attempts=1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=0 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=0 failed=0 retired=5 parked=1 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder retired: claim=late session=late-24h reason=superseded attempts=1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=0 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=0 failed=0 retired=1 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_cancelled push not queued for user=client-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=1 caught_up=0 dispatched=0 skipped=1 retrying=0 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=0 failed=2 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:05:00 PM [33m   WARN[39m [38;5;3m[SessionReminderJob] [39m[33mreminder catch-up: kind=booking_reminder_1h sessions=1 (first claim was never written)[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:05:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:05:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:05:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=1 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=0 failed=2 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:15:00 PM [33m   WARN[39m [38;5;3m[SessionReminderJob] [39m[33mreminder catch-up: kind=booking_reminder_24h sessions=1 (first claim was never written)[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:15:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:15:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:15:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=1 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[31m[Nest] 17209  - [39m10/05/2026, 3:10:00 PM [31m  ERROR[39m [38;5;3m[SessionReminderJob] [39m[31mreminder gave up after 3 attempts: claim=eligible channels=push[39m
+[31m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [31m  ERROR[39m [38;5;3m[SessionReminderJob] [39m[31mreminder claim failed: session=trailing user=client-1 kind=booking_reminder_1h err=DatabaseRequestError: Database request failed (P2024)[39m
+[31m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [31m  ERROR[39m [38;5;3m[SessionReminderJob] [39m[31mreminder claim failed: session=trailing user=coach-1 kind=booking_reminder_1h err=DatabaseRequestError: Database request failed (P2024)[39m
+[31m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [31m  ERROR[39m [38;5;3m[SessionReminderJob] [39m[31mreminder claim failed: session=trailing user=client-1 kind=booking_reminder_24h err=DatabaseRequestError: Database request failed (P2024)[39m
+[31m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [31m  ERROR[39m [38;5;3m[SessionReminderJob] [39m[31mreminder claim failed: session=trailing user=coach-1 kind=booking_reminder_24h err=DatabaseRequestError: Database request failed (P2024)[39m
+[31m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [31m  ERROR[39m [38;5;3m[SessionReminderJob] [39m[31mreminder claim failed: session=moved user=client-1 kind=booking_reminder_1h err=DatabaseRequestError: Database request failed (P2024)[39m
+[31m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [31m  ERROR[39m [38;5;3m[SessionReminderJob] [39m[31mreminder claim failed: session=moved user=coach-1 kind=booking_reminder_1h err=DatabaseRequestError: Database request failed (P2024)[39m
+[31m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [31m  ERROR[39m [38;5;3m[SessionReminderJob] [39m[31mreminder claim takeover failed: session=moved user=client-1 kind=booking_reminder_1h err=DatabaseRequestError: Database request failed (P2024)[39m
+[31m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [31m  ERROR[39m [38;5;3m[SessionReminderJob] [39m[31mreminder claim takeover failed: session=moved user=coach-1 kind=booking_reminder_1h err=DatabaseRequestError: Database request failed (P2024)[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=0 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=0 failed=0 retired=0 parked=200 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:05:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:05:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=1 caught_up=0 dispatched=0 skipped=0 retrying=1 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:10:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:10:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=1 caught_up=0 dispatched=0 skipped=0 retrying=0 failed=1 retired=0 parked=0 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=0 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=0 failed=0 retired=0 parked=1 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 4:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 4:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 4:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=0 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=0 failed=0 retired=0 parked=0 recovery_failed=1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=0 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=0 failed=0 retired=0 parked=0 recovery_failed=1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=0 failed=2 retired=0 parked=0 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=0 failed=2 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:05:00 PM [33m   WARN[39m [38;5;3m[SessionReminderJob] [39m[33mreminder catch-up: kind=booking_reminder_1h sessions=1 (first claim was never written)[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:05:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:05:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:05:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=1 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=0 failed=2 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:15:00 PM [33m   WARN[39m [38;5;3m[SessionReminderJob] [39m[33mreminder catch-up: kind=booking_reminder_24h sessions=1 (first claim was never written)[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:15:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:15:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:15:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=1 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=0 failed=2 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:05:00 PM [33m   WARN[39m [38;5;3m[SessionReminderJob] [39m[33mreminder catch-up: kind=booking_reminder_1h sessions=1 (first claim was never written)[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:05:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:05:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:05:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=1 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=0 failed=2 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:05:00 PM [33m   WARN[39m [38;5;3m[SessionReminderJob] [39m[33mreminder catch-up: kind=booking_reminder_1h sessions=1 (first claim was never written)[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:05:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:05:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:05:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=1 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+FAIL test/scheduling-lifecycle-integrity.spec.ts (150 MB heap size)
+  ● booking validation matrix (request) › coach-approval type creates a request; the coach gets an in-app row and a push to the inbox
+
+    expect(received).toBeDefined()
+
+    Received: undefined
+
+    [0m [90m 406 |[39m     expect(notifications[33m.[39mkindsFor([32m'coach-1'[39m))[33m.[39mtoEqual([[33mNotificationKind[39m[33m.[39m[33mBOOKING_REQUESTED[39m])[33m;[39m
+     [90m 407 |[39m     [36mconst[39m push [33m=[39m notifications[33m.[39mpushes[33m.[39mfind((p) [33m=>[39m p[33m.[39muserId [33m===[39m [32m'coach-1'[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 408 |[39m     expect(push)[33m.[39mtoBeDefined()[33m;[39m
+     [90m     |[39m                  [31m[1m^[22m[39m
+     [90m 409 |[39m     [90m// B-714-1: the lock screen gets the fixed line; the inbox row has the detail.[39m
+     [90m 410 |[39m     expect(push[33m?[39m[33m.[39mtitle)[33m.[39mtoBe([32m'Session request'[39m)[33m;[39m
+     [90m 411 |[39m     expect(push[33m?[39m[33m.[39mbody)[33m.[39mtoBe([32m'There is a new session request. Open the app to see it.'[39m)[33m;[39m[0m
+
+      at Object.<anonymous> (test/scheduling-lifecycle-integrity.spec.ts:408:18)
+
+  ● booking validation matrix (request) › instant-confirm type is scheduled, gets the default meeting link, and notifies both sides
+
+    expect(received).toMatchObject(expected)
+
+    Matcher error: received value must be a non-null object
+
+    Received has value: undefined
+
+    [0m [90m 434 |[39m     expect(notifications[33m.[39mkindsFor([32m'coach-1'[39m))[33m.[39mtoEqual([[33mNotificationKind[39m[33m.[39m[33mBOOKING_CONFIRMED[39m])[33m;[39m
+     [90m 435 |[39m     [36mconst[39m clientPush [33m=[39m notifications[33m.[39mpushes[33m.[39mfind((p) [33m=>[39m p[33m.[39muserId [33m===[39m [32m'client-1'[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 436 |[39m     expect(clientPush[33m?[39m[33m.[39mdata)[33m.[39mtoMatchObject({
+     [90m     |[39m                              [31m[1m^[22m[39m
+     [90m 437 |[39m       actionScreen[33m:[39m [32m'CalendarSession'[39m[33m,[39m
+     [90m 438 |[39m       actionParams[33m:[39m { sessionId[33m:[39m s[33m.[39mid }[33m,[39m
+     [90m 439 |[39m     })[33m;[39m[0m
+
+      at Object.<anonymous> (test/scheduling-lifecycle-integrity.spec.ts:436:30)
+
+  ● S-SCHED-3 B-634-2: reminder delivery is recoverable and channel-aware › both channels fail, then recover: the next sweep delivers to both recipients (Sol probe)
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 2
+    Received length: 0
+    Received array:  []
+
+    [0m [90m 1464 |[39m       [36mawait[39m reminder[33m.[39mrunOneHourReminderSweep()[33m;[39m
+     [90m 1465 |[39m       expect(remindersFor(notifications))[33m.[39mtoHaveLength([35m2[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 1466 |[39m       expect(notifications[33m.[39mpushes)[33m.[39mtoHaveLength([35m2[39m)[33m;[39m
+     [90m      |[39m                                    [31m[1m^[22m[39m
+     [90m 1467 |[39m       expect(db[33m.[39mdeliveryLogs[33m.[39mmap((l) [33m=>[39m l[33m.[39mstatus))[33m.[39mtoEqual([[32m'sent'[39m[33m,[39m [32m'sent'[39m])[33m;[39m
+     [90m 1468 |[39m       [36mawait[39m reminder[33m.[39mrunOneHourReminderSweep()[33m;[39m
+     [90m 1469 |[39m       expect(remindersFor(notifications))[33m.[39mtoHaveLength([35m2[39m)[33m;[39m[0m
+
+      at test/scheduling-lifecycle-integrity.spec.ts:1466:36
+      at Object.<anonymous> (test/scheduling-lifecycle-integrity.spec.ts:1460:5)
+
+  ● S-SCHED-3 B-634-2: reminder delivery is recoverable and channel-aware › partial failure retries only the failed channel; the retried push links the first in-app row
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 2
+    + Received  + 2
+
+      Object {
+    -   "dispatched": 1,
+    +   "dispatched": 0,
+        "failed": 0,
+    -   "retrying": 1,
+    +   "retrying": 2,
+      }
+
+    [0m [90m 1489 |[39m           })[33m,[39m
+     [90m 1490 |[39m       })[33m;[39m
+    [31m[1m>[22m[39m[90m 1491 |[39m       expect(first)[33m.[39mtoMatchObject({ dispatched[33m:[39m [35m1[39m[33m,[39m retrying[33m:[39m [35m1[39m[33m,[39m failed[33m:[39m [35m0[39m })[33m;[39m
+     [90m      |[39m                     [31m[1m^[22m[39m
+     [90m 1492 |[39m       expect(remindersFor(notifications))[33m.[39mtoHaveLength([35m2[39m)[33m;[39m
+     [90m 1493 |[39m       [36mawait[39m reminder[33m.[39mrunOneHourReminderSweep()[33m;[39m
+     [90m 1494 |[39m       expect(remindersFor(notifications))[33m.[39mtoHaveLength([35m2[39m)[33m;[39m[0m
+
+      at test/scheduling-lifecycle-integrity.spec.ts:1491:21
+      at Object.<anonymous> (test/scheduling-lifecycle-integrity.spec.ts:1477:5)
+
+  ● S-SCHED-3 B-634-2: reminder delivery is recoverable and channel-aware › a worker that died after claiming is taken over once its lease expires; a live lease is left alone
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "attempts": 2,
+    -   "status": "sent",
+    +   "status": "retry",
+      }
+
+    [0m [90m 1536 |[39m     [36mawait[39m withReminders(() [33m=>[39m reminder[33m.[39mrunOneHourReminderSweep())[33m;[39m
+     [90m 1537 |[39m     expect(remindersFor(notifications)[33m.[39mmap((r) [33m=>[39m r[33m.[39muser_id))[33m.[39mtoEqual([[32m'client-1'[39m])[33m;[39m
+    [31m[1m>[22m[39m[90m 1538 |[39m     expect(db[33m.[39mdeliveryLogs[33m.[39mfind((l) [33m=>[39m l[33m.[39mid [33m===[39m [32m'stuck'[39m))[33m.[39mtoMatchObject({
+     [90m      |[39m                                                           [31m[1m^[22m[39m
+     [90m 1539 |[39m       status[33m:[39m [32m'sent'[39m[33m,[39m
+     [90m 1540 |[39m       attempts[33m:[39m [35m2[39m[33m,[39m
+     [90m 1541 |[39m     })[33m;[39m[0m
+
+      at Object.<anonymous> (test/scheduling-lifecycle-integrity.spec.ts:1538:59)
+
+  ● S-SCHED-3 B-634-2: reminder delivery is recoverable and channel-aware › preference suppression and no device are settled answers, never retried
+
+    expect(jest.fn()).toHaveBeenCalledTimes(expected)
+
+    Expected number of calls: 1
+    Received number of calls: 0
+
+    [0m [90m 1578 |[39m     })[33m;[39m
+     [90m 1579 |[39m     expect(remindersFor(notifications)[33m.[39mmap((r) [33m=>[39m r[33m.[39muser_id))[33m.[39mtoEqual([[32m'coach-1'[39m])[33m;[39m
+    [31m[1m>[22m[39m[90m 1580 |[39m     expect(notifications[33m.[39mpushToUser)[33m.[39mtoHaveBeenCalledTimes([35m1[39m)[33m;[39m
+     [90m      |[39m                                      [31m[1m^[22m[39m
+     [90m 1581 |[39m     expect(db[33m.[39mdeliveryLogs[33m.[39mmap((l) [33m=>[39m [l[33m.[39muser_id[33m,[39m l[33m.[39mstatus[33m,[39m l[33m.[39mattempts]))[33m.[39mtoEqual([
+     [90m 1582 |[39m       [[32m'client-1'[39m[33m,[39m [32m'sent'[39m[33m,[39m [35m1[39m][33m,[39m
+     [90m 1583 |[39m       [[32m'coach-1'[39m[33m,[39m [32m'sent'[39m[33m,[39m [35m1[39m][33m,[39m[0m
+
+      at Object.<anonymous> (test/scheduling-lifecycle-integrity.spec.ts:1580:38)
+
+  ● S-SCHED-3 B-634-2: reminder delivery is recoverable and channel-aware › two replicas sweeping at once deliver exactly once per recipient
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 2
+    Received length: 0
+    Received array:  []
+
+    [0m [90m 1593 |[39m     )[33m;[39m
+     [90m 1594 |[39m     expect(remindersFor(notifications))[33m.[39mtoHaveLength([35m2[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 1595 |[39m     expect(notifications[33m.[39mpushes)[33m.[39mtoHaveLength([35m2[39m)[33m;[39m
+     [90m      |[39m                                  [31m[1m^[22m[39m
+     [90m 1596 |[39m   })[33m;[39m
+     [90m 1597 |[39m
+     [90m 1598 |[39m   it([32m'a claim for an older start time does not cover the new time: the moved session is reminded for it'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/scheduling-lifecycle-integrity.spec.ts:1595:34)
+
+  ● S-SCHED-3 B-634-2: reminder delivery is recoverable and channel-aware › a claim for an older start time does not cover the new time: the moved session is reminded for it
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+    -   "status": "sent",
+    +   "status": "retry",
+      }
+
+    [0m [90m 1628 |[39m     expect(
+     [90m 1629 |[39m       db[33m.[39mdeliveryLogs[33m.[39mfind((l) [33m=>[39m l[33m.[39muser_id [33m===[39m [32m'client-1'[39m [33m&&[39m startMs(l) [33m===[39m startMs(s))[33m,[39m
+    [31m[1m>[22m[39m[90m 1630 |[39m     )[33m.[39mtoMatchObject({ status[33m:[39m [32m'sent'[39m })[33m;[39m
+     [90m      |[39m       [31m[1m^[22m[39m
+     [90m 1631 |[39m   })[33m;[39m
+     [90m 1632 |[39m
+     [90m 1633 |[39m   it([32m'a session cancelled after the sweep read it is not reminded, and its claim is released'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/scheduling-lifecycle-integrity.spec.ts:1630:7)
+
+  ● S-SCHED-3 B-634-2: reminder delivery is recoverable and channel-aware › gives up after the attempt limit and says so
+
+    expect(jest.fn()).toHaveBeenCalledTimes(expected)
+
+    Expected number of calls: 6
+    Received number of calls: 0
+
+    [0m [90m 1656 |[39m       [[32m'gave_up'[39m[33m,[39m [35m3[39m][33m,[39m
+     [90m 1657 |[39m     ])[33m;[39m
+    [31m[1m>[22m[39m[90m 1658 |[39m     expect(notifications[33m.[39mpushToUser)[33m.[39mtoHaveBeenCalledTimes([35m6[39m)[33m;[39m
+     [90m      |[39m                                      [31m[1m^[22m[39m
+     [90m 1659 |[39m     expect(remindersFor(notifications))[33m.[39mtoHaveLength([35m2[39m)[33m;[39m
+     [90m 1660 |[39m     expect([33mString[39m(db[33m.[39mdeliveryLogs[[35m0[39m][33m.[39mlast_error))[33m.[39mtoContain([32m'push'[39m)[33m;[39m
+     [90m 1661 |[39m   })[33m;[39m[0m
+
+      at Object.<anonymous> (test/scheduling-lifecycle-integrity.spec.ts:1658:38)
+
+  ● S-SCHED-4 B-634-2: unfinished reminders are recovered on the next real tick, after the band › 1h: both recipients fail at the final tick (start in 55m); the +5m tick delivers both (Sol counterexample)
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 2
+    Received length: 0
+    Received array:  []
+
+    [0m [90m 1732 |[39m         [33m.[39msort()[33m,[39m
+     [90m 1733 |[39m     )[33m.[39mtoEqual([[32m'client-1'[39m[33m,[39m [32m'coach-1'[39m])[33m;[39m
+    [31m[1m>[22m[39m[90m 1734 |[39m     expect(notifications[33m.[39mpushes)[33m.[39mtoHaveLength([35m2[39m)[33m;[39m
+     [90m      |[39m                                  [31m[1m^[22m[39m
+     [90m 1735 |[39m     expect(db[33m.[39mdeliveryLogs[33m.[39mmap((l) [33m=>[39m [l[33m.[39mstatus[33m,[39m l[33m.[39mattempts]))[33m.[39mtoEqual([
+     [90m 1736 |[39m       [[32m'sent'[39m[33m,[39m [35m2[39m][33m,[39m
+     [90m 1737 |[39m       [[32m'sent'[39m[33m,[39m [35m2[39m][33m,[39m[0m
+
+      at Object.<anonymous> (test/scheduling-lifecycle-integrity.spec.ts:1734:34)
+
+  ● S-SCHED-4 B-634-2: unfinished reminders are recovered on the next real tick, after the band › 24h: both recipients fail at the final tick (start in 23h45m); the +15m tick delivers both
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 2
+    + Received  + 2
+
+      Array [
+        Array [
+    -     "sent",
+    +     "retry",
+          2,
+        ],
+        Array [
+    -     "sent",
+    +     "retry",
+          2,
+        ],
+      ]
+
+    [0m [90m 1755 |[39m     [36mconst[39m sent [33m=[39m ofKind(notifications[33m,[39m [33mNotificationKind[39m[33m.[39m[33mBOOKING_REMINDER_24H[39m)[33m;[39m
+     [90m 1756 |[39m     expect(sent[33m.[39mmap((r) [33m=>[39m r[33m.[39muser_id)[33m.[39msort())[33m.[39mtoEqual([[32m'client-1'[39m[33m,[39m [32m'coach-1'[39m])[33m;[39m
+    [31m[1m>[22m[39m[90m 1757 |[39m     expect(db[33m.[39mdeliveryLogs[33m.[39mmap((l) [33m=>[39m [l[33m.[39mstatus[33m,[39m l[33m.[39mattempts]))[33m.[39mtoEqual([
+     [90m      |[39m                                                                [31m[1m^[22m[39m
+     [90m 1758 |[39m       [[32m'sent'[39m[33m,[39m [35m2[39m][33m,[39m
+     [90m 1759 |[39m       [[32m'sent'[39m[33m,[39m [35m2[39m][33m,[39m
+     [90m 1760 |[39m     ])[33m;[39m[0m
+
+      at Object.<anonymous> (test/scheduling-lifecycle-integrity.spec.ts:1757:64)
+
+  ● S-SCHED-4 B-634-2: unfinished reminders are recovered on the next real tick, after the band › partial failure at the final tick: the next tick re-sends only the push, linked to the first in-app row
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "attempts": 2,
+        "notification_id": "notif-1",
+    -   "status": "sent",
+    +   "status": "retry",
+      }
+
+    [0m [90m 1773 |[39m     expect(ofKind(notifications[33m,[39m [33mNotificationKind[39m[33m.[39m[33mBOOKING_REMINDER_1H[39m))[33m.[39mtoHaveLength([35m2[39m)[33m;[39m
+     [90m 1774 |[39m     [36mconst[39m retried [33m=[39m db[33m.[39mdeliveryLogs[33m.[39mfind((l) [33m=>[39m l[33m.[39mid [33m===[39m failed[33m?[39m[33m.[39mid)[33m;[39m
+    [31m[1m>[22m[39m[90m 1775 |[39m     expect(retried)[33m.[39mtoMatchObject({ status[33m:[39m [32m'sent'[39m[33m,[39m attempts[33m:[39m [35m2[39m[33m,[39m notification_id[33m:[39m firstInApp })[33m;[39m
+     [90m      |[39m                     [31m[1m^[22m[39m
+     [90m 1776 |[39m     [36mconst[39m pushes [33m=[39m notifications[33m.[39mpushes[33m.[39mfilter((p) [33m=>[39m p[33m.[39muserId [33m===[39m failed[33m?[39m[33m.[39muser_id)[33m;[39m
+     [90m 1777 |[39m     expect(pushes)[33m.[39mtoHaveLength([35m1[39m)[33m;[39m
+     [90m 1778 |[39m     expect(pushes[[35m0[39m][33m.[39mdata[33m.[39mnotificationId)[33m.[39mtoBe(firstInApp)[33m;[39m[0m
+
+      at Object.<anonymous> (test/scheduling-lifecycle-integrity.spec.ts:1775:21)
+
+  ● S-SCHED-4 B-634-2: unfinished reminders are recovered on the next real tick, after the band › worker crash at the final tick: a live lease is left alone, the expired lease is taken over on the next tick
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "attempts": 2,
+    -   "status": "sent",
+    +   "status": "retry",
+      }
+
+    [0m [90m 1815 |[39m       ofKind(notifications[33m,[39m [33mNotificationKind[39m[33m.[39m[33mBOOKING_REMINDER_1H[39m)[33m.[39mmap((r) [33m=>[39m r[33m.[39muser_id)[33m,[39m
+     [90m 1816 |[39m     )[33m.[39mtoEqual([[32m'client-1'[39m])[33m;[39m
+    [31m[1m>[22m[39m[90m 1817 |[39m     expect(db[33m.[39mdeliveryLogs[33m.[39mfind((l) [33m=>[39m l[33m.[39mid [33m===[39m [32m'dead'[39m))[33m.[39mtoMatchObject({
+     [90m      |[39m                                                          [31m[1m^[22m[39m
+     [90m 1818 |[39m       status[33m:[39m [32m'sent'[39m[33m,[39m
+     [90m 1819 |[39m       attempts[33m:[39m [35m2[39m[33m,[39m
+     [90m 1820 |[39m     })[33m;[39m[0m
+
+      at Object.<anonymous> (test/scheduling-lifecycle-integrity.spec.ts:1817:58)
+
+  ● S-SCHED-4 B-634-2: unfinished reminders are recovered on the next real tick, after the band › a recovered session never claims a recipient that had no unfinished work
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+    -   "dispatched": 1,
+    +   "dispatched": 0,
+        "recovered": 1,
+        "retired": 0,
+        "scanned": 1,
+      }
+
+    [0m [90m 1844 |[39m       })[33m,[39m
+     [90m 1845 |[39m     )[33m;[39m
+    [31m[1m>[22m[39m[90m 1846 |[39m     expect(result)[33m.[39mtoMatchObject({ scanned[33m:[39m [35m1[39m[33m,[39m recovered[33m:[39m [35m1[39m[33m,[39m dispatched[33m:[39m [35m1[39m[33m,[39m retired[33m:[39m [35m0[39m })[33m;[39m
+     [90m      |[39m                    [31m[1m^[22m[39m
+     [90m 1847 |[39m     expect(db[33m.[39mdeliveryLogs[33m.[39mmap((l) [33m=>[39m l[33m.[39muser_id))[33m.[39mtoEqual([[32m'client-1'[39m])[33m;[39m
+     [90m 1848 |[39m     expect(notifications[33m.[39mrows)[33m.[39mtoHaveLength([35m0[39m)[33m;[39m
+     [90m 1849 |[39m   })[33m;[39m[0m
+
+      at Object.<anonymous> (test/scheduling-lifecycle-integrity.spec.ts:1846:20)
+
+  ● S-SCHED-5 B-634-2 / B-634-6: missed first claims, fair recovery, safe diagnostics › 1h: both first-claim inserts fail at the final due tick (55m); the next real tick (50m) delivers both (Sol probe)
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 2
+    Received length: 0
+    Received array:  []
+
+    [0m [90m 2063 |[39m     [36mawait[39m withReminders(() [33m=>[39m reminder[33m.[39mrunOneHourReminderSweep())[33m;[39m
+     [90m 2064 |[39m     expect(notifications[33m.[39mrows)[33m.[39mtoHaveLength([35m2[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 2065 |[39m     expect(notifications[33m.[39mpushes)[33m.[39mtoHaveLength([35m2[39m)[33m;[39m
+     [90m      |[39m                                  [31m[1m^[22m[39m
+     [90m 2066 |[39m     expect(db[33m.[39mdeliveryLogs[33m.[39mmap((l) [33m=>[39m l[33m.[39mstatus))[33m.[39mtoEqual([[32m'sent'[39m[33m,[39m [32m'sent'[39m])[33m;[39m
+     [90m 2067 |[39m     [90m// And never twice: the following tick finds both rows.[39m
+     [90m 2068 |[39m     jest[33m.[39msetSystemTime([36mnew[39m [33mDate[39m([33mNOW[39m[33m.[39mgetTime() [33m+[39m [35m10[39m [33m*[39m [33mMIN[39m))[33m;[39m[0m
+
+      at Object.<anonymous> (test/scheduling-lifecycle-integrity.spec.ts:2065:34)
+
+  ● S-SCHED-5 B-634-2 / B-634-6: missed first claims, fair recovery, safe diagnostics › 24h: first-claim inserts fail at the final due tick; the next 15m tick delivers the "tomorrow" reminder
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 2
+    Received length: 0
+    Received array:  []
+
+    [0m [90m 2082 |[39m     [36mconst[39m sent [33m=[39m notifications[33m.[39mrows[33m.[39mfilter((r) [33m=>[39m r[33m.[39mkind [33m===[39m [33mNotificationKind[39m[33m.[39m[33mBOOKING_REMINDER_24H[39m)[33m;[39m
+     [90m 2083 |[39m     expect(sent)[33m.[39mtoHaveLength([35m2[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 2084 |[39m     expect(notifications[33m.[39mpushes)[33m.[39mtoHaveLength([35m2[39m)[33m;[39m
+     [90m      |[39m                                  [31m[1m^[22m[39m
+     [90m 2085 |[39m   })[33m;[39m
+     [90m 2086 |[39m
+     [90m 2087 |[39m   it([32m'a session booked after its band (confirmed 40m before start) is not sent a back-dated reminder'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/scheduling-lifecycle-integrity.spec.ts:2084:34)
+
+  ● S-SCHED-5 B-634-2 / B-634-6: missed first claims, fair recovery, safe diagnostics › 200 retained moved-later rows do not pin the recovery page: the eligible retry is sent within the next ticks (Sol probe)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "sent"
+    Received: "gave_up"
+
+    [0m [90m 2115 |[39m       [36mawait[39m withReminders(() [33m=>[39m reminder[33m.[39mrunOneHourReminderSweep())[33m;[39m
+     [90m 2116 |[39m     }
+    [31m[1m>[22m[39m[90m 2117 |[39m     expect(db[33m.[39mdeliveryLogs[33m.[39mfind((r) [33m=>[39m r[33m.[39mid [33m===[39m [32m'eligible'[39m)[33m?[39m[33m.[39mstatus)[33m.[39mtoBe([32m'sent'[39m)[33m;[39m
+     [90m      |[39m                                                                      [31m[1m^[22m[39m
+     [90m 2118 |[39m     expect(notifications[33m.[39mpushes[33m.[39mlength)[33m.[39mtoBeGreaterThanOrEqual([35m1[39m)[33m;[39m
+     [90m 2119 |[39m     [90m// The retained rows are parked (receipts kept), not deleted or sent.[39m
+     [90m 2120 |[39m     [36mconst[39m old [33m=[39m db[33m.[39mdeliveryLogs[33m.[39mfilter((r) [33m=>[39m [33mString[39m(r[33m.[39mid)[33m.[39mstartsWith([32m'old-'[39m))[33m;[39m[0m
+
+      at Object.<anonymous> (test/scheduling-lifecycle-integrity.spec.ts:2117:70)
+
+  ● S-SCHED-5 B-634-2 / B-634-6: missed first claims, fair recovery, safe diagnostics › a parked row stays parked and the new time is claimed and sent when it reaches the band
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "sent"
+    Received: "retry"
+
+    [0m [90m 2139 |[39m         (r) [33m=>[39m r[33m.[39muser_id [33m===[39m [32m'client-1'[39m [33m&&[39m r[33m.[39msession_id [33m===[39m [32m'moved-later'[39m [33m&&[39m startMs(r) [33m===[39m start[33m,[39m
+     [90m 2140 |[39m       )[33m?[39m[33m.[39mstatus[33m,[39m
+    [31m[1m>[22m[39m[90m 2141 |[39m     )[33m.[39mtoBe([32m'sent'[39m)[33m;[39m
+     [90m      |[39m       [31m[1m^[22m[39m
+     [90m 2142 |[39m     expect(notifications[33m.[39mrows[33m.[39mfilter((r) [33m=>[39m r[33m.[39muser_id [33m===[39m [32m'client-1'[39m))[33m.[39mtoHaveLength([35m1[39m)[33m;[39m
+     [90m 2143 |[39m   })[33m;[39m
+     [90m 2144 |[39m[0m
+
+      at Object.<anonymous> (test/scheduling-lifecycle-integrity.spec.ts:2141:7)
+
+  ● S-SCHED-5 round 2 B-634-2: catch-up walks the whole interval, not the first page › 1h: a first claim that failed is delivered at the next real tick behind 250 already-reminded sessions
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 2
+    + Received  + 2
+
+      Array [
+    -   "sent",
+    -   "sent",
+    +   "retry",
+    +   "retry",
+      ]
+
+    [0m [90m 2327 |[39m           [33m.[39mmap((l) [33m=>[39m l[33m.[39mstatus)
+     [90m 2328 |[39m           [33m.[39msort()[33m,[39m
+    [31m[1m>[22m[39m[90m 2329 |[39m       )[33m.[39mtoEqual([[32m'sent'[39m[33m,[39m [32m'sent'[39m])[33m;[39m
+     [90m      |[39m         [31m[1m^[22m[39m
+     [90m 2330 |[39m       [90m// Keep ticking through the catch-up interval: still exactly once.[39m
+     [90m 2331 |[39m       [36mfor[39m ([36mlet[39m t [33m=[39m [35m2[39m[33m;[39m t [33m*[39m cadence [33m<=[39m [35m30[39m[33m;[39m t[33m++[39m) {
+     [90m 2332 |[39m         jest[33m.[39msetSystemTime([36mnew[39m [33mDate[39m([33mNOW[39m[33m.[39mgetTime() [33m+[39m t [33m*[39m cadence [33m*[39m [33mMIN[39m))[33m;[39m[0m
+
+      at test/scheduling-lifecycle-integrity.spec.ts:2329:9
+
+  ● S-SCHED-5 round 2 B-634-2: catch-up walks the whole interval, not the first page › 24h: a first claim that failed is delivered at the next real tick behind 250 already-reminded sessions
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 2
+    + Received  + 2
+
+      Array [
+    -   "sent",
+    -   "sent",
+    +   "retry",
+    +   "retry",
+      ]
+
+    [0m [90m 2327 |[39m           [33m.[39mmap((l) [33m=>[39m l[33m.[39mstatus)
+     [90m 2328 |[39m           [33m.[39msort()[33m,[39m
+    [31m[1m>[22m[39m[90m 2329 |[39m       )[33m.[39mtoEqual([[32m'sent'[39m[33m,[39m [32m'sent'[39m])[33m;[39m
+     [90m      |[39m         [31m[1m^[22m[39m
+     [90m 2330 |[39m       [90m// Keep ticking through the catch-up interval: still exactly once.[39m
+     [90m 2331 |[39m       [36mfor[39m ([36mlet[39m t [33m=[39m [35m2[39m[33m;[39m t [33m*[39m cadence [33m<=[39m [35m30[39m[33m;[39m t[33m++[39m) {
+     [90m 2332 |[39m         jest[33m.[39msetSystemTime([36mnew[39m [33mDate[39m([33mNOW[39m[33m.[39mgetTime() [33m+[39m t [33m*[39m cadence [33m*[39m [33mMIN[39m))[33m;[39m[0m
+
+      at test/scheduling-lifecycle-integrity.spec.ts:2329:9
+
+  ● C-634-6: catch-up coverage is keyed on the current start time › 1h: a moved session's first claim (an earlier start's sent rows kept) that fails at the final due tick is delivered by the next tick
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 2
+    Received length: 0
+    Received array:  []
+
+    [0m [90m 2558 |[39m       [36mawait[39m withReminders(() [33m=>[39m reminder[33m.[39mrunOneHourReminderSweep())[33m;[39m
+     [90m 2559 |[39m       expect(notifications[33m.[39mrows[33m.[39mmap((r) [33m=>[39m r[33m.[39muser_id)[33m.[39msort())[33m.[39mtoEqual([[32m'client-1'[39m[33m,[39m [32m'coach-1'[39m])[33m;[39m
+    [31m[1m>[22m[39m[90m 2560 |[39m       expect(notifications[33m.[39mpushes)[33m.[39mtoHaveLength([35m2[39m)[33m;[39m
+     [90m      |[39m                                    [31m[1m^[22m[39m
+     [90m 2561 |[39m       [36mconst[39m current [33m=[39m db[33m.[39mdeliveryLogs[33m.[39mfilter((l) [33m=>[39m startMs(l) [33m===[39m start[33m.[39mgetTime())[33m;[39m
+     [90m 2562 |[39m       expect(current)[33m.[39mtoHaveLength([35m2[39m)[33m;[39m
+     [90m 2563 |[39m       [36mfor[39m ([36mconst[39m l [36mof[39m current) expect(l)[33m.[39mtoMatchObject({ status[33m:[39m [32m'sent'[39m })[33m;[39m[0m
+
+      at test/scheduling-lifecycle-integrity.spec.ts:2560:36
+
+  ● C-634-6: catch-up coverage is keyed on the current start time › 1h: a parked row that fails at the final due tick is delivered by the next tick
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 2
+    Received length: 0
+    Received array:  []
+
+    [0m [90m 2558 |[39m       [36mawait[39m withReminders(() [33m=>[39m reminder[33m.[39mrunOneHourReminderSweep())[33m;[39m
+     [90m 2559 |[39m       expect(notifications[33m.[39mrows[33m.[39mmap((r) [33m=>[39m r[33m.[39muser_id)[33m.[39msort())[33m.[39mtoEqual([[32m'client-1'[39m[33m,[39m [32m'coach-1'[39m])[33m;[39m
+    [31m[1m>[22m[39m[90m 2560 |[39m       expect(notifications[33m.[39mpushes)[33m.[39mtoHaveLength([35m2[39m)[33m;[39m
+     [90m      |[39m                                    [31m[1m^[22m[39m
+     [90m 2561 |[39m       [36mconst[39m current [33m=[39m db[33m.[39mdeliveryLogs[33m.[39mfilter((l) [33m=>[39m startMs(l) [33m===[39m start[33m.[39mgetTime())[33m;[39m
+     [90m 2562 |[39m       expect(current)[33m.[39mtoHaveLength([35m2[39m)[33m;[39m
+     [90m 2563 |[39m       [36mfor[39m ([36mconst[39m l [36mof[39m current) expect(l)[33m.[39mtoMatchObject({ status[33m:[39m [32m'sent'[39m })[33m;[39m[0m
+
+      at test/scheduling-lifecycle-integrity.spec.ts:2560:36
+
+PASS test/push-delivery.service.spec.ts (178 MB heap size)
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:18 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:18 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:18 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:18 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_declined push not queued for user=client-ny[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:18 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_ready push not queued for user=client-x[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:18 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:18 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_rescheduled in-app write failed for user=coach-1: TypeError[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:18 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_rescheduled push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:18 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:18 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:18 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=c[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:18 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_rescheduled push not queued for user=c[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:18 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_needed push not queued for user=c[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:18 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:18 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_cancelled push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:18 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_rescheduled push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:18 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:18 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:18 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=client-1[39m
+FAIL test/booking-emitter.spec.ts (206 MB heap size)
+  ● BookingEmitter delivery › requested -> coach: one in-app row plus a real push routed to the booking inbox
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "inapp": "written",
+        "notificationId": "notif-1",
+    -   "push": "delivered",
+    +   "push": "failed",
+      }
+
+    [0m [90m 103 |[39m       notes[33m:[39m [36mnull[39m[33m,[39m
+     [90m 104 |[39m     })[33m;[39m
+    [31m[1m>[22m[39m[90m 105 |[39m     expect(outcome)[33m.[39mtoEqual({ inapp[33m:[39m [32m'written'[39m[33m,[39m push[33m:[39m [32m'delivered'[39m[33m,[39m notificationId[33m:[39m [32m'notif-1'[39m })[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 106 |[39m     expect(fake[33m.[39mrows)[33m.[39mtoHaveLength([35m1[39m)[33m;[39m
+     [90m 107 |[39m     [36mconst[39m [row] [33m=[39m fake[33m.[39mrows[33m;[39m
+     [90m 108 |[39m     expect(row)[33m.[39mtoMatchObject({[0m
+
+      at Object.<anonymous> (test/booking-emitter.spec.ts:105:21)
+
+  ● BookingEmitter delivery › confirmed -> client routes to CalendarSession; instant wording differs from approval
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 4
+    + Received  + 1
+
+    - Array [
+    -   "CalendarSession",
+    -   "CalendarSession",
+    - ]
+    + Array []
+
+    [0m [90m 161 |[39m       [32m'Coach Kim confirmed your Quick Q/A Call on Tue, Oct 6, 10:00 AM PDT.'[39m[33m,[39m
+     [90m 162 |[39m     ])[33m;[39m
+    [31m[1m>[22m[39m[90m 163 |[39m     expect(fake[33m.[39mpushes[33m.[39mmap((p) [33m=>[39m p[33m.[39mdata[33m.[39mactionScreen))[33m.[39mtoEqual([
+     [90m     |[39m                                                         [31m[1m^[22m[39m
+     [90m 164 |[39m       [32m'CalendarSession'[39m[33m,[39m
+     [90m 165 |[39m       [32m'CalendarSession'[39m[33m,[39m
+     [90m 166 |[39m     ])[33m;[39m[0m
+
+      at Object.<anonymous> (test/booking-emitter.spec.ts:163:57)
+
+  ● BookingEmitter delivery › reports a missing device token without throwing
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "inapp": "written",
+        "notificationId": "notif-1",
+    -   "push": "no-token",
+    +   "push": "failed",
+      }
+
+    [0m [90m 240 |[39m       hasMeetingLink[33m:[39m [36mtrue[39m[33m,[39m
+     [90m 241 |[39m     })[33m;[39m
+    [31m[1m>[22m[39m[90m 242 |[39m     expect(outcome)[33m.[39mtoEqual({ inapp[33m:[39m [32m'written'[39m[33m,[39m push[33m:[39m [32m'no-token'[39m[33m,[39m notificationId[33m:[39m [32m'notif-1'[39m })[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 243 |[39m   })[33m;[39m
+     [90m 244 |[39m
+     [90m 245 |[39m   it([32m'never throws when storage or transport fail'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/booking-emitter.spec.ts:242:21)
+
+  ● BookingEmitter delivery › reminders name the other party and handle a missing call link per side
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 10
+    + Received  +  1
+
+    - Array [
+    -   Array [
+    -     "Session reminder",
+    -     "CoachBookingInbox",
+    -   ],
+    -   Array [
+    -     "Session reminder",
+    -     "CalendarSession",
+    -   ],
+    - ]
+    + Array []
+
+    [0m [90m 283 |[39m       [32m'Your Quick Q/A Call with Coach Kim is on Tue, Oct 6, 10:00 AM PDT. Your coach will add the call link before it starts.'[39m[33m,[39m
+     [90m 284 |[39m     ])[33m;[39m
+    [31m[1m>[22m[39m[90m 285 |[39m     expect(fake[33m.[39mpushes[33m.[39mmap((p) [33m=>[39m [p[33m.[39mtitle[33m,[39m p[33m.[39mdata[33m.[39mactionScreen]))[33m.[39mtoEqual([
+     [90m     |[39m                                                                    [31m[1m^[22m[39m
+     [90m 286 |[39m       [[32m'Session reminder'[39m[33m,[39m [32m'CoachBookingInbox'[39m][33m,[39m
+     [90m 287 |[39m       [[32m'Session reminder'[39m[33m,[39m [32m'CalendarSession'[39m][33m,[39m
+     [90m 288 |[39m     ])[33m;[39m[0m
+
+      at Object.<anonymous> (test/booking-emitter.spec.ts:285:68)
+
+  ● B-634-8: emitter logs never carry raw ORM diagnostics › in-app creation P2024: canary never logged; push still delivered without a notificationId
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "inapp": "failed",
+        "notificationId": null,
+    -   "push": "delivered",
+    +   "push": "failed",
+      }
+
+    [0m [90m 378 |[39m     })[33m;[39m
+     [90m 379 |[39m     [36mconst[39m outcome [33m=[39m [36mawait[39m emitter[33m.[39memitRequested(requested)[33m;[39m
+    [31m[1m>[22m[39m[90m 380 |[39m     expect(outcome)[33m.[39mtoEqual({ inapp[33m:[39m [32m'failed'[39m[33m,[39m push[33m:[39m [32m'delivered'[39m[33m,[39m notificationId[33m:[39m [36mnull[39m })[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 381 |[39m     expect(fake[33m.[39mpushes[[35m0[39m][33m.[39mdata)[33m.[39mnot[33m.[39mtoHaveProperty([32m'notificationId'[39m)[33m;[39m
+     [90m 382 |[39m     [36mconst[39m text [33m=[39m loggedText()[33m;[39m
+     [90m 383 |[39m     expect(text)[33m.[39mtoContain([32m'booking_requested in-app write failed for user=coach-1'[39m)[33m;[39m[0m
+
+      at Object.<anonymous> (test/booking-emitter.spec.ts:380:21)
+
+  ● B-634-8: emitter logs never carry raw ORM diagnostics › zone lookup P2024: canary never logged; copy without a clock time, both channels delivered
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "inapp": "written",
+        "notificationId": "notif-1",
+    -   "push": "delivered",
+    +   "push": "failed",
+      }
+
+    [0m [90m 408 |[39m     })[33m;[39m
+     [90m 409 |[39m     [36mconst[39m outcome [33m=[39m [36mawait[39m emitter[33m.[39memitRequested(requested)[33m;[39m
+    [31m[1m>[22m[39m[90m 410 |[39m     expect(outcome)[33m.[39mtoEqual({ inapp[33m:[39m [32m'written'[39m[33m,[39m push[33m:[39m [32m'delivered'[39m[33m,[39m notificationId[33m:[39m [32m'notif-1'[39m })[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 411 |[39m     expect(fake[33m.[39mrows[[35m0[39m][33m.[39mbody)[33m.[39mnot[33m.[39mtoMatch([35m/AM|PM|\d:\d{2}/[39m)[33m;[39m
+     [90m 412 |[39m     [36mconst[39m text [33m=[39m loggedText()[33m;[39m
+     [90m 413 |[39m     [90m// recipient-timezone.ts logs the error class only.[39m[0m
+
+      at Object.<anonymous> (test/booking-emitter.spec.ts:410:21)
+
+  ● B-634-8: emitter logs never carry raw ORM diagnostics › an ORM error wrapped as a cause, and a non-ORM error, never log their message
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "push failed for user=coach-1: TypeError"
+    Received string:    "[[\"BookingEmitter booking_requested in-app write failed for user=coach-1: DatabaseRequestError: Database request failed (P2024)\"],[\"BookingEmitter booking_requested push not queued for user=coach-1\"]]"
+
+    [0m [90m 434 |[39m     expect(text)[33m.[39mtoContain([32m'Database request failed (P2024)'[39m)[33m;[39m
+     [90m 435 |[39m     [90m// B-634-10: ERR_X is not in the reviewed code catalog, so it is dropped.[39m
+    [31m[1m>[22m[39m[90m 436 |[39m     expect(text)[33m.[39mtoContain([32m'push failed for user=coach-1: TypeError'[39m)[33m;[39m
+     [90m     |[39m                  [31m[1m^[22m[39m
+     [90m 437 |[39m     expect(text)[33m.[39mnot[33m.[39mtoContain([32m'ERR_X'[39m)[33m;[39m
+     [90m 438 |[39m     expect(text)[33m.[39mnot[33m.[39mtoContain([33mCANARY[39m)[33m;[39m
+     [90m 439 |[39m   })[33m;[39m[0m
+
+      at Object.<anonymous> (test/booking-emitter.spec.ts:436:18)
+
+  ● B-634-10: emitter logs carry only closed-enum error classes and codes › in-app write: unknown name and code log as OtherError; push still delivered
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "inapp": "failed",
+        "notificationId": null,
+    -   "push": "delivered",
+    +   "push": "failed",
+      }
+
+    [0m [90m 480 |[39m     })[33m;[39m
+     [90m 481 |[39m     [36mconst[39m outcome [33m=[39m [36mawait[39m emitter[33m.[39memitRequested(requested)[33m;[39m
+    [31m[1m>[22m[39m[90m 482 |[39m     expect(outcome)[33m.[39mtoEqual({ inapp[33m:[39m [32m'failed'[39m[33m,[39m push[33m:[39m [32m'delivered'[39m[33m,[39m notificationId[33m:[39m [36mnull[39m })[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 483 |[39m     [36mconst[39m text [33m=[39m loggedText()[33m;[39m
+     [90m 484 |[39m     expect(text)[33m.[39mtoContain([32m'booking_requested in-app write failed for user=coach-1: OtherError'[39m)[33m;[39m
+     [90m 485 |[39m     expect(text)[33m.[39mnot[33m.[39mtoContain([33mNAME_CANARY[39m)[33m;[39m[0m
+
+      at Object.<anonymous> (test/booking-emitter.spec.ts:482:21)
+
+  ● B-634-10: emitter logs carry only closed-enum error classes and codes › push: a known class with an unknown code logs the class only
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /push failed for user=coach-1: TypeError"/
+    Received string:  "[[\"BookingEmitter booking_requested push not queued for user=coach-1\"]]"
+
+    [0m [90m 495 |[39m     expect(outcome)[33m.[39mtoEqual({ inapp[33m:[39m [32m'written'[39m[33m,[39m push[33m:[39m [32m'failed'[39m[33m,[39m notificationId[33m:[39m [32m'notif-1'[39m })[33m;[39m
+     [90m 496 |[39m     [36mconst[39m text [33m=[39m loggedText()[33m;[39m
+    [31m[1m>[22m[39m[90m 497 |[39m     expect(text)[33m.[39mtoMatch([35m/push failed for user=coach-1: TypeError"/[39m)[33m;[39m
+     [90m     |[39m                  [31m[1m^[22m[39m
+     [90m 498 |[39m     expect(text)[33m.[39mnot[33m.[39mtoContain([33mCODE_CANARY[39m)[33m;[39m
+     [90m 499 |[39m   })[33m;[39m
+     [90m 500 |[39m[0m
+
+      at Object.<anonymous> (test/booking-emitter.spec.ts:497:18)
+
+  ● B-634-10: emitter logs carry only closed-enum error classes and codes › zone lookup: a wrapped canary cause and a non-Error throw never surface
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "push failed for user=coach-1: OtherError"
+    Received string:    "[[\"time zone lookup failed for user=coach-1; writing copy without a clock time: Error\"],[\"BookingEmitter booking_requested push not queued for user=coach-1\"]]"
+
+    [0m [90m 513 |[39m       [32m'time zone lookup failed for user=coach-1; writing copy without a clock time: Error'[39m[33m,[39m
+     [90m 514 |[39m     )[33m;[39m
+    [31m[1m>[22m[39m[90m 515 |[39m     expect(text)[33m.[39mtoContain([32m'push failed for user=coach-1: OtherError'[39m)[33m;[39m
+     [90m     |[39m                  [31m[1m^[22m[39m
+     [90m 516 |[39m     expect(text)[33m.[39mnot[33m.[39mtoContain([33mNAME_CANARY[39m)[33m;[39m
+     [90m 517 |[39m     expect(text)[33m.[39mnot[33m.[39mtoContain([33mCODE_CANARY[39m)[33m;[39m
+     [90m 518 |[39m   })[33m;[39m[0m
+
+      at Object.<anonymous> (test/booking-emitter.spec.ts:515:18)
+
+  ● B-634-10: emitter logs carry only closed-enum error classes and codes › a catalogued transport code on a cause is kept for operators
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "push failed for user=coach-1: TypeError (ECONNRESET)"
+    Received string:    "[[\"BookingEmitter booking_requested push not queued for user=coach-1\"]]"
+
+    [0m [90m 526 |[39m     })[33m;[39m
+     [90m 527 |[39m     [36mawait[39m emitter[33m.[39memitRequested(requested)[33m;[39m
+    [31m[1m>[22m[39m[90m 528 |[39m     expect(loggedText())[33m.[39mtoContain([32m'push failed for user=coach-1: TypeError (ECONNRESET)'[39m)[33m;[39m
+     [90m     |[39m                          [31m[1m^[22m[39m
+     [90m 529 |[39m   })[33m;[39m
+     [90m 530 |[39m })[33m;[39m
+     [90m 531 |[39m[0m
+
+      at Object.<anonymous> (test/booking-emitter.spec.ts:528:26)
+
+  ● BookingEmitter zone provenance (main merge) › no usable zone: every body drops the clock time and never shows UTC
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 7
+    + Received  + 1
+
+    - Array [
+    -   "Your session is confirmed. Open the app to see the details.",
+    -   "A session was cancelled. Open the app to see the details.",
+    -   "A session has a new time. Open the app to see it.",
+    -   "You have a session in about 24 hours. Open the app to see the details.",
+    -   "Your session starts in about an hour. Open the app to see the details.",
+    - ]
+    + Array []
+
+    [0m [90m 605 |[39m     [36mfor[39m ([36mconst[39m b [36mof[39m bodies) expect(b)[33m.[39mnot[33m.[39mtoMatch([35m/UTC|AM|PM|\d:\d{2}/[39m)[33m;[39m
+     [90m 606 |[39m     [90m// B-714-1: lock-screen lines, no name and no clock time without a zone.[39m
+    [31m[1m>[22m[39m[90m 607 |[39m     expect(fake[33m.[39mpushes[33m.[39mmap((p) [33m=>[39m p[33m.[39mbody))[33m.[39mtoEqual([
+     [90m     |[39m                                            [31m[1m^[22m[39m
+     [90m 608 |[39m       [32m'Your session is confirmed. Open the app to see the details.'[39m[33m,[39m
+     [90m 609 |[39m       [32m'A session was cancelled. Open the app to see the details.'[39m[33m,[39m
+     [90m 610 |[39m       [32m'A session has a new time. Open the app to see it.'[39m[33m,[39m[0m
+
+      at Object.<anonymous> (test/booking-emitter.spec.ts:607:44)
+
+PASS test/push-delivery-send-time.spec.ts (226 MB heap size)
+[31m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [31m  ERROR[39m [38;5;3m[SessionReminderJob] [39m[31mreminder claim failed: session=sess-dberr user=client-1 kind=booking_reminder_1h err=Error[39m
+[31m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [31m  ERROR[39m [38;5;3m[SessionReminderJob] [39m[31mreminder claim failed: session=sess-dberr user=coach-1 kind=booking_reminder_1h err=Error[39m
+[31m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [31m  ERROR[39m [38;5;3m[SessionReminderJob] [39m[31mreminder delivery failed: session=sess-fence user=coach-1 kind=booking_reminder_1h err=Error[39m
+PASS test/booking-reminder.job.spec.ts (252 MB heap size)
+[32m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=2 skipped=0 retrying=0 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=2 skipped=0 retrying=0 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=2 retrying=0 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=1 skipped=0 retrying=0 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=0 dispatched=2 skipped=0 retrying=0 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=0 dispatched=1 skipped=1 retrying=0 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[95m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [95m  DEBUG[39m [38;5;3m[SessionReminderJob] [39m[95m1h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable[39m
+[95m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [95m  DEBUG[39m [38;5;3m[SessionReminderJob] [39m[95m24h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable[39m
+[95m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [95m  DEBUG[39m [38;5;3m[SessionReminderJob] [39m[95m1h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable[39m
+[95m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [95m  DEBUG[39m [38;5;3m[SessionReminderJob] [39m[95m24h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable[39m
+[95m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [95m  DEBUG[39m [38;5;3m[SessionReminderJob] [39m[95m1h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable[39m
+[95m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [95m  DEBUG[39m [38;5;3m[SessionReminderJob] [39m[95m24h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable[39m
+[95m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [95m  DEBUG[39m [38;5;3m[SessionReminderJob] [39m[95m1h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable[39m
+[95m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [95m  DEBUG[39m [38;5;3m[SessionReminderJob] [39m[95m24h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable[39m
+[95m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [95m  DEBUG[39m [38;5;3m[SessionReminderJob] [39m[95m1h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable[39m
+[95m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [95m  DEBUG[39m [38;5;3m[SessionReminderJob] [39m[95m24h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable[39m
+[95m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [95m  DEBUG[39m [38;5;3m[SessionReminderJob] [39m[95m1h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable[39m
+[95m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [95m  DEBUG[39m [38;5;3m[SessionReminderJob] [39m[95m24h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable[39m
+[95m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [95m  DEBUG[39m [38;5;3m[SessionReminderJob] [39m[95m1h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable[39m
+[95m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [95m  DEBUG[39m [38;5;3m[SessionReminderJob] [39m[95m24h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable[39m
+[32m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=2 skipped=0 retrying=0 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=0 dispatched=2 skipped=0 retrying=0 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=2 retrying=0 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/06/2026, 12:00:19 AM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=0 dispatched=2 skipped=0 retrying=0 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=0 dispatched=2 skipped=0 retrying=0 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=0 dispatched=2 skipped=0 retrying=0 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=2 retrying=0 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=2 retrying=0 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=0 failed=2 retired=0 parked=0 recovery_failed=0[39m
+[32m[Nest] 17209  - [39m10/05/2026, 9:00:19 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=1 skipped=0 retrying=0 failed=1 retired=0 parked=0 recovery_failed=0[39m
+[31m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [31m  ERROR[39m [38;5;3m[SchedulingSessionLifecycleService] [39m[31mprovider provisioning failed for session=sess-6: TypeError[39m
+[31m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [31m  ERROR[39m [38;5;3m[SchedulingSessionLifecycleService] [39m[31mprovider provisioning failed for session=sess-7: TypeError[39m
+[31m[Nest] 17209  - [39m10/06/2026, 3:59:00 PM [31m  ERROR[39m [38;5;3m[SchedulingSessionLifecycleService] [39m[31mprovider provisioning failed for session=sess-6: TypeError[39m
+[31m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [31m  ERROR[39m [38;5;3m[SchedulingSessionLifecycleService] [39m[31mprovider provisioning failed for session=sess-6: TypeError[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_needed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-2[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_needed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/06/2026, 3:59:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/06/2026, 3:59:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_needed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/06/2026, 4:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 8:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_rescheduled push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/06/2026, 4:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_request_expired push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/06/2026, 4:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_request_expired push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/06/2026, 4:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/06/2026, 4:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_request_expired push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/06/2026, 4:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_request_expired push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_needed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/06/2026, 4:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_request_expired push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/06/2026, 4:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_request_expired push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/06/2026, 4:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_request_expired push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/06/2026, 4:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_request_expired push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/06/2026, 4:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_request_expired push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/06/2026, 4:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_request_expired push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/06/2026, 4:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_request_expired push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/06/2026, 4:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_request_expired push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/06/2026, 4:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_request_expired push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/06/2026, 4:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_request_expired push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/06/2026, 4:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_request_expired push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/06/2026, 4:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_request_expired push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m10/06/2026, 4:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_request_expired push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/06/2026, 4:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_request_expired push not queued for user=coach-1[39m
+FAIL test/scheduling-request-expiry.spec.ts (291 MB heap size)
+  ● S-SCHED-5 expiry sweep › closes the lapsed request, frees the slot and sends one calm notice to each side
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "expired": 1,
+        "failed": 0,
+        "lease": "acquired",
+    -   "notified": 2,
+    +   "notified": 0,
+      }
+
+    [0m [90m 267 |[39m     jest[33m.[39msetSystemTime([33mTUE_DEADLINE[39m)[33m;[39m
+     [90m 268 |[39m     [36mconst[39m res [33m=[39m [36mawait[39m job[33m.[39msweep([36mnew[39m [33mDate[39m())[33m;[39m
+    [31m[1m>[22m[39m[90m 269 |[39m     expect(res)[33m.[39mtoMatchObject({ lease[33m:[39m [32m'acquired'[39m[33m,[39m expired[33m:[39m [35m1[39m[33m,[39m notified[33m:[39m [35m2[39m[33m,[39m failed[33m:[39m [35m0[39m })[33m;[39m
+     [90m     |[39m                 [31m[1m^[22m[39m
+     [90m 270 |[39m     expect(db[33m.[39msessions[33m.[39mfind((s) [33m=>[39m s[33m.[39mid [33m===[39m r[33m.[39mid))[33m.[39mtoMatchObject({
+     [90m 271 |[39m       status[33m:[39m [32m'expired'[39m[33m,[39m
+     [90m 272 |[39m       end_reason[33m:[39m [32m'request_expired'[39m[33m,[39m[0m
+
+      at Object.<anonymous> (test/scheduling-request-expiry.spec.ts:269:17)
+
+  ● S-SCHED-5 expiry sweep › announces a request the booking transaction closed
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "expired": 0,
+    -   "notified": 2,
+    +   "notified": 0,
+      }
+
+    [0m [90m 311 |[39m     [36mawait[39m svc[33m.[39mrequestSession([33mCLIENT_2[39m[33m,[39m req([33mCLIENT_2[39m[33m,[39m [32m'st-q'[39m))[33m;[39m
+     [90m 312 |[39m     [36mconst[39m res [33m=[39m [36mawait[39m job[33m.[39msweep([36mnew[39m [33mDate[39m())[33m;[39m
+    [31m[1m>[22m[39m[90m 313 |[39m     expect(res)[33m.[39mtoMatchObject({ expired[33m:[39m [35m0[39m[33m,[39m notified[33m:[39m [35m2[39m })[33m;[39m
+     [90m     |[39m                 [31m[1m^[22m[39m
+     [90m 314 |[39m     expect(notifications[33m.[39mexpiredFor([32m'client-1'[39m))[33m.[39mtoHaveLength([35m1[39m)[33m;[39m
+     [90m 315 |[39m   })[33m;[39m
+     [90m 316 |[39m[0m
+
+      at Object.<anonymous> (test/scheduling-request-expiry.spec.ts:313:17)
+
+  ● S-SCHED-5 expiry sweep › a failed push is retried on the next tick for that channel only, then settles
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+    -   "notified": 2,
+    +   "notified": 0,
+        "recovered": 2,
+      }
+
+    [0m [90m 385 |[39m     notifications[33m.[39mpushResult [33m=[39m { delivered[33m:[39m [36mtrue[39m[33m,[39m code[33m:[39m [32m'delivered'[39m }[33m;[39m
+     [90m 386 |[39m     [36mconst[39m second [33m=[39m [36mawait[39m job[33m.[39msweep([36mnew[39m [33mDate[39m([33mTUE_DEADLINE[39m[33m.[39mgetTime() [33m+[39m [35m5[39m [33m*[39m [35m60[39m_000))[33m;[39m
+    [31m[1m>[22m[39m[90m 387 |[39m     expect(second)[33m.[39mtoMatchObject({ recovered[33m:[39m [35m2[39m[33m,[39m notified[33m:[39m [35m2[39m })[33m;[39m
+     [90m     |[39m                    [31m[1m^[22m[39m
+     [90m 388 |[39m     expect(notifications[33m.[39mrows)[33m.[39mtoHaveLength(inAppAfterFirst)[33m;[39m [90m// no duplicate in-app row[39m
+     [90m 389 |[39m     expect(
+     [90m 390 |[39m       db[33m.[39mdeliveryLogs[0m
+
+      at Object.<anonymous> (test/scheduling-request-expiry.spec.ts:387:20)
+
+  ● S-SCHED-5 expiry sweep › gives up after three attempts with a safe reason
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 6
+    Received length: 0
+    Received array:  []
+
+    [0m [90m 403 |[39m     expect(logs[33m.[39mmap((l) [33m=>[39m l[33m.[39mstatus))[33m.[39mtoEqual([[32m'gave_up'[39m[33m,[39m [32m'gave_up'[39m])[33m;[39m
+     [90m 404 |[39m     expect(logs[33m.[39mevery((l) [33m=>[39m (l[33m.[39mattempts [36mas[39m number) [33m===[39m [35m3[39m))[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 405 |[39m     expect(notifications[33m.[39mpushes[33m.[39mfilter((p) [33m=>[39m p[33m.[39mtitle [33m===[39m [32m'Session request closed'[39m))[33m.[39mtoHaveLength(
+     [90m     |[39m                                                                                      [31m[1m^[22m[39m
+     [90m 406 |[39m       [35m6[39m[33m,[39m
+     [90m 407 |[39m     )[33m;[39m
+     [90m 408 |[39m   })[33m;[39m[0m
+
+      at Object.<anonymous> (test/scheduling-request-expiry.spec.ts:405:86)
+
+PASS test/push-delivery-round5.spec.ts (315 MB heap size)
+PASS test/notification-emitters.spec.ts (154 MB heap size)
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:21 PM [33m   WARN[39m [38;5;3m[MilestoneReachedEmitter] [39m[33mMilestoneReachedEmitter failed for user=user-1: DB down[39m
+[31m[Nest] 17209  - [39m06/02/2026, 12:40:00 AM [31m  ERROR[39m [38;5;3m[SessionReminderJob] [39m[31mreminder gave up after 3 attempts: claim=log-1 channels=push[39m
+[31m[Nest] 17209  - [39m06/02/2026, 12:40:00 AM [31m  ERROR[39m [38;5;3m[SessionReminderJob] [39m[31mreminder gave up after 3 attempts: claim=log-2 channels=push[39m
+PASS test/booking-reminder-local-time.spec.ts (175 MB heap size)
+[33m[Nest] 17209  - [39m06/02/2026, 12:30:00 AM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m06/02/2026, 12:30:00 AM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m06/02/2026, 12:30:00 AM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m06/02/2026, 11:30:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m06/02/2026, 11:30:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m06/02/2026, 11:30:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m06/02/2026, 12:30:00 AM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m06/02/2026, 12:30:00 AM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m06/02/2026, 12:30:00 AM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m06/02/2026, 12:30:00 AM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m06/02/2026, 12:30:00 AM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m06/02/2026, 12:30:00 AM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m06/02/2026, 12:40:00 AM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m06/02/2026, 12:40:00 AM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m06/02/2026, 12:40:00 AM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=client-1[39m
+[32m[Nest] 17209  - [39m06/02/2026, 12:40:00 AM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m06/02/2026, 12:40:00 AM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m06/02/2026, 12:40:00 AM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m06/02/2026, 12:40:00 AM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m06/02/2026, 12:40:00 AM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m06/02/2026, 12:40:00 AM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=0 failed=2 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m06/02/2026, 12:30:00 AM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m06/02/2026, 12:30:00 AM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m06/02/2026, 12:30:00 AM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m06/02/2026, 12:30:00 AM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m06/02/2026, 12:30:00 AM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m06/02/2026, 12:30:00 AM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m06/02/2026, 12:30:00 AM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m06/02/2026, 12:30:00 AM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m06/02/2026, 12:30:00 AM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+PASS test/scheduling.service.spec.ts (207 MB heap size)
+[33m[Nest] 17209  - [39m05/31/2026, 12:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m05/31/2026, 12:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m05/31/2026, 12:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m05/31/2026, 12:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_needed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m05/31/2026, 12:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m05/31/2026, 12:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m05/31/2026, 12:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m05/31/2026, 12:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_needed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m05/31/2026, 12:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m05/31/2026, 12:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m05/31/2026, 12:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_needed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m05/31/2026, 12:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m05/31/2026, 12:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_rescheduled push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m05/31/2026, 12:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m05/31/2026, 12:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m05/31/2026, 12:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_needed push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m05/31/2026, 12:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_ready push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m05/31/2026, 12:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m05/31/2026, 12:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach-1[39m
+[33m[Nest] 17209  - [39m05/31/2026, 12:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m05/31/2026, 12:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_needed push not queued for user=coach-1[39m
+[31m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [31m  ERROR[39m [38;5;3m[SessionReminderJob] [39m[31mreminder gave up after 3 attempts: claim=log-10 channels=push[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=1 retrying=1 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=1 failed=1 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[95m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [95m  DEBUG[39m [38;5;3m[SessionReminderJob] [39m[95m1h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable[39m
+[95m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [95m  DEBUG[39m [38;5;3m[SessionReminderJob] [39m[95m24h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable[39m
+[95m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [95m  DEBUG[39m [38;5;3m[SessionReminderJob] [39m[95m1h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable[39m
+[95m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [95m  DEBUG[39m [38;5;3m[SessionReminderJob] [39m[95m24h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable[39m
+[95m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [95m  DEBUG[39m [38;5;3m[SessionReminderJob] [39m[95m1h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable[39m
+[95m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [95m  DEBUG[39m [38;5;3m[SessionReminderJob] [39m[95m24h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable[39m
+[95m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [95m  DEBUG[39m [38;5;3m[SessionReminderJob] [39m[95m1h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable[39m
+[95m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [95m  DEBUG[39m [38;5;3m[SessionReminderJob] [39m[95m24h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable[39m
+[95m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [95m  DEBUG[39m [38;5;3m[SessionReminderJob] [39m[95m1h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable[39m
+[95m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [95m  DEBUG[39m [38;5;3m[SessionReminderJob] [39m[95m24h reminder cron skipped — set BOOKING_REMINDERS_ENABLED=on to enable[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_1h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=client-1[39m
+[33m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=coach-1[39m
+[32m[Nest] 17209  - [39m10/05/2026, 3:00:00 PM [32m    LOG[39m [38;5;3m[SessionReminderJob] [39m[32mreminder sweep kind=booking_reminder_24h scanned=1 recovered=0 caught_up=0 dispatched=0 skipped=0 retrying=2 failed=0 retired=0 parked=0 recovery_failed=0[39m
+FAIL test/scheduling-reminder-delivery.spec.ts (232 MB heap size)
+  ● 24h reminder › session starting in 1425 minutes -> 2 deliveries
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 2
+    Received length: 0
+    Received array:  []
+
+    [0m [90m 142 |[39m     addSession(db[33m,[39m [32m's1'[39m[33m,[39m minutes)[33m;[39m
+     [90m 143 |[39m     [36mawait[39m sweep24h(job)[33m;[39m
+    [31m[1m>[22m[39m[90m 144 |[39m     expect(fake[33m.[39mpushes)[33m.[39mtoHaveLength(expected)[33m;[39m
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 145 |[39m   })[33m;[39m
+     [90m 146 |[39m
+     [90m 147 |[39m   it([32m'pushes both sides with their own wording and tap target'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at test/scheduling-reminder-delivery.spec.ts:144:25
+
+  ● 24h reminder › session starting in 1440 minutes -> 2 deliveries
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 2
+    Received length: 0
+    Received array:  []
+
+    [0m [90m 142 |[39m     addSession(db[33m,[39m [32m's1'[39m[33m,[39m minutes)[33m;[39m
+     [90m 143 |[39m     [36mawait[39m sweep24h(job)[33m;[39m
+    [31m[1m>[22m[39m[90m 144 |[39m     expect(fake[33m.[39mpushes)[33m.[39mtoHaveLength(expected)[33m;[39m
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 145 |[39m   })[33m;[39m
+     [90m 146 |[39m
+     [90m 147 |[39m   it([32m'pushes both sides with their own wording and tap target'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at test/scheduling-reminder-delivery.spec.ts:144:25
+
+  ● 24h reminder › session starting in 1455 minutes -> 2 deliveries
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 2
+    Received length: 0
+    Received array:  []
+
+    [0m [90m 142 |[39m     addSession(db[33m,[39m [32m's1'[39m[33m,[39m minutes)[33m;[39m
+     [90m 143 |[39m     [36mawait[39m sweep24h(job)[33m;[39m
+    [31m[1m>[22m[39m[90m 144 |[39m     expect(fake[33m.[39mpushes)[33m.[39mtoHaveLength(expected)[33m;[39m
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 145 |[39m   })[33m;[39m
+     [90m 146 |[39m
+     [90m 147 |[39m   it([32m'pushes both sides with their own wording and tap target'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at test/scheduling-reminder-delivery.spec.ts:144:25
+
+  ● 24h reminder › pushes both sides with their own wording and tap target
+
+    expect(received).toMatchObject(expected)
+
+    Matcher error: received value must be a non-null object
+
+    Received has value: undefined
+
+    [0m [90m 151 |[39m     [36mconst[39m byUser [33m=[39m [33mObject[39m[33m.[39mfromEntries(fake[33m.[39mpushes[33m.[39mmap((p) [33m=>[39m [p[33m.[39muserId[33m,[39m p]))[33m;[39m
+     [90m 152 |[39m     [90m// B-714-1: the lock screen keeps the time and drops the name and type.[39m
+    [31m[1m>[22m[39m[90m 153 |[39m     expect(byUser[[32m'client-1'[39m])[33m.[39mtoMatchObject({
+     [90m     |[39m                                [31m[1m^[22m[39m
+     [90m 154 |[39m       title[33m:[39m [32m'Session reminder'[39m[33m,[39m
+     [90m 155 |[39m       body[33m:[39m [32m'Your session is on Tue, Oct 6, 8:00 AM PDT.'[39m[33m,[39m
+     [90m 156 |[39m       data[33m:[39m {[0m
+
+      at Object.<anonymous> (test/scheduling-reminder-delivery.spec.ts:153:32)
+
+  ● 1h reminder › session starting in 55 minutes -> 2 deliveries
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 2
+    Received length: 0
+    Received array:  []
+
+    [0m [90m 190 |[39m     addSession(db[33m,[39m [32m's1'[39m[33m,[39m minutes)[33m;[39m
+     [90m 191 |[39m     [36mawait[39m sweep1h(job)[33m;[39m
+    [31m[1m>[22m[39m[90m 192 |[39m     expect(fake[33m.[39mpushes)[33m.[39mtoHaveLength(expected)[33m;[39m
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 193 |[39m     [36mif[39m (expected [33m>[39m [35m0[39m) expect(fake[33m.[39mpushes[[35m0[39m][33m.[39mtitle)[33m.[39mtoBe([32m'Session starting soon'[39m)[33m;[39m
+     [90m 194 |[39m   })[33m;[39m
+     [90m 195 |[39m[0m
+
+      at test/scheduling-reminder-delivery.spec.ts:192:25
+
+  ● 1h reminder › session starting in 60 minutes -> 2 deliveries
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 2
+    Received length: 0
+    Received array:  []
+
+    [0m [90m 190 |[39m     addSession(db[33m,[39m [32m's1'[39m[33m,[39m minutes)[33m;[39m
+     [90m 191 |[39m     [36mawait[39m sweep1h(job)[33m;[39m
+    [31m[1m>[22m[39m[90m 192 |[39m     expect(fake[33m.[39mpushes)[33m.[39mtoHaveLength(expected)[33m;[39m
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 193 |[39m     [36mif[39m (expected [33m>[39m [35m0[39m) expect(fake[33m.[39mpushes[[35m0[39m][33m.[39mtitle)[33m.[39mtoBe([32m'Session starting soon'[39m)[33m;[39m
+     [90m 194 |[39m   })[33m;[39m
+     [90m 195 |[39m[0m
+
+      at test/scheduling-reminder-delivery.spec.ts:192:25
+
+  ● 1h reminder › session starting in 65 minutes -> 2 deliveries
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 2
+    Received length: 0
+    Received array:  []
+
+    [0m [90m 190 |[39m     addSession(db[33m,[39m [32m's1'[39m[33m,[39m minutes)[33m;[39m
+     [90m 191 |[39m     [36mawait[39m sweep1h(job)[33m;[39m
+    [31m[1m>[22m[39m[90m 192 |[39m     expect(fake[33m.[39mpushes)[33m.[39mtoHaveLength(expected)[33m;[39m
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 193 |[39m     [36mif[39m (expected [33m>[39m [35m0[39m) expect(fake[33m.[39mpushes[[35m0[39m][33m.[39mtitle)[33m.[39mtoBe([32m'Session starting soon'[39m)[33m;[39m
+     [90m 194 |[39m   })[33m;[39m
+     [90m 195 |[39m[0m
+
+      at test/scheduling-reminder-delivery.spec.ts:192:25
+
+  ● 1h reminder › only confirmed sessions are reminded
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 2
+    Received length: 0
+    Received array:  []
+
+    [0m [90m 207 |[39m     addSession(db[33m,[39m [32m'ok'[39m[33m,[39m [35m60[39m[33m,[39m [32m'pending_provider'[39m)[33m;[39m
+     [90m 208 |[39m     [36mawait[39m sweep1h(job)[33m;[39m
+    [31m[1m>[22m[39m[90m 209 |[39m     expect(fake[33m.[39mpushes)[33m.[39mtoHaveLength([35m2[39m)[33m;[39m
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 210 |[39m     expect(fake[33m.[39mpushes[33m.[39mmap((p) [33m=>[39m p[33m.[39mdata[33m.[39mactionParams))[33m.[39mtoEqual([
+     [90m 211 |[39m       { sessionId[33m:[39m [32m'ok'[39m }[33m,[39m
+     [90m 212 |[39m       { sessionId[33m:[39m [32m'ok'[39m }[33m,[39m[0m
+
+      at Object.<anonymous> (test/scheduling-reminder-delivery.spec.ts:209:25)
+
+  ● 1h reminder › is idempotent across sweeps and replicas
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 2
+    Received length: 0
+    Received array:  []
+
+    [0m [90m 219 |[39m     [36mawait[39m [33mPromise[39m[33m.[39mall([sweep1h(job)[33m,[39m sweep1h(job)])[33m;[39m
+     [90m 220 |[39m     [36mawait[39m sweep1h(job)[33m;[39m
+    [31m[1m>[22m[39m[90m 221 |[39m     expect(fake[33m.[39mpushes)[33m.[39mtoHaveLength([35m2[39m)[33m;[39m
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 222 |[39m     expect(db[33m.[39mdeliveryLogs)[33m.[39mtoHaveLength([35m2[39m)[33m;[39m
+     [90m 223 |[39m   })[33m;[39m
+     [90m 224 |[39m })[33m;[39m[0m
+
+      at Object.<anonymous> (test/scheduling-reminder-delivery.spec.ts:221:25)
+
+  ● re-arming after a move › a reminder already sent for the old time is sent again for the new time
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 2
+    Received length: 0
+    Received array:  []
+
+    [0m [90m 229 |[39m     addSession(db[33m,[39m [32m's1'[39m[33m,[39m [35m24[39m [33m*[39m [35m60[39m)[33m;[39m
+     [90m 230 |[39m     [36mawait[39m sweep24h(job)[33m;[39m
+    [31m[1m>[22m[39m[90m 231 |[39m     expect(fake[33m.[39mpushes)[33m.[39mtoHaveLength([35m2[39m)[33m;[39m
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 232 |[39m     [36mconst[39m start [33m=[39m [36mnew[39m [33mDate[39m([33mNOW[39m[33m.[39mgetTime() [33m+[39m ([35m24[39m [33m*[39m [35m60[39m [33m+[39m [35m10[39m) [33m*[39m [33mMIN[39m)[33m;[39m
+     [90m 233 |[39m     [36mawait[39m svc[33m.[39mrescheduleSession([33mCOACH[39m[33m,[39m [32m's1'[39m[33m,[39m {
+     [90m 234 |[39m       start_at[33m:[39m start[33m.[39mtoISOString()[33m,[39m[0m
+
+      at Object.<anonymous> (test/scheduling-reminder-delivery.spec.ts:231:25)
+
+  ● explicit launch switch BOOKING_REMINDERS_ENABLED › on: both sweeps push
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 4
+    Received length: 0
+    Received array:  []
+
+    [0m [90m 260 |[39m     [36mawait[39m job[33m.[39mrunOneHourReminderSweep()[33m;[39m
+     [90m 261 |[39m     [36mawait[39m job[33m.[39mrunTwentyFourHourReminderSweep()[33m;[39m
+    [31m[1m>[22m[39m[90m 262 |[39m     expect(fake[33m.[39mpushes)[33m.[39mtoHaveLength([35m4[39m)[33m;[39m
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 263 |[39m   })[33m;[39m
+     [90m 264 |[39m })[33m;[39m
+     [90m 265 |[39m[0m
+
+      at Object.<anonymous> (test/scheduling-reminder-delivery.spec.ts:262:25)
+
+FAIL test/booking-lock-screen-push.spec.ts (261 MB heap size)
+  ● B-714-1 / B-653-1 booking pushes keep names and coach text off the lock screen › every emitter pushes only its fixed per-kind line; reminders keep only the time
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 14
+    Received length: 0
+    Received array:  []
+
+    [0m [90m 177 |[39m     [36mconst[39m { emitter[33m,[39m rows[33m,[39m pushes } [33m=[39m build()[33m;[39m
+     [90m 178 |[39m     [36mawait[39m emitAll(emitter)[33m;[39m
+    [31m[1m>[22m[39m[90m 179 |[39m     expect(pushes)[33m.[39mtoHaveLength([35m14[39m)[33m;[39m
+     [90m     |[39m                    [31m[1m^[22m[39m
+     [90m 180 |[39m     [36mfor[39m ([36mconst[39m p [36mof[39m pushes) {
+     [90m 181 |[39m       [36mfor[39m ([36mconst[39m c [36mof[39m [33mCANARIES[39m) expect([32m`${p.title} ${p.body}`[39m)[33m.[39mnot[33m.[39mtoContain(c)[33m;[39m
+     [90m 182 |[39m       expect([32m`${p.title} ${p.body}`[39m)[33m.[39mnot[33m.[39mtoMatch([35m/!|\b(I|me|my|we|our)\b/[39m)[33m;[39m[0m
+
+      at Object.<anonymous> (test/booking-lock-screen-push.spec.ts:179:20)
+
+  ● B-714-1 / B-653-1 booking pushes keep names and coach text off the lock screen › with no usable zone a reminder push has no clock time and still no name
+
+    TypeError: Cannot read properties of undefined (reading 'booking_reminder_24h')
+
+    [0m [90m 171 |[39m
+     [90m 172 |[39m [36mconst[39m [33mK[39m [33m=[39m [33mNotificationKind[39m[33m;[39m
+    [31m[1m>[22m[39m[90m 173 |[39m [36mconst[39m fixed [33m=[39m (kind[33m:[39m string) [33m=>[39m [33mBOOKING_LOCK_SCREEN[39m[kind][33m;[39m
+     [90m     |[39m                                                    [31m[1m^[22m[39m
+     [90m 174 |[39m
+     [90m 175 |[39m describe([32m'B-714-1 / B-653-1 booking pushes keep names and coach text off the lock screen'[39m[33m,[39m () [33m=>[39m {
+     [90m 176 |[39m   it([32m'every emitter pushes only its fixed per-kind line; reminders keep only the time'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at fixed (test/booking-lock-screen-push.spec.ts:173:52)
+      at Object.<anonymous> (test/booking-lock-screen-push.spec.ts:223:42)
+
+  ● B-714-1 / B-653-1 booking pushes keep names and coach text off the lock screen › only the kind and a reminder instant are read: names, notes and bad zones never reach the copy
+
+    TypeError: (0 , booking_emitter_1.bookingLockScreenCopy) is not a function
+
+    [0m [90m 235 |[39m       notes[33m:[39m [33mNOTE[39m[33m,[39m
+     [90m 236 |[39m     }[33m;[39m
+    [31m[1m>[22m[39m[90m 237 |[39m     expect(bookingLockScreenCopy([33mK[39m[33m.[39m[33mBOOKING_REMINDER_24H[39m[33m,[39m ctx))[33m.[39mtoEqual(
+     [90m     |[39m                                 [31m[1m^[22m[39m
+     [90m 238 |[39m       fixed([33mK[39m[33m.[39m[33mBOOKING_REMINDER_24H[39m)[33m,[39m
+     [90m 239 |[39m     )[33m;[39m
+     [90m 240 |[39m     expect(bookingLockScreenCopy([33mK[39m[33m.[39m[33mBOOKING_CANCELLED[39m[33m,[39m ctx))[33m.[39mtoEqual(fixed([33mK[39m[33m.[39m[33mBOOKING_CANCELLED[39m))[33m;[39m[0m
+
+      at Object.<anonymous> (test/booking-lock-screen-push.spec.ts:237:33)
+
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=coach[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_declined push not queued for user=client[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_cancelled push not queued for user=client[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_rescheduled push not queued for user=coach[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_rescheduled push not queued for user=coach[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=client[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_needed push not queued for user=coach[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_ready push not queued for user=client[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_request_expired push not queued for user=client[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_request_expired push not queued for user=coach[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_requested push not queued for user=coach[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=coach[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_confirmed push not queued for user=client[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_declined push not queued for user=client[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_cancelled push not queued for user=client[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_rescheduled push not queued for user=coach[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_rescheduled push not queued for user=coach[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_24h push not queued for user=client[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_reminder_1h push not queued for user=coach[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_needed push not queued for user=coach[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_link_ready push not queued for user=client[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_request_expired push not queued for user=client[39m
+[33m[Nest] 17209  - [39m10/05/2026, 9:00:22 PM [33m   WARN[39m [38;5;3m[BookingEmitter] [39m[33mBookingEmitter booking_request_expired push not queued for user=coach[39m
+PASS test/push-lock-screen-copy.spec.ts (257 MB heap size)
+
+Test Suites: 5 failed, 8 passed, 13 total
+Tests:       52 failed, 253 passed, 305 total
+Snapshots:   0 total
+Time:        8.918 s
+Ran all test suites matching test/booking-emitter.spec.ts|test/booking-lock-screen-push.spec.ts|test/booking-reminder-local-time.spec.ts|test/booking-reminder.job.spec.ts|test/push-delivery-round5.spec.ts|test/push-delivery-send-time.spec.ts|test/push-delivery.service.spec.ts|test/scheduling-lifecycle-integrity.spec.ts|test/scheduling-reminder-delivery.spec.ts|test/scheduling-request-expiry.spec.ts|test/scheduling.service.spec.ts|test/push-lock-screen-copy.spec.ts|test/notification-emitters.spec.ts.

@@ -253,3 +253,54 @@ a false claim or a core-flow dead end; everything else is "C (edge, deferred to 
 one, A5 rule 11) and each piece as safe alone. Some required checks may still be queued or re-running because of GitHub's runner
 incident: say which, and do not block for queued checks (the operator merges only once they are green). One verdict per PR at the exact
 head. Budget: finish within 45 minutes; read-only, one CI lane at most, single-spec heavy.sh fallback after 20 minutes queued.
+
+### AUD-OPUS-D5-121 / AUD-SOL-D5-121 — delta verdicts: messaging fix round 3 (b#709-#711) + scheduling #653 fix round 1 (T4 delta, changed lines only)
+Messaging: Sol RC #709 (6002806005) and #710 (6002806399); Opus APPROVE all four (6002845912-6002846955). Fix round 3 by B-MSG-FIN-121:
+#709 d9cf7ad9 -> 8d3cf36c20bb5cb2b8619b1c0fc5d74ba98de6ee (B-709-1 empty refresh ping; B-710-1 block check on edit/pin; B-710-2 blocked
+senders out of previews/unread), #710 3572b209 -> 654b048a911d952ec2467e2adda893923783ef6f (restack), #711 db7fa3bf ->
+3d0a615e2611cde6f502d65c8e6ef10c76df92ed (restack + README). #708 07d16d82 unchanged (dual APPROVE). Comments 6003156563 / 6003156955 /
+6003157149; report ops/reports/B-MSG-FIN-121.md; Sol probes ops/aud-121/AUD-SOL-MSG3-121/. Check: the three Bs are fixed, the restack
+merges only add the fix (resolve the one test-file conflict per PR by both sides), nothing else moved. Mobile follow-up (app drops
+id-free pings) is out of scope: flag FEATURE_MESSAGING_CORE_V2 stays off.
+Scheduling: #653 9a23e3b2 -> c48adb9f8239d3de00a5a56de6ff1e6a19c8b921 (FIX ROUND 1 by B-SCHED2-121, comment on #653 20:54Z; report
+ops/reports/B-SCHED2-121.md). Bs to check: B-653-1 and B-714-1 (no client name / coach-written session-type name on lock screens: generic
+per-type copy; operator ruling: B-714-1 fixed in #653 because the train lands as one), Sol's #653 Bs per the report (fixed or listed as edge
+C under the freeze). Routing through the push sender is a follow-up PR after both trains land (booking pushes behind BOOKING_REMINDERS,
+off): not a B here. #712-#720 are unchanged (dual APPROVE except #714, whose B is fixed in #653).
+Rules: freeze (_COMMON_121 item 13) in full; read only the delta (git diff old..new, and for restacks a merge-tree recompute); one verdict
+per PR at the exact head (#709, #710, #711, #653; on #714 post a one-line "B-714-1 verified fixed in #653 @ c48adb9f" note); do not
+block for queued CI (operator merges only on green). Budget: 30 minutes, read-only, no CI lane (incident), heavy.sh one spec at most.
+
+### AUD-OPUS-D6-121 / AUD-SOL-D6-121 — two tiny deltas (owner RUTHLESS SCOPE, _COMMON_121 item 14; time box 15 minutes)
+1. b#653 c48adb9f8239d3de00a5a56de6ff1e6a19c8b921 -> 40050cde572c7f69f66dc29a7f1be3cabdc391a6 (FIX ROUND 2 by B-SCHED2-121, comment
+   6003441858): B-653-4 (Opus D5 6003335592) — a move request that needs coach approval now shows "Time change requested" / "A client asked
+   to move a session. Open the app to review." instead of "Session moved". Check: fixed, and nothing else in the diff breaks an item-list
+   area. Sol D5 approved c48adb9f (6003308198); Opus D5 RC only for B-653-4.
+2. b#674 42705e41 -> 2e06942aca39565c22f5448b388bf27108524c8e (operator 121 one-line test fix, comment 6003397377): the required R75
+   gate failed on one `as any` in test/refund-reversal-recovery.spec.ts; now cast to the Prisma ClientPurchase type. Test-only. #674 was
+   dual APPROVED at the coach stack heads (operator landing evidence on #674: bottom tree 4aee575c = audited #703 ebde8b3b, then main
+   refresh 42705e41).
+One verdict per PR at the exact head (verify heads unchanged before posting). Do not block for queued CI. No probes beyond re-running the
+one B-653-4 test if quick. Read-only.
+
+### AUD-OPUS-D7-121 / AUD-SOL-D7-121 — b#712 main-merge resolution only (owner RUTHLESS SCOPE, item 14; time box 15 minutes)
+b#712 9d93b86765f5874f25a5342558d96a34f5b0b0aa (tree 247f9e96 = audited top #653 @ 40050cde, dual APPROVE) -> f2af32dd717c679a10e3ed5e67686cbf6421af67
+= merge of 9d93b867 + main 4bddf24a (push b#692, coach b#674, messaging b#708). Builder comment 6003702168 (B-SCHED2-121). Review ONLY
+what the merge changed relative to a clean combination: `git diff $(git merge-tree --write-tree 9d93b867 4bddf24a 2>/dev/null | head -1)`
+will not exist for conflicts, so instead read (a) the three conflicted files src/notifications/emitters/booking.emitter.ts,
+test/booking-emitter.spec.ts, test/scheduling.service.spec.ts at f2af32dd vs both parents, and (b) the extra non-conflict edits:
+lock-screen-copy.ts (+25), push-delivery.service.ts (+1), scheduling-session-lifecycle.service.ts (+7), scheduling spec fakes. Check
+item-list areas only: booking pushes go through the #692 push sender only (quiet hours / preferences honoured), lock-screen copy has no
+client names or coach-written text and the move request says "Time change requested", the lifecycle fix is correct, nothing from main
+(push, coach payouts, messaging) is dropped or altered. One verdict on #712 at the exact head (verify unchanged before posting). Do
+not block for queued CI. Read-only, no probes.
+
+### AUD-OPUS-HC13-121 / AUD-SOL-HC13-121 — Health Connect follow-up m#378 + flag b#731 (launch step 5; owner RUTHLESS SCOPE item 14; 30 minutes)
+m#378 2ea649a1bd9d4ba8f61c9c84f57e100df8b31fb7 (base main, 1,055 lines; builder B-HC12-121, READY 6002676577; report ops/reports/B-HC12-121.md):
+Health Connect refresh posts only changed records, paced under the backend limit (50 req / 60 s), honours Retry-After up to 60 s,
+first sleep session per night wins until b#732. b#731 958d340d480e569770345f38bd0130dcd7cb64ee (draft, base main, 13 lines): sets
+FEATURE_WEARABLES_INGEST_POST "true" in the desired-state manifest + gate entry + runbook (READY 6002677024). Operator rulings (accepted
+defaults): Retry-After cap 60 s; first sleep session wins; 50/60 s; apply #731 only after #378 merges, then the owner's device pass.
+Full first review (#378 had H9 lens rounds on the parent work; probes in ops/aud-121/). Item-list only: health data reaching the wrong
+account, data loss or double counting a normal user would see, a sync that never finishes, crash, store policy (Health Connect
+permissions), false claims. One verdict per PR at the exact head. Do not block for queued CI. Read-only; heavy.sh one spec at most.

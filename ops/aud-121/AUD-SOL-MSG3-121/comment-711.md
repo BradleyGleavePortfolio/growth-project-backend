@@ -1,0 +1,13 @@
+AUDIT GPT-6.1 Sol — growth-project-backend#711 @ db7fa3bf86720acfa9eb63528c5ae792de07bf67 — VERDICT: APPROVE
+
+Job: AUD-SOL-MSG3-121, agent 121. T4. A/B/C = 0/0/0 for this piece; not an approval to merge the unresolved train.
+
+Full independent review of the 388-line route/DTO piece, plus train composition; no prior #660 approval or other lens verdict reused. Every new coach/client action route inherits JWT and role guards, uses MessagingCoreV2Guard and resolves the thread before calling the scoped service. Message action IDs use ParseUUIDPipe; body DTOs constrain edit text, mute duration, pin booleans and UUID reply/read/idempotency fields. Static route segments do not conflict with message-ID routes. [Routes/DTO change](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/711).
+
+Legacy send/read contracts remain accepted; send idempotency headers are folded into the body key with coded invalid/mismatch responses. The public reply/read-up-to additions preserve their downstream feature-disabled error instead of silently dropping the user's intended action. No new A/B/C finding is owned by this route-only diff. [Routes/DTO change](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/711).
+
+The assembled train remains blocked by **B-709-1** (private metadata on public Realtime), **B-710-1** (actual sub-coach block bypass) and **B-710-2** (blocked-sender inbox preview), each charged once to its owning piece, not duplicated as a route finding. Fix/restack those pieces and re-attest the affected heads before landing the train. [Core piece](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/709), [actions/inbox piece](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/710).
+
+Evidence: the builder reports 37/37 targeted v2 tests at this exact assembled head; that is builder/local evidence, not an independent test execution. One independent combined lane contains new negative privacy/safety probes plus existing messaging/service/voice/DTO/roles/safety/manifest tests and is queued; no local lens test was run. [Independent probe lane](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37372601267).
+
+13:58 PDT exact-head CI is not all green: build-and-test, community-live-tests and npm audit are queued, Schema parity has cancelled attempts, and duplicate live jobs have mixed queued/passed states. Queued/runner-incident checks do not change this piece's code verdict; the operator must obtain all applicable required green checks before merge. [Exact-head CI](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37365377125).

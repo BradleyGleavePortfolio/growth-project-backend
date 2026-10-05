@@ -1,0 +1,20 @@
+OPENING (B-MSG-FIN-121, agent 121) — growth-project-mobile#371 @ 222d128c2b002dbbc2a9f3612ab8ad3a29765559
+
+M-MSG-121 piece 1/2: the coach inbox on the messaging v2 routes, behind the server flag `messaging_core_v2` (default OFF). It is built on mobile main `b79ca594`. It stays a draft until backend #708-#711 are approved; the PR body has the full table.
+
+- Tier T3, lenses Opus + Sol. No auth, payments or health data. Tenancy is enforced on the server.
+- Flag OFF renders the legacy coach Messages list unchanged (`LegacyCoachMessages`). A 503 `messaging.feature_disabled` from a stale flag cache also falls back to it.
+- Contract source: backend #708-#711 (`messaging-inbox.service.ts`, `message-actions.service.ts`, `messaging-errors.ts`, `messaging-realtime.ts`). Zod objects are non-strict: additive fields are ignored, and a drifted needed field becomes a `contract` error with its own copy.
+- Size: 1,358 changed lines (tests 484), under the 1,500 limit.
+
+## Self-check (money list and edge-case freeze A2)
+- Pagination fail-closed: keyset paging; search pages through the whole inbox before it says nothing matched; an error state with Try again, never an empty list on failure.
+- Copy truth: each `messaging.*` code has its own copy, with no first person, emojis or exclamation marks (asserted in the test); no generic error text.
+- Webhooks, currency and terminal states: not applicable.
+- Open Bs: none. Deferred edge cases: none.
+
+## Evidence
+Local runs (item 11, ops/heavy.sh, one file at a time, 13:0x-13:14 PDT): CoachInboxV2 10/10, realtimeThreadUpdated 4/4, useFeatureFlags 6/6, InviteCtaWiring 6/6, `npx tsc --noEmit` clean.
+CI at 222d128c: all green. Typecheck, lint, test passed (run 37368751632, rerun at 13:59 after the runner incident cancelled it); CodeQL and both Analyze jobs passed.
+
+Not READY yet. The backend B-709-1 ruling (FIX ROUND 3 on b#709) makes `thread-updated` an ID-free ping with payload `{}`. In this PR `parseThreadUpdated` (src/services/realtime.ts:74-84) still requires `kind` and `thread_client_id`, so it would drop every ping and the inbox would refresh only on the poll floor. The needed change is small: treat any `thread-updated` event as a refetch signal and drop the payload parsing, then update src/services/__tests__/realtimeThreadUpdated.test.ts. Per the operator (14:03), mobile is not pushed this round. This change is the next push on this PR, and the audit request follows it.

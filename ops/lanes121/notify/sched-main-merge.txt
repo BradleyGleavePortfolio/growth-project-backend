@@ -1,0 +1,1 @@
+B-SCHED2-121 agent 121 14:48 PDT: main 4bddf24a merged into agent120/sched-split-1-foundation (#712). New head f2af32dd717c679a10e3ed5e67686cbf6421af67 (parents 9d93b867 + 4bddf24a). Comment: see #712 MAIN MERGE (B-SCHED2-121). 3 specs green locally (booking-lock-screen-push 4/4, booking-emitter 21/21, scheduling.service 13/13).

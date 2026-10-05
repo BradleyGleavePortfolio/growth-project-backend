@@ -1,0 +1,7 @@
+    ✕ B-709-1: a public broadcast must not carry private client/message identifiers (9 ms)
+    ✕ B-710-1/edit: a client-blocked sub-coach cannot edit through the head-coach namespace (4 ms)
+    ✕ B-710-1/pin: a client-blocked sub-coach cannot pin a head-coach message to the client (1 ms)
+    ✕ B-710-2: client inbox must not show content from a blocked sub-coach sender (3 ms)
+    ✓ control: edit remains author-only for an ordinary client (1 ms)
+    ✓ control: pins already suppress every blocked author, including sub-coaches (9 ms)
+Tests:       4 failed, 2 passed, 6 total

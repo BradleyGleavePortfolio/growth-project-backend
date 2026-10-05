@@ -1,0 +1,20 @@
+[heavy] waiting for a slot: npx jest src/services/health/healthConnect/__tests__/healthConnectSyncService.hc12.test.ts --ci --forceExit
+PASS src/services/health/healthConnect/__tests__/healthConnectSyncService.hc12.test.ts
+  HC12-HC-1 (C-370-2, failing before): a refresh posts only what changed since the last read
+    ✓ a day of 5-second heart rate already posted is not posted again; the new hour is (38 ms)
+  HC12-HC-2: nothing that may be unposted is skipped
+    ✓ posts a record changed after the last read, one without a modification time, and one at the progress edge (1 ms)
+    ✓ a first import (no progress) and a resumed page post every record (1 ms)
+  HC12-HC-3 (C-370-3, failing before): one sleep session per night
+    ✓ 330 + 180 minutes for one night from two apps counts once; a separate nap still counts (1 ms)
+    ✓ a session that arrives after the night was posted does not count the night again (1 ms)
+  HC12-HC-4 (C-370-2): a 429 keeps progress and the next run resumes after a Retry-After hold
+    ✓ stops after the bounded retries with the saved page kept, then resumes there without re-posting (4 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       6 passed, 6 total
+Snapshots:   0 total
+Time:        3.419 s
+Ran all test suites matching /src\/services\/health\/healthConnect\/__tests__\/healthConnectSyncService.hc12.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+rc=0
