@@ -10,7 +10,9 @@
  *     sweep runs again or on two machines at once.
  *
  * Before the fix, the body read "tomorrow at 00:30 UTC" and every reminder
- * was two inbox items (an inapp row plus a push row) and two unread.
+ * was two inbox items (an inapp row plus a push row) and two unread. Copy is
+ * the S-SCHED-2 wording (type, other party, call-link line); the zone rules
+ * are B-643-1 / B-647.
  */
 
 import { SessionReminderJob } from '../src/scheduling/jobs/reminder.job';
@@ -154,10 +156,10 @@ describe('booking reminders: local time, shown once (B-643-1)', () => {
     const client = await w.notifications.listNotifications('client-1', {});
     const coach = await w.notifications.listNotifications('coach-1', {});
     expect(client.items.map((r) => r.body)).toEqual([
-      'Reminder: your session with Coach K is on Tue, Jun 2 at 5:30 PM PDT.',
+      'Your session with Coach K is on Tue, Jun 2, 5:30 PM PDT.',
     ]);
     expect(coach.items.map((r) => r.body)).toEqual([
-      'Reminder: your session with Jamie is on Tue, Jun 2 at 8:30 PM EDT.',
+      'Your session with Jamie is on Tue, Jun 2, 8:30 PM EDT.',
     ]);
     for (const r of w.rows) {
       expect(r.body).not.toMatch(/UTC|GMT/);
@@ -177,7 +179,7 @@ describe('booking reminders: local time, shown once (B-643-1)', () => {
     await w.job.runOneHourReminderSweep();
     const client = await w.notifications.listNotifications('client-1', {});
     expect(client.items.map((r) => r.body)).toEqual([
-      'Starting soon: your session with Coach K is at 5:30 PM PDT.',
+      'Your session with Coach K starts at 5:30 PM PDT.',
     ]);
   });
 
@@ -186,7 +188,7 @@ describe('booking reminders: local time, shown once (B-643-1)', () => {
     await w.job.runTwentyFourHourReminderSweep();
     const client = await w.notifications.listNotifications('client-1', {});
     expect(client.items.map((r) => r.body)).toEqual([
-      'Reminder: your session with Coach K is on Tue, Jun 2 at 7:30 PM CDT.',
+      'Your session with Coach K is on Tue, Jun 2, 7:30 PM CDT.',
     ]);
   });
 
@@ -195,8 +197,8 @@ describe('booking reminders: local time, shown once (B-643-1)', () => {
     await w.job.runTwentyFourHourReminderSweep();
     const bodies = w.rows.map((r) => r.body).sort();
     expect(bodies).toEqual([
-      'Reminder: your session with Coach K is in about 24 hours.',
-      'Reminder: your session with Jamie is in about 24 hours.',
+      'Your session with Coach K is in about 24 hours.',
+      'Your session with Jamie is in about 24 hours.',
     ]);
   });
 
@@ -234,10 +236,10 @@ describe('booking reminders: local time, shown once (B-643-1)', () => {
     const client = await w.notifications.listNotifications('client-1', {});
     const coach = await w.notifications.listNotifications('coach-1', {});
     expect(client.items.map((r) => r.body)).toEqual([
-      'Reminder: your session with Coach K is on Tue, Jun 2 at 6:30 PM MDT.',
+      'Your session with Coach K is on Tue, Jun 2, 6:30 PM MDT.',
     ]);
     expect(coach.items.map((r) => r.body)).toEqual([
-      'Reminder: your session with Jamie is on Tue, Jun 2 at 6:30 PM MDT.',
+      'Your session with Jamie is on Tue, Jun 2, 6:30 PM MDT.',
     ]);
   });
 
@@ -250,10 +252,10 @@ describe('booking reminders: local time, shown once (B-643-1)', () => {
     const client = await w.notifications.listNotifications('client-1', {});
     const coach = await w.notifications.listNotifications('coach-1', {});
     expect(client.items.map((r) => r.body)).toEqual([
-      'Reminder: your session with Coach K is on Tue, Jun 2 at 8:30 PM EDT.',
+      'Your session with Coach K is on Tue, Jun 2, 8:30 PM EDT.',
     ]);
     expect(coach.items.map((r) => r.body)).toEqual([
-      'Reminder: your session with Jamie is on Tue, Jun 2 at 5:30 PM PDT.',
+      'Your session with Jamie is on Tue, Jun 2, 5:30 PM PDT.',
     ]);
   });
 
@@ -262,7 +264,7 @@ describe('booking reminders: local time, shown once (B-643-1)', () => {
     await w.job.runTwentyFourHourReminderSweep();
     const client = await w.notifications.listNotifications('client-1', {});
     expect(client.items.map((r) => r.body)).toEqual([
-      'Reminder: your session with Coach K is in about 24 hours.',
+      'Your session with Coach K is in about 24 hours.',
     ]);
   });
 });

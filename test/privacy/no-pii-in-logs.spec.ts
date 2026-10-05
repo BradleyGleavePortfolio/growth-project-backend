@@ -583,7 +583,6 @@ const LEGACY_EXCEPTION_TEXT: Readonly<Record<string, number>> = {
   'src/leaderboard/leaderboard.scheduler.ts': 1,
   'src/leaderboard/leaderboard.service.ts': 1,
   'src/messaging/messaging.service.ts': 1,
-  'src/notifications/emitters/booking.emitter.ts': 1,
   'src/notifications/emitters/build-week-day-unlocked.emitter.ts': 1,
   'src/notifications/emitters/checkin-submitted.emitter.ts': 1,
   'src/notifications/emitters/coach-alert.emitter.ts': 1,

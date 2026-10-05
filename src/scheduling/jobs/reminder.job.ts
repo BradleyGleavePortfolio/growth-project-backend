@@ -120,7 +120,7 @@ export class SessionReminderJob {
       recipientUserId: string,
       otherPartyDisplayName: string,
       session: CoachingSession,
-    ) => Promise<void>;
+    ) => Promise<unknown>;
   }): Promise<{ scanned: number; dispatched: number; skipped: number }> {
     const now = new Date();
     const lower = new Date(now.getTime() + args.lowerOffsetMinutes * 60 * 1000);
