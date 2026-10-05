@@ -179,31 +179,35 @@ export const EXPIRED_LINK: RomanVariantPair = {
 // ── §C.8 Dispute (late-reversal) cycle copy ─────────────────────────────────
 // R-DISPUTE-PAUSE (owner 10-04): a dispute ends access and pauses billing at
 // once; only the coach restarts it. One variant (no quip); no amount.
+// B-687-8: owner ruling 6 (10-05) pauses on an inquiry too, and an inquiry
+// moves no money, so no line claims a reversal: the bank opened a dispute or
+// inquiry (true for both). C-687-9: {coachName} never starts a sentence (its
+// fallback is lower case).
 const same = (text: string): RomanVariantPair => ({ straight: text, dryRoman: text });
 export const LR_DAY3_PUSH: RomanVariantPair = same(
-  '{firstName}, a recent payment was reversed by the bank after a dispute. Access has ended and billing is paused. {coachName} decides whether to restart it.',
+  '{firstName}, the bank opened a dispute or inquiry about a recent payment. Access has ended and billing is paused. Restarting it is up to {coachName}.',
 );
 
 const LR_BLOCKER: BlockerVariant = {
-  headline: 'A payment was reversed after a dispute.',
-  body: 'A recent payment was reversed after a dispute. Access has ended and billing is paused. {coachName} decides whether to restart it.',
+  headline: 'The bank opened a dispute or inquiry about a payment.',
+  body: 'The bank opened a dispute or inquiry about a recent payment. Access has ended and billing is paused. Restarting it is up to {coachName}.',
   primaryCta: 'See details',
   secondaryCta: 'Not now',
 };
 export const LR_DAY3_BLOCKER: BlockerCopy = { straight: LR_BLOCKER, dryRoman: LR_BLOCKER };
 
 export const LR_DAY7_ESCALATION: RomanVariantPair = same(
-  'Good day, {firstName}.\n\nA recent payment was reversed by the bank after a dispute. It was for your plan with {coachName}. Access has ended and billing for the plan is paused.\n\n{coachName} decides whether to restart it. The dispute closing does not restart it on its own.\n\n— Roman, on behalf of {coachName}',
+  'Good day, {firstName}.\n\nThe bank opened a dispute or inquiry about a recent payment for your plan with {coachName}. Access has ended and billing for the plan is paused.\n\nRestarting it is up to {coachName}. The dispute or inquiry closing does not restart it on its own.\n\n— Roman, on behalf of {coachName}',
 );
 
 export const LR_COACH_INAPP: RomanVariantPair = same(
-  "{clientName}'s bank reversed a payment after a dispute. Their access has ended and billing for the plan is paused. Restarting is your decision.",
+  "{clientName}'s bank opened a dispute or inquiry about a recent payment. Their access has ended and billing for the plan is paused. Restarting is your decision.",
 );
 export const LR_COACH_PUSH: RomanVariantPair = same(
-  '{clientName}: a payment was reversed after a dispute. Access has ended and billing is paused. Restarting is your decision.',
+  '{clientName}: the bank opened a dispute or inquiry about a payment. Access has ended and billing is paused. Restarting is your decision.',
 );
 export const LR_COACH_EMAIL: RomanVariantPair = same(
-  'Good day, {coachName}.\n\nThe bank of one of your clients, {clientName}, reversed a recent payment after a dispute. Their access has ended and billing for the plan is paused. It stays that way when the dispute closes, won or lost.\n\nRestarting access and billing is your decision. The full record is in the app: open Clients, then {clientName}.\n\n— Roman',
+  'Good day, {coachName}.\n\nThe bank of one of your clients, {clientName}, opened a dispute or inquiry about a recent payment. Their access has ended and billing for the plan is paused. It stays that way when the dispute or inquiry closes, whatever the outcome.\n\nRestarting access and billing is your decision. The full record is in the app: open Clients, then {clientName}.\n\n— Roman',
 );
 
 // Late-reversal Day-10 lockout copy is IDENTICAL to the regular lockout
@@ -222,5 +226,5 @@ export const ROMAN_STEMS = {
   coach: 'locked out in 3 days',
   day10: 'household ledger',
   expired: 'Links, like milk',
-  lateReversal: 'payment was reversed',
+  lateReversal: 'dispute or inquiry',
 } as const;
