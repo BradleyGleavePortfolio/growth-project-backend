@@ -337,6 +337,18 @@ describe('BroadcastsService edit / resume after a claim (B-659-1)', () => {
     expect(data.status).toBe('sending');
   });
 
+  it('C-728-1: editing a draft without a status keeps it a draft and never arms it', async () => {
+    const h = withRun({ ...base, status: 'draft', recurrence: null, next_run_at: null }, null);
+    expect(await code(h.svc.update('coach-a', 'b1', { ...input, body: 'Draft v2' }, NOW))).toBe(
+      'resolved',
+    );
+    expect(h.prisma.coachBroadcast.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'draft', next_run_at: null, body: 'Draft v2' }),
+      }),
+    );
+  });
+
   it('resume of a series skips to a day that has not had a copy yet', async () => {
     const rule = { freq: 'daily', interval: 1, local_time: '10:00', anchor_date: '2027-01-30' };
     const h = withRun(
@@ -351,5 +363,42 @@ describe('BroadcastsService edit / resume after a claim (B-659-1)', () => {
     )[0].data;
     expect(data.next_run_at).toEqual(new Date('2027-02-02T16:00:00Z'));
     expect(data.status).toBe('scheduled');
+  });
+});
+
+// ---- B-728-1: the audience picker lists only programs the caller can read ----
+
+describe('BroadcastsService.segmentOptions (B-728-1)', () => {
+  type Row = Record<string, unknown>;
+  const readable = (p: Row, w: { coach_id: string; OR: Array<Row> }) =>
+    p.coach_id === w.coach_id &&
+    p.is_template === true &&
+    p.archived_at === null &&
+    w.OR.some((alt) => Object.entries(alt).every(([k, v]) => p[k] === v));
+  const programs: Row[] = [
+    { id: 'head-private', owner_user_id: 'coach-a', visibility: 'owner_only' },
+    { id: 'sibling-private', owner_user_id: 'sub-2', visibility: 'owner_only' },
+    { id: 'mine', owner_user_id: 'sub-1', visibility: 'owner_only' },
+    { id: 'shared', owner_user_id: 'coach-a', visibility: 'tenant_shared' },
+  ].map((p) => ({ ...p, coach_id: 'coach-a', is_template: true, archived_at: null }));
+
+  it("a sub-coach sees their own and team-shared programs, never another author's private ones", async () => {
+    const workoutProgramFindMany = jest.fn(
+      async (a: { where: { coach_id: string; OR: Array<Row> } }) =>
+        programs.filter((p) => readable(p, a.where)).map((p) => ({ id: p.id })),
+    );
+    const svc = new BroadcastsService(
+      stub<PrismaService>({
+        coachPackage: { findMany: async () => [] },
+        workoutProgram: { findMany: workoutProgramFindMany },
+        coachClientTag: { groupBy: async () => [] },
+      }),
+      stub<BroadcastScopeService>({ resolve: async () => sub }),
+      stub<SegmentResolverService>({}),
+      stub<CardsService>({}),
+      stub<AuditService>({ write: async () => undefined }),
+    );
+    const out = await svc.segmentOptions('sub-1');
+    expect(out.programs.map((p) => p.id).sort()).toEqual(['mine', 'shared']);
   });
 });
