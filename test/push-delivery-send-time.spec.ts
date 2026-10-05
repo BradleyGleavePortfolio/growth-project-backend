@@ -16,6 +16,9 @@
  * Round 4 (fails on ab607b34), Sol B-648-10 partial: the window was judged
  * on the clock read when the send began; a slow read or the handoff write
  * could carry a non-urgent push past 21:00 onto the lock screen.
+ * Round 6 (fails on 53796f1e), Sol B-648-8 reopened: the final token read
+ * ran after the handoff CAS, so a lapsed or swept claim, or an erased row or
+ * token, still reached Expo.
  * Verification (passes before and after): a coach message, the welcome
  * included, reaches the client's lock screen with quiet copy.
  */
@@ -207,6 +210,74 @@ describe('B-648-8: lease authority is proven right before every send', () => {
     const [ra, rb] = await Promise.all([a.svc.checkReceipts(), b.svc.checkReceipts()]);
     expect(ra.checked + rb.checked).toBe(1);
   });
+});
+
+describe('B-648-8 (round 6): the handoff CAS follows the final read', () => {
+  const NEW_TOKEN = 'ExponentPushToken[zyxwvutsrqponmlkjihgfe]';
+  /** Run `change` once the final token read has its result, before it returns. */
+  function afterFinalRead(w: ReturnType<typeof world>, change: () => unknown) {
+    const original = w.db.user.findUnique.getMockImplementation();
+    let reads = 0;
+    w.db.user.findUnique.mockImplementation(async (args) => {
+      const out = original ? await original(args) : null;
+      const { select } = args as { select?: { expo_push_token?: boolean } };
+      if (select?.expo_push_token && ++reads === 2) await change();
+      return out;
+    });
+  }
+
+  it("Sol's probe: the final read outlasts the lease and a replica sweeps; only the replica sends", async () => {
+    const w = world();
+    const [a, b] = [w.worker(), w.worker()];
+    await a.svc.enqueue(message());
+    let swept = { sent: 0, expired: 0 };
+    afterFinalRead(w, async () => {
+      w.clock.at = at(w.clock.at, 121_000);
+      swept = await b.svc.sweep();
+    });
+    expect(await a.svc.drain()).toBe(0);
+    expect(swept).toEqual({ sent: 1, expired: 1 }); // released unstarted, sent once
+    expect(a.client.send).not.toHaveBeenCalled();
+    expect(b.client.send).toHaveBeenCalledTimes(1);
+    expect(w.rows[0]).toMatchObject({ status: 'sent', result_code: 'sent' });
+  });
+
+  it("Sol's probe: erasure of the token and the outbox rows during the final read sends nothing", async () => {
+    const w = world();
+    const a = w.worker();
+    await a.svc.enqueue(message());
+    afterFinalRead(w, async () => {
+      w.tokens['u-1'] = null;
+      await w.db.pushOutbox.deleteMany({ where: { user_id: 'u-1' } });
+    });
+    expect(await a.svc.drain()).toBe(0);
+    expect(a.client.send).not.toHaveBeenCalled();
+    expect(w.rows).toHaveLength(0);
+  });
+
+  it.each([
+    ['the lease lapses (no sweep yet)', null, 'sent', TOKEN],
+    ['sign-out', null, 'no-token', null],
+    ['a new device registers', NEW_TOKEN, 'sent', NEW_TOKEN],
+  ])(
+    '%s during the final read: nothing is sent; after the lease the row is decided again',
+    async (name, next, code, to) => {
+      const w = world();
+      const a = w.worker();
+      await a.svc.enqueue(message());
+      afterFinalRead(w, () => {
+        if (name.startsWith('the lease')) w.clock.at = at(w.clock.at, 121_000);
+        else w.tokens['u-1'] = next;
+      });
+      expect(await a.svc.drain()).toBe(0);
+      expect(a.client.send).not.toHaveBeenCalled();
+      expect(w.rows[0]).toMatchObject({ status: 'sending', handed_off_at: null });
+      w.clock.at = at(NY_AFTERNOON, 125_000);
+      await a.svc.sweep();
+      expect(w.rows[0].result_code).toBe(code);
+      expect(a.client.send.mock.calls.map((c) => c[0][0].to)).toEqual(to ? [to] : []);
+    },
+  );
 });
 
 describe('B-648-9: a queued push obeys the preferences at the moment it is sent', () => {

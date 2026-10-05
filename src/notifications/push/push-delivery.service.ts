@@ -31,20 +31,22 @@ import { resolveRecipientTimeZone } from '../recipient-timezone';
 // Guarantees:
 //   - Lease authority (B-648-8). Every claim gets a fresh lease_token, and
 //     every write the worker makes afterwards is a compare-and-set on it.
-//     Right before the Expo call the worker renews the lease and stamps
-//     handed_off_at in one CAS; if that fails (another worker took the row
-//     back) it does not send. A lapsed lease WITHOUT handed_off_at was never
-//     started and goes back to pending; WITH it the send is unknown and the
-//     row is closed (at most once). A lost CAS is never reported as sent.
+//     After the LAST read and right before the Expo call (no await between),
+//     one CAS proves the claim is live (row exists, this lease_token, lease
+//     not lapsed) and the device token is still the user's, renews the lease
+//     and stamps handed_off_at; if it fails (lease lapsed or taken back, row
+//     or token erased) nothing is sent. A lapsed lease WITHOUT handed_off_at
+//     was never started and goes back to pending; WITH it the send is unknown
+//     and the row is closed (at most once). A lost CAS is never reported as sent.
 //   - Every decision is re-made at the moment of sending, not only at
 //     enqueue (B-648-9, B-648-10): the recipient's current preferences
 //     (`muted`, `<kind>_push`), quiet hours in the recipient's CURRENT zone,
 //     and the burst cap. A push whose switch was turned off while it waited
 //     is suppressed; one that would now land inside quiet hours waits for
 //     08:00 local again, without spending a provider retry attempt. The
-//     switches and the device token are read once more AFTER the handoff
-//     write, so a mute or sign-out committed at any point before the handoff
-//     stops the send (Sol B-648-9, round 5).
+//     switches and the device token are read once more after every other
+//     read, so a mute or sign-out committed during preparation stops the
+//     send (Sol B-648-9, round 5).
 //   - Lock screen (B-692-1): title and body come only from the per-kind
 //     templates (lock-screen-copy.ts), rendered at the moment of sending; the
 //     Android channel is one the app creates (push-channels.ts, B-693-1).
@@ -381,7 +383,9 @@ export class PushDeliveryService {
   }
 
   private lost(row: OutboxRow, step: string): SendOutcome {
-    this.logger.warn(`push outbox: lease lost row=${row.id} step=${step} (another worker owns it)`);
+    this.logger.warn(
+      `push outbox: lease lost row=${row.id} step=${step} (claim lapsed, taken back or erased)`,
+    );
     return 'lease-lost';
   }
 
@@ -438,13 +442,18 @@ export class PushDeliveryService {
   }
 
   /**
-   * Renew the lease and record the handoff in one CAS, right before the
-   * Expo call (B-648-8). False: this worker no longer owns the row.
+   * The last await before the Expo call (B-648-8, round 6): in one CAS, prove
+   * the claim is live and `to` is still the user's token, renew the lease and
+   * record the handoff. False: lease lapsed or taken back, row or token gone.
    */
-  private async handOff(row: OutboxRow): Promise<boolean> {
+  private async handOff(row: OutboxRow, to: string): Promise<boolean> {
     const now = this.now();
     const res = await this.prisma.pushOutbox.updateMany({
-      where: { ...this.fence(row), lease_until: { gt: now } },
+      where: {
+        ...this.fence(row),
+        lease_until: { gt: now },
+        user: { is: { expo_push_token: to } },
+      },
       data: { handed_off_at: now, lease_until: new Date(now.getTime() + LEASE_MS) },
     });
     return res.count === 1;
@@ -523,13 +532,9 @@ export class PushDeliveryService {
         return await this.finish(row, 'dropped', 'invalid-token');
       }
 
-      // B-648-8: prove and renew authority right before the handoff.
-      if (!(await this.handOff(row))) return this.lost(row, 'handoff');
-
-      // Sol B-648-9 (round 5): consent at the handoff. These reads start
-      // after the handoff write, so a mute, a switch turned off or a sign-out
-      // committed during the slow reads above is seen here. Nothing has
-      // reached Expo yet: the push is suppressed and no attempt is spent.
+      // Sol B-648-9 (round 5): consent read again after the reads above, so a
+      // mute, a switch turned off or a sign-out committed during them is seen
+      // here. Nothing has reached Expo yet: the push is suppressed.
       const [prefsAtSend, userAtSend] = await Promise.all([
         this.prisma.notificationPreferences.findUnique({ where: { user_id: row.user_id } }),
         this.prisma.user.findUnique({
@@ -543,6 +548,11 @@ export class PushDeliveryService {
       const to = userAtSend?.expo_push_token ?? null;
       if (!to) return await this.finish(row, 'dropped', 'no-token');
       if (!Expo.isExpoPushToken(to)) return await this.finish(row, 'dropped', 'invalid-token');
+
+      // B-648-8 (Sol, round 6): the fenced handoff comes after every read, so
+      // a claim that lapsed or was swept, or a row or token erased while a
+      // read was in flight, sends nothing (and is never marked as started).
+      if (!(await this.handOff(row, to))) return this.lost(row, 'handoff');
 
       // B-648-10 (round 4): the clock at the Expo handoff. If the window
       // opened during the reads or the handoff write, nothing has reached
