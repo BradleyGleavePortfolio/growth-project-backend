@@ -27,6 +27,7 @@ import { ClientAIContextService } from '../ai/client-ai-context.service';
 import { MessagesSafetyService } from '../messages-safety/messages-safety.service';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { isCoachReviewedAtEnabled } from '../roman/coach-reviewed.feature';
+import { holdWelcomeLease, WelcomeLeaseLostError } from '../engagement/welcome-lease-fence';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -407,6 +408,15 @@ export class MessagingService {
     coachId: string,
     clientId: string,
     payload: SendMessagePayload | string,
+    // Internal callers only (never bound to a request body). `welcome` is the
+    // coach welcome scheduler's job id + lease (B-609-3). The row is written
+    // with CoachMessage.welcome_job_id = jobId (@unique), and a second send for
+    // the same job returns the already-persisted message without a second
+    // realtime ping, push, audit, analytics or PTM signal. The INSERT commits
+    // only while the caller still holds the job's lease (holdWelcomeLease);
+    // otherwise WelcomeLeaseLostError is thrown before any persistence or
+    // fan-out.
+    options: { welcome?: { jobId: string; lease: string } } = {},
   ) {
     // Back-compat: existing test fixtures and pre-Phase-6C call sites pass
     // a bare string. Normalize to the payload shape so the new code only
@@ -438,8 +448,8 @@ export class MessagingService {
     // so existing head-coach queries keep returning them. For sub-coaches
     // the sender_id captures who actually sent.
     const threadCoachId = client.coach_id ?? coachId;
-    const created = await this.prisma.coachMessage.create({
-      data: {
+    const { row: created, duplicate } = await this.persistCoachMessage(
+      {
         coach_id: threadCoachId,
         client_id: clientId,
         sender_id: coachId,
@@ -449,7 +459,12 @@ export class MessagingService {
         voice_size_bytes: voice?.size_bytes ?? null,
         voice_content_type: voice?.content_type ?? null,
       },
-    });
+      options.welcome,
+    );
+    // B-609-3: another worker already persisted this job's welcome. Hand back
+    // that row and skip every side effect below, so the client gets exactly
+    // one message, one ping and one push.
+    if (duplicate) return created;
     // Realtime ping to the recipient (the client). No body is sent over the
     // wire — just a refresh signal. The mobile client refetches via the
     // authenticated REST endpoint when it receives the ping. Fire-and-
@@ -505,6 +520,39 @@ export class MessagingService {
     // new coach message in last_coach_message_excerpt.
     this.aiContext.invalidateForUser(clientId);
     return created;
+  }
+
+  /**
+   * Insert one CoachMessage. With a welcome job the row carries
+   * CoachMessage.welcome_job_id (@unique) and is inserted in one transaction
+   * with holdWelcomeLease, so it commits only while the caller's lease is live
+   * (B-609-3 persistence fence); a lost lease throws WelcomeLeaseLostError and
+   * inserts nothing. When the key is already taken the existing row is
+   * returned with duplicate=true instead of a second insert.
+   */
+  private async persistCoachMessage(
+    data: Prisma.CoachMessageUncheckedCreateInput,
+    welcome?: { jobId: string; lease: string },
+  ) {
+    if (!welcome) {
+      return { row: await this.prisma.coachMessage.create({ data }), duplicate: false };
+    }
+    try {
+      const row = await this.prisma.$transaction(async (tx) => {
+        if (!(await holdWelcomeLease(tx, welcome.jobId, welcome.lease))) {
+          throw new WelcomeLeaseLostError(welcome.jobId);
+        }
+        return tx.coachMessage.create({ data: { ...data, welcome_job_id: welcome.jobId } });
+      });
+      return { row, duplicate: false };
+    } catch (err) {
+      if (!isPrismaUniqueViolation(err)) throw err;
+      const existing = await this.prisma.coachMessage.findUnique({
+        where: { welcome_job_id: welcome.jobId },
+      });
+      if (!existing) throw err;
+      return { row: existing, duplicate: true };
+    }
   }
 
   async sendAsClient(clientId: string, payload: SendMessagePayload | string) {
@@ -824,3 +872,13 @@ export class MessagingService {
 // Re-export ForbiddenException so service consumers can distinguish authorization
 // failures without importing from @nestjs/common themselves.
 export { ForbiddenException };
+
+/** Prisma P2002 (unique constraint) without importing the runtime error class. */
+function isPrismaUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    (err as { code?: unknown }).code === 'P2002'
+  );
+}

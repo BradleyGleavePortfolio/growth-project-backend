@@ -19,6 +19,8 @@
  * The database-level floor itself is proven against real Postgres in
  * test/scheduling-booking-concurrency.live.spec.ts.
  */
+import * as fs from 'fs';
+import * as path from 'path';
 import { HttpException, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { SessionReminderJob } from '../src/scheduling/jobs/reminder.job';
@@ -42,6 +44,11 @@ import { SchedulingFakeDb, asPrisma } from './utils/scheduling-fake-db';
 
 // Monday 2026-10-05 08:00 PDT.
 const NOW = new Date('2026-10-05T15:00:00.000Z');
+
+// Fake rows are untyped; a claim's start_at is a Date (NOT NULL, B-NOTIF-4).
+function startMs(row: { start_at?: unknown } | undefined): number {
+  return row?.start_at instanceof Date ? row.start_at.getTime() : Number.NaN;
+}
 // Tuesday 2026-10-06, coach-local (America/Los_Angeles, PDT = UTC-7).
 const TUE_1000 = '2026-10-06T17:00:00.000Z';
 const TUE_1015 = '2026-10-06T17:15:00.000Z';
@@ -220,6 +227,7 @@ function harness() {
       Object.create(NotificationsService.prototype) as NotificationsService,
       notifications,
     ),
+    asPrisma(db),
   );
   const auditWrites: unknown[] = [];
   const audit = Object.assign(Object.create(AuditService.prototype) as AuditService, {
@@ -822,6 +830,7 @@ describe('lifecycle rules', () => {
       session_id: s.id,
       user_id: 'client-1',
       kind: 'booking_reminder_24h',
+      start_at: new Date(TUE_1000),
     });
     notifications.rows = [];
     const moved = await svc.rescheduleSession(CLIENT, s.id, {
@@ -833,7 +842,12 @@ describe('lifecycle rules', () => {
       approved_at: null,
       start_at: new Date(TUE_1100),
     });
-    expect(db.deliveryLogs.filter((l) => l.session_id === s.id)).toHaveLength(0);
+    // Sol B-647-1: the move re-arms reminders through the claim key (session,
+    // user, kind, start_at), so it never deletes claims: the old-time claim is
+    // kept and cannot suppress the new time.
+    expect(db.deliveryLogs.filter((l) => l.session_id === s.id)).toEqual([
+      expect.objectContaining({ id: 'log-x', start_at: new Date(TUE_1000) }),
+    ]);
     const toCoach = notifications.rows.filter((r) => r.user_id === 'coach-1');
     expect(toCoach.map((r) => r.kind)).toEqual([NotificationKind.BOOKING_RESCHEDULED]);
     expect(toCoach[0].payload).toMatchObject({ title: 'Session move requested' });
@@ -1494,7 +1508,7 @@ describe('S-SCHED-3 B-634-2: reminder delivery is recoverable and channel-aware'
         attempts: 1,
         lease_until: new Date(NOW.getTime() - 60_000),
         claim_token: 'dead-worker',
-        session_start_at: s.start_at,
+        start_at: s.start_at,
         inapp_done_at: null,
         push_done_at: null,
         notification_id: null,
@@ -1508,7 +1522,7 @@ describe('S-SCHED-3 B-634-2: reminder delivery is recoverable and channel-aware'
         attempts: 1,
         lease_until: new Date(NOW.getTime() + 60_000),
         claim_token: 'other-replica',
-        session_start_at: s.start_at,
+        start_at: s.start_at,
         inapp_done_at: null,
         push_done_at: null,
         notification_id: null,
@@ -1576,7 +1590,7 @@ describe('S-SCHED-3 B-634-2: reminder delivery is recoverable and channel-aware'
     expect(notifications.pushes).toHaveLength(2);
   });
 
-  it('a claim for an older start time is a new revision: the moved session is reminded for its new time', async () => {
+  it('a claim for an older start time does not cover the new time: the moved session is reminded for it', async () => {
     const { db, notifications, reminder } = harness();
     const s = dueSession(db);
     db.deliveryLogs.push({
@@ -1588,7 +1602,7 @@ describe('S-SCHED-3 B-634-2: reminder delivery is recoverable and channel-aware'
       attempts: 1,
       lease_until: null,
       claim_token: 'old',
-      session_start_at: new Date(NOW.getTime() + 24 * 60 * 60_000),
+      start_at: new Date(NOW.getTime() + 24 * 60 * 60_000),
       inapp_done_at: NOW,
       push_done_at: NOW,
       notification_id: 'n-old',
@@ -1599,10 +1613,16 @@ describe('S-SCHED-3 B-634-2: reminder delivery is recoverable and channel-aware'
         .map((r) => r.user_id)
         .sort(),
     ).toEqual(['client-1', 'coach-1']);
+    // The claim key carries start_at (B-NOTIF-4): the old-time claim is left
+    // as it was and the new time gets its own claim.
     expect(db.deliveryLogs.find((l) => l.id === 'old-time')).toMatchObject({
       status: 'sent',
-      session_start_at: s.start_at,
+      start_at: new Date(NOW.getTime() + 24 * 60 * 60_000),
+      notification_id: 'n-old',
     });
+    expect(
+      db.deliveryLogs.find((l) => l.user_id === 'client-1' && startMs(l) === startMs(s)),
+    ).toMatchObject({ status: 'sent' });
   });
 
   it('a session cancelled after the sweep read it is not reminded, and its claim is released', async () => {
@@ -1667,7 +1687,7 @@ describe('S-SCHED-4 B-634-2: unfinished reminders are recovered on the next real
       attempts: 1,
       lease_until: null,
       claim_token: `tok-${over.id}`,
-      session_start_at: null,
+      start_at: null,
       inapp_done_at: null,
       push_done_at: null,
       notification_id: null,
@@ -1764,14 +1784,14 @@ describe('S-SCHED-4 B-634-2: unfinished reminders are recovered on the next real
         status: 'sending',
         lease_until: new Date(NOW.getTime() + 4 * MIN),
         claim_token: 'dead-worker',
-        session_start_at: s.start_at,
+        start_at: s.start_at,
       }),
       logRow({
         id: 'done',
         session_id: s.id,
         user_id: 'coach-1',
         status: 'sent',
-        session_start_at: s.start_at,
+        start_at: s.start_at,
         inapp_done_at: NOW,
         push_done_at: NOW,
       }),
@@ -1807,7 +1827,7 @@ describe('S-SCHED-4 B-634-2: unfinished reminders are recovered on the next real
         id: 'r-client',
         session_id: s.id,
         user_id: 'client-1',
-        session_start_at: s.start_at,
+        start_at: s.start_at,
       }),
     );
     const result = await at(0, () =>
@@ -1836,7 +1856,7 @@ describe('S-SCHED-4 B-634-2: unfinished reminders are recovered on the next real
         id: 'x-cancelled',
         session_id: cancelled.id,
         user_id: 'client-1',
-        session_start_at: cancelled.start_at,
+        start_at: cancelled.start_at,
         inapp_done_at: NOW,
         notification_id: 'n-kept',
       }),
@@ -1844,7 +1864,7 @@ describe('S-SCHED-4 B-634-2: unfinished reminders are recovered on the next real
         id: 'x-started',
         session_id: started.id,
         user_id: 'client-2',
-        session_start_at: started.start_at,
+        start_at: started.start_at,
       }),
       logRow({
         id: 'x-exhausted',
@@ -1853,20 +1873,20 @@ describe('S-SCHED-4 B-634-2: unfinished reminders are recovered on the next real
         status: 'sending',
         attempts: 3,
         lease_until: new Date(NOW.getTime() - MIN),
-        session_start_at: exhausted.start_at,
+        start_at: exhausted.start_at,
       }),
       logRow({
         id: 'x-recipient',
         session_id: reassigned.id,
         user_id: 'client-1',
-        session_start_at: reassigned.start_at,
+        start_at: reassigned.start_at,
       }),
       // Claimed for an older start; the new start (30m) is past its band.
       logRow({
         id: 'x-superseded',
         session_id: superseded.id,
         user_id: 'client-5',
-        session_start_at: new Date(NOW.getTime() + 24 * 60 * MIN),
+        start_at: new Date(NOW.getTime() + 24 * 60 * MIN),
       }),
       // Claimed for an older start; the new start is still ahead of its
       // band, so the band pass re-arms it later. S-SCHED-5: it is parked
@@ -1875,7 +1895,7 @@ describe('S-SCHED-4 B-634-2: unfinished reminders are recovered on the next real
         id: 'x-later',
         session_id: later.id,
         user_id: 'client-6',
-        session_start_at: new Date(NOW.getTime() + 55 * MIN),
+        start_at: new Date(NOW.getTime() + 55 * MIN),
       }),
     );
     const result = await at(0, () => reminder.runOneHourReminderSweep().then(() => null));
@@ -1919,7 +1939,7 @@ describe('S-SCHED-4 B-634-2: unfinished reminders are recovered on the next real
         session_id: s.id,
         user_id: 'client-1',
         kind: NotificationKind.BOOKING_REMINDER_24H,
-        session_start_at: s.start_at,
+        start_at: s.start_at,
       }),
     );
     await at(0, () => reminder.runTwentyFourHourReminderSweep());
@@ -1938,7 +1958,7 @@ describe('S-SCHED-4 B-634-2: unfinished reminders are recovered on the next real
         id: 'mid',
         session_id: s.id,
         user_id: 'client-1',
-        session_start_at: s.start_at,
+        start_at: s.start_at,
         inapp_done_at: NOW,
         notification_id: 'n-first',
       }),
@@ -2005,7 +2025,7 @@ describe('S-SCHED-5 B-634-2 / B-634-6: missed first claims, fair recovery, safe 
       attempts: 1,
       lease_until: null,
       claim_token: `token-${id}`,
-      session_start_at: forStart,
+      start_at: forStart,
       inapp_done_at: null,
       push_done_at: null,
       notification_id: null,
@@ -2097,7 +2117,7 @@ describe('S-SCHED-5 B-634-2 / B-634-6: missed first claims, fair recovery, safe 
     expect(old.every((r) => r.status === 'parked')).toBe(true);
   });
 
-  it('a parked row is re-armed and sent when its new time reaches the band', async () => {
+  it('a parked row stays parked and the new time is claimed and sent when it reaches the band', async () => {
     const { db, notifications, reminder } = harness();
     confirmed(db, 'moved-later', 120);
     db.deliveryLogs.push(retryRow('moved', 'moved-later', new Date(NOW.getTime() + 30 * MIN)));
@@ -2105,7 +2125,15 @@ describe('S-SCHED-5 B-634-2 / B-634-6: missed first claims, fair recovery, safe 
     expect(db.deliveryLogs.find((r) => r.id === 'moved')?.status).toBe('parked');
     jest.setSystemTime(new Date(NOW.getTime() + 60 * MIN));
     await withReminders(() => reminder.runOneHourReminderSweep());
-    expect(db.deliveryLogs.find((r) => r.id === 'moved')?.status).toBe('sent');
+    // The claim key carries start_at (B-NOTIF-4): the earlier start's claim
+    // keeps its receipts; the new start has its own claim.
+    expect(db.deliveryLogs.find((r) => r.id === 'moved')?.status).toBe('parked');
+    const start = startMs(db.sessions.find((x) => x.id === 'moved-later'));
+    expect(
+      db.deliveryLogs.find(
+        (r) => r.user_id === 'client-1' && r.session_id === 'moved-later' && startMs(r) === start,
+      )?.status,
+    ).toBe('sent');
     expect(notifications.rows.filter((r) => r.user_id === 'client-1')).toHaveLength(1);
   });
 
@@ -2220,7 +2248,7 @@ describe('S-SCHED-5 round 2 B-634-2: catch-up walks the whole interval, not the 
       attempts: 1,
       lease_until: null,
       claim_token: null,
-      session_start_at: start,
+      start_at: start,
       inapp_done_at: NOW,
       push_done_at: NOW,
       notification_id: null,
@@ -2341,5 +2369,421 @@ describe('S-SCHED-5 round 2 B-634-2: catch-up walks the whole interval, not the 
     await withReminders(() => reminder.runOneHourReminderSweep());
     expect(db.deliveryLogs.filter((l) => l.session_id === 'late-booked')).toHaveLength(0);
     expect(notifications.rows).toHaveLength(0);
+  });
+});
+
+// B-634-9 (Sol @ bb6f3ea8): client-facing scheduling error copy speaks to the
+// reader directly (no "we"/"us"/"our") and names a working next step, while
+// status, machine code and existence hiding stay exactly as they were.
+describe('B-634-9: scheduling error envelopes are direct and actionable', () => {
+  const COLLECTIVE_VOICE = /\b(we|us|our|we're|we've|we'll|let's)\b/i;
+  const NEXT_STEP = /\b(Open|Refresh|Pick|Message|Reload|Fix|Use|Decline|Mark|add)\b/;
+
+  function expectDirect(f: Failure): void {
+    expect(f.message).not.toMatch(COLLECTIVE_VOICE);
+    expect(f.message).toMatch(NEXT_STEP);
+  }
+
+  it('404 SESSION_NOT_FOUND: same direct copy for a missing and a foreign session', async () => {
+    const { svc } = harness();
+    const s = await svc.requestSession(CLIENT, request(CLIENT, 'st-q', TUE_1000, TUE_1015));
+    const foreign = await failure(svc.getSession(CLIENT_2, s.id));
+    const missing = await failure(svc.getSession(CLIENT, 'no-such-session'));
+    const lifecycleMissing = await failure(svc.approveSession(COACH, 'no-such-session'));
+    for (const f of [foreign, missing, lifecycleMissing]) {
+      expect(f).toEqual({
+        status: 404,
+        code: 'SESSION_NOT_FOUND',
+        message: 'That session is no longer available. Open Calendar to see your sessions.',
+      });
+      expectDirect(f);
+    }
+  });
+
+  it('404 SESSION_TYPE_UNAVAILABLE on edit: missing and foreign types read the same', async () => {
+    const { svc } = harness();
+    const missing = await failure(svc.updateSessionType(COACH, 'no-such-type', { name: 'x' }));
+    const foreign = await failure(svc.updateSessionType(OTHER_COACH, 'st-q', { name: 'x' }));
+    for (const f of [missing, foreign]) {
+      expect(f).toEqual({
+        status: 404,
+        code: 'SESSION_TYPE_UNAVAILABLE',
+        message:
+          'That appointment type is no longer available. Refresh your appointment types and try the change again.',
+      });
+      expectDirect(f);
+    }
+  });
+
+  it('404 COACH_NOT_FOUND and 403 COACH_NOT_BOOKABLE keep status and code with direct copy', async () => {
+    const { svc } = harness();
+    const noCoach = await failure(
+      svc.getOpenSlots(OWNER, 'no-such-coach', {
+        from: TUE_1000,
+        to: '2026-10-07T17:00:00.000Z',
+        session_type_id: null,
+        duration_minutes: 30,
+      }),
+    );
+    expect(noCoach).toMatchObject({ status: 404, code: 'COACH_NOT_FOUND' });
+    expectDirect(noCoach);
+    const otherCalendar = await failure(svc.listSessionTypes(OTHER_COACH, 'coach-1'));
+    expect(otherCalendar).toMatchObject({ status: 403, code: 'COACH_NOT_BOOKABLE' });
+    expectDirect(otherCalendar);
+    const notAssigned = await failure(svc.listSessionTypes(FOREIGN_CLIENT, 'coach-1'));
+    expect(notAssigned).toMatchObject({ status: 403, code: 'COACH_NOT_BOOKABLE' });
+    expectDirect(notAssigned);
+  });
+
+  it('every schedulingError message in src/scheduling is free of we/us, and SESSION_NOT_FOUND uses one constant', () => {
+    const dir = path.join(__dirname, '..', 'src', 'scheduling');
+    const files = fs
+      .readdirSync(dir)
+      .filter((f) => f.endsWith('.ts'))
+      .map((f) => path.join(dir, f));
+    const messages: string[] = [];
+    let inlineNotFound = 0;
+    for (const file of files) {
+      const src = fs.readFileSync(file, 'utf8');
+      for (const m of src.matchAll(
+        /schedulingError\(\s*SchedulingErrorCode\.\w+,\s*(?:'([^']*)'|`([^`]*)`|"([^"]*)")/g,
+      )) {
+        messages.push(m[1] ?? m[2] ?? m[3] ?? '');
+      }
+      for (const m of src.matchAll(/new \w+Exception\(\s*'([^']*)'/g)) messages.push(m[1]);
+      inlineNotFound += [...src.matchAll(/SchedulingErrorCode\.SESSION_NOT_FOUND,\s*['`"]/g)]
+        .length;
+    }
+    expect(messages.length).toBeGreaterThan(30);
+    expect(messages.filter((m) => COLLECTIVE_VOICE.test(m))).toEqual([]);
+    expect(inlineNotFound).toBe(0);
+  });
+});
+
+// C-634-6 (Opus @ bb6f3ea8): catch-up counts a participant as covered only by
+// a row for the session's CURRENT start. A stale row (an earlier start of a
+// moved session) or a parked row whose re-arm write failed at the band's last
+// tick is otherwise invisible to both recovery and catch-up.
+describe('C-634-6: catch-up coverage is keyed on the current start time', () => {
+  const MIN = 60_000;
+  afterEach(() => jest.setSystemTime(NOW));
+  function addConfirmed(db: SchedulingFakeDb, id: string, start: Date): void {
+    db.addSession({
+      id,
+      coach_id: 'coach-1',
+      client_id: 'client-1',
+      session_type_id: 'st-q',
+      status: 'scheduled',
+      start_at: start,
+      end_at: new Date(start.getTime() + 15 * MIN),
+      video_url: 'https://meet.example.com/c6',
+      approved_at: new Date(NOW.getTime() - 3 * 24 * 60 * MIN),
+      created_at: new Date(NOW.getTime() - 3 * 24 * 60 * MIN),
+    });
+  }
+  function logRow(sessionId: string, userId: string, status: string, forStart: Date) {
+    return {
+      id: `c6-${sessionId}-${userId}`,
+      session_id: sessionId,
+      user_id: userId,
+      kind: NotificationKind.BOOKING_REMINDER_1H,
+      status,
+      attempts: 1,
+      lease_until: null,
+      claim_token: null,
+      start_at: forStart,
+      inapp_done_at: status === 'sent' ? NOW : null,
+      push_done_at: status === 'sent' ? NOW : null,
+      notification_id: null,
+      last_error: null,
+      created_at: NOW,
+    };
+  }
+  // The first claim for the new start is an insert (the claim key carries
+  // start_at, B-NOTIF-4); re-arming a parked row for the same start is an
+  // update. Either write failing at the band's last tick is the miss.
+  function failClaimWrites(db: SchedulingFakeDb, write: 'create' | 'updateMany') {
+    const timeout = () =>
+      new Prisma.PrismaClientKnownRequestError('synthetic pool timeout on claim', {
+        code: 'P2024',
+        clientVersion: 'test',
+      });
+    const delegate = db.notificationDeliveryLog;
+    if (write === 'create') {
+      const create = delegate.create;
+      delegate.create = async () => {
+        throw timeout();
+      };
+      return () => {
+        delegate.create = create;
+      };
+    }
+    const updateMany = delegate.updateMany;
+    delegate.updateMany = async () => {
+      throw timeout();
+    };
+    return () => {
+      delegate.updateMany = updateMany;
+    };
+  }
+
+  it.each([
+    {
+      label: "a moved session's first claim (an earlier start's sent rows kept)",
+      status: 'sent',
+      stale: true,
+      write: 'create' as const,
+    },
+    { label: 'a parked row', status: 'parked', stale: false, write: 'updateMany' as const },
+  ])(
+    '1h: $label that fails at the final due tick is delivered by the next tick',
+    async ({ status, stale, write }) => {
+      const { db, notifications, reminder } = harness();
+      const start = new Date(NOW.getTime() + 55 * MIN);
+      const forStart = stale ? new Date(start.getTime() - 3 * 60 * MIN) : start;
+      addConfirmed(db, 'moved', start);
+      db.deliveryLogs.push(logRow('moved', 'client-1', status, forStart));
+      db.deliveryLogs.push(logRow('moved', 'coach-1', status, forStart));
+      const restore = failClaimWrites(db, write);
+      await withReminders(() => reminder.runOneHourReminderSweep());
+      restore();
+      expect(notifications.rows).toHaveLength(0);
+      // Next real tick: 50 minutes out, below the band.
+      jest.setSystemTime(new Date(NOW.getTime() + 5 * MIN));
+      await withReminders(() => reminder.runOneHourReminderSweep());
+      expect(notifications.rows.map((r) => r.user_id).sort()).toEqual(['client-1', 'coach-1']);
+      expect(notifications.pushes).toHaveLength(2);
+      const current = db.deliveryLogs.filter((l) => startMs(l) === start.getTime());
+      expect(current).toHaveLength(2);
+      for (const l of current) expect(l).toMatchObject({ status: 'sent' });
+      // An earlier start's rows are never rewritten.
+      const earlier = db.deliveryLogs.filter((l) => startMs(l) !== start.getTime());
+      expect(earlier).toHaveLength(stale ? 2 : 0);
+      for (const l of earlier) expect(l).toMatchObject({ status: 'sent', start_at: forStart });
+      // And never twice.
+      jest.setSystemTime(new Date(NOW.getTime() + 10 * MIN));
+      await withReminders(() => reminder.runOneHourReminderSweep());
+      expect(notifications.rows).toHaveLength(2);
+    },
+  );
+
+  // Every claim carries its start: B-NOTIF-4 (20270301000000) backfilled
+  // start_at and made it NOT NULL, so there are no legacy start-less rows.
+  it('rows for the current start (sent, gave_up) count as covered', async () => {
+    const { db, notifications, reminder } = harness();
+    const a = new Date(NOW.getTime() + 50 * MIN);
+    addConfirmed(db, 'settled-now', a);
+    db.deliveryLogs.push(logRow('settled-now', 'client-1', 'sent', a));
+    db.deliveryLogs.push(logRow('settled-now', 'coach-1', 'gave_up', a));
+    const warns = jest.spyOn(Logger.prototype, 'warn');
+    const errors = jest.spyOn(Logger.prototype, 'error');
+    try {
+      await withReminders(() => reminder.runOneHourReminderSweep());
+      expect(notifications.rows).toHaveLength(0);
+      expect(notifications.pushes).toHaveLength(0);
+      // Covered: catch-up neither failed nor found an uncovered session.
+      expect(JSON.stringify([...warns.mock.calls, ...errors.mock.calls])).not.toContain('catch-up');
+    } finally {
+      warns.mockRestore();
+      errors.mockRestore();
+    }
+  });
+});
+
+// Pre-push checklist (a) over the whole PR: provider and reminder error paths
+// log only IDs and machine codes. A synthetic private string in an error
+// message (provider SDK text, ORM query text) never reaches a logger argument.
+describe('checklist (a): scheduling error logs carry no free-form error text', () => {
+  const CANARY = 'PRIVATE-CANARY-meet-link-Jamie-notes-91c2';
+  const LOG_METHODS = ['log', 'warn', 'error', 'debug', 'verbose', 'fatal'] as const;
+  let spies: jest.SpyInstance[] = [];
+  beforeEach(() => {
+    spies = LOG_METHODS.map((m) =>
+      jest.spyOn(Logger.prototype, m).mockImplementation(() => undefined),
+    );
+  });
+  afterEach(() => {
+    for (const s of spies) s.mockRestore();
+    jest.setSystemTime(NOW);
+  });
+  function logged(): string {
+    return JSON.stringify(spies.flatMap((s) => s.mock.calls));
+  }
+  function ormCanary(): Prisma.PrismaClientKnownRequestError {
+    return new Prisma.PrismaClientKnownRequestError(`Query failed: ${CANARY}`, {
+      code: 'P2024',
+      clientVersion: 'test',
+      meta: { target: CANARY },
+    });
+  }
+
+  it.each([
+    { label: 'a provider SDK error', make: () => new TypeError(`calendar said: ${CANARY}`) },
+    { label: 'an ORM error', make: () => ormCanary() },
+  ])(
+    'provisioning failure ($label): booking stands, log has the session id only',
+    async ({ make }) => {
+      const { svc, providers } = harness();
+      const s = await svc.requestSession(CLIENT, request(CLIENT, 'st-q', TUE_1000, TUE_1015));
+      providers.resolveCalendar('stub').createEvent = async () => {
+        throw make();
+      };
+      const final = await svc.approveSession(COACH, s.id);
+      expect(final.status).toBe('scheduled');
+      const text = logged();
+      expect(text).toContain(`provider provisioning failed for session=${s.id}`);
+      expect(text).not.toContain(CANARY);
+    },
+  );
+
+  it('provider cancellation and superseded-artifact cleanup failures never log the provider message', async () => {
+    const { svc, providers } = harness();
+    const s = await svc.requestSession(CLIENT, request(CLIENT, 'st-q', TUE_1000, TUE_1015));
+    const adapter = providers.resolveCalendar('stub');
+    const original = adapter.createEvent.bind(adapter);
+    const gate = pausePoint();
+    adapter.createEvent = async (input) => {
+      await gate.hit();
+      await original(input);
+      return { externalEventId: 'gcal-evt-9', resolvedProvider: 'google_calendar' };
+    };
+    providers.resolveCalendar('google_calendar').cancelEvent = async () => {
+      throw new TypeError(`google said: ${CANARY}`);
+    };
+    const approving = svc.approveSession(COACH, s.id);
+    await gate.reached;
+    await svc.cancelSession(CLIENT, s.id, { reason: 'plans changed' });
+    gate.release();
+    expect((await approving).status).toBe('canceled');
+    const text = logged();
+    expect(text).toMatch(/(superseded artifact cleanup|Provider cancellation) failed for session=/);
+    expect(text).toContain('TypeError');
+    expect(text).not.toContain(CANARY);
+  });
+
+  it('a reminder dispatch that throws a non-ORM error logs its class only', async () => {
+    const { db, reminder, emitter } = harness();
+    const start = new Date(NOW.getTime() + 57 * 60_000);
+    db.addSession({
+      id: 'canary-reminder',
+      coach_id: 'coach-1',
+      client_id: 'client-1',
+      session_type_id: 'st-q',
+      status: 'scheduled',
+      start_at: start,
+      end_at: new Date(start.getTime() + 15 * 60_000),
+      video_url: 'https://meet.example.com/a',
+      approved_at: new Date(NOW.getTime() - 3 * 24 * 3_600_000),
+      created_at: new Date(NOW.getTime() - 3 * 24 * 3_600_000),
+    });
+    jest.spyOn(emitter, 'emitReminder1h').mockImplementation(async () => {
+      throw new RangeError(`render failed: ${CANARY}`);
+    });
+    await withReminders(() => reminder.runOneHourReminderSweep());
+    const text = logged();
+    expect(text).toContain('session=canary-reminder');
+    expect(text).toContain('RangeError');
+    expect(text).not.toContain(CANARY);
+  });
+});
+
+// B-634-10 (Sol @ 9e6c62c9): the lifecycle provider catches and the reminder
+// job log only closed-enum class names and catalogued codes. An identifier-
+// shaped name or code (still arbitrary data) logs as OtherError / is dropped.
+describe('B-634-10: lifecycle and reminder logs carry only closed-enum classes and codes', () => {
+  const NAME_CANARY = 'SYNTHETIC_PRIVATE_CANARY_123';
+  const CODE_CANARY = 'SYNTHETIC_PRIVATE_CODE_456';
+  const LOG_METHODS = ['log', 'warn', 'error', 'debug', 'verbose', 'fatal'] as const;
+  let spies: jest.SpyInstance[] = [];
+  beforeEach(() => {
+    spies = LOG_METHODS.map((m) =>
+      jest.spyOn(Logger.prototype, m).mockImplementation(() => undefined),
+    );
+  });
+  afterEach(() => {
+    for (const s of spies) s.mockRestore();
+    jest.setSystemTime(NOW);
+  });
+  function logged(): string {
+    return JSON.stringify(spies.flatMap((s) => s.mock.calls));
+  }
+  function canaryError(): Error {
+    const err = Object.assign(new Error('provider text'), { code: CODE_CANARY });
+    err.name = NAME_CANARY;
+    return err;
+  }
+
+  it('provisioning failure with an unknown name and code: booking stands, log says OtherError', async () => {
+    const { svc, providers } = harness();
+    const s = await svc.requestSession(CLIENT, request(CLIENT, 'st-q', TUE_1000, TUE_1015));
+    providers.resolveCalendar('stub').createEvent = async () => {
+      throw canaryError();
+    };
+    const final = await svc.approveSession(COACH, s.id);
+    expect(final.status).toBe('scheduled');
+    const text = logged();
+    expect(text).toContain(`provider provisioning failed for session=${s.id}: OtherError`);
+    expect(text).not.toContain(NAME_CANARY);
+    expect(text).not.toContain(CODE_CANARY);
+  });
+
+  it('provider cancellation failure wrapping a canary cause logs the outer class only', async () => {
+    const { svc, providers } = harness();
+    const s = await svc.requestSession(CLIENT, request(CLIENT, 'st-q', TUE_1000, TUE_1015));
+    const adapter = providers.resolveCalendar('stub');
+    const original = adapter.createEvent.bind(adapter);
+    const gate = pausePoint();
+    adapter.createEvent = async (input) => {
+      await gate.hit();
+      await original(input);
+      return { externalEventId: 'gcal-evt-9', resolvedProvider: 'google_calendar' };
+    };
+    providers.resolveCalendar('google_calendar').cancelEvent = async () => {
+      throw Object.assign(new TypeError('x'), { cause: canaryError(), code: CODE_CANARY });
+    };
+    const approving = svc.approveSession(COACH, s.id);
+    await gate.reached;
+    await svc.cancelSession(CLIENT, s.id, { reason: 'plans changed' });
+    gate.release();
+    expect((await approving).status).toBe('canceled');
+    const text = logged();
+    expect(text).toMatch(
+      /(superseded artifact cleanup|Provider cancellation) failed for session=[^:]+: TypeError"/,
+    );
+    expect(text).not.toContain(NAME_CANARY);
+    expect(text).not.toContain(CODE_CANARY);
+  });
+
+  it.each([
+    { label: 'an unknown-named error', make: (): unknown => canaryError(), expected: 'OtherError' },
+    {
+      label: 'a non-Error throw',
+      make: (): unknown => ({ name: NAME_CANARY, code: CODE_CANARY }),
+      expected: 'OtherError',
+    },
+  ])('a reminder dispatch that throws $label logs $expected only', async ({ make, expected }) => {
+    const { db, reminder, emitter } = harness();
+    const start = new Date(NOW.getTime() + 57 * 60_000);
+    db.addSession({
+      id: 'enum-reminder',
+      coach_id: 'coach-1',
+      client_id: 'client-1',
+      session_type_id: 'st-q',
+      status: 'scheduled',
+      start_at: start,
+      end_at: new Date(start.getTime() + 15 * 60_000),
+      video_url: 'https://meet.example.com/a',
+      approved_at: new Date(NOW.getTime() - 3 * 24 * 3_600_000),
+      created_at: new Date(NOW.getTime() - 3 * 24 * 3_600_000),
+    });
+    jest.spyOn(emitter, 'emitReminder1h').mockImplementation(async () => {
+      throw make();
+    });
+    await withReminders(() => reminder.runOneHourReminderSweep());
+    const text = logged();
+    expect(text).toContain('session=enum-reminder');
+    expect(text).toContain(`err=${expected}`);
+    expect(text).not.toContain(NAME_CANARY);
+    expect(text).not.toContain(CODE_CANARY);
   });
 });

@@ -54,6 +54,9 @@ const WAVE_FLAGS = [
   'FEATURE_MWB_AUTOSAVE_UNDO',
   'FEATURE_NAMED_REGIMES',
   'FEATURE_DUNNING_V2',
+  // Clinic engagement kill switches (backend #609, B-609-2).
+  'COACH_WELCOME_SCHEDULER_ENABLED',
+  'WORKOUT_REMINDERS_ENABLED',
 ];
 
 function edit(
@@ -99,7 +102,12 @@ describe('ENV_RULES extraction (runner side, no TypeScript)', () => {
 
 describe('emergency kill per flag (B-637-2): defaults-on switches are killed by a set, never an unset', () => {
   const kills = fem.killSwitches(base(), rules);
-  const DEFAULTS_ON = ['FEATURE_COMMUNITY_SCHEMA', 'SIGNUP_ROLE_CHOICE_ENABLED'];
+  const DEFAULTS_ON = [
+    'COACH_WELCOME_SCHEDULER_ENABLED',
+    'FEATURE_COMMUNITY_SCHEMA',
+    'SIGNUP_ROLE_CHOICE_ENABLED',
+    'WORKOUT_REMINDERS_ENABLED',
+  ];
 
   it('every managed flag declares unsetIs, and exactly the defaults-on switches are "on"', () => {
     for (const n of Object.keys(base().flags))
@@ -118,7 +126,7 @@ describe('emergency kill per flag (B-637-2): defaults-on switches are killed by 
       expect([r.name, onText.test(r.default ?? '')]).toEqual([r.name, r.unsetIs === 'on']);
   });
 
-  it('the real code readers: absent = on and the kill value = off for both defaults-on switches', () => {
+  it('the real code readers: absent = on and the kill value = off for every defaults-on switch', () => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { isCommunitySchemaEnabled } =
       require('../../src/community/community-schema.feature') as {
@@ -128,9 +136,17 @@ describe('emergency kill per flag (B-637-2): defaults-on switches are killed by 
     const { signupRoleChoiceEnabled } = require('../../src/auth/auth.service') as {
       signupRoleChoiceEnabled: () => boolean;
     };
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { isCoachWelcomeSchedulerEnabled, isWorkoutRemindersEnabled } =
+      require('../../src/engagement/engagement.flags') as {
+        isCoachWelcomeSchedulerEnabled: () => boolean;
+        isWorkoutRemindersEnabled: () => boolean;
+      };
     const readers: Record<string, () => boolean> = {
+      COACH_WELCOME_SCHEDULER_ENABLED: isCoachWelcomeSchedulerEnabled,
       FEATURE_COMMUNITY_SCHEMA: isCommunitySchemaEnabled,
       SIGNUP_ROLE_CHOICE_ENABLED: signupRoleChoiceEnabled,
+      WORKOUT_REMINDERS_ENABLED: isWorkoutRemindersEnabled,
     };
     for (const name of DEFAULTS_ON) {
       const saved = process.env[name];
@@ -221,7 +237,7 @@ describe('emergency kill per flag (B-637-2): defaults-on switches are killed by 
       kills,
     );
     expect(plan.join('\n')).toContain(
-      'defaults-on switches are killed by SETTING their off value, never by unsetting: FEATURE_COMMUNITY_SCHEMA=false SIGNUP_ROLE_CHOICE_ENABLED=false.',
+      'defaults-on switches are killed by SETTING their off value, never by unsetting: FEATURE_COMMUNITY_SCHEMA=false SIGNUP_ROLE_CHOICE_ENABLED=false COACH_WELCOME_SCHEDULER_ENABLED=false WORKOUT_REMINDERS_ENABLED=false.',
     );
   });
 });
@@ -454,6 +470,8 @@ describe('validation errors are specific and carry a Fix', () => {
         FEATURE_AI_CONSENT_LEDGER_ENABLED: 'true',
         BOOKING_REMINDERS_ENABLED: 'on',
         SIGNUP_ROLE_CHOICE_ENABLED: 'true',
+        COACH_WELCOME_SCHEDULER_ENABLED: 'true',
+        WORKOUT_REMINDERS_ENABLED: 'true',
         FEATURE_DUNNING_V2: 'true',
         FEATURE_WEARABLES_INGEST_POST: 'true',
         FEATURE_MWB_TEMPLATES: 'true',

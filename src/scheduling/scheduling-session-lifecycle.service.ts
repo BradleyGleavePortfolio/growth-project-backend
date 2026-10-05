@@ -20,7 +20,7 @@ import {
 import { randomUUID } from 'crypto';
 import { AuditAction, AuditService } from '../audit/audit.service';
 import { BookingEmitter } from '../notifications/emitters/booking.emitter';
-import { NotificationKind } from '../notifications/notification-kind';
+import { safeLogDiagnostic } from '../observability/orm-diagnostics';
 import { PrismaService } from '../prisma.service';
 import type {
   AttachManualVideoLinkDto,
@@ -38,6 +38,7 @@ import {
   MEETING_LINK_PATTERN,
   MIN_BOOKING_LEAD_MINUTES,
   OCCUPYING_SESSION_STATUSES,
+  SESSION_NOT_FOUND_MESSAGE,
   SchedulingErrorCode,
   hasUsableLink,
   requestExpiresAt,
@@ -493,16 +494,11 @@ export class SchedulingSessionLifecycleService {
           throw requestExpiredError(after, viewerOf(actor));
         throw stateChanged();
       }
-      // Reminder claims are per (session, user, kind); a moved session must
-      // be reminded again for its new time.
-      await tx.notificationDeliveryLog.deleteMany({
-        where: {
-          session_id: current.id,
-          kind: {
-            in: [NotificationKind.BOOKING_REMINDER_24H, NotificationKind.BOOKING_REMINDER_1H],
-          },
-        },
-      });
+      // B-643-1 / Sol B-647-1: reminders re-arm for the new time without
+      // touching the claim ledger. Claims are keyed (session, user, kind,
+      // start_at), so the new start time has no claim yet, and the
+      // reminder job only sends while the session still has the start
+      // time it claimed for (reminder.job.ts claimDelivery / remindOne).
       const row = await tx.coachingSession.findUniqueOrThrow({ where: { id: current.id } });
       return { row, typeName: type?.name ?? null, previousStatus: current.status, lapsed };
     });
@@ -734,10 +730,7 @@ export class SchedulingSessionLifecycleService {
     const session = await this.prisma.coachingSession.findUnique({ where: { id: sessionId } });
     if (!session) {
       throw new NotFoundException(
-        schedulingError(
-          SchedulingErrorCode.SESSION_NOT_FOUND,
-          'We could not find that session. It may have been removed. Open Calendar to see your sessions.',
-        ),
+        schedulingError(SchedulingErrorCode.SESSION_NOT_FOUND, SESSION_NOT_FOUND_MESSAGE),
       );
     }
     return session;
@@ -957,7 +950,7 @@ export class SchedulingSessionLifecycleService {
       return await this.runProviderProvisioning(sessionId, actor);
     } catch (err) {
       this.logger.error(
-        `provider provisioning failed for session=${sessionId}: ${(err as Error).message}`,
+        `provider provisioning failed for session=${sessionId}: ${safeLogDiagnostic(err)}`,
       );
       return this.loadSessionOrThrow(sessionId);
     }
@@ -1139,8 +1132,9 @@ export class SchedulingSessionLifecycleService {
         },
       });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.logger.error(`superseded artifact cleanup failed for session=${session.id}: ${msg}`);
+      this.logger.error(
+        `superseded artifact cleanup failed for session=${session.id}: ${safeLogDiagnostic(err)}`,
+      );
     }
   }
 
@@ -1172,8 +1166,9 @@ export class SchedulingSessionLifecycleService {
       });
     } catch (err) {
       // Provider cancellation failure must not roll back the local cancel.
-      const msg = err instanceof Error ? err.message : String(err);
-      this.logger.error(`Provider cancellation failed for session=${session.id}: ${msg}`);
+      this.logger.error(
+        `Provider cancellation failed for session=${session.id}: ${safeLogDiagnostic(err)}`,
+      );
     }
   }
 }

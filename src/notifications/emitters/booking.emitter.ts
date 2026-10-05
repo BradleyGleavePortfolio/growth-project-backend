@@ -3,6 +3,9 @@ import { NotificationsService } from '../notifications.service';
 import { NotificationKind, type NotificationKindValue } from '../notification-kind';
 import { NotificationCategory } from '../notification-category.enum';
 import type { PushDeliveryCode } from '../push-delivery.types';
+import { safeLogDiagnostic } from '../../observability/orm-diagnostics';
+import { PrismaService } from '../../prisma.service';
+import { resolveRecipientTimeZone } from '../recipient-timezone';
 
 // Booking lifecycle notifications: one in-app row (the notification center
 // entry) plus a real push through the shared Expo transport
@@ -20,8 +23,14 @@ import type { PushDeliveryCode } from '../push-delivery.types';
 //    actionScreen/actionParams, the format the mobile push router and
 //    notification center consume. Clients land on CalendarSession, coaches on
 //    CoachBookingInbox, both with { sessionId }.
-//  - Times are written in the recipient's zone (NotificationPreferences.timezone)
-//    with the zone abbreviation, e.g. "Mon, Oct 5, 9:00 AM PDT".
+//  - Times are written in the recipient's own zone with the zone named, e.g.
+//    "Mon, Oct 5, 9:00 AM PDT", never in UTC (B-643-1). The zone comes from
+//    recipient-timezone.ts (zone provenance, B-647-1 / B-647-2): a zone the
+//    person actually supplied, else the coach's published zone. With no
+//    usable zone the copy has no clock time at all (never a silent Pacific
+//    default), and every payload carries the zone it was written in.
+//  - C-647-3: the stored 24h reminder names the date, not "tomorrow", so it
+//    is still true when read the next day.
 //  - Copy is plain and calm (no exclamation marks, no emojis). Each message
 //    says what happened and, where there is one, the next step.
 //  - Emitters never throw: booking state must not fail because delivery did.
@@ -160,11 +169,17 @@ export const BOOKING_PUSH_SCREEN: Record<BookingRecipientRole, string> = {
 export class BookingEmitter {
   private readonly logger = new Logger(BookingEmitter.name);
 
-  constructor(private readonly notifications: NotificationsService) {}
+  constructor(
+    private readonly notifications: NotificationsService,
+    // C-647-2: required. PrismaModule is @Global; a lost provider must fail
+    // at boot, not silently drop every clock time from booking copy.
+    private readonly prisma: PrismaService,
+  ) {}
 
   // (a) booking_requested -> COACH, a client asked for a coach-approval type.
   async emitRequested(p: BookingRequestedPayload): Promise<BookingDeliveryOutcome> {
-    const when = p.scheduledAt ? await this.whenFor(p.coachUserId, p.scheduledAt) : null;
+    const tz = p.scheduledAt ? await this.zoneFor(p.coachUserId, p.sessionId) : null;
+    const when = p.scheduledAt && tz ? formatWhen(p.scheduledAt, tz) : null;
     const what = typeLabel(p.sessionTypeName, 'a session');
     const body = when
       ? `${p.clientDisplayName} asked for ${what} on ${when}. Approve or decline in your booking inbox.`
@@ -181,6 +196,7 @@ export class BookingEmitter {
         clientDisplayName: p.clientDisplayName,
         requestedAt: p.requestedAt.toISOString(),
         scheduledAt: p.scheduledAt ? p.scheduledAt.toISOString() : null,
+        timeZone: tz,
         sessionTypeName: p.sessionTypeName ?? null,
         notes: p.notes,
       },
@@ -189,18 +205,22 @@ export class BookingEmitter {
 
   // (a2) booking_confirmed -> COACH, a client booked an instant-confirm type.
   async emitBooked(p: BookingBookedPayload): Promise<BookingDeliveryOutcome> {
-    const when = await this.whenFor(p.coachUserId, p.scheduledAt);
+    const tz = await this.zoneFor(p.coachUserId, p.sessionId);
+    const what = typeLabel(p.sessionTypeName, 'a session');
     return this.deliver({
       userId: p.coachUserId,
       role: 'coach',
       kind: NotificationKind.BOOKING_CONFIRMED,
       title: 'New session booked',
-      body: `${p.clientDisplayName} booked ${typeLabel(p.sessionTypeName, 'a session')} on ${when}.`,
+      body: tz
+        ? `${p.clientDisplayName} booked ${what} on ${formatWhen(p.scheduledAt, tz)}.`
+        : `${p.clientDisplayName} booked ${what}. Open the session to see the time.`,
       sessionId: p.sessionId,
       deepLink: `tgp://coach/sessions/${p.sessionId}`,
       payload: {
         clientDisplayName: p.clientDisplayName,
         scheduledAt: p.scheduledAt.toISOString(),
+        timeZone: tz,
         sessionTypeName: p.sessionTypeName ?? null,
       },
     });
@@ -208,11 +228,16 @@ export class BookingEmitter {
 
   // (b) booking_confirmed -> CLIENT, coach approved or the type confirms instantly.
   async emitConfirmed(p: BookingConfirmedPayload): Promise<BookingDeliveryOutcome> {
-    const when = await this.whenFor(p.clientUserId, p.scheduledAt);
+    const tz = await this.zoneFor(p.clientUserId, p.sessionId);
+    const when = tz ? formatWhen(p.scheduledAt, tz) : null;
     const what = typeLabel(p.sessionTypeName, 'session');
     const body = p.instant
-      ? `Your ${what} with ${p.coachDisplayName} is confirmed for ${when}.`
-      : `${p.coachDisplayName} confirmed your ${what} on ${when}.`;
+      ? when
+        ? `Your ${what} with ${p.coachDisplayName} is confirmed for ${when}.`
+        : `Your ${what} with ${p.coachDisplayName} is confirmed. Open the session to see the time.`
+      : when
+        ? `${p.coachDisplayName} confirmed your ${what} on ${when}.`
+        : `${p.coachDisplayName} confirmed your ${what}. Open the session to see the time.`;
     return this.deliver({
       userId: p.clientUserId,
       role: 'client',
@@ -224,6 +249,7 @@ export class BookingEmitter {
       payload: {
         coachDisplayName: p.coachDisplayName,
         scheduledAt: p.scheduledAt.toISOString(),
+        timeZone: tz,
         sessionTypeName: p.sessionTypeName ?? null,
       },
     });
@@ -232,7 +258,8 @@ export class BookingEmitter {
   // (c) booking_declined -> CLIENT.
   async emitDeclined(p: BookingDeclinedPayload): Promise<BookingDeliveryOutcome> {
     const what = typeLabel(p.sessionTypeName, 'session');
-    const when = p.scheduledAt ? await this.whenFor(p.clientUserId, p.scheduledAt) : null;
+    const tz = p.scheduledAt ? await this.zoneFor(p.clientUserId, p.sessionId) : null;
+    const when = p.scheduledAt && tz ? formatWhen(p.scheduledAt, tz) : null;
     const body = when
       ? `${p.coachDisplayName} could not take your ${what} request for ${when}. Pick another time in Calendar.`
       : `${p.coachDisplayName} could not take your ${what} request. Pick another time in Calendar.`;
@@ -248,6 +275,7 @@ export class BookingEmitter {
         coachDisplayName: p.coachDisplayName,
         requestedAt: p.requestedAt.toISOString(),
         scheduledAt: p.scheduledAt ? p.scheduledAt.toISOString() : null,
+        timeZone: tz,
         sessionTypeName: p.sessionTypeName ?? null,
         declineReason: p.declineReason,
       },
@@ -257,7 +285,7 @@ export class BookingEmitter {
   // (d) booking_cancelled -> the OTHER party.
   async emitCancelled(p: BookingCancelledPayload): Promise<BookingDeliveryOutcome> {
     const role = p.recipientRole ?? 'client';
-    const when = await this.whenFor(p.recipientUserId, p.scheduledAt);
+    const tz = await this.zoneFor(p.recipientUserId, p.sessionId);
     const what = typeLabel(p.sessionTypeName, 'session');
     const next = role === 'client' ? ' You can book a new time in Calendar.' : '';
     return this.deliver({
@@ -265,12 +293,15 @@ export class BookingEmitter {
       role,
       kind: NotificationKind.BOOKING_CANCELLED,
       title: 'Session cancelled',
-      body: `${p.cancellingPartyDisplayName} cancelled the ${what} on ${when}.${next}`,
+      body: tz
+        ? `${p.cancellingPartyDisplayName} cancelled the ${what} on ${formatWhen(p.scheduledAt, tz)}.${next}`
+        : `${p.cancellingPartyDisplayName} cancelled your upcoming ${what}.${next}`,
       sessionId: p.sessionId,
       deepLink: `tgp://sessions/${p.sessionId}`,
       payload: {
         cancellingPartyDisplayName: p.cancellingPartyDisplayName,
         scheduledAt: p.scheduledAt.toISOString(),
+        timeZone: tz,
         sessionTypeName: p.sessionTypeName ?? null,
         cancelReason: p.cancelReason,
       },
@@ -280,20 +311,23 @@ export class BookingEmitter {
   // (e) booking_rescheduled -> the OTHER party, the move took effect.
   async emitRescheduled(p: BookingRescheduledPayload): Promise<BookingDeliveryOutcome> {
     const role = p.recipientRole ?? 'client';
-    const when = await this.whenFor(p.recipientUserId, p.newScheduledAt);
+    const tz = await this.zoneFor(p.recipientUserId, p.sessionId);
     const what = typeLabel(p.sessionTypeName, 'session');
     return this.deliver({
       userId: p.recipientUserId,
       role,
       kind: NotificationKind.BOOKING_RESCHEDULED,
       title: 'Session moved',
-      body: `${p.reschedulerDisplayName} moved your ${what} to ${when}.`,
+      body: tz
+        ? `${p.reschedulerDisplayName} moved your ${what} to ${formatWhen(p.newScheduledAt, tz)}.`
+        : `${p.reschedulerDisplayName} moved your ${what} to a new time. Open the session to see it.`,
       sessionId: p.sessionId,
       deepLink: `tgp://sessions/${p.sessionId}`,
       payload: {
         reschedulerDisplayName: p.reschedulerDisplayName,
         oldScheduledAt: p.oldScheduledAt.toISOString(),
         newScheduledAt: p.newScheduledAt.toISOString(),
+        timeZone: tz,
         sessionTypeName: p.sessionTypeName ?? null,
       },
     });
@@ -302,19 +336,21 @@ export class BookingEmitter {
   // (e2) booking_rescheduled -> COACH, a client moved a coach-approval session;
   // it is back to awaiting approval at the new time.
   async emitMoveRequested(p: BookingMoveRequestedPayload): Promise<BookingDeliveryOutcome> {
-    const when = await this.whenFor(p.coachUserId, p.newScheduledAt);
+    const tz = await this.zoneFor(p.coachUserId, p.sessionId);
+    const to = tz ? formatWhen(p.newScheduledAt, tz) : 'a new time';
     return this.deliver({
       userId: p.coachUserId,
       role: 'coach',
       kind: NotificationKind.BOOKING_RESCHEDULED,
       title: 'Session move requested',
-      body: `${p.clientDisplayName} asked to move ${typeLabel(p.sessionTypeName, 'a session')} to ${when}. Approve or decline in your booking inbox.`,
+      body: `${p.clientDisplayName} asked to move ${typeLabel(p.sessionTypeName, 'a session')} to ${to}. Approve or decline in your booking inbox.`,
       sessionId: p.sessionId,
       deepLink: `tgp://coach/sessions/${p.sessionId}`,
       payload: {
         clientDisplayName: p.clientDisplayName,
         oldScheduledAt: p.oldScheduledAt.toISOString(),
         newScheduledAt: p.newScheduledAt.toISOString(),
+        timeZone: tz,
         sessionTypeName: p.sessionTypeName ?? null,
       },
     });
@@ -332,18 +368,22 @@ export class BookingEmitter {
 
   // (h) booking_link_needed -> COACH, a confirmed session has no call link.
   async emitLinkNeeded(p: BookingLinkNeededPayload): Promise<BookingDeliveryOutcome> {
-    const when = await this.whenFor(p.coachUserId, p.scheduledAt);
+    const tz = await this.zoneFor(p.coachUserId, p.sessionId);
+    const what = typeLabel(p.sessionTypeName, 'session');
     return this.deliver({
       userId: p.coachUserId,
       role: 'coach',
       kind: NotificationKind.BOOKING_LINK_NEEDED,
       title: 'Add a call link',
-      body: `Your ${typeLabel(p.sessionTypeName, 'session')} with ${p.clientDisplayName} on ${when} has no call link yet. Add one so they can join.`,
+      body: tz
+        ? `Your ${what} with ${p.clientDisplayName} on ${formatWhen(p.scheduledAt, tz)} has no call link yet. Add one so they can join.`
+        : `Your upcoming ${what} with ${p.clientDisplayName} has no call link yet. Add one so they can join.`,
       sessionId: p.sessionId,
       deepLink: `tgp://coach/sessions/${p.sessionId}`,
       payload: {
         clientDisplayName: p.clientDisplayName,
         scheduledAt: p.scheduledAt.toISOString(),
+        timeZone: tz,
         sessionTypeName: p.sessionTypeName ?? null,
       },
     });
@@ -351,18 +391,22 @@ export class BookingEmitter {
 
   // (i) booking_link_ready -> CLIENT, the coach added the call link.
   async emitLinkReady(p: BookingLinkReadyPayload): Promise<BookingDeliveryOutcome> {
-    const when = await this.whenFor(p.clientUserId, p.scheduledAt);
+    const tz = await this.zoneFor(p.clientUserId, p.sessionId);
+    const what = typeLabel(p.sessionTypeName, 'session');
     return this.deliver({
       userId: p.clientUserId,
       role: 'client',
       kind: NotificationKind.BOOKING_LINK_READY,
       title: 'Call link ready',
-      body: `${p.coachDisplayName} added the call link for your ${typeLabel(p.sessionTypeName, 'session')} on ${when}.`,
+      body: tz
+        ? `${p.coachDisplayName} added the call link for your ${what} on ${formatWhen(p.scheduledAt, tz)}.`
+        : `${p.coachDisplayName} added the call link for your upcoming ${what}.`,
       sessionId: p.sessionId,
       deepLink: `tgp://client/sessions/${p.sessionId}`,
       payload: {
         coachDisplayName: p.coachDisplayName,
         scheduledAt: p.scheduledAt.toISOString(),
+        timeZone: tz,
         sessionTypeName: p.sessionTypeName ?? null,
       },
     });
@@ -371,12 +415,13 @@ export class BookingEmitter {
   // (k) booking_request_expired -> BOTH sides, once each (S-SCHED-5). Calm,
   // no blame: what happened, that the time is open again, and the next step.
   async emitRequestExpired(p: BookingRequestExpiredPayload): Promise<BookingDeliveryOutcome> {
-    const when = await this.whenFor(p.recipientUserId, p.scheduledAt);
+    const tz = await this.zoneFor(p.recipientUserId, p.sessionId);
     const what = typeLabel(p.sessionTypeName, 'session');
+    const forWhen = tz ? ` for ${formatWhen(p.scheduledAt, tz)}` : '';
     const body =
       p.recipientRole === 'client'
-        ? `Your ${what} request for ${when} was not confirmed in time, so it has closed. Pick another time in Calendar.`
-        : `${p.otherPartyDisplayName}'s ${what} request for ${when} closed without an answer, and the time is open again.`;
+        ? `Your ${what} request${forWhen} was not confirmed in time, so it has closed. Pick another time in Calendar.`
+        : `${p.otherPartyDisplayName}'s ${what} request${forWhen} closed without an answer, and the time is open again.`;
     return this.deliver({
       userId: p.recipientUserId,
       role: p.recipientRole,
@@ -391,6 +436,7 @@ export class BookingEmitter {
       payload: {
         otherPartyDisplayName: p.otherPartyDisplayName,
         scheduledAt: p.scheduledAt.toISOString(),
+        timeZone: tz,
         sessionTypeName: p.sessionTypeName ?? null,
       },
       skipInApp: p.skipInApp === true,
@@ -406,12 +452,19 @@ export class BookingEmitter {
     kind: NotificationKindValue,
   ): Promise<BookingDeliveryOutcome> {
     const role = p.recipientRole ?? 'client';
-    const at = await this.timeFor(p.recipientUserId, p.scheduledAt);
+    const tz = await this.zoneFor(p.recipientUserId, p.sessionId);
     const what = typeLabel(p.sessionTypeName, 'session');
+    const withWhom = `Your ${what} with ${p.otherPartyDisplayName}`;
     const lead =
       kind === NotificationKind.BOOKING_REMINDER_24H
-        ? `Your ${what} with ${p.otherPartyDisplayName} is tomorrow at ${at}.`
-        : `Your ${what} with ${p.otherPartyDisplayName} starts at ${at}.`;
+        ? tz
+          ? // C-647-3: the stored body names the date, so it stays true
+            // when read the next day.
+            `${withWhom} is on ${formatWhen(p.scheduledAt, tz)}.`
+          : `${withWhom} is in about 24 hours.`
+        : tz
+          ? `${withWhom} starts at ${formatTime(p.scheduledAt, tz)}.`
+          : `${withWhom} starts in about an hour.`;
     let tail = '';
     if (p.hasMeetingLink === false) {
       tail =
@@ -433,6 +486,7 @@ export class BookingEmitter {
       payload: {
         otherPartyDisplayName: p.otherPartyDisplayName,
         scheduledAt: p.scheduledAt.toISOString(),
+        timeZone: tz,
         sessionTypeName: p.sessionTypeName ?? null,
         hasMeetingLink: p.hasMeetingLink ?? null,
       },
@@ -490,7 +544,7 @@ export class BookingEmitter {
         outcome.notificationId = notificationId;
       } catch (err) {
         this.logger.warn(
-          `BookingEmitter ${args.kind} in-app write failed for user=${args.userId}: ${(err as Error).message}`,
+          `BookingEmitter ${args.kind} in-app write failed for user=${args.userId}: ${emitterDiagnostic(err)}`,
         );
       }
     }
@@ -519,7 +573,7 @@ export class BookingEmitter {
       }
     } catch (err) {
       this.logger.warn(
-        `BookingEmitter ${args.kind} push failed for user=${args.userId}: ${(err as Error).message}`,
+        `BookingEmitter ${args.kind} push failed for user=${args.userId}: ${emitterDiagnostic(err)}`,
       );
     }
     return outcome;
@@ -531,29 +585,25 @@ export class BookingEmitter {
     return prefs.booking_push !== false;
   }
 
-  // Recipient-local wording. NotificationPreferences.timezone (default
-  // America/Los_Angeles) is the per-user zone; the zone abbreviation is
-  // always printed so the time is unambiguous on a lock screen.
-  private async zoneFor(userId: string): Promise<string> {
-    try {
-      const prefs: Record<string, unknown> = await this.notifications.getPreferences(userId);
-      const tz = prefs.timezone;
-      if (typeof tz === 'string' && isValidZone(tz)) return tz;
-    } catch (err) {
-      this.logger.debug(
-        `BookingEmitter zone lookup failed for user=${userId}: ${(err as Error).message}`,
-      );
-    }
-    return 'America/Los_Angeles';
+  // Recipient-local wording (B-643-1, zone provenance B-647-1 / B-647-2):
+  // the zone the person supplied, else the coach's published zone, else null
+  // (the caller then writes copy without a clock time). Never throws.
+  private zoneFor(userId: string, sessionId: string): Promise<string | null> {
+    return resolveRecipientTimeZone(this.prisma, userId, sessionId);
   }
+}
 
-  private async whenFor(userId: string, d: Date): Promise<string> {
-    return formatWhen(d, await this.zoneFor(userId));
-  }
-
-  private async timeFor(userId: string, d: Date): Promise<string> {
-    return formatTime(d, await this.zoneFor(userId));
-  }
+/**
+ * B-634-8: the only text a BookingEmitter log line carries for an error.
+ * Booking notification bodies and payloads hold display names and private
+ * request/decline/cancel notes, and an ORM error (or any error wrapping one
+ * as a cause) can echo those query arguments in its message, stack or meta.
+ * ORM errors collapse to `DatabaseRequestError: Database request failed
+ * (P####)` through the shared safeDiagnostic; any other error keeps only its
+ * class name and a machine-shaped `code`, never its message.
+ */
+export function emitterDiagnostic(err: unknown): string {
+  return safeLogDiagnostic(err);
 }
 
 function typeLabel(name: string | null | undefined, fallback: string): string {
@@ -561,18 +611,9 @@ function typeLabel(name: string | null | undefined, fallback: string): string {
   return n ? n.slice(0, 60) : fallback;
 }
 
-function isValidZone(tz: string): boolean {
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone: tz });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 // e.g. "Mon, Oct 5, 9:00 AM PDT". The app renders the payload's ISO
 // timestamp in the device zone; this is the lock-screen wording.
-export function formatWhen(d: Date, tz = 'America/Los_Angeles'): string {
+export function formatWhen(d: Date, tz: string): string {
   return new Intl.DateTimeFormat('en-US', {
     timeZone: tz,
     weekday: 'short',
@@ -585,7 +626,7 @@ export function formatWhen(d: Date, tz = 'America/Los_Angeles'): string {
 }
 
 // e.g. "9:00 AM PDT".
-export function formatTime(d: Date, tz = 'America/Los_Angeles'): string {
+export function formatTime(d: Date, tz: string): string {
   return new Intl.DateTimeFormat('en-US', {
     timeZone: tz,
     hour: 'numeric',

@@ -253,7 +253,7 @@ export class BookingRequestExpiryJob {
               attempts: 1,
               lease_until: new Date(now.getTime() + REQUEST_EXPIRY_NOTICE_LEASE_MS),
               claim_token: token,
-              session_start_at: session.start_at,
+              start_at: session.start_at,
             },
           });
           rows.push(row);

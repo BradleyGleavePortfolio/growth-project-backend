@@ -40,6 +40,7 @@ import { assertCanManageAvailability } from './scheduling.permissions';
 import {
   HTTPS_LINK_PATTERN,
   OCCUPYING_SESSION_STATUSES,
+  SESSION_NOT_FOUND_MESSAGE,
   SchedulingErrorCode,
   schedulingError,
 } from './scheduling.types';
@@ -279,7 +280,7 @@ export class SchedulingService {
       throw new NotFoundException(
         schedulingError(
           SchedulingErrorCode.SESSION_TYPE_UNAVAILABLE,
-          'We could not find that appointment type. Refresh your appointment types and try the change again.',
+          'That appointment type is no longer available. Refresh your appointment types and try the change again.',
         ),
       );
     }
@@ -566,10 +567,7 @@ export class SchedulingService {
     });
     if (!full) {
       throw new NotFoundException(
-        schedulingError(
-          SchedulingErrorCode.SESSION_NOT_FOUND,
-          'We could not find that session. It may have been removed. Open Calendar to see your sessions.',
-        ),
+        schedulingError(SchedulingErrorCode.SESSION_NOT_FOUND, SESSION_NOT_FOUND_MESSAGE),
       );
     }
     return toSessionView(full, actor);

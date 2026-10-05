@@ -6,8 +6,12 @@
  * NotificationsService.pushToUser, gated on the recipient's booking_push /
  * muted preference. Both carry actionScreen/actionParams so a tap opens the
  * session (client: CalendarSession, coach: CoachBookingInbox). Times are in
- * the recipient's zone with the zone abbreviation.
+ * the recipient's zone with the zone abbreviation; the zone comes from
+ * recipient-timezone.ts (B-643-1 / B-647 zone provenance), and with no usable
+ * zone the copy has no clock time.
  */
+import { Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import {
   BOOKING_PUSH_SCREEN,
   BookingEmitter,
@@ -20,6 +24,7 @@ import {
   type CreateNotificationInput,
 } from '../src/notifications/notifications.service';
 import type { PushDeliveryResult } from '../src/notifications/push-delivery.types';
+import { PrismaService } from '../src/prisma.service';
 
 const SCHEDULED_AT = new Date('2026-10-06T17:00:00Z'); // Tue Oct 6, 10:00 AM PDT
 const NEW_SCHEDULED_AT = new Date('2026-10-07T18:30:00Z');
@@ -56,12 +61,31 @@ class FakeNotifications {
       return this.pushResult;
     },
   );
+
+  // Zone provenance (B-647-1 / B-647-2): the emitter reads the recipient's
+  // zone through recipient-timezone.ts. This answers it from `prefs` as a
+  // zone the person supplied (timezone_updated_at stamped); default Los
+  // Angeles. No coach profile zones, so an unusable zone means no zone.
+  zoneReads = jest.fn(async (args: { where: { user_id: string } }) => ({
+    timezone: this.prefs[args.where.user_id]?.timezone ?? 'America/Los_Angeles',
+    timezone_updated_at: new Date('2026-09-01T00:00:00Z'),
+  }));
+}
+
+function zonePrisma(fake: FakeNotifications): PrismaService {
+  return Object.assign(Object.create(PrismaService.prototype) as PrismaService, {
+    notificationPreferences: { findUnique: fake.zoneReads },
+    coachProfile: { findUnique: async () => null },
+    coachingSession: { findUnique: async () => null },
+    user: { findUnique: async () => null },
+  });
 }
 
 function build() {
   const fake = new FakeNotifications();
   const emitter = new BookingEmitter(
     Object.assign(Object.create(NotificationsService.prototype) as NotificationsService, fake),
+    zonePrisma(fake),
   );
   return { fake, emitter };
 }
@@ -158,7 +182,7 @@ describe('BookingEmitter delivery', () => {
     );
   });
 
-  it('falls back to Pacific time for an unknown zone', async () => {
+  it('an unusable zone writes no clock time (never a silent Pacific default, B-643-1)', async () => {
     const { fake, emitter } = build();
     fake.prefs['client-x'] = { timezone: 'Mars/Olympus' };
     await emitter.emitLinkReady({
@@ -168,8 +192,8 @@ describe('BookingEmitter delivery', () => {
       sessionTypeName: null,
       scheduledAt: SCHEDULED_AT,
     });
-    expect(fake.rows[0].body).toContain('10:00 AM PDT');
-    expect(fake.rows[0].body).toContain('your session');
+    expect(fake.rows[0].body).toBe('Coach Kim added the call link for your upcoming session.');
+    expect(fake.rows[0].payload).toMatchObject({ timeZone: null });
   });
 
   it('respects booking_push=false: in-app row still written, no push sent', async () => {
@@ -254,8 +278,8 @@ describe('BookingEmitter delivery', () => {
       hasMeetingLink: false,
     });
     expect(fake.rows.map((r) => r.body)).toEqual([
-      'Your Quick Q/A Call with Jamie is tomorrow at 10:00 AM PDT. It has no call link yet. Add one so they can join.',
-      'Your Quick Q/A Call with Coach Kim is tomorrow at 10:00 AM PDT. Your coach will add the call link before it starts.',
+      'Your Quick Q/A Call with Jamie is on Tue, Oct 6, 10:00 AM PDT. It has no call link yet. Add one so they can join.',
+      'Your Quick Q/A Call with Coach Kim is on Tue, Oct 6, 10:00 AM PDT. Your coach will add the call link before it starts.',
     ]);
     expect(fake.pushes.map((p) => [p.title, p.data.actionScreen])).toEqual([
       ['Session tomorrow', 'CoachBookingInbox'],
@@ -300,7 +324,302 @@ describe('BookingEmitter delivery', () => {
       client: 'CalendarSession',
       coach: 'CoachBookingInbox',
     });
-    expect(formatWhen(SCHEDULED_AT)).toBe('Tue, Oct 6, 10:00 AM PDT');
+    expect(formatWhen(SCHEDULED_AT, 'America/Los_Angeles')).toBe('Tue, Oct 6, 10:00 AM PDT');
     expect(formatTime(SCHEDULED_AT, 'Europe/London')).toBe('6:00 PM GMT+1');
+  });
+});
+
+// B-634-8 (Sol @ bb6f3ea8): booking bodies and payloads carry display names
+// and private request/decline/cancel notes. An ORM error at any of the three
+// emitter catch sites can echo those query arguments; none of it may reach a
+// logger argument. Delivery stays nonthrowing and channel-aware.
+describe('B-634-8: emitter logs never carry raw ORM diagnostics', () => {
+  const CANARY = 'PRIVATE-CANARY-note-Jamie-knee-pain-7f3a';
+  const LOG_METHODS = ['log', 'warn', 'error', 'debug', 'verbose', 'fatal'] as const;
+  let spies: jest.SpyInstance[] = [];
+
+  function ormError(): Prisma.PrismaClientKnownRequestError {
+    const err = new Prisma.PrismaClientKnownRequestError(
+      `Timed out fetching a new connection. Query: INSERT ... body = "${CANARY}"`,
+      { code: 'P2024', clientVersion: 'test', meta: { target: CANARY } },
+    );
+    err.stack = `PrismaClientKnownRequestError: ${CANARY}\n    at query (${CANARY})`;
+    return err;
+  }
+
+  function loggedText(): string {
+    return JSON.stringify(spies.flatMap((s) => s.mock.calls));
+  }
+
+  beforeEach(() => {
+    spies = LOG_METHODS.map((m) =>
+      jest.spyOn(Logger.prototype, m).mockImplementation(() => undefined),
+    );
+  });
+  afterEach(() => {
+    for (const s of spies) s.mockRestore();
+  });
+
+  const requested = {
+    coachUserId: 'coach-1',
+    clientDisplayName: 'Jamie',
+    sessionId: 'sess-1',
+    sessionTypeName: 'Quick Q/A Call',
+    requestedAt: REQUESTED_AT,
+    scheduledAt: SCHEDULED_AT,
+    notes: CANARY,
+  };
+
+  it('in-app creation P2024: canary never logged; push still delivered without a notificationId', async () => {
+    const { fake, emitter } = build();
+    fake.createNotification.mockImplementationOnce(async () => {
+      throw ormError();
+    });
+    const outcome = await emitter.emitRequested(requested);
+    expect(outcome).toEqual({ inapp: 'failed', push: 'delivered', notificationId: null });
+    expect(fake.pushes[0].data).not.toHaveProperty('notificationId');
+    const text = loggedText();
+    expect(text).toContain('booking_requested in-app write failed for user=coach-1');
+    expect(text).toContain('Database request failed (P2024)');
+    expect(text).not.toContain(CANARY);
+  });
+
+  it('push-preference lookup P2024: canary never logged; in-app row kept, push reported failed', async () => {
+    const { fake, emitter } = build();
+    // The zone comes from recipient-timezone.ts; the only preference read is
+    // the push gate.
+    fake.getPreferences.mockImplementationOnce(async () => {
+      throw ormError();
+    });
+    const outcome = await emitter.emitRequested(requested);
+    expect(outcome).toEqual({ inapp: 'written', push: 'failed', notificationId: 'notif-1' });
+    expect(fake.pushToUser).not.toHaveBeenCalled();
+    const text = loggedText();
+    expect(text).toContain('booking_requested push failed for user=coach-1');
+    expect(text).toContain('Database request failed (P2024)');
+    expect(text).not.toContain(CANARY);
+  });
+
+  it('zone lookup P2024: canary never logged; copy without a clock time, both channels delivered', async () => {
+    const { fake, emitter } = build();
+    fake.zoneReads.mockImplementationOnce(async () => {
+      throw ormError();
+    });
+    const outcome = await emitter.emitRequested(requested);
+    expect(outcome).toEqual({ inapp: 'written', push: 'delivered', notificationId: 'notif-1' });
+    expect(fake.rows[0].body).not.toMatch(/AM|PM|\d:\d{2}/);
+    const text = loggedText();
+    // recipient-timezone.ts logs the error class only.
+    expect(text).toContain('time zone lookup failed for user=coach-1');
+    expect(text).toContain('PrismaClientKnownRequestError');
+    expect(text).not.toContain(CANARY);
+  });
+
+  it('an ORM error wrapped as a cause, and a non-ORM error, never log their message', async () => {
+    const { fake, emitter } = build();
+    const wrapped = Object.assign(new Error(`notification write failed: ${CANARY}`), {
+      cause: ormError(),
+    });
+    fake.createNotification.mockImplementationOnce(async () => {
+      throw wrapped;
+    });
+    const plain = Object.assign(new TypeError(`bad payload ${CANARY}`), { code: 'ERR_X' });
+    fake.pushToUser.mockImplementationOnce(async () => {
+      throw plain;
+    });
+    const outcome = await emitter.emitRequested(requested);
+    expect(outcome).toEqual({ inapp: 'failed', push: 'failed', notificationId: null });
+    const text = loggedText();
+    expect(text).toContain('Database request failed (P2024)');
+    // B-634-10: ERR_X is not in the reviewed code catalog, so it is dropped.
+    expect(text).toContain('push failed for user=coach-1: TypeError');
+    expect(text).not.toContain('ERR_X');
+    expect(text).not.toContain(CANARY);
+  });
+});
+
+// B-634-10 (Sol @ 9e6c62c9): identifier-shaped names and codes are still
+// arbitrary data. At the real emitter logger boundary only closed-enum class
+// names and catalogued codes may appear; unknown names log as OtherError.
+describe('B-634-10: emitter logs carry only closed-enum error classes and codes', () => {
+  const NAME_CANARY = 'SYNTHETIC_PRIVATE_CANARY_123';
+  const CODE_CANARY = 'SYNTHETIC_PRIVATE_CODE_456';
+  const LOG_METHODS = ['log', 'warn', 'error', 'debug', 'verbose', 'fatal'] as const;
+  let spies: jest.SpyInstance[] = [];
+  beforeEach(() => {
+    spies = LOG_METHODS.map((m) =>
+      jest.spyOn(Logger.prototype, m).mockImplementation(() => undefined),
+    );
+  });
+  afterEach(() => {
+    for (const s of spies) s.mockRestore();
+  });
+  function loggedText(): string {
+    return JSON.stringify(spies.flatMap((s) => s.mock.calls));
+  }
+  function canaryError(): Error {
+    const err = Object.assign(new Error('provider text'), { code: CODE_CANARY });
+    err.name = NAME_CANARY;
+    return err;
+  }
+  const requested = {
+    coachUserId: 'coach-1',
+    clientDisplayName: 'Jamie',
+    sessionId: 'sess-1',
+    sessionTypeName: 'Quick Q/A Call',
+    requestedAt: REQUESTED_AT,
+    scheduledAt: SCHEDULED_AT,
+    notes: null,
+  };
+
+  it('in-app write: unknown name and code log as OtherError; push still delivered', async () => {
+    const { fake, emitter } = build();
+    fake.createNotification.mockImplementationOnce(async () => {
+      throw canaryError();
+    });
+    const outcome = await emitter.emitRequested(requested);
+    expect(outcome).toEqual({ inapp: 'failed', push: 'delivered', notificationId: null });
+    const text = loggedText();
+    expect(text).toContain('booking_requested in-app write failed for user=coach-1: OtherError');
+    expect(text).not.toContain(NAME_CANARY);
+    expect(text).not.toContain(CODE_CANARY);
+  });
+
+  it('push: a known class with an unknown code logs the class only', async () => {
+    const { fake, emitter } = build();
+    fake.pushToUser.mockImplementationOnce(async () => {
+      throw Object.assign(new TypeError('x'), { code: CODE_CANARY });
+    });
+    const outcome = await emitter.emitRequested(requested);
+    expect(outcome).toEqual({ inapp: 'written', push: 'failed', notificationId: 'notif-1' });
+    const text = loggedText();
+    expect(text).toMatch(/push failed for user=coach-1: TypeError"/);
+    expect(text).not.toContain(CODE_CANARY);
+  });
+
+  it('zone lookup: a wrapped canary cause and a non-Error throw never surface', async () => {
+    const { fake, emitter } = build();
+    fake.zoneReads.mockImplementationOnce(async () => {
+      throw Object.assign(new Error('outer'), { cause: canaryError() });
+    });
+    fake.pushToUser.mockImplementationOnce(async () => {
+      throw { name: NAME_CANARY, code: CODE_CANARY };
+    });
+    const outcome = await emitter.emitRequested(requested);
+    expect(outcome).toEqual({ inapp: 'written', push: 'failed', notificationId: 'notif-1' });
+    const text = loggedText();
+    expect(text).toContain(
+      'time zone lookup failed for user=coach-1; writing copy without a clock time: Error',
+    );
+    expect(text).toContain('push failed for user=coach-1: OtherError');
+    expect(text).not.toContain(NAME_CANARY);
+    expect(text).not.toContain(CODE_CANARY);
+  });
+
+  it('a catalogued transport code on a cause is kept for operators', async () => {
+    const { fake, emitter } = build();
+    fake.pushToUser.mockImplementationOnce(async () => {
+      throw Object.assign(new TypeError('fetch failed'), {
+        cause: Object.assign(new Error('socket'), { code: 'ECONNRESET' }),
+      });
+    });
+    await emitter.emitRequested(requested);
+    expect(loggedText()).toContain('push failed for user=coach-1: TypeError (ECONNRESET)');
+  });
+});
+
+// Main merge (B-643-1, B-647-1 / B-647-2 zone provenance, C-647-3): the zone
+// comes from recipient-timezone.ts. With no usable zone no booking copy shows
+// a clock time; an unstamped preference row (the schema default zone) is not
+// the person's zone; every payload names the zone its copy was written in.
+describe('BookingEmitter zone provenance (main merge)', () => {
+  function emitterWith(zones: {
+    prefs?: { timezone: string; timezone_updated_at: Date | null } | null;
+    coachProfiles?: Record<string, string>;
+    sessionCoach?: string | null;
+  }) {
+    const fake = new FakeNotifications();
+    const prisma = Object.assign(Object.create(PrismaService.prototype) as PrismaService, {
+      notificationPreferences: { findUnique: async () => zones.prefs ?? null },
+      coachProfile: {
+        findUnique: async (args: { where: { user_id: string } }) => {
+          const tz = zones.coachProfiles?.[args.where.user_id];
+          return tz ? { timezone: tz } : null;
+        },
+      },
+      coachingSession: {
+        findUnique: async () => (zones.sessionCoach ? { coach_id: zones.sessionCoach } : null),
+      },
+      user: { findUnique: async () => null },
+    });
+    const emitter = new BookingEmitter(
+      Object.assign(Object.create(NotificationsService.prototype) as NotificationsService, fake),
+      prisma,
+    );
+    return { fake, emitter };
+  }
+
+  it('no usable zone: every body drops the clock time and never shows UTC', async () => {
+    const { fake, emitter } = emitterWith({});
+    await emitter.emitConfirmed({
+      clientUserId: 'client-1',
+      coachDisplayName: 'Coach Kim',
+      sessionId: 'sess-tz',
+      scheduledAt: SCHEDULED_AT,
+    });
+    await emitter.emitCancelled({
+      recipientUserId: 'client-1',
+      cancellingPartyDisplayName: 'Coach Kim',
+      sessionId: 'sess-tz',
+      scheduledAt: SCHEDULED_AT,
+      cancelReason: null,
+    });
+    await emitter.emitRescheduled({
+      recipientUserId: 'client-1',
+      reschedulerDisplayName: 'Coach Kim',
+      sessionId: 'sess-tz',
+      oldScheduledAt: SCHEDULED_AT,
+      newScheduledAt: NEW_SCHEDULED_AT,
+    });
+    await emitter.emitReminder24h({
+      recipientUserId: 'client-1',
+      otherPartyDisplayName: 'Coach Kim',
+      sessionId: 'sess-tz',
+      scheduledAt: SCHEDULED_AT,
+    });
+    await emitter.emitReminder1h({
+      recipientUserId: 'client-1',
+      otherPartyDisplayName: 'Coach Kim',
+      sessionId: 'sess-tz',
+      scheduledAt: SCHEDULED_AT,
+    });
+    const bodies = fake.rows.map((r) => r.body);
+    expect(bodies).toEqual([
+      'Coach Kim confirmed your session. Open the session to see the time.',
+      'Coach Kim cancelled your upcoming session. You can book a new time in Calendar.',
+      'Coach Kim moved your session to a new time. Open the session to see it.',
+      'Your session with Coach Kim is in about 24 hours.',
+      'Your session with Coach Kim starts in about an hour.',
+    ]);
+    for (const b of bodies) expect(b).not.toMatch(/UTC|AM|PM|\d:\d{2}/);
+    expect(fake.pushes.map((p) => p.body)).toEqual(bodies);
+    for (const r of fake.rows) expect(r.payload).toMatchObject({ timeZone: null });
+  });
+
+  it('an unstamped preference row is not the person zone: the booking coach zone is used', async () => {
+    const { fake, emitter } = emitterWith({
+      prefs: { timezone: 'America/Los_Angeles', timezone_updated_at: null },
+      coachProfiles: { 'coach-9': 'America/New_York' },
+      sessionCoach: 'coach-9',
+    });
+    await emitter.emitReminder24h({
+      recipientUserId: 'client-1',
+      otherPartyDisplayName: 'Coach Kim',
+      sessionId: 'sess-tz',
+      scheduledAt: SCHEDULED_AT,
+    });
+    // C-647-3: the stored 24h body names the date, not "tomorrow".
+    expect(fake.rows[0].body).toBe('Your session with Coach Kim is on Tue, Oct 6, 1:00 PM EDT.');
+    expect(fake.rows[0].payload).toMatchObject({ timeZone: 'America/New_York' });
   });
 });

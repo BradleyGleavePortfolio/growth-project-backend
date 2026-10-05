@@ -89,6 +89,7 @@ function harness() {
       Object.create(NotificationsService.prototype) as NotificationsService,
       notifications,
     ),
+    asPrisma(db),
   );
   const auditWrites: Array<Record<string, unknown>> = [];
   const audit = Object.assign(Object.create(AuditService.prototype) as AuditService, {

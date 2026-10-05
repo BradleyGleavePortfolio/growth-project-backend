@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -12,39 +13,69 @@ import * as crypto from 'crypto';
 import { PrismaService } from '../prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import {
+  AppleRevocationOutcome,
+  AppleTokenRevocationService,
+} from './apple-token-revocation.service';
+import { executeErasureManifest } from './account-deletion.manifest';
+import {
+  TOMBSTONE_AUTH_PREFIX,
+  RECEIPT_KEY_PREFIX,
+  LEGACY_RECEIPT_KEY_PREFIX,
+  deletionReceiptKey,
+  receiptCutoff,
+} from './deletion-receipt';
+import { AccountDeletionStorageService } from './account-deletion.storage';
+import { AccountDeletionBillingService } from './account-deletion.billing';
 import { VoiceUploadProvider } from '../community/voice/voice-upload.provider';
 import {
+  VoiceErasureRow,
   attemptVoiceErasures,
   objectTargets,
   recordVoiceErasures,
 } from '../community/voice/voice-erasure';
 
 // ─── State machine ────────────────────────────────────────────────────────────
-// User-initiated two-phase deletion:
 //
-//   NONE       → REQUESTED   POST /me/delete-account
-//                             token emailed; deletion_requested_at + token_hash set
+//   NONE / REQUESTED → CONFIRMED   POST /me/delete-account (after RecentAuthGuard)
+//                                   requested_at (kept if a legacy request
+//                                   exists) + confirmed_at = now, one write
+//   REQUESTED        → CONFIRMED   GET /me/delete-account/confirm?token= (legacy)
+//   REQUESTED/CONFIRMED → NONE     POST /me/delete-account/cancel, while
+//                                   now < purge_after
+//   CONFIRMED        → DELETED     nightly cron, once now >= purge_after
+//   ANY              → DELETED     POST /admin/users/:id/delete (owner only)
 //
-//   REQUESTED  → CONFIRMED   GET  /me/delete-account/confirm?token=...
-//                             deletion_confirmed_at set; grace period starts
+// Concurrency (A-608-2). Every transition runs in ONE database transaction
+// that first takes a row lock on the User row (SELECT ... FOR UPDATE) and
+// re-checks the state under that lock. The confirmed_at timestamp is the
+// schedule version: the cron passes the value it saw and the finalizer
+// refuses a row whose schedule changed (cancelled and re-requested).
+//   - request waits for the lock, so two concurrent requests serialize; the
+//     second sees CONFIRMED and returns the first schedule unchanged, and only
+//     the winner calls Apple.
+//   - cancel and the finalizer use SKIP LOCKED: a cancel that meets a running
+//     finalization gets 409 instead of racing it, and a second cron worker
+//     skips a row another worker holds.
+//   - the finalizer checks the exact cutoff (now >= purge_after) under the
+//     lock, so a cancel that passed its own check has either committed (the
+//     finalizer then sees NONE) or not started (it then sees DELETED).
+//   - the lifecycle audit row is written in the same transaction as the
+//     transition, so an event exists if and only if the transition committed.
 //
-//   CONFIRMED  → DELETED     nightly cron (DELETION_FINALIZE_CRON)
-//                             PII scrubbed after DELETION_GRACE_DAYS
-//
-// Cancel endpoint resets REQUESTED or CONFIRMED → NONE (available during grace).
-//
-// Admin-initiated:
-//   ANY → DELETED             POST /admin/users/:id/delete
-//                             hard-delete bypasses confirmation and grace period;
-//                             always writes a deletion_audit row
+// Finalization order inside the locked transaction: collect storage keys and
+// Stripe subscription ids from the rows, record the durable voice-recording
+// erasure work (B-610-5; verified after commit, retried by
+// VoiceErasureService until verified), tombstone the User row, run the
+// erasure manifest (account-deletion.manifest.ts), delete the lifecycle audit
+// rows, THEN remove the bytes and cancel the subscriptions (only after every
+// DB statement succeeded; both idempotent, any failure throws and rolls the
+// DB back for the next run), and write one non-identifying outcome row. After commit the Supabase auth identity is
+// removed; the original supabase_id stays on the tombstone (the only retry
+// handle) until that succeeds, and the cron retries it every night.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Sentinel user ID used in place of the real user_id when anonymizing
-// CoachMessage and AuditLog rows. A real User row with this exact ID must
-// exist in the database (bootstrapped by the GDPR migration's seed step or
-// created by your bootstrap script). The sentinel row has role='student',
-// email='__deleted_user__@tombstone.invalid', and is never accessible through
-// the API.
+/** Legacy sentinel id kept for callers that still import it. */
 export const DELETED_USER_SENTINEL_ID = '__deleted_user_sentinel__';
 
 export const DeletionAuditEvent = {
@@ -53,9 +84,19 @@ export const DeletionAuditEvent = {
   DELETION_CANCELLED: 'deletion_cancelled',
   DELETION_FINALIZED: 'deletion_finalized',
   ADMIN_FORCE_DELETE: 'admin_force_delete',
+  APPLE_REVOCATION: 'apple_revocation',
+  AUTH_IDENTITY_REMOVED: 'auth_identity_removed',
+  AUTH_IDENTITY_CLEANUP_FAILED: 'auth_identity_cleanup_failed',
 } as const;
 
 export type DeletionAuditEventValue = (typeof DeletionAuditEvent)[keyof typeof DeletionAuditEvent];
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** The finalize cron runs once a day, so completion can lag eligibility by up to a day. */
+const FINALIZE_WINDOW_MS = DAY_MS;
+const FINALIZE_TX_TIMEOUT_MS = 120_000;
+// Re-exported for existing importers; defined with the completion receipt.
+export { TOMBSTONE_AUTH_PREFIX };
 
 export interface DeletionStatus {
   state: 'none' | 'requested' | 'confirmed' | 'deleted';
@@ -63,7 +104,23 @@ export interface DeletionStatus {
   confirmed_at?: string;
   grace_days?: number;
   purge_after?: string;
+  /** Latest time the nightly job is expected to have finished the deletion. */
+  completes_by?: string;
   deleted_at?: string;
+  cancellable?: boolean;
+}
+
+export interface DeletionScheduledResponse {
+  state: 'confirmed';
+  already_scheduled: boolean;
+  message: string;
+  requested_at: string;
+  confirmed_at: string;
+  grace_days: number;
+  purge_after: string;
+  completes_by: string;
+  cancellable: true;
+  apple_revocation: AppleRevocationOutcome;
 }
 
 export interface AdminDeleteOptions {
@@ -73,6 +130,25 @@ export interface AdminDeleteOptions {
   reason?: string;
   ip?: string | null;
   userAgent?: string | null;
+}
+
+export type FinalizeSkipReason =
+  'not_found' | 'locked' | 'already_deleted' | 'cancelled' | 'not_due' | 'rescheduled';
+
+export type AuthIdentityOutcome = 'removed' | 'pending' | 'none';
+
+export type FinalizeResult =
+  | { outcome: 'finalized'; authIdentity: AuthIdentityOutcome }
+  | { outcome: 'skipped'; reason: FinalizeSkipReason };
+
+interface LockedUser {
+  id: string;
+  role: string;
+  email: string;
+  supabase_id: string | null;
+  deleted_at: Date | null;
+  deletion_requested_at: Date | null;
+  deletion_confirmed_at: Date | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -86,9 +162,12 @@ export class AccountDeletionService {
     private readonly auditService: AuditService,
     private readonly config: ConfigService,
     private readonly supabase: SupabaseService,
+    private readonly appleRevocation: AppleTokenRevocationService,
+    private readonly storage: AccountDeletionStorageService,
+    private readonly billing: AccountDeletionBillingService,
   ) {}
 
-  // ── Env helpers ─────────────────────────────────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────────────────────
 
   private get graceDays(): number {
     const raw = this.config.get<string>('DELETION_GRACE_DAYS');
@@ -96,231 +175,329 @@ export class AccountDeletionService {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 14;
   }
 
-  private get tokenTtlHours(): number {
-    const raw = this.config.get<string>('DELETION_TOKEN_TTL_HOURS');
-    const parsed = raw ? parseInt(raw, 10) : NaN;
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 24;
-  }
-
-  // ── Token helpers ────────────────────────────────────────────────────────────
-
-  /** Generate a cryptographically random single-use token and its SHA-256 hash. */
-  private generateToken(): { token: string; hash: string } {
-    const token = crypto.randomBytes(32).toString('hex');
-    const hash = crypto.createHash('sha256').update(token).digest('hex');
-    return { token, hash };
-  }
-
-  /** Hash an inbound token so it can be compared against the stored hash. */
   private hashToken(token: string): string {
     return crypto.createHash('sha256').update(token).digest('hex');
   }
 
-  // ── Step 1: Request deletion (sends confirmation email) ──────────────────────
+  private purgeAfterFor(confirmedAt: Date): Date {
+    return new Date(confirmedAt.getTime() + this.graceDays * DAY_MS);
+  }
+
+  private completesByFor(confirmedAt: Date): Date {
+    return new Date(this.purgeAfterFor(confirmedAt).getTime() + FINALIZE_WINDOW_MS);
+  }
+
+  /**
+   * Lock the User row for the rest of the transaction and return its
+   * lifecycle columns. `skip` returns null when another transaction holds
+   * the lock (callers distinguish that from a missing row).
+   */
+  private async lockUser(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    mode: 'wait' | 'skip',
+  ): Promise<LockedUser | null> {
+    const rows =
+      mode === 'skip'
+        ? await tx.$queryRaw<LockedUser[]>`
+            SELECT "id", "role"::text AS "role", "email", "supabase_id", "deleted_at",
+                   "deletion_requested_at", "deletion_confirmed_at"
+              FROM "User" WHERE "id" = ${userId}
+               FOR UPDATE SKIP LOCKED`
+        : await tx.$queryRaw<LockedUser[]>`
+            SELECT "id", "role"::text AS "role", "email", "supabase_id", "deleted_at",
+                   "deletion_requested_at", "deletion_confirmed_at"
+              FROM "User" WHERE "id" = ${userId}
+               FOR UPDATE`;
+    return rows[0] ?? null;
+  }
+
+  private async userExists(tx: Prisma.TransactionClient, userId: string): Promise<boolean> {
+    const row = await tx.user.findUnique({ where: { id: userId }, select: { id: true } });
+    return !!row;
+  }
+
+  /**
+   * deletion_audit insert. Lifecycle events are written with the
+   * transaction client of the transition they describe, so a failure rolls
+   * the transition back (B-608-4). Metadata never carries email, IP or
+   * user agent.
+   */
+  private async insertDeletionAudit(
+    client: Prisma.TransactionClient,
+    opts: {
+      subjectId: string;
+      event: DeletionAuditEventValue;
+      actorId: string | null;
+      actorRole?: string | null;
+      metadata?: Record<string, unknown>;
+    },
+  ): Promise<void> {
+    await client.$executeRaw`
+      INSERT INTO "deletion_audit" ("id", "user_id", "event", "actor_id", "actor_role", "metadata", "created_at")
+      VALUES (
+        gen_random_uuid()::text,
+        ${opts.subjectId},
+        ${opts.event},
+        ${opts.actorId},
+        ${opts.actorRole ?? null},
+        ${opts.metadata ? (opts.metadata as Prisma.InputJsonValue) : Prisma.DbNull}::jsonb,
+        NOW()
+      )
+    `;
+  }
+
+  // ── Request (in-app; schedules immediately) ─────────────────────────────────
+  //
+  // Apple 5.1.1(v): deletion must be initiable AND completable in the app. The
+  // caller has just passed RecentAuthGuard (fresh password, Sign in with
+  // Apple, or Google re-auth), which is the confirmation factor, so the grace
+  // period starts now. A legacy REQUESTED row (old email flow) is confirmed
+  // here too, so nobody is stranded waiting for an email that never comes.
 
   async requestDeletion(
     userId: string,
-    opts: { ip?: string | null; userAgent?: string | null } = {},
-  ): Promise<{ message: string; expires_at: string }> {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new NotFoundException('User not found');
-    if (user.deleted_at) throw new BadRequestException('Account is already deleted');
-
-    // Idempotent — if a valid token already exists return the same expiry
-    // without sending another email (prevents enumeration / token flooding).
-    if (
-      user.deletion_token_hash &&
-      user.deletion_token_expires_at &&
-      user.deletion_token_expires_at > new Date() &&
-      user.deletion_requested_at
-    ) {
+    opts: {
+      ip?: string | null;
+      userAgent?: string | null;
+      appleAuthorizationCode?: string | null;
+    } = {},
+  ): Promise<DeletionScheduledResponse> {
+    const tx = await this.prisma.$transaction(async (client) => {
+      const user = await this.lockUser(client, userId, 'wait');
+      if (!user) throw new NotFoundException('User not found');
+      if (user.deleted_at) throw new BadRequestException('Account is already deleted');
+      if (user.deletion_confirmed_at) {
+        return {
+          scheduled: false as const,
+          role: user.role,
+          email: user.email,
+          requestedAt: user.deletion_requested_at ?? user.deletion_confirmed_at,
+          confirmedAt: user.deletion_confirmed_at,
+        };
+      }
+      const now = new Date();
+      const requestedAt = user.deletion_requested_at ?? now;
+      await client.user.update({
+        where: { id: userId },
+        data: {
+          deletion_requested_at: requestedAt,
+          deletion_confirmed_at: now,
+          deletion_token_hash: null,
+          deletion_token_expires_at: null,
+        },
+      });
+      const purgeAfter = this.purgeAfterFor(now);
+      await this.insertDeletionAudit(client, {
+        subjectId: userId,
+        event: DeletionAuditEvent.DELETION_REQUESTED,
+        actorId: userId,
+        actorRole: user.role,
+        metadata: {
+          confirmation: 'in_app_recent_auth',
+          from_legacy_request: !!user.deletion_requested_at,
+        },
+      });
+      await this.insertDeletionAudit(client, {
+        subjectId: userId,
+        event: DeletionAuditEvent.DELETION_CONFIRMED,
+        actorId: userId,
+        actorRole: user.role,
+        metadata: { grace_days: this.graceDays, purge_after: purgeAfter.toISOString() },
+      });
       return {
-        message:
-          'A deletion request is already pending for your account. You can cancel it from Settings.',
-        expires_at: user.deletion_token_expires_at.toISOString(),
+        scheduled: true as const,
+        role: user.role,
+        email: user.email,
+        requestedAt,
+        confirmedAt: now,
       };
+    });
+
+    if (!tx.scheduled) {
+      return this.scheduledResponse(tx.requestedAt, tx.confirmedAt, 'not_requested', true);
     }
 
-    const { token, hash } = this.generateToken();
-    const expiresAt = new Date(Date.now() + this.tokenTtlHours * 60 * 60 * 1000);
-    const now = new Date();
-
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        deletion_requested_at: now,
-        // Reset any prior confirmed state so the user has to re-confirm
-        deletion_confirmed_at: null,
-        deletion_token_hash: hash,
-        deletion_token_expires_at: expiresAt,
-      },
-    });
-
-    // Send confirmation email via the same infra as Phase 9 digests.
-    // If the email module is not yet wired, we log and continue — a missing
-    // email is operational, not a data-integrity failure.
-    await this.sendConfirmationEmail(user.email, user.name, token, expiresAt).catch(
-      (err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        this.logger.error(
-          `AccountDeletion: failed to send confirmation email to user=${userId}: ${msg}`,
-        );
-      },
-    );
-
-    await this.writeDeletionAudit({
+    // Only the transaction that actually scheduled the deletion revokes Apple
+    // tokens (never blocks; the outcome is recorded and returned).
+    const appleRevocation = await this.appleRevocation.revokeWithAuthorizationCode(
+      opts.appleAuthorizationCode,
       userId,
-      event: DeletionAuditEvent.DELETION_REQUESTED,
-      actorId: userId,
-      actorRole: user.role,
-      metadata: {
-        email_snapshot: user.email,
-        ip: opts.ip,
-        user_agent: opts.userAgent,
-        token_expires_at: expiresAt.toISOString(),
-      },
-    });
+    );
+    this.logger.log(
+      `account deletion scheduled user=${userId} apple_revocation=${appleRevocation}`,
+    );
+    try {
+      await this.insertDeletionAudit(this.prisma, {
+        subjectId: userId,
+        event: DeletionAuditEvent.APPLE_REVOCATION,
+        actorId: userId,
+        actorRole: tx.role,
+        metadata: { outcome: appleRevocation },
+      });
+    } catch (err) {
+      // The schedule is committed; the outcome is also in the log line above.
+      this.logger.error(
+        `account deletion: apple revocation audit write failed user=${userId}: ${(err as Error).message}`,
+      );
+    }
 
-    // Mirror to global AuditLog so the admin console shows this event.
     await this.auditService.write({
       action: 'account_deletion.requested',
       actorId: userId,
-      actorRole: user.role,
-      actorEmail: user.email,
+      actorRole: tx.role,
+      actorEmail: tx.email,
       targetUserId: userId,
       targetType: 'user',
       targetId: userId,
       ip: opts.ip ?? null,
       userAgent: opts.userAgent ?? null,
-      metadata: { token_expires_at: expiresAt.toISOString() },
+      metadata: {
+        grace_days: this.graceDays,
+        purge_after: this.purgeAfterFor(tx.confirmedAt).toISOString(),
+        apple_revocation: appleRevocation,
+      },
     });
 
+    return this.scheduledResponse(tx.requestedAt, tx.confirmedAt, appleRevocation, false);
+  }
+
+  private scheduledResponse(
+    requestedAt: Date,
+    confirmedAt: Date,
+    appleRevocation: AppleRevocationOutcome,
+    alreadyScheduled: boolean,
+  ): DeletionScheduledResponse {
+    const purgeAfter = this.purgeAfterFor(confirmedAt);
+    const dateLabel = purgeAfter.toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'UTC',
+    });
     return {
-      message:
-        'Your deletion request has been received. A confirmation link will be sent to your email when email delivery is configured. You have 24 hours to confirm. You can cancel at any time from Settings.',
-      expires_at: expiresAt.toISOString(),
+      state: 'confirmed',
+      already_scheduled: alreadyScheduled,
+      message: `Your account and its data will be permanently deleted after ${dateLabel}. You can cancel before then from Settings.`,
+      requested_at: requestedAt.toISOString(),
+      confirmed_at: confirmedAt.toISOString(),
+      grace_days: this.graceDays,
+      purge_after: purgeAfter.toISOString(),
+      completes_by: this.completesByFor(confirmedAt).toISOString(),
+      cancellable: true,
+      apple_revocation: appleRevocation,
     };
   }
 
-  // ── Step 2: Confirm via one-time email link ───────────────────────────────────
+  // ── Legacy: confirm via one-time email link ────────────────────────────────
 
   async confirmDeletion(token: string): Promise<{ message: string; purge_after: string }> {
     const hash = this.hashToken(token);
-
-    const user = await this.prisma.user.findFirst({
+    const candidate = await this.prisma.user.findFirst({
       where: { deletion_token_hash: hash },
+      select: { id: true },
     });
-
-    if (!user) {
-      // Return 401 rather than 404 to avoid oracle: "this token doesn't exist
-      // vs this token expired" are indistinguishable to the client.
+    if (!candidate) {
+      // 401 rather than 404: "no such token" and "expired" look the same.
       throw new UnauthorizedException('Invalid or expired confirmation link');
     }
-    if (!user.deletion_token_expires_at || user.deletion_token_expires_at < new Date()) {
-      throw new UnauthorizedException('Confirmation link has expired');
-    }
-    if (user.deleted_at) {
-      throw new BadRequestException('Account is already deleted');
-    }
 
-    const now = new Date();
-    const purgeAfter = new Date(now.getTime() + this.graceDays * 24 * 60 * 60 * 1000);
-
-    // Consume the token (single-use): clear hash + expiry, set confirmed_at.
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: {
-        deletion_confirmed_at: now,
-        deletion_token_hash: null,
-        deletion_token_expires_at: null,
-      },
-    });
-
-    await this.writeDeletionAudit({
-      userId: user.id,
-      event: DeletionAuditEvent.DELETION_CONFIRMED,
-      actorId: user.id,
-      actorRole: user.role,
-      metadata: {
-        email_snapshot: user.email,
-        grace_days: this.graceDays,
-        purge_after: purgeAfter.toISOString(),
-      },
-    });
-
-    await this.auditService.write({
-      action: 'account_deletion.confirmed',
-      actorId: user.id,
-      actorRole: user.role,
-      actorEmail: user.email,
-      targetUserId: user.id,
-      targetType: 'user',
-      targetId: user.id,
-      metadata: { grace_days: this.graceDays, purge_after: purgeAfter.toISOString() },
+    const purgeAfter = await this.prisma.$transaction(async (client) => {
+      const user = await this.lockUser(client, candidate.id, 'wait');
+      const fresh = await client.user.findUnique({
+        where: { id: candidate.id },
+        select: { deletion_token_hash: true, deletion_token_expires_at: true },
+      });
+      if (!user || !fresh || fresh.deletion_token_hash !== hash) {
+        throw new UnauthorizedException('Invalid or expired confirmation link');
+      }
+      if (!fresh.deletion_token_expires_at || fresh.deletion_token_expires_at < new Date()) {
+        throw new UnauthorizedException('Confirmation link has expired');
+      }
+      if (user.deleted_at) throw new BadRequestException('Account is already deleted');
+      const now = new Date();
+      await client.user.update({
+        where: { id: user.id },
+        data: {
+          deletion_confirmed_at: now,
+          deletion_token_hash: null,
+          deletion_token_expires_at: null,
+        },
+      });
+      const after = this.purgeAfterFor(now);
+      await this.insertDeletionAudit(client, {
+        subjectId: user.id,
+        event: DeletionAuditEvent.DELETION_CONFIRMED,
+        actorId: user.id,
+        actorRole: user.role,
+        metadata: {
+          grace_days: this.graceDays,
+          purge_after: after.toISOString(),
+          via: 'email_link',
+        },
+      });
+      return after;
     });
 
     return {
-      message: `Your account is scheduled for permanent deletion on ${purgeAfter.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}. You have ${this.graceDays} days to cancel.`,
+      message: `Your account is scheduled for permanent deletion after ${purgeAfter.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}. You have ${this.graceDays} days to cancel.`,
       purge_after: purgeAfter.toISOString(),
     };
   }
 
-  // ── Step 3: Cancel (within grace period) ─────────────────────────────────────
+  // ── Cancel (within grace period) ───────────────────────────────────────────
 
   async cancelDeletion(
     userId: string,
     opts: { ip?: string | null; userAgent?: string | null } = {},
   ): Promise<{ message: string }> {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new NotFoundException('User not found');
-    if (user.deleted_at) throw new BadRequestException('Account is already deleted');
-
-    const hasRequest = !!user.deletion_requested_at;
-    const hasConfirm = !!user.deletion_confirmed_at;
-
-    if (!hasRequest && !hasConfirm) {
-      throw new BadRequestException('No pending deletion request to cancel');
-    }
-
-    // If confirmed, ensure we're still within the grace window
-    if (hasConfirm) {
-      const graceEnd = new Date(
-        user.deletion_confirmed_at!.getTime() + this.graceDays * 24 * 60 * 60 * 1000,
-      );
-      if (new Date() > graceEnd) {
+    const result = await this.prisma.$transaction(async (client) => {
+      const user = await this.lockUser(client, userId, 'skip');
+      if (!user) {
+        if (!(await this.userExists(client, userId))) throw new NotFoundException('User not found');
+        throw new ConflictException(
+          'Your account deletion is already in progress and can no longer be cancelled.',
+        );
+      }
+      if (user.deleted_at) throw new BadRequestException('Account is already deleted');
+      const hasRequest = !!user.deletion_requested_at;
+      const hasConfirm = !!user.deletion_confirmed_at;
+      if (!hasRequest && !hasConfirm) {
+        throw new BadRequestException('No pending deletion request to cancel');
+      }
+      // Same boundary as the finalizer: cancellable strictly before purge_after.
+      if (
+        user.deletion_confirmed_at &&
+        Date.now() >= this.purgeAfterFor(user.deletion_confirmed_at).getTime()
+      ) {
         throw new BadRequestException(
           'The grace period has expired. Your account is being finalized for deletion.',
         );
       }
-    }
-
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        deletion_requested_at: null,
-        deletion_confirmed_at: null,
-        deletion_token_hash: null,
-        deletion_token_expires_at: null,
-      },
-    });
-
-    await this.writeDeletionAudit({
-      userId,
-      event: DeletionAuditEvent.DELETION_CANCELLED,
-      actorId: userId,
-      actorRole: user.role,
-      metadata: {
-        was_confirmed: hasConfirm,
-        ip: opts.ip,
-        user_agent: opts.userAgent,
-      },
+      await client.user.update({
+        where: { id: userId },
+        data: {
+          deletion_requested_at: null,
+          deletion_confirmed_at: null,
+          deletion_token_hash: null,
+          deletion_token_expires_at: null,
+        },
+      });
+      await this.insertDeletionAudit(client, {
+        subjectId: userId,
+        event: DeletionAuditEvent.DELETION_CANCELLED,
+        actorId: userId,
+        actorRole: user.role,
+        metadata: { was_confirmed: hasConfirm },
+      });
+      return user;
     });
 
     await this.auditService.write({
       action: 'account_deletion.cancelled',
       actorId: userId,
-      actorRole: user.role,
-      actorEmail: user.email,
+      actorRole: result.role,
+      actorEmail: result.email,
       targetUserId: userId,
       targetType: 'user',
       targetId: userId,
@@ -331,7 +508,7 @@ export class AccountDeletionService {
     return { message: 'Your deletion request has been cancelled. Your account is active.' };
   }
 
-  // ── Status ────────────────────────────────────────────────────────────────────
+  // ── Status ─────────────────────────────────────────────────────────────────
 
   async getDeletionStatus(userId: string): Promise<DeletionStatus> {
     const user = await this.prisma.user.findUnique({
@@ -340,7 +517,6 @@ export class AccountDeletionService {
         deleted_at: true,
         deletion_requested_at: true,
         deletion_confirmed_at: true,
-        deletion_token_expires_at: true,
       },
     });
     if (!user) throw new NotFoundException('User not found');
@@ -349,634 +525,406 @@ export class AccountDeletionService {
       return { state: 'deleted', deleted_at: user.deleted_at.toISOString() };
     }
     if (user.deletion_confirmed_at) {
-      const purgeAfter = new Date(
-        user.deletion_confirmed_at.getTime() + this.graceDays * 24 * 60 * 60 * 1000,
-      );
+      const purgeAfter = this.purgeAfterFor(user.deletion_confirmed_at);
       return {
         state: 'confirmed',
+        requested_at: (user.deletion_requested_at ?? user.deletion_confirmed_at).toISOString(),
         confirmed_at: user.deletion_confirmed_at.toISOString(),
         grace_days: this.graceDays,
         purge_after: purgeAfter.toISOString(),
+        completes_by: this.completesByFor(user.deletion_confirmed_at).toISOString(),
+        cancellable: Date.now() < purgeAfter.getTime(),
       };
     }
     if (user.deletion_requested_at) {
+      // Legacy email-flow request that was never confirmed: not scheduled.
+      // The app finishes it with a fresh re-auth + POST /me/delete-account.
       return {
         state: 'requested',
         requested_at: user.deletion_requested_at.toISOString(),
+        grace_days: this.graceDays,
+        cancellable: true,
       };
     }
-    return { state: 'none' };
+    return { state: 'none', grace_days: this.graceDays };
   }
 
-  // ── Admin force-delete ────────────────────────────────────────────────────────
+  // ── Admin force-delete ─────────────────────────────────────────────────────
 
-  /**
-   * Immediately scrub PII and finalize the account. No grace period.
-   * Only reachable by OWNER-role admins.
-   *
-   * IMPORTANT: this is audited both in deletion_audit and AuditLog. The
-   * dual write is intentional so GDPR auditors and security teams each
-   * have their own query surface.
-   */
   async adminForceDelete(
     targetUserId: string,
     opts: AdminDeleteOptions,
   ): Promise<{ message: string }> {
-    const user = await this.prisma.user.findUnique({ where: { id: targetUserId } });
-    if (!user) throw new NotFoundException('User not found');
-    if (user.deleted_at) {
-      // Idempotent — already deleted.
-      return { message: 'Account is already deleted (no-op).' };
-    }
-
-    await this.finalizeUserDeletion(targetUserId, {
-      isAdminForced: true,
-      actorId: opts.actorId,
-    });
-
-    await this.writeDeletionAudit({
-      userId: targetUserId,
-      event: DeletionAuditEvent.ADMIN_FORCE_DELETE,
+    const result = await this.finalizeUserDeletion(targetUserId, {
+      mode: 'admin',
       actorId: opts.actorId,
       actorRole: opts.actorRole,
-      metadata: {
-        email_snapshot: user.email,
-        reason: opts.reason ?? null,
-        ip: opts.ip,
-        user_agent: opts.userAgent,
-      },
     });
+    if (result.outcome === 'skipped') {
+      if (result.reason === 'not_found') throw new NotFoundException('User not found');
+      if (result.reason === 'already_deleted') {
+        return { message: 'Account is already deleted (no-op).' };
+      }
+      throw new ConflictException('A deletion for this account is already running.');
+    }
 
     await this.auditService.write({
       action: 'account_deletion.admin_force_delete',
       actorId: opts.actorId,
       actorRole: opts.actorRole,
       actorEmail: opts.actorEmail,
-      targetUserId,
       targetType: 'user',
-      targetId: targetUserId,
       ip: opts.ip ?? null,
       userAgent: opts.userAgent ?? null,
-      metadata: {
-        reason: opts.reason ?? null,
-        original_email_snapshot: user.email,
-      },
+      metadata: { reason: opts.reason ?? null, auth_identity: result.authIdentity },
     });
 
     return { message: `User ${targetUserId} has been permanently deleted.` };
   }
 
-  // ── Nightly finalize cron ─────────────────────────────────────────────────────
+  // ── Nightly finalize cron ──────────────────────────────────────────────────
   //
-  // Runs at 03:00 UTC by default (DELETION_FINALIZE_CRON env). Finds all
-  // users whose deletion_confirmed_at is older than DELETION_GRACE_DAYS and
-  // whose deleted_at is still null, then finalizes them one by one.
-  //
-  // Idempotent: re-running against already-finalized rows is a safe no-op
-  // because the WHERE predicate filters on deleted_at IS NULL.
+  // 03:00 UTC slot in the nightly stagger (AccountDeletionService 03:00,
+  // BloodworkStaleScheduler 03:15, DataExportCleanupCron 03:30,
+  // GdprScrubScheduler 03:45). Override via DELETION_FINALIZE_CRON only on
+  // purpose.
 
-  // 03:00 UTC slot in the nightly cron stagger. The pre-Connect cleanup
-  // splits four 03:00 jobs across 15-minute windows (alphabetical by class
-  // name) so the worker doesn't fan out four heavy reads against the same
-  // Postgres connection pool at the same instant:
-  //   AccountDeletionService    -> 03:00 (this)
-  //   BloodworkStaleScheduler   -> 03:15
-  //   DataExportCleanupCron     -> 03:30
-  //   GdprScrubScheduler        -> 03:45
-  // Override via DELETION_FINALIZE_CRON only when the operator deliberately
-  // wants a different slot — the default keeps the stagger intact.
   @Cron(process.env['DELETION_FINALIZE_CRON'] ?? '0 3 * * *')
-  async runFinalizeCron(): Promise<void> {
+  async runFinalizeCron(): Promise<{ finalized: number; skipped: number; errors: number }> {
     this.logger.log('AccountDeletion finalize cron: starting');
-
-    const cutoff = new Date(Date.now() - this.graceDays * 24 * 60 * 60 * 1000);
+    const cutoff = new Date(Date.now() - this.graceDays * DAY_MS);
 
     const candidates = await this.prisma.user.findMany({
       where: {
         deletion_confirmed_at: { lte: cutoff, not: null },
         deleted_at: null,
       },
-      select: { id: true, email: true },
+      select: { id: true, deletion_confirmed_at: true },
       orderBy: { deletion_confirmed_at: 'asc' },
-      take: 500, // safety batch cap
+      take: 500,
     });
 
-    this.logger.log(
-      `AccountDeletion finalize cron: ${candidates.length} candidate(s) past cutoff ${cutoff.toISOString()}`,
-    );
-
     let finalized = 0;
-    const errors: Array<{ userId: string; error: string }> = [];
-
+    let skipped = 0;
+    let errors = 0;
     for (const candidate of candidates) {
       try {
-        const result = await this.finalizeUserDeletion(candidate.id, { isAdminForced: false });
-
-        if (result && result.skipped) {
+        const result = await this.finalizeUserDeletion(candidate.id, {
+          mode: 'cron',
+          expectedConfirmedAt: candidate.deletion_confirmed_at,
+        });
+        if (result.outcome === 'skipped') {
+          skipped += 1;
           this.logger.log(
-            `AccountDeletion finalize: skipped user=${candidate.id} reason=${result.skipped}`,
+            `AccountDeletion finalize: skipped user=${candidate.id} reason=${result.reason}`,
           );
           continue;
         }
-
-        await this.writeDeletionAudit({
-          userId: candidate.id,
-          event: DeletionAuditEvent.DELETION_FINALIZED,
-          actorId: null,
-          actorRole: 'system',
-          metadata: {
-            email_snapshot: candidate.email,
-            grace_days: this.graceDays,
-            cutoff: cutoff.toISOString(),
-          },
-        });
-
+        finalized += 1;
         await this.auditService.write({
           action: 'account_deletion.finalized',
           actorId: null,
           actorRole: 'system',
-          targetUserId: candidate.id,
           targetType: 'user',
-          targetId: candidate.id,
-          metadata: { email_snapshot: candidate.email, grace_days: this.graceDays },
-        });
-
-        finalized += 1;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        this.logger.error(`AccountDeletion finalize: failed for user=${candidate.id}: ${msg}`);
-        errors.push({ userId: candidate.id, error: msg });
-      }
-    }
-
-    this.logger.log(
-      `AccountDeletion finalize cron: finalized=${finalized} errors=${errors.length}`,
-    );
-  }
-
-  // ── Core PII scrub (per-model cascade strategy) ───────────────────────────────
-  //
-  // CASCADE STRATEGY — documented inline so every future engineer knows why
-  // each model was handled this way. Edit the comment here when schema changes.
-  //
-  // HARD DELETE (row gone, FK referencing user_id also gone):
-  //   • User row itself (last, inside the transaction)
-  //   • UserProfile — personal biometric PII (height, DOB, body composition)
-  //   • NotificationPreferences — no intrinsic value once user is gone
-  //   • UserPreferences — local personalization only, no value to other party
-  //   • LoggedFoodEntry — pure client calorie data, no coach dependency
-  //   • WorkoutSession + ExerciseSet (cascade) — client training records
-  //   • FastingWindow — client-only log
-  //   • WeightLog — biometric PII
-  //   • WaterLog — health data
-  //   • CheckIn — daily diary entries
-  //   • HabitLog + Habit (cascade) — client habit tracking
-  //   • LessonCompletion — client progress through coach content
-  //   • CommunityWin — the user's own posts
-  //   • SavedRecipe — client-side bookmark, no shared value
-  //   • ListItem — client grocery/prep lists
-  //   • ClientSignal — PTM raw signals (scrubbing; retain aggregates via PtmPrediction anonymize)
-  //   • ClientOutcome — PTM teaching label; labelled_by_id set to null via schema SetNull
-  //   • PtmPrediction — risk/success scores contain user_id; purge
-  //   • CoachEffectivenessScore — linked to coach user, not client; only delete if target IS coach
-  //   • CoachAlert — remove alerts where either party is the deleted user
-  //   • CoachOnboardingProgress — delete if user was a coach
-  //   • CoachProfile — delete if user was a coach
-  //   • CoachSubscription — delete if user was a coach
-  //   • Invoice — delete if user was a coach (financial records must be kept per local law — NOTE: consider archiving off-platform rather than deleting for 7 years per UK law)
-  //   • PaymentFailure — delete if user was a coach
-  //   • MessageDraft — delete
-  //   • InviteCode — delete if user was a coach
-  //   • BuildWeekEnrollment + BuildWeekDayCompletion (cascade) — client progress
-  //   • DataExportRequest — delete (payload is user's own data)
-  //   • ClientCoachConsent — delete (consent record was consent to use data; no data = no consent needed)
-  //   • ActivityEvent — delete where actor/coach/client matches
-  //   • DiagnosticSubmission — nullify user_id (keep for lead analytics); see note below
-  //
-  // ANONYMIZE (user_id replaced with sentinel "__deleted_user_sentinel__"):
-  //   • CoachMessage — preserve thread integrity for the OTHER party (coach or other client)
-  //     who still has their own copy of the conversation. Replacing with sentinel keeps
-  //     the message row valid so coach UI doesn't crash on orphan sender_id.
-  //     Body text is cleared to remove the deleted user's actual words.
-  //   • AuditLog (target_user_id) — compliance record must survive; the target column
-  //     is nullable by schema (SetNull). actor_id is set to null so the scrubbed user's
-  //     authorship is removed while the event itself is preserved.
-  //   • MealPlan — the meal plan has a coach side (coach_id) and client side (client_id).
-  //     If the deleted user is the CLIENT, nullify client_id. If they are the COACH, nullify coach_id.
-  //     The plan content itself is not the deleted user's PII and is retained for the coach.
-  //   • CoachGuideline — if deleted user is CLIENT, delete row entirely.
-  //     If deleted user is COACH, set coach_id → sentinel (guideline content was created by coach).
-  //   • CoachNudge — clear body, replace client_id/coach_id with sentinel as appropriate
-  //
-  // NOT TOUCHED:
-  //   • DiagnosticSubmission.user_id → set NULL (no FK cascade, per schema comment: analytics)
-  //   • AiRoadmap — belongs to DiagnosticSubmission; keep for funnel analytics
-  //   • Recipe (created_by) → keep recipes (they are content shared to all; creator_id set null)
-  //   • Lesson (coach_id) → keep lessons; set coach_id to null
-  //   • WorkoutRoutine (creator_id) → delete if user is owner; keep if coach re-shares
-
-  private async finalizeUserDeletion(
-    userId: string,
-    opts: { isAdminForced: boolean; actorId?: string },
-  ): Promise<{ skipped?: string } | void> {
-    // Pre-flight re-read (A1-C5-P1-4): abort early if the user cancelled
-    // their deletion request after the cron snapshotted the candidates list.
-    // This check is intentionally BEFORE the heavy anonymization steps so we
-    // never touch PII for a user who cancelled mid-cron.
-    //
-    // The admin-force-delete path (opts.isAdminForced=true) bypasses this check
-    // because it is a one-shot intentional scrub that does not require the user
-    // to have deletion_confirmed_at set.
-    if (!opts.isAdminForced) {
-      const preCheck = await this.prisma.user.findUnique({
-        where: { id: userId },
-        select: { deletion_confirmed_at: true, deleted_at: true },
-      });
-      if (!preCheck) return { skipped: 'user-not-found' };
-      if (preCheck.deleted_at) return { skipped: 'already-deleted' };
-      if (!preCheck.deletion_confirmed_at) {
-        this.logger.warn(`finalizeUserDeletion: cancelled mid-cron for ${userId} — aborting scrub`);
-        return { skipped: 'cancelled' };
-      }
-    }
-
-    const tombstoneEmail = `deleted-${userId}@tombstone.invalid`;
-    const tombstoneSupabaseId = `deleted-${userId}`;
-    const now = new Date();
-
-    // We process anonymizations BEFORE the transaction that deletes the User row,
-    // because the sentinel row must exist before we can FK-reference it.
-    // These operations are NOT transactional in the DB sense, but they are
-    // idempotent so re-running after a partial failure is safe.
-
-    // ── 1. Anonymize CoachMessage rows ────────────────────────────────────
-    // Anonymize all CoachMessage rows where the deleted user is client, sender,
-    // or coach. Body text is cleared on rows where they were the sender.
-    // FK columns (client_id, coach_id, sender_id) are left pointing at the
-    // tombstoned user row — the tombstone email/name are scrubbed so no PII leaks.
-    // This preserves thread structure for the other participant.
-    await this.prisma.coachMessage
-      .updateMany({
-        where: { sender_id: userId },
-        data: { body: null },
-      })
-      .catch(() => undefined);
-    // coach_id rows: body is NOT cleared (coach authored these; no other participant's
-    // data is affected — only the relationship is preserved for billing/audit).
-    // No additional update needed for coach_id; FK stays tombstoned.
-    // ── 2. Nullify AuditLog actor_id for rows where actor is deleted user ───
-    // Compliance: the event record stays; just the actor attribution is removed.
-    await this.prisma.auditLog
-      .updateMany({
-        where: { actor_id: userId },
-        data: { actor_id: null },
-      })
-      .catch(() => undefined);
-
-    // ── 3. Delete MealPlan rows where user is client or coach ───────────────
-    // Both coach_id and client_id are non-nullable in the schema (no FK cascade
-    // to null). MealPlans are session-level content scoped to the coach-client
-    // relationship; once either party is deleted the plan is removed.
-    await this.prisma.mealPlan
-      .deleteMany({
-        where: { OR: [{ client_id: userId }, { coach_id: userId }] },
-      })
-      .catch(() => undefined);
-
-    // ── 4. Nullify DiagnosticSubmission.user_id ──────────────────────────────
-    await this.prisma.diagnosticSubmission
-      .updateMany({ where: { user_id: userId }, data: { user_id: null } })
-      .catch(() => undefined);
-
-    // ── 5. Delete Recipe rows created by this user ──────────────────────
-    // created_by_id is non-nullable in the schema. Recipes authored by the
-    // deleted user are hard-deleted per GDPR. If you need to preserve coach
-    // recipes for other clients, make created_by_id nullable in a future
-    // migration and switch this to an updateMany nullification.
-    await this.prisma.recipe
-      .deleteMany({ where: { created_by_id: userId } })
-      .catch(() => undefined);
-
-    // ── 6. Delete Lesson rows where this user was the coach ──────────
-    // coach_id is non-nullable. LessonCompletion rows cascade via their FK.
-    await this.prisma.lesson.deleteMany({ where: { coach_id: userId } }).catch(() => undefined);
-
-    // ── 7. Delete WorkoutRoutine rows created by this user ────────────
-    // creator_id is non-nullable. RoutineExercise rows cascade.
-    await this.prisma.workoutRoutine
-      .deleteMany({ where: { creator_id: userId } })
-      .catch(() => undefined);
-
-    // ── 8. Delete CoachGuideline rows where this user was the coach ────────────
-    // coach_id is non-nullable. If the deleted user was a coach, their guideline
-    // rows are deleted (the client relationship is severed anyway since the coach
-    // account no longer exists). The client_id rows are deleted below in step 10.
-    await this.prisma.coachGuideline
-      .deleteMany({ where: { coach_id: userId } })
-      .catch(() => undefined);
-
-    // ── 9. Delete CoachNudge rows where user is coach or client ─────────────
-    // coach_id and client_id are non-nullable. Nudges are ephemeral coach-to-
-    // client notifications; deleting them when either party is removed is safe.
-    await this.prisma.coachNudge
-      .deleteMany({
-        where: { OR: [{ client_id: userId }, { coach_id: userId }] },
-      })
-      .catch(() => undefined);
-
-    // ── 10. Delete rows with hard-delete cascade (no FK deps from other tables) ─
-    // Most cascade deletions are handled below via the transactional User delete,
-    // but some relations need explicit deletes because their FK is NOT the
-    // direct user_id column or they reference via a different path.
-
-    // CoachAlert — both coach_id and client_id must be cleaned
-    await this.prisma.coachAlert
-      .deleteMany({
-        where: { OR: [{ coach_id: userId }, { client_id: userId }] },
-      })
-      .catch(() => undefined);
-
-    // ActivityEvent — actor/coach/client can all be the deleted user
-    await this.prisma.activityEvent
-      .deleteMany({
-        where: {
-          OR: [{ actor_id: userId }, { coach_id: userId }, { client_id: userId }],
-        },
-      })
-      .catch(() => undefined);
-
-    // MessageDraft — coach_id and client_id
-    await this.prisma.messageDraft
-      .deleteMany({
-        where: { OR: [{ coach_id: userId }, { client_id: userId }] },
-      })
-      .catch(() => undefined);
-
-    // CoachGuideline — client_id rows (coach_id already nullified above)
-    await this.prisma.coachGuideline
-      .deleteMany({ where: { client_id: userId } })
-      .catch(() => undefined);
-
-    // CommunityWin — coach_id reference (author rows handled via cascade)
-    await this.prisma.communityWin
-      .updateMany({ where: { coach_id: userId }, data: { coach_id: null } })
-      .catch(() => undefined);
-
-    // ── 10b. Community voice notes (B-610-5, OR-110-1, Apple 5.1.1(v)) ─────
-    // Every voice note the user recorded is soft-deleted with its transcript
-    // search row (no feed, queue or search shows it and nothing signs it
-    // again), then the recordings are erased from storage: the exact keys on
-    // their rows plus everything else in their `voice-notes/<uid>/` folder
-    // (unpublished uploads, DM voice uploads). The User row is tombstoned,
-    // not deleted, so no FK cascade would do this. The erasure is recorded
-    // durably first (a failed record aborts finalization for a retry);
-    // storage faults after that do not block the rest of the deletion: the
-    // open erasure work is retried until verified.
-    await this.eraseCommunityVoice(userId, now);
-
-    // ── 11. Revoke Supabase auth identity ──────────────────────────────────
-    // Best-effort: a failure here is logged but does not block local deletion.
-    // Placed OUTSIDE the $transaction because Supabase is an external call.
-    try {
-      const originalUser = await this.prisma.user.findUnique({
-        where: { id: userId },
-        select: { supabase_id: true },
-      });
-      if (originalUser?.supabase_id && !originalUser.supabase_id.startsWith('deleted-')) {
-        const adminClient = this.supabase.getClient();
-        await adminClient.auth.admin.deleteUser(originalUser.supabase_id);
-      }
-    } catch (supabaseErr) {
-      this.logger.error(
-        `Failed to delete Supabase auth user for ${userId}: ${(supabaseErr as Error).message}. ` +
-          'Local deletion proceeding — Supabase user may need manual cleanup.',
-      );
-    }
-
-    // ── 12. Final transaction: delete user-owned rows + tombstone User ────────
-    await this.prisma.$transaction(async (tx) => {
-      // Re-read inside the transaction (A1-C5-P1-4 belt-and-suspenders):
-      // A cancel could have arrived between the pre-flight check above and
-      // the transaction start. Re-verify here under serializable-ish
-      // transaction isolation before any destructive writes.
-      if (!opts.isAdminForced) {
-        const fresh = await tx.user.findUnique({
-          where: { id: userId },
-          select: { deletion_confirmed_at: true, deleted_at: true },
-        });
-        if (!fresh) return;
-        if (fresh.deleted_at) return;
-        if (!fresh.deletion_confirmed_at) {
-          this.logger.warn(
-            `finalizeUserDeletion tx: cancelled mid-cron for ${userId} — aborting scrub`,
-          );
-          return;
-        }
-      }
-
-      // Belt-and-suspenders: explicitly delete Message rows where the user is
-      // sender OR recipient BEFORE the User tombstone below.
-      //
-      // WHY explicit even though FKs are CASCADE?
-      //   The FK cascade (added in migration 20260613000001_message_fk_cascade)
-      //   guarantees no FK violation when the User row is deleted. However, the
-      //   explicit deleteMany here serves two additional purposes:
-      //     1. Gives us a concrete `count` we can log for GDPR audit trails.
-      //     2. Makes the intent self-documenting — a future engineer reading
-      //        this function can see that Message cleanup is intentional, not
-      //        accidentally omitted.
-      // (Finding 2 — CRITICAL, audit 2026-05-19)
-      const deletedMessages = await tx.message.deleteMany({
-        where: { OR: [{ sender_id: userId }, { recipient_id: userId }] },
-      });
-      this.logger.log(
-        `[finalizeUserDeletion] deleted ${deletedMessages.count} Message row(s) for user ${userId}`,
-      );
-
-      // Hard-delete rows that are purely owned by this user (no cross-user FK dep):
-      await tx.loggedFoodEntry.deleteMany({ where: { user_id: userId } });
-      await tx.workoutSession.deleteMany({ where: { user_id: userId } });
-      await tx.fastingWindow.deleteMany({ where: { user_id: userId } });
-      await tx.weightLog.deleteMany({ where: { user_id: userId } });
-      await tx.waterLog.deleteMany({ where: { user_id: userId } });
-      await tx.checkIn.deleteMany({ where: { user_id: userId } });
-      await tx.habit.deleteMany({ where: { user_id: userId } });
-      await tx.lessonCompletion.deleteMany({ where: { user_id: userId } });
-      await tx.communityWin.deleteMany({ where: { user_id: userId } });
-      await tx.savedRecipe.deleteMany({ where: { user_id: userId } });
-      await tx.listItem.deleteMany({ where: { user_id: userId } });
-      await tx.clientSignal.deleteMany({ where: { user_id: userId } });
-      await tx.clientOutcome.deleteMany({ where: { user_id: userId } });
-      await tx.ptmPrediction.deleteMany({ where: { user_id: userId } });
-      await tx.coachEffectivenessScore.deleteMany({ where: { coach_id: userId } });
-      await tx.coachOnboardingProgress.deleteMany({ where: { coach_id: userId } });
-      await tx.coachProfile.deleteMany({ where: { user_id: userId } });
-      await tx.coachSubscription.deleteMany({ where: { coach_id: userId } });
-      // NOTE: Invoice rows are intentionally kept per UK/EU financial records
-      // retention obligations (Companies Act: 6 years). We nullify coach_id
-      // instead of deleting so the billing row stays but is de-linked.
-      // Invoice rows: kept for UK/EU financial records retention (6+ years).
-      // The coach_id FK remains valid because the User row is tombstoned, not deleted.
-      // No update needed — the FK stays pointing at the tombstoned user row.
-      await tx.paymentFailure.deleteMany({ where: { coach_id: userId } });
-      await tx.inviteCode.deleteMany({ where: { coach_id: userId } });
-      await tx.buildWeekEnrollment.deleteMany({ where: { user_id: userId } });
-      await tx.dataExportRequest.deleteMany({ where: { user_id: userId } });
-      await tx.clientCoachConsent.deleteMany({
-        where: { OR: [{ client_id: userId }, { coach_id: userId }] },
-      });
-      await tx.notificationPreferences.deleteMany({ where: { user_id: userId } });
-      await tx.userPreferences.deleteMany({ where: { user_id: userId } });
-      await tx.userProfile.deleteMany({ where: { user_id: userId } });
-
-      // Detach any students still assigned to this coach so they are not
-      // orphaned against a tombstoned coach_id.
-      await tx.user.updateMany({
-        where: { coach_id: userId, role: 'student' },
-        data: { coach_id: null },
-      });
-
-      // Tombstone the User row (PII scrub + mark deleted). We do NOT DELETE
-      // the row to preserve referential integrity on coach-side tables (billing,
-      // CoachMessage, AuditLog) that reference user.id. The tombstone email uses
-      // the reserved RFC 2606 .invalid TLD so no real address ever collides.
-      await tx.user.update({
-        where: { id: userId },
-        data: {
-          email: tombstoneEmail,
-          name: 'Deleted user',
-          phone: null,
-          supabase_id: tombstoneSupabaseId,
-          archived_at: now,
-          deleted_at: now,
-          deletion_token_hash: null,
-          deletion_token_expires_at: null,
-        },
-      });
-    });
-  }
-
-  /**
-   * B-610-5: erase the user's community voice recordings.
-   *
-   * Round 5: the erasure work (every exact key on their notes plus their
-   * owner folder) is recorded durably in community_voice_erasures FIRST. If
-   * that write fails this throws, the account is NOT finalized and the next
-   * finalize run retries the whole user, so a recording is never left behind
-   * by an acknowledged deletion. Then the rows are soft-deleted (nothing signs
-   * them again) and storage is tried; any removal not verified stays open and
-   * VoiceErasureService retries it after the account is tombstoned (the work
-   * table has no FK to User, so finalization never drops it).
-   */
-  private async eraseCommunityVoice(userId: string, now: Date): Promise<void> {
-    const notes = await this.prisma.communityVoiceNote.findMany({
-      where: { author_id: userId },
-      select: { id: true, storage_key: true },
-    });
-    const work = await recordVoiceErasures(
-      this.prisma,
-      [
-        ...objectTargets(notes.map((n) => n.storage_key)),
-        { kind: 'owner_folder', target: userId },
-      ],
-      'account_deletion',
-      now,
-    );
-    if (notes.length > 0) {
-      // Rows next: once soft-deleted nothing signs them again. Both writes
-      // are idempotent, so a retried deletion converges.
-      try {
-        await this.prisma.communityVoiceNote.updateMany({
-          where: { author_id: userId, soft_deleted_at: null },
-          data: { soft_deleted_at: now },
-        });
-        await this.prisma.communitySearchEntry.updateMany({
-          where: {
-            kind: 'voice_note_transcript',
-            targetId: { in: notes.map((n) => n.id) },
-            softDeletedAt: null,
-          },
-          data: { softDeletedAt: now },
+          metadata: { grace_days: this.graceDays, auth_identity: result.authIdentity },
         });
       } catch (err) {
+        errors += 1;
         this.logger.error(
-          `finalizeUserDeletion: voice note soft-delete failed for ${userId}: ${(err as Error).message}; recordings are still erased (work recorded)`,
+          `AccountDeletion finalize: failed for user=${candidate.id}, will retry next run: ${(err as Error).message}`,
         );
       }
     }
-    const outcome = await attemptVoiceErasures(
-      this.prisma,
-      new VoiceUploadProvider(this.supabase),
-      work,
-      this.logger,
+
+    // Retry auth-identity removal for tombstones whose Supabase delete failed.
+    const pendingAuth = await this.prisma.user.findMany({
+      where: {
+        deleted_at: { not: null },
+        NOT: { supabase_id: { startsWith: TOMBSTONE_AUTH_PREFIX } },
+      },
+      select: { id: true, supabase_id: true },
+      take: 100,
+    });
+    // One row's failure must not stop the rest of tonight's retries (C-608-5).
+    for (const row of pendingAuth) {
+      try {
+        await this.removeAuthIdentity(row.id, row.supabase_id);
+      } catch (err) {
+        this.logger.error(
+          `AccountDeletion auth retry: failed for user=${row.id}, will retry next run: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    // Completion receipts are kept for DELETION_RECEIPT_DAYS only (B-608-10).
+    let receiptsDropped = 0;
+    try {
+      receiptsDropped = await this.prisma.$executeRaw`
+        UPDATE "User" SET "supabase_id" = ${TOMBSTONE_AUTH_PREFIX} || "id"
+         WHERE ("supabase_id" LIKE ${`${RECEIPT_KEY_PREFIX}%`}
+                OR "supabase_id" LIKE ${`${LEGACY_RECEIPT_KEY_PREFIX}%`})
+           AND "deleted_at" < ${receiptCutoff()}
+      `;
+    } catch (err) {
+      this.logger.error(
+        `AccountDeletion receipt expiry failed, will retry next run: ${(err as Error).message}`,
+      );
+    }
+
+    this.logger.log(
+      `AccountDeletion finalize cron: finalized=${finalized} skipped=${skipped} errors=${errors} auth_retries=${pendingAuth.length} receipts_dropped=${receiptsDropped}`,
     );
-    if (outcome.pending > 0) {
-      this.logger.warn(
-        `finalizeUserDeletion: ${outcome.pending} voice erasure(s) for ${userId} not yet verified; ` +
-          'recorded in community_voice_erasures and retried by VoiceErasureService.',
+    return { finalized, skipped, errors };
+  }
+
+  // ── Finalization ───────────────────────────────────────────────────────────
+
+  async finalizeUserDeletion(
+    userId: string,
+    opts: {
+      mode: 'cron' | 'admin';
+      expectedConfirmedAt?: Date | null;
+      actorId?: string;
+      actorRole?: string;
+    },
+  ): Promise<FinalizeResult> {
+    const committed = await this.prisma.$transaction(
+      async (
+        tx,
+      ): Promise<
+        | { skipped: FinalizeSkipReason }
+        | { supabaseId: string | null; voiceWork: VoiceErasureRow[] }
+      > => {
+        const user = await this.lockUser(tx, userId, 'skip');
+        if (!user) {
+          const exists = await this.userExists(tx, userId);
+          return { skipped: exists ? 'locked' : 'not_found' };
+        }
+        if (user.deleted_at) return { skipped: 'already_deleted' as const };
+        if (opts.mode === 'cron') {
+          if (!user.deletion_confirmed_at) return { skipped: 'cancelled' as const };
+          if (Date.now() < this.purgeAfterFor(user.deletion_confirmed_at).getTime()) {
+            return { skipped: 'not_due' as const };
+          }
+          if (
+            opts.expectedConfirmedAt &&
+            opts.expectedConfirmedAt.getTime() !== user.deletion_confirmed_at.getTime()
+          ) {
+            return { skipped: 'rescheduled' as const };
+          }
+        }
+
+        const now = new Date();
+        const tombstoneEmail = `deleted-${userId}@tombstone.invalid`;
+
+        // 1. Collect object keys and Stripe subscription ids while the rows
+        //    that hold them still exist. Nothing external happens yet.
+        const objects = await this.storage.collect(tx, userId);
+        const subscriptionIds = await this.billing.collectSubscriptionIds(tx, userId);
+        // Sol B-679-7 — plus native checkout subscriptions not bound to a row yet.
+        subscriptionIds.push(
+          ...(await this.billing.collectUnboundAttemptSubscriptionIds(tx, userId)),
+        );
+
+        // 1b. Community voice recordings (B-610-5, OR-110-1, Apple 5.1.1(v)).
+        //     The verified-erasure work (every exact key on the user's notes
+        //     plus their `<uid>/` owner folder) is recorded in
+        //     community_voice_erasures inside THIS transaction, before the
+        //     manifest deletes the note rows: it commits if and only if the
+        //     deletion commits, and a failed record rolls the whole deletion
+        //     back for the next run. The bytes are removed by storage.purge
+        //     below (in the transaction); after commit the work is verified
+        //     (object reads back missing, folder lists empty) and anything not
+        //     verified stays open for VoiceErasureService to retry. The table
+        //     has no FK to User, so the work survives the tombstone.
+        const voiceNotes = await tx.communityVoiceNote.findMany({
+          where: { author_id: userId },
+          select: { id: true, storage_key: true },
+        });
+        const voiceWork = await recordVoiceErasures(
+          tx,
+          [
+            ...objectTargets(voiceNotes.map((n) => n.storage_key)),
+            { kind: 'owner_folder', target: userId },
+          ],
+          'account_deletion',
+          now,
+        );
+        // Transcript search rows point at the note (targetId); the manifest
+        // removes the user's search rows by authorId, and this also catches a
+        // transcript row indexed without an author.
+        if (voiceNotes.length > 0) {
+          await tx.communitySearchEntry.deleteMany({
+            where: {
+              kind: 'voice_note_transcript',
+              targetId: { in: voiceNotes.map((n) => n.id) },
+            },
+          });
+        }
+
+        // 2. Tombstone. Runs before the manifest because it clears User-row
+        //    FKs (default payout method) to rows the manifest deletes.
+        //    supabase_id is kept until the auth identity is gone.
+        await tx.user.update({
+          where: { id: userId },
+          data: {
+            email: tombstoneEmail,
+            name: 'Deleted user',
+            phone: null,
+            coach_id: null,
+            expo_push_token: null,
+            leaderboard_display_name: null,
+            show_on_leaderboard: false,
+            signup_ref: null,
+            default_payout_method_id: null,
+            archived_at: now,
+            deleted_at: now,
+            deletion_scheduled_at: null,
+            deletion_requested_at: null,
+            deletion_confirmed_at: null,
+            deletion_token_hash: null,
+            deletion_token_expires_at: null,
+          },
+        });
+
+        // 3. Every user-referencing table (A-608-1).
+        const steps = await executeErasureManifest(tx, {
+          userId,
+          email: user.email,
+          tombstoneEmail,
+          now,
+        });
+        const rowsChanged = steps.reduce((sum, s) => sum + s.count, 0);
+
+        // 4. Audit: lifecycle rows carry the user id, so they go; one outcome
+        //    row with a random subject id stays (B-608-4).
+        await tx.$executeRaw`DELETE FROM "deletion_audit" WHERE "user_id" = ${userId}`;
+
+        // 5. External side effects last (A-608-3): every DB statement above
+        //    has already succeeded, so a constraint or data error can no
+        //    longer leave the bytes removed and billing stopped on an account
+        //    that did not finish. Both are idempotent (a missing object or an
+        //    already-canceled subscription counts as done), so if one throws
+        //    (rollback, nightly retry) or the commit itself fails, repeating
+        //    them is safe. Past purge_after the deletion cannot be cancelled.
+        const storage = await this.storage.purge(objects);
+        const billing = await this.billing.cancelAll(subscriptionIds);
+
+        await this.insertDeletionAudit(tx, {
+          subjectId: crypto.randomUUID(),
+          event:
+            opts.mode === 'admin'
+              ? DeletionAuditEvent.ADMIN_FORCE_DELETE
+              : DeletionAuditEvent.DELETION_FINALIZED,
+          actorId: opts.mode === 'admin' ? (opts.actorId ?? null) : null,
+          actorRole: opts.mode === 'admin' ? (opts.actorRole ?? 'owner') : 'system',
+          metadata: {
+            outcome: 'finalized',
+            storage_objects_removed: storage.removed,
+            subscriptions_canceled: billing.canceled + billing.alreadyInactive,
+            rows_changed: rowsChanged,
+            auth_identity: user.supabase_id ? 'pending' : 'none',
+          },
+        });
+        this.logger.log(
+          `account deletion finalized user=${userId} rows=${rowsChanged} objects=${storage.removed} subscriptions=${billing.canceled}`,
+        );
+        return { supabaseId: user.supabase_id, voiceWork };
+      },
+      { timeout: FINALIZE_TX_TIMEOUT_MS, maxWait: 10_000 },
+    );
+
+    if ('skipped' in committed) return { outcome: 'skipped', reason: committed.skipped };
+    await this.verifyVoiceErasures(userId, committed.voiceWork);
+    const authIdentity = await this.removeAuthIdentity(userId, committed.supabaseId);
+    return { outcome: 'finalized', authIdentity };
+  }
+
+  /**
+   * B-610-5: verify the voice-recording erasure recorded in the committed
+   * finalization. Never fails the deletion (it already committed): any
+   * removal not verified stays open in community_voice_erasures and
+   * VoiceErasureService retries it until verified.
+   */
+  private async verifyVoiceErasures(userId: string, work: VoiceErasureRow[]): Promise<void> {
+    if (work.length === 0) return;
+    try {
+      const outcome = await attemptVoiceErasures(
+        this.prisma,
+        new VoiceUploadProvider(this.supabase),
+        work,
+        this.logger,
+      );
+      if (outcome.pending > 0) {
+        this.logger.warn(
+          `account deletion: ${outcome.pending} voice erasure(s) for user=${userId} not yet verified; retried by VoiceErasureService`,
+        );
+      }
+    } catch (err) {
+      this.logger.error(
+        `account deletion: voice erasure verification failed after commit for user=${userId} (${(err as Error).message}); VoiceErasureService retries it`,
       );
     }
   }
 
-  // ── Email ─────────────────────────────────────────────────────────────────────
-
-  private async sendConfirmationEmail(
-    email: string,
-    name: string,
-    token: string,
-    expiresAt: Date,
-  ): Promise<void> {
-    // IMPORTANT: Never log the confirmation URL or the raw token. The token is
-    // a single-use credential; logging it exposes it to anyone with log access.
-    // The token hash is stored in the DB. The user retrieves a fresh status
-    // from the app; email delivery will surface the URL once wired up.
-    //
-    // Phase 9 digest infra: replace the warn below with a MailService call.
-    // Subject: "Confirm your account deletion request — The Growth Project"
-    // Body:    Plain-text + HTML with the confirmation URL, expiry time, and a
-    //          note that clicking starts a 14-day grace period during which the
-    //          deletion can be cancelled from Settings.
-    //
-    // Do not send a second email after confirmation — the mobile client
-    // shows the in-app status instead.
-    // Do not log email, name, token, or any URL derived from the token.
-    void email;
-    void name;
-    void token;
-    this.logger.warn(
-      `AccountDeletion: confirmation pending — email not yet configured. ` +
-        `Token stored in DB, expires ${expiresAt.toISOString()}. ` +
-        'Wire up MailService in Phase 9 to send the confirmation link.',
-    );
-  }
-
-  // ── deletion_audit write ──────────────────────────────────────────────────────
-
-  private async writeDeletionAudit(opts: {
-    userId: string;
-    event: DeletionAuditEventValue;
-    actorId: string | null;
-    actorRole?: string;
-    metadata?: Record<string, unknown>;
-  }): Promise<void> {
+  /**
+   * Remove the Supabase auth identity after the DB erasure committed
+   * (B-608-2). Both a returned `error` and a thrown exception count as
+   * failure; "not found" counts as already removed. On success the tombstone
+   * forgets the provider id; on failure it keeps it so the cron retries.
+   */
+  async removeAuthIdentity(
+    userId: string,
+    supabaseId: string | null,
+  ): Promise<AuthIdentityOutcome> {
+    if (!supabaseId || supabaseId.startsWith(TOMBSTONE_AUTH_PREFIX)) return 'none';
+    let failure: string | null = null;
     try {
-      await this.prisma.$executeRaw`
-        INSERT INTO "deletion_audit" ("id", "user_id", "event", "actor_id", "actor_role", "metadata", "created_at")
-        VALUES (
-          gen_random_uuid()::text,
-          ${opts.userId},
-          ${opts.event},
-          ${opts.actorId ?? null},
-          ${opts.actorRole ?? null},
-          ${opts.metadata ? (opts.metadata as Prisma.InputJsonValue) : Prisma.DbNull}::jsonb,
-          NOW()
-        )
-      `;
+      const { error } = await this.supabase.getClient().auth.admin.deleteUser(supabaseId);
+      if (error && !(error.status === 404 || /not found/i.test(error.message))) {
+        failure = error.message;
+      }
     } catch (err) {
-      // Never surface to caller — audit write failures are operational, not
-      // correctness failures. Log and continue.
-      const msg = err instanceof Error ? err.message : String(err);
-      this.logger.error(`AccountDeletion: deletion_audit write failed: ${msg}`);
+      failure = (err as Error).message;
     }
+
+    if (failure !== null) {
+      this.logger.error(
+        `account deletion: auth identity removal failed user=${userId}; retrying nightly: ${failure}`,
+      );
+      await this.insertDeletionAudit(this.prisma, {
+        subjectId: crypto.randomUUID(),
+        event: DeletionAuditEvent.AUTH_IDENTITY_CLEANUP_FAILED,
+        actorId: null,
+        actorRole: 'system',
+        metadata: { outcome: 'retry_scheduled' },
+      });
+      return 'pending';
+    }
+
+    // B-608-10: keep a keyed completion receipt (C-608-7: HMAC r2, see
+    // deletion-receipt.ts) instead of forgetting the auth id at once, so the
+    // person's own token gets 403 ACCOUNT_DELETED (and the receipt endpoint
+    // answers) rather than a bare 401. The nightly cron drops the receipt
+    // after DELETION_RECEIPT_DAYS. With no usable receipt secret the
+    // tombstone forgets the auth id instead (never an unkeyed digest).
+    const receiptKey = deletionReceiptKey(supabaseId);
+    if (!receiptKey) {
+      this.logger.error(
+        `account deletion: no usable DELETION_RECEIPT_SECRET / RECENT_AUTH_SECRET; user=${userId} gets no completion receipt`,
+      );
+    }
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { supabase_id: receiptKey ?? `${TOMBSTONE_AUTH_PREFIX}${userId}` },
+    });
+    await this.insertDeletionAudit(this.prisma, {
+      subjectId: crypto.randomUUID(),
+      event: DeletionAuditEvent.AUTH_IDENTITY_REMOVED,
+      actorId: null,
+      actorRole: 'system',
+      metadata: { outcome: 'removed' },
+    });
+    return 'removed';
   }
 }

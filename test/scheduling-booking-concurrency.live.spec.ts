@@ -194,6 +194,7 @@ liveDescribe('S-SCHED-2 live: no double booking (Postgres)', () => {
         Object.create(NotificationsService.prototype) as NotificationsService,
         notifications,
       ),
+      prisma,
     );
     const audit = Object.assign(Object.create(AuditService.prototype) as AuditService, {
       write: jest.fn(async () => undefined),
@@ -412,7 +413,7 @@ liveDescribe('S-SCHED-2 live: no double booking (Postgres)', () => {
     const cols = await prisma.$queryRaw<Array<{ column_name: string }>>`
       SELECT column_name FROM information_schema.columns
       WHERE table_name = 'NotificationDeliveryLog'
-        AND column_name IN ('status', 'attempts', 'lease_until', 'claim_token', 'session_start_at',
+        AND column_name IN ('status', 'attempts', 'lease_until', 'claim_token', 'start_at',
                             'inapp_done_at', 'push_done_at', 'notification_id', 'last_error')
       ORDER BY column_name`;
     expect(cols.map((c) => c.column_name)).toEqual([
@@ -423,7 +424,7 @@ liveDescribe('S-SCHED-2 live: no double booking (Postgres)', () => {
       'lease_until',
       'notification_id',
       'push_done_at',
-      'session_start_at',
+      'start_at',
       'status',
     ]);
     const check = await prisma.$queryRaw<Array<{ conname: string }>>`
@@ -432,9 +433,9 @@ liveDescribe('S-SCHED-2 live: no double booking (Postgres)', () => {
   });
 
   // S-SCHED-5 (B-634-7): the real CHECK must accept every status the reminder
-  // job writes. Park -> excluded from recovery -> re-armed by the band pass,
-  // run through the real SessionReminderJob against Postgres.
-  it('S-SCHED-5 B-634-7: the status check allows parked; park, recovery exclusion and re-arm work on Postgres', async () => {
+  // job writes. Park -> excluded from recovery -> the new start claimed by the
+  // band pass, run through the real SessionReminderJob against Postgres.
+  it('S-SCHED-5 B-634-7: the status check allows parked; park, recovery exclusion and the new-start claim work on Postgres', async () => {
     const clientId = CLIENT_IDS[0];
     const MIN = 60_000;
     const now = Date.now();
@@ -461,7 +462,7 @@ liveDescribe('S-SCHED-2 live: no double booking (Postgres)', () => {
         status: 'retry',
         attempts: 1,
         claim_token: 'live-earlier-claim',
-        session_start_at: wholeMinute(now + 30 * MIN),
+        start_at: wholeMinute(now + 30 * MIN),
         inapp_done_at: new Date(now - 10 * MIN),
       },
     });
@@ -502,19 +503,28 @@ liveDescribe('S-SCHED-2 live: no double booking (Postgres)', () => {
         claim_token: parked.claim_token,
       });
       expect(liveNotifications.pushToUser.mock.calls.length).toBe(pushesBefore);
-      // 3. The session's new start reaches the 1h band: the band pass re-arms
-      //    the parked row for the new revision and delivers it once.
+      // 3. The session's new start reaches the 1h band: the band pass claims
+      //    the new start (claim key session, user, kind, start_at, B-NOTIF-4)
+      //    and delivers it once; the claim for the earlier start stays parked.
       const inBand = wholeMinute(Date.now() + 60 * MIN);
       await prisma.coachingSession.update({
         where: { id: session.id },
         data: { start_at: inBand, end_at: new Date(inBand.getTime() + 30 * MIN) },
       });
       await tick();
-      const rearmed = await prisma.notificationDeliveryLog.findUniqueOrThrow({
+      const fresh = await prisma.notificationDeliveryLog.findFirstOrThrow({
+        where: {
+          session_id: session.id,
+          user_id: clientId,
+          kind: NotificationKind.BOOKING_REMINDER_1H,
+          start_at: inBand,
+        },
+      });
+      expect(fresh.status).toBe('sent');
+      const earlier = await prisma.notificationDeliveryLog.findUniqueOrThrow({
         where: { id: row.id },
       });
-      expect(rearmed.status).toBe('sent');
-      expect(rearmed.session_start_at?.getTime()).toBe(inBand.getTime());
+      expect(earlier.status).toBe('parked');
       const clientPushes = liveNotifications.pushToUser.mock.calls
         .slice(pushesBefore)
         .filter((c: unknown[]) => c[0] === clientId);

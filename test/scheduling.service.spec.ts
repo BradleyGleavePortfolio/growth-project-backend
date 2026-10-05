@@ -90,7 +90,7 @@ function build() {
     asPrisma(db),
     audit,
     registry,
-    new BookingEmitter(notifications),
+    new BookingEmitter(notifications, asPrisma(db)),
   );
   return { db, svc, writes, real: { calendarSpy, meetSpy, zoomSpy } };
 }
@@ -212,12 +212,25 @@ describe('SchedulingService — request + state machine + audit', () => {
 
   it('reschedule is allowed in requested or scheduled, captures previous + new times', async () => {
     const requested = await request(h.svc);
+    h.db.deliveryLogs.push({
+      id: 'claim-old-time',
+      session_id: requested.id,
+      user_id: 'client-1',
+      kind: 'booking_reminder_24h',
+      start_at: new Date('2026-06-01T15:00:00Z'),
+    });
     const rescheduled = await h.svc.rescheduleSession(CLIENT_ACTOR, requested.id, {
       start_at: '2026-06-02T15:00:00Z',
       end_at: '2026-06-02T15:30:00Z',
       reason: 'conflict',
     });
     expect(rescheduled.start_at.toISOString()).toBe('2026-06-02T15:00:00.000Z');
+    // Sol B-647-1: the move re-arms the reminders through the claim key
+    // (session, user, kind, start_at), so it never deletes claims; a stale
+    // sweep's old-time claim cannot suppress the new time.
+    expect(h.db.deliveryLogs.filter((l) => l.session_id === requested.id).map((l) => l.id)).toEqual(
+      ['claim-old-time'],
+    );
     const audit = h.writes.find((w) => w.action === 'session.rescheduled');
     expect(audit?.metadata).toMatchObject({
       previous_start_at: '2026-06-01T15:00:00.000Z',

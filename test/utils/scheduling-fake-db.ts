@@ -318,6 +318,33 @@ export class SchedulingFakeDb {
     },
   };
 
+  // Zone provenance (recipient-timezone.ts, B-643-1 / B-647-1): the booking
+  // emitter reads a zone the person supplied (timezone_updated_at stamped),
+  // else a coach profile zone. `suppliedZones` holds what people supplied;
+  // every coach publishes `coachZones.get(id)`, default America/Los_Angeles
+  // (the zone these fixtures' availability is written in). No tick: zone
+  // reads do not change the interleaving the race tests pin.
+  suppliedZones = new Map<string, string>();
+  coachZones = new Map<string, string | null>();
+
+  notificationPreferences = {
+    findUnique: async (args: { where: { user_id: string } }) => {
+      const tz = this.suppliedZones.get(args.where.user_id);
+      return tz ? { timezone: tz, timezone_updated_at: new Date('2026-01-01T00:00:00Z') } : null;
+    },
+  };
+
+  coachProfile = {
+    findUnique: async (args: { where: { user_id: string } }) => {
+      const user = this.users.find((u) => u.id === args.where.user_id);
+      if (!user || user.role !== 'coach') return null;
+      const id = args.where.user_id;
+      return {
+        timezone: this.coachZones.has(id) ? this.coachZones.get(id) : 'America/Los_Angeles',
+      };
+    },
+  };
+
   subCoachAssignment = {
     findFirst: async (args: { where?: Row }) => {
       await this.tick();
@@ -499,22 +526,29 @@ export class SchedulingFakeDb {
   notificationDeliveryLog = {
     create: async (args: { data: Row }) => {
       await this.tick();
+      // start_at is NOT NULL with no default (migration 20270301000000).
+      if (!(args.data.start_at instanceof Date)) {
+        throw new TypeError('NotificationDeliveryLog.start_at is required');
+      }
+      const forStart = args.data.start_at.getTime();
+      // Claim key (session_id, user_id, kind, start_at) (B-NOTIF-4).
       const dup = this.deliveryLogs.find(
         (l) =>
           l.session_id === args.data.session_id &&
           l.user_id === args.data.user_id &&
-          l.kind === args.data.kind,
+          l.kind === args.data.kind &&
+          l.start_at instanceof Date &&
+          l.start_at.getTime() === forStart,
       );
       if (dup) throw Object.assign(new TypeError('Unique constraint failed'), { code: 'P2002' });
       checkDeliveryStatus(args.data);
-      // Column defaults of migration 20270222000000.
+      // Column defaults of migrations 20270222000000 / 20270301000000.
       const row = {
         id: `log-${++this.seq}`,
         status: 'sent',
         attempts: 1,
         lease_until: null,
         claim_token: null,
-        session_start_at: null,
         inapp_done_at: null,
         push_done_at: null,
         notification_id: null,
@@ -590,6 +624,16 @@ export class SchedulingFakeDb {
   // Outside a transaction a bare $executeRaw is a no-op.
   $executeRaw: (strings?: TemplateStringsArray, ...values: unknown[]) => Promise<number> =
     async () => 0;
+
+  // Row locks (the reminder fence's SELECT ... FOR SHARE, Sol B-647-1) are
+  // not modelled: every write here is atomic, so a FOR SHARE read sees the
+  // latest committed state. Counted so tests can see the fence ran.
+  forShareReads = 0;
+  $queryRaw = async (strings?: TemplateStringsArray): Promise<unknown[]> => {
+    const sql = strings ? strings.join('?') : '';
+    if (sql.includes('FOR SHARE')) this.forShareReads += 1;
+    return [];
+  };
 
   $transaction = async <T>(fn: (tx: SchedulingFakeDb) => Promise<T>): Promise<T> => {
     const held: Array<() => void> = [];

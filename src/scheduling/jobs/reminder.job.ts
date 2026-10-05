@@ -10,7 +10,7 @@ import {
 import type { BookingDeliveryOutcome } from '../../notifications/emitters/booking.emitter';
 import { NotificationKind } from '../../notifications/notification-kind';
 import { PrismaService } from '../../prisma.service';
-import { safeDiagnostic } from '../../observability/orm-diagnostics';
+import { safeLogDiagnostic } from '../../observability/orm-diagnostics';
 import { hasUsableLink } from '../scheduling.types';
 
 // Per-recipient context the sweep hands to the emitter (S-SCHED-2): which
@@ -61,9 +61,7 @@ export interface ReminderSweepResult {
  * anything else keeps its message.
  */
 export function describeError(err: unknown): string {
-  const safe = safeDiagnostic(err);
-  if (safe instanceof Error) return `${safe.name}: ${safe.message}`.slice(0, 200);
-  return 'unknown error';
+  return safeLogDiagnostic(err).slice(0, 200);
 }
 
 // S-SCHED-3 (B-634-2) delivery-claim tuning. The lease is shorter than the
@@ -129,7 +127,8 @@ interface DeliveryLogRow {
   attempts: number;
   lease_until: Date | null;
   claim_token: string | null;
-  session_start_at: Date | null;
+  /** The session start this claim is for (claim key, B-NOTIF-4). */
+  start_at: Date;
   inapp_done_at: Date | null;
   push_done_at: Date | null;
   notification_id: string | null;
@@ -168,12 +167,22 @@ function reminderContext(ctx: ReminderRecipientContext | undefined): {
 //   24h reminder — runs every 15 minutes, sweeps [now+23h45m, now+24h15m].
 //
 // Idempotency and recovery (S-SCHED-3 B-634-2): every fan-out claims a
-// NotificationDeliveryLog row keyed (session_id, user_id, kind) with a lease,
-// a claim token and the session start it is for, then records which
-// channels landed. Two replicas never both send (the unique key plus a
-// compare-and-set takeover); a transient failure or a worker that died
-// after claiming is retried by the next sweep, re-sending only the channel
-// that did not land; only P2002 counts as "already claimed".
+// NotificationDeliveryLog row keyed (session_id, user_id, kind, start_at)
+// with a lease and a claim token, then records which channels landed. Two
+// replicas never both send (the unique key plus a compare-and-set
+// takeover); a transient failure or a worker that died after claiming is
+// retried by the next sweep, re-sending only the channel that did not land;
+// only P2002 counts as "already claimed".
+//
+// Generation fence (Sol B-647-1): the claim carries the start time the
+// sweep selected (start_at, the schedule generation). Before anything is
+// sent, remindOne re-reads the session with the row locked FOR SHARE in a
+// transaction: a reschedule or cancel still in flight is waited for, and a
+// session that is no longer confirmed at that start time is not reminded
+// (a claim this sweep inserted is released, a taken-over one is closed).
+// Claims for the old time never block the new time's reminder, so a
+// reschedule does not delete claims, and a no-op reschedule (same time)
+// cannot re-send.
 //
 // The sweeps are deliberately wider than the cron interval so a missed
 // tick from a redeploy still catches every session.
@@ -190,8 +199,9 @@ function reminderContext(ctx: ReminderRecipientContext | undefined): {
 // test suite asserts this.
 //
 // Delivery (S-SCHED-2): BookingEmitter writes the in-app row and sends a
-// real push through NotificationsService.pushToUser. A reschedule clears the
-// session's reminder claims so the new time is reminded again. When the
+// real push through NotificationsService.pushToUser. A reschedule leaves the
+// claims in place: the new time has no claim yet (the key carries start_at),
+// so it is reminded again. When the
 // session has no call link, the coach's reminder asks them to add one and
 // the client's says the coach will add it.
 //
@@ -457,9 +467,7 @@ export class SessionReminderJob {
     // Fence: the session may have been cancelled or moved after the
     // sweep read it. Never remind a time that no longer exists; a moved
     // session is reminded for its new time by a later sweep.
-    const current = await this.prisma.coachingSession.findUnique({
-      where: { id: session.id },
-    });
+    const current = await this.readFencedSession(session.id);
     if (
       !current ||
       !REMINDABLE_STATUSES.includes(current.status) ||
@@ -511,8 +519,9 @@ export class SessionReminderJob {
   //  - park (S-SCHED-5): a claim whose session was moved to a time still
   //    ahead of its band. It is set to 'parked' (receipts kept) so it leaves
   //    the unfinished set and can never pin the recovery page; the band pass
-  //    re-arms it at the new time (claimDelivery resets a stale revision
-  //    whatever its status).
+  //    reminds the new time through that time's own claim row (the claim key
+  //    carries start_at), and a parked row is re-armed only if the session
+  //    comes back to the start it was claimed for.
   // Every row on the page therefore changes state this tick (claimed,
   // retired or parked) unless another worker owns it, so a backlog larger
   // than one page drains on the following ticks.
@@ -588,14 +597,14 @@ export class SessionReminderJob {
         continue;
       }
       if (!session || !row.user_id) continue;
-      const forStart = row.session_start_at ?? null;
+      const forStart = row.start_at;
       if (args.dueIds.has(session.id)) continue;
       if (
-        (forStart !== null && forStart.getTime() !== session.start_at.getTime()) ||
+        forStart.getTime() !== session.start_at.getTime() ||
         session.start_at.getTime() > args.upper.getTime()
       ) {
         // Moved to a later time (or otherwise not this band's work yet):
-        // parked for the band pass, which re-arms it at the new time.
+        // parked; the band pass reminds the new time through its own claim.
         if (await this.parkRow(row)) parked += 1;
         continue;
       }
@@ -676,9 +685,25 @@ export class SessionReminderJob {
         if (candidates.length > 0) {
           const logs = await this.prisma.notificationDeliveryLog.findMany({
             where: { kind: args.kind, session_id: { in: candidates.map((c) => c.id) } },
-            select: { session_id: true, user_id: true },
+            select: { session_id: true, user_id: true, status: true, start_at: true },
           });
-          const have = new Set(logs.map((l) => `${l.session_id}|${l.user_id}`));
+          // C-634-6: a row covers a participant only for the start time it
+          // was claimed for. A row for an earlier start of a moved session,
+          // or a parked row, is not this time's reminder: if the new time's
+          // first claim failed at the band's last tick, recovery never reads
+          // it (not retry/sending), so catch-up claims it here: claimDelivery
+          // inserts the new start's row (the claim key carries start_at), or
+          // re-arms a parked row for this same start. Every row carries the
+          // start it was claimed for (B-NOTIF-4 backfilled older rows).
+          const startById = new Map(candidates.map((c) => [c.id, c.start_at.getTime()]));
+          const have = new Set(
+            logs
+              .filter((l) => {
+                if (l.status === 'parked') return false;
+                return l.start_at.getTime() === startById.get(l.session_id);
+              })
+              .map((l) => `${l.session_id}|${l.user_id}`),
+          );
           for (const session of candidates) {
             const onlyUsers = new Set<string>();
             for (const userId of [session.client_id, session.coach_id]) {
@@ -740,8 +765,7 @@ export class SessionReminderJob {
     // reminder has taken over, or a claim for an older start whose new time
     // has already passed its band. Either way it can never be sent correctly.
     if (startMs <= cutoffMs) return 'superseded';
-    const forStart = row.session_start_at ?? null;
-    if (forStart !== null && forStart.getTime() !== startMs && startMs < lowerMs) {
+    if (row.start_at.getTime() !== startMs && startMs < lowerMs) {
       return 'superseded';
     }
     return null;
@@ -770,14 +794,16 @@ export class SessionReminderJob {
   }
 
   // S-SCHED-3 (B-634-2): durable, recoverable delivery claim per
-  // (session, recipient, kind), fenced to the session's start time.
+  // (session, recipient, kind, start_at): the claim key carries the start
+  // time it is for (B-NOTIF-4), so another start time is another row.
   //  - New: INSERT a 'sending' row with a lease and a random claim token.
-  //  - P2002 (row exists): take it over with one compare-and-set UPDATE only
-  //    when it is not finished for this revision: a 'retry' row, a 'sending'
-  //    row whose lease expired (the worker died after claiming), or a row for
-  //    an older start time (a move the reschedule cleanup did not catch).
+  //  - P2002 (row exists for this start): take it over with one
+  //    compare-and-set UPDATE only when it is not finished: a 'retry' row, a
+  //    'parked' row (the session moved away and back to this time), or a
+  //    'sending' row whose lease expired (the worker died after claiming).
   //    A live lease, 'sent' or 'gave_up' is a duplicate (another replica or
-  //    an earlier sweep owns it). Legacy rows read as 'sent'.
+  //    an earlier sweep owns it). Rows written before the delivery-state
+  //    columns read as 'sent'.
   //  - Any other database error is a real failure: logged, counted, retried
   //    next sweep; never mistaken for a duplicate.
   private async claimDelivery(
@@ -798,7 +824,7 @@ export class SessionReminderJob {
           attempts: 1,
           lease_until: leaseUntil,
           claim_token: token,
-          session_start_at: session.start_at,
+          start_at: session.start_at,
         },
       });
       return {
@@ -822,7 +848,7 @@ export class SessionReminderJob {
     let existing: DeliveryLogRow | null;
     try {
       existing = await this.prisma.notificationDeliveryLog.findFirst({
-        where: { session_id: session.id, user_id: userId, kind },
+        where: { session_id: session.id, user_id: userId, kind, start_at: session.start_at },
       });
     } catch (err) {
       this.logger.error(
@@ -834,18 +860,15 @@ export class SessionReminderJob {
     // Rows written before the delivery-state columns read as settled.
     const status = existing.status ?? 'sent';
     const priorAttempts = existing.attempts ?? 1;
-    const forStart = existing.session_start_at ?? null;
     const lease = existing.lease_until ?? null;
-    const staleRevision = forStart !== null && forStart.getTime() !== session.start_at.getTime();
     const leaseExpired =
       status === 'sending' && (lease === null || lease.getTime() <= now.getTime());
     const retryable =
-      !staleRevision &&
       (status === 'retry' || status === 'parked' || leaseExpired) &&
       priorAttempts < REMINDER_MAX_ATTEMPTS;
-    if (!staleRevision && !retryable) return 'duplicate';
+    if (!retryable) return 'duplicate';
 
-    const attempts = staleRevision ? 1 : priorAttempts + 1;
+    const attempts = priorAttempts + 1;
     let took: { count: number };
     try {
       took = await this.prisma.notificationDeliveryLog.updateMany({
@@ -860,10 +883,6 @@ export class SessionReminderJob {
           attempts,
           lease_until: leaseUntil,
           claim_token: token,
-          session_start_at: session.start_at,
-          ...(staleRevision
-            ? { inapp_done_at: null, push_done_at: null, notification_id: null, last_error: null }
-            : {}),
         },
       });
     } catch (err) {
@@ -877,9 +896,9 @@ export class SessionReminderJob {
       id: existing.id,
       token,
       attempts,
-      inappDone: !staleRevision && (existing.inapp_done_at ?? null) !== null,
-      pushDone: !staleRevision && (existing.push_done_at ?? null) !== null,
-      notificationId: staleRevision ? null : (existing.notification_id ?? null),
+      inappDone: (existing.inapp_done_at ?? null) !== null,
+      pushDone: (existing.push_done_at ?? null) !== null,
+      notificationId: existing.notification_id ?? null,
       fresh: false,
     };
   }
@@ -941,9 +960,9 @@ export class SessionReminderJob {
           ? 'session_started'
           : 'superseded';
     try {
-      // A moved session's row was already removed by the reschedule (and a
-      // stale revision is re-armed by the band pass), so this only matches
-      // while this sweep still owns the claim.
+      // Matches only while this sweep still owns the claim. A moved
+      // session's new time has its own claim row (the key carries
+      // start_at), so closing this one never suppresses the new time.
       await this.prisma.notificationDeliveryLog.updateMany({
         where: { id: claim.id, claim_token: claim.token },
         data: { status: 'gave_up', lease_until: null, last_error: `retired:${reason}` },
@@ -951,6 +970,16 @@ export class SessionReminderJob {
     } catch (err) {
       this.logger.warn(`reminder claim ${claim.id} retire failed: ${describeError(err)}`);
     }
+  }
+
+  // Sol B-647-1 (backend #647): the fence read takes FOR SHARE on the session
+  // row inside a transaction, so a reschedule or cancel that is still in
+  // flight is waited for, and its committed result is what the fence sees.
+  private readFencedSession(sessionId: string): Promise<CoachingSession | null> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT 1 FROM "CoachingSession" WHERE "id" = ${sessionId} FOR SHARE`;
+      return tx.coachingSession.findUnique({ where: { id: sessionId } });
+    });
   }
 
   private async releaseClaim(claim: ReminderClaim): Promise<void> {

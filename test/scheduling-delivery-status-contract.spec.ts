@@ -66,13 +66,15 @@ describe('S-SCHED-5 B-634-7: delivery status contract (job <-> database CHECK)',
       start_at: new Date('2027-03-01T10:00:00Z'),
       end_at: new Date('2027-03-01T10:30:00Z'),
     });
+    // start_at is the claim's NOT NULL session start (B-NOTIF-4).
+    const start_at = new Date('2027-03-01T10:00:00Z');
     await expect(
       db.notificationDeliveryLog.create({
-        data: { session_id: 's-1', user_id: 'client-1', kind: 'k', status: 'bogus' },
+        data: { session_id: 's-1', user_id: 'client-1', kind: 'k', start_at, status: 'bogus' },
       }),
     ).rejects.toThrow(/NotificationDeliveryLog_status_check/);
     const row = await db.notificationDeliveryLog.create({
-      data: { session_id: 's-1', user_id: 'client-1', kind: 'k', status: 'retry' },
+      data: { session_id: 's-1', user_id: 'client-1', kind: 'k', start_at, status: 'retry' },
     });
     await expect(
       db.notificationDeliveryLog.updateMany({ where: { id: row.id }, data: { status: 'parked' } }),
