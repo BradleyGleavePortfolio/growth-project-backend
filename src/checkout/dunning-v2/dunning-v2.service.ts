@@ -977,8 +977,14 @@ export class DunningV2Service {
       // C-680-18: decided on the purchase as it is under its row lock. A plan
       // that ended or was revoked (refund, lost dispute, dispute, cancel,
       // expiry) is never handed access back, nor its lock lifted.
+      // R-DISPUTE-PAUSE: the pause is read again under the same locks, so a
+      // dispute applied after the read above keeps the plan paused.
       const purchase = await this.lockedPurchaseForClear(w, purchaseId);
-      if (!purchase || dunningPurchaseEnded(purchase)) {
+      if (
+        !purchase ||
+        dunningPurchaseEnded(purchase) ||
+        (await this.isDisputeCycleOpen(purchaseId, w))
+      ) {
         refused = true;
         return;
       }

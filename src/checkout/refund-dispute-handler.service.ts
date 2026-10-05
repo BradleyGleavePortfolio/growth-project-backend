@@ -1002,10 +1002,14 @@ export class RefundDisputeHandlerService {
       }
     } else if (dispute.status === 'won') {
       // Clear the disputed flag so the purchase rejoins the normal feed.
+      // C-680-19 (R-DISPUTE-PAUSE): a recurring plan whose access the dispute
+      // ended stays revoked when the dispute is won; only the coach restart
+      // grants access again (`paid` without access would read as not ended).
       const purchase = await this.prisma.clientPurchase.findUnique({
         where: { id: updated.purchase_id },
       });
-      if (purchase && purchase.status === 'disputed') {
+      const pausedPlan = purchase?.billing_type === 'recurring' && !purchase.entitlement_active;
+      if (purchase && purchase.status === 'disputed' && !pausedPlan) {
         await this.prisma.clientPurchase.update({
           where: { id: purchase.id },
           data: { status: 'paid' },

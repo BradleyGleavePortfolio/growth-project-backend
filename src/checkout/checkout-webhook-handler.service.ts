@@ -1323,7 +1323,8 @@ export class CheckoutWebhookHandlerService {
       }
       if (purchaseHasEnded(fresh)) return { skipped: 'subscription_already_ended' };
       // R-DISPUTE-PAUSE: a plan a dispute paused stays without access whatever
-      // Stripe's status (pause_collection keeps it `active`).
+      // Stripe's status (pause_collection keeps it `active`); read under the
+      // purchase lock, which the pause and the coach restart also take.
       const entitled =
         subscriptionGrantsAccess(fresh, sub) && !(await this.disputePaused(client, fresh.id));
       if (live && live.revision !== null && lifecycleRevision(fresh) !== live.revision) {
@@ -1845,9 +1846,11 @@ export class CheckoutWebhookHandlerService {
     // B3 v2 (§5) — immediate-clear additions (restore entitlement, lift Day-10
     // lockout, dismiss blockers, revoke recovery tokens). No-op when the flag
     // is off; runs AFTER the v1 recordResolution so v1 behaviour is unchanged.
+    // On the outer tx (B-DUNMR-120): it already holds this purchase's row
+    // lock, which a second connection would wait on until the tx times out.
     if (this.dunningV2) {
       try {
-        await this.dunningV2.applyImmediateClear(updated.id, 'retry');
+        await this.dunningV2.applyImmediateClear(updated.id, 'retry', tx);
       } catch (err) {
         this.logger.warn(
           `dunningV2.applyImmediateClear failed purchase=${updated.id}: ${(err as Error).message}`,
@@ -2063,6 +2066,20 @@ export class CheckoutWebhookHandlerService {
   }
 
   /**
+   * R-DISPUTE-PAUSE: a plan a dispute paused is never re-entitled by a Stripe
+   * status (pause_collection leaves the subscription `active`). Read under the
+   * caller's purchase lock, which the pause and the coach restart also take;
+   * no DunningState lock here (B-DUNMR-120): v1 `recordResolution` writes
+   * that row on its own connection during this transaction.
+   */
+  private async disputePaused(client: WebhookTx, purchaseId: string): Promise<boolean> {
+    // Legacy test stubs of DunningV2Service lack the read; production has it.
+    const v2 = this.dunningV2;
+    if (!v2 || typeof v2.isDisputePaused !== 'function') return false;
+    return v2.isDisputePaused(purchaseId, client);
+  }
+
+  /**
    * B1 pricing-lock serialization (PR-18).
    *
    * Runs `activate` (a ClientPurchase entitlement-activation write) AFTER
@@ -2096,21 +2113,6 @@ export class CheckoutWebhookHandlerService {
    * `$transaction` so the FOR UPDATE lock is held across the activating
    * write. No Stripe HTTP is performed inside this transaction.
    */
-  /**
-   * R-DISPUTE-PAUSE: a plan a dispute paused is never re-entitled by a Stripe
-   * status (pause_collection leaves the subscription `active`). Decided under
-   * the cycle's row lock, the dunning lock order (DunningState first).
-   */
-  private async disputePaused(client: WebhookTx, purchaseId: string): Promise<boolean> {
-    // Legacy test stubs of DunningV2Service lack the read; production has it.
-    const v2 = this.dunningV2;
-    if (!v2 || typeof v2.isDisputePaused !== 'function') return false;
-    if (typeof (client as { $queryRaw?: unknown }).$queryRaw === 'function') {
-      await client.$queryRaw`SELECT "id" FROM "DunningState" WHERE "purchase_id" = ${purchaseId} FOR UPDATE`;
-    }
-    return v2.isDisputePaused(purchaseId, client);
-  }
-
   private async activateUnderPackageLock<T>(
     tx: WebhookTx | undefined,
     packageId: string,
