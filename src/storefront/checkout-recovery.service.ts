@@ -13,6 +13,7 @@ import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
 import { PrismaService } from '../prisma.service';
 import { EmailService } from '../email/email.service';
 import { EmailTemplateKey } from '../email/email.types';
+import { describeFailure } from '../observability/log-pii';
 import { MIN_CHECKOUT_RECOVERY_SECRET_LENGTH } from '../common/env-validation';
 
 // r48 #5 — magic-link recovery for abandoned checkouts.
@@ -133,11 +134,11 @@ export class CheckoutRecoveryService implements OnModuleInit, OnModuleDestroy {
       // the single-use guard.
       if (isProd) {
         const envLabel = nodeEnv ?? '<unset>';
-        const msg =
+        const refusal =
           `CheckoutRecoveryService: REDIS_URL is required in ${envLabel} — refusing to boot. ` +
           'The in-memory single-use guard is single-process and unsafe across the Fly cluster.';
-        this.logger.error(msg);
-        throw new Error(msg);
+        this.logger.error(refusal);
+        throw new Error(refusal);
       }
       this.logger.log(
         'CheckoutRecoveryService: REDIS_URL unset — using in-memory single-use guard (single-process, dev/test only)',
@@ -232,8 +233,9 @@ export class CheckoutRecoveryService implements OnModuleInit, OnModuleDestroy {
       },
     });
     if (recentCount >= RATE_LIMIT_MAX) {
+      // C-611-17: the checkout id, never any part of the address.
       this.logger.warn(
-        `recovery rate-limit hit for ${email.slice(0, 3)}*** (count=${recentCount})`,
+        `recovery rate-limit hit for checkout=${checkout.id} (count=${recentCount})`,
       );
       return { sent: true };
     }
@@ -274,9 +276,7 @@ export class CheckoutRecoveryService implements OnModuleInit, OnModuleDestroy {
       // "we sent it but it bounced" and "we sent it successfully"
       // anyway.
       this.logger.error(
-        `recovery email failed for ${email.slice(0, 3)}***: ${
-          err instanceof Error ? err.message : 'unknown'
-        }`,
+        `recovery email failed for checkout=${checkout.id}: ${describeFailure(err)}`,
       );
     }
     return { sent: true };
@@ -413,9 +413,7 @@ export class CheckoutRecoveryService implements OnModuleInit, OnModuleDestroy {
         // "link was real and is now consumed" / "backing store is down" /
         // "link never existed". Ops keep the distinction via the log.
         this.logger.error(
-          `recovery single-use guard: Redis SET NX failed, denying (reason=fail-closed-store-unreachable): ${
-            err instanceof Error ? err.message : 'unknown'
-          }`,
+          `recovery single-use guard: Redis SET NX failed, denying (reason=fail-closed-store-unreachable): ${describeFailure(err)}`,
         );
         throw this.invalidTokenError();
       }

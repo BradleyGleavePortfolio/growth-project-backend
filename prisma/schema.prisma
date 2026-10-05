@@ -3872,6 +3872,8 @@ model ClientPurchase {
 
   splits                 SplitLedgerEntry[]
   transfers              ConnectTransfer[]
+  // S-FEE — one settlement per Stripe charge (first charge + every renewal).
+  settlements            ChargeSettlement[]
   dunning                DunningState?
   reminders              PaymentReminder[]
   refunds                ChargeRefund[]
@@ -3909,20 +3911,32 @@ model ClientPurchase {
   source         String?
   grant_metadata Json?
 
+  // B-RECUR (OR-113-2) — free trial granted by the native subscription
+  // checkout. trial_days is set when the trial is offered (null = no trial);
+  // trial_started_at is set by the webhook when the trial's entitlement is
+  // granted (card saved). One trial per client per coach is decided from
+  // these two columns under a per-(client, coach) advisory lock.
   // B-TRIALS (OR-113-2) — the free trial this purchase was sold with.
   // trial_days is the snapshot taken when the subscription was created (null =
   // no trial; shared with B-RECUR #654, which declares the same column);
   // trial_ends_at mirrors the Stripe subscription's trial_end and drives the
   // app's "Trial ends Oct 12" line and the trial-ending notice.
-  trial_days    Int?
-  trial_ends_at DateTime?
+  trial_days       Int?
+  trial_started_at DateTime?
+  trial_ends_at    DateTime?
+  // B-RECUR-3 (B-654-5 / B-654-7) — the exact Stripe request and money terms
+  // one native subscription attempt is bound to (price ids, amounts,
+  // currency, cadence, trial days). Written on the reservation before the
+  // first Subscription create; a retry resends the identical request and a
+  // replay answers these terms. No user id, email, token or secret.
+  checkout_terms   Json?
   // B-TRIALS-3 (B-656-5) — does the Stripe subscription itself hold a payment
   // method (default_payment_method / default_source) as of its latest event.
   // NULL = never observed. With the customer default
   // (ConnectCustomer.default_payment_method_id) it decides whether the trial
   // end really charges a card; access is decided separately (a started trial
   // keeps access after the card is removed).
-  card_on_file  Boolean?
+  card_on_file     Boolean?
 
   @@index([client_user_id, status])
   @@index([coach_user_id, status])
@@ -4137,7 +4151,10 @@ model SplitLedgerEntry {
   // reversed back to the platform. Always <= amount_cents.
   reversed_cents            Int            @default(0)
   // Idempotency-key we sent to Stripe when posting this slice. Lets the
-  // worker retry safely. Globally unique.
+  // worker retry safely. Globally unique. S-FEE round 11 (B-681-2): a legacy
+  // per-purchase row carries its durable identity here
+  // (sfee-legacy-ledger:<purchase>:<kind>:<payee account>, ids only), so two
+  // concurrent legacy planners can never create a second row.
   idempotency_key           String?        @unique
   last_error                String?
   posted_at                 DateTime?
@@ -4145,11 +4162,17 @@ model SplitLedgerEntry {
   created_at                DateTime       @default(now())
   updated_at                DateTime       @updatedAt
 
-  @@unique([purchase_id, kind, payee_user_id])
+  // S-FEE: the ledger is per CHARGE. A recurring purchase has one set of rows
+  // per renewal, distinguished by stripe_charge_id. Kinds written by
+  // ChargeSettlementService: application_fee (TGP's 2%), stripe_fee (Stripe's
+  // actual processing fee, borne by the coach), destination (coach net) and
+  // head_coach_split. The four slices of one charge sum to its gross.
+  @@unique([purchase_id, kind, payee_user_id, stripe_charge_id], map: "SplitLedgerEntry_purchase_kind_payee_charge_key")
   @@index([purchase_id])
   @@index([status])
   @@index([kind, status])
   @@index([payee_user_id, status])
+  @@index([stripe_charge_id])
 }
 
 // Phase 4 Connect — Follow-on Connect transfer record.
@@ -4169,6 +4192,16 @@ model ConnectTransfer {
   purchase_id                   String
   purchase                      ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
   ledger_entry_id               String?        @unique
+  // S-FEE — the charge settlement this transfer pays out, and what it is:
+  //   coach_net        : the selling coach's net for the charge
+  //   head_coach_split : the head coach's split for the charge
+  //   coach_reinstate  : funds returned to a payee after a won dispute
+  settlement_id                 String?
+  settlement                    ChargeSettlement? @relation(fields: [settlement_id], references: [id], onDelete: Cascade)
+  kind                          String         @default("head_coach_split")
+  // Open recoveries (PayeeRecovery) netted out of this transfer. The payee's
+  // position for the settlement is amount_cents + netted_recovery_cents.
+  netted_recovery_cents         Int            @default(0)
   // Destination connected account (head coach for the sub-coach split).
   destination_stripe_account_id String
   destination_user_id           String?
@@ -4191,12 +4224,238 @@ model ConnectTransfer {
   posted_at                     DateTime?
   reversed_at                   DateTime?
   reversed_amount_cents         Int            @default(0)
+  // S-FEE round 4 — reversal operations started on this transfer (CAS slot:
+  // at most one TransferReversalOp in flight per transfer).
+  reversal_seq                  Int            @default(0)
+  // S-FEE round 7 (B-627-8) — set before every Stripe create, cleared once
+  // its result is known (posted, or a definitive 4xx refusal). While set, the
+  // next attempt reconciles against Stripe's transfer list (matched by
+  // metadata.tgp_transfer_op = idempotency_key) before it may send again.
+  stripe_send_unresolved_at     DateTime?
   created_at                    DateTime       @default(now())
   updated_at                    DateTime       @updatedAt
+
+  reversal_ops TransferReversalOp[]
 
   @@index([status, next_attempt_at])
   @@index([destination_user_id])
   @@index([purchase_id])
+  @@index([settlement_id])
+}
+
+// S-FEE round 4 (B-627-5) — one durable, keyed Stripe transfer reversal. It is
+// written before Stripe is called and resolved from Stripe's answer (or, when
+// the answer was lost, from the transfer's reversal list matched by
+// metadata.tgp_reversal_op = idempotency_key), so an uncertain outcome is
+// re-driven with the same key and never becomes a second recovery.
+model TransferReversalOp {
+  id                  String          @id @default(uuid())
+  transfer_id         String
+  transfer            ConnectTransfer @relation(fields: [transfer_id], references: [id], onDelete: Cascade)
+  seq                 Int
+  idempotency_key     String          @unique
+  amount_cents        Int
+  // The transfer's reversed_amount_cents when the operation started.
+  base_reversed_cents Int
+  // adjust (refund / dispute convergence of THIS charge's transfer) | legacy.
+  // Owner decision OR-111-1: a transfer is only ever reversed for its own
+  // charge; another charge's debt is recovered by forward netting only.
+  purpose             String          @default("adjust")
+  // pending | succeeded | refused
+  status              String          @default("pending")
+  stripe_reversal_id  String?         @unique
+  attempts            Int             @default(0)
+  last_attempt_at     DateTime?
+  last_error          String?
+  resolved_at         DateTime?
+  created_at          DateTime        @default(now())
+  updated_at          DateTime        @updatedAt
+
+  @@unique([transfer_id, seq])
+  @@index([status, created_at])
+}
+
+// S-FEE — Charge settlement (one row per Stripe charge on a coach package).
+//
+// Mechanism: separate charges and transfers. The charge is created on the
+// platform with on_behalf_of = the coach's connected account (coach is the
+// settlement merchant) and NO transfer_data / application fee. After the
+// charge succeeds we read its balance_transaction (actual Stripe fee, in the
+// settlement currency) and compute the split once, in PlatformFeeService:
+//   coach_net = gross - stripe_fee - platform_fee - head_coach_split
+// then transfer coach_net and head_coach_split with source_transaction = the
+// charge. TGP keeps platform_fee and never pays the processing fee.
+//
+// Refunds / disputes re-derive targets (refunded_cents, dispute_*_cents) and
+// reverse transfers; anything a transfer reversal cannot recover becomes a
+// PayeeRecovery that is netted out of the payee's next transfers.
+//
+// status:
+//   awaiting_fee       : charge known, balance transaction not yet available
+//   settled            : split computed, transfers enqueued/posted
+//   legacy_destination : a pre-S-FEE destination charge (Stripe already moved
+//                        the funds via transfer_data); recorded, never transferred
+//   skipped_free       : $0 charge or grant; nothing to settle
+// S-FEE — single-runner lease for scheduled jobs (one row per job). A
+// machine runs the job only while it holds an unexpired lease; see
+// src/checkout/cron-lease.service.ts.
+model CronLease {
+  name        String   @id
+  holder      String
+  lease_until DateTime
+  acquired_at DateTime
+  updated_at  DateTime @updatedAt
+  // Resume position of a paged job (the S-FEE paid-invoice backfill keeps the
+  // last Stripe invoice id it examined). Null for plain leases.
+  cursor      String?
+}
+
+model ChargeSettlement {
+  id                            String         @id @default(uuid())
+  purchase_id                   String
+  purchase                      ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
+  coach_user_id                 String
+  head_coach_user_id            String?
+  stripe_charge_id              String         @unique
+  stripe_balance_transaction_id String?
+  stripe_invoice_id             String?
+  // Settlement currency (balance_transaction.currency). All *_cents below are
+  // in this currency.
+  currency                      String         @default("usd")
+  // card | bank_debit (payment_method_details.type).
+  rail                          String         @default("card")
+  mechanism                     String         @default("separate_charge_transfer")
+  status                        String         @default("awaiting_fee")
+  // Snapshot of the policy used (bps), so a later policy edit never rewrites history.
+  platform_bps                  Int
+  head_coach_bps                Int            @default(0)
+  gross_cents                   Int
+  stripe_fee_cents              Int?
+  platform_fee_cents            Int?
+  head_coach_split_cents        Int?
+  coach_net_cents               Int?
+  // Adjustments (cumulative, mirrored from Stripe).
+  refunded_cents                Int            @default(0)
+  dispute_withdrawn_cents       Int            @default(0)
+  dispute_fee_cents             Int            @default(0)
+  // Current targets after adjustments (equal to the originals until a refund/dispute).
+  target_platform_fee_cents     Int?
+  target_head_coach_cents       Int?
+  target_coach_net_cents        Int?
+  settled_at                    DateTime?
+  adjusted_at                   DateTime?
+  last_error                    String?
+  // S-FEE round 4 (B-627-4) — an adjustment that could not establish
+  // canonical state (dispute unreadable, reversal outcome unknown, lock lost)
+  // flags the settlement; the sweeper re-runs it until it converges.
+  reconcile_requested_at        DateTime?
+  reconcile_dispute_id          String?
+  reconcile_reason              String?
+  created_at                    DateTime       @default(now())
+  updated_at                    DateTime       @updatedAt
+
+  transfers  ConnectTransfer[]
+  recoveries PayeeRecovery[]
+  notices    PayoutAdjustmentNotice[]
+
+  @@index([purchase_id])
+  @@index([coach_user_id, created_at])
+  @@index([status])
+  @@index([reconcile_requested_at])
+}
+
+// S-FEE — Money a payee owes TGP for one charge that a transfer reversal could
+// not recover (the non-returned processing fee on a full refund, a dispute fee,
+// or a reversal Stripe refused because the payee's balance was already paid
+// out). Collected by netting it out of the payee's next transfers (Stripe:
+// "reconcile any amount owed back to it by reducing subsequent transfer amounts
+// or by reversing transfers").
+//   status: open | collected | released (released = a won dispute cancelled it)
+model PayeeRecovery {
+  id              String           @id @default(uuid())
+  settlement_id   String
+  settlement      ChargeSettlement @relation(fields: [settlement_id], references: [id], onDelete: Cascade)
+  payee_user_id   String
+  amount_cents    Int
+  collected_cents Int              @default(0)
+  currency        String           @default("usd")
+  reason          String
+  status          String           @default("open")
+  // Deterministic per (charge, leg, adjustment state): replays collapse.
+  idempotency_key String           @unique
+  collected_at    DateTime?
+  created_at      DateTime         @default(now())
+  updated_at      DateTime         @updatedAt
+
+  @@index([payee_user_id, status])
+  @@index([settlement_id])
+}
+
+// S-FEE round 5 (owner decision OR-111-1) — the payee-facing record of one
+// refund / chargeback / dispute outcome on one charge: what the customer got
+// back, what was taken back from that sale's own payout, and what TGP holds
+// from the payee's next sale(s) (TGP 2% + every Stripe fee on the charge +
+// any share Stripe refused to reverse). Written under the charge lock after
+// the money converged, one row per (charge, payee leg, event, adjustment
+// state); the Money page reads it as "needs attention" and the dispatcher
+// sends the push / in-app alert / email once per row.
+//   role:  coach | head_coach
+//   event: refund | chargeback | dispute_won | dispute_lost
+//   held_cents = held_tgp_fee_cents + held_stripe_fee_cents
+//              + held_dispute_fee_cents + held_not_reversed_cents
+model PayoutAdjustmentNotice {
+  id                      String           @id @default(uuid())
+  settlement_id           String
+  settlement              ChargeSettlement @relation(fields: [settlement_id], references: [id], onDelete: Cascade)
+  payee_user_id           String
+  role                    String
+  purchase_id             String
+  stripe_charge_id        String
+  event                   String
+  currency                String           @default("usd")
+  charge_gross_cents      Int
+  customer_refunded_cents Int
+  // Round 13 (B-683-1): for a charge presented in another currency than it
+  // settled in, what the client got back in their own currency (the cents
+  // above are the settlement debit). Null when the two currencies match.
+  client_currency         String?
+  client_refunded_cents   Int?
+  reversed_cents          Int
+  reinstated_cents        Int              @default(0)
+  held_cents              Int
+  held_tgp_fee_cents      Int
+  held_stripe_fee_cents   Int
+  held_dispute_fee_cents  Int
+  held_not_reversed_cents Int
+  // Part of held_cents not yet netted out of a later sale when the row was written.
+  held_open_cents         Int
+  state_key               String
+  // Deterministic per (charge, leg, event, adjustment state): replays collapse.
+  idempotency_key         String           @unique
+  title                   String
+  body                    String
+  // Round 6 (B-627-6): each channel's outcome is kept, and a retry only
+  // re-runs the channels that are not done.
+  //   inapp: pending | sent | off | failed
+  //   push:  pending | sent | off | no_token | invalid_token | rate_limited | failed
+  //   email: pending | sent | logged | no_address | disabled | failed
+  inapp_status            String           @default("pending")
+  inapp_notification_id   String?
+  push_notification_id    String?
+  push_status             String           @default("pending")
+  email_status            String           @default("pending")
+  // Email attempts made; attempt k > 1 uses the key `${idempotency_key}:e${k}`.
+  email_attempts          Int              @default(0)
+  dispatch_attempts       Int              @default(0)
+  dispatch_claimed_at     DateTime?
+  dispatched_at           DateTime?
+  acknowledged_at         DateTime?
+  created_at              DateTime         @default(now())
+  updated_at              DateTime         @updatedAt
+
+  @@index([payee_user_id, created_at])
+  @@index([settlement_id])
+  @@index([dispatched_at, created_at])
 }
 
 // Phase 5 Connect — Dunning state per recurring purchase.
