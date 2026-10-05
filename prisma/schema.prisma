@@ -4091,6 +4091,8 @@ model SplitLedgerEntry {
   reversed_at               DateTime?
   created_at                DateTime       @default(now())
   updated_at                DateTime       @updatedAt
+  // B-676-1 (B-CM1-116): one immutable row per reversal posted to this slice.
+  reversal_postings         SplitLedgerReversal[]
 
   // S-FEE: the ledger is per CHARGE. A recurring purchase has one set of rows
   // per renewal, distinguished by stripe_charge_id. Kinds written by
@@ -4103,6 +4105,22 @@ model SplitLedgerEntry {
   @@index([kind, status])
   @@index([payee_user_id, status])
   @@index([stripe_charge_id])
+}
+
+// B-676-1 (B-CM1-116): what ONE refund / lost chargeback (source_id) took back
+// from ONE slice, written once with the reversed_cents increase.
+model SplitLedgerReversal {
+  id          String           @id @default(uuid())
+  entry_id    String
+  entry       SplitLedgerEntry @relation(fields: [entry_id], references: [id], onDelete: Cascade)
+  source_kind String // refund | dispute
+  source_id   String
+  cents       Int
+  posted_at   DateTime
+  created_at  DateTime         @default(now())
+
+  @@unique([entry_id, source_kind, source_id])
+  @@index([posted_at])
 }
 
 // Phase 4 Connect — Follow-on Connect transfer record.
@@ -4721,6 +4739,24 @@ model ChargeRefund {
   // Whether we've reversed the matching ledger entry / head-coach transfer.
   ledger_reversed      Boolean        @default(false)
   transfer_reversed    Boolean        @default(false)
+  // B-641-7/8 (B-COACH-5): the first time a head-coach transfer reversal for
+  // this refund was (or may have been) sent to Stripe under the refund-scoped
+  // key. Stripe keeps a key for 24 hours from its first request, so a retry is
+  // admitted only while this is under 23 hours old, for every caller.
+  transfer_reversal_first_attempt_at DateTime?
+  // Set once when a reversal is still owed past that window: the row leaves
+  // automatic retry, an operator alert fires once, and an owner reconciles it
+  // (POST /v1/admin/payments/refund-reversals/:id/reconcile).
+  transfer_reversal_review_at        DateTime?
+  // B-641-8 (narrowed): the latest admitted attempt. The retry sweep takes
+  // never-attempted rows first, then the least recently attempted, so rows
+  // that keep failing never hold later refunds back across runs.
+  transfer_reversal_last_attempt_at  DateTime?
+  // B-674-3 (d): the first attempt's amount; every resend replays it.
+  transfer_reversal_amount_cents     Int?
+  // B-641-9: the Stripe transfer reversal recorded for this refund (every
+  // path, B-674-3). Unique, so one Stripe reversal settles at most one refund.
+  transfer_reversal_stripe_id        String?   @unique
   posted_at            DateTime?
   created_at           DateTime       @default(now())
   updated_at           DateTime       @updatedAt
@@ -4728,6 +4764,7 @@ model ChargeRefund {
   @@index([purchase_id])
   @@index([status])
   @@index([stripe_charge_id])
+  @@index([transfer_reversed, transfer_reversal_review_at])
 }
 
 // F2 — Partial-refund coach-decision surface.
@@ -4791,6 +4828,17 @@ model ChargeDispute {
   // Stripe-side balance transaction id for the chargeback debit (when lost).
   // Used to reconcile the negative balance against our ledger.
   balance_transaction_id String?
+  // B-674-5 / B-674-10: the lost chargeback's head-coach transfer reversal.
+  // Amount and first attempt are stamped before the first Stripe call (every
+  // attempt replays them under one key); reversed_at is the once-only record
+  // claim; stripe_id is the reversal recorded (unique: settles one dispute).
+  // B-674-11: last_attempt_at orders and claims the retry sweep (least
+  // recently attempted first).
+  transfer_reversal_amount_cents     Int?
+  transfer_reversal_first_attempt_at DateTime?
+  transfer_reversal_last_attempt_at  DateTime?
+  transfer_reversed_at               DateTime?
+  transfer_reversal_stripe_id        String?        @unique
   created_at             DateTime       @default(now())
   updated_at             DateTime       @updatedAt
 
