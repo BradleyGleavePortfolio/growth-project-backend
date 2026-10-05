@@ -8,6 +8,7 @@ import { VoiceModule } from '../../roman/voice/voice.module';
 import { DunningEscalationClassifier } from './dunning-escalation.classifier';
 import { DunningLockoutGuard } from './dunning-lockout.guard';
 import { DunningLockoutScheduler } from './dunning-lockout.scheduler';
+import { DunningRestartController } from './dunning-restart.controller';
 import { DunningStatusController } from './dunning-status.controller';
 import { DunningV2Dispatcher } from './dunning-v2.dispatcher';
 import { DunningV2Renderer } from './dunning-v2.renderer';
@@ -34,7 +35,7 @@ import { DunningV2Telemetry } from './dunning-v2.telemetry';
   // ConnectModule supplies StripeConnectApiService for the pre-lock Stripe
   // subscription check (never a charge call).
   imports: [AnalyticsModule, ConnectModule, EmailModule, NotificationsModule, VoiceModule],
-  controllers: [DunningStatusController],
+  controllers: [DunningStatusController, DunningRestartController],
   providers: [
     PrismaService,
     DunningEscalationClassifier,
