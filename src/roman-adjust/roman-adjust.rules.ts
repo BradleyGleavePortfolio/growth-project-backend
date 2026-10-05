@@ -299,7 +299,10 @@ export function cutVolume(exercises: readonly AdjustExercise[], pct: number): Ad
     total -= 1;
   }
   return {
-    volume_pct: pct,
+    // The realized reduction, not the requested `pct`: the one-set floor and
+    // rounding can make the actual cut smaller or larger, and the coach is
+    // shown this number next to the set counts.
+    volume_pct: before > 0 ? Math.round(((before - total) / before) * 100) : 0,
     sets_before: before,
     sets_after: total,
     exercises: ordered.map((e, i) => ({
@@ -349,7 +352,7 @@ function signalPhrase(s: AdjustSignal): string {
     case 'rhr_rise':
       return `resting heart rate is up ${s.value} bpm`;
     case 'short_sleep':
-      return `sleep has averaged ${s.value} hours over the last ${ADJUST_THRESHOLDS.recentDays} nights`;
+      return `sleep has averaged ${s.value} hours on the nights tracked in the last ${ADJUST_THRESHOLDS.recentDays} days`;
     case 'low_readiness':
       return `readiness has averaged ${s.value}, down from ${s.baseline ?? s.value}`;
     case 'load_spike':
@@ -364,12 +367,12 @@ function joinPhrases(xs: string[]): string {
   return `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`;
 }
 
-/** "today's", "tomorrow's" or "Friday's", by the client's local calendar. */
-export function whenWord(scheduledFor: Date, now: Date, timeZone: string): string {
-  const today = localDate(now, timeZone);
-  const day = localDate(scheduledFor, timeZone);
-  if (day === today) return "today's";
-  if (day === addDays(today, 1)) return "tomorrow's";
+/**
+ * "Saturday's": the weekday of the workout on the client's calendar. Never
+ * "today's" or "tomorrow's": the sentence is stored at scan time and read
+ * later, and a weekday stays true whenever the coach reads it.
+ */
+export function whenWord(scheduledFor: Date, timeZone: string): string {
   try {
     return `${new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone }).format(scheduledFor)}'s`;
   } catch {
@@ -389,8 +392,8 @@ export function romanProposalText(input: {
   const reasonsSentence = reasons.charAt(0).toUpperCase() + reasons.slice(1);
   return (
     `${name}'s recovery has dipped. ${reasonsSentence}. ` +
-    `I suggest trimming ${input.when} ${input.planName} by ${input.change.volume_pct}%, ` +
+    `Roman suggests trimming ${input.when} ${input.planName} by ${input.change.volume_pct}%, ` +
     `from ${input.change.sets_before} to ${input.change.sets_after} sets. Reps and loads stay as you set them. ` +
-    `Shall I apply it?`
+    `Approve to apply it.`
   );
 }

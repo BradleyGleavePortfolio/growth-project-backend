@@ -122,7 +122,8 @@ describe('cutVolume / setsChange / applyChange', () => {
   it('15% of 18 sets is 15 sets; sets come off the exercise with the most sets first (the later one on a tie), reps and load untouched', () => {
     const ex = [EX(0, 5), EX(1, 4), EX(2, 3), EX(3, 3), EX(4, 3)];
     const c = cutVolume(ex, 15);
-    expect(c).toMatchObject({ volume_pct: 15, sets_before: 18, sets_after: 15 });
+    // 18 -> 15 is a 17% cut: the stored percentage is the realized one (B-655-6).
+    expect(c).toMatchObject({ volume_pct: 17, sets_before: 18, sets_after: 15 });
     expect(c.exercises.map((e) => e.sets_after)).toEqual([3, 3, 3, 3, 3]);
     const after = applyChange(ex, c);
     expect(after.map((e) => [e.reps_or_duration_seconds, e.weight_lbs, e.rest_seconds])).toEqual(
@@ -132,6 +133,8 @@ describe('cutVolume / setsChange / applyChange', () => {
   it('never drops an exercise below one set', () => {
     const c = cutVolume([EX(0, 1), EX(1, 1), EX(2, 2)], 50);
     expect(c.exercises.map((e) => e.sets_after)).toEqual([1, 1, 1]);
+    // B-655-6: the floor stops the cut at 4 -> 3 sets, which is 25%, not the 50% asked for.
+    expect(c).toMatchObject({ volume_pct: 25, sets_before: 4, sets_after: 3 });
   });
   it('explicit set counts compute the honest percentage', () => {
     const c = setsChange([EX(0, 4), EX(1, 4)], new Map([[1, 2]]));
@@ -149,16 +152,19 @@ describe("Roman's phrasing", () => {
       ],
       change: { volume_pct: 15, sets_before: 18, sets_after: 15, exercises: [] },
       planName: 'Lower Body A',
-      when: "tomorrow's",
+      when: "Saturday's",
     });
     expect(t).toBe(
-      "Maya's recovery has dipped. Heart-rate variability is 18% below the usual and sleep has averaged 5.6 hours over the last 3 nights. I suggest trimming tomorrow's Lower Body A by 15%, from 18 to 15 sets. Reps and loads stay as you set them. Shall I apply it?",
+      "Maya's recovery has dipped. Heart-rate variability is 18% below the usual and sleep has averaged 5.6 hours on the nights tracked in the last 3 days. Roman suggests trimming Saturday's Lower Body A by 15%, from 18 to 15 sets. Reps and loads stay as you set them. Approve to apply it.",
     );
     expect(t).not.toMatch(/!|diagnos|illness|sick|treat|injur/i);
+    // B-655-9: no first person; B-655-5: the sleep figure claims only the nights actually tracked.
+    expect(t).not.toMatch(/\bI\b|\bI'|\bme\b|\bmy\b|\bwe\b|\bus\b/i);
+    expect(t).not.toMatch(/last 3 nights/);
   });
-  it('when-word follows the client calendar', () => {
-    expect(whenWord(new Date('2026-10-03T01:00:00Z'), NOW, TZ)).toBe("today's"); // 18:00 Oct 2 local
-    expect(whenWord(new Date('2026-10-03T16:00:00Z'), NOW, TZ)).toBe("tomorrow's");
-    expect(whenWord(new Date('2026-10-05T16:00:00Z'), NOW, TZ)).toBe("Monday's");
+  it('when-word is the weekday on the client calendar, never today/tomorrow (B-655-3: true whenever it is read)', () => {
+    expect(whenWord(new Date('2026-10-03T01:00:00Z'), TZ)).toBe("Friday's"); // 18:00 Oct 2 local
+    expect(whenWord(new Date('2026-10-03T16:00:00Z'), TZ)).toBe("Saturday's");
+    expect(whenWord(new Date('2026-10-05T16:00:00Z'), TZ)).toBe("Monday's");
   });
 });

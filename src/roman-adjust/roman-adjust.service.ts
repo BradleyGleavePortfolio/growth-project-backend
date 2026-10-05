@@ -10,16 +10,17 @@
  *   undo     restore the previous set counts inside the undo window
  *
  * Every state change writes an append-only WorkoutAdjustmentEvent row in the
- * same transaction. Box-2 AI consent (D2) is checked before a proposal is
- * created and again before one is applied. Writes go through
+ * same transaction. Box-2 AI consent (D2) is read through AiEgressService
+ * (R2b) before a proposal is created, on every list and again before one is
+ * applied. A proposal is visible and actionable only while its client is
+ * still the caller's live client. Writes go through
  * WorkoutBuilderService, which owns assignment snapshots and refuses a write
  * once the client has started the workout or anyone edited it since.
  */
-import { HttpException, Inject, Injectable, Logger } from '@nestjs/common';
+import { HttpException, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
-import { CLIENT_AI_CONSENT_READER, type ClientAiConsentReader } from '../ai-consent/ai-consent.reader';
-import { AI_CONSENT_BATCH_MAX } from '../ai-consent/ai-consent.constants';
+import { AiEgressService } from '../ai-egress/ai-egress.service';
 import {
   WorkoutBuilderService,
   type AssignmentExerciseRow,
@@ -132,7 +133,7 @@ export class RomanAdjustService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly workoutBuilder: WorkoutBuilderService,
-    @Inject(CLIENT_AI_CONSENT_READER) private readonly consent: ClientAiConsentReader,
+    private readonly egress: AiEgressService,
   ) {}
 
   // ─── list + scan ──────────────────────────────────────────────────────────
@@ -154,17 +155,24 @@ export class RomanAdjustService {
         orderBy: { created_at: 'desc' },
         take: 50,
       });
-      // Box 2 on read too: a client who withdrew since the scan drops out.
+      // Only the caller's current, live clients: a client moved to another
+      // coach or deleted since the scan drops out, health signals included.
       const clientIds = [...new Set(rows.map((r) => r.client_id))];
-      const consented = clientIds.length ? await this.consent.clientsWithAiConsent(clientIds) : new Set<string>();
-      const withdrawn = rows.filter((r) => r.status === 'pending' && !consented.has(r.client_id));
-      for (const r of withdrawn) await this.closeAs(r.id, 'withdrawn', null, { reason: 'consent_withdrawn' });
-      const visible = rows.filter((r) => consented.has(r.client_id));
-      const names = await this.prisma.user.findMany({
-        where: { id: { in: visible.map((r) => r.client_id) } },
-        select: { id: true, name: true },
-      });
-      const nameOf = new Map(names.map((n) => [n.id, firstName(n.name)]));
+      const current = clientIds.length
+        ? await this.prisma.user.findMany({
+            where: { id: { in: clientIds }, coach_id: coachId, deleted_at: null },
+            select: { id: true, name: true },
+          })
+        : [];
+      const nameOf = new Map(current.map((n) => [n.id, firstName(n.name)]));
+      // Box 2 on read too: a client who withdrew since the scan drops out.
+      const consented = await this.egress.consentedClients([...nameOf.keys()]);
+      const visibleTo = (clientId: string) => nameOf.has(clientId) && consented.has(clientId);
+      for (const r of rows) {
+        if (r.status !== 'pending' || visibleTo(r.client_id)) continue;
+        await this.closeAs(r.id, 'withdrawn', null, { reason: nameOf.has(r.client_id) ? 'consent_withdrawn' : 'client_not_current' });
+      }
+      const visible = rows.filter((r) => visibleTo(r.client_id));
       const exNames = await this.exerciseNames(visible);
       return { proposals: visible.map((r) => this.view(r, nameOf.get(r.client_id) ?? '', exNames)) };
     } catch (err) {
@@ -186,10 +194,10 @@ export class RomanAdjustService {
     const clients = await this.prisma.user.findMany({
       where: { coach_id: coachId, role: 'student', deleted_at: null },
       select: { id: true, name: true, notification_prefs: { select: { timezone: true } } },
-      take: Math.min(ADJUST_SCAN_MAX_CLIENTS, AI_CONSENT_BATCH_MAX),
+      take: ADJUST_SCAN_MAX_CLIENTS,
     });
     if (clients.length === 0) return 0;
-    const consented = await this.consent.clientsWithAiConsent(clients.map((c) => c.id));
+    const consented = await this.egress.consentedClients(clients.map((c) => c.id));
     const eligible = clients.filter((c) => consented.has(c.id));
     if (eligible.length === 0) return 0;
     const ids = eligible.map((c) => c.id);
@@ -261,7 +269,7 @@ export class RomanAdjustService {
             signals,
             change,
             planName: cur.plan_name,
-            when: whenWord(cur.scheduled_for, now, tz),
+            when: whenWord(cur.scheduled_for, tz),
           });
           const p = await tx.workoutAdjustmentProposal.create({
             data: {
@@ -357,7 +365,7 @@ export class RomanAdjustService {
     now: Date,
   ): Promise<AdjustProposalView> {
     const p = await this.ownPending(coachId, id);
-    if (!(await this.consent.hasClientAiConsent(p.client_id))) {
+    if (!(await this.egress.consentedClients([p.client_id])).has(p.client_id)) {
       await this.closeAs(p.id, 'withdrawn', coachId, { reason: 'consent_withdrawn' });
       throw adjustError('CONSENT_WITHDRAWN');
     }
@@ -488,6 +496,9 @@ export class RomanAdjustService {
     });
     // Another coach's proposal is indistinguishable from a missing one.
     if (!p || p.coach_id !== coachId) throw adjustError('NOT_FOUND');
+    // So is one whose client has since moved to another coach or been deleted.
+    const client = await this.prisma.user.findUnique({ where: { id: p.client_id }, select: { coach_id: true, deleted_at: true } });
+    if (!client || client.coach_id !== coachId || client.deleted_at) throw adjustError('NOT_FOUND');
     return p;
   }
 

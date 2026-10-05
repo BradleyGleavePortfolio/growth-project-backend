@@ -41,7 +41,7 @@ export const ADJUST_ERRORS = {
   WORKOUT_CHANGED: {
     status: 409,
     code: 'ADJUSTMENT_WORKOUT_CHANGED',
-    message: 'This workout was edited after Roman made the suggestion, so it was not applied. Open the workout to review it, then refresh for a new suggestion.',
+    message: 'This workout was edited after Roman made the suggestion, so it was not applied. Open the workout to review it.',
   },
   CONSENT_WITHDRAWN: {
     status: 409,

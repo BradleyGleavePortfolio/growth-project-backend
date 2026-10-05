@@ -14,7 +14,7 @@ import {
   WorkoutBuilderService,
   parseAssignmentRows,
 } from '../../src/workout-builder/workout-builder.service';
-import { FakeConsentReader, fakeOf } from '../ai-egress/ai-egress.fakes';
+import { egressWithGrants, fakeOf } from '../ai-egress/ai-egress.fakes';
 
 const NOW = new Date('2026-10-02T16:00:00Z'); // Fri 09:00 Los Angeles
 const COACH = 'coach-1';
@@ -92,6 +92,9 @@ function world() {
     const s = snapshots.find((x) => x.assignment_id === p.assignment_id);
     return { ...p, assignment: { ...a, snapshot: s ? { plan_name: s.plan_name } : null } };
   };
+  // The transaction hands the same double back; held outside the literal so
+  // the double's type is not self-referential (TS7022/TS7024).
+  const txHolder: { db: unknown } = { db: null };
   const prisma = {
     user: {
       findMany: jest.fn(async ({ where }: { where: Row }) => users.filter((u) => matches(u, where))),
@@ -149,14 +152,15 @@ function world() {
         return data;
       }),
     },
-    $transaction: jest.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+    $transaction: jest.fn(async (fn: (tx: unknown) => unknown) => fn(txHolder.db)),
   };
-  const reader = new FakeConsentReader([MAYA]);
+  txHolder.db = prisma;
+  const { egress, reader } = egressWithGrants([MAYA]);
   const builder = new WorkoutBuilderService(fakeOf(prisma));
-  const svc = new RomanAdjustService(fakeOf(prisma), builder, reader);
+  const svc = new RomanAdjustService(fakeOf(prisma), builder, egress);
   const setsOf = (asg: string) =>
     parseAssignmentRows(snapshots.find((s) => s.assignment_id === asg)?.exercises_json).map((e) => e.sets);
-  return { prisma, svc, reader, proposals, events, assignments, snapshots, setsOf };
+  return { prisma, svc, reader, users, proposals, events, assignments, snapshots, setsOf };
 }
 
 function codeOf(key: keyof typeof ADJUST_ERRORS) {
@@ -190,10 +194,14 @@ describe('scan', () => {
       severity: 'moderate',
       client: { id: MAYA, first_name: 'Maya' },
       workout: { assignment_id: 'asg-maya', plan_name: 'Lower Body A' },
-      proposed_change: { volume_pct: 15, sets_before: 18, sets_after: 15 },
+      // 18 -> 15 sets is a 17% cut (B-655-6: the realized change, not the 15% asked for).
+      proposed_change: { volume_pct: 17, sets_before: 18, sets_after: 15 },
       exercise_names: { 'ex-0': 'Back squat' },
     });
-    expect(proposals[0].roman_text).toMatch(/^Maya's recovery has dipped\. Heart-rate variability is 23% below the usual and resting heart rate is up 6 bpm\. I suggest trimming tomorrow's Lower Body A by 15%, from 18 to 15 sets\./);
+    expect(proposals[0].roman_text).toBe(
+      "Maya's recovery has dipped. Heart-rate variability is 23% below the usual and resting heart rate is up 6 bpm. " +
+        "Roman suggests trimming Saturday's Lower Body A by 17%, from 18 to 15 sets. Reps and loads stay as you set them. Approve to apply it.",
+    );
     expect(w.proposals.some((p) => p.client_id === OMAR)).toBe(false);
     expect(w.events.map((e) => e.action)).toEqual(['proposed']);
     // A proposal changes nothing by itself.
@@ -342,6 +350,67 @@ describe('approve / edit / dismiss / undo', () => {
     const w = world();
     w.prisma.user.findMany.mockRejectedValueOnce(new Error('connection reset for maya@example.com'));
     await expect(w.svc.listForCoach(COACH, NOW)).rejects.toMatchObject(codeOf('UNAVAILABLE'));
+  });
+});
+
+describe('fix round 1 (B-ADJB-122): what the coach reads is true when it is read', () => {
+  it('B-655-3: a suggestion made Friday still names the right day when the coach opens it on Saturday', async () => {
+    const w = world();
+    await w.svc.listForCoach(COACH, NOW);
+    const saturdayMorning = new Date('2026-10-03T15:00:00Z'); // Sat 08:00 Los Angeles, workout at 09:00
+    const { proposals } = await w.svc.listForCoach(COACH, saturdayMorning);
+    expect(proposals).toHaveLength(1);
+    expect(proposals[0].roman_text).toContain("trimming Saturday's Lower Body A");
+    expect(proposals[0].roman_text).not.toMatch(/tomorrow|today/i);
+  });
+
+  it('B-655-9: the suggestion has no first person', async () => {
+    const w = world();
+    const { proposals } = await w.svc.listForCoach(COACH, NOW);
+    expect(proposals[0].roman_text).not.toMatch(/\bI\b|\bI'|\bme\b|\bmy\b|\bwe\b|\bus\b/i);
+  });
+
+  it('B-655-6: the percentage shown is the change the client gets', async () => {
+    const w = world();
+    const { proposals } = await w.svc.listForCoach(COACH, NOW);
+    const c = proposals[0].proposed_change;
+    expect(c.volume_pct).toBe(Math.round(((c.sets_before - c.sets_after) / c.sets_before) * 100));
+    expect(proposals[0].roman_text).toContain(`by ${c.volume_pct}%, from ${c.sets_before} to ${c.sets_after} sets`);
+    const v = await w.svc.approve(COACH, proposals[0].id, NOW);
+    expect(w.setsOf('asg-maya').reduce((a, b) => a + b, 0)).toBe(v.applied_change?.sets_after);
+  });
+
+  it('B-655-2: the edited-workout refusal promises nothing that never comes', async () => {
+    const w = world();
+    const { proposals } = await w.svc.listForCoach(COACH, NOW);
+    w.snapshots[0].exercises_json = exercises([6, 4, 3, 3, 3]);
+    await expect(w.svc.approve(COACH, proposals[0].id, NOW)).rejects.toMatchObject(codeOf('WORKOUT_CHANGED'));
+    expect(ADJUST_ERRORS.WORKOUT_CHANGED.message).not.toMatch(/new suggestion|refresh/i);
+    // No new suggestion is made for that workout, so the copy must not offer one.
+    await w.svc.refreshForCoach(COACH, NOW, true);
+    expect(w.proposals.filter((p) => p.status === 'pending')).toHaveLength(0);
+  });
+
+  it("A-655-1: a client moved to another coach drops out of the old coach's list, and the old coach cannot act", async () => {
+    const w = world();
+    const { proposals } = await w.svc.listForCoach(COACH, NOW);
+    const id = proposals[0].id;
+    (w.users.find((u) => u.id === MAYA) as Row).coach_id = 'coach-2';
+    await expect(w.svc.approve(COACH, id, NOW)).rejects.toMatchObject(codeOf('NOT_FOUND'));
+    await expect(w.svc.dismiss(COACH, id, null)).rejects.toMatchObject(codeOf('NOT_FOUND'));
+    expect(w.setsOf('asg-maya')).toEqual([5, 4, 3, 3, 3]);
+    const later = await w.svc.listForCoach(COACH, new Date(NOW.getTime() + 1000));
+    expect(later.proposals).toEqual([]);
+    expect(w.proposals[0].status).toBe('withdrawn');
+  });
+
+  it('A-655-1: an applied change cannot be undone by the old coach after the client moved', async () => {
+    const w = world();
+    const { proposals } = await w.svc.listForCoach(COACH, NOW);
+    await w.svc.approve(COACH, proposals[0].id, NOW);
+    (w.users.find((u) => u.id === MAYA) as Row).coach_id = 'coach-2';
+    await expect(w.svc.undo(COACH, proposals[0].id, NOW)).rejects.toMatchObject(codeOf('NOT_FOUND'));
+    expect(w.setsOf('asg-maya')).toEqual([3, 3, 3, 3, 3]);
   });
 });
 
