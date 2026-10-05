@@ -1,0 +1,37 @@
+<html lang='en'>
+  <body
+    style='font-family: -apple-system, system-ui, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; color: #1a1a1a;'
+  >
+    <h1 style='font-size: 22px; margin: 0 0 16px;'>Your free trial ends on {{trial_end_date}}</h1>
+    <p>Hi{{#if recipient_name}} {{recipient_name}}{{/if}},</p>
+    {{#if will_charge}}
+      <p>Your free trial of
+        <strong>{{plan_name}}</strong>{{#if coach_name}} with {{coach_name}}{{/if}}
+        ends on
+        <strong>{{trial_end_date}}</strong>. Your card will be charged
+        <strong>{{amount_display}}</strong>
+        then, and the plan continues
+        {{cadence}}.</p>
+      <p>Nothing to do if you would like to keep going. If not, cancel anytime before
+        {{trial_end_date}}
+        in the app under Your plan, and your card will not be charged.</p>
+    {{else if no_card}}
+      <p>Your free trial of
+        <strong>{{plan_name}}</strong>{{#if coach_name}} with {{coach_name}}{{/if}}
+        ends on
+        <strong>{{trial_end_date}}</strong>. No card is saved on the plan, so nothing will be
+        charged and your plan ends then.</p>
+      <p>You can start the plan again anytime from the app.</p>
+    {{else}}
+      <p>Your free trial of
+        <strong>{{plan_name}}</strong>{{#if coach_name}} with {{coach_name}}{{/if}}
+        ends on
+        <strong>{{trial_end_date}}</strong>. You cancelled during the trial, so your card will not
+        be charged and your plan ends then.</p>
+      <p>You can start the plan again anytime from the app.</p>
+    {{/if}}
+    <hr style='border: 0; border-top: 1px solid #eaeaea; margin: 32px 0;' />
+    <p style='font-size: 12px; color: #888;'>You are receiving this because you started a free trial
+      in The Growth Project app.</p>
+  </body>
+</html>

@@ -10,6 +10,7 @@ import {
   SUBSCRIPTION_CHECKOUT_OWNER,
   TrialCheckoutCapability,
 } from '../src/packages/trials/trial-checkout-capability';
+import { PackagesModule } from '../src/packages/packages.module';
 import { makeTrialUsageTable, stub } from './utils/trial-fakes';
 
 function setup(opts: { checkoutReady?: boolean } = {}) {
@@ -282,6 +283,13 @@ describe('B-TRIALS-2 — a trial is advertised only when a checkout honors it (#
     expect((await service.offersForClient('client-1', pkgs)).get('pkg-1')?.reason).toBe(
       'already_used',
     );
+  });
+
+  it('PackagesModule provides and exports one capability instance for CheckoutModule to register with', () => {
+    const providers = Reflect.getMetadata('providers', PackagesModule) as unknown[];
+    const exported = Reflect.getMetadata('exports', PackagesModule) as unknown[];
+    expect(providers).toContain(TrialCheckoutCapability);
+    expect(exported).toContain(TrialCheckoutCapability);
   });
 
   it('hasStarted is true only for a started trial on that purchase', async () => {

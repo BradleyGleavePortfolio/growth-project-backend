@@ -26,6 +26,8 @@ export const EmailTemplateKey = {
   PAYMENT_REMINDER_URGENT: 'payment-reminder-urgent',
   PAYMENT_FINAL_NOTICE: 'payment-final-notice',
   PAYMENT_RECOVERED: 'payment-recovered',
+  // B-TRIALS (OR-113-2) — free trial ends in three days (date + amount).
+  TRIAL_ENDING: 'trial-ending',
   // S-FEE round 5 (OR-111-1) — refund / chargeback payout notice to a coach.
   COACH_PAYOUT_ADJUSTMENT: 'coach-payout-adjustment',
 } as const;
@@ -54,6 +56,10 @@ export interface SendEmailInput {
   // Optional cancellation: checked before the send-log row, again right before the transport,
   // and passed to the provider request. An abort before the transport returns notStarted.
   signal?: AbortSignal;
+  // B-672-4 (trials) — stable across retries of one message: sent to the
+  // provider (Resend Idempotency-Key, 24 h) with a hash of the rendered
+  // content, so the same message is not delivered twice.
+  providerIdempotencyKey?: string;
 }
 
 export interface SendEmailResult {
