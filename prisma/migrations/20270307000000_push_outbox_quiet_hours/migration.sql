@@ -85,6 +85,9 @@ CREATE INDEX IF NOT EXISTS "PushOutbox_user_id_sent_at_idx" ON "PushOutbox"("use
 CREATE INDEX IF NOT EXISTS "PushOutbox_sent_at_receipt_checked_at_idx" ON "PushOutbox"("sent_at", "receipt_checked_at");
 
 -- CreateIndex
+CREATE INDEX IF NOT EXISTS "PushOutbox_result_code_idx" ON "PushOutbox"("result_code");
+
+-- CreateIndex
 CREATE UNIQUE INDEX IF NOT EXISTS "PushOutbox_user_id_dedupe_key_key" ON "PushOutbox"("user_id", "dedupe_key");
 
 -- AddForeignKey
