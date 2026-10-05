@@ -28,6 +28,8 @@ export const EmailTemplateKey = {
   PAYMENT_RECOVERED: 'payment-recovered',
   // B-TRIALS (OR-113-2) — free trial ends in three days (date + amount).
   TRIAL_ENDING: 'trial-ending',
+  // S-FEE round 5 (OR-111-1) — refund / chargeback payout notice to a coach.
+  COACH_PAYOUT_ADJUSTMENT: 'coach-payout-adjustment',
 } as const;
 export type EmailTemplateKey =
   (typeof EmailTemplateKey)[keyof typeof EmailTemplateKey];
@@ -51,8 +53,8 @@ export interface SendEmailInput {
   from?: string;
   // Optional reply-to header; falls back to provider default if unset.
   replyTo?: string;
-  // B-672-4 (trials) — optional abort, checked before the log row and the
-  // transport and passed to the provider request.
+  // Optional cancellation: checked before the send-log row, again right before the transport,
+  // and passed to the provider request. An abort before the transport returns notStarted.
   signal?: AbortSignal;
   // B-672-4 (trials) — stable across retries of one message: sent to the
   // provider (Resend Idempotency-Key, 24 h) with a hash of the rendered
@@ -67,7 +69,12 @@ export interface SendEmailResult {
   providerMessageId: string | null;
   // Mirrored from input.idempotencyKey for caller convenience.
   idempotencyKey: string;
-  // Human-readable error text on 'failed'. Never contains the provider
-  // API key. Safe to surface up to the operator.
+  // Diagnostic on 'failed': server-owned parts only, e.g.
+  // `provider=resend status=422 code=validation_error` or
+  // `render: error=Error` (B-700-1: never the provider body or an exception
+  // message, which can hold an address or a name). Safe to surface up to
+  // the operator.
   error?: string;
+  // True when input.signal aborted before the provider was called: nothing was sent.
+  notStarted?: boolean;
 }

@@ -71,6 +71,7 @@ function build(opts: { confirmedDaysAgo?: number | null; role?: string } = {}) {
   };
   const billing = {
     collectSubscriptionIds: jest.fn().mockResolvedValue(['sub_1']),
+    collectUnboundAttemptSubscriptionIds: jest.fn(async () => []),
     cancelAll: jest.fn().mockResolvedValue({ canceled: 1, alreadyInactive: 0 }),
   };
   const service = new AccountDeletionService(

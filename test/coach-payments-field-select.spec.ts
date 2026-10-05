@@ -166,6 +166,10 @@ function buildPrisma() {
       ),
       groupBy: jest.fn(async () => []),
     },
+    // S-FEE: the earnings summary also sums recoveries owed back (none here).
+    payeeRecovery: {
+      aggregate: jest.fn(async () => ({ _sum: { amount_cents: null } })),
+    },
     connectTransfer: {
       findMany: jest.fn(async (args: { where?: Row; select?: Row }) =>
         transfers.filter((r) => matches(r, args.where)).map((r) => project(r, args.select, {})),

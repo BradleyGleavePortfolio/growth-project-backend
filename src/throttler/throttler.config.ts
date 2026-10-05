@@ -42,6 +42,7 @@ import {
 // POST /diagnostic/submit                   | diagnostic-submit       | DIAGNOSTIC_RATE_LIMIT_PER_HOUR / hour (IP)
 // POST /v1/checkout/sessions               | checkout-mint           | CHECKOUT_MINT_PER_HOUR / hour (user)
 // POST /v1/checkout/payment-intent         | checkout-mint           | shared
+// POST /v1/checkout/subscription-intent    | checkout-mint           | shared
 // POST /coach/ai/workout-program           | coach-ai-generation     | 5 / hour (user)
 // POST /coach/ai/meal-plan                 | coach-ai-generation     | 5 / hour (user)
 // POST /coach/ai/client-insight            | coach-ai-generation     | 10 / hour (user)
