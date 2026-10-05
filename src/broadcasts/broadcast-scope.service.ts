@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
+import { PrismaService } from '../prisma.service';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 
 export interface CoachScope {
@@ -7,7 +8,7 @@ export interface CoachScope {
   actorId: string;
   /** Head coach id: the tenant and the CoachMessage thread namespace. */
   tenantId: string;
-  /** Clients the caller may message (live students only). */
+  /** Clients the caller may message (live, unarchived students only). */
   clientIds: string[];
 }
 
@@ -19,6 +20,7 @@ interface LockedUser {
   role: string;
   coach_id: string | null;
   deleted_at: Date | null;
+  archived_at: Date | null;
 }
 
 /**
@@ -29,13 +31,29 @@ interface LockedUser {
  */
 @Injectable()
 export class BroadcastScopeService {
-  constructor(private readonly subCoachScope: SubCoachScopeService) {}
+  constructor(
+    private readonly subCoachScope: SubCoachScopeService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   async resolve(actorId: string): Promise<CoachScope> {
-    const [clientIds, head] = await Promise.all([
+    const [authorized, head] = await Promise.all([
       this.subCoachScope.getAuthorizedClientIds(actorId),
       this.subCoachScope.getHeadCoachIdForSubCoach(actorId),
     ]);
+    // C-727-1: a client the coach archived is in no broadcast audience.
+    const live =
+      authorized.length === 0
+        ? new Set<string>()
+        : new Set(
+            (
+              await this.prisma.user.findMany({
+                where: { id: { in: authorized }, archived_at: null },
+                select: { id: true },
+              })
+            ).map((u) => u.id),
+          );
+    const clientIds = authorized.filter((id) => live.has(id));
     return { actorId, tenantId: head ?? actorId, clientIds };
   }
 
@@ -61,7 +79,13 @@ export class BroadcastScopeService {
     const head = await this.subCoachScope.lockMembershipHeadCoachIdInTx(tx, authorId, author);
     if ((head ?? authorId) !== tenantId) return 'author_not_in_tenant';
     const client = await lockUser(tx, clientId);
-    if (!client || client.deleted_at || client.role !== 'student' || client.coach_id !== tenantId) {
+    if (
+      !client ||
+      client.deleted_at ||
+      client.archived_at ||
+      client.role !== 'student' ||
+      client.coach_id !== tenantId
+    ) {
       return 'not_on_roster';
     }
     if (authorId === tenantId) return null;
@@ -75,7 +99,7 @@ export class BroadcastScopeService {
 
 async function lockUser(tx: Prisma.TransactionClient, id: string): Promise<LockedUser | null> {
   const rows = await tx.$queryRaw<LockedUser[]>`
-    SELECT "id", "role"::text AS "role", "coach_id", "deleted_at"
+    SELECT "id", "role"::text AS "role", "coach_id", "deleted_at", "archived_at"
     FROM "User" WHERE "id" = ${id} FOR SHARE`;
   return rows[0] ?? null;
 }
