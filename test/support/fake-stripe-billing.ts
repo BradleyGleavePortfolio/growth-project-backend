@@ -311,7 +311,9 @@ export class FakeStripeBilling {
     return paid;
   }
 
-  async voidInvoice(args: { invoiceId: string; idempotencyKey: string }): Promise<FakeInvoice> {
+  // Main's positional signature (voidInvoice(invoiceId, idempotencyKey)).
+  async voidInvoice(invoiceId: string, idempotencyKey: string): Promise<FakeInvoice> {
+    const args = { invoiceId, idempotencyKey };
     this.calls.push({ op: 'voidInvoice', key: args.idempotencyKey, args });
     if (this.beforeVoid) await this.beforeVoid(args.invoiceId);
     return this.once(`void:${args.idempotencyKey}`, () => {
